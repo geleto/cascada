@@ -464,10 +464,6 @@ class CompilerBase extends Obj {
         // @todo - optimization: if there are no further funCalls with lock on the path,
         // emit a terminal marker so follow-up accesses can skip redundant lock plumbing.
 
-        this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
-        if (sequenceLockLookup.repair) {
-          this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
-        }
         if (this.scriptMode) {
           this.emit(`runtime.sequentialContextLookupScriptValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         } else {
@@ -500,10 +496,6 @@ class CompilerBase extends Obj {
         this.inBlock &&
         !this._isDeclared(frame, name, node);
       if (useContextOnlyInheritanceLookup) {
-        // Conservative registration: unresolved inheritance/block symbols can still
-        // resolve to var outputs at runtime (after context miss), and prelinking
-        // relies on usedOutputs coverage to keep snapshots reachable.
-        this.buffer.registerOutputUsage(frame, name);
         const outputDecl = this._getOutputDeclaration(node, frame, name);
         if (outputDecl) {
           this.emit('runtime.varOutputLookup(' + `frame, "${name}", ${this.buffer.currentBuffer})`);
@@ -918,10 +910,6 @@ class CompilerBase extends Obj {
 
         // Create the error context and pass it to the runtime function.
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
-        if (sequenceLockLookup.repair) {
-          this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
-        }
         if (this.scriptMode) {
           this.emit('runtime.sequentialMemberLookupScriptAsyncValue(frame, (');
         } else {
@@ -1037,8 +1025,6 @@ class CompilerBase extends Obj {
         if (this._isDeclared(frame, keyRoot, node) || keyRootOutput) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
-        this.buffer.registerOutputUsage(frame, sequenceLockKey);
-        this.buffer.registerOutputMutation(frame, sequenceLockKey);
       }
       if (sequenceLockKey) {
         const errorContextJson = JSON.stringify(this._createErrorContext(node));

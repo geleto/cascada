@@ -106,7 +106,6 @@ class CompileBuffer {
     }
 
     const handler = staticPath[0];
-    this.registerOutputUsage(frame, handler);
     const outputDecl = this.compiler._getOutputDeclaration(node, frame, handler);
     const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
@@ -142,7 +141,6 @@ class CompileBuffer {
 
     if (outputType === 'sequence') {
       if (isCallNode) {
-        this.registerOutputMutation(frame, handler);
         if (!command) {
           this.compiler.fail('Invalid sequence command syntax: expected sequenceOutput.method(...)', node.lineno, node.colno, node);
         }
@@ -176,8 +174,6 @@ class CompileBuffer {
         node
       );
     }
-    this.registerOutputMutation(frame, handler);
-
     this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
     if (command) {
       this.compiler.emit(`command: '${command}', `);
@@ -223,50 +219,7 @@ class CompileBuffer {
     this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
   }
 
-  registerOutputUsage(frame, outputName) {
-    let df = frame;
-    while (df) {
-      if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
-        break;
-      }
-      // Outputs follow lexical scoping only (same as variables).
-      df = df.parent;
-    }
-
-    let current = frame;
-    while (current) {
-      current.usedOutputs = current.usedOutputs || new Set();
-      current.usedOutputs.add(outputName);
-      if (current === df) {
-        break;
-      }
-      current = current.parent;
-    }
-  }
-
-  registerOutputMutation(frame, outputName) {
-    let df = frame;
-    while (df) {
-      if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
-        break;
-      }
-      // Outputs follow lexical scoping only (same as variables).
-      df = df.parent;
-    }
-
-    let current = frame;
-    while (current) {
-      current.mutatedOutputs = current.mutatedOutputs || new Set();
-      current.mutatedOutputs.add(outputName);
-      if (current === df) {
-        break;
-      }
-      current = current.parent;
-    }
-  }
-
   emitAddCommand(frame, outputName, valueExpr, positionNode = null, emitTextCommand = false) {
-    this.registerOutputUsage(frame, outputName);
     if (emitTextCommand) {
       this.compiler.emit.line(
         `${this.currentBuffer}.addText(${valueExpr}, ${this._emitPositionLiteral(positionNode)}, "${outputName}")`
@@ -289,7 +242,6 @@ class CompileBuffer {
     }
     // Register as usage, not mutation: waited commands are bookkeeping and
     // should not participate in output-mutation wrapping decisions.
-    this.registerOutputUsage(frame, waitedOutputName);
     // WaitResolveCommand resolves plain promises and aggregate roots; runtime
     // command apply intentionally swallows resolution errors (timing-only wait).
     this.compiler.emit.line(
@@ -298,22 +250,18 @@ class CompileBuffer {
   }
 
   emitAddSequenceGet(frame, outputName, commandName, subpath, positionNode) {
-    this.registerOutputUsage(frame, outputName);
     this.compiler.emit(
       `${this.currentBuffer}.addSequenceGet("${outputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
   emitAddSequenceCall(frame, outputName, commandName, subpath, argsExpr, positionNode) {
-    this.registerOutputUsage(frame, outputName);
-    this.registerOutputMutation(frame, outputName);
     this.compiler.emit(
       `${this.currentBuffer}.addSequenceCall("${outputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${argsExpr}, ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
   emitAddSnapshot(frame, outputName, positionNode, asExpression = false) {
-    this.registerOutputUsage(frame, outputName);
     const snapshotExpr = `${this.currentBuffer}.addSnapshot("${outputName}", ${this._emitPositionLiteral(positionNode)})`;
     if (asExpression) {
       return snapshotExpr;
@@ -323,21 +271,18 @@ class CompileBuffer {
 
   // Emit an ordered raw snapshot command (no nested poison inspection).
   emitAddRawSnapshot(frame, outputName, positionNode) {
-    this.registerOutputUsage(frame, outputName);
     this.compiler.emit(
       `${this.currentBuffer}.addRawSnapshot("${outputName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
   emitAddIsError(frame, outputName, positionNode) {
-    this.registerOutputUsage(frame, outputName);
     this.compiler.emit(
       `${this.currentBuffer}.addIsError("${outputName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
   emitAddGetError(frame, outputName, positionNode) {
-    this.registerOutputUsage(frame, outputName);
     this.compiler.emit(
       `${this.currentBuffer}.addGetError("${outputName}", ${this._emitPositionLiteral(positionNode)})`
     );
@@ -404,13 +349,10 @@ class CompileBuffer {
    * Add value to buffer (async mode with error handling)
    */
   asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName, emitTextCommand = false) {
-    const returnId = this.compiler._tmpid();
+      const returnId = this.compiler._tmpid();
     if (this.compiler.asyncMode) {
       this.compiler.emit.asyncClosureDepth++;
       frame = frame.push(false, false);
-      this.registerOutputUsage(frame, outputName);
-      // Observation commands are emitted through dedicated helpers like:
-      this.registerOutputMutation(frame, outputName);
 
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
       this.compiler.emit.line(`${this.currentBuffer}.add((() => {`);
@@ -489,8 +431,6 @@ class CompileBuffer {
     this.compiler.emit.asyncClosureDepth++;
 
     const innerFrame = frame.push(false, false);
-    this.registerOutputUsage(innerFrame, outputName);
-    this.registerOutputMutation(innerFrame, outputName);
 
     if (typeof emitFunc === 'function') {
       emitFunc(innerFrame, valueId);

@@ -130,12 +130,6 @@ class AsyncFrame extends Frame {
     if (AsyncFrame.inCompilerContext) {
       //holds the names of outputs declared at this frame
       this.declaredOutputs = undefined;
-
-      //holds the names of outputs used in this frame or its children
-      this.usedOutputs = undefined;
-
-      //holds the names of outputs mutated in this frame or its children
-      this.mutatedOutputs = undefined;
     }
 
   }

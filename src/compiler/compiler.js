@@ -1433,8 +1433,6 @@ class Compiler extends CompilerBase {
   _emitMacroBindingInit(frame, bufferId, name, emitValueExpression, positionNode = null) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    this.buffer.registerOutputUsage(frame, name);
-    this.buffer.registerOutputMutation(frame, name);
     this.emit(`${bufferId}.add(new runtime.ValueCommand({ handler: '${name}', args: [`);
     emitValueExpression();
     this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), "${name}");`);
