@@ -352,7 +352,21 @@ class CompileAnalysis {
         this._validateReservedDeclarationName(analysis, decl);
         const currentScopeDecl = owner.declaredOutputs.get(decl.name) || null;
         if (analysis.node.typename === 'Macro') {
-          if (currentScopeDecl && currentScopeDecl.declarationOrigin === declarationOrigin) {
+          if (decl.parentOwned) {
+            if (currentScopeDecl) {
+              this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
+            }
+            let current = owner.parent;
+            while (current) {
+              if (current.declaredOutputs && current.declaredOutputs.has(decl.name)) {
+                this._validateDeclarationConflict(analysis, decl, current.declaredOutputs.get(decl.name));
+              }
+              if (current.scopeBoundary) {
+                break;
+              }
+              current = current.parent;
+            }
+          } else if (currentScopeDecl && currentScopeDecl.declarationOrigin === declarationOrigin) {
             this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
           }
         } else if (decl.explicit !== false &&

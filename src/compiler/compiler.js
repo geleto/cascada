@@ -407,7 +407,6 @@ class Compiler extends CompilerBase {
       const isOwnDeclaration = !!(visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis);
 
       if (isOwnDeclaration) {
-        this._addDeclaredOutput(frame, name, 'var', null, node);
         this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
       } else {
         if (!(visibleDeclaration && visibleDeclaration.type === 'var')) {
@@ -468,8 +467,6 @@ class Compiler extends CompilerBase {
       }, undefined, node.body);
       this.emit.line(';');
       hasAssignedValue = true;
-    } else if (!isDeclaration) {
-      this.fail('set var assignment requires a value or capture body.', node.lineno, node.colno, node);
     }
 
     // 3. Second pass: emit output commands + export.
@@ -1208,13 +1205,13 @@ class Compiler extends CompilerBase {
       if (node.isAsync) {
         // Async macro bindings are var outputs so assignment/read semantics
         // match value-command ordering instead of frame-local var behavior.
-        this._declareMacroBindingValueOutput(managedFrame, bufferId, 'caller', node);
+        this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "caller", "var", context, null);`);
         args.forEach((arg) => {
-          this._declareMacroBindingValueOutput(managedFrame, bufferId, arg.value, arg);
+          this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "${arg.value}", "var", context, null);`);
         });
         if (kwargs) {
           kwargs.children.forEach((pair) => {
-            this._declareMacroBindingValueOutput(managedFrame, bufferId, pair.key.value, pair.key);
+            this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "${pair.key.value}", "var", context, null);`);
           });
         }
 
@@ -1325,27 +1322,6 @@ class Compiler extends CompilerBase {
     return funcId;
   }
 
-  _declareMacroBindingValueOutput(frame, bufferId, name, node) {
-    this._addDeclaredVar(frame, name);
-
-    const existing = this._findSyntheticOutputDeclarationInCurrentScope(frame, name);
-    if (existing) {
-      this.fail(
-        `Cannot declare output '${name}': already declared`,
-        node && node.lineno,
-        node && node.colno,
-        node || undefined
-      );
-    }
-
-    // Macro invocation bindings are emitted as var outputs for async ordering semantics.
-    this._setSyntheticOutputDeclaration(frame, name, {
-      type: 'var',
-      initializer: null
-    });
-    this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "${name}", "var", context, null);`);
-  }
-
   _emitMacroBindingInit(frame, bufferId, name, emitValueExpression, positionNode = null) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
@@ -1369,8 +1345,9 @@ class Compiler extends CompilerBase {
       }
     }, undefined, node);
     const macroDecl = { name: node.name.value, type: 'var', initializer: null };
+    const parentMacroDecl = { name: node.name.value, type: 'var', initializer: null, parentOwned: true };
     declares.push(macroDecl);
-    declaresInParent.push(macroDecl);
+    declaresInParent.push(parentMacroDecl);
     return { createScope: true, scopeBoundary: true, declares, declaresInParent };
   }
 

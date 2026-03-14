@@ -1335,6 +1335,22 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       }
     });
 
+    it('should reject macro names that shadow variables in the parent scope', async () => {
+      const script = `
+        var inner = 1
+        macro inner()
+          return 42
+        endmacro
+        return inner()
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('already been declared');
+      }
+    });
+
     it('should pass output snapshots as regular values', async () => {
       const script = `
         data myData
