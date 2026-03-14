@@ -133,7 +133,7 @@ class CompilerBase extends Obj {
   }
 
   _nodeDeclaresOutput(node, name) {
-    const declares = node && node._analysis && node._analysis.declares;
+    const declares = node._analysis.declares;
     return Array.isArray(declares) && declares.some((decl) => decl && decl.name === name);
   }
 

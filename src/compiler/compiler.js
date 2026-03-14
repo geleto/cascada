@@ -975,7 +975,7 @@ class Compiler extends CompilerBase {
 
       for (const name of variableTargetsRaw) {
         const isDeclaredVar = this._isDeclared(frame, name, guardNode);
-        const outputDecl = this._getOutputDeclaration(guardNode, frame, name);
+        const outputDecl = this.analysis.findDeclaration(guardNode._analysis, name);
 
         if (isDeclaredVar) {
           variableValidationTargets.push(name);

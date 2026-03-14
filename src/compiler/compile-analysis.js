@@ -40,18 +40,7 @@ class CompileAnalysis {
       sequenceLocks
     });
 
-    const frame = {
-      declaredOutputs: new Map(),
-      parent: null
-    };
-    sequenceLocks.forEach((lockName) => {
-      if (!lockName) {
-        return;
-      }
-      frame.declaredOutputs.set(lockName, { type: 'sequential_path', initializer: null });
-    });
-
-    this.compiler.sequential._collectSequenceKeysAndOperations(rootNode, frame);
+    this.compiler.sequential._collectSequenceKeysAndOperations(rootNode, new Set(sequenceLocks));
 
     const nodesList = [];
     this._collectNodes(rootNode, nodesList);
