@@ -458,8 +458,8 @@ class Compiler extends CompilerBase {
       const name = target.value;
       let id;
 
-      const declaredOutput = !this.scriptMode && this.async && this.async._getDeclaredOutput
-        ? this.async._getDeclaredOutput(frame, name)
+      const declaredOutput = !this.scriptMode
+        ? this._findSyntheticOutputDeclaration(frame, name)
         : this._getOutputDeclaration(node, frame, name, true);
       const shouldDeclareInTemplateMode = templateAutoDeclareMode && !(declaredOutput && declaredOutput.type === 'var');
       const shouldDeclare = isDeclaration || shouldDeclareInTemplateMode;

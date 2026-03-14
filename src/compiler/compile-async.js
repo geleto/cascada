@@ -30,16 +30,4 @@ module.exports = class CompileAsync {
     node.isAsync = hasAsync;
     return hasAsync;
   }
-
-  _getDeclaredOutput(frame, name) {
-    while (frame) {
-      if (frame.declaredOutputs && frame.declaredOutputs.has(name)) {
-        return frame.declaredOutputs.get(name);
-      }
-      // Outputs follow lexical scoping only (same as variables).
-      frame = frame.parent;
-    }
-    return null;
-  }
-
 };

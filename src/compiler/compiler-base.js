@@ -137,21 +137,27 @@ class CompilerBase extends Obj {
     return Array.isArray(declares) && declares.some((decl) => decl && decl.name === name);
   }
 
+  _findSyntheticOutputDeclaration(frame, name) {
+    while (frame) {
+      if (frame.declaredOutputs && frame.declaredOutputs.has(name)) {
+        return frame.declaredOutputs.get(name);
+      }
+      frame = frame.parent;
+    }
+    return null;
+  }
+
   _getOutputDeclaration(node, frame, name, excludeLocalDeclarations = false) {
     if (excludeLocalDeclarations && this._nodeDeclaresOutput(node, name)) {
-      return this.async && this.async._getDeclaredOutput
-        ? this.async._getDeclaredOutput(frame, name)
-        : null;
+      return this._findSyntheticOutputDeclaration(frame, name);
     }
-    const analysisDecl = node && node._analysis && this.analysis
+    const analysisDecl = node
       ? this.analysis.findDeclaration(node._analysis, name)
       : null;
     if (analysisDecl) {
       return analysisDecl;
     }
-    return this.async && this.async._getDeclaredOutput
-      ? this.async._getDeclaredOutput(frame, name)
-      : null;
+    return this._findSyntheticOutputDeclaration(frame, name);
   }
 
   _isOutputDeclaredInCurrentScope(node, frame, name) {
