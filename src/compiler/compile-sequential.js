@@ -503,19 +503,6 @@ module.exports = class CompileSequential {
     return definedVars;
   }
 
-  /**
-   * Pre-declare all sequence locks at the root frame.
-   * This must be called BEFORE compilation starts.
-   * Locks are initialized but not set to any value - they start as undefined.
-   * @param {Frame} rootFrame - The root frame
-   * @param {Set<string>} locks - Set of lock names to declare
-   */
-  preDeclareSequenceLocks(rootFrame, locks) {
-    for (const lockName of locks) {
-      this.compiler._addDeclaredOutput(rootFrame, lockName, 'sequential_path');
-    }
-  }
-
   _isSequenceLockDeclared(sequenceLocks, lockKey) {
     if (!lockKey) {
       return false;

@@ -134,25 +134,20 @@ Notes:
 
 ### 6. Sequential Lock Declarations
 
-Current site:
+Status:
+- done
+
+Current state:
+- [src/compiler/compiler.js](/c:/Projects/cascada/src/compiler/compiler.js)
+  - `analyzeRoot()` declares root sequence lock names from `node._analysis.sequenceLocks`
+- [src/compiler/compiler.js](/c:/Projects/cascada/src/compiler/compiler.js)
+  - `compileRoot()` emits runtime `declareOutput(...)` for those lock names directly
 - [src/compiler/compile-sequential.js](/c:/Projects/cascada/src/compiler/compile-sequential.js)
-  - `_addDeclaredOutput(..., 'sequential_path')`
+  - no longer predeclares `sequential_path` entries on the frame
 
-Why they still exist:
-- sequence lock keys are still declared through the synthetic frame path
-
-Target state:
-- analysis owns synthetic sequential lock declarations just like it already owns sequence usage/mutation metadata
-- compile-sequential emits runtime lock declarations directly from analysis
-
-Needed work:
-- add synthetic declaration metadata for sequence locks
-- keep sequence usage/mutation metadata aligned with the declared synthetic lock names
-- remove frame registration for `sequential_path`
-
-Recommended analyze owner:
-- sequence metadata annotation/finalization in [src/compiler/compile-analysis.js](/c:/Projects/cascada/src/compiler/compile-analysis.js)
-  and [src/compiler/compile-sequential.js](/c:/Projects/cascada/src/compiler/compile-sequential.js)
+Notes:
+- sequence usage and mutation metadata were already analysis-owned
+- the removed frame path was duplicate registration ahead of runtime declaration
 
 ### 7. Synthetic Collision Reads
 

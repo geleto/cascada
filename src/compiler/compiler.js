@@ -1739,11 +1739,6 @@ class Compiler extends CompilerBase {
     frame._seesRootScope = true;
 
     if (this.asyncMode) {
-      const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
-        ? node._analysis.sequenceLocks
-        : [];
-      this.sequential.preDeclareSequenceLocks(frame, sequenceLocks);
-
       this.async.propagateIsAsync(node);
       // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
     }
