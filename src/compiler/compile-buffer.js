@@ -7,7 +7,6 @@
 
 const nodes = require('../nodes');
 const {
-  validateOutputCommandScope,
   validateOutputObservationCall
 } = require('./validation');
 const OUTPUT_COMMAND_CLASS = {
@@ -114,17 +113,6 @@ class CompileBuffer {
       !subpath &&
       (command === 'snapshot' || command === 'isError' || command === 'getError');
 
-    validateOutputCommandScope(this.compiler, {
-      frame,
-      node,
-      handler,
-      outputType,
-      hasOutputDecl: !!outputDecl,
-      declaredInCurrentScope: !!this.compiler.analysis.findDeclarationInCurrentScope(node._analysis, handler),
-      isCallNode,
-      isObservationCall
-    });
-
     if (isObservationCall) {
       validateOutputObservationCall(this.compiler, { node, command, handler, outputType });
       if (command === 'snapshot') {
@@ -168,7 +156,7 @@ class CompileBuffer {
     const commandClass = OUTPUT_COMMAND_CLASS[outputType];
     if (!commandClass) {
       this.compiler.fail(
-        `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/var/sink/sequence).`,
+        `Compiler error: analysis did not resolve a declared output target for '${handler}'.`,
         node.lineno,
         node.colno,
         node

@@ -1257,6 +1257,7 @@ class CompilerBase extends Obj {
     return {
       createScope: true,
       scopeBoundary: false,
+      parentReadOnly: true,
       declares
     };
   }

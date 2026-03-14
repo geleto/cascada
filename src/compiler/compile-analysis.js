@@ -75,6 +75,8 @@ class CompileAnalysis {
     const analysis = this._ensureAnalysis(node, parentNode);
     this._analyzeNode(node);
     this._registerDeclarations(analysis);
+    this._validateUses(analysis);
+    this._validateMutations(analysis);
 
     node.fields.forEach((field) => {
       const child = node[field];
@@ -97,8 +99,10 @@ class CompileAnalysis {
       return value;
     };
     node._analysis = Object.assign({
+      node,
       createScope: false,
       scopeBoundary: false,
+      parentReadOnly: false,
       declarationTarget: false,
       parent: parentAnalysis,
       textOutput: null,
@@ -112,6 +116,7 @@ class CompileAnalysis {
       usedOutputs: null,
       mutatedOutputs: null
     }, existingAnalysis);
+    node._analysis.node = node;
     node._analysis.parent = parentAnalysis;
     return node._analysis;
   }
@@ -191,6 +196,17 @@ class CompileAnalysis {
       current = current.parent;
     }
     return current || analysis;
+  }
+
+  _passesReadOnlyBoundary(currentScopeOwner, declarationOwner) {
+    let current = currentScopeOwner;
+    while (current && current !== declarationOwner) {
+      if (current.parentReadOnly) {
+        return true;
+      }
+      current = current.parent ? this.getScopeOwner(current.parent) : null;
+    }
+    return false;
   }
 
   getIncludeVisibleVarOutputs(analysis) {
@@ -307,6 +323,24 @@ class CompileAnalysis {
         if (!decl || !decl.name) {
           continue;
         }
+        if (decl.explicit !== false &&
+          (analysis.node.typename === 'Set' || analysis.node.typename === 'OutputDeclaration')) {
+          const currentScopeDecl = owner.declaredOutputs.get(decl.name) || null;
+          if (currentScopeDecl && currentScopeDecl.declarationOrigin !== declarationOrigin) {
+            this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
+          }
+
+          let current = owner.parent;
+          while (current) {
+            if (current.declaredOutputs && current.declaredOutputs.has(decl.name)) {
+              this._validateDeclarationConflict(analysis, decl, current.declaredOutputs.get(decl.name));
+            }
+            if (current.scopeBoundary) {
+              break;
+            }
+            current = current.parent;
+          }
+        }
         if (!owner.declaredOutputs.has(decl.name)) {
           owner.declaredOutputs.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
             declarationOrigin
@@ -321,6 +355,36 @@ class CompileAnalysis {
       const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
       registerDeclares(analysis.declaresInParent, parentOwner, analysis);
     }
+  }
+
+  _validateDeclarationConflict(analysis, decl, conflictingDecl) {
+    const originNode = analysis.node || null;
+    const lineno = originNode && originNode.lineno;
+    const colno = originNode && originNode.colno;
+
+    if (decl.type !== 'var') {
+      if (conflictingDecl && conflictingDecl.type === 'var') {
+        this.compiler.fail(
+          `Cannot declare output '${decl.name}' because a variable with the same name is already declared`,
+          lineno,
+          colno,
+          originNode || undefined
+        );
+      }
+      this.compiler.fail(
+        `Cannot declare output '${decl.name}': already declared`,
+        lineno,
+        colno,
+        originNode || undefined
+      );
+    }
+
+    this.compiler.fail(
+      `Identifier '${decl.name}' has already been declared.`,
+      lineno,
+      colno,
+      originNode || undefined
+    );
   }
 
   _collectNodes(node, out) {
@@ -349,8 +413,120 @@ class CompileAnalysis {
       internal: !!decl.internal,
       isLoopMeta: !!decl.isLoopMeta,
       runtimeName: decl.runtimeName || null,
+      explicit: decl.explicit !== false,
       declarationOrigin: decl.declarationOrigin || null
     };
+  }
+
+  _validateMutations(analysis) {
+    if (!analysis) {
+      return;
+    }
+    const scopeOwner = this.getScopeOwner(analysis);
+    const currentTextOutput = this.getCurrentTextOutput(analysis);
+    const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
+    for (let i = 0; i < localMutates.length; i++) {
+      const name = localMutates[i];
+      if (!name) {
+        continue;
+      }
+      if (name && name.charAt(0) === '!') {
+        continue;
+      }
+      if (name === currentTextOutput) {
+        continue;
+      }
+      const declarationOwner = this.findDeclarationOwner(analysis, name);
+      const declaration = this.findDeclaration(analysis, name);
+      if (!declarationOwner || !declaration) {
+        this._validateMissingDeclaration(analysis, name, 'mutation');
+        continue;
+      }
+      if (declaration.type === 'sequential_path' || (name && name.charAt(0) === '!')) {
+        continue;
+      }
+      if (!this._passesReadOnlyBoundary(scopeOwner, declarationOwner)) {
+        continue;
+      }
+      this._validateReadOnlyMutation(analysis, name, declaration);
+    }
+  }
+
+  _validateUses(analysis) {
+    if (!analysis) {
+      return;
+    }
+    const currentTextOutput = this.getCurrentTextOutput(analysis);
+    const localUses = Array.isArray(analysis.uses) ? analysis.uses : [];
+    for (let i = 0; i < localUses.length; i++) {
+      const name = localUses[i];
+      if (!name) {
+        continue;
+      }
+      if (name && name.charAt(0) === '!') {
+        continue;
+      }
+      if (name === currentTextOutput) {
+        continue;
+      }
+      if (!this.findDeclaration(analysis, name)) {
+        this._validateMissingDeclaration(analysis, name, 'use');
+      }
+    }
+  }
+
+  _validateMissingDeclaration(analysis, name, accessType) {
+    const originNode = analysis.node || null;
+    const lineno = originNode && originNode.lineno;
+    const colno = originNode && originNode.colno;
+
+    if (originNode && originNode.typename === 'OutputCommand') {
+      this.compiler.fail(
+        `Unsupported output command target '${name}'. Output commands must target declared outputs (data/text/var/sink/sequence).`,
+        lineno,
+        colno,
+        originNode || undefined
+      );
+    }
+
+    if (originNode && (originNode.typename === 'Set' || originNode.typename === 'CallAssign')) {
+      this.compiler.fail(
+        `Cannot assign to undeclared variable '${name}'. Use 'var' to declare a new variable.`,
+        lineno,
+        colno,
+        originNode || undefined
+      );
+    }
+
+    this.compiler.fail(
+      accessType === 'mutation'
+        ? `Cannot assign to undeclared variable '${name}'. Use 'var' to declare a new variable.`
+        : `Can not look up unknown variable/function: ${name}`,
+      lineno,
+      colno,
+      originNode || undefined
+    );
+  }
+
+  _validateReadOnlyMutation(analysis, name, declaration) {
+    const originNode = analysis.node || null;
+    const lineno = originNode && originNode.lineno;
+    const colno = originNode && originNode.colno;
+
+    if (declaration.type === 'var') {
+      this.compiler.fail(
+        `Cannot assign to outer-scope variable '${name}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`,
+        lineno,
+        colno,
+        originNode || undefined
+      );
+    }
+    this.compiler.fail(
+      `Output '${name}' is read-only in this scope.`,
+      lineno,
+      colno,
+      originNode || undefined
+    );
   }
 
   _finalizeOutputUsage(node) {

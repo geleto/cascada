@@ -197,6 +197,28 @@
         expect(e.message).to.contain('outer');
       }
     });
+
+    it('should reject outer non-var output mutation commands inside call blocks with read-only error', async () => {
+      const script = `
+        data outerData
+
+        macro runner()
+          return caller()
+        endmacro
+
+        var callResult = call runner()
+          outerData.value = 20
+          return none
+        endcall
+
+        return callResult`;
+      try {
+        await env.renderScriptString(script);
+        throw new Error('Should have thrown');
+      } catch (e) {
+        expect(e.message).to.contain(`Output 'outerData' is read-only in this scope.`);
+      }
+    });
   });
 
   describe('Async mode - calls and arguments', () => {

@@ -4,7 +4,6 @@ const {
   validateSetTarget,
   validateDeclarationTarget,
   validateDeclarationScope,
-  validateReadOnlyOuterMutation,
   validateOutputDeclarationNode
 } = require('./validation');
 
@@ -81,18 +80,21 @@ class Compiler extends CompilerBase {
       this.fail(`Cannot declare output '${name}': already declared`, node && node.lineno, node && node.colno, node || undefined);
     }
 
-    let parentFrame = frame && frame.parent;
-    while (parentFrame) {
-      const parentDeclaredOutputs = this._getSyntheticDeclarationsInCurrentScope(parentFrame);
-      if (parentDeclaredOutputs && parentDeclaredOutputs.has(name)) {
-        this.fail(
-          `Cannot declare output '${name}' because it shadows an output declared in a parent scope`,
-          node && node.lineno,
-          node && node.colno,
-          node || undefined
-        );
+    const allowParentVarShadowing = !this.scriptMode;
+    if (!allowParentVarShadowing) {
+      let parentFrame = frame && frame.parent;
+      while (parentFrame) {
+        const parentDeclaredOutputs = this._getSyntheticDeclarationsInCurrentScope(parentFrame);
+        if (parentDeclaredOutputs && parentDeclaredOutputs.has(name)) {
+          this.fail(
+            `Cannot declare output '${name}' because it shadows an output declared in a parent scope`,
+            node && node.lineno,
+            node && node.colno,
+            node || undefined
+          );
+        }
+        parentFrame = parentFrame.parent;
       }
-      parentFrame = parentFrame.parent;
     }
 
     // Output declarations cannot conflict with variables in the same lexical frame chain.
@@ -327,7 +329,7 @@ class Compiler extends CompilerBase {
           !isDeclaration &&
           !analysisPass.findDeclaration(node._analysis, name);
         if (isDeclaration || shouldDeclareImplicitTemplateVar) {
-          declares.push({ name, type: 'var', initializer: null });
+          declares.push({ name, type: 'var', initializer: null, explicit: !!isDeclaration });
         } else {
           mutates.push(name);
         }
@@ -352,20 +354,6 @@ class Compiler extends CompilerBase {
       let id;
 
       const isDeclared = this._isDeclared(frame, name, node);
-      const declaredFrame = isDeclared ? frame.resolve(name, false) : null;
-
-      // Read-only parent scopes (e.g. call/caller bodies) may read from parent frames,
-      // but must not mutate parent variables. Without this check, assignments can
-      // silently become local shadows, which is surprising.
-      if (this.scriptMode && node.varType === 'assignment') {
-        validateReadOnlyOuterMutation(this, {
-          frame,
-          node,
-          target,
-          name,
-          mutatingOuterRef: !!declaredFrame && declaredFrame !== frame
-        });
-      }
 
       validateSetTarget(this, node, target, name, isDeclared);
 
@@ -463,22 +451,6 @@ class Compiler extends CompilerBase {
       const isDeclaredForValidation = !isOwnDeclaration &&
         !!(visibleDeclaration && visibleDeclaration.type === 'var');
 
-      if (this.scriptMode && !isDeclaration) {
-        const declarationOwner = visibleDeclaration
-          ? this.analysis.findDeclarationOwner(node._analysis, name)
-          : null;
-        const currentScopeOwner = this.analysis.getScopeOwner(node._analysis);
-        validateReadOnlyOuterMutation(this, {
-          frame,
-          node,
-          target,
-          name,
-          mutatingOuterRef: isDeclaredForValidation &&
-            !!declarationOwner &&
-            declarationOwner !== currentScopeOwner
-        });
-      }
-
       validateSetTarget(this, validationNode, target, name, isDeclaredForValidation);
 
       if (isOwnDeclaration) {
@@ -487,7 +459,7 @@ class Compiler extends CompilerBase {
       } else {
         if (!(visibleDeclaration && visibleDeclaration.type === 'var')) {
           this.fail(
-            `Cannot assign to undeclared variable output '${name}'. Use 'var ${name}' to declare it first.`,
+            `Compiler error: analysis did not resolve a visible var declaration for '${name}'.`,
             target.lineno,
             target.colno,
             node,
@@ -1528,7 +1500,7 @@ class Compiler extends CompilerBase {
   }
 
   analyzeBlock(node) {
-    return { createScope: true, scopeBoundary: false };
+    return { createScope: true, scopeBoundary: false, parentReadOnly: true };
   }
 
   compileBlock(node, frame) {
@@ -2124,7 +2096,6 @@ class Compiler extends CompilerBase {
       return {};
     }
     const handler = path[0];
-
     const isObservation = callNode &&
       path.length === 2 &&
       (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError' || path[1] === '__checkpoint');

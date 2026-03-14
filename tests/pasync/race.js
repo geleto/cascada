@@ -988,8 +988,8 @@
             {%- set val = getOuterVal() -%}
           {%- endif -%}
           {%- call m.show(val) -%}
-            {%- set val = getInnerVal() -%}
-            Inner: {{ val }}
+            {%- set innerVal = getInnerVal() -%}
+            Inner: {{ innerVal }}
           {%- endcall %} Final val: {{ val }}`;
 
         loader.addTemplate('macros_caller.njk', `
@@ -1867,4 +1867,3 @@
     });
   });
 })();
-

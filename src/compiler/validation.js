@@ -54,20 +54,15 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
  */
 function validateSetTarget(compiler, node, target, name, isDeclared) {
   if (compiler.scriptMode) {
-    // Script mode: Enforce strict var/set rules.
+    // Script mode: keep only syntax/reserved-name checks here.
+    // Declaration existence/conflict is validated during analysis.
     switch (node.varType) {
       case 'declaration': // from 'var'
         if (compiler.isReservedDeclarationName && compiler.isReservedDeclarationName(name)) {
           compiler.fail(`Identifier '${name}' is reserved and cannot be used as a variable or output name.`, target.lineno, target.colno, node, target);
         }
-        if (isDeclared) {
-          compiler.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
-        }
         break;
       case 'assignment': // from '='
-        if (!isDeclared) {
-          compiler.fail(`Cannot assign to undeclared variable '${name}'. Use 'var' to declare a new variable.`, target.lineno, target.colno, node, target);
-        }
         break;
       default:
         compiler.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
@@ -122,24 +117,6 @@ function validateDeclarationScope(frame, name, compiler, node) {
  * @param {string} options.name - Variable/output name
  * @param {boolean} options.mutatingOuterRef - True when assignment targets an outer-scope binding
  */
-function validateReadOnlyOuterMutation(compiler, {
-  frame,
-  node,
-  target,
-  name,
-  mutatingOuterRef
-}) {
-  if (frame && frame.isolateWrites && mutatingOuterRef) {
-    compiler.fail(
-      `Cannot assign to outer-scope variable '${name}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`,
-      target && target.lineno,
-      target && target.colno,
-      node,
-      target
-    );
-  }
-}
-
 /**
  * Validate output declaration statement constraints.
  * @param {Compiler} compiler - The compiler instance
@@ -193,54 +170,6 @@ function validateSinkSnapshotInGuard(compiler, { node, command, outputType }) {
 }
 
 /**
- * Validate that an output command is legal in the current frame/scope.
- * In read-only scopes (isolateWrites), only non-mutating output observations
- * are allowed for outer-scope outputs.
- * @param {Compiler} compiler - The compiler instance
- * @param {object} options
- * @param {Frame} options.frame - Current frame
- * @param {Node} options.node - OutputCommand node
- * @param {string} options.handler - Output symbol name
- * @param {string|null} options.outputType - Declared output type
- * @param {boolean} options.hasOutputDecl - Whether handler resolves to declared output
- * @param {boolean} options.declaredInCurrentScope - Whether output is declared on current frame
- * @param {boolean} options.isCallNode - Whether command is a function call form
- * @param {boolean} options.isObservationCall - Whether call is snapshot/isError/getError
- */
-function validateOutputCommandScope(compiler, {
-  frame,
-  node,
-  handler,
-  outputType,
-  hasOutputDecl,
-  declaredInCurrentScope,
-  isCallNode,
-  isObservationCall
-}) {
-  if (!hasOutputDecl) {
-    return;
-  }
-  const isNonMutatingRead = !isCallNode && outputType === 'sequence';
-  const isMutatingCommand = !isObservationCall && !isNonMutatingRead;
-  if (frame && frame.isolateWrites && !declaredInCurrentScope && isMutatingCommand) {
-    if (outputType === 'var') {
-      compiler.fail(
-        `Cannot assign to outer-scope variable '${handler}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`,
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-    compiler.fail(
-      `Output '${handler}' is read-only in this scope.`,
-      node.lineno,
-      node.colno,
-      node
-    );
-  }
-}
-
-/**
  * Validate observation call constraints for output symbols.
  * @param {Compiler} compiler - The compiler instance
  * @param {object} options
@@ -271,9 +200,7 @@ module.exports = {
   validateSetTarget,
   validateDeclarationTarget,
   validateDeclarationScope,
-  validateReadOnlyOuterMutation,
   validateOutputDeclarationNode,
   validateSinkSnapshotInGuard,
-  validateOutputCommandScope,
   validateOutputObservationCall
 };
