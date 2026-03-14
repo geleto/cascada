@@ -662,7 +662,7 @@ class Compiler extends CompilerBase {
 
             // Collect handlers from this branch
             if (this.asyncMode) {
-              branchHandlers.push(new Set(f.usedOutputs ? Array.from(f.usedOutputs) : []));
+              branchHandlers.push(new Set(this._getAnalysisRuntimeOutputNames(c.body, blockFrame, 'usedOutputs')));
             }
           }, c.body); // Pass body as code position
           this.emit.line('break;');
@@ -687,7 +687,7 @@ class Compiler extends CompilerBase {
 
           // Collect handlers from default
           if (this.asyncMode) {
-            branchHandlers.push(new Set(f.usedOutputs ? Array.from(f.usedOutputs) : []));
+            branchHandlers.push(new Set(this._getAnalysisRuntimeOutputNames(node.default, blockFrame, 'usedOutputs')));
           }
         }, node.default); // Pass default as code position
       } else if (this.asyncMode) {
