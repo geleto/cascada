@@ -173,7 +173,9 @@ class CompilerBase extends Obj {
   _isDeclared(frame, name, node = null) {
     // Variable declaration checks intentionally exclude var outputs.
     // Output declarations are tracked separately in declaredOutputs.
-    const outputDecl = this._getOutputDeclaration(node, frame, name);
+    const outputDecl = node
+      ? this.analysis.findDeclaration(node._analysis, name)
+      : this._findSyntheticOutputDeclaration(frame, name);
     if (outputDecl) {
       return false;
     }
@@ -420,8 +422,11 @@ class CompilerBase extends Obj {
       this.emit(name);
       return;
     }
-    const declaredOutput = this._getOutputDeclaration(node, frame, name);
-    if (declaredOutput && !this._isDeclared(frame, name, node)) {
+    const analysisDecl = this.analysis.findDeclaration(node._analysis, name);
+    const syntheticDecl = analysisDecl ? null : this._findSyntheticOutputDeclaration(frame, name);
+    const declaredOutput = analysisDecl || syntheticDecl;
+    const syntheticFrameVar = syntheticDecl && frame && frame.resolve && frame.resolve(name, false);
+    if (declaredOutput && (analysisDecl || !syntheticFrameVar)) {
       if (node.sequential || node.sequentialRepair) {
         this.fail(
           'Sequence marker (!) is not allowed in non-context variable paths',
@@ -506,9 +511,9 @@ class CompilerBase extends Obj {
       const useContextOnlyInheritanceLookup =
         this.asyncMode &&
         this.inBlock &&
-        !this._isDeclared(frame, name, node);
+        !this.analysis.findDeclaration(node._analysis, name);
       if (useContextOnlyInheritanceLookup) {
-        const outputDecl = this._getOutputDeclaration(node, frame, name);
+        const outputDecl = this.analysis.findDeclaration(node._analysis, name);
         if (outputDecl) {
           this.emit('runtime.varOutputLookup(' + `frame, "${name}", ${this.buffer.currentBuffer})`);
         } else {
@@ -792,7 +797,7 @@ class CompilerBase extends Obj {
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
       const outputDecl = this.analysis.findDeclaration(targetNode._analysis, name);
-      if (outputDecl && !this._isDeclared(frame, name, targetNode)) {
+      if (outputDecl) {
         return name;
       }
       return null;
@@ -802,7 +807,7 @@ class CompilerBase extends Obj {
       const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
         const outputDecl = this.analysis.findDeclaration(targetNode._analysis, candidate);
-        if (outputDecl && !this._isDeclared(frame, candidate, targetNode)) {
+        if (outputDecl) {
           return candidate;
         }
       }
@@ -1034,7 +1039,8 @@ class CompilerBase extends Obj {
         let index = sequenceLockKey.indexOf('!', 1);
         const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
         const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
-        if (this._isDeclared(frame, keyRoot, node) || keyRootOutput) {
+        const keyRootSyntheticVar = frame && frame.resolve && frame.resolve(keyRoot, false);
+        if (keyRootOutput || keyRootSyntheticVar) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
       }
@@ -1099,7 +1105,8 @@ class CompilerBase extends Obj {
       return;
     }
     const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
-    if (this._isDeclared(frame, keyRoot, node) || keyRootOutput) {
+    const keyRootSyntheticVar = frame && frame.resolve && frame.resolve(keyRoot, false);
+    if (keyRootOutput || keyRootSyntheticVar) {
       this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
     }
   }

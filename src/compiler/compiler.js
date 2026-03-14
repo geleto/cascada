@@ -50,8 +50,8 @@ class Compiler extends CompilerBase {
     if (this.asyncMode || this.scriptMode) {
       validateDeclarationScope(frame, varName, this, null);
       // Variables and outputs share the same lexical scoping rules.
-      // Use _getDeclaredOutput (lexical-only) for collision checks.
-      const outputDecl = this._getOutputDeclaration(null, frame, varName);
+      // At this point only compiler-generated synthetic outputs can exist on the frame.
+      const outputDecl = this._findSyntheticOutputDeclaration(frame, varName);
       const allowSequenceLockAlias = varName && varName.startsWith('!') &&
         outputDecl && outputDecl.type === 'sequential_path';
       if (outputDecl && outputDecl.type !== 'var' && !allowSequenceLockAlias) {
@@ -459,13 +459,15 @@ class Compiler extends CompilerBase {
       const name = target.value;
       let id;
 
-      const declaredOutput = !this.scriptMode
-        ? this._findSyntheticOutputDeclaration(frame, name)
-        : this._getOutputDeclaration(node, frame, name, true);
+      const currentSyntheticDecl = this._findSyntheticOutputDeclarationInCurrentScope(frame, name);
+      const analysisDeclaredOutput = this._nodeDeclaresOutput(node, name)
+        ? this.analysis.findOuterDeclaration(node._analysis, name)
+        : this.analysis.findDeclaration(node._analysis, name);
+      const declaredOutput = analysisDeclaredOutput || currentSyntheticDecl;
       const shouldDeclareInTemplateMode = templateAutoDeclareMode && !(declaredOutput && declaredOutput.type === 'var');
       const shouldDeclare = isDeclaration || shouldDeclareInTemplateMode;
       const isDeclaredForValidation = shouldDeclare
-        ? this._isOutputDeclaredInCurrentScope(node, frame, name)
+        ? !!currentSyntheticDecl
         : !!(declaredOutput && declaredOutput.type === 'var');
 
       if (this.scriptMode && !isDeclaration) {
@@ -726,7 +728,7 @@ class Compiler extends CompilerBase {
     // Guard state is used for sequence lock detection/repair bookkeeping.
     const needsGuardState = variableTargetsAll || hasSequenceTargets;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
-    validateGuardVariablesDeclared(variableValidationTargets, frame, this, node);
+    validateGuardVariablesDeclared(variableValidationTargets, this, node);
 
     // Guard blocks are always async boundaries
     node.isAsync = true;
@@ -934,10 +936,7 @@ class Compiler extends CompilerBase {
           return false;
         }
         const outputDecl = analysis ? this.analysis.findDeclaration(analysis, name) : null;
-        if (outputDecl) {
-          return outputDecl.type === 'var';
-        }
-        return !!(frame && this._isDeclared(frame, name));
+        return !!(outputDecl && outputDecl.type === 'var');
       });
     }
 
@@ -975,8 +974,8 @@ class Compiler extends CompilerBase {
       const resolvedHandlers = new Set(Array.isArray(handlerSelector) ? handlerSelector : []);
 
       for (const name of variableTargetsRaw) {
-        const isDeclaredVar = this._isDeclared(frame, name, guardNode);
         const outputDecl = this.analysis.findDeclaration(guardNode._analysis, name);
+        const isDeclaredVar = !!(outputDecl && outputDecl.type === 'var');
 
         if (isDeclaredVar) {
           variableValidationTargets.push(name);

@@ -33,10 +33,11 @@ function validateCompileTimeFrameBalance(frame, compiler, positionNode) {
  * This remains a compile-time syntax/semantic check even though
  * async var rollback machinery has been removed.
  */
-function validateGuardVariablesDeclared(variableTargets, frame, compiler, node) {
+function validateGuardVariablesDeclared(variableTargets, compiler, node) {
   if (variableTargets && variableTargets !== '*') {
     for (const varName of variableTargets) {
-      if (!compiler._isDeclared(frame, varName)) {
+      const decl = compiler.analysis.findDeclaration(node._analysis, varName);
+      if (!(decl && decl.type === 'var')) {
         compiler.fail(`guard variable "${varName}" is not declared`, node.lineno, node.colno, node);
       }
     }
