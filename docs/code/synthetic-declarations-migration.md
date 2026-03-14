@@ -85,72 +85,52 @@ Recommended analyze owner:
 
 ### 3. Guard Synthetic Vars
 
-Current site:
+Status:
+- done for the guard recovery error variable
+
+Current state:
 - [src/compiler/compiler.js](/c:/Projects/cascada/src/compiler/compiler.js)
-  - guard/recover temp vars such as `node.errorVar`
+  - `compileGuard()` emits runtime `declareOutput(...)` directly for `node.errorVar`
+- [src/compiler/compiler.js](/c:/Projects/cascada/src/compiler/compiler.js)
+  - `analyzeGuard()` declares `node.errorVar` on the recovery scope analysis
 
-Why they still exist:
-- compiler creates internal variables/outputs to preserve async guard behavior and revert state
-
-Target state:
-- analysis marks guard-owned synthetic declarations
-- compiler emits runtime declare/init directly from that metadata
-- no frame registration for guard internals
-
-Needed work:
-- identify all guard-only synthetic names
-- declare them from guard analysis/finalization
-- replace `_addDeclaredOutput(...)` use with direct runtime emission based on analysis
-
-Recommended analyze owner:
-- `analyzeGuard(...)` or `finalizeAnalyzeGuard(...)`
+Notes:
+- there is no longer any frame synthetic registration for the recovery error variable
+- if more guard-only synthetic names are introduced later, they should follow the same pattern:
+  - declare in `analyzeGuard()`
+  - emit runtime registration directly during lowering
 
 ### 4. Loop Synthetic Value Outputs
 
-Current site:
+Status:
+- done
+
+Current state:
+- [src/compiler/compiler.js](/c:/Projects/cascada/src/compiler/compiler.js)
+  - `_analyzeLoopNodeDeclarations(...)` validates reserved loop variable names in analysis
 - [src/compiler/compile-loop.js](/c:/Projects/cascada/src/compiler/compile-loop.js)
-  - `_declareLoopValueOutput(...)`
+  - async loop lowering no longer registers loop vars or loop metadata on the frame
+  - lowering still emits runtime `declareOutput(...)` and per-iteration `ValueCommand` writes
 
-Why they still exist:
-- async loop lowering exposes loop vars/metadata as output-backed values during iteration
-
-Target state:
-- loop analysis owns the synthetic declarations required by lowered async loop bodies
-- compile-loop emits runtime declarations directly from analysis
-- no frame registration for loop iteration bindings
-
-Needed work:
-- identify loop-body-visible synthetic vars that are not already represented in source declarations
-- attach them to loop/body analysis
-- remove `_declareLoopValueOutput(...)` frame registration
-
-Recommended analyze owner:
-- `analyzeFor(...)`
-- `analyzeAsyncEach(...)`
-- `analyzeAsyncAll(...)`
-- `analyzeWhile(...)`
-- or loop finalization in [src/compiler/compile-loop.js](/c:/Projects/cascada/src/compiler/compile-loop.js)
+Notes:
+- loop vars were already analysis declarations; the removed frame path was only synthetic registration
+- loop metadata renaming still comes from the rename/finalize pass
 
 ### 5. Loop Waited Outputs
 
-Current site:
+Status:
+- done
+
+Current state:
+- [src/compiler/compiler.js](/c:/Projects/cascada/src/compiler/compiler.js)
+  - loop analysis assigns `body._analysis.waitedOutputName` for bounded loops
 - [src/compiler/compile-loop.js](/c:/Projects/cascada/src/compiler/compile-loop.js)
-  - limited concurrency waited outputs like `__waited__...`
+  - bounded loop lowering consumes that analysis-planned waited output name
+  - lowering emits runtime `declareOutput(...)` directly without frame registration
 
-Why they still exist:
-- bounded concurrency lowering uses synthetic outputs to coordinate awaited loop-body completion
-
-Target state:
-- analysis plans the waited output for bounded loops
-- compiler emits it directly without frame declaration bookkeeping
-
-Needed work:
-- model waited-output declaration on loop analysis node
-- thread runtime name through compile-loop lowering
-- remove `_addDeclaredOutput(...)` from bounded loop path
-
-Recommended analyze owner:
-- loop analysis/finalization in [src/compiler/compile-loop.js](/c:/Projects/cascada/src/compiler/compile-loop.js)
+Notes:
+- waited outputs remain synthetic lowering metadata, but they are now planned by analysis
+- `WaitResolveCommand` emission is unchanged
 
 ### 6. Sequential Lock Declarations
 

@@ -779,9 +779,8 @@ class Compiler extends CompilerBase {
         if (node.recoveryBody) {
           this.emit.asyncBlock(node, blockFrame, true, (f) => {
             if (node.errorVar) {
-              // Guard recovery error variable is exposed as an internal var output
-              // so async reads use snapshot semantics instead of frame mutation.
-              this._addDeclaredOutput(f, node.errorVar, 'var', null, node);
+              // Guard recovery error variable is already declared in analysis;
+              // async lowering only needs the runtime var-output registration.
               this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
               this.buffer.asyncAddValueToBuffer(node, f, (resultVar) => {
                 this.emit(
@@ -1075,6 +1074,13 @@ class Compiler extends CompilerBase {
     });
     if (!declaredNames.includes('loop')) {
       declares.push({ name: 'loop', type: 'var', initializer: null, internal: true, isLoopMeta: true });
+    }
+    if (node.concurrentLimit) {
+      node.body._analysis = Object.assign({}, node.body._analysis, {
+        waitedOutputName: node.body._analysis && node.body._analysis.waitedOutputName
+          ? node.body._analysis.waitedOutputName
+          : `__waited__${this._tmpid()}`
+      });
     }
     if (declarationsInBody) {
       node.body._analysis = Object.assign({}, node.body._analysis, {

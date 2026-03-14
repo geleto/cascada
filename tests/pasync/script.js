@@ -465,6 +465,36 @@ describe('Cascada Script: Variables', function () {
       expect(result.outer).to.be('outer');
     });
 
+    it('should reject reserved keywords as loop variable names', async function () {
+      const scripts = [
+        `
+          for data in [1]
+          endfor
+          return 1`,
+        `
+          var items = [1]
+          each value in items
+          endeach
+          return 1`,
+        `
+          var n = 0
+          while n < 1
+            var sink = n
+            n = n + 1
+          endwhile
+          return n`
+      ];
+
+      for (const script of scripts) {
+        try {
+          await env.renderScriptString(script, {});
+          expect().fail(`Should have thrown for script: ${script}`);
+        } catch (error) {
+          expect(error.message).to.contain('is reserved');
+        }
+      }
+    });
+
     it('should allow outer assignment updated inside branch', async function () {
       const script = `
         var scopedValue = "outer"

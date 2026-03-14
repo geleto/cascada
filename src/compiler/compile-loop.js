@@ -192,18 +192,10 @@ class CompileLoop {
       this.compiler.emit('return ');
     }
     const bodyResult = this.compiler.buffer.asyncBufferNode(node, frame, bodyCreatesScope, false, node.body, (bodyFrame) => {
-      const limitedWaitedOutputName = hasConcurrencyLimit ? `__waited__${this.compiler._tmpid()}` : null;
-      if (useLoopValues) {
-        loopVars.forEach((name) => {
-          this._declareLoopValueOutput(bodyFrame, name, node);
-        });
-        if (node.loopRuntimeName) {
-          // Internal metadata binding for rewritten loop symbol (e.g. loop#3).
-          this._declareLoopValueOutput(bodyFrame, node.loopRuntimeName, node, undefined, true);
-        }
-      }
+      const limitedWaitedOutputName = hasConcurrencyLimit
+        ? (node.body && node.body._analysis && node.body._analysis.waitedOutputName)
+        : null;
       if (limitedWaitedOutputName) {
-        this.compiler._addDeclaredOutput(bodyFrame, limitedWaitedOutputName, 'var', null, node);
         this.compiler.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedOutputName}", "var", context, null);`);
       }
 
@@ -345,27 +337,6 @@ class CompileLoop {
     // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
     return elseFrame;
-  }
-
-  _declareLoopValueOutput(frame, name, _node, runtimeName, internal = false) {
-    if (this.compiler.scriptMode && this.compiler.isReservedDeclarationName(name)) {
-      this.compiler.fail(
-        `Identifier '${name}' is reserved and cannot be used as a variable or output name.`,
-        _node && _node.lineno,
-        _node && _node.colno,
-        _node || undefined
-      );
-    }
-    const decl = {
-      type: 'var',
-      initializer: null,
-      internal
-    };
-    if (runtimeName && runtimeName !== name) {
-      // Lexical name can differ from runtime output key (notably loop aliasing).
-      decl.runtimeName = runtimeName;
-    }
-    this.compiler._setSyntheticOutputDeclaration(frame, name, decl);
   }
 
   _emitLoopValueDeclarations(node, loopVars) {
