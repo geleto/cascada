@@ -267,6 +267,9 @@ class CompileAnalysis {
       }
       const owner = this.getScopeOwner(analysis);
 
+      // Most declarations are owned by the current scope owner. For example,
+      // set/var statements and macro parameters become visible in the scope
+      // introduced by the current node.
       const localDeclares = Array.isArray(analysis.declares) ? analysis.declares : [];
       for (let j = 0; j < localDeclares.length; j++) {
         const decl = localDeclares[j];
@@ -278,6 +281,29 @@ class CompileAnalysis {
           owner.declaredOutputs.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
             declarationOrigin: analysis
           })));
+        }
+      }
+
+      // Some nodes introduce a declaration that is owned by the parent scope
+      // instead of the current one. Macros are the main case: the macro name
+      // is visible where the macro is declared, even though the macro body
+      // itself gets its own scope owner.
+      const parentDeclares = Array.isArray(analysis.declaresInParent) ? analysis.declaresInParent : [];
+      if (parentDeclares.length > 0) {
+        const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
+        if (parentOwner) {
+          for (let j = 0; j < parentDeclares.length; j++) {
+            const decl = parentDeclares[j];
+            if (!decl || !decl.name) {
+              continue;
+            }
+            parentOwner.declaredOutputs = parentOwner.declaredOutputs || new Map();
+            if (!parentOwner.declaredOutputs.has(decl.name)) {
+              parentOwner.declaredOutputs.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
+                declarationOrigin: analysis
+              })));
+            }
+          }
         }
       }
     }
@@ -323,6 +349,7 @@ class CompileAnalysis {
         if (!decl || !decl.name) {
           continue;
         }
+        this._validateReservedDeclarationName(analysis, decl);
         if (decl.explicit !== false &&
           (analysis.node.typename === 'Set' || analysis.node.typename === 'OutputDeclaration')) {
           const currentScopeDecl = owner.declaredOutputs.get(decl.name) || null;
@@ -381,6 +408,24 @@ class CompileAnalysis {
 
     this.compiler.fail(
       `Identifier '${decl.name}' has already been declared.`,
+      lineno,
+      colno,
+      originNode || undefined
+    );
+  }
+
+  _validateReservedDeclarationName(analysis, decl) {
+    if (!this.compiler || !this.compiler.isReservedDeclarationName || !this.compiler.isReservedDeclarationName(decl.name)) {
+      return;
+    }
+    if (decl.type === 'var' && !this.compiler.scriptMode) {
+      return;
+    }
+    const originNode = analysis.node || null;
+    const lineno = originNode && originNode.lineno;
+    const colno = originNode && originNode.colno;
+    this.compiler.fail(
+      `Identifier '${decl.name}' is reserved and cannot be used as a variable or output name.`,
       lineno,
       colno,
       originNode || undefined

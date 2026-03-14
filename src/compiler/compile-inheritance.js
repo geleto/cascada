@@ -44,7 +44,6 @@ class CompileInheritance {
   }
 
   _emitValueImportBinding(frame, name, sourceVar, node) {
-    this.compiler._addDeclaredOutput(frame, name, 'var', null, node);
     this.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
       this.emit(

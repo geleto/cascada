@@ -1435,7 +1435,6 @@ class Compiler extends CompilerBase {
     var name = node.name.value;
     if (this.asyncMode) {
       // Expose the macro as a var output.
-      this._addDeclaredOutput(frame, name, 'var', null, node);
       this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
       this.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
         this.emit(
@@ -2063,8 +2062,6 @@ class Compiler extends CompilerBase {
       isNameSymbol: nameNode instanceof nodes.Symbol
     });
     const name = nameNode.value;
-
-    this._addDeclaredOutput(frame, name, outputType, node.initializer, node);
 
     this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "${outputType}", context, `);
     if (outputType === 'sink' || outputType === 'sequence') {
