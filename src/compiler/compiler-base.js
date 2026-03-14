@@ -153,19 +153,6 @@ class CompilerBase extends Obj {
     frame.setSyntheticDeclaration(name, decl);
   }
 
-  _getOutputDeclaration(node, frame, name, excludeLocalDeclarations = false) {
-    if (excludeLocalDeclarations && this._nodeDeclaresOutput(node, name)) {
-      return this._findSyntheticOutputDeclaration(frame, name);
-    }
-    const analysisDecl = node
-      ? this.analysis.findDeclaration(node._analysis, name)
-      : null;
-    if (analysisDecl) {
-      return analysisDecl;
-    }
-    return this._findSyntheticOutputDeclaration(frame, name);
-  }
-
   _isOutputDeclaredInCurrentScope(node, frame, name) {
     return !!this._findSyntheticOutputDeclarationInCurrentScope(frame, name);
   }
@@ -422,11 +409,8 @@ class CompilerBase extends Obj {
       this.emit(name);
       return;
     }
-    const analysisDecl = this.analysis.findDeclaration(node._analysis, name);
-    const syntheticDecl = analysisDecl ? null : this._findSyntheticOutputDeclaration(frame, name);
-    const declaredOutput = analysisDecl || syntheticDecl;
-    const syntheticFrameVar = syntheticDecl && frame && frame.resolve && frame.resolve(name, false);
-    if (declaredOutput && (analysisDecl || !syntheticFrameVar)) {
+    const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
+    if (declaredOutput) {
       if (node.sequential || node.sequentialRepair) {
         this.fail(
           'Sequence marker (!) is not allowed in non-context variable paths',
