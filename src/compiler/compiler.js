@@ -816,7 +816,8 @@ class Compiler extends CompilerBase {
         let guardHandlers = this._getGuardedOutputNames(
           bodyUsedOutputs,
           guardTargets,
-          blockFrame
+          blockFrame,
+          node.body._analysis
         );
         if (resolvedSequenceTargets.size > 0) {
           const merged = new Set(guardHandlers);
@@ -880,7 +881,7 @@ class Compiler extends CompilerBase {
     frame = guardResult.frame;
   }
 
-  _getGuardedOutputNames(usedOutputs, guardTargets, frame) {
+  _getGuardedOutputNames(usedOutputs, guardTargets, frame, analysis) {
     let used = [];
     if (usedOutputs instanceof Set) {
       used = Array.from(usedOutputs);
@@ -913,7 +914,7 @@ class Compiler extends CompilerBase {
         if (guardedTypes.size === 0 || !frame) {
           return false;
         }
-        const outputDecl = frame ? this.async._getDeclaredOutput(frame, name) : null;
+        const outputDecl = analysis ? this.analysis.findDeclaration(analysis, name) : null;
         if (outputDecl) {
           return guardedTypes.has(outputDecl.type);
         }
@@ -931,7 +932,7 @@ class Compiler extends CompilerBase {
         if (name && name.charAt(0) === '!') {
           return false;
         }
-        const outputDecl = frame ? this.async._getDeclaredOutput(frame, name) : null;
+        const outputDecl = analysis ? this.analysis.findDeclaration(analysis, name) : null;
         if (outputDecl) {
           return outputDecl.type === 'var';
         }
@@ -1848,13 +1849,11 @@ class Compiler extends CompilerBase {
 
     this.emit.beginEntryFunction(node, 'root', frame);
     this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-    if (frame.declaredOutputs) {
-      for (const [name, decl] of frame.declaredOutputs.entries()) {
-        if (!decl || decl.type !== 'sequential_path') {
-          continue;
-        }
-        this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
-      }
+    const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
+      ? node._analysis.sequenceLocks
+      : [];
+    for (const name of sequenceLocks) {
+      this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
     // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
