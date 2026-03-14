@@ -64,27 +64,6 @@ class Compiler extends CompilerBase {
     return RESERVED_DECLARATION_NAMES.has(name);
   }
 
-  _getAnalysisRuntimeOutputNames(node, frame, fieldName) {
-    let values = node._analysis[fieldName] ?? [];
-    return values instanceof Set ? Array.from(values) : values;
-  }
-
-  _getAnalysisRuntimeDeclaredOutputNames(node, frame) {
-    const declaredOutputs = node._analysis.declaredOutputs;
-    if (!declaredOutputs) {
-      return [];
-    }
-
-    const runtimeNames = new Set();
-    declaredOutputs.forEach((decl, name) => {
-      if (!name) {
-        return;
-      }
-      runtimeNames.add(name);
-    });
-    return Array.from(runtimeNames);
-  }
-
   _addDeclaredOutput(frame, name, outputType, initializer = null, node = null) {
     validateDeclarationScope(frame, name, this, node);
     frame.declaredOutputs = frame.declaredOutputs || new Map();
@@ -652,7 +631,7 @@ class Compiler extends CompilerBase {
 
             // Collect handlers from this branch
             if (this.asyncMode) {
-              branchHandlers.push(new Set(this._getAnalysisRuntimeOutputNames(c.body, blockFrame, 'usedOutputs')));
+              branchHandlers.push(new Set(c.body._analysis.usedOutputs || []));
             }
           }, c.body); // Pass body as code position
           this.emit.line('break;');
@@ -677,7 +656,7 @@ class Compiler extends CompilerBase {
 
           // Collect handlers from default
           if (this.asyncMode) {
-            branchHandlers.push(new Set(this._getAnalysisRuntimeOutputNames(node.default, blockFrame, 'usedOutputs')));
+            branchHandlers.push(new Set(node.default._analysis.usedOutputs || []));
           }
         }, node.default); // Pass default as code position
       } else if (this.asyncMode) {
@@ -778,7 +757,7 @@ class Compiler extends CompilerBase {
         // Sequence lock mutations are tracked via used output handlers.
         const resolvedSequenceTargets = new Set();
         const modifiedLocks = new Set();
-        const bodyUsedOutputs = this._getAnalysisRuntimeOutputNames(node.body, blockFrame, 'usedOutputs');
+        const bodyUsedOutputs = Array.from(node.body._analysis.usedOutputs || []);
         if (bodyUsedOutputs.length > 0) {
           for (const outputName of bodyUsedOutputs) {
             if (outputName && outputName.startsWith('!')) {
@@ -846,7 +825,7 @@ class Compiler extends CompilerBase {
           }
           guardHandlers = Array.from(merged);
         }
-        const bodyDeclaredOutputs = this._getAnalysisRuntimeDeclaredOutputNames(node.body, blockFrame);
+        const bodyDeclaredOutputs = Array.from((node.body._analysis.declaredOutputs || new Map()).keys());
         if (bodyDeclaredOutputs.length > 0) {
           const merged = new Set(guardHandlers);
           for (const name of bodyDeclaredOutputs) {
@@ -1079,9 +1058,9 @@ class Compiler extends CompilerBase {
         this.emit('');
         this.emit('}');  // No re-throw - execution continues with poisoned vars
 
-        trueBranchHandlers = new Set(this._getAnalysisRuntimeOutputNames(node.body, blockFrame, 'usedOutputs'));
+        trueBranchHandlers = new Set(node.body._analysis.usedOutputs || []);
         falseBranchHandlers = node.else_
-          ? new Set(this._getAnalysisRuntimeOutputNames(node.else_, blockFrame, 'usedOutputs'))
+          ? new Set(node.else_._analysis.usedOutputs || [])
           : new Set();
         allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
 
@@ -1972,7 +1951,7 @@ class Compiler extends CompilerBase {
       this.emit.line('');
       this.compile(block.body, tmpFrame);
       if (this.asyncMode) {
-        const usedOutputs = this._getAnalysisRuntimeOutputNames(block.body, tmpFrame, 'usedOutputs');
+        const usedOutputs = Array.from(block.body._analysis.usedOutputs || []);
         const prelinkHandlers = usedOutputs.filter((hname) => hname !== this.buffer.currentTextOutputName);
         this.emitLinkWithParentCompositionBuffer(
           prelinkHandlers,

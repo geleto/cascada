@@ -163,8 +163,8 @@ module.exports = class CompileEmit {
     }
 
     if (createScopeRootBuffer && parentBufferId && analysisNode && analysisNode._analysis) {
-      const used = this.compiler._getAnalysisRuntimeOutputNames(analysisNode, nextFrame, 'usedOutputs');
-      const declared = new Set(this.compiler._getAnalysisRuntimeDeclaredOutputNames(analysisNode, nextFrame));
+      const used = Array.from(analysisNode._analysis.usedOutputs || []);
+      const declared = new Set((analysisNode._analysis.declaredOutputs || new Map()).keys());
       const foreignUsed = used.filter((name) => {
         if (name === this.compiler.buffer.currentTextOutputName) {
           return false;
@@ -383,8 +383,8 @@ module.exports = class CompileEmit {
   // @todo - optimize this:
   // similar for writes we can do some optimizations
   getAsyncBlockArgs(node, frame) {
-    const usedOutputs = this.compiler._getAnalysisRuntimeOutputNames(node, frame, 'usedOutputs');
-    const declaredOutputs = new Set(this.compiler._getAnalysisRuntimeDeclaredOutputNames(node, frame));
+    const usedOutputs = Array.from(node._analysis.usedOutputs || []);
+    const declaredOutputs = new Set((node._analysis.declaredOutputs || new Map()).keys());
     const linkedOutputs = usedOutputs.filter((name) => {
       if (name === this.compiler.buffer.currentTextOutputName) {
         return true;
