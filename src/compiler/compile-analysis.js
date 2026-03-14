@@ -166,18 +166,26 @@ class CompileAnalysis {
     return [];
   }
 
-  getDeclaration(node, name) {
-    if (!node || !node._analysis) {
-      return null;
-    }
-    return this._getDeclaration(node._analysis, name);
+  findDeclaration(analysis, name) {
+    return this._findDeclaration(analysis, name);
   }
 
-  getDeclarationOwner(node, name) {
-    if (!node || !node._analysis) {
+  findDeclarationInCurrentScope(analysis, name) {
+    const owner = this._findScopeOwner(analysis);
+    if (!owner || !owner.declaredOutputs) {
       return null;
     }
-    return this._getDeclarationOwner(node._analysis, name);
+    return owner.declaredOutputs.get(name) || null;
+  }
+
+  findOuterDeclaration(analysis, name) {
+    const owner = this._findScopeOwner(analysis);
+    const start = owner ? owner.parent : null;
+    return this._findDeclaration(start, name);
+  }
+
+  findDeclarationOwner(analysis, name) {
+    return this._findDeclarationOwner(analysis, name);
   }
 
   getScopeOwner(analysis) {
@@ -437,15 +445,15 @@ class CompileAnalysis {
     };
   }
 
-  _getDeclaration(analysis, name) {
-    const owner = this._getDeclarationOwner(analysis, name);
+  _findDeclaration(analysis, name) {
+    const owner = this._findDeclarationOwner(analysis, name);
     if (!owner || !owner.declaredOutputs) {
       return null;
     }
     return owner.declaredOutputs.get(name) || null;
   }
 
-  _getDeclarationOwner(analysis, name) {
+  _findDeclarationOwner(analysis, name) {
     let current = analysis;
     while (current) {
       if (current.declaredOutputs && current.declaredOutputs.has(name)) {

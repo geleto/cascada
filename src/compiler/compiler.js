@@ -324,7 +324,7 @@ class Compiler extends CompilerBase {
         const name = target.value;
         const shouldDeclareImplicitTemplateVar = !this.scriptMode &&
           !isDeclaration &&
-          !analysisPass.getDeclaration(node, name);
+          !analysisPass.findDeclaration(node._analysis, name);
         if (isDeclaration || shouldDeclareImplicitTemplateVar) {
           declares.push({ name, type: 'var', initializer: null });
         } else {

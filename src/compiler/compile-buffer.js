@@ -106,7 +106,7 @@ class CompileBuffer {
     }
 
     const handler = staticPath[0];
-    const outputDecl = this.compiler._getOutputDeclaration(node, frame, handler);
+    const outputDecl = this.compiler.analysis.findDeclaration(node._analysis, handler);
     const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
@@ -120,7 +120,7 @@ class CompileBuffer {
       handler,
       outputType,
       hasOutputDecl: !!outputDecl,
-      declaredInCurrentScope: this.compiler._isOutputDeclaredInCurrentScope(node, frame, handler),
+      declaredInCurrentScope: !!this.compiler.analysis.findDeclarationInCurrentScope(node._analysis, handler),
       isCallNode,
       isObservationCall
     });
@@ -349,7 +349,7 @@ class CompileBuffer {
    * Add value to buffer (async mode with error handling)
    */
   asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName, emitTextCommand = false) {
-      const returnId = this.compiler._tmpid();
+    const returnId = this.compiler._tmpid();
     if (this.compiler.asyncMode) {
       this.compiler.emit.asyncClosureDepth++;
       frame = frame.push(false, false);

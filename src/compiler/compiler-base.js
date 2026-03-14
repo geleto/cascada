@@ -144,7 +144,7 @@ class CompilerBase extends Obj {
         : null;
     }
     const analysisDecl = node && node._analysis && this.analysis
-      ? this.analysis.getDeclaration(node, name)
+      ? this.analysis.findDeclaration(node._analysis, name)
       : null;
     if (analysisDecl) {
       return analysisDecl;
@@ -392,7 +392,7 @@ class CompilerBase extends Obj {
       }
     }
 
-    if (analysisPass.getDeclaration(node, name)) {
+    if (analysisPass.findDeclaration(node._analysis, name)) {
       uses.push(name);
     }
 
@@ -862,7 +862,7 @@ class CompilerBase extends Obj {
         sequencePath && sequencePath.length >= 2
           ? (() => {
             const outputName = sequencePath[0];
-            const outputDecl = analysisPass.getDeclaration(node, outputName);
+            const outputDecl = analysisPass.findDeclaration(node._analysis, outputName);
             const propertyName = sequencePath[sequencePath.length - 1];
             if (!outputDecl || outputDecl.type !== 'sequence' || propertyName === 'snapshot') {
               return null;
@@ -974,7 +974,7 @@ class CompilerBase extends Obj {
           }
 
           const outputName = sequencePath[0];
-          const outputDecl = analysisPass.getDeclaration(node, outputName);
+          const outputDecl = analysisPass.findDeclaration(node._analysis, outputName);
           if (!outputDecl) {
             return null;
           }
