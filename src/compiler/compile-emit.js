@@ -162,7 +162,7 @@ module.exports = class CompileEmit {
       emitFunc(nextFrame, bufferId);
     }
 
-    if (createScopeRootBuffer && parentBufferId) {
+    if (createScopeRootBuffer && parentBufferId && analysisNode && analysisNode._analysis) {
       const used = this.compiler._getAnalysisRuntimeOutputNames(analysisNode, nextFrame, 'usedOutputs');
       const declared = new Set(this.compiler._getAnalysisRuntimeDeclaredOutputNames(analysisNode, nextFrame));
       const foreignUsed = used.filter((name) => {

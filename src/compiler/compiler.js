@@ -65,25 +65,13 @@ class Compiler extends CompilerBase {
   }
 
   _getAnalysisRuntimeOutputNames(node, frame, fieldName) {
-    // let values = node._analysis[fieldName] ?? [];
-    const analysis = node && node._analysis ? node._analysis : null;
-    const values = analysis && analysis[fieldName];
-    if (!values) {
-      return [];
-    }
-
-    const names = values instanceof Set ? Array.from(values) : values;
-    if (!Array.isArray(names) || names.length === 0) {
-      return [];
-    }
-
-    return names.filter((name) => !!name);
+    let values = node._analysis[fieldName] ?? [];
+    return values instanceof Set ? Array.from(values) : values;
   }
 
   _getAnalysisRuntimeDeclaredOutputNames(node, frame) {
-    const analysis = node && node._analysis ? node._analysis : null;
-    const declaredOutputs = analysis && analysis.declaredOutputs;
-    if (!declaredOutputs || typeof declaredOutputs.forEach !== 'function') {
+    const declaredOutputs = node._analysis.declaredOutputs;
+    if (!declaredOutputs) {
       return [];
     }
 
@@ -1482,7 +1470,7 @@ class Compiler extends CompilerBase {
         arg._analysis = { declarationTarget: true };
         declares.push({ name: arg.value, type: 'var', initializer: null });
       }
-    });
+    }, undefined, node);
     const macroDecl = { name: node.name.value, type: 'var', initializer: null };
     declares.push(macroDecl);
     declaresInParent.push(macroDecl);
