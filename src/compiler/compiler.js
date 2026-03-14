@@ -66,7 +66,7 @@ class Compiler extends CompilerBase {
 
   _addDeclaredOutput(frame, name, outputType, initializer = null, node = null) {
     validateDeclarationScope(frame, name, this, node);
-    frame.declaredOutputs = frame.declaredOutputs || new Map();
+    const declaredOutputs = this._getSyntheticDeclarationsInCurrentScope(frame);
 
     if (this.isReservedDeclarationName(name)) {
       this.fail(
@@ -77,13 +77,14 @@ class Compiler extends CompilerBase {
       );
     }
 
-    if (frame.declaredOutputs.has(name)) {
+    if (declaredOutputs && declaredOutputs.has(name)) {
       this.fail(`Cannot declare output '${name}': already declared`, node && node.lineno, node && node.colno, node || undefined);
     }
 
     let parentFrame = frame && frame.parent;
     while (parentFrame) {
-      if (parentFrame.declaredOutputs && parentFrame.declaredOutputs.has(name)) {
+      const parentDeclaredOutputs = this._getSyntheticDeclarationsInCurrentScope(parentFrame);
+      if (parentDeclaredOutputs && parentDeclaredOutputs.has(name)) {
         this.fail(
           `Cannot declare output '${name}' because it shadows an output declared in a parent scope`,
           node && node.lineno,
@@ -106,7 +107,7 @@ class Compiler extends CompilerBase {
       );
     }
 
-    frame.declaredOutputs.set(name, {
+    this._setSyntheticOutputDeclaration(frame, name, {
       type: outputType,
       initializer: initializer || null,
     });
@@ -1412,8 +1413,7 @@ class Compiler extends CompilerBase {
     validateDeclarationTarget(this, name, alreadyDeclared, bindingNode, bindingNode);
     this._addDeclaredVar(frame, name);
 
-    frame.declaredOutputs = frame.declaredOutputs || new Map();
-    const existing = frame.declaredOutputs.get(name);
+    const existing = this._findSyntheticOutputDeclarationInCurrentScope(frame, name);
     if (existing) {
       this.fail(
         `Cannot declare output '${name}': already declared`,
@@ -1424,7 +1424,7 @@ class Compiler extends CompilerBase {
     }
 
     // Macro invocation bindings are emitted as var outputs for async ordering semantics.
-    frame.declaredOutputs.set(name, {
+    this._setSyntheticOutputDeclaration(frame, name, {
       type: 'var',
       initializer: null
     });

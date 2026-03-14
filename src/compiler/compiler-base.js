@@ -137,14 +137,20 @@ class CompilerBase extends Obj {
     return Array.isArray(declares) && declares.some((decl) => decl && decl.name === name);
   }
 
+  _getSyntheticDeclarationsInCurrentScope(frame) {
+    return frame.getSyntheticDeclarations();
+  }
+
   _findSyntheticOutputDeclaration(frame, name) {
-    while (frame) {
-      if (frame.declaredOutputs && frame.declaredOutputs.has(name)) {
-        return frame.declaredOutputs.get(name);
-      }
-      frame = frame.parent;
-    }
-    return null;
+    return frame.findSyntheticDeclaration(name);
+  }
+
+  _findSyntheticOutputDeclarationInCurrentScope(frame, name) {
+    return frame.findSyntheticDeclarationInCurrentScope(name);
+  }
+
+  _setSyntheticOutputDeclaration(frame, name, decl) {
+    frame.setSyntheticDeclaration(name, decl);
   }
 
   _getOutputDeclaration(node, frame, name, excludeLocalDeclarations = false) {
@@ -161,7 +167,7 @@ class CompilerBase extends Obj {
   }
 
   _isOutputDeclaredInCurrentScope(node, frame, name) {
-    return !!(frame && frame.declaredOutputs && frame.declaredOutputs.has(name));
+    return !!this._findSyntheticOutputDeclarationInCurrentScope(frame, name);
   }
 
   _isDeclared(frame, name, node = null) {
@@ -785,7 +791,7 @@ class CompilerBase extends Obj {
 
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
-      const outputDecl = this._getOutputDeclaration(targetNode, frame, name);
+      const outputDecl = this.analysis.findDeclaration(targetNode._analysis, name);
       if (outputDecl && !this._isDeclared(frame, name, targetNode)) {
         return name;
       }
@@ -795,7 +801,7 @@ class CompilerBase extends Obj {
     if (targetNode instanceof nodes.FunCall) {
       const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
-        const outputDecl = this._getOutputDeclaration(targetNode, frame, candidate);
+        const outputDecl = this.analysis.findDeclaration(targetNode._analysis, candidate);
         if (outputDecl && !this._isDeclared(frame, candidate, targetNode)) {
           return candidate;
         }
@@ -1027,7 +1033,7 @@ class CompilerBase extends Obj {
       if (sequenceLockKey) {
         let index = sequenceLockKey.indexOf('!', 1);
         const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
-        const keyRootOutput = this._getOutputDeclaration(node, frame, keyRoot);
+        const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
         if (this._isDeclared(frame, keyRoot, node) || keyRootOutput) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
@@ -1092,7 +1098,7 @@ class CompilerBase extends Obj {
     if (!keyRoot) {
       return;
     }
-    const keyRootOutput = this._getOutputDeclaration(node, frame, keyRoot);
+    const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
     if (this._isDeclared(frame, keyRoot, node) || keyRootOutput) {
       this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
     }

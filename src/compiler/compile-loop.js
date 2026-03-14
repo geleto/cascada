@@ -356,7 +356,6 @@ class CompileLoop {
         _node || undefined
       );
     }
-    frame.declaredOutputs = frame.declaredOutputs || new Map();
     const decl = {
       type: 'var',
       initializer: null,
@@ -366,7 +365,7 @@ class CompileLoop {
       // Lexical name can differ from runtime output key (notably loop aliasing).
       decl.runtimeName = runtimeName;
     }
-    frame.declaredOutputs.set(name, decl);
+    this.compiler._setSyntheticOutputDeclaration(frame, name, decl);
   }
 
   _emitLoopValueDeclarations(node, loopVars) {
