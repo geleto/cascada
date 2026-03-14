@@ -1,8 +1,6 @@
 const {
   RESERVED_DECLARATION_NAMES,
   validateGuardVariablesDeclared,
-  validateSetTarget,
-  validateDeclarationTarget,
   validateDeclarationScope,
   validateOutputDeclarationNode
 } = require('./validation');
@@ -65,50 +63,6 @@ class Compiler extends CompilerBase {
 
   _addDeclaredOutput(frame, name, outputType, initializer = null, node = null) {
     validateDeclarationScope(frame, name, this, node);
-    const declaredOutputs = this._getSyntheticDeclarationsInCurrentScope(frame);
-
-    if (this.isReservedDeclarationName(name)) {
-      this.fail(
-        `Identifier '${name}' is reserved and cannot be used as a variable or output name.`,
-        node && node.lineno,
-        node && node.colno,
-        node || undefined
-      );
-    }
-
-    if (declaredOutputs && declaredOutputs.has(name)) {
-      this.fail(`Cannot declare output '${name}': already declared`, node && node.lineno, node && node.colno, node || undefined);
-    }
-
-    const allowParentVarShadowing = !this.scriptMode;
-    if (!allowParentVarShadowing) {
-      let parentFrame = frame && frame.parent;
-      while (parentFrame) {
-        const parentDeclaredOutputs = this._getSyntheticDeclarationsInCurrentScope(parentFrame);
-        if (parentDeclaredOutputs && parentDeclaredOutputs.has(name)) {
-          this.fail(
-            `Cannot declare output '${name}' because it shadows an output declared in a parent scope`,
-            node && node.lineno,
-            node && node.colno,
-            node || undefined
-          );
-        }
-        parentFrame = parentFrame.parent;
-      }
-    }
-
-    // Output declarations cannot conflict with variables in the same lexical frame chain.
-    // Note: we intentionally do NOT consider outputParent here; macro/call detached scopes
-    // can still access outer outputs via @name without having lexical name conflicts.
-    if (this._isDeclared(frame, name, node)) {
-      this.fail(
-        `Cannot declare output '${name}' because a variable with the same name is already declared`,
-        node && node.lineno,
-        node && node.colno,
-        node || undefined
-      );
-    }
-
     this._setSyntheticOutputDeclaration(frame, name, {
       type: outputType,
       initializer: initializer || null,
@@ -318,6 +272,17 @@ class Compiler extends CompilerBase {
     const mutates = [];
     const isDeclaration = node.varType === 'declaration';
     const targets = node.targets;
+    if (this.scriptMode) {
+      switch (node.varType) {
+        case 'declaration':
+        case 'assignment':
+          break;
+        default:
+          this.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
+      }
+    } else if (node.varType !== 'assignment' && node.varType !== 'declaration') {
+      this.fail(`'${node.varType}' is not allowed in template mode. Use 'set' or declaration tags.`, node.lineno, node.colno, node);
+    }
     if (node.body) {
       node.body._analysis = { createScope: true };
     }
@@ -352,10 +317,6 @@ class Compiler extends CompilerBase {
     node.targets.forEach((target) => {
       const name = target.value;
       let id;
-
-      const isDeclared = this._isDeclared(frame, name, node);
-
-      validateSetTarget(this, node, target, name, isDeclared);
 
       // Sync mode relies on a fresh temp for JS assignment.
       id = this._tmpid();
@@ -435,11 +396,7 @@ class Compiler extends CompilerBase {
       this.fail('async var output assignments are only supported in async mode', node.lineno, node.colno, node);
     }
     const ids = [];
-    const isDeclaration = node.varType === 'declaration';
     const isDeclarationOnly = !!node.declarationOnly;
-    const validationNode = Object.assign({}, node, {
-      varType: isDeclaration ? 'declaration' : 'assignment'
-    });
 
     // 1. First pass: validate + declarations + temp ids (mirrors compileSet structure).
     node.targets.forEach((target) => {
@@ -448,10 +405,6 @@ class Compiler extends CompilerBase {
 
       const visibleDeclaration = this.analysis.findDeclaration(node._analysis, name);
       const isOwnDeclaration = !!(visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis);
-      const isDeclaredForValidation = !isOwnDeclaration &&
-        !!(visibleDeclaration && visibleDeclaration.type === 'var');
-
-      validateSetTarget(this, validationNode, target, name, isDeclaredForValidation);
 
       if (isOwnDeclaration) {
         this._addDeclaredOutput(frame, name, 'var', null, node);
@@ -789,7 +742,6 @@ class Compiler extends CompilerBase {
         let guardHandlers = this._getGuardedOutputNames(
           bodyUsedOutputs,
           guardTargets,
-          blockFrame,
           node.body._analysis
         );
         if (resolvedSequenceTargets.size > 0) {
@@ -854,7 +806,7 @@ class Compiler extends CompilerBase {
     frame = guardResult.frame;
   }
 
-  _getGuardedOutputNames(usedOutputs, guardTargets, frame, analysis) {
+  _getGuardedOutputNames(usedOutputs, guardTargets, analysis) {
     let used = [];
     if (usedOutputs instanceof Set) {
       used = Array.from(usedOutputs);
@@ -884,10 +836,10 @@ class Compiler extends CompilerBase {
         if (guardedSet.has(name)) {
           return true;
         }
-        if (guardedTypes.size === 0 || !frame) {
+        if (guardedTypes.size === 0) {
           return false;
         }
-        const outputDecl = analysis ? this.analysis.findDeclaration(analysis, name) : null;
+        const outputDecl = this.analysis.findDeclaration(analysis, name);
         if (outputDecl) {
           return guardedTypes.has(outputDecl.type);
         }
@@ -905,7 +857,7 @@ class Compiler extends CompilerBase {
         if (name && name.charAt(0) === '!') {
           return false;
         }
-        const outputDecl = analysis ? this.analysis.findDeclaration(analysis, name) : null;
+        const outputDecl = this.analysis.findDeclaration(analysis, name);
         return !!(outputDecl && outputDecl.type === 'var');
       });
     }
@@ -1374,12 +1326,6 @@ class Compiler extends CompilerBase {
   }
 
   _declareMacroBindingValueOutput(frame, bufferId, name, node) {
-    const bindingNode = node || { lineno: 0, colno: 0 };
-
-    // Keep macro arg/kwarg/caller declaration rules aligned with normal var declarations.
-    const alreadyDeclared = this._isDeclared(frame, name, node) ||
-      this._isOutputDeclaredInCurrentScope(node, frame, name);
-    validateDeclarationTarget(this, name, alreadyDeclared, bindingNode, bindingNode);
     this._addDeclaredVar(frame, name);
 
     const existing = this._findSyntheticOutputDeclarationInCurrentScope(frame, name);

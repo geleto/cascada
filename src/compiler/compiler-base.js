@@ -157,19 +157,6 @@ class CompilerBase extends Obj {
     return !!this._findSyntheticOutputDeclarationInCurrentScope(frame, name);
   }
 
-  _isDeclared(frame, name, node = null) {
-    // Variable declaration checks intentionally exclude var outputs.
-    // Output declarations are tracked separately in declaredOutputs.
-    const outputDecl = node
-      ? this.analysis.findDeclaration(node._analysis, name)
-      : this._findSyntheticOutputDeclaration(frame, name);
-    if (outputDecl) {
-      return false;
-    }
-    return !!(frame && frame.resolve && frame.resolve(name, false));
-  }
-
-
   _getNodeName(node) {
     switch (node.typename) {
       case 'Symbol':
@@ -497,19 +484,14 @@ class CompilerBase extends Obj {
         this.inBlock &&
         !this.analysis.findDeclaration(node._analysis, name);
       if (useContextOnlyInheritanceLookup) {
-        const outputDecl = this.analysis.findDeclaration(node._analysis, name);
-        if (outputDecl) {
-          this.emit('runtime.varOutputLookup(' + `frame, "${name}", ${this.buffer.currentBuffer})`);
-        } else {
-          const contextRef = this._tmpid();
-          // Preserve context-first semantics for non-output names, then only fall back
-          // to output-aware lookup for dynamic var-output visibility.
-          this.emit('(() => {');
-          this.emit(`const ${contextRef} = context.lookup("${name}");`);
-          this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
-          this.emit(`return runtime.contextOrVarLookup(context, frame, "${name}", ${this.buffer.currentBuffer});`);
-          this.emit('})()');
-        }
+        const contextRef = this._tmpid();
+        // Preserve context-first semantics for non-output names, then only fall back
+        // to output-aware lookup for dynamic var-output visibility.
+        this.emit('(() => {');
+        this.emit(`const ${contextRef} = context.lookup("${name}");`);
+        this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
+        this.emit(`return runtime.contextOrVarLookup(context, frame, "${name}", ${this.buffer.currentBuffer});`);
+        this.emit('})()');
       } else {
         this.emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
       }

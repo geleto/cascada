@@ -45,49 +45,6 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
 }
 
 /**
- * Validate variable declaration/assignment rules for 'set' and 'var' statements.
- * @param {Compiler} compiler - The compiler instance
- * @param {Node} node - The Set node
- * @param {Node} target - The specific target node being processed
- * @param {string} name - The variable name
- * @param {boolean} isDeclared - Whether the variable is already declared in the frame
- */
-function validateSetTarget(compiler, node, target, name, isDeclared) {
-  if (compiler.scriptMode) {
-    // Script mode: keep only syntax/reserved-name checks here.
-    // Declaration existence/conflict is validated during analysis.
-    switch (node.varType) {
-      case 'declaration': // from 'var'
-        if (compiler.isReservedDeclarationName && compiler.isReservedDeclarationName(name)) {
-          compiler.fail(`Identifier '${name}' is reserved and cannot be used as a variable or output name.`, target.lineno, target.colno, node, target);
-        }
-        break;
-      case 'assignment': // from '='
-        break;
-      default:
-        compiler.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
-    }
-  } else {
-    // TEMPLATE MODE: allow both set-style assignment and var/value-style declaration.
-    if (node.varType !== 'assignment' && node.varType !== 'declaration') {
-      compiler.fail(`'${node.varType}' is not allowed in template mode. Use 'set' or declaration tags.`, node.lineno, node.colno, node);
-    }
-  }
-}
-
-function validateDeclarationTarget(compiler, name, isDeclared, node, target) {
-  if (!compiler.scriptMode) {
-    return;
-  }
-  if (compiler.isReservedDeclarationName && compiler.isReservedDeclarationName(name)) {
-    compiler.fail(`Identifier '${name}' is reserved and cannot be used as a variable or output name.`, target.lineno, target.colno, node, target);
-  }
-  if (isDeclared) {
-    compiler.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
-  }
-}
-
-/**
  * Validate that a variable declaration is attached to a scoping frame.
  * @param {Frame} frame - The frame where the declaration is being registered
  * @param {string} name - The variable name
@@ -197,8 +154,6 @@ module.exports = {
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
   validateGuardVariablesDeclared,
-  validateSetTarget,
-  validateDeclarationTarget,
   validateDeclarationScope,
   validateOutputDeclarationNode,
   validateSinkSnapshotInGuard,

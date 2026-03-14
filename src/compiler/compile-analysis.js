@@ -350,13 +350,16 @@ class CompileAnalysis {
           continue;
         }
         this._validateReservedDeclarationName(analysis, decl);
-        if (decl.explicit !== false &&
+        const currentScopeDecl = owner.declaredOutputs.get(decl.name) || null;
+        if (analysis.node.typename === 'Macro') {
+          if (currentScopeDecl && currentScopeDecl.declarationOrigin === declarationOrigin) {
+            this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
+          }
+        } else if (decl.explicit !== false &&
           (analysis.node.typename === 'Set' || analysis.node.typename === 'OutputDeclaration')) {
-          const currentScopeDecl = owner.declaredOutputs.get(decl.name) || null;
           if (currentScopeDecl && currentScopeDecl.declarationOrigin !== declarationOrigin) {
             this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
           }
-
           let current = owner.parent;
           while (current) {
             if (current.declaredOutputs && current.declaredOutputs.has(decl.name)) {
