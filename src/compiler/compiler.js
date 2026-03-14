@@ -2,6 +2,7 @@ const {
   RESERVED_DECLARATION_NAMES,
   validateGuardVariablesDeclared,
   validateSetTarget,
+  validateDeclarationTarget,
   validateDeclarationScope,
   validateReadOnlyOuterMutation,
   validateOutputDeclarationNode
@@ -64,6 +65,7 @@ class Compiler extends CompilerBase {
   }
 
   _getAnalysisRuntimeOutputNames(node, frame, fieldName) {
+    // let values = node._analysis[fieldName] ?? [];
     const analysis = node && node._analysis ? node._analysis : null;
     const values = analysis && analysis[fieldName];
     if (!values) {
@@ -1435,20 +1437,11 @@ class Compiler extends CompilerBase {
 
   _declareMacroBindingValueOutput(frame, bufferId, name, node) {
     const bindingNode = node || { lineno: 0, colno: 0 };
-    const targetNode = {
-      lineno: bindingNode.lineno,
-      colno: bindingNode.colno
-    };
-    const bindingSetNode = {
-      varType: 'declaration',
-      lineno: bindingNode.lineno,
-      colno: bindingNode.colno
-    };
 
     // Keep macro arg/kwarg/caller declaration rules aligned with normal var declarations.
     const alreadyDeclared = this._isDeclared(frame, name, node) ||
       this._isOutputDeclaredInCurrentScope(node, frame, name);
-    validateSetTarget(this, bindingSetNode, targetNode, name, alreadyDeclared);
+    validateDeclarationTarget(this, name, alreadyDeclared, bindingNode, bindingNode);
     this._addDeclaredVar(frame, name);
 
     frame.declaredOutputs = frame.declaredOutputs || new Map();

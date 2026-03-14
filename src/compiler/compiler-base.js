@@ -268,6 +268,36 @@ class CompilerBase extends Obj {
     }
   }
 
+  _compileResolvedPartList(partCompilers, compileThen, asyncThen) {
+    if (partCompilers.length === 1) {
+      this.emit('runtime.resolveSingleArr(');
+      partCompilers[0].call(this);
+      this.emit(')');
+    } else if (partCompilers.length === 2) {
+      this.emit('runtime.resolveDuo(');
+      partCompilers[0].call(this);
+      this.emit(',');
+      partCompilers[1].call(this);
+      this.emit(')');
+    } else {
+      this.emit('runtime.resolveAll([');
+      for (let i = 0; i < partCompilers.length; i++) {
+        if (i > 0) {
+          this.emit(',');
+        }
+        partCompilers[i].call(this);
+      }
+      this.emit('])');
+    }
+
+    if (compileThen) {
+      const result = this._tmpid();
+      this.emit(`.then(${asyncThen ? 'async ' : ''}function(${result}){`);
+      compileThen.call(this, result, partCompilers.length);
+      this.emit(' })');
+    }
+  }
+
   _compileArguments(node, frame, expressionRoot, startChar) {
     node.children.forEach((child, i) => {
       if (i > 0) {
@@ -1137,21 +1167,31 @@ class CompilerBase extends Obj {
       // still we need to process it as expression for its arguments
       // and wrap if the wrapInAsyncBlock is true
       this.sequential.processExpression(node, frame);
-
-      const filterGetNode = { value: node.name.value, typename: 'FilterGet' };
-      const mergedNode = {
-        isAsync: true,
-        children: [filterGetNode, ...node.args.children]
-      };
       if (!node.wrapInAsyncBlock) {
-        this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
+        const parts = [
+          function () {
+            this.emit(`env.getFilter("${node.name.value}")`);
+          },
+          ...node.args.children.map((arg) => function () {
+            this.compile(arg, frame);
+          })
+        ];
+        this._compileResolvedPartList(parts, function (result) {
           this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
-        });
+        }, false);
       } else {
-        this.emit.asyncBlockValue(mergedNode, frame, (n, f) => {
-          this._compileAggregate(n, f, '[', ']', true, false, function (result) {
+        this.emit.asyncBlockValue(node, frame, (n, f) => {
+          const parts = [
+            function () {
+              this.emit(`env.getFilter("${n.name.value}")`);
+            },
+            ...n.args.children.map((arg) => function () {
+              this.compile(arg, f);
+            })
+          ];
+          this._compileResolvedPartList(parts, function (result) {
             this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
-          });
+          }, false);
         }, undefined, node.args);
       }
     } else {

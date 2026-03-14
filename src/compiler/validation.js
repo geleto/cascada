@@ -79,6 +79,18 @@ function validateSetTarget(compiler, node, target, name, isDeclared) {
   }
 }
 
+function validateDeclarationTarget(compiler, name, isDeclared, node, target) {
+  if (!compiler.scriptMode) {
+    return;
+  }
+  if (compiler.isReservedDeclarationName && compiler.isReservedDeclarationName(name)) {
+    compiler.fail(`Identifier '${name}' is reserved and cannot be used as a variable or output name.`, target.lineno, target.colno, node, target);
+  }
+  if (isDeclared) {
+    compiler.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
+  }
+}
+
 /**
  * Validate that a variable declaration is attached to a scoping frame.
  * @param {Frame} frame - The frame where the declaration is being registered
@@ -256,6 +268,7 @@ module.exports = {
   validateCompileTimeFrameBalance,
   validateGuardVariablesDeclared,
   validateSetTarget,
+  validateDeclarationTarget,
   validateDeclarationScope,
   validateReadOnlyOuterMutation,
   validateOutputDeclarationNode,
