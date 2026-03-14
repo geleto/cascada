@@ -156,29 +156,41 @@ class CompileAnalysis {
   }
 
   findDeclaration(analysis, name) {
-    return this._findDeclaration(analysis, name);
-  }
-
-  findDeclarationInCurrentScope(analysis, name) {
-    const owner = this._findScopeOwner(analysis);
+    const owner = this.findDeclarationOwner(analysis, name);
     if (!owner || !owner.declaredOutputs) {
       return null;
     }
     return owner.declaredOutputs.get(name) || null;
   }
 
-  findOuterDeclaration(analysis, name) {
-    const owner = this._findScopeOwner(analysis);
-    const start = owner ? owner.parent : null;
-    return this._findDeclaration(start, name);
+  findDeclarationInCurrentScope(analysis, name) {
+    const owner = this.getScopeOwner(analysis);
+    if (!owner || !owner.declaredOutputs) {
+      return null;
+    }
+    return owner.declaredOutputs.get(name) || null;
   }
 
   findDeclarationOwner(analysis, name) {
-    return this._findDeclarationOwner(analysis, name);
+    let current = analysis;
+    while (current) {
+      if (current.declaredOutputs && current.declaredOutputs.has(name)) {
+        return current;
+      }
+      if (current.scopeBoundary) {
+        break;
+      }
+      current = current.parent;
+    }
+    return null;
   }
 
   getScopeOwner(analysis) {
-    return this._findScopeOwner(analysis);
+    let current = analysis;
+    while (current && !current.createScope) {
+      current = current.parent;
+    }
+    return current || analysis;
   }
 
   getIncludeVisibleVarOutputs(analysis) {
@@ -213,17 +225,6 @@ class CompileAnalysis {
     return visibleOutputs;
   }
 
-  _findScopeOwner(analysis) {
-    let current = analysis;
-    while (current) {
-      if (current.createScope) {
-        return current;
-      }
-      current = current.parent;
-    }
-    return analysis;
-  }
-
   getBaseOutputName(runtimeName) {
     const hashIndex = runtimeName.indexOf('#');
     if (hashIndex === -1) {
@@ -248,7 +249,7 @@ class CompileAnalysis {
       if (!analysis) {
         continue;
       }
-      const owner = this._findScopeOwner(analysis);
+      const owner = this.getScopeOwner(analysis);
 
       const localDeclares = Array.isArray(analysis.declares) ? analysis.declares : [];
       for (let j = 0; j < localDeclares.length; j++) {
@@ -258,7 +259,9 @@ class CompileAnalysis {
         }
         owner.declaredOutputs = owner.declaredOutputs || new Map();
         if (!owner.declaredOutputs.has(decl.name)) {
-          owner.declaredOutputs.set(decl.name, this._cloneDeclaration(decl));
+          owner.declaredOutputs.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
+            declarationOrigin: analysis
+          })));
         }
       }
     }
@@ -294,7 +297,7 @@ class CompileAnalysis {
     if (!analysis) {
       return;
     }
-    const registerDeclares = (declares, owner) => {
+    const registerDeclares = (declares, owner, declarationOrigin) => {
       if (!Array.isArray(declares) || declares.length === 0 || !owner) {
         return;
       }
@@ -305,16 +308,18 @@ class CompileAnalysis {
           continue;
         }
         if (!owner.declaredOutputs.has(decl.name)) {
-          owner.declaredOutputs.set(decl.name, this._cloneDeclaration(decl));
+          owner.declaredOutputs.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
+            declarationOrigin
+          })));
         }
       }
     };
 
-    registerDeclares(analysis.declares, this._findScopeOwner(analysis));
+    registerDeclares(analysis.declares, this.getScopeOwner(analysis), analysis);
 
     if (Array.isArray(analysis.declaresInParent) && analysis.declaresInParent.length > 0) {
-      const parentOwner = analysis.parent ? this._findScopeOwner(analysis.parent) : null;
-      registerDeclares(analysis.declaresInParent, parentOwner);
+      const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
+      registerDeclares(analysis.declaresInParent, parentOwner, analysis);
     }
   }
 
@@ -343,7 +348,8 @@ class CompileAnalysis {
       initializer: Object.prototype.hasOwnProperty.call(decl, 'initializer') ? decl.initializer : null,
       internal: !!decl.internal,
       isLoopMeta: !!decl.isLoopMeta,
-      runtimeName: decl.runtimeName || null
+      runtimeName: decl.runtimeName || null,
+      declarationOrigin: decl.declarationOrigin || null
     };
   }
 
@@ -432,28 +438,6 @@ class CompileAnalysis {
       usedOutputs: parentUsedOutputs,
       mutatedOutputs: parentMutatedOutputs
     };
-  }
-
-  _findDeclaration(analysis, name) {
-    const owner = this._findDeclarationOwner(analysis, name);
-    if (!owner || !owner.declaredOutputs) {
-      return null;
-    }
-    return owner.declaredOutputs.get(name) || null;
-  }
-
-  _findDeclarationOwner(analysis, name) {
-    let current = analysis;
-    while (current) {
-      if (current.declaredOutputs && current.declaredOutputs.has(name)) {
-        return current;
-      }
-      if (current.scopeBoundary) {
-        break;
-      }
-      current = current.parent;
-    }
-    return null;
   }
 
   getCurrentTextOutput(analysis) {

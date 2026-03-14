@@ -446,7 +446,6 @@ class Compiler extends CompilerBase {
     if (!this.asyncMode) {
       this.fail('async var output assignments are only supported in async mode', node.lineno, node.colno, node);
     }
-    const templateAutoDeclareMode = !this.scriptMode;
     const ids = [];
     const isDeclaration = node.varType === 'declaration';
     const isDeclarationOnly = !!node.declarationOnly;
@@ -459,35 +458,34 @@ class Compiler extends CompilerBase {
       const name = target.value;
       let id;
 
-      const currentSyntheticDecl = this._findSyntheticOutputDeclarationInCurrentScope(frame, name);
-      const analysisDeclaredOutput = this._nodeDeclaresOutput(node, name)
-        ? this.analysis.findOuterDeclaration(node._analysis, name)
-        : this.analysis.findDeclaration(node._analysis, name);
-      const declaredOutput = analysisDeclaredOutput || currentSyntheticDecl;
-      const shouldDeclareInTemplateMode = templateAutoDeclareMode && !(declaredOutput && declaredOutput.type === 'var');
-      const shouldDeclare = isDeclaration || shouldDeclareInTemplateMode;
-      const isDeclaredForValidation = shouldDeclare
-        ? !!currentSyntheticDecl
-        : !!(declaredOutput && declaredOutput.type === 'var');
+      const visibleDeclaration = this.analysis.findDeclaration(node._analysis, name);
+      const isOwnDeclaration = !!(visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis);
+      const isDeclaredForValidation = !isOwnDeclaration &&
+        !!(visibleDeclaration && visibleDeclaration.type === 'var');
 
       if (this.scriptMode && !isDeclaration) {
-        const declaredInCurrentScope = this._isOutputDeclaredInCurrentScope(node, frame, name);
+        const declarationOwner = visibleDeclaration
+          ? this.analysis.findDeclarationOwner(node._analysis, name)
+          : null;
+        const currentScopeOwner = this.analysis.getScopeOwner(node._analysis);
         validateReadOnlyOuterMutation(this, {
           frame,
           node,
           target,
           name,
-          mutatingOuterRef: isDeclaredForValidation && !declaredInCurrentScope
+          mutatingOuterRef: isDeclaredForValidation &&
+            !!declarationOwner &&
+            declarationOwner !== currentScopeOwner
         });
       }
 
       validateSetTarget(this, validationNode, target, name, isDeclaredForValidation);
 
-      if (shouldDeclare) {
+      if (isOwnDeclaration) {
         this._addDeclaredOutput(frame, name, 'var', null, node);
         this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
       } else {
-        if (!(declaredOutput && declaredOutput.type === 'var')) {
+        if (!(visibleDeclaration && visibleDeclaration.type === 'var')) {
           this.fail(
             `Cannot assign to undeclared variable output '${name}'. Use 'var ${name}' to declare it first.`,
             target.lineno,
@@ -1446,6 +1444,10 @@ class Compiler extends CompilerBase {
       if (arg instanceof nodes.Symbol) {
         arg._analysis = { declarationTarget: true };
         declares.push({ name: arg.value, type: 'var', initializer: null });
+      } else if (arg instanceof nodes.Dict) {
+        arg.children.forEach((pair) => {
+          declares.push({ name: pair.key.value, type: 'var', initializer: null });
+        });
       }
     }, undefined, node);
     const macroDecl = { name: node.name.value, type: 'var', initializer: null };
