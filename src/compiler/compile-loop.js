@@ -121,7 +121,7 @@ class CompileLoop {
         useLoopValues,
         loopVarNames
       );
-      const bodyHandlers = node.isAsync ? new Set(bodyFrame.usedOutputs ? Array.from(bodyFrame.usedOutputs) : []) : null;
+      const bodyHandlers = node.isAsync ? new Set(node.body._analysis.usedOutputs || []) : null;
 
       // Compile else block and collect metadata
       let elseFuncId = 'null';
@@ -131,8 +131,8 @@ class CompileLoop {
         elseFuncId = this.compiler._tmpid();
         this.compiler.emit(`let ${elseFuncId} = `);
 
-        const elseFrame = this._compileLoopElse(node, blockFrame, sequentialLoopBody);
-        elseHandlers = node.isAsync ? new Set(elseFrame.usedOutputs ? Array.from(elseFrame.usedOutputs) : []) : null;
+        this._compileLoopElse(node, blockFrame, sequentialLoopBody);
+        elseHandlers = node.isAsync ? new Set(node.else_._analysis.usedOutputs || []) : null;
       }
 
       // Build asyncOptions code string if in async mode
@@ -282,7 +282,7 @@ class CompileLoop {
 
         if (whileConditionNode) {
           if (catchPoisonPos !== null) {
-            const bodyHandlers = node.isAsync ? new Set(bodyFrame.usedOutputs ? Array.from(bodyFrame.usedOutputs) : []) : null;
+            const bodyHandlers = node.isAsync ? new Set(node.body._analysis.usedOutputs || []) : null;
             if (bodyHandlers && bodyHandlers.size > 0) {
               for (const handler of bodyHandlers) {
                 this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
