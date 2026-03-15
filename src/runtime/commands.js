@@ -26,6 +26,7 @@ let safeOutputApi = null;
 // Base
 // ---------------------------------------------------------------------------
 
+// Base class for all commands. Manages the optional deferred-result promise used by observable commands.
 class Command {
   constructor(options = null) {
     const opts = options || {};
@@ -71,7 +72,7 @@ class Command {
   }
 }
 
-// Base command for declared outputs only (text/value/data/sink).
+// Base class for commands targeting a declared output handler (text/value/data/sink). Carries handler name, method name, arguments, and source position.
 class OutputCommand extends Command {
   constructor({ handler, command = null, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
     super();
@@ -111,6 +112,7 @@ class OutputCommand extends Command {
   }
 }
 
+// Appends one or more text values to a text output's buffer array, or replaces it on `set`.
 class TextCommand extends OutputCommand {
   constructor(specOrValue) {
     const isSpecObject = !!specOrValue &&
@@ -196,6 +198,7 @@ class TextCommand extends OutputCommand {
   }
 }
 
+// Sets the value of a var output's target to the single supplied argument.
 class ValueCommand extends OutputCommand {
   constructor(specOrValue) {
     const isSpecObject = !!specOrValue &&
@@ -250,6 +253,7 @@ class ValueCommand extends OutputCommand {
   }
 }
 
+// Timing-only sync point: awaits an iteration value for limited-concurrency loop synchronization. Does not propagate errors.
 class WaitResolveCommand extends OutputCommand {
   constructor({ handler, args = null, arguments: legacyArgs = null, pos = null }) {
     super({
@@ -281,6 +285,7 @@ class WaitResolveCommand extends OutputCommand {
   }
 }
 
+// Invokes a named data handler method (e.g., set, push) on a data output's DataHandler. Corresponds to @data directives in scripts.
 class DataCommand extends OutputCommand {
   constructor({ handler, command, args = null, arguments: legacyArgs = null, pos = null }) {
     super({
@@ -347,6 +352,7 @@ class DataCommand extends OutputCommand {
   }
 }
 
+// Calls a method on a sink output object (or a sub-path within it). Errors poison the output target.
 class SinkCommand extends OutputCommand {
   constructor({ handler, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
     super({
@@ -409,6 +415,7 @@ class SinkCommand extends OutputCommand {
   }
 }
 
+// Calls a method on a sequence sink in source order and resolves the deferred result promise with the return value. Mutating — waits for prior observables.
 class SequenceCallCommand extends OutputCommand {
   constructor({ handler, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null, withDeferredResult = false }) {
     super({
@@ -472,6 +479,7 @@ class SequenceCallCommand extends OutputCommand {
   }
 }
 
+// Reads a property from a sequence sink in source order and resolves the deferred result promise with the value. Observable — applied immediately without waiting for pending mutating commands.
 class SequenceGetCommand extends OutputCommand {
   constructor({ handler, command, subpath = null, pos = null, withDeferredResult = false }) {
     super({
@@ -511,6 +519,7 @@ class SequenceGetCommand extends OutputCommand {
   }
 }
 
+// Executes a `!`-path read operation in source order. Skips (rejects) if the path is already poisoned. Observable.
 class SequentialPathReadCommand extends Command {
   constructor({ handler, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
     super({ withDeferredResult });
@@ -572,6 +581,7 @@ class SequentialPathReadCommand extends Command {
   }
 }
 
+// Like SequentialPathReadCommand but clears existing path poison before executing (used in `resume` blocks).
 class RepairReadCommand extends SequentialPathReadCommand {
   constructor(spec = {}) {
     super({
@@ -581,6 +591,7 @@ class RepairReadCommand extends SequentialPathReadCommand {
   }
 }
 
+// Executes a `!`-path write/call operation in source order. Poisons the path on failure so subsequent commands on the same path are skipped. Mutating.
 class SequentialPathWriteCommand extends Command {
   constructor({ handler, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
     super({ withDeferredResult });
@@ -645,6 +656,7 @@ class SequentialPathWriteCommand extends Command {
   }
 }
 
+// Like SequentialPathWriteCommand but clears existing path poison before executing (used in `resume` blocks).
 class RepairWriteCommand extends SequentialPathWriteCommand {
   constructor(spec = {}) {
     super({
@@ -654,6 +666,7 @@ class RepairWriteCommand extends SequentialPathWriteCommand {
   }
 }
 
+// Poison marker in the command buffer. Always throws a PoisonError when applied, propagating errors through the buffer in source order.
 class ErrorCommand extends Command {
   constructor(errors) {
     super();
@@ -670,6 +683,7 @@ class ErrorCommand extends Command {
   }
 }
 
+// Writes poison directly into an output's target: pushes a PoisonedValue onto a text buffer, or replaces a data/var/sink target with one.
 class TargetPoisonCommand extends Command {
   constructor({ handler, errors = null, pos = null }) {
     super();
@@ -703,6 +717,7 @@ class TargetPoisonCommand extends Command {
   }
 }
 
+// Captures the current output state (with poison inspection) as a deferred value. Used for `snapshot()` calls and explicit `return data/text.snapshot()`. Observable.
 class SnapshotCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -742,9 +757,7 @@ class SnapshotCommand extends Command {
   }
 }
 
-// RawSnapshotCommand returns the output's current target as-is, without
-// snapshot error inspection. This is required for overwrite semantics such as
-// var-output set_path where poisoned leaves may be replaced by the write.
+// Captures the raw output target without poison inspection. Used for overwrite semantics (e.g., var-output set_path) where poisoned leaves may be replaced by the write. Observable.
 class RawSnapshotCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -773,6 +786,7 @@ class RawSnapshotCommand extends Command {
   }
 }
 
+// Resolves to a boolean indicating whether the output currently holds a poisoned (error) value. Observable.
 class IsErrorCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -808,6 +822,7 @@ class IsErrorCommand extends Command {
   }
 }
 
+// Resolves to the current error on the output (a PoisonError or null). Observable.
 class GetErrorCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -843,6 +858,7 @@ class GetErrorCommand extends Command {
   }
 }
 
+// Snapshots the current output state for `try/resume` guard entry. The captured state is passed to a later RestoreGuardStateCommand. Observable.
 class CaptureGuardStateCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -878,6 +894,7 @@ class CaptureGuardStateCommand extends Command {
   }
 }
 
+// Calls `_repairNow()` on a sink output to repair it within a guard block. Carries a deferred result.
 class SinkRepairCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -911,6 +928,7 @@ class SinkRepairCommand extends Command {
   }
 }
 
+// Restores a previously captured guard state to the output, overwriting the current target with the saved snapshot. Carries a deferred result.
 class RestoreGuardStateCommand extends Command {
   constructor({ handler, target, pos = null }) {
     super({ withDeferredResult: true });
