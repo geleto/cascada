@@ -1989,7 +1989,7 @@ class Compiler extends CompilerBase {
     const handler = path[0];
     const isObservation = callNode &&
       path.length === 2 &&
-      (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError' || path[1] === '__checkpoint');
+      (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError');
     return isObservation ? { uses: [handler] } : { uses: [handler], mutates: [handler] };
   }
 

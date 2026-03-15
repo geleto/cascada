@@ -928,6 +928,44 @@ class SinkRepairCommand extends Command {
   }
 }
 
+// Captures the current text output state (including poison) for `try/resume` guard entry.
+// The captured state is passed to a later RestoreGuardStateCommand. Observable.
+// @todo - not implemented, implement as a general CaptureGuardStateCommand?
+class TextCheckpointCommand extends Command {
+  constructor({ handler, pos = null }) {
+    super({ withDeferredResult: true });
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
+    this.isSnapshotCommand = true;
+  }
+
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
+    if (!output || typeof output._captureTextCheckpoint !== 'function') {
+      this.rejectResult(contextualize(new Error('TextCheckpointCommand requires a text output handler with _captureTextCheckpoint()')));
+      return;
+    }
+
+    try {
+      const result = output._captureTextCheckpoint();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => this.resolveResult(value),
+          (err) => this.rejectResult(contextualize(err))
+        );
+      }
+      this.resolveResult(result);
+    } catch (err) {
+      this.rejectResult(contextualize(err));
+    }
+  }
+}
+
 // Restores a previously captured guard state to the output, overwriting the current target with the saved snapshot. Carries a deferred result.
 class RestoreGuardStateCommand extends Command {
   constructor({ handler, target, pos = null }) {
@@ -986,6 +1024,7 @@ module.exports = {
   GetErrorCommand,
   CaptureGuardStateCommand,
   SinkRepairCommand,
+  TextCheckpointCommand,
   RestoreGuardStateCommand
 };
 

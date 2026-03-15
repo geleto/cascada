@@ -647,6 +647,13 @@ class SinkOutput extends Output {
   _applyCommand(cmd) {
     if (!cmd) return;
     const applyResolved = () => {
+      // Observable commands handle sink resolution inside their own apply() with
+      // proper rejection handlers that settle the deferred promise. Calling
+      // _ensureSinkResolved() here first would swallow a rejected-sink error in
+      // _recordError without settling the command's promise, causing a hang.
+      if (cmd.isObservable) {
+        return cmd.apply(this);
+      }
       const sink = this._ensureSinkResolved();
       const apply = () => cmd.apply(this);
       const result = (sink && typeof sink.then === 'function')

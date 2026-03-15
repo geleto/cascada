@@ -950,7 +950,7 @@ class CompilerBase extends Obj {
             subpath: sequencePath.slice(1, -1),
             isObservation:
                 sequencePath.length === 2 &&
-                (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError' || methodName === '__checkpoint')
+                (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
           };
         })()
         : null;
