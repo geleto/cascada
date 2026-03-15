@@ -54,7 +54,6 @@ This guide provides context for developing the Cascada engine. Assist in writing
 
 -   **Implementation Guides** (`docs/code/`), may not be up-to-date on the latest implementation details:
     -   `Tests.md`: General testing guidelines and philosophy.
-    -   `Async - Implementation.md`: Deep dive into the async runtime and promise handling.
     -   `Error Handling Guide.md`: Overview of the "Poison" error system.
     -   `Error Handling Patterns In Script.md`: Common patterns for handling errors in scripts.
     -   `Poisoning - Implementation Principles.md`: Detailed mechanics of error propagation.
@@ -239,7 +238,6 @@ Resilient error handling system under development.
 ## Implementation Architecture
 
 <details>
-<summary><strong>Click to expand detailed architecture notes...</strong></summary>
 
 ### Async Execution Model
 
@@ -252,24 +250,29 @@ Resilient error handling system under development.
 
 **Goal:** Prevent race conditions; ensure sequential equivalence when concurrent blocks read/write same outer-scope variables.
 
-**Mechanism:** Compile-time analysis + runtime locking system.
+**Mechanism:** Compile-time analysis + command buffer tree system.
 
-1.  **Compile-Time Analysis:** Compiler statically analyzes each async block for variables it reads (`readVars`) and writes (`writeCounts`). `writeCounters` are conservative count of all potential writes, including those in conditional branches that may not be executed.
+-   **Compile-time analysis** (`src/compiler/compile-buffer.js`, `compile-analysis.js`): For each async block (IIFE), the compiler computes `usedOutputs` — the set of output handlers the block touches. This drives whether a child `CommandBuffer` is created at runtime for that block.
+-   **Command Buffer Tree** (`src/runtime/command-buffer.js`): Each async IIFE that touches outputs creates a child `CommandBuffer` linked to the parent. All output commands from that block are written into this child buffer rather than the parent directly. The tree mirrors the source-code nesting structure.
+-   **Ordered Application via Buffer Iterator** (`src/runtime/buffer-iterator.js`): A depth-first iterator walks the buffer tree and applies commands in source-code order. It waits on unfilled slots (child buffers not yet finished) before advancing. This guarantees outputs are committed in program order even though execution was concurrent.
+-   **Implicit Variable Synchronization**: Frame variables assigned in async blocks may be promises. When a subsequent concurrent block reads them in an expression, `resolveAll`/`resolveSingle` naturally awaits any pending promise — no explicit locks needed. Data dependencies automatically serialize execution.
 
-2.  **Runtime Locking (`pushAsyncBlock`):** When async block starts:
-    *   **Snapshots:** Variables for reading snapshotted from parent frame, capturing state at block initiation.
-    *   **Promisification (Locking):** Variables for writing **promisified** in parent frame. Value temporarily replaced with `Promise` (acts as lock), forcing other operations to wait.
+### Commands (`src/runtime/commands.js`)
 
-3.  **Runtime Unlocking (Write Counting):** Writes inside async block update local copy and decrement internal `writeCounter`. When counter hits zero (all potential writes accounted), resolves parent's lock promise with final value, "unlocking" variable.
+Every output mutation is a `Command` enqueued in the buffer tree and applied in source order by the buffer iterator. `apply(output)` mutates the output; `getError()` returns a `PoisonError` if the command carries poison.
 
--   **Key Functions**: `frame.pushAsyncBlock`, `frame._promisifyParentVariables`, `frame._countdownAndResolveAsyncWrites`.
+**Mutating** (`isObservable = false`):
+`TextCommand` (append to text buffer), `ValueCommand` (set var-output value), `DataCommand` (invoke @data handler method), `SinkCommand` (call method on sink object), `SequentialPathWriteCommand` (write via `!`-path; poisons path on failure), `RepairWriteCommand` (same but clears existing path poison first), `TargetPoisonCommand` (write poison directly into output target), `ErrorCommand` (poison marker in buffer; always throws on apply)
+
+**Observable** (`isObservable = true`, hold a deferred result `.promise` the caller awaits):
+`SequenceCallCommand` (execute `!`-call on sink; resolve with return value), `SequenceGetCommand` (read property via `!`-path), `SequentialPathReadCommand` (read via `!`-path; skip if path already poisoned), `RepairReadCommand` (same but clears existing path poison first), `SnapshotCommand` (capture current output state), `RawSnapshotCommand` (return raw `_target` without error inspection), `IsErrorCommand` (resolve to bool — is output poisoned?), `GetErrorCommand` (resolve to current error or null), `CaptureGuardStateCommand` (snapshot state for `try/resume` entry), `RestoreGuardStateCommand` (restore a previously captured guard state), `WaitResolveCommand` (await a value for timing only; does not propagate errors)
 
 ### Sequential Operations (`!`)
 
--   **Mechanism**: Uses **Sequence Keys** (e.g., `!account!deposit`) treated like special variables. Same promise-locking mechanism applied.
--   **Compiler Pass**: `_declareSequentialLocks` identifies `!` markers to register keys.
--   **Runtime Helpers**: `runtime.sequentialCallWrap`, `runtime.sequentialMemberLookupAsync` acquire/release lock.
--   **Reference**: `docs/code/Sequential Operations - Execution.md`
+-   **Sequence Keys**: Each `!`-path (e.g., `account!.deposit`) maps to a named output slot on the frame. The slot acts as a promise-locking channel—subsequent `!`-calls on the same path enqueue after the previous one resolves.
+-   **Compiler Pass** (`src/compiler/compile-sequential.js`): `_declareSequentialLocks` identifies every `!` marker in the AST and registers the corresponding sequence key on the frame.
+-   **Runtime Commands**: `SequenceCallCommand` and `SequenceGetCommand` carry a deferred-result promise. The buffer iterator applies them in source order; each call awaits the prior result before executing, giving hard serialization without explicit locks.
+-   **Poison propagation**: If a `!`-call fails, `SequentialPathWriteCommand` marks the path poisoned. All subsequent commands on that path see the poison via `_getSequentialPathPoisonErrors()` and skip execution, rejecting their deferred promises.
 
 ### Error Handling (Poison System)
 
