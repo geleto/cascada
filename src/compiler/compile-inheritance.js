@@ -19,18 +19,18 @@ class CompileInheritance {
   _emitDeclaredValueSnapshots(analysis, frame, targetVarsVar, positionNode) {
     const lineno = positionNode && positionNode.lineno != null ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno != null ? positionNode.colno : 0;
-    const visibleOutputs = this.compiler.analysis.getIncludeVisibleVarOutputs(analysis);
-    visibleOutputs.forEach((entry) => {
+    const visibleChannels = this.compiler.analysis.getIncludeVisibleVarChannels(analysis);
+    visibleChannels.forEach((entry) => {
       const snapshotExpr = this.compiler.buffer.emitAddSnapshot(frame, entry.runtimeName, { lineno, colno }, true);
       this.emit.line(`${targetVarsVar}[${JSON.stringify(entry.baseName)}] = ${snapshotExpr};`);
     });
   }
 
   _emitDeclaredValueAliasMap(analysis, aliasVar) {
-    const visibleOutputs = this.compiler.analysis.getIncludeVisibleVarOutputs(analysis);
+    const visibleChannels = this.compiler.analysis.getIncludeVisibleVarChannels(analysis);
     const aliases = Object.create(null);
-    for (let i = 0; i < visibleOutputs.length; i++) {
-      const entry = visibleOutputs[i];
+    for (let i = 0; i < visibleChannels.length; i++) {
+      const entry = visibleChannels[i];
       if (entry.baseName === entry.runtimeName) {
         continue;
       }
@@ -61,7 +61,7 @@ class CompileInheritance {
    * currently visible channel lane for each name.
    */
   _collectIncludeLinkCandidates(analysis) {
-    return this.compiler.analysis.getIncludeVisibleVarOutputs(analysis)
+    return this.compiler.analysis.getIncludeVisibleVarChannels(analysis)
       .map((entry) => entry.runtimeName);
   }
 
@@ -296,7 +296,7 @@ class CompileInheritance {
         }
         // Step 7: block invocation boundary completion in limited-loop waited output.
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
-      }, node, null, this.compiler.buffer.currentTextOutputName, true);
+      }, node, null, this.compiler.buffer.currentTextChannelName, true);
     }
     else {
       let id = this.compiler._tmpid();
@@ -313,7 +313,7 @@ class CompileInheritance {
         //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
         this.compiler.buffer.addToBuffer(node, frame, function () {
           this.emit(id);
-        }, node, this.compiler.buffer.currentTextOutputName, true);
+        }, node, this.compiler.buffer.currentTextChannelName, true);
       } else {
         this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
       }
@@ -399,7 +399,7 @@ class CompileInheritance {
       // Included template renders into its own default text lane.
       // The caller lane may be scope-specific (e.g. capture text output) and
       // is only used when enqueueing the final TextCommand in the parent buffer.
-      const includeOutputName = CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT;
+      const includeOutputChannelName = CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
 
       // Get the template name expression
       this.emit(`let ${templateNameVar} = `);
@@ -432,16 +432,16 @@ class CompileInheritance {
         includeLinkCandidates,
         parentBufferExpr,
         'composed',
-        'composed._outputs'
+        'composed._channels'
       );
-      this.emit.line(`  return composed.addSnapshot("${includeOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+      this.emit.line(`  return composed.addSnapshot("${includeOutputChannelName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
       this.emit.line('});');
-      this.emit.line(`${resultVar} = new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextOutputName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} });`);
+      this.emit.line(`${resultVar} = new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} });`);
       // Include boundary completion in limited-loop waited output.
       // Wait on the composed include snapshot promise (timing unit), not on the
       // command object created for parent enqueue.
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, includeTextPromise, node);
-    }, node, this.compiler.buffer.currentTextOutputName, false);
+    }, node, this.compiler.buffer.currentTextChannelName, false);
   }
 
   compileIncludeSync(node, frame) {
@@ -471,7 +471,7 @@ class CompileInheritance {
       //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
       this.compiler.buffer.addToBuffer(node, frame, function () {
         this.emit('result');
-      }, node, this.compiler.buffer.currentTextOutputName, true);
+      }, node, this.compiler.buffer.currentTextChannelName, true);
     } else {
       this.emit.line(`${this.compiler.buffer.currentBuffer} += result;`);
     }

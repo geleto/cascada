@@ -1018,7 +1018,7 @@ class ScriptTranspiler {
     return commandContent;
   }
 
-  _parseDataCommandFromOutput(after, lineIndex) {
+  _parseDataCommandFromChannel(after, lineIndex) {
     const { lex } = require('./script-lexer');
     const tokens = lex(after);
 
@@ -1129,7 +1129,7 @@ class ScriptTranspiler {
     if (!['.', '(', '['].includes(opStart)) return false;
 
     if (channelType === 'data') {
-      const parsed = this._parseDataCommandFromOutput(after, lineIndex);
+      const parsed = this._parseDataCommandFromChannel(after, lineIndex);
 
       if (parsed.directCall) {
         const argsPreview = (parsed.args || '').trimStart();
@@ -1181,7 +1181,7 @@ class ScriptTranspiler {
     }
 
     if (channelType === 'sequence') {
-      const parsed = this._parseDataCommandFromOutput(after, lineIndex);
+      const parsed = this._parseDataCommandFromChannel(after, lineIndex);
       if (parsed.operatorUsed) {
         throw new Error(`sequence channel '${channelName}' does not support property assignment at line ${lineIndex + 1}`);
       }
@@ -1209,7 +1209,7 @@ class ScriptTranspiler {
     return true;
   }
 
-  _parseOutputDeclaration(codeContent, lineIndex) {
+  _parseChannelDeclaration(codeContent, lineIndex) {
     const trimmed = codeContent.trim();
     const channelType = this._getFirstWord(trimmed);
     if (!channelType) return null;
@@ -1230,8 +1230,8 @@ class ScriptTranspiler {
     return { channelType, name, initializer };
   }
 
-  _processOutputDeclaration(parseResult, lineIndex) {
-    const decl = this._parseOutputDeclaration(parseResult.codeContent, lineIndex);
+  _processChannelDeclaration(parseResult, lineIndex) {
+    const decl = this._parseChannelDeclaration(parseResult.codeContent, lineIndex);
     if (!decl) {
       throw new Error(`Invalid channel declaration at line ${lineIndex + 1}`);
     }
@@ -1244,7 +1244,7 @@ class ScriptTranspiler {
     parseResult.blockType = null;
   }
 
-  _isOutputDeclarationLine(firstWord, codeContent) {
+  _isChannelDeclarationLine(firstWord, codeContent) {
     if (!firstWord || !codeContent) return false;
     if (firstWord === 'sink' || firstWord === 'sequence') {
       // sink/sequence declarations must have an assignment
@@ -1316,8 +1316,8 @@ class ScriptTranspiler {
       throw new Error(`Explicit 'value' declarations are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'var') {
       this._processVar(parseResult, lineIndex);
-    } else if (this._isOutputDeclarationLine(firstWord, code)) {
-      this._processOutputDeclaration(parseResult, lineIndex);
+    } else if (this._isChannelDeclarationLine(firstWord, code)) {
+      this._processChannelDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {
       // Channel operation was processed
     } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'sink' || firstWord === 'sequence') &&

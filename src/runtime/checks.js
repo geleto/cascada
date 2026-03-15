@@ -49,8 +49,9 @@ function ensureSequentialPathChannel(frame, pathKey) {
     throw new Error(`Sequential path '${pathKey}' was not predeclared as a channel (expected compile-time declaration)`);
   }
 
-  if (channel._outputType !== 'sequential_path') {
-    throw new Error(`Sequential path '${pathKey}' is declared with incompatible channel type '${channel._outputType || 'unknown'}'`);
+  const channelType = channel._channelType;
+  if (channelType !== 'sequential_path') {
+    throw new Error(`Sequential path '${pathKey}' is declared with incompatible channel type '${channelType || 'unknown'}'`);
   }
 }
 

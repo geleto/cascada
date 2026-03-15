@@ -45,7 +45,7 @@
         {% endguard %}
         after
       `;
-      // The guard fails, so inner output 'inside' should be reverted.
+      // The guard fails, so the inner text channel write 'inside' should be reverted.
       // 'before' and 'after' should remain.
       const res = await env.renderTemplateString(tpl, {
         error: (msg) => { throw new Error(msg); }
@@ -110,7 +110,7 @@
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('BEFORE keep AFTER');
     });
 
-    it('should revert only specified handlers in script mode', async () => {
+    it('should revert only specified channels in script mode', async () => {
       const script = `
         text output
         data result
@@ -136,7 +136,7 @@
       expect(result.data).to.eql({ status: 'ok' });
     });
 
-    it('should allow guard type selectors to revert all handlers', async () => {
+    it('should allow guard type selectors to revert all channels', async () => {
       const script = `
         text output
         data result
@@ -162,7 +162,7 @@
       expect(result.data).to.eql({ status: 'ok' });
     });
 
-    it('should allow bare datatype selector to guard matching handler in script mode', async () => {
+    it('should allow bare datatype selector to guard matching channel in script mode', async () => {
       const script = `
         data result
         text output
@@ -227,7 +227,7 @@
       expect(result.final.trim()).to.equal('BEFOREOUTER');
     });
 
-    it('should propagate handler poison when only variables are guarded', async () => {
+    it('should propagate channel poison when only variables are guarded', async () => {
       const script = `
         text output
         var count = 1
@@ -246,7 +246,7 @@
 
       try {
         await env.renderScriptString(script, context);
-        expect().fail('Expected guard to propagate handler poison');
+        expect().fail('Expected guard to propagate channel poison');
       } catch (err) {
         expect(err.message).to.contain('boom');
       }
@@ -293,7 +293,7 @@
       }
     });
 
-    it('should error on duplicate handler selectors', async () => {
+    it('should error on duplicate channel selectors', async () => {
       const script = `
         text output
         guard output, output
@@ -708,7 +708,7 @@
 
     // --- Top Priority Missing Tests ---
 
-    it('should leak unrelated poison when guarding specific handler', async () => {
+    it('should leak unrelated poison when guarding specific channel', async () => {
       // guard result should ignore output poison.
       // E.g. guard result cannot stop output poison properly, so it bubbles up.
       // But side-effects (state="changed") should PERSIST because guard block technically "finished"
@@ -724,7 +724,7 @@
         var state = "initial"
         guard state, result
           state = "changed"
-          // This puts a PoisonedValue into the buffer (output handler default)
+          // This puts a PoisonedValue into the buffer (default channel behavior)
           // Since guard result ignores it, this poison remains in buffer.
           output(poison())
         endguard

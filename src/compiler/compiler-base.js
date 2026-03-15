@@ -810,7 +810,7 @@ class CompilerBase extends Obj {
   analyzeLookupVal(node, analysisPass) {
     const uses = [];
     const mutates = [];
-    let sequenceOutputLookup = null;
+    let sequenceChannelLookup = null;
     const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
     if (sequenceLockLookup) {
       uses.push(sequenceLockLookup.key);
@@ -824,37 +824,38 @@ class CompilerBase extends Obj {
       const lookupFacts =
         sequencePath && sequencePath.length >= 2
           ? (() => {
-            const outputName = sequencePath[0];
-            const outputDecl = analysisPass.findDeclaration(node._analysis, outputName);
+            const channelName = sequencePath[0];
+            const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
             const propertyName = sequencePath[sequencePath.length - 1];
-            if (!outputDecl || outputDecl.type !== 'sequence' || propertyName === 'snapshot') {
+            if (!channelDecl || channelDecl.type !== 'sequence' || propertyName === 'snapshot') {
               return null;
             }
             return {
-              outputName,
+              channelName,
               propertyName,
               subpath: sequencePath.slice(1, -1)
             };
           })()
           : null;
       if (lookupFacts) {
-        uses.push(lookupFacts.outputName);
-        sequenceOutputLookup = lookupFacts;
+        uses.push(lookupFacts.channelName);
+        sequenceChannelLookup = lookupFacts;
       }
     }
 
-    return { uses, mutates, sequenceOutputLookup };
+    return { uses, mutates, sequenceChannelLookup };
   }
 
   compileLookupVal(node, frame) {
     if (node.isAsync) {
-      const sequenceOutputLookup = node._analysis && node._analysis.sequenceOutputLookup;
-      if (this.scriptMode && sequenceOutputLookup) {
+      const sequenceChannelLookup =
+        node._analysis && node._analysis.sequenceChannelLookup;
+      if (this.scriptMode && sequenceChannelLookup) {
         this.buffer.emitAddSequenceGet(
           frame,
-          sequenceOutputLookup.outputName,
-          sequenceOutputLookup.propertyName,
-          sequenceOutputLookup.subpath,
+          sequenceChannelLookup.channelName,
+          sequenceChannelLookup.propertyName,
+          sequenceChannelLookup.subpath,
           node
         );
         return;

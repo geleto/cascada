@@ -57,8 +57,8 @@ class CompileLoop {
         iteratorCompiler(sourcePositionNode, blockFrame, arr);
       } else {
         // Loop source expression is control-flow input, not iteration-body work.
-        // Keep it out of the loop body's own waited output tracking scope.
-        this.compiler.buffer.skipOwnWaitedOutput(() => {
+        // Keep it out of the loop body's own waited channel tracking scope.
+        this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${arr} = `);
           this.compiler._compileExpression(node.arr, blockFrame, false);
           this.compiler.emit.line(';');
@@ -69,8 +69,8 @@ class CompileLoop {
       const limitVar = node.concurrentLimit ? this.compiler._tmpid() : null;
       if (node.concurrentLimit) {
         // concurrentLimit expression is scheduler/control metadata for the loop.
-        // It must not be tracked as iteration-body waited output work.
-        this.compiler.buffer.skipOwnWaitedOutput(() => {
+        // It must not be tracked as iteration-body waited channel work.
+        this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${limitVar} = `);
           this.compiler._compileExpression(node.concurrentLimit, blockFrame, false);
           this.compiler.emit.line(';');
@@ -118,7 +118,7 @@ class CompileLoop {
         useLoopValues,
         loopVarNames
       );
-      const bodyChannels = node.isAsync ? new Set(node.body._analysis.usedOutputs || []) : null;
+      const bodyChannels = node.isAsync ? new Set(node.body._analysis.usedChannels || []) : null;
 
       // Compile else block and collect metadata
       let elseFuncId = 'null';
@@ -129,7 +129,7 @@ class CompileLoop {
         this.compiler.emit(`let ${elseFuncId} = `);
 
         this._compileLoopElse(node, blockFrame, sequentialLoopBody);
-        elseChannels = node.isAsync ? new Set(node.else_._analysis.usedOutputs || []) : null;
+        elseChannels = node.isAsync ? new Set(node.else_._analysis.usedChannels || []) : null;
       }
 
       // Build asyncOptions code string if in async mode
@@ -189,11 +189,11 @@ class CompileLoop {
       this.compiler.emit('return ');
     }
     const bodyResult = this.compiler.buffer.asyncBufferNode(node, frame, bodyCreatesScope, false, node.body, (bodyFrame) => {
-      const limitedWaitedOutputName = hasConcurrencyLimit
+      const limitedWaitedChannelName = hasConcurrencyLimit
         ? (node.body && node.body._analysis && node.body._analysis.waitedOutputName)
         : null;
-      if (limitedWaitedOutputName) {
-        this.compiler.emit.line(`runtime.declareChannel(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedOutputName}", "var", context, null);`);
+      if (limitedWaitedChannelName) {
+        this.compiler.emit.line(`runtime.declareChannel(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedChannelName}", "var", context, null);`);
       }
 
       const compileIterationBody = () => {
@@ -235,8 +235,8 @@ class CompileLoop {
             this.compiler.emit(`let ${whileCondId};`);
             this.compiler.emit('try {');
             this.compiler.emit(`${whileCondId} = `);
-            // While condition is control-flow gating and excluded from waited output tracking.
-            this.compiler.buffer.skipOwnWaitedOutput(() => {
+            // While condition is control-flow gating and excluded from waited channel tracking.
+            this.compiler.buffer.skipOwnWaitedChannel(() => {
               this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame, false);
             });
             this.compiler.emit.line(';');
@@ -252,8 +252,8 @@ class CompileLoop {
             this.compiler.emit('}');
           } else {
             this.compiler.emit(`const ${whileCondId} = `);
-            // While condition is control-flow gating and excluded from waited output tracking.
-            this.compiler.buffer.skipOwnWaitedOutput(() => {
+            // While condition is control-flow gating and excluded from waited channel tracking.
+            this.compiler.buffer.skipOwnWaitedChannel(() => {
               this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame, false);
             });
             this.compiler.emit.line(';');
@@ -271,7 +271,7 @@ class CompileLoop {
 
         if (whileConditionNode) {
           if (catchPoisonPos !== null) {
-            const bodyChannels = node.isAsync ? new Set(node.body._analysis.usedOutputs || []) : null;
+            const bodyChannels = node.isAsync ? new Set(node.body._analysis.usedChannels || []) : null;
             if (bodyChannels && bodyChannels.size > 0) {
               for (const channelName of bodyChannels) {
                 this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
@@ -288,11 +288,11 @@ class CompileLoop {
         };
       };
 
-      if (!limitedWaitedOutputName) {
+      if (!limitedWaitedChannelName) {
         return compileIterationBody();
       }
 
-      return this.compiler.buffer.withOwnWaitedOutput(limitedWaitedOutputName, compileIterationBody);
+      return this.compiler.buffer.withOwnWaitedChannel(limitedWaitedChannelName, compileIterationBody);
     });
     const bodyFrame = bodyResult.result;
 
@@ -466,18 +466,18 @@ class CompileLoop {
       }
     });
 
-    const output = this.compiler._tmpid();
-    this.compiler.emit.line('}, ' + this.compiler._makeCallback(output));
+    const textResult = this.compiler._tmpid();
+    this.compiler.emit.line('}, ' + this.compiler._makeCallback(textResult));
     this.compiler.emit.addScopeLevel();
 
     if (parallel) {
       if (this.compiler.asyncMode) {
         //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
         this.compiler.buffer.addToBuffer(node, frame, function () {
-          this.emit(output);
-        }, node, this.compiler.buffer.currentTextOutputName, true);
+          this.emit(textResult);
+        }, node, this.compiler.buffer.currentTextChannelName, true);
       } else {
-        this.compiler.emit.line(`${this.compiler.buffer.currentBuffer} += ${output};`);
+        this.compiler.emit.line(`${this.compiler.buffer.currentBuffer} += ${textResult};`);
       }
     }
 

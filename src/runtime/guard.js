@@ -28,7 +28,8 @@ function initChannelSnapshots(frame, channelNames = null, buffer = null, cb = nu
     if (!channel) {
       continue;
     }
-    if (channel._outputType === 'sequence') {
+    const channelType = channel._channelType;
+    if (channelType === 'sequence') {
       const tx = { channelName, channel, active: false, token: undefined, beginPromise: null };
       if (typeof channel.beginTransaction === 'function') {
         try {
@@ -47,7 +48,7 @@ function initChannelSnapshots(frame, channelNames = null, buffer = null, cb = nu
       state.sequenceTransactions.push(tx);
       continue;
     }
-    if (channel._outputType === 'sequential_path') {
+    if (channelType === 'sequential_path') {
       state.sequentialPathChannels.push(channelName);
       continue;
     }

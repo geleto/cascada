@@ -1927,13 +1927,13 @@
     });
   });
 
-  describe('Compiler waited-output scaffolding', function () {
+  describe('Compiler waited-channel scaffolding', function () {
     function countWaitResolveCommands(source) {
       const matches = source.match(/new runtime\.WaitResolveCommand/g);
       return matches ? matches.length : 0;
     }
 
-    it('declares internal __waited__ output for limited loop iterations', function () {
+    it('declares internal __waited__ channel for limited loop iterations', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x }}{% endfor %}', env);
       const source = tmpl._compileSource();
@@ -1961,21 +1961,21 @@
       });
     });
 
-    it('does not declare internal __waited__ output for unbounded loops', function () {
+    it('does not declare internal __waited__ channel for unbounded loops', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs %}{{ x }}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(source).to.not.contain('__waited__');
     });
 
-    it('emits WaitResolveCommand for limited-loop top-level output expressions', function () {
+    it('emits WaitResolveCommand for limited-loop top-level channel expressions', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x + 1 }}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(source).to.contain('new runtime.WaitResolveCommand');
     });
 
-    it('does not emit WaitResolveCommand for unbounded loop output expressions', function () {
+    it('does not emit WaitResolveCommand for unbounded loop channel expressions', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs %}{{ x + 1 }}{% endfor %}', env);
       const source = tmpl._compileSource();
@@ -2107,7 +2107,7 @@
       return { promise, resolve, reject };
     }
 
-    it('waits for delayed mutable apply in text output', async function () {
+    it('waits for delayed mutable apply in text channel', async function () {
       const ctx = { path: 'wait-applied.njk' };
       const buffer = new CommandBuffer(ctx, null, { parent: null }, true);
       const frame = { parent: null };
@@ -2116,7 +2116,7 @@
 
       const deferred = createDeferred();
       buffer.add(new TextCommand({
-        handler: 'text',
+        channelName: 'text',
         args: [deferred.promise],
         pos: { lineno: 1, colno: 1 }
       }), 'text');
@@ -2139,7 +2139,7 @@
       expect(snapshot).to.be('done');
     });
 
-    it('waits until all output lanes in the buffer are applied', async function () {
+    it('waits until all channel lanes in the buffer are applied', async function () {
       const ctx = { path: 'wait-applied-multi.njk' };
       const buffer = new CommandBuffer(ctx, null, { parent: null }, true);
       const frame = { parent: null };
@@ -2149,13 +2149,13 @@
 
       const deferred = createDeferred();
       buffer.add(new DataCommand({
-        handler: 'data',
+        channelName: 'data',
         command: 'set',
         args: [['value'], 1],
         pos: { lineno: 1, colno: 1 }
       }), 'data');
       buffer.add(new TextCommand({
-        handler: 'text',
+        channelName: 'text',
         args: [deferred.promise],
         pos: { lineno: 1, colno: 1 }
       }), 'text');
@@ -2182,14 +2182,14 @@
   });
 
   describe('CommandBuffer boundary alias canonicalization', function () {
-    it('maps base handler names to canonical aliases in add()', function () {
+    it('maps base channel names to canonical aliases in add()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
       createChannel({ parent: null }, buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({
-        handler: 'text',
+        channelName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
       }), 'loop');
@@ -2224,7 +2224,7 @@
       expect(child._boundaryAliases.loop).to.be('loop#4');
       expect(child._boundaryAliases.someVar).to.be('someVar#9');
       child.add(new TextCommand({
-        handler: 'text',
+        channelName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
       }), 'someVar');
@@ -2267,7 +2267,7 @@
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({
-        handler: 'text',
+        channelName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
       }), 'loop#4');

@@ -6,7 +6,7 @@ const {
   DataCommand,
   SinkCommand
 } = require('./commands');
-const DataHandler = require('../script/data-handler');
+const DataChannelTarget = require('../script/data-channel');
 const { BufferIterator } = require('./buffer-iterator');
 const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
 const { RESOLVE_MARKER } = require('./resolve');
@@ -15,8 +15,8 @@ const ASYNC_POISON_BOX_KEY = Symbol.for('cascada.asyncArgPoisonBox');
 class Channel {
   constructor(frame, buffer, channelName, context, channelType = null, target = undefined, base = null) {
     //this._frame = frame;
-    this._outputName = channelName;//@todo rename to name
-    this._outputType = channelType || channelName;//@todo rename to type
+    this._channelName = channelName;
+    this._channelType = channelType || channelName;
     this._context = context;
     this._buffer = buffer;
     this._target = target;
@@ -34,10 +34,10 @@ class Channel {
       this._resolveCompletion = resolve;
     });
 
-    if (this._buffer && this._buffer._registerOutput) {
-      this._buffer._registerOutput(this._outputName, this);
-    } else if (this._buffer && this._buffer._outputs instanceof Map) {
-      this._buffer._outputs.set(this._outputName, this);
+    if (this._buffer && this._buffer._registerChannel) {
+      this._buffer._registerChannel(this._channelName, this);
+    } else if (this._buffer && this._buffer._channels instanceof Map) {
+      this._buffer._channels.set(this._channelName, this);
       this._iterator.bindToCurrentBuffer();
     }
   }
@@ -45,37 +45,37 @@ class Channel {
   _enqueueCommand(command, args) {
     if (!this._buffer) return;
     let entry;
-    if (this._outputType === 'text') {
+    if (this._channelType === 'text') {
       entry = new TextCommand({
-        channelName: this._outputName,
+        channelName: this._channelName,
         args,
         normalizeArgs: true,
         pos: { lineno: 0, colno: 0 }
       });
-    } else if (this._outputType === 'var') {
+    } else if (this._channelType === 'var') {
       entry = new VarCommand({
-        channelName: this._outputName,
+        channelName: this._channelName,
         args,
         pos: { lineno: 0, colno: 0 }
       });
-    } else if (this._outputType === 'data') {
+    } else if (this._channelType === 'data') {
       entry = new DataCommand({
-        channelName: this._outputName,
+        channelName: this._channelName,
         command: command || null,
         args,
         pos: { lineno: 0, colno: 0 }
       });
-    } else if (this._outputType === 'sink') {
+    } else if (this._channelType === 'sink') {
       entry = new SinkCommand({
-        channelName: this._outputName,
+        channelName: this._channelName,
         command: command || null,
         args,
         pos: { lineno: 0, colno: 0 }
       });
     } else {
-      throw new Error(`Unsupported channel type '${this._outputType}' for command enqueueing`);
+      throw new Error(`Unsupported channel type '${this._channelType}' for command enqueueing`);
     }
-    this._buffer.add(entry, this._outputName);
+    this._buffer.add(entry, this._channelName);
   }
 
   _getTarget() {
@@ -133,7 +133,7 @@ class Channel {
   }
 
   _getCurrentResult() {
-    throw new Error(`Channel type '${this._outputType}' must implement _getCurrentResult()`);
+    throw new Error(`Channel type '${this._channelType}' must implement _getCurrentResult()`);
   }
 
   _recordError(err, cmd = null) {
@@ -249,9 +249,9 @@ class Channel {
 
 // Shared properties exposed on channel facades (proxy/callable).
 // These must read/write the underlying Channel instance.
-const OUTPUT_API_PROPS = new Set([
-  '_outputName',
-  '_outputType',
+const CHANNEL_API_PROPS = new Set([
+  '_channelName',
+  '_channelType',
   //'_frame',
   '_context',
   '_target',
@@ -310,7 +310,7 @@ function createChannelFacade(output, options) {
       if (prop === '_inspectTargetForErrors') {
         return output._inspectTargetForErrors.bind(output);
       }
-      if (OUTPUT_API_PROPS.has(prop)) {
+      if (CHANNEL_API_PROPS.has(prop)) {
         return output[prop];
       }
       if (prop === 'then') {
@@ -337,7 +337,7 @@ function createChannelFacade(output, options) {
       return proxyTarget[prop];
     },
     set: (proxyTarget, prop, value) => {
-      if (OUTPUT_API_PROPS.has(prop)) {
+      if (CHANNEL_API_PROPS.has(prop)) {
         output[prop] = value;
         return true;
       }
@@ -348,8 +348,8 @@ function createChannelFacade(output, options) {
 }
 
 class TextChannel extends Channel {
-  constructor(frame, buffer, outputName, context, outputType) {
-    super(frame, buffer, outputName, context, outputType, [], null);
+  constructor(frame, buffer, channelName, context, channelType) {
+    super(frame, buffer, channelName, context, channelType, [], null);
   }
 
   invoke(...args) {
@@ -382,10 +382,10 @@ class TextChannel extends Channel {
 }
 
 class VarChannel extends Channel {
-  constructor(frame, buffer, outputName, context, outputType) {
+  constructor(frame, buffer, channelName, context, channelType) {
     // Keep declaration-only var channels aligned with `none` semantics.
     // This sets the default snapshot to null without enqueuing a write command.
-    super(frame, buffer, outputName, context, outputType, null, null);
+    super(frame, buffer, channelName, context, channelType, null, null);
   }
 
   invoke(value) {
@@ -399,8 +399,8 @@ class VarChannel extends Channel {
 }
 
 class SequentialPathChannel extends Channel {
-  constructor(frame, buffer, outputName, context, outputType) {
-    super(frame, buffer, outputName, context, outputType, true, null);
+  constructor(frame, buffer, channelName, context, channelType) {
+    super(frame, buffer, channelName, context, channelType, true, null);
     this._sequentialPathPoisonErrors = null;
     this._sequentialPathLastResult = undefined;
   }
@@ -464,15 +464,15 @@ class SequentialPathChannel extends Channel {
 }
 
 class DataChannel extends Channel {
-  constructor(frame, buffer, outputName, context, outputType) {
+  constructor(frame, buffer, channelName, context, channelType) {
     const env = context && context.env ? context.env : null;
-    const base = new DataHandler(context && context.getVariables ? context.getVariables() : {}, env);
+    const base = new DataChannelTarget(context && context.getVariables ? context.getVariables() : {}, env);
     super(
       frame,
       buffer,
-      outputName,
+      channelName,
       context,
-      outputType,
+      channelType,
       base.data,
       base
     );
@@ -618,7 +618,7 @@ class SinkChannel extends Channel {
   repair(pos = null) {
     const commandPos = normalizeCommandPos(pos);
     if (this._buffer && typeof this._buffer.addSinkRepair === 'function') {
-      return this._buffer.addSinkRepair(this._outputName, commandPos);
+      return this._buffer.addSinkRepair(this._channelName, commandPos);
     }
     return Promise.resolve(this._repairNow());
   }
@@ -757,7 +757,7 @@ function createSinkChannel(frame, buffer, channelName, context, sink) {
 class SequenceChannel extends SinkChannel {
   constructor(frame, buffer, channelName, context, sink) {
     super(frame, buffer, channelName, context, sink);
-    this._outputType = 'sequence';
+    this._channelType = 'sequence';
   }
 
   beginTransaction() {
@@ -820,8 +820,8 @@ function createSequenceChannel(frame, buffer, channelName, context, sink) {
 function getChannel(frame, channelName) {
   let current = frame;
   while (current) {
-    if (current._outputs && Object.prototype.hasOwnProperty.call(current._outputs, channelName)) {
-      return current._outputs[channelName];
+    if (current._channels && Object.prototype.hasOwnProperty.call(current._channels, channelName)) {
+      return current._channels[channelName];
     }
     // Channels follow the same scoping rules as variables: lexical parent chain only.
     current = current.parent;
@@ -830,7 +830,7 @@ function getChannel(frame, channelName) {
 }
 
 function declareChannel(frame, buffer, channelName, channelType, context, initializer = null) {
-  frame._outputs = frame._outputs || Object.create(null);
+  frame._channels = frame._channels || Object.create(null);
 
   const targetBuffer = buffer;
   if (!targetBuffer) {
@@ -839,31 +839,31 @@ function declareChannel(frame, buffer, channelName, channelType, context, initia
     throw new Error(`Channel "${channelName}" declared without an active CommandBuffer`);
   }
 
-  targetBuffer._outputTypes = targetBuffer._outputTypes || Object.create(null);
-  targetBuffer._outputTypes[channelName] = channelType;
+  targetBuffer._channelTypes = targetBuffer._channelTypes || Object.create(null);
+  targetBuffer._channelTypes[channelName] = channelType;
 
-  const output = (channelType === 'sink')
+  const channel = (channelType === 'sink')
     ? createSinkChannel(frame, targetBuffer, channelName, context, initializer)
     : (channelType === 'sequence')
       ? createSequenceChannel(frame, targetBuffer, channelName, context, initializer)
       : createChannel(frame, targetBuffer, channelName, context, channelType);
 
-  output._buffer = targetBuffer;
-  frame._outputs[channelName] = output;
+  channel._buffer = targetBuffer;
+  frame._channels[channelName] = channel;
 
-  //if (buffer._registerOutput) {
-  targetBuffer._registerOutput(channelName, output);//@todo - this happens always?
-  /*} else if (buffer._outputs instanceof Map) {
-    buffer._outputs.set(outputName, output);
-    output._iterator.bindToCurrentBuffer();
+  //if (buffer._registerChannel) {
+  targetBuffer._registerChannel(channelName, channel);//@todo - this happens always?
+  /*} else if (buffer._channels instanceof Map) {
+    buffer._channels.set(channelName, channel);
+    channel._iterator.bindToCurrentBuffer();
   }*/
 
   if (channelType === 'sink' || channelType === 'sequence') {
     targetBuffer._channelRegistry = targetBuffer._channelRegistry || Object.create(null);
-    targetBuffer._channelRegistry[channelName] = output;
+    targetBuffer._channelRegistry[channelName] = channel;
   }
 
-  return output;
+  return channel;
 }
 
 function finalizeUnobservedSinks(frame, context) {

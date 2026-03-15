@@ -244,22 +244,22 @@ export class AsyncEnvironment {
   addDataMethods(methods: Record<string, (...args: any[]) => any>): this;
 
   /**
-   * Registers a command handler class that will be instantiated once for each script run.
+   * Registers a command channel class that will be instantiated once for each script run.
    * This is the "factory" pattern, providing a clean state for each execution.
-   * @param name The name used to invoke the handler in a script (e.g., 'turtle' for `@turtle.forward()`).
-   * @param handlerClass The class constructor to be instantiated.
+   * @param name The name used to invoke the channel in a script (e.g., 'turtle' for `@turtle.forward()`).
+   * @param channelClass The class constructor to be instantiated.
    * @returns The environment instance for chaining.
    */
-  addCommandHandlerClass(name: string, handlerClass: new (...args: any[]) => any): this;
+  addCommandChannelClass(name: string, channelClass: new (...args: any[]) => any): this;
 
   /**
-   * Registers a pre-existing object instance as a command handler.
+   * Registers a pre-existing object instance as a command channel.
    * This "singleton" instance will be used across all script runs.
-   * @param name The name used to invoke the handler in a script.
-   * @param handlerInstance The persistent object instance to use.
+   * @param name The name used to invoke the channel in a script.
+   * @param channelInstance The persistent object instance to use.
    * @returns The environment instance for chaining.
    */
-  addCommandHandler(name: string, handlerInstance: Record<string, any>): this;
+  addCommandChannel(name: string, channelInstance: Record<string, any>): this;
 }
 
 export interface Extension {

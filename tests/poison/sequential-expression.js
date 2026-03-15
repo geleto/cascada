@@ -510,7 +510,7 @@ describe('Sequential Expression Poisoning', function () {
       }
     });
 
-    it('should verify basic locking inside output handler', async function () {
+    it('should verify basic locking inside channel queue', async function () {
       const script = `
       var result = {}
       api.users!.fail()

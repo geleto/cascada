@@ -1,7 +1,7 @@
 /**
- * CompileBuffer - Output buffer management module
+ * CompileBuffer - channel buffer management module
  *
- * Handles all output buffering operations for Cascada's deferred output system.
+ * Handles all channel buffering operations for Cascada's deferred output system.
  * Manages buffer stacks, async buffer operations, and channel command compilation.
  */
 
@@ -16,15 +16,15 @@ const CHANNEL_COMMAND_CLASS = {
   text: 'TextCommand',
   var: 'VarCommand'
 };
-const DEFAULT_TEMPLATE_TEXT_OUTPUT = '__text__';
+const DEFAULT_TEMPLATE_TEXT_CHANNEL = '__text__';
 
 class CompileBuffer {
   constructor(compiler) {
     this.compiler = compiler;
     this.currentBuffer = null;
-    this.currentTextOutputVer = null;
-    this.currentTextOutputName = DEFAULT_TEMPLATE_TEXT_OUTPUT;
-    this.currentWaitedOutputName = null;
+    this.currentTextChannelVar = null;
+    this.currentTextChannelName = DEFAULT_TEMPLATE_TEXT_CHANNEL;
+    this.currentWaitedChannelName = null;
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
     // @otodo - evaluate these buffers, we shall be able to store
     // the values in the frame, the only probblem is when node.isAsync
@@ -38,15 +38,15 @@ class CompileBuffer {
    *
    * @param {string} bufferId
    * @param {string|null} parentBufferId
-   * @param {string} textOutputId
+   * @param {string} textChannelVar
    */
-  initManagedBuffer(bufferId, parentBufferId, textOutputId) {
+  initManagedBuffer(bufferId, parentBufferId, textChannelVar) {
     if (this.compiler.asyncMode) {
-      const textId = textOutputId || `${bufferId}_textOutputVar`;
+      const textId = textChannelVar || `${bufferId}_textChannelVar`;
       const parentArg = parentBufferId || 'null';
       this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, frame);`);
       if (!this.compiler.scriptMode) {
-        this.compiler.emit.line(`let ${textId} = runtime.declareChannel(frame, ${bufferId}, "${this.currentTextOutputName}", "text", context, null);`);
+        this.compiler.emit.line(`let ${textId} = runtime.declareChannel(frame, ${bufferId}, "${this.currentTextChannelName}", "text", context, null);`);
       }
     } else {
       this.compiler.emit.line(`let ${bufferId} = "";`);
@@ -60,21 +60,21 @@ class CompileBuffer {
     return this.currentBuffer;
   }
 
-  // Scope current waited output binding for the emitted code region.
-  // Pass null to explicitly compile without an own waited output.
-  withOwnWaitedOutput(waitedOutputName, emitFunc) {
-    const prevWaitedOutputName = this.currentWaitedOutputName;
-    this.currentWaitedOutputName = waitedOutputName;
+  // Scope current waited channel binding for the emitted code region.
+  // Pass null to explicitly compile without an own waited channel.
+  withOwnWaitedChannel(waitedChannelName, emitFunc) {
+    const prevWaitedChannelName = this.currentWaitedChannelName;
+    this.currentWaitedChannelName = waitedChannelName;
     try {
       return emitFunc();
     } finally {
-      this.currentWaitedOutputName = prevWaitedOutputName;
+      this.currentWaitedChannelName = prevWaitedChannelName;
     }
   }
 
-  // Compile a region with no own waited output binding.
-  skipOwnWaitedOutput(emitFunc) {
-    return this.withOwnWaitedOutput(null, emitFunc);
+  // Compile a region with no own waited channel binding.
+  skipOwnWaitedChannel(emitFunc) {
+    return this.withOwnWaitedChannel(null, emitFunc);
   }
 
   _getBufferAccess() {
@@ -85,7 +85,7 @@ class CompileBuffer {
   _emitTemplateTextCommandExpression(valueExpression, positionNode, normalizeArgs = false) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    return `new runtime.TextCommand({ channelName: "${this.currentTextOutputName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
+    return `new runtime.TextCommand({ channelName: "${this.currentTextChannelName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
   }
 
   _emitPositionLiteral(positionNode) {
@@ -207,25 +207,25 @@ class CompileBuffer {
     this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
   }
 
-  emitAddCommand(frame, outputName, valueExpr, positionNode = null, emitTextCommand = false) {
+  emitAddCommand(frame, channelName, valueExpr, positionNode = null, emitTextCommand = false) {
     if (emitTextCommand) {
       this.compiler.emit.line(
-        `${this.currentBuffer}.addText(${valueExpr}, ${this._emitPositionLiteral(positionNode)}, "${outputName}")`
+        `${this.currentBuffer}.addText(${valueExpr}, ${this._emitPositionLiteral(positionNode)}, "${channelName}")`
       );
       return;
     }
-    this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${outputName}");`);
+    this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${channelName}");`);
   }
 
   emitOwnWaitedConcurrencyResolve(frame, valueExpr, positionNode = null) {
     // Limited-loop timing hook:
     // Emit a WaitResolveCommand only when current compilation scope owns a
-    // waited output (`__waited__*`). Outside that scope this is a no-op.
+    // waited channel (`__waited__*`). Outside that scope this is a no-op.
     //
     // This command is for iteration-completion timing only (used by waitApplied).
     // It must not change functional error propagation semantics.
-    const waitedOutputName = this.currentWaitedOutputName;
-    if (!this.compiler.asyncMode || !waitedOutputName) {
+    const waitedChannelName = this.currentWaitedChannelName;
+    if (!this.compiler.asyncMode || !waitedChannelName) {
       return;
     }
     // Register as usage, not mutation: waited commands are bookkeeping and
@@ -233,24 +233,24 @@ class CompileBuffer {
     // WaitResolveCommand resolves plain promises and aggregate roots; runtime
     // command apply intentionally swallows resolution errors (timing-only wait).
     this.compiler.emit.line(
-      `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedOutputName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedOutputName}");`
+      `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedChannelName}");`
     );
   }
 
-  emitAddSequenceGet(frame, outputName, commandName, subpath, positionNode) {
+  emitAddSequenceGet(frame, channelName, commandName, subpath, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addSequenceGet("${outputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addSequenceGet("${channelName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddSequenceCall(frame, outputName, commandName, subpath, argsExpr, positionNode) {
+  emitAddSequenceCall(frame, channelName, commandName, subpath, argsExpr, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addSequenceCall("${outputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${argsExpr}, ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addSequenceCall("${channelName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${argsExpr}, ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddSnapshot(frame, outputName, positionNode, asExpression = false) {
-    const snapshotExpr = `${this.currentBuffer}.addSnapshot("${outputName}", ${this._emitPositionLiteral(positionNode)})`;
+  emitAddSnapshot(frame, channelName, positionNode, asExpression = false) {
+    const snapshotExpr = `${this.currentBuffer}.addSnapshot("${channelName}", ${this._emitPositionLiteral(positionNode)})`;
     if (asExpression) {
       return snapshotExpr;
     }
@@ -258,21 +258,21 @@ class CompileBuffer {
   }
 
   // Emit an ordered raw snapshot command (no nested poison inspection).
-  emitAddRawSnapshot(frame, outputName, positionNode) {
+  emitAddRawSnapshot(frame, channelName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addRawSnapshot("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addRawSnapshot("${channelName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddIsError(frame, outputName, positionNode) {
+  emitAddIsError(frame, channelName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addIsError("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addIsError("${channelName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddGetError(frame, outputName, positionNode) {
+  emitAddGetError(frame, channelName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addGetError("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addGetError("${channelName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
@@ -292,7 +292,7 @@ class CompileBuffer {
    * Handles declared channels (data/text/value/sink) and custom sinks
    */
   compileChannelCommand(node, frame) {
-    // Preserve output routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
+    // Preserve channel routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
     const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
     const channelName = this.compiler.sequential._extractStaticPathRoot(pathNode);
 
@@ -307,21 +307,21 @@ class CompileBuffer {
   /**
    * Add value to buffer (sync mode)
    */
-  addToBuffer(node, frame, renderFunction, positionNode = node, outputName, emitTextCommand = false) {
+  addToBuffer(node, frame, renderFunction, positionNode = node, channelName, emitTextCommand = false) {
     if (this.compiler.asyncMode) {
       if (emitTextCommand) {
         const valueId = this.compiler._tmpid();
         this.compiler.emit(`let ${valueId} = `);
         renderFunction.call(this.compiler, frame);
         this.compiler.emit.line(';');
-        this.emitAddCommand(frame, outputName, valueId, positionNode, true);
+        this.emitAddCommand(frame, channelName, valueId, positionNode, true);
         return;
       } else {
         const valueId = this.compiler._tmpid();
         this.compiler.emit(`let ${valueId} = `);
         renderFunction.call(this.compiler, frame);
         this.compiler.emit.line(';');
-        this.emitAddCommand(frame, outputName, valueId);
+        this.emitAddCommand(frame, channelName, valueId);
         return;
       }
     } else {
@@ -336,7 +336,7 @@ class CompileBuffer {
   /**
    * Add value to buffer (async mode with error handling)
    */
-  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, channelName = null, outputName, emitTextCommand = false) {
+  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, channelName = null, targetChannelName, emitTextCommand = false) {
     void channelName;
     const returnId = this.compiler._tmpid();
     if (this.compiler.asyncMode) {
@@ -352,7 +352,7 @@ class CompileBuffer {
         ? this._emitTemplateTextCommandExpression(returnId, positionNode)
         : returnId;
       this.compiler.emit.line(`return ${valueExpr};`);
-      this.compiler.emit.line(`})(), "${outputName}");`);
+      this.compiler.emit.line(`})(), "${targetChannelName}");`);
 
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');
@@ -365,7 +365,7 @@ class CompileBuffer {
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       if (this.compiler.asyncMode) {
-        this.emitAddCommand(frame, outputName, returnId, positionNode, emitTextCommand);
+        this.emitAddCommand(frame, targetChannelName, returnId, positionNode, emitTextCommand);
       } else {
         this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
       }
@@ -377,7 +377,7 @@ class CompileBuffer {
    * Use when value construction does not require addAsyncArgsCommand producer semantics.
    * The value is added directly to the current buffer (no extra async block).
    */
-  asyncAddValueToBuffer(node, frame, renderFunction, positionNode = node, outputName, emitTextCommand = false) {
+  asyncAddValueToBuffer(node, frame, renderFunction, positionNode = node, channelName, emitTextCommand = false) {
     void node;
     const returnId = this.compiler._tmpid();
     this.compiler.emit.line(`let ${returnId};`);
@@ -386,7 +386,7 @@ class CompileBuffer {
     const valueExpr = emitTextCommand
       ? this._emitTemplateTextCommandExpression(returnId, positionNode)
       : returnId;
-    this.emitAddCommand(frame, outputName, valueExpr, positionNode, emitTextCommand);
+    this.emitAddCommand(frame, channelName, valueExpr, positionNode, emitTextCommand);
   }
 
   /**
@@ -397,7 +397,7 @@ class CompileBuffer {
     frame,
     positionNode = node,
     channelName = null,
-    outputName,
+    targetChannelName,
     emitTextCommand = false,
     normalizeTextArgs = false,
     emitFunc = null,
@@ -434,7 +434,7 @@ class CompileBuffer {
       ? this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs)
       : valueId;
     this.compiler.emit.line(`return ${valueExpr};`);
-    this.compiler.emit.line(`})(), "${outputName}");`);
+    this.compiler.emit.line(`})(), "${targetChannelName}");`);
 
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit.line('}');
@@ -458,10 +458,10 @@ class CompileBuffer {
       const nestedBufferId = this.compiler._tmpid();
       this.compiler.emit.line(`let ${nestedBufferId} = currentBuffer;`);
       const prevBuffer = this.currentBuffer;
-      const prevTextOutput = this.currentTextOutputVer;
-      const prevTextOutputName = this.currentTextOutputName;
+      const prevTextChannelVar = this.currentTextChannelVar;
+      const prevTextChannelName = this.currentTextChannelName;
       this.currentBuffer = nestedBufferId;
-      this.currentTextOutputVer = null;
+      this.currentTextChannelVar = null;
 
       let callbackValue;
       try {
@@ -481,8 +481,8 @@ class CompileBuffer {
           callbackValue?.hasConcurrencyLimit
         );
         this.currentBuffer = prevBuffer;
-        this.currentTextOutputVer = prevTextOutput;
-        this.currentTextOutputName = prevTextOutputName;
+        this.currentTextChannelVar = prevTextChannelVar;
+        this.currentTextChannelName = prevTextChannelName;
       }
 
       const result = callbackValue && typeof callbackValue === 'object' &&
@@ -506,5 +506,6 @@ class CompileBuffer {
 }
 
 module.exports = CompileBuffer;
-module.exports.DEFAULT_TEMPLATE_TEXT_OUTPUT = DEFAULT_TEMPLATE_TEXT_OUTPUT;
+module.exports.DEFAULT_TEMPLATE_TEXT_CHANNEL = DEFAULT_TEMPLATE_TEXT_CHANNEL;
+module.exports.DEFAULT_TEMPLATE_TEXT_OUTPUT = DEFAULT_TEMPLATE_TEXT_CHANNEL;
 

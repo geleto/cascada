@@ -112,9 +112,9 @@ class CompileAnalysis {
       declaresInParent: normalizeAnalysisList(existingAnalysis.declaresInParent, 'declaresInParent'),
       uses: normalizeAnalysisList(existingAnalysis.uses, 'uses'),
       mutates: normalizeAnalysisList(existingAnalysis.mutates, 'mutates'),
-      declaredOutputs: null,
-      usedOutputs: null,
-      mutatedOutputs: null
+      declaredChannels: existingAnalysis.declaredChannels || null,
+      usedChannels: existingAnalysis.usedChannels || null,
+      mutatedChannels: existingAnalysis.mutatedChannels || null
     }, existingAnalysis);
     node._analysis.node = node;
     node._analysis.parent = parentAnalysis;
@@ -162,24 +162,24 @@ class CompileAnalysis {
 
   findDeclaration(analysis, name) {
     const owner = this.findDeclarationOwner(analysis, name);
-    if (!owner || !owner.declaredOutputs) {
+    if (!owner || !owner.declaredChannels) {
       return null;
     }
-    return owner.declaredOutputs.get(name) || null;
+    return owner.declaredChannels.get(name) || null;
   }
 
   findDeclarationInCurrentScope(analysis, name) {
     const owner = this.getScopeOwner(analysis);
-    if (!owner || !owner.declaredOutputs) {
+    if (!owner || !owner.declaredChannels) {
       return null;
     }
-    return owner.declaredOutputs.get(name) || null;
+    return owner.declaredChannels.get(name) || null;
   }
 
   findDeclarationOwner(analysis, name) {
     let current = analysis;
     while (current) {
-      if (current.declaredOutputs && current.declaredOutputs.has(name)) {
+      if (current.declaredChannels && current.declaredChannels.has(name)) {
         return current;
       }
       if (current.scopeBoundary) {
@@ -209,23 +209,23 @@ class CompileAnalysis {
     return false;
   }
 
-  getIncludeVisibleVarOutputs(analysis) {
-    const visibleOutputs = [];
+  getIncludeVisibleVarChannels(analysis) {
+    const visibleChannels = [];
     const visibleNames = new Set();
     let current = analysis;
     while (current) {
-      if (current.declaredOutputs) {
-        current.declaredOutputs.forEach((decl, name) => {
+      if (current.declaredChannels) {
+        current.declaredChannels.forEach((decl, name) => {
           if (!decl || decl.type !== 'var') {
             return;
           }
           const runtimeName = decl.runtimeName || name;
-          const baseName = this.getBaseOutputName(runtimeName);
+          const baseName = this.getBaseChannelName(runtimeName);
           if (visibleNames.has(baseName)) {
             return;
           }
           visibleNames.add(baseName);
-          visibleOutputs.push({
+          visibleChannels.push({
             name,
             decl,
             runtimeName,
@@ -238,10 +238,10 @@ class CompileAnalysis {
       }
       current = current.parent;
     }
-    return visibleOutputs;
+    return visibleChannels;
   }
 
-  getBaseOutputName(runtimeName) {
+  getBaseChannelName(runtimeName) {
     const hashIndex = runtimeName.indexOf('#');
     if (hashIndex === -1) {
       return runtimeName;
@@ -257,7 +257,7 @@ class CompileAnalysis {
       if (!analysis) {
         continue;
       }
-      analysis.declaredOutputs = null;
+      analysis.declaredChannels = null;
     }
 
     for (let i = 0; i < nodesList.length; i++) {
@@ -276,9 +276,9 @@ class CompileAnalysis {
         if (!decl || !decl.name) {
           continue;
         }
-        owner.declaredOutputs = owner.declaredOutputs || new Map();
-        if (!owner.declaredOutputs.has(decl.name)) {
-          owner.declaredOutputs.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
+        owner.declaredChannels = owner.declaredChannels || new Map();
+        if (!owner.declaredChannels.has(decl.name)) {
+          owner.declaredChannels.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
             declarationOrigin: analysis
           })));
         }
@@ -297,9 +297,9 @@ class CompileAnalysis {
             if (!decl || !decl.name) {
               continue;
             }
-            parentOwner.declaredOutputs = parentOwner.declaredOutputs || new Map();
-            if (!parentOwner.declaredOutputs.has(decl.name)) {
-              parentOwner.declaredOutputs.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
+            parentOwner.declaredChannels = parentOwner.declaredChannels || new Map();
+            if (!parentOwner.declaredChannels.has(decl.name)) {
+              parentOwner.declaredChannels.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
                 declarationOrigin: analysis
               })));
             }
@@ -343,14 +343,14 @@ class CompileAnalysis {
       if (!Array.isArray(declares) || declares.length === 0 || !owner) {
         return;
       }
-      owner.declaredOutputs = owner.declaredOutputs || new Map();
+      owner.declaredChannels = owner.declaredChannels || new Map();
       for (let i = 0; i < declares.length; i++) {
         const decl = declares[i];
         if (!decl || !decl.name) {
           continue;
         }
         this._validateReservedDeclarationName(analysis, decl);
-        const currentScopeDecl = owner.declaredOutputs.get(decl.name) || null;
+        const currentScopeDecl = owner.declaredChannels.get(decl.name) || null;
         if (analysis.node.typename === 'Macro') {
           if (decl.parentOwned) {
             if (currentScopeDecl) {
@@ -358,8 +358,8 @@ class CompileAnalysis {
             }
             let current = owner.parent;
             while (current) {
-              if (current.declaredOutputs && current.declaredOutputs.has(decl.name)) {
-                this._validateDeclarationConflict(analysis, decl, current.declaredOutputs.get(decl.name));
+              if (current.declaredChannels && current.declaredChannels.has(decl.name)) {
+                this._validateDeclarationConflict(analysis, decl, current.declaredChannels.get(decl.name));
               }
               if (current.scopeBoundary) {
                 break;
@@ -376,8 +376,8 @@ class CompileAnalysis {
           }
           let current = owner.parent;
           while (current) {
-            if (current.declaredOutputs && current.declaredOutputs.has(decl.name)) {
-              this._validateDeclarationConflict(analysis, decl, current.declaredOutputs.get(decl.name));
+            if (current.declaredChannels && current.declaredChannels.has(decl.name)) {
+              this._validateDeclarationConflict(analysis, decl, current.declaredChannels.get(decl.name));
             }
             if (current.scopeBoundary) {
               break;
@@ -385,8 +385,8 @@ class CompileAnalysis {
             current = current.parent;
           }
         }
-        if (!owner.declaredOutputs.has(decl.name)) {
-          owner.declaredOutputs.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
+        if (!owner.declaredChannels.has(decl.name)) {
+          owner.declaredChannels.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
             declarationOrigin
           })));
         }
@@ -485,7 +485,7 @@ class CompileAnalysis {
       return;
     }
     const scopeOwner = this.getScopeOwner(analysis);
-    const currentTextOutput = this.getCurrentTextOutput(analysis);
+    const currentTextChannel = this.getCurrentTextChannel(analysis);
     const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
     for (let i = 0; i < localMutates.length; i++) {
       const name = localMutates[i];
@@ -495,7 +495,7 @@ class CompileAnalysis {
       if (name && name.charAt(0) === '!') {
         continue;
       }
-      if (name === currentTextOutput) {
+      if (name === currentTextChannel) {
         continue;
       }
       const declarationOwner = this.findDeclarationOwner(analysis, name);
@@ -518,7 +518,7 @@ class CompileAnalysis {
     if (!analysis) {
       return;
     }
-    const currentTextOutput = this.getCurrentTextOutput(analysis);
+    const currentTextChannel = this.getCurrentTextChannel(analysis);
     const localUses = Array.isArray(analysis.uses) ? analysis.uses : [];
     for (let i = 0; i < localUses.length; i++) {
       const name = localUses[i];
@@ -528,7 +528,7 @@ class CompileAnalysis {
       if (name && name.charAt(0) === '!') {
         continue;
       }
-      if (name === currentTextOutput) {
+      if (name === currentTextChannel) {
         continue;
       }
       if (!this.findDeclaration(analysis, name)) {
@@ -594,91 +594,91 @@ class CompileAnalysis {
   _finalizeOutputUsage(node) {
     if (!node) {
       return {
-        usedOutputs: new Set(),
-        mutatedOutputs: new Set()
+        usedChannels: new Set(),
+        mutatedChannels: new Set()
       };
     }
     if (Array.isArray(node)) {
       const aggregate = {
-        usedOutputs: new Set(),
-        mutatedOutputs: new Set()
+        usedChannels: new Set(),
+        mutatedChannels: new Set()
       };
       node.forEach((child) => {
         const childAggregate = this._finalizeOutputUsage(child);
-        childAggregate.usedOutputs.forEach((name) => aggregate.usedOutputs.add(name));
-        childAggregate.mutatedOutputs.forEach((name) => aggregate.mutatedOutputs.add(name));
+        childAggregate.usedChannels.forEach((name) => aggregate.usedChannels.add(name));
+        childAggregate.mutatedChannels.forEach((name) => aggregate.mutatedChannels.add(name));
       });
       return aggregate;
     }
     if (!(node instanceof nodes.Node)) {
       return {
-        usedOutputs: new Set(),
-        mutatedOutputs: new Set()
+        usedChannels: new Set(),
+        mutatedChannels: new Set()
       };
     }
 
     const analysis = node._analysis || {};
     const localUses = Array.isArray(analysis.uses) ? analysis.uses : [];
     const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
-    const usedOutputs = new Set();
-    const mutatedOutputs = new Set();
+    const usedChannels = new Set();
+    const mutatedChannels = new Set();
 
     localUses.forEach((name) => {
       if (!name) {
         return;
       }
-      usedOutputs.add(name);
+      usedChannels.add(name);
     });
     localMutates.forEach((name) => {
       if (!name) {
         return;
       }
-      usedOutputs.add(name);
-      mutatedOutputs.add(name);
+      usedChannels.add(name);
+      mutatedChannels.add(name);
     });
 
     node.fields.forEach((field) => {
       const childAggregate = this._finalizeOutputUsage(node[field]);
-      childAggregate.usedOutputs.forEach((name) => usedOutputs.add(name));
-      childAggregate.mutatedOutputs.forEach((name) => mutatedOutputs.add(name));
+      childAggregate.usedChannels.forEach((name) => usedChannels.add(name));
+      childAggregate.mutatedChannels.forEach((name) => mutatedChannels.add(name));
     });
 
-    analysis.usedOutputs = usedOutputs.size > 0 ? usedOutputs : null;
-    analysis.mutatedOutputs = mutatedOutputs.size > 0 ? mutatedOutputs : null;
+    analysis.usedChannels = usedChannels.size > 0 ? usedChannels : null;
+    analysis.mutatedChannels = mutatedChannels.size > 0 ? mutatedChannels : null;
 
     if (analysis.scopeBoundary) {
       return {
-        usedOutputs: new Set(),
-        mutatedOutputs: new Set()
+        usedChannels: new Set(),
+        mutatedChannels: new Set()
       };
     }
 
-    const declaredHere = analysis.declaredOutputs instanceof Map ? analysis.declaredOutputs : null;
+    const declaredHere = analysis.declaredChannels instanceof Map ? analysis.declaredChannels : null;
     if (!declaredHere || declaredHere.size === 0) {
       return {
-        usedOutputs,
-        mutatedOutputs
+        usedChannels,
+        mutatedChannels
       };
     }
 
-    const parentUsedOutputs = new Set(usedOutputs);
-    const parentMutatedOutputs = new Set(mutatedOutputs);
+    const parentUsedChannels = new Set(usedChannels);
+    const parentMutatedChannels = new Set(mutatedChannels);
 
     declaredHere.forEach((_decl, name) => {
       if (!name) {
         return;
       }
-      parentUsedOutputs.delete(name);
-      parentMutatedOutputs.delete(name);
+      parentUsedChannels.delete(name);
+      parentMutatedChannels.delete(name);
     });
 
     return {
-      usedOutputs: parentUsedOutputs,
-      mutatedOutputs: parentMutatedOutputs
+      usedChannels: parentUsedChannels,
+      mutatedChannels: parentMutatedChannels
     };
   }
 
-  getCurrentTextOutput(analysis) {
+  getCurrentTextChannel(analysis) {
     let current = analysis;
     while (current) {
       if (current.textOutput) {
@@ -688,6 +688,7 @@ class CompileAnalysis {
     }
     return null;
   }
+
 }
 
 module.exports = CompileAnalysis;

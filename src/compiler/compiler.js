@@ -179,7 +179,7 @@ class Compiler extends CompilerBase {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
 
-      const callTextChannelName = this.buffer.currentTextOutputName;
+      const callTextChannelName = this.buffer.currentTextChannelName;
       frame = this.buffer.asyncAddToBufferScoped(
         node,
         frame,
@@ -211,7 +211,7 @@ class Compiler extends CompilerBase {
 
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      const callbackTextChannelName = this.buffer.currentTextOutputName;
+      const callbackTextChannelName = this.buffer.currentTextChannelName;
       frame = this.buffer.asyncAddToBufferScoped(
         node,
         frame,
@@ -524,7 +524,7 @@ class Compiler extends CompilerBase {
 
             // Collect channels from this branch
             if (this.asyncMode) {
-              branchChannels.push(new Set(c.body._analysis.usedOutputs || []));
+              branchChannels.push(new Set(c.body._analysis.usedChannels || []));
             }
           }, c.body); // Pass body as code position
           this.emit.line('break;');
@@ -549,7 +549,7 @@ class Compiler extends CompilerBase {
 
           // Collect channels from default
           if (this.asyncMode) {
-            branchChannels.push(new Set(node.default._analysis.usedOutputs || []));
+            branchChannels.push(new Set(node.default._analysis.usedChannels || []));
           }
         }, node.default); // Pass default as code position
       } else if (this.asyncMode) {
@@ -650,11 +650,11 @@ class Compiler extends CompilerBase {
         // Sequence lock mutations are tracked via used channel names.
         const resolvedSequenceTargets = new Set();
         const modifiedLocks = new Set();
-        const bodyUsedOutputs = Array.from(node.body._analysis.usedOutputs || []);
-        if (bodyUsedOutputs.length > 0) {
-          for (const outputName of bodyUsedOutputs) {
-            if (outputName && outputName.startsWith('!')) {
-              modifiedLocks.add(outputName);
+        const bodyUsedChannels = Array.from(node.body._analysis.usedChannels || []);
+        if (bodyUsedChannels.length > 0) {
+          for (const channelName of bodyUsedChannels) {
+            if (channelName && channelName.startsWith('!')) {
+              modifiedLocks.add(channelName);
             }
           }
         }
@@ -706,8 +706,8 @@ class Compiler extends CompilerBase {
           );
         }
 
-        let guardChannels = this._getGuardedOutputNames(
-          bodyUsedOutputs,
+        let guardChannels = this._getGuardedChannelNames(
+          bodyUsedChannels,
           guardTargets,
           node.body._analysis
         );
@@ -718,10 +718,10 @@ class Compiler extends CompilerBase {
           }
           guardChannels = Array.from(merged);
         }
-        const bodyDeclaredOutputs = Array.from((node.body._analysis.declaredOutputs || new Map()).keys());
-        if (bodyDeclaredOutputs.length > 0) {
+        const bodyDeclaredChannels = Array.from((node.body._analysis.declaredChannels || new Map()).keys());
+        if (bodyDeclaredChannels.length > 0) {
           const merged = new Set(guardChannels);
-          for (const name of bodyDeclaredOutputs) {
+          for (const name of bodyDeclaredChannels) {
             merged.add(name);
           }
           guardChannels = Array.from(merged);
@@ -772,12 +772,12 @@ class Compiler extends CompilerBase {
     frame = guardResult.frame;
   }
 
-  _getGuardedOutputNames(usedOutputs, guardTargets, analysis) {
+  _getGuardedChannelNames(usedChannels, guardTargets, analysis) {
     let used = [];
-    if (usedOutputs instanceof Set) {
-      used = Array.from(usedOutputs);
-    } else if (Array.isArray(usedOutputs)) {
-      used = usedOutputs;
+    if (usedChannels instanceof Set) {
+      used = Array.from(usedChannels);
+    } else if (Array.isArray(usedChannels)) {
+      used = usedChannels;
     }
 
     if (!guardTargets) {
@@ -795,7 +795,7 @@ class Compiler extends CompilerBase {
       // Template implicit text output uses an internal channel name (__text__...).
       // Preserve selector ergonomics: guarding `text` targets the active text channel.
       if (!this.scriptMode && guardedSet.has('text')) {
-        guardedSet.add(this.buffer.currentTextOutputName);
+        guardedSet.add(this.buffer.currentTextChannelName);
       }
       const guardedTypes = new Set(hasTypedChannels ? guardTargets.typeTargets : []);
       return used.filter((name) => {
@@ -809,7 +809,7 @@ class Compiler extends CompilerBase {
         if (channelDecl) {
           return guardedTypes.has(channelDecl.type);
         }
-        if (!this.scriptMode && name === this.buffer.currentTextOutputName && guardedTypes.has('text')) {
+        if (!this.scriptMode && name === this.buffer.currentTextChannelName && guardedTypes.has('text')) {
           return true;
         }
         return guardedTypes.has(name);
@@ -872,7 +872,7 @@ class Compiler extends CompilerBase {
           resolvedChannels.add(name);
         }
         if (!this.scriptMode && !isDeclaredVar && !channelDecl && name === 'text') {
-          resolvedChannels.add(this.buffer.currentTextOutputName);
+          resolvedChannels.add(this.buffer.currentTextChannelName);
           continue;
         }
         if (!isDeclaredVar && !channelDecl) {
@@ -947,9 +947,9 @@ class Compiler extends CompilerBase {
         this.emit('');
         this.emit('}');  // No re-throw - execution continues with poisoned vars
 
-        trueBranchChannels = new Set(node.body._analysis.usedOutputs || []);
+        trueBranchChannels = new Set(node.body._analysis.usedChannels || []);
         falseBranchChannels = node.else_
-          ? new Set(node.else_._analysis.usedOutputs || [])
+          ? new Set(node.else_._analysis.usedChannels || [])
           : new Set();
         allBranchChannels = new Set([...trueBranchChannels, ...falseBranchChannels]);
 
@@ -1261,7 +1261,7 @@ class Compiler extends CompilerBase {
           returnStatement = `astate.waitAllClosures().then(() => {${bufferId}.markFinishedAndPatchLinks();${errorCheck}return undefined;})`;
         } else {
           // Snapshot must be enqueued before this managed buffer is finished.
-          this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextOutputName}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
+          this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
 
           const needsSafeString = !this.scriptMode;
           const safeStringCall = needsSafeString
@@ -1417,15 +1417,15 @@ class Compiler extends CompilerBase {
     if (this.scriptMode) {
       return {};
     }
-    const textOutput = this.analysis.getCurrentTextOutput(node._analysis);
-    const includeVisibleOutputs = this.analysis.getIncludeVisibleVarOutputs(node._analysis)
+    const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
+    const includeVisibleChannels = this.analysis.getIncludeVisibleVarChannels(node._analysis)
       .map((entry) => entry.runtimeName);
-    const uses = textOutput
-      ? [textOutput, ...includeVisibleOutputs]
-      : includeVisibleOutputs;
+    const uses = textChannel
+      ? [textChannel, ...includeVisibleChannels]
+      : includeVisibleChannels;
     return {
       uses,
-      mutates: textOutput ? [textOutput] : []
+      mutates: textChannel ? [textChannel] : []
     };
   }
 
@@ -1445,7 +1445,7 @@ class Compiler extends CompilerBase {
     return {
       createScope: true,
       scopeBoundary: false,
-      textOutput: this.scriptMode ? null : `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT}${this._tmpid()}`
+      textOutput: this.scriptMode ? null : `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL}${this._tmpid()}`
     };
   }
 
@@ -1453,13 +1453,13 @@ class Compiler extends CompilerBase {
     // we need to temporarily override the current buffer id as 'output'
     // so the set block writes to the capture channel instead of the buffer
     const buffer = this.buffer.currentBuffer;
-    const textOutput = this.buffer.currentTextOutputVer;
-    const textOutputName = this.buffer.currentTextOutputName;
+    const textChannelVar = this.buffer.currentTextChannelVar;
+    const textChannelName = this.buffer.currentTextChannelName;
     const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
     this.buffer.currentBuffer = 'output';
-    this.buffer.currentTextOutputVer = 'output_textChannelVar';
+    this.buffer.currentTextChannelVar = 'output_textChannelVar';
     if (!this.scriptMode) {
-      this.buffer.currentTextOutputName = captureTextOutputName;
+      this.buffer.currentTextChannelName = captureTextOutputName;
     }
     if (node.isAsync) {
       const res = this._tmpid();
@@ -1504,19 +1504,19 @@ class Compiler extends CompilerBase {
 
     // and of course, revert back to the old buffer id
     this.buffer.currentBuffer = buffer;
-    this.buffer.currentTextOutputVer = textOutput;
-    this.buffer.currentTextOutputName = textOutputName;
+    this.buffer.currentTextChannelVar = textChannelVar;
+    this.buffer.currentTextChannelName = textChannelName;
   }
 
   // @todo - get rid of the asyncAddToBufferBegin after we have switch var to the new value implementation
   analyzeOutput(node) {
-    const textOutput = !this.scriptMode
-      ? this.analysis.getCurrentTextOutput(node._analysis)
+    const textChannel = !this.scriptMode
+      ? this.analysis.getCurrentTextChannel(node._analysis)
       : null;
     return (this.scriptMode) ? {}
       : {
-        uses: [textOutput],
-        mutates: [textOutput]
+        uses: [textChannel],
+        mutates: [textChannel]
       };
   }
 
@@ -1529,7 +1529,7 @@ class Compiler extends CompilerBase {
         node || undefined
       );
     }
-    const textChannelName = this.buffer.currentTextOutputName;
+    const textChannelName = this.buffer.currentTextChannelName;
     if (this.asyncMode) {
       const children = node.children;
       children.forEach(child => {
@@ -1545,7 +1545,7 @@ class Compiler extends CompilerBase {
         // Adding any command to the buffer
         // In the future, when we make the CommandBuffer tree synchronously before any expression evaluation,
         // This will not be needed anymore
-        const forceWrapRootExpression = this._expressionAddsCommands(child) && !this.buffer.currentWaitedOutputName;
+        const forceWrapRootExpression = this._expressionAddsCommands(child) && !this.buffer.currentWaitedChannelName;
         frame = this.buffer.asyncAddToBufferScoped(
           node,
           frame,
@@ -1620,7 +1620,7 @@ class Compiler extends CompilerBase {
     return children;
   }
 
-  // temp implementation, will use mutatedOutputs instead
+  // temp implementation, will use mutatedChannels instead
   // Will create the CommandBuffer tree before any expression evaluation
   // (but each node will know its current command buffer)
   _expressionAddsCommands(node) {
@@ -1674,7 +1674,7 @@ class Compiler extends CompilerBase {
   analyzeRoot(node) {
     const declares = [];
     if (!this.scriptMode) {
-      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT, type: 'text', initializer: null });
+      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
     }
     const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
@@ -1686,7 +1686,7 @@ class Compiler extends CompilerBase {
       createScope: true,
       scopeBoundary: true,
       declares,
-      textOutput: this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT
+      textOutput: this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL
     };
   }
 
@@ -1758,7 +1758,7 @@ class Compiler extends CompilerBase {
         this.emit.line('    cb(null, undefined);');
       } else {
         this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line(`    cb(null, await ${this.buffer.currentTextOutputVer}.finalSnapshot());`);
+        this.emit.line(`    cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);
       }
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
@@ -1814,20 +1814,20 @@ class Compiler extends CompilerBase {
       this.emit.line('');
       this.compile(block.body, tmpFrame);
       if (this.asyncMode) {
-        const usedOutputs = Array.from(block.body._analysis.usedOutputs || []);
-        const prelinkChannels = usedOutputs.filter((hname) => hname !== this.buffer.currentTextOutputName);
+        const usedChannels = Array.from(block.body._analysis.usedChannels || []);
+        const prelinkChannels = usedChannels.filter((hname) => hname !== this.buffer.currentTextChannelName);
         this.emitLinkWithParentCompositionBuffer(
           prelinkChannels,
           'parentBuffer',
           this.buffer.currentBuffer,
-          'parentBuffer._outputs',
+          'parentBuffer._channels',
           blockPrelinkPos
         );
       }
       if (this.asyncMode) {
         // Block functions in async mode return final text snapshots directly.
         this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line(`return ${this.buffer.currentTextOutputVer}.finalSnapshot();`);
+        this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
         this.emit.endEntryFunction(block, true);
       } else {
         this.emit.endEntryFunction(block);

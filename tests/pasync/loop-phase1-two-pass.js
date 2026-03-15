@@ -108,8 +108,8 @@
       });
     });
 
-    describe('Test 1.3: Handler collection from body', () => {
-      it('should collect handlers from loop body', async () => {
+    describe('Test 1.3: Channel collection from body', () => {
+      it('should collect channels from loop body', async () => {
         const script = `
           data result
           for i in [1, 2, 3]
@@ -120,12 +120,12 @@
 
         const result = await env.renderScriptString(script);
         expect(result.items).to.eql([1, 2, 3]);
-        // Verifies: handlers collected, output produced correctly
+        // Verifies: channels collected, channel data produced correctly
       });
     });
 
-    describe('Test 1.4: Handler collection from else', () => {
-      it('should collect handlers from else block', async () => {
+    describe('Test 1.4: Channel collection from else', () => {
+      it('should collect channels from else block', async () => {
         const script = `
           data result
           for i in []
@@ -138,7 +138,7 @@
 
         const result = await env.renderScriptString(script);
         expect(result.empty).to.be(true);
-        // Verifies: else handlers collected, else output correct
+        // Verifies: else channels collected, else channel data correct
       });
     });
 
@@ -534,8 +534,8 @@
       });
     });
 
-    describe('Test 1.8: Handler collection edge cases', () => {
-      it('should collect multiple different handlers from loop body', async () => {
+    describe('Test 1.8: Channel collection edge cases', () => {
+      it('should collect multiple different channels from loop body', async () => {
         const script = `
           data result
           for i in [1, 2]
@@ -548,7 +548,7 @@
         expect(result.numbers).to.eql([1, 2]);
       });
 
-      it('should collect handlers from nested control structures in loop', async () => {
+      it('should collect channels from nested control structures in loop', async () => {
         const script = `
           data result
           for i in [1, 2, 3]

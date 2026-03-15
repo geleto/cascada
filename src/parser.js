@@ -923,7 +923,7 @@ class Parser extends Obj {
         channelTargets.push('@');
         sequenceTargets.push('!');
       } else if (this.peekToken().type === lexer.TOKEN_SYMBOL) {
-        // Variable, Handler, or Sequence
+        // Variable, Channel, or Sequence
         selectorTok = this.nextToken();
         rawSelector = selectorTok.value;
 

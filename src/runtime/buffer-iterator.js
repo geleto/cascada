@@ -26,8 +26,8 @@ class BufferIterator {
   }
 
   _reset(rootBuffer) {
-    if (this._enteredBuffer && this.outputName) {
-      this._enteredBuffer.onLeaveBuffer(this, this.outputName);
+    if (this._enteredBuffer && this.channelName) {
+      this._enteredBuffer.onLeaveBuffer(this, this.channelName);
     }
 
     this.stack = [];
@@ -67,7 +67,7 @@ class BufferIterator {
     while (this.stack.length > 0) {
       const cursor = this._currentCursor();
       const buffer = cursor.buffer;
-      const arr = buffer.arrays[this.outputName];
+      const arr = buffer.arrays[this.channelName];
       const nextIndex = cursor.index + 1;
 
       if (arr && nextIndex < arr.length && arr[nextIndex] != null) {
@@ -165,19 +165,19 @@ class BufferIterator {
     }
 
     if (leaving && leaving.buffer) {
-      leaving.buffer.onLeaveBuffer(this, this.outputName);
+      leaving.buffer.onLeaveBuffer(this, this.channelName);
     }
 
     this._setCurrentBuffer(parentCursor.buffer, true);
   }
 
   _setCurrentBuffer(buffer, skipLeave = false) {
-    if (!skipLeave && this._enteredBuffer && this.outputName) {
-      this._enteredBuffer.onLeaveBuffer(this, this.outputName);
+    if (!skipLeave && this._enteredBuffer && this.channelName) {
+      this._enteredBuffer.onLeaveBuffer(this, this.channelName);
     }
     this._enteredBuffer = buffer || null;
-    if (buffer && this.outputName) {
-      buffer.onEnterBuffer(this, this.outputName);
+    if (buffer && this.channelName) {
+      buffer.onEnterBuffer(this, this.channelName);
     }
   }
 
@@ -185,8 +185,11 @@ class BufferIterator {
     return this.stack.length > 0 ? this.stack[this.stack.length - 1] : null;
   }
 
-  get outputName() {
-    return this.output ? this.output._outputName : null;
+  get channelName() {
+    if (!this.output) {
+      return null;
+    }
+    return this.output._channelName;
   }
 }
 

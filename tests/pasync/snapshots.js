@@ -38,11 +38,11 @@ if (typeof require !== 'undefined') {
   expectAsyncError = nunjucks.util.expectAsyncError;
 }
 
-describe('output.finalSnapshot', function () {
+describe('channel.finalSnapshot', function () {
   let env;
   let context;
-  const createBuffer = (input, ctx, outputName) => {
-    const targetName = outputName || 'text';
+  const createBuffer = (input, ctx, channelName) => {
+    const targetName = channelName || 'text';
     const cb = new CommandBuffer(ctx || null, null, { parent: null });
     const addItem = (buffer, item) => {
       if (item instanceof CommandBuffer) {
@@ -61,7 +61,7 @@ describe('output.finalSnapshot', function () {
         return;
       }
       if (targetName === 'text') {
-        buffer.add(new TextCommand({ handler: 'text', args: [item], pos: { lineno: 0, colno: 0 } }), targetName);
+        buffer.add(new TextCommand({ channelName: 'text', args: [item], pos: { lineno: 0, colno: 0 } }), targetName);
         return;
       }
       buffer.add(item, targetName);
@@ -74,38 +74,36 @@ describe('output.finalSnapshot', function () {
     cb.markFinishedAndPatchLinks();
     return cb;
   };
-  const makeOutput = (buffer, ctx, outputName) => {
-    const name = outputName || 'text';
+  const makeChannel = (buffer, ctx, channelName) => {
+    const name = channelName || 'text';
     const frame = { parent: null };
     return createChannel(frame, buffer, name, ctx || null, name);
   };
-  const flatten = (buffer, ctx, outputName) => (
-    makeOutput(buffer, ctx, outputName).finalSnapshot()
+  const flatten = (buffer, ctx, channelName) => (
+    makeChannel(buffer, ctx, channelName).finalSnapshot()
   );
-  const flattenSink = (commands, ctx, outputName, sink) => {
+  const flattenSink = (commands, ctx, channelName, sink) => {
     const buffer = new CommandBuffer(ctx, null, { parent: null });
     const frame = { parent: null };
-    const sinkOutput = createSinkChannel(frame, buffer, outputName, ctx || null, sink);
+    const sinkChannel = createSinkChannel(frame, buffer, channelName, ctx || null, sink);
 
-    buffer._outputTypes = Object.create(null);
-    buffer._outputTypes[outputName] = 'sink';
-    // Don't overwrite buffer._outputs - it's already a Map from the constructor
-    // Just ensure the sink output is registered (it should be from constructor)
-    if (buffer._outputs instanceof Map) {
-      buffer._outputs.set(outputName, sinkOutput);
+    buffer._channelTypes = Object.create(null);
+    buffer._channelTypes[channelName] = 'sink';
+    // Don't overwrite buffer._channels - it's already a Map from the constructor
+    // Just ensure the sink channel is registered (it should be from constructor)
+    if (buffer._channels instanceof Map) {
+      buffer._channels.set(channelName, sinkChannel);
     }
-    buffer._outputHandlers = Object.create(null);
-    buffer._outputHandlers[outputName] = sinkOutput;
 
-    commands.forEach((entry) => buffer.add(entry, outputName));
-    sinkOutput.finalSnapshot();
+    commands.forEach((entry) => buffer.add(entry, channelName));
+    sinkChannel.finalSnapshot();
     return sink;
   };
   const cmd = (spec) => {
-    if (spec.channelName === 'data' || spec.handler === 'data') {
+    if (spec.channelName === 'data') {
       return new DataCommand(spec);
     }
-    if (spec.channelName === 'text' || spec.handler === 'text') {
+    if (spec.channelName === 'text') {
       return new TextCommand(spec);
     }
     return new SinkCommand(spec);
@@ -122,34 +120,34 @@ describe('output.finalSnapshot', function () {
 
   describe('Data Assembly (@put, @push, etc.)', function () {
     it('should handle a simple @data.set command', async function () {
-      const buffer = createBuffer([cmd({ handler: 'data', command: 'set', arguments: [['user'], { name: 'Alice' }] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', arguments: [['user'], { name: 'Alice' }] })], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ user: { name: 'Alice' } });
     });
 
     it('should create nested objects with @data.set', async function () {
-      const buffer = createBuffer([cmd({ handler: 'data', command: 'set', arguments: [['config', 'theme', 'color'], 'dark'] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', arguments: [['config', 'theme', 'color'], 'dark'] })], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ config: { theme: { color: 'dark' } } });
     });
 
     it('should handle a simple @data.push command', async function () {
-      const buffer = createBuffer([cmd({ handler: 'data', command: 'push', arguments: [['users'], 'Alice'] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'push', arguments: [['users'], 'Alice'] })], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ users: ['Alice'] });
     });
 
     it('should create an array with @data.push if it does not exist', async function () {
-      const buffer = createBuffer([cmd({ handler: 'data', command: 'push', arguments: [['config', 'admins'], 'root'] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'push', arguments: [['config', 'admins'], 'root'] })], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ config: { admins: ['root'] } });
     });
 
     it('should handle the "[]" path syntax for creating and populating array items', async function () {
       const buffer = createBuffer([
-        cmd({ handler: 'data', command: 'push', arguments: [['users'], { id: 0 }] }),
-        cmd({ handler: 'data', command: 'set', arguments: [['users', '[]', 'id'], 1] }),
-        cmd({ handler: 'data', command: 'set', arguments: [['users', 0, 'name'], 'Alice'] })
+        cmd({ channelName: 'data', command: 'push', arguments: [['users'], { id: 0 }] }),
+        cmd({ channelName: 'data', command: 'set', arguments: [['users', '[]', 'id'], 1] }),
+        cmd({ channelName: 'data', command: 'set', arguments: [['users', 0, 'name'], 'Alice'] })
       ], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ users: [{ id: 1, name: 'Alice' }] });
@@ -157,8 +155,8 @@ describe('output.finalSnapshot', function () {
 
     it('should handle the @data.merge command', async function () {
       const buffer = createBuffer([
-        cmd({ handler: 'data', command: 'set', arguments: [['user'], { id: 1, name: 'Alice' }] }),
-        cmd({ handler: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] }),
+        cmd({ channelName: 'data', command: 'set', arguments: [['user'], { id: 1, name: 'Alice' }] }),
+        cmd({ channelName: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] }),
       ], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ user: { id: 1, name: 'Alicia', active: true } });
@@ -166,7 +164,7 @@ describe('output.finalSnapshot', function () {
 
     it('should handle null path to work on the root of the data object', async function () {
       const buffer = createBuffer([
-        cmd({ handler: 'data', command: 'set', arguments: [null, { id: 5, name: 'Bob' }] })
+        cmd({ channelName: 'data', command: 'set', arguments: [null, { id: 5, name: 'Bob' }] })
       ], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ id: 5, name: 'Bob' });
@@ -174,15 +172,15 @@ describe('output.finalSnapshot', function () {
 
     it('should handle null path with merge to combine with existing root data', async function () {
       const buffer = createBuffer([
-        cmd({ handler: 'data', command: 'set', arguments: [['id'], 10] }),
-        cmd({ handler: 'data', command: 'merge', arguments: [null, { name: 'Charlie' }] })
+        cmd({ channelName: 'data', command: 'set', arguments: [['id'], 10] }),
+        cmd({ channelName: 'data', command: 'merge', arguments: [null, { name: 'Charlie' }] })
       ], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ id: 10, name: 'Charlie' });
     });
   });
 
-  describe('Text Output & Mixed Content', function () {
+  describe('Text Channel & Mixed Content', function () {
     it('should join plain strings and numbers in the buffer', async function () {
       const buffer = createBuffer(['Hello', ' ', 'world', '!', 42], context, 'text');
       const result = await flatten(buffer, context, 'text');
@@ -196,7 +194,7 @@ describe('output.finalSnapshot', function () {
     });
   });
 
-  describe('Sink Outputs (Factory & Singleton)', function () {
+  describe('Sink Channels (Factory & Singleton)', function () {
     it('should instantiate and use a factory-style sink instance', function () {
       class CounterSink {
         constructor() {
@@ -212,7 +210,7 @@ describe('output.finalSnapshot', function () {
 
       const sink = new CounterSink();
       const commands = [
-        cmd({ handler: 'counter', command: 'increment', subpath: [], arguments: [] })
+        cmd({ channelName: 'counter', command: 'increment', subpath: [], arguments: [] })
       ];
 
       flattenSink(commands, context, 'counter', sink);
@@ -225,7 +223,7 @@ describe('output.finalSnapshot', function () {
         set(val) { this.value = val; },
         getReturnValue() { return { value: this.value }; }
       };
-      const commands = [cmd({ handler: 'singleton', command: 'set', subpath: [], arguments: [456] })];
+      const commands = [cmd({ channelName: 'singleton', command: 'set', subpath: [], arguments: [456] })];
 
       flattenSink(commands, context, 'singleton', singletonSink);
       expect(singletonSink.getReturnValue()).to.eql({ value: 456 });
@@ -234,7 +232,7 @@ describe('output.finalSnapshot', function () {
     it('should support callable sink targets (sink is a function)', function () {
       const callableSink = function(val) { this.lastValue = val; };
       callableSink.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
-      const commands = [cmd({ handler: 'callable', command: null, subpath: [], arguments: ['test'] })];
+      const commands = [cmd({ channelName: 'callable', command: null, subpath: [], arguments: ['test'] })];
 
       flattenSink(commands, context, 'callable', callableSink);
       expect(callableSink.getReturnValue()).to.eql({ result: 'called', lastValue: 'test' });
@@ -260,14 +258,14 @@ describe('output.finalSnapshot', function () {
 
     it('should allow snapshot calls after buffer is already finished', async function () {
       const buffer = createBuffer(['A'], context, 'text');
-      const output = makeOutput(buffer, context, 'text');
-      const first = await output.finalSnapshot();
-      const second = await output.finalSnapshot();
+      const textChannel = makeChannel(buffer, context, 'text');
+      const first = await textChannel.finalSnapshot();
+      const second = await textChannel.finalSnapshot();
       expect(first).to.equal('A');
       expect(second).to.equal('A');
     });
 
-    it('finalSnapshot should wait for owning output completion', async function () {
+    it('finalSnapshot should wait for owning channel completion', async function () {
       const buffer = new CommandBuffer(context, null, { parent: null });
       const frame = { parent: null };
       const out = createChannel(frame, buffer, 'text', context, 'text');
@@ -296,8 +294,8 @@ describe('output.finalSnapshot', function () {
       expect(result).to.equal('HelloWorld');
     });
 
-    it('should throw an error for an unsupported output command target', async function () {
-      const buffer = createBuffer([cmd({ handler: 'nonexistent', command: 'method', subpath: [], arguments: [] })]);
+    it('should throw an error for an unsupported channel command target', async function () {
+      const buffer = createBuffer([cmd({ channelName: 'nonexistent', command: 'method', subpath: [], arguments: [] })]);
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'text');
       }, (err) => {
@@ -305,8 +303,8 @@ describe('output.finalSnapshot', function () {
       });
     });
 
-    it('should throw an error for an unknown command method on data output', async function () {
-      const buffer = createBuffer([cmd({ handler: 'data', command: 'nonexistent', subpath: [], arguments: [null] })], context, 'data');
+    it('should throw an error for an unknown command method on data channel', async function () {
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'nonexistent', subpath: [], arguments: [null] })], context, 'data');
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'data');
       }, (err) => {
@@ -315,7 +313,7 @@ describe('output.finalSnapshot', function () {
     });
 
     it('should throw an error for a non-string/non-number path segment', async function () {
-      const buffer = createBuffer([cmd({ handler: 'data', command: 'set', arguments: [[{}], 'value'] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', arguments: [[{}], 'value'] })], context, 'data');
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'data');
       }, (err) => {
@@ -325,9 +323,9 @@ describe('output.finalSnapshot', function () {
 
     it('should reject CommandBuffer values inside TextCommand arguments', async function () {
       const nested = new CommandBuffer(context, null, { parent: null });
-      nested.add(new TextCommand({ handler: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
+      nested.add(new TextCommand({ channelName: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
       const buffer = createBuffer([
-        new TextCommand({ handler: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })
+        new TextCommand({ channelName: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })
       ], context, 'text');
 
       await expectAsyncError(async () => {
@@ -339,7 +337,7 @@ describe('output.finalSnapshot', function () {
 
     it('should reject plain object envelope values inside TextCommand arguments', async function () {
       const buffer = createBuffer([
-        new TextCommand({ handler: 'text', args: [{ text: 'wrapped' }], pos: { lineno: 1, colno: 1 } })
+        new TextCommand({ channelName: 'text', args: [{ text: 'wrapped' }], pos: { lineno: 1, colno: 1 } })
       ], context, 'text');
 
       await expectAsyncError(async () => {
@@ -350,7 +348,7 @@ describe('output.finalSnapshot', function () {
     });
   });
 
-  describe('Output Snapshot Poison Handling', function () {
+  describe('Channel Snapshot Poison Handling', function () {
     describe('snapshot with simple templates', function () {
       it('should concatenate simple values', async function () {
         const arr = ['Hello', ' ', 'World'];
@@ -443,7 +441,7 @@ describe('output.finalSnapshot', function () {
       it('should handle command objects with poisoned args', async function () {
         const poison = createPoison(new Error('Arg error'));
         const arr = [cmd({
-          handler: 'text',
+          channelName: 'text',
           command: null,
           subpath: [],
           arguments: ['valid', poison],
@@ -458,9 +456,9 @@ describe('output.finalSnapshot', function () {
         }
       });
 
-      it('should collect errors from handler instantiation failures', async function () {
+      it('should collect errors from channel instantiation failures', async function () {
         const arr = [cmd({
-          handler: 'nonexistent',
+          channelName: 'nonexistent',
           command: 'method',
           subpath: [],
           arguments: ['arg'],
@@ -476,7 +474,7 @@ describe('output.finalSnapshot', function () {
         }
       });
 
-      it('should return valid output when no poison found', async function () {
+      it('should return a valid snapshot when no poison is found', async function () {
         const arr = ['Hello', ' ', 'World'];
         const result = await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
         expect(result).to.equal('Hello World');
@@ -569,7 +567,7 @@ describe('output.finalSnapshot', function () {
       });
     });
 
-    describe('Output command error collection', function () {
+    describe('Channel command error collection', function () {
       let poisonContext;
 
       beforeEach(() => {
@@ -580,9 +578,9 @@ describe('output.finalSnapshot', function () {
         };
       });
 
-      it('should collect data output method errors', async function () {
+      it('should collect data channel method errors', async function () {
         const arr = [cmd({
-          handler: 'data',
+          channelName: 'data',
           command: 'nonexistentMethod',
           subpath: [],
           arguments: [null],
@@ -598,9 +596,9 @@ describe('output.finalSnapshot', function () {
         }
       });
 
-      it('should collect unsupported output target errors', async function () {
+      it('should collect unsupported channel target errors', async function () {
         const arr = [cmd({
-          handler: 'badHandler',
+          channelName: 'badHandler',
           command: 'method',
           subpath: ['nested', 'path'],
           arguments: [],
@@ -645,7 +643,7 @@ describe('output.finalSnapshot', function () {
       });
     });
 
-    describe('Output name handling', function () {
+    describe('Channel name handling', function () {
       let poisonContext;
 
       beforeEach(() => {
@@ -656,7 +654,7 @@ describe('output.finalSnapshot', function () {
         };
       });
 
-      it('should handle output name with poison', async function () {
+      it('should handle channel name with poison', async function () {
         const poison = createPoison(new Error('Focus poison'));
         const arr = [poison, 'text'];
 
@@ -668,7 +666,7 @@ describe('output.finalSnapshot', function () {
         }
       });
 
-      it('should return text output when no poison', async function () {
+      it('should return a text channel snapshot when no poison', async function () {
         const arr = ['Hello', ' ', 'World'];
         const result = await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
         expect(result).to.equal('Hello World');

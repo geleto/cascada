@@ -52,7 +52,9 @@ class AsyncState {
     cb,
     hasConcurrencyLimit = false
   ) {
-    const usedOutputs = asyncMeta && Array.isArray(asyncMeta.usedOutputs) ? asyncMeta.usedOutputs : null;
+    const usedChannels = asyncMeta && Array.isArray(asyncMeta.usedChannels)
+      ? asyncMeta.usedChannels
+      : null;
     const childFrame = f.push(false);
     // Runtime async-block creation site for CommandBuffer.
     // This avoids compiler-side duplicate creation for async block execution.
@@ -60,9 +62,9 @@ class AsyncState {
     if (createOutputBuffer) {
       const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
       newBuffer = runtime.createCommandBuffer(bufferContext, null, childFrame, hasConcurrencyLimit);
-      if (parentBuffer && Array.isArray(usedOutputs)) {
-        for (const outputName of usedOutputs) {
-          parentBuffer.addBuffer(newBuffer, outputName);
+      if (parentBuffer && Array.isArray(usedChannels)) {
+        for (const channelName of usedChannels) {
+          parentBuffer.addBuffer(newBuffer, channelName);
         }
       }
     }

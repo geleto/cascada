@@ -1,10 +1,10 @@
 /**
- * DataHandler class manages the assembly of the script's data object.
- * It encapsulates all data-assembly logic and path traversal for output commands.
+ * DataChannelTarget manages the assembly of the script's data object.
+ * It encapsulates all data-assembly logic and path traversal for channel commands.
  */
-class DataHandler {
+class DataChannelTarget {
   /**
-   * Creates a new DataHandler instance.
+   * Creates a new DataChannelTarget instance.
    * @param {Object} _context - The context object containing the script variables
    * @param {AsyncEnvironment} env - The AsyncEnvironment instance containing custom data methods.
    */
@@ -14,21 +14,20 @@ class DataHandler {
 
     // Register custom methods from the environment
     if (env && env.customDataMethods) {
-      Object.keys(env.customDataMethods).forEach(methodName => {
+      Object.keys(env.customDataMethods).forEach((methodName) => {
         this.addMethod(methodName, env.customDataMethods[methodName]);
       });
     }
   }
 
   /**
-   * Adds a method to the handler instance.
+   * Adds a method to the data channel instance.
    * @param {string} name - The method name.
    * @param {Function} func - The function to register.
    */
   addMethod(name, func) {
     // Create a wrapper that handles path traversal and argument conversion
     this[name] = function (path, ...args) {
-
       // Special case: null path or [null] means we're working on the root object itself
       if (path === null || (Array.isArray(path) && path.length === 1 && path[0] === null)) {
         // Replace this data with the return
@@ -58,10 +57,8 @@ class DataHandler {
         } else {
           target[key] = result;
         }
-      } else {
-        if (key !== '[]') {
-          delete target[key];
-        }
+      } else if (key !== '[]') {
+        delete target[key];
       }
 
       return result;
@@ -152,8 +149,8 @@ class DataHandler {
 
 // Load and register default data methods on the prototype
 const defaultMethods = require('./default-data-methods');
-Object.keys(defaultMethods).forEach(methodName => {
-  DataHandler.prototype.addMethod(methodName, defaultMethods[methodName]);
+Object.keys(defaultMethods).forEach((methodName) => {
+  DataChannelTarget.prototype.addMethod(methodName, defaultMethods[methodName]);
 });
 
-module.exports = DataHandler;
+module.exports = DataChannelTarget;

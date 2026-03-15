@@ -2,7 +2,7 @@ const {
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance
 } = require('./validation');
-const { DEFAULT_TEMPLATE_TEXT_OUTPUT } = require('./compile-buffer');
+const { DEFAULT_TEMPLATE_TEXT_CHANNEL } = require('./compile-buffer');
 
 module.exports = class CompileEmit {
   constructor(compiler) {
@@ -55,13 +55,13 @@ module.exports = class CompileEmit {
   }
 
   beginEntryFunction(node, name, frame = null) {
-    const rootTextOutputName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
+    const rootTextChannelName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
-      : DEFAULT_TEMPLATE_TEXT_OUTPUT;
+      : DEFAULT_TEMPLATE_TEXT_CHANNEL;
     this.compiler.buffer.currentBuffer = 'output';
-    this.compiler.buffer.currentTextOutputVer = 'output_textChannelVar';
-    this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : rootTextOutputName;
-    this.compiler.buffer.currentWaitedOutputName = null;
+    this.compiler.buffer.currentTextChannelVar = 'output_textChannelVar';
+    this.compiler.buffer.currentTextChannelName = this.compiler.scriptMode ? null : rootTextChannelName;
+    this.compiler.buffer.currentWaitedChannelName = null;
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
@@ -79,7 +79,7 @@ module.exports = class CompileEmit {
     this.compiler.buffer.initManagedBuffer(
       this.compiler.buffer.currentBuffer,
       (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null,
-      this.compiler.buffer.currentTextOutputVer
+      this.compiler.buffer.currentTextChannelVar
     );
     this.line('try {');
   }
@@ -112,11 +112,11 @@ module.exports = class CompileEmit {
     this.line('}');
     this.line('}');
     this.compiler.buffer.currentBuffer = null;
-    this.compiler.buffer.currentTextOutputVer = null;
-    this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode
+    this.compiler.buffer.currentTextChannelVar = null;
+    this.compiler.buffer.currentTextChannelName = this.compiler.scriptMode
       ? null
       : (((node && node._analysis && node._analysis.textOutput)));
-    this.compiler.buffer.currentWaitedOutputName = null;
+    this.compiler.buffer.currentWaitedChannelName = null;
   }
 
   //todo: use only simple async block if you know that:
@@ -139,16 +139,16 @@ module.exports = class CompileEmit {
     let parentBufferId = null;
     let bufferId = null;
     let prevBuffer = null;
-    let prevTextOutput = null;
+    let prevTextChannelVar = null;
     if (createScopeRootBuffer) {
       parentBufferId = parentBufferOverride !== undefined
         ? parentBufferOverride
         : (this.compiler.buffer.currentBuffer || null);
       bufferId = this.compiler._tmpid();
       prevBuffer = this.compiler.buffer.currentBuffer;
-      prevTextOutput = this.compiler.buffer.currentTextOutputVer;
+      prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
       this.compiler.buffer.currentBuffer = bufferId;
-      this.compiler.buffer.currentTextOutputVer = `${bufferId}_textOutputVar`;
+      this.compiler.buffer.currentTextChannelVar = `${bufferId}_textChannelVar`;
       this.compiler.buffer.initManagedBuffer(
         bufferId,
         parentBufferId,
@@ -163,10 +163,10 @@ module.exports = class CompileEmit {
     }
 
     if (createScopeRootBuffer && parentBufferId && analysisNode && analysisNode._analysis) {
-      const used = Array.from(analysisNode._analysis.usedOutputs || []);
-      const declared = new Set((analysisNode._analysis.declaredOutputs || new Map()).keys());
+      const used = Array.from(analysisNode._analysis.usedChannels || []);
+      const declared = new Set((analysisNode._analysis.declaredChannels || new Map()).keys());
       const foreignUsed = used.filter((name) => {
-        if (name === this.compiler.buffer.currentTextOutputName) {
+        if (name === this.compiler.buffer.currentTextChannelName) {
           return false;
         }
         return !declared.has(name);
@@ -174,14 +174,14 @@ module.exports = class CompileEmit {
       if (foreignUsed.length > 0) {
         // Use the shared runtime prelink helper to keep boundary-linking behavior
         // consistent with include/block prelink paths.
-        const linkLine = `runtime.linkWithParentCompositionBuffer(${parentBufferId}, ${bufferId}, ${JSON.stringify(foreignUsed)}, ${bufferId}._outputs);\n`;
+        const linkLine = `runtime.linkWithParentCompositionBuffer(${parentBufferId}, ${bufferId}, ${JSON.stringify(foreignUsed)}, ${bufferId}._channels);\n`;
         this.insert(linkInsertPos, linkLine);
       }
     }
 
     if (createScopeRootBuffer) {
       this.compiler.buffer.currentBuffer = prevBuffer;
-      this.compiler.buffer.currentTextOutputVer = prevTextOutput;
+      this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     }
     if (createScope) {
       this.line('frame = frame.pop();');
@@ -312,7 +312,7 @@ module.exports = class CompileEmit {
 
     frame = frame.push(false, false);//unscoped frame for the async block
     // asyncBlockRender always materializes text output; ensure async block
-    // allocates an output buffer via usedOutputs.
+    // allocates a channel buffer via usedChannels.
     //this.compiler.buffer.registerOutputUsage(frame, 'text');
     this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) =>{`);
 
@@ -323,14 +323,14 @@ module.exports = class CompileEmit {
     //this.line(`if (!${id}) { throw new Error("asyncBlockRender requires async block output buffer"); }`);
 
     //text only? Why not just use currentBuffer?
-    const textOutputName = this.compiler.buffer.currentTextOutputName;
-    this.line(`let ${id}_textOutputVar = runtime.declareChannel(frame, ${id}, "${textOutputName}", "text", context, null);`);
+    const textChannelName = this.compiler.buffer.currentTextChannelName;
+    this.line(`let ${id}_textChannelVar = runtime.declareChannel(frame, ${id}, "${textChannelName}", "text", context, null);`);
     const prevBuffer = this.compiler.buffer.currentBuffer;
-    const prevTextOutput = this.compiler.buffer.currentTextOutputVer;
-    const prevTextOutputName = this.compiler.buffer.currentTextOutputName;
+    const prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
+    const prevTextChannelName = this.compiler.buffer.currentTextChannelName;
     this.compiler.buffer.currentBuffer = id;
-    this.compiler.buffer.currentTextOutputVer = `${id}_textOutputVar`;
-    this.compiler.buffer.currentTextOutputName = textOutputName;
+    this.compiler.buffer.currentTextChannelVar = `${id}_textChannelVar`;
+    this.compiler.buffer.currentTextChannelName = textChannelName;
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
     this.asyncClosureDepth = 0;
@@ -348,12 +348,12 @@ module.exports = class CompileEmit {
 
     this.asyncClosureDepth = originalAsyncClosureDepth;
     this.compiler.buffer.currentBuffer = prevBuffer;
-    this.compiler.buffer.currentTextOutputVer = prevTextOutput;
-    this.compiler.buffer.currentTextOutputName = prevTextOutputName;
+    this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
+    this.compiler.buffer.currentTextChannelName = prevTextChannelName;
 
     if (!this.compiler.scriptMode) {
       //this.line('await astate.waitAllClosures(1);');
-      this.line(`${id} = await ${id}.addSnapshot("${textOutputName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
+      this.line(`${id} = await ${id}.addSnapshot("${textChannelName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
     }
     /*this.line(`let ${id}_flat = runtime.flattenBuffer(${id});`);
     this.line(`if (${id}_flat && typeof ${id}_flat.then === 'function') { ${id}_flat = await ${id}_flat; }`);
@@ -383,18 +383,18 @@ module.exports = class CompileEmit {
   // @todo - optimize this:
   // similar for writes we can do some optimizations
   getAsyncBlockArgs(node, frame) {
-    const usedOutputs = Array.from(node._analysis.usedOutputs || []);
-    const declaredOutputs = new Set((node._analysis.declaredOutputs || new Map()).keys());
-    const linkedOutputs = usedOutputs.filter((name) => {
-      if (name === this.compiler.buffer.currentTextOutputName) {
+    const usedChannels = Array.from(node._analysis.usedChannels || []);
+    const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
+    const linkedChannels = usedChannels.filter((name) => {
+      if (name === this.compiler.buffer.currentTextChannelName) {
         return true;
       }
-      return !declaredOutputs.has(name);
+      return !declaredChannels.has(name);
     });
-    if (this.compiler.buffer.currentWaitedOutputName) {
-      linkedOutputs.push(this.compiler.buffer.currentWaitedOutputName);
+    if (this.compiler.buffer.currentWaitedChannelName) {
+      linkedChannels.push(this.compiler.buffer.currentWaitedChannelName);
     }
-    const outputArgs = linkedOutputs.length > 0 ? JSON.stringify(linkedOutputs) : 'null';
-    return `({ usedOutputs: ${outputArgs} })`;
+    const channelArgs = linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
+    return `({ usedChannels: ${channelArgs} })`;
   }
 };

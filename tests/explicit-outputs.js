@@ -18,7 +18,7 @@ if (typeof require !== 'undefined') {
   isPoisonError = nunjucks.runtime.isPoisonError;
 }
 
-describe('Cascada Script: Explicit Output Declarations', function () {
+describe('Cascada Script: Explicit Channel Declarations', function () {
   let env;
 
   const delay = (ms, value) => new Promise((resolve) => setTimeout(() => resolve(value), ms));
@@ -32,7 +32,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
   });
 
   describe('Basic Declarations', function () {
-    it('should declare data output', async () => {
+    it('should declare data channel', async () => {
       const script = `
         data myData
         myData.key = 'value'
@@ -42,7 +42,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ key: 'value' });
     });
 
-    it('should declare text output', async () => {
+    it('should declare text channel', async () => {
       const script = `
         text textOut
         textOut("hello")
@@ -53,7 +53,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be('hello world');
     });
 
-    it('should declare sink output with initializer', async () => {
+    it('should declare sink channel with initializer', async () => {
       const context = {
         makeLogger() {
           return {
@@ -72,7 +72,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql(['message']);
     });
 
-    it('should support multiple output declarations', async () => {
+    it('should support multiple channel declarations', async () => {
       const script = `
         data myData
         text textOut
@@ -87,7 +87,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     });
   });
 
-  describe('Output Operations', function () {
+  describe('Channel Operations', function () {
     it('should support data set operation', async () => {
       const script = `
         data myData
@@ -132,7 +132,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be('abc');
     });
 
-    it('should support text output with expressions', async () => {
+    it('should support text channel writes with expressions', async () => {
       const script = `
         text textOut
         var name = "World"
@@ -143,7 +143,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be('Hello World');
     });
 
-    it('should overwrite text output with assignment', async () => {
+    it('should overwrite a text channel with assignment', async () => {
       const script = `
         text textOut
         textOut("Hello")
@@ -186,7 +186,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be(100);
     });
 
-    it('should implicitly snapshot value outputs in expressions', async () => {
+    it('should implicitly snapshot var channels in expressions', async () => {
       const script = `
         var x
         x = 5
@@ -197,7 +197,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be(10);
     });
 
-    it('should allow value output initializer and use it in expressions', async () => {
+    it('should allow var channel initializer and use it in expressions', async () => {
       const script = `
         var x = 3
         var y = x + 4
@@ -219,7 +219,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be(33);
     });
 
-    it('should use initialized value output across chained expressions', async () => {
+    it('should use initialized var channel across chained expressions', async () => {
       const script = `
         var score = 10
         var boosted = score + 5
@@ -230,7 +230,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be(150);
     });
 
-    it('should reject bare symbol reads for non-value outputs', async () => {
+    it('should reject bare symbol reads for non-var channels', async () => {
       const script = `
         data myData
         text textOut
@@ -302,7 +302,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ last: 4, plus: 10 });
     });
 
-    it('should handle null and undefined in data output', async () => {
+    it('should handle null and undefined in data channel writes', async () => {
       const context = { undef: undefined };
       const script = `
         data myData
@@ -314,7 +314,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ x: null });
     });
 
-    it('should return empty/default snapshots for unused outputs', async () => {
+    it('should return empty/default snapshots for unused channels', async () => {
       const script = `
         data myData
         text textOut
@@ -327,7 +327,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
   });
 
   describe('Snapshots and Returns', function () {
-    it('should return a single output snapshot directly', async () => {
+    it('should return a single channel snapshot directly', async () => {
       const script = `
         data myData
         myData.x = 1
@@ -337,7 +337,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ x: 1 });
     });
 
-    it('should return multiple outputs in an object', async () => {
+    it('should return multiple channel snapshots in an object', async () => {
       const script = `
         data myData
         text textOut
@@ -349,7 +349,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ data: { x: 1 }, text: 'hi' });
     });
 
-    it('should return a plain value without outputs', async () => {
+    it('should return a plain value without channel declarations', async () => {
       const script = `
         return { value: 42 }
       `;
@@ -414,7 +414,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result.snap2).to.eql({ x: 1, y: 2 });
     });
 
-    it('should keep earlier snapshot resolved even if later output command fails', async () => {
+    it('should keep earlier snapshot resolved even if a later channel command fails', async () => {
       const script = `
         text out
         out("A")
@@ -523,7 +523,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     });
   });
 
-  describe('Sink Outputs', function () {
+  describe('Sink Channels', function () {
     it('should execute sink methods during flattening', async () => {
       const context = {
         makeLogger() {
@@ -955,7 +955,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(commitFail.events).to.eql(['begin', 'run:x', 'commit:t', 'rollback:t']);
     });
 
-    it('should unwind multi-handler sequence transactions in LIFO order', async () => {
+    it('should unwind multi-channel sequence transactions in LIFO order', async () => {
       const successEvents = [];
       const successScript = `
         sequence a = makeA()
@@ -1679,7 +1679,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be(1);
     });
 
-    it('should allow value outputs with initializers', async () => {
+    it('should allow var channels with initializers', async () => {
       const script = `
         var result = 1
         return result
@@ -1900,11 +1900,11 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ x: 1 });
     });
 
-    it('should allow output names with underscores', async () => {
+    it('should allow channel names with underscores', async () => {
       const script = `
-        data my_output_data
-        my_output_data.x = 1
-        return my_output_data.snapshot()
+        data my_channel_data
+        my_channel_data.x = 1
+        return my_channel_data.snapshot()
       `;
       const result = await render(script);
       expect(result).to.eql({ x: 1 });

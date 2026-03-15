@@ -26,8 +26,8 @@ const {
   createSinkChannel
 } = require('../../src/runtime/output');
 
-describe('output errors', function () {
-  describe('output commands step2 poison encoding', function () {
+describe('channel errors', function () {
+  describe('channel commands step2 poison encoding', function () {
     it('TextCommand encodes poison into target instead of throwing', () => {
       const output = new TextChannel(null, null, 'text', null, 'text');
       const poison = createPoison([new Error('text poison')]);

@@ -739,15 +739,15 @@ endif`;
     });
   });
 
-  // Output operation tests
-  describe('Output Operations', () => {
-    it('should convert data set with explicit output variable', () => {
+  // Channel operation tests
+  describe('Channel Operations', () => {
+    it('should convert data set with explicit channel variable', () => {
       const script = 'data outData\noutData.user.name = "Alice"';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- data outData -%}\n{%- command outData.set(["user", "name"], "Alice") -%}');
     });
 
-    it('should convert data push with explicit output variable', () => {
+    it('should convert data push with explicit channel variable', () => {
       const script = 'data outData\noutData.user.roles.push("admin")';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- data outData -%}\n{%- command outData.push(["user", "roles"],"admin") -%}');
@@ -765,18 +765,18 @@ endif`;
       expect(template).to.equal('{%- text outText -%}\n{%- command outText("Hello, World!") -%}');
     });
 
-    it('should convert text output assignment syntax to overwrite command', () => {
+    it('should convert text channel assignment syntax to overwrite command', () => {
       const script = 'text outText\noutText = "Hello, World!"';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- text outText -%}\n{%- command outText.set("Hello, World!") -%}');
     });
 
-    it('should reject var output callable assignment syntax', () => {
+    it('should reject var channel callable assignment syntax', () => {
       const script = 'var result\nresult(42)';
       expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/does not support callable assignment/);
     });
 
-    it('should convert sink output calls', () => {
+    it('should convert sink channel calls', () => {
       const script = 'sink turtle = makeTurtle()\nturtle.forward(50)';
       const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
       expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- command turtle.forward(50) -%}');

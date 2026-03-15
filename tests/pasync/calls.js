@@ -148,7 +148,7 @@
       }
     });
 
-    it('should allow observing outer value output inside call blocks', async () => {
+    it('should allow observing outer var channel inside call blocks', async () => {
       const script = `
         var outer = 10
 
@@ -198,7 +198,7 @@
       }
     });
 
-    it('should reject outer non-var output mutation commands inside call blocks with read-only error', async () => {
+    it('should reject outer non-var channel mutation commands inside call blocks with read-only error', async () => {
       const script = `
         data outerData
 

@@ -269,8 +269,8 @@ function contextOrVarLookup(_context, frame, name, currentBuffer) {
  */
 function varChannelLookup(frame, name, currentBuffer) {
   let channel = getChannel(frame, name);
-  if (!channel && currentBuffer && currentBuffer._outputs instanceof Map) {
-    channel = currentBuffer._outputs.get(name);
+  if (!channel && currentBuffer && currentBuffer._channels instanceof Map) {
+    channel = currentBuffer._channels.get(name);
   }
   if (!channel) {
     return undefined;
@@ -330,8 +330,8 @@ function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, erro
 // to avoid waiting on full finalization of the channel stream.
 function varChannelLookupScript(frame, name, currentBuffer) {
   let channel = getChannel(frame, name);
-  if (!channel && currentBuffer && currentBuffer._outputs instanceof Map) {
-    channel = currentBuffer._outputs.get(name);
+  if (!channel && currentBuffer && currentBuffer._channels instanceof Map) {
+    channel = currentBuffer._channels.get(name);
   }
   if (!channel) {
     return undefined;

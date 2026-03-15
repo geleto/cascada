@@ -309,7 +309,7 @@
 
     // include poisoning not yet supported
     // include imports missing template
-    // For templates this is easy - we know to poison the text output
+    // For templates this is easy - we know to poison the text channel
     // @todo - make a script version poisoning @data
     // include "missing.njk" modifies @data
     it.skip('should report correct path for error when template loading fails', async () => {
@@ -397,7 +397,7 @@
       }
     });
 
-    it('shoukld report correct path when outputing unknown variable in script', async () => {
+    it('shoukld report correct path when writing unknown variable to a channel in script', async () => {
       var scriptName = 'error-script-output-unknown-variable.scr';
       loader.addTemplate(scriptName, 'text output\noutput( nonExistentVar )\nreturn output.snapshot()');
       try {
@@ -419,8 +419,8 @@
       }
     });
 
-    it('shoukld report correct path when using unknown handler in script', async () => {
-      var scriptName = 'error-script-unknown-handler.scr';
+    it('shoukld report correct path when using unknown channel in script', async () => {
+      var scriptName = 'error-script-unknown-channel.scr';
       loader.addTemplate(scriptName, 'sink logger = loggerRef\nlogger.missing("Hi")\nreturn logger.snapshot()');
       try {
         await env.renderScript(scriptName, { loggerRef: { snapshot() { return []; } } });

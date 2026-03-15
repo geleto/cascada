@@ -119,7 +119,7 @@ function promisify(fn) {
  * Link a composed child buffer into selected parent channel lanes.
  *
  * The compiler provides a conservative channel candidate list; this helper
- * performs a runtime intersection against `presenceMap` (typically child `_outputs`)
+ * performs a runtime intersection against `presenceMap` (typically child `_channels`)
  * to avoid linking lanes that do not exist for the child.
  */
 function linkWithParentCompositionBuffer(parentBuffer, childBuffer, channelNames, presenceMap) {

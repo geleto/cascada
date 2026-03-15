@@ -238,25 +238,25 @@ function installCompat() {
       return lib.keys(this);
     },
     get(key, def) {
-      var output = this[key];
-      if (output === undefined) {
-        output = def;
+      var value = this[key];
+      if (value === undefined) {
+        value = def;
       }
-      return output;
+      return value;
     },
     has_key(key) {
       return hasOwnProp(this, key);
     },
     pop(key, def) {
-      var output = this[key];
-      if (output === undefined && def !== undefined) {
-        output = def;
-      } else if (output === undefined) {
+      var value = this[key];
+      if (value === undefined && def !== undefined) {
+        value = def;
+      } else if (value === undefined) {
         throw new Error('KeyError');
       } else {
         delete this[key];
       }
-      return output;
+      return value;
     },
     popitem() {
       const keys = lib.keys(this);

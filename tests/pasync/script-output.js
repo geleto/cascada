@@ -11,7 +11,7 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = nunjucks.AsyncEnvironment;
 }
 
-describe('Cascada Script: Output commands', function () {
+describe('Cascada Script: Channel commands', function () {
   let env;
 
   // For each test, create a fresh environment.
@@ -83,7 +83,7 @@ describe('Cascada Script: Output commands', function () {
    * - A macro defines a self-contained unit of work with its own parallel operations.
    * - The macro returns a clean data object explicitly.
    * - Multiple calls to the same macro run concurrently.
-   * - The main script assembles its final output only after all macro calls have completed.
+   * - The main script assembles its final channel snapshot only after all macro calls have completed.
    */
   it('should execute macros in parallel and use their focused results for final assembly', async () => {
     const context = {
@@ -137,7 +137,7 @@ describe('Cascada Script: Output commands', function () {
 
     const result = await env.renderScriptString(script, context);
 
-    // The final result combines the outputs of the parallel macro calls.
+    // The final result combines channel snapshots from the parallel macro calls.
     expect(result).to.eql({
       reports: {
         user1: {
@@ -808,7 +808,7 @@ describe('Cascada Script: Output commands', function () {
       expect(result).to.eql({ log: 'Log started. Event 1. Event 2.' });
     });
 
-    it('should focus the output to just the text stream with', async () => {
+    it('should focus the channel to just the text stream with', async () => {
       const script = `
         text output
         data result
@@ -851,7 +851,7 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    it('should support custom handlers with the Factory pattern (sink)', async () => {
+    it('should support custom channels with the Factory pattern (sink)', async () => {
       class Turtle {
         constructor() { this.x = 0; this.y = 0; }
         forward(dist) { this.x += dist; }
@@ -874,7 +874,7 @@ describe('Cascada Script: Output commands', function () {
       expect(result.y).to.equal(90);
     });
 
-    it('supports sink snapshot of callable command handler (no path)', async () => {
+    it('supports sink snapshot of callable command channel (no path)', async () => {
       class Logger {
         constructor() {
           this.logs = [];
@@ -900,7 +900,7 @@ describe('Cascada Script: Output commands', function () {
       expect(result.log.logs).to.eql(['user1 logged in', 'user2 logged in']);
     });
 
-    it('should support sink handlers with a singleton instance - 1 segment path', async () => {
+    it('should support sink channels with a singleton instance - 1 segment path', async () => {
       const logger = {
         log: [],
         login: function (user) {
@@ -920,7 +920,7 @@ describe('Cascada Script: Output commands', function () {
       expect(logger.log).to.eql(['login(user1)', 'action(read,doc1)']);
     });
 
-    it('should support sink snapshot of multi-segment command handler (2 segments path)', async () => {
+    it('should support sink snapshot of multi-segment command channel (2 segments path)', async () => {
       // Create a utility object with nested structure
       class OutputLogger {
         constructor() {
@@ -953,7 +953,7 @@ describe('Cascada Script: Output commands', function () {
 
       const result = await env.renderScriptString(script, { utilRef: util });
 
-      // Verify the multi-segment handler is accessible and functional
+      // Verify the multi-segment channel is accessible and functional
       expect(result.util).to.be.an(OutputLogger);
       expect(result.util.logs).to.eql(['User logged in']);
       expect(result.util.errors).to.eql(['Connection failed']);
@@ -1123,7 +1123,7 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    it('should return a custom handler result with explicit return', async () => {
+    it('should return a custom channel result with explicit return', async () => {
       class Turtle {
         constructor() { this.x = 0; this.y = 0; }
         forward(dist) { this.x += dist; }
@@ -1241,9 +1241,9 @@ describe('Cascada Script: Output commands', function () {
     //
     // These tests verify that when `@text()` is used with a single argument
     // or a complex expression, it correctly transpiles to a Nunjucks
-    // output tag `{{ ... }}` and contributes to the `text` property of the result.
+    // render tag `{{ ... }}` and contributes to the `text` property of the result.
     // ========================================================================
-    describe('Expression-style @text() (generates text output)', () => {
+    describe('Expression-style @text() (generates text channel content)', () => {
 
       it('should handle a simple path-like expression', async () => {
         const script = `
@@ -1380,7 +1380,7 @@ describe('Cascada Script: Output commands', function () {
     // and value (e.g., `@data.set`, `@data.append`), it correctly transpiles
     // to a `statement_command` tag and modifies the `data` property of the result.
     // ========================================================================
-    describe('Statement-style commands (modifies data output)', () => {
+    describe('Statement-style commands (modifies data channel)', () => {
       it('should handle @data assignment with a simple path and string value', async () => {
         const script = `
                 data result
@@ -1440,7 +1440,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle command with no arguments (@data.reverse) on a path', async () => {
         // Note: The built-in @data.reverse command requires a path.
         // A command like @data.reverse with no args is valid syntax but would
-        // throw an error in the handler. Here we test a valid use case.
+        // throw an error in the channel. Here we test a valid use case.
         const script = `
                 data result
                 result.user.items = [1, 2, 3]
@@ -1461,7 +1461,7 @@ describe('Cascada Script: Output commands', function () {
         expect(result).to.eql({ user: { name: 'Heidi' } });
       });
 
-      it('should resolve promises in data handler objects', async () => {
+      it('should resolve promises in data channel objects', async () => {
         const context = {
           async getData() {
             return { id: 42, name: 'Test' };
@@ -3147,7 +3147,7 @@ describe('Cascada Script: Output commands', function () {
       expect(result.trim()).to.contain('Wrapped: Content');
     });
 
-    it('should filter output to text when using filter', async () => {
+    it('should filter channel to text when using filter', async () => {
       const script = `
         text mainText
         data mainData
@@ -3172,14 +3172,14 @@ describe('Cascada Script: Output commands', function () {
         mainText(wrapped.text)
         return { text: mainText.snapshot(), data: mainData.snapshot() }`;
       const result = await env.renderScriptString(script);
-      // filter means the call block output is text only.
-      // And it is appended to the main script's text output.
+      // Filter means the call block channel is text only.
+      // And it is appended to the main script's text channel.
       expect(result.text.trim()).to.equal('DebugContent: Inner');
       // The inner data should be discarded by the filter on the call block
-      // But wrapper does not output data anyway.
+      // But wrapper does not write data anyway.
     });
 
-    it('should filter output to data when using filter', async () => {
+    it('should filter channel to data when using filter', async () => {
       const script = `
         text output
         data result
@@ -3201,11 +3201,11 @@ describe('Cascada Script: Output commands', function () {
 
         return {data: result.snapshot(), text: output.snapshot() }`;
       const result = await env.renderScriptString(script);
-      // Wrapper output focused to data.
+      // Wrapper channel focused to data.
       // Wrapper returns data object.
       // Caller returns object (since script mode).
       // wrapper logic sets @data.wrappee = content.
-      // So wrapper output has data.
+      // So wrapper channel has data.
       // Main script consumes and verifies the returned call value explicitly.
       expect(result.data).to.not.be.undefined;
       expect(result.data.wrappee).to.not.be.undefined;

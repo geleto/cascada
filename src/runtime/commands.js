@@ -290,7 +290,7 @@ class WaitResolveCommand extends ChannelCommand {
   }
 }
 
-// Invokes a named data method (e.g., set, push) on a data channel's DataHandler. Corresponds to @data directives in scripts.
+// Invokes a named data method (e.g., set, push) on a data channel's DataChannelTarget. Corresponds to @data directives in scripts.
 class DataCommand extends ChannelCommand {
   constructor({ channelName, command, args = null, arguments: legacyArgs = null, pos = null }) {
     super({
@@ -706,7 +706,8 @@ class TargetPoisonCommand extends Command {
       return;
     }
     const contextualizedErrors = contextualizeErrorsForOutput(output, this.pos, this.errors);
-    if (output._outputType === 'text') {
+    const channelType = output._channelType;
+    if (channelType === 'text') {
       if (!Array.isArray(output._target)) {
         output._setTarget([]);
       }

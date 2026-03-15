@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   'use strict';
 
   var expect;
@@ -15,14 +15,14 @@
     isPoisonError = nunjucks.runtime.isPoisonError;
   }
 
-  describe('Handler Poisoning for Conditional Branches', () => {
+  describe('Channel Poisoning for Conditional Branches', () => {
     let env;
 
     beforeEach(() => {
       env = new AsyncEnvironment();
     });
 
-    it('should poison handlers when if condition fails with output only', async () => {
+    it('should poison channels when if condition fails with text channel only', async () => {
       const template = `{% if asyncReject() %}yes{% endif %}`;
 
       const context = {
@@ -39,7 +39,7 @@
       }
     });
 
-    it('should poison handlers when if condition fails with @data output only, in script', async () => {
+    it('should poison channels when if condition fails with data channel only, in script', async () => {
       const script = `
         data result
         if asyncReject()
@@ -63,7 +63,7 @@
       }
     });
 
-    it('should poison handlers when while condition fails with @data output only, in script', async () => {
+    it('should poison channels when while condition fails with data channel only, in script', async () => {
       const script = `
         data result
         while asyncReject()
@@ -87,7 +87,7 @@
       }
     });
 
-    it('should poison handlers when if-else both have output', async () => {
+    it('should poison channels when if-else both write channels', async () => {
       const template = `{% if asyncReject() %}yes{% else %}no{% endif %}`;
 
       const context = {
@@ -104,7 +104,7 @@
       }
     });
 
-    it('should poison handlers with mixed variables and output', async () => {
+    it('should poison channels with mixed variables and channel writes', async () => {
       const template = `{% if asyncReject() %}{% set x = 5 %}{{ x }}{% endif %}Result: {{ x }}`;
 
       const context = {
@@ -348,9 +348,9 @@
     });
   });
 
-  // Add to existing test file for poison handler tests
+  // Add to existing test file for poison channel tests
 
-  describe('Poison Handler Tests - Scripts with @data', () => {
+  describe('Poison Channel Tests - Scripts with data channel', () => {
     let env;
     let context;
 
@@ -361,7 +361,7 @@
       };
     });
 
-    it('should poison @data handler when condition fails in script', async () => {
+    it('should poison data channel when condition fails in script', async () => {
       const script = `
       data result
       if asyncReject()
@@ -442,7 +442,7 @@
       }
     });
 
-    it('should handle mixed text and @data handlers in script', async () => {
+    it('should handle mixed text and data channels in script', async () => {
       const script = `
       text output
       data result
@@ -459,11 +459,11 @@
         throw new Error('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
-        // Should have markers for both 'text' and 'data' handlers
+        // Should have markers for both 'text' and 'data' channels
       }
     });
 
-    it('should work when @data operations succeed but other output fails', async () => {
+    it('should work when data channel operations succeed but text channel fails', async () => {
       const script = `
       data result
       text output
@@ -523,10 +523,10 @@
     });
   });
 
-  describe('Poison Handler Tests - Custom Handlers in Scripts', () => {
+  describe('Poison Channel Tests - Custom Sink Channels in Scripts', () => {
     let env;
-    // Simple custom handler for testing
-    class TestHandler {
+    // Simple custom sink channel target for testing
+    class TestSinkChannel {
       constructor(context) {
         this.commands = [];
         this.context = context;
@@ -549,8 +549,8 @@
       }
     }
 
-    // Singleton handler for testing
-    class SingletonHandler {
+    // Singleton sink channel target for testing
+    class SingletonSinkChannel {
       constructor() {
         this.allLogs = [];
         this.currentLogs = [];
@@ -582,16 +582,16 @@
 
     beforeEach(() => {
       env = new AsyncEnvironment(null, { asyncMode: true, scriptMode: true });
-      singleton = new SingletonHandler();
+      singleton = new SingletonSinkChannel();
 
       context = {
         asyncReject: async () => { throw new Error('Async rejection'); },
         loggerRef: singleton,
-        makeTest: () => new TestHandler()
+        makeTest: () => new TestSinkChannel()
       };
     });
 
-    it('should poison custom handler when condition fails', async () => {
+    it('should poison custom sink channel when condition fails', async () => {
       const script = `
         sink test = makeTest()
         if asyncReject()
@@ -609,13 +609,13 @@
       }
     });
 
-    it('should poison multiple custom handlers', async () => {
+    it('should poison multiple custom sink channels', async () => {
       const script = `
         sink test = makeTest()
         sink logger = loggerRef
         if asyncReject()
-          test.log("Handler 1")
-          logger.log("Handler 2")
+          test.log("Channel 1")
+          logger.log("Channel 2")
         endif
         return { test: test.snapshot(), logger: logger.snapshot() }`;
 
@@ -624,11 +624,11 @@
         throw new Error('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
-        // Both 'test' and 'logger' handlers should have markers
+        // Both 'test' and 'logger' channels should have markers
       }
     });
 
-    it('should poison custom handler in else branch', async () => {
+    it('should poison custom sink channel in else branch', async () => {
       const script = `
         sink test = makeTest()
         if asyncReject()
@@ -647,9 +647,9 @@
       }
     });
 
-    it('should poison custom handler with method chains', async () => {
-      // Add a handler that supports subpaths
-      class ChainHandler {
+    it('should poison custom sink channel with method chains', async () => {
+      // Add a sink channel target that supports subpaths
+      class ChainSinkChannel {
         constructor() {
           this.state = { actions: [] };
         }
@@ -680,14 +680,14 @@
       `;
 
       try {
-        await env.renderScriptString(script, { ...context, makeChain: () => new ChainHandler() });
+        await env.renderScriptString(script, { ...context, makeChain: () => new ChainSinkChannel() });
         throw new Error('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
       }
     });
 
-    it('should work with sink-backed custom handler when no condition poison', async () => {
+    it('should work with sink-backed custom channel when no condition poison', async () => {
       const script = `
       sink testSink = makeTest()
       if true
@@ -699,14 +699,14 @@
 
       const result = await env.renderScriptString(script, {
         ...context,
-        makeTest: () => new TestHandler()
+        makeTest: () => new TestSinkChannel()
       });
       expect(result.test.commands).to.have.length(2);
       expect(result.test.commands[0].type).to.be('log');
       expect(result.test.commands[1].type).to.be('set');
     });
 
-    it('should poison handler in nested blocks with custom handlers', async () => {
+    it('should poison channel in nested blocks with custom channels', async () => {
       const script = `
         sink test = makeTest()
         sink logger = loggerRef
@@ -729,7 +729,7 @@
       }
     });
 
-    it('should handle sink-backed singleton handler state correctly on poison', async () => {
+    it('should handle sink-backed singleton channel state correctly on poison', async () => {
       // First render - should succeed
       const script1 = `
       sink loggerSink = loggerRef
@@ -771,7 +771,7 @@
     });
   });
 
-  describe('Poison Handler Tests - Templates with Text Output', () => {
+  describe('Poison Channel Tests - Templates with Text Channel', () => {
     let env;
     let context;
 
@@ -782,7 +782,7 @@
       };
     });
 
-    it('should poison text output in template when condition fails', async () => {
+    it('should poison text channel in template when condition fails', async () => {
       const template = `{% if asyncReject() %}Hello World{% endif %}`;
 
       try {
@@ -841,7 +841,7 @@
     });
   });
 
-  describe('Poison Handler Tests - Edge Cases', () => {
+  describe('Poison Channel Tests - Edge Cases', () => {
     let env;
     let context;
 
@@ -852,7 +852,7 @@
       };
     });
 
-    it('should handle deeply nested handler calls in scripts', async () => {
+    it('should handle deeply nested channel calls in scripts', async () => {
       const script = `
       data result
       if true

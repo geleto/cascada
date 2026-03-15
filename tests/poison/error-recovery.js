@@ -603,7 +603,7 @@
     });
 
     // not implemented yet
-    describe('@data Output Error Recovery', () => {
+    describe('@data Channel Error Recovery', () => {
       const errorPromise = (msg) => Promise.reject(new Error(msg));
 
       it('should recover from error in simple assignment', async () => {
