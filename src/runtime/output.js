@@ -4,11 +4,7 @@ const {
   TextCommand,
   ValueCommand,
   DataCommand,
-  SinkCommand,
-  SnapshotCommand,
-  RawSnapshotCommand,
-  IsErrorCommand,
-  GetErrorCommand
+  SinkCommand
 } = require('./commands');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
@@ -496,7 +492,7 @@ class DataOutput extends Output {
   }
 
   _beforeApplyCommand(cmd) {
-    if (!cmd || !cmd.mutatesOutput || !this._snapshotShared || !this._base) {
+    if (!cmd || cmd.isObservable || !this._snapshotShared || !this._base) {
       return;
     }
     const cloned = cloneSnapshotValue(this._target);
@@ -665,21 +661,6 @@ class SinkOutput extends Output {
     };
 
     try {
-      if (
-        cmd instanceof SnapshotCommand ||
-        cmd instanceof RawSnapshotCommand ||
-        cmd instanceof IsErrorCommand ||
-        cmd instanceof GetErrorCommand
-      ) {
-        const snapshotResult = cmd.apply(this);
-        if (snapshotResult && typeof snapshotResult.then === 'function') {
-          return Promise.resolve(snapshotResult).catch((err) => {
-            this._recordError(err, cmd);
-          });
-        }
-        return snapshotResult;
-      }
-
       const prep = resolveCommandArgumentsForApply(cmd, this);
       if (prep && typeof prep.then === 'function') {
         return Promise.resolve(prep).then(applyResolved).catch((err) => {

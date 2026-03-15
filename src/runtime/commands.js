@@ -13,6 +13,13 @@ let safeOutputApi = null;
  *
  * apply() mutates output in place and may encode poison into output state.
  * getError() returns a PoisonError if the command carries poison, or null.
+ *
+ * isObservable: true  — command returns a deferred value; applied immediately
+ *                       without waiting for prior mutable commands to complete.
+ * isObservable: false — command mutates output state; waits for any pending
+ *                       observable commands before applying.
+ * Copy-on-write protection (DataOutput._beforeApplyCommand) is triggered for
+ * every non-observable (mutating) command.
  */
 
 // ---------------------------------------------------------------------------
@@ -26,7 +33,6 @@ class Command {
     this.promise = null;
     this.resolve = null;
     this.reject = null;
-    this.mutatesOutput = false;
     this.isObservable = false;
     this.isSnapshotCommand = false;
 
@@ -74,7 +80,6 @@ class OutputCommand extends Command {
     this.arguments = args || legacyArgs || [];
     this.subpath = subpath;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.mutatesOutput = true;
   }
 
   extractPoisonFromArgs() {
@@ -476,7 +481,6 @@ class SequenceGetCommand extends OutputCommand {
       subpath: subpath || null,
       pos
     });
-    this.mutatesOutput = false;
     this.isObservable = true;
     if (withDeferredResult) {
       this.promise = new Promise((resolve, reject) => {
@@ -515,7 +519,6 @@ class SequentialPathReadCommand extends Command {
     this.operation = operation;
     this.repair = !!repair;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.mutatesOutput = false;
     this.isObservable = true;
   }
 
@@ -586,8 +589,6 @@ class SequentialPathWriteCommand extends Command {
     this.operation = operation;
     this.repair = !!repair;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.mutatesOutput = true;
-    this.isObservable = false;
   }
 
   apply(output) {
@@ -675,7 +676,6 @@ class TargetPoisonCommand extends Command {
     this.handler = handler;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
-    this.mutatesOutput = true;
   }
 
   getError() {
@@ -883,7 +883,6 @@ class SinkRepairCommand extends Command {
     super({ withDeferredResult: true });
     this.handler = handler;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.mutatesOutput = true;
   }
 
   apply(output) {
