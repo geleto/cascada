@@ -263,6 +263,11 @@ class WaitResolveCommand extends OutputCommand {
       subpath: null,
       pos
     });
+    // isObservable is intentionally false: routing through _applyMutable ensures
+    // this command waits for all pending observables, which is the sync guarantee
+    // concurrency-limited loops depend on. No copy-on-write concern: this command
+    // is only ever applied to the __waited__ var output (ValueOutput), which has
+    // no _beforeApplyCommand COW logic.
   }
 
   async apply(output) {
