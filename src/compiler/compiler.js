@@ -1987,9 +1987,21 @@ class Compiler extends CompilerBase {
       return {};
     }
     const handler = path[0];
-    const isObservation = callNode &&
-      path.length === 2 &&
-      (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError');
+    // isObservation — does this output command read rather than mutate?
+    // Two cases emit an observable (isObservable=true) command at runtime:
+    //   1. Call to a read-only method: snapshot(), isError(), getError()
+    //      (emits SnapshotCommand / IsErrorCommand / GetErrorCommand).
+    //      __checkpoint is excluded — it has no compile path yet.
+    //   2. Non-call property read on a sequence output (emits SequenceGetCommand).
+    //      Non-sequence non-call accesses are mutations, so the declaration type
+    //      is checked before classifying.
+    // Everything else is a mutation: { uses, mutates } makes the async block wait
+    // for pending observables and triggers copy-on-write in DataOutput.
+    const outputDecl = handler ? this.analysis.findDeclaration(node._analysis, handler) : null;
+    const isSequenceGet = !callNode && outputDecl && outputDecl.type === 'sequence';
+    const isObservation = isSequenceGet ||
+      (callNode && path.length === 2 &&
+       (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError'));
     return isObservation ? { uses: [handler] } : { uses: [handler], mutates: [handler] };
   }
 
