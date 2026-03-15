@@ -132,9 +132,6 @@ class CompileInheritance {
     }
 
     frame.set(target, id);
-    if (node.isAsync) {
-      this.compiler._addDeclaredVar(frame, target);
-    }
 
     if (frame.parent) {
       this.emit.line(`frame.set("${target}", ${id});`);
@@ -382,9 +379,6 @@ class CompileInheritance {
 
     if (!node.isAsync) {
       this.emit.addScopeLevel();
-    }
-    if (node.isAsync) {
-      this.compiler._addDeclaredVar(frame, id);
     }
   }
 

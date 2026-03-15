@@ -84,9 +84,6 @@ class CompileLoop {
           return;
         }
         blockFrame.set(name, name);
-        if (node.isAsync) {
-          this.compiler._addDeclaredVar(blockFrame, name);
-        }
       };
 
       if (loopVarNames) {
@@ -111,7 +108,7 @@ class CompileLoop {
 
       //compile the loop body function
       const hasConcurrentLimit = Boolean(node.concurrentLimit);
-      const bodyFrame = this._compileLoopBody(
+      this._compileLoopBody(
         node,
         blockFrame,
         loopVars,

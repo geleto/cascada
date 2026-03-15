@@ -137,26 +137,6 @@ class CompilerBase extends Obj {
     return Array.isArray(declares) && declares.some((decl) => decl && decl.name === name);
   }
 
-  _getSyntheticDeclarationsInCurrentScope(frame) {
-    return frame.getSyntheticDeclarations();
-  }
-
-  _findSyntheticOutputDeclaration(frame, name) {
-    return frame.findSyntheticDeclaration(name);
-  }
-
-  _findSyntheticOutputDeclarationInCurrentScope(frame, name) {
-    return frame.findSyntheticDeclarationInCurrentScope(name);
-  }
-
-  _setSyntheticOutputDeclaration(frame, name, decl) {
-    frame.setSyntheticDeclaration(name, decl);
-  }
-
-  _isOutputDeclaredInCurrentScope(node, frame, name) {
-    return !!this._findSyntheticOutputDeclarationInCurrentScope(frame, name);
-  }
-
   _getNodeName(node) {
     switch (node.typename) {
       case 'Symbol':

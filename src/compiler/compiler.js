@@ -1,7 +1,6 @@
 const {
   RESERVED_DECLARATION_NAMES,
   validateGuardVariablesDeclared,
-  validateDeclarationScope,
   validateOutputDeclarationNode
 } = require('./validation');
 
@@ -41,32 +40,8 @@ class Compiler extends CompilerBase {
     this.analysisState = null;
   }
 
-
-  //@todo - move to compile-base next to _isDeclared
-  _addDeclaredVar(frame, varName) {
-    if (this.asyncMode || this.scriptMode) {
-      validateDeclarationScope(frame, varName, this, null);
-      // Variables and outputs share the same lexical scoping rules.
-      // At this point only compiler-generated synthetic outputs can exist on the frame.
-      const outputDecl = this._findSyntheticOutputDeclaration(frame, varName);
-      const allowSequenceLockAlias = varName && varName.startsWith('!') &&
-        outputDecl && outputDecl.type === 'sequential_path';
-      if (outputDecl && outputDecl.type !== 'var' && !allowSequenceLockAlias) {
-        this.fail(`Cannot declare variable '${varName}' because an output with the same name is already declared.`);
-      }
-    }
-  }
-
   isReservedDeclarationName(name) {
     return RESERVED_DECLARATION_NAMES.has(name);
-  }
-
-  _addDeclaredOutput(frame, name, outputType, initializer = null, node = null) {
-    validateDeclarationScope(frame, name, this, node);
-    this._setSyntheticOutputDeclaration(frame, name, {
-      type: outputType,
-      initializer: initializer || null,
-    });
   }
 
   //@todo - move to compile-base
@@ -315,17 +290,12 @@ class Compiler extends CompilerBase {
 
     // 1. First pass: Validate, declare, and prepare temporary JS variables for all targets.
     node.targets.forEach((target) => {
-      const name = target.value;
       let id;
 
       // Sync mode relies on a fresh temp for JS assignment.
       id = this._tmpid();
       this.emit.line(`var ${id};`);
       ids.push(id);
-
-      if (this.scriptMode) {
-        this._addDeclaredVar(frame, name);
-      }
     });
 
     // 2. Compile the value/body assignment.

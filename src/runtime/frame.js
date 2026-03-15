@@ -81,34 +81,6 @@ class Frame {
     return p && p.resolve(name);
   }
 
-  getSyntheticDeclarations() {
-    return this.declaredOutputs || null;
-  }
-
-  findSyntheticDeclaration(name) {
-    let frame = this;
-    while (frame) {
-      const declaredOutputs = frame.getSyntheticDeclarations();
-      if (declaredOutputs && declaredOutputs.has(name)) {
-        return declaredOutputs.get(name);
-      }
-      frame = frame.parent;
-    }
-    return null;
-  }
-
-  findSyntheticDeclarationInCurrentScope(name) {
-    const declaredOutputs = this.getSyntheticDeclarations();
-    return declaredOutputs ? declaredOutputs.get(name) || null : null;
-  }
-
-  setSyntheticDeclaration(name, decl) {
-    if (!this.declaredOutputs) {
-      this.declaredOutputs = new Map();
-    }
-    this.declaredOutputs.set(name, decl);
-  }
-
   push(isolateWrites, _createScope) {
     const newFrame = new Frame(this, isolateWrites);
     if (this._seesRootScope) {
@@ -154,12 +126,6 @@ class AsyncFrame extends Frame {
   constructor(parent, isolateWrites, createScope = true) {
     super(parent, isolateWrites);
     this.createScope = createScope;
-
-    if (AsyncFrame.inCompilerContext) {
-      //holds the names of outputs declared at this frame
-      this.declaredOutputs = undefined;
-    }
-
   }
 
   static inCompilerContext = false;

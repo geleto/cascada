@@ -45,26 +45,6 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
 }
 
 /**
- * Validate that a variable declaration is attached to a scoping frame.
- * @param {Frame} frame - The frame where the declaration is being registered
- * @param {string} name - The variable name
- * @param {Compiler} compiler - The compiler instance (for error reporting)
- * @param {Node|null} node - The AST node for error positioning (optional)
- */
-function validateDeclarationScope(frame, name, compiler, node) {
-  if (frame && frame.createScope === false) {
-    const lineno = node && node.lineno;
-    const colno = node && node.colno;
-    compiler.fail(
-      `Cannot declare variable '${name}' in a non-scoping frame.`,
-      lineno,
-      colno,
-      node || undefined
-    );
-  }
-}
-
-/**
  * Validate that write attempts from read-only scopes do not target outer variables/outputs.
  * @param {Compiler} compiler - The compiler instance
  * @param {object} options
@@ -154,7 +134,6 @@ module.exports = {
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
   validateGuardVariablesDeclared,
-  validateDeclarationScope,
   validateOutputDeclarationNode,
   validateSinkSnapshotInGuard,
   validateOutputObservationCall
