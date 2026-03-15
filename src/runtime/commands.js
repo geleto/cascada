@@ -5,21 +5,21 @@ const contextualizedOutputErrorCache = new WeakMap();
 let safeOutputApi = null;
 
 /**
- * Command classes for the script-mode output pipeline.
+ * Command classes for the script-mode channel pipeline.
  *
- * Each command carries the data needed to mutate an Output object.
- * The flattener calls command.apply(output) in source order; output is the
- * Output instance for the target handler.
+ * Each command carries the data needed to mutate a Channel object.
+ * The flattener calls command.apply(channel) in source order; channel is the
+ * Channel instance for the target channel.
  *
- * apply() mutates output in place and may encode poison into output state.
+ * apply() mutates channel in place and may encode poison into channel state.
  * getError() returns a PoisonError if the command carries poison, or null.
  *
  * isObservable: true  — command returns a deferred value; applied immediately
  *                       without waiting for prior mutable commands to complete.
- * isObservable: false — command mutates output state; waits for any pending
+ * isObservable: false — mutation command mutates channel state; waits for any pending
  *                       observable commands before applying.
- * Copy-on-write protection (DataOutput._beforeApplyCommand) is triggered for
- * every non-observable (mutating) command.
+ * Copy-on-write protection (DataChannel._beforeApplyCommand) is triggered for
+ * every non-observable mutation command.
  */
 
 // ---------------------------------------------------------------------------
@@ -72,11 +72,11 @@ class Command {
   }
 }
 
-// Base class for commands targeting a declared output handler (text/value/data/sink). Carries handler name, method name, arguments, and source position.
-class OutputCommand extends Command {
-  constructor({ handler, command = null, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
+// Base class for commands targeting a declared channel (text/var/data/sink). Carries channel name, method name, arguments, and source position.
+class ChannelCommand extends Command {
+  constructor({ channelName, command = null, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
     super();
-    this.handler = handler;
+    this.channelName = channelName;
     this.command = command;
     this.arguments = args || legacyArgs || [];
     this.subpath = subpath;
@@ -112,14 +112,14 @@ class OutputCommand extends Command {
   }
 }
 
-// Appends one or more text values to a text output's buffer array, or replaces it on `set`.
-class TextCommand extends OutputCommand {
+// Appends one or more text values to a text channel's buffer array, or replaces it on `set`.
+class TextCommand extends ChannelCommand {
   constructor(specOrValue) {
     const isSpecObject = !!specOrValue &&
       typeof specOrValue === 'object' &&
       !Array.isArray(specOrValue) &&
       (
-        Object.prototype.hasOwnProperty.call(specOrValue, 'handler') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'channelName') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'arguments') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
@@ -128,7 +128,7 @@ class TextCommand extends OutputCommand {
       );
     if (isSpecObject) {
       super({
-        handler: specOrValue.handler,
+        channelName: specOrValue.channelName,
         command: specOrValue.command || null,
         args: specOrValue.args || specOrValue.arguments || [],
         subpath: null,
@@ -138,7 +138,7 @@ class TextCommand extends OutputCommand {
       return;
     }
     super({
-      handler: 'text',
+      channelName: 'text',
       command: null,
       arguments: [specOrValue],
       subpath: null,
@@ -147,43 +147,43 @@ class TextCommand extends OutputCommand {
     this.normalizeArgs = false;
   }
 
-  apply(output) {
-    super.apply(output);
-    if (!output || !Array.isArray(output._target)) {
-      if (!output) {
+  apply(channel) {
+    super.apply(channel);
+    if (!channel || !Array.isArray(channel._target)) {
+      if (!channel) {
         return;
       }
-      output._setTarget([]);
+      channel._setTarget([]);
     }
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      output._target.push(this.toPoisonValue(poisonErrors));
-      output._markStateChanged();
+      channel._target.push(this.toPoisonValue(poisonErrors));
+      channel._markStateChanged();
       return;
     }
     const args = Array.isArray(this.arguments) ? this.arguments : [];
     if (this.command === 'set') {
       if (args.length !== 1) {
-        output._setTarget(this.toPoisonValue([
-          contextualizeOutputError(output, this.pos, new Error('text.set() accepts exactly one argument'))
+        channel._setTarget(this.toPoisonValue([
+          contextualizeOutputError(channel, this.pos, new Error('text.set() accepts exactly one argument'))
         ]));
         return;
       }
-      output._setTarget([]);
+      channel._setTarget([]);
     } else if (this.command !== null) {
-      output._setTarget(this.toPoisonValue([
-        contextualizeOutputError(output, this.pos, new Error(`Unsupported text output command '${this.command}'`))
+      channel._setTarget(this.toPoisonValue([
+        contextualizeOutputError(channel, this.pos, new Error(`Unsupported text channel command '${this.command}'`))
       ]));
       return;
     }
     if (!this.normalizeArgs) {
-      appendTextValues(output, args, this.pos);
+      appendTextValues(channel, args, this.pos);
       return;
     }
     const normalizedArgs = [];
     let hasAsyncNormalization = false;
     for (const arg of args) {
-      const normalized = normalizeTextCommandArg(arg, output, this.pos);
+      const normalized = normalizeTextCommandArg(arg, channel, this.pos);
       if (normalized && typeof normalized.then === 'function') {
         hasAsyncNormalization = true;
       }
@@ -191,21 +191,21 @@ class TextCommand extends OutputCommand {
     }
     if (hasAsyncNormalization) {
       return Promise.all(normalizedArgs).then((resolvedArgs) => {
-        appendTextValues(output, resolvedArgs, this.pos);
+        appendTextValues(channel, resolvedArgs, this.pos);
       });
     }
-    appendTextValues(output, normalizedArgs, this.pos);
+    appendTextValues(channel, normalizedArgs, this.pos);
   }
 }
 
-// Sets the value of a var output's target to the single supplied argument.
-class ValueCommand extends OutputCommand {
+// Sets the value of a var channel's target to the single supplied argument.
+class VarCommand extends ChannelCommand {
   constructor(specOrValue) {
     const isSpecObject = !!specOrValue &&
       typeof specOrValue === 'object' &&
       !Array.isArray(specOrValue) &&
       (
-        Object.prototype.hasOwnProperty.call(specOrValue, 'handler') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'channelName') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'arguments') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
@@ -214,7 +214,7 @@ class ValueCommand extends OutputCommand {
       );
     if (isSpecObject) {
       super({
-        handler: specOrValue.handler,
+        channelName: specOrValue.channelName,
         command: null,
         args: specOrValue.args || specOrValue.arguments || [],
         subpath: null,
@@ -223,7 +223,7 @@ class ValueCommand extends OutputCommand {
       return;
     }
     super({
-      handler: 'var',
+      channelName: 'var',
       command: null,
       arguments: [specOrValue],
       subpath: null,
@@ -231,33 +231,33 @@ class ValueCommand extends OutputCommand {
     });
   }
 
-  apply(output) {
-    super.apply(output);
-    if (!output) return;
+  apply(channel) {
+    super.apply(channel);
+    if (!channel) return;
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      output._setTarget(this.toPoisonValue(poisonErrors));
+      channel._setTarget(this.toPoisonValue(poisonErrors));
       return;
     }
     if (!Array.isArray(this.arguments) || this.arguments.length === 0) {
-      output._setTarget(undefined);
+      channel._setTarget(undefined);
       return;
     }
     if (this.arguments.length > 1) {
-      output._setTarget(this.toPoisonValue([
-        contextualizeOutputError(output, this.pos, new Error('var output accepts exactly one argument'))
+      channel._setTarget(this.toPoisonValue([
+        contextualizeOutputError(channel, this.pos, new Error('var channel accepts exactly one argument'))
       ]));
       return;
     }
-    output._setTarget(this.arguments[0]);
+    channel._setTarget(this.arguments[0]);
   }
 }
 
 // Timing-only sync point: awaits an iteration value for limited-concurrency loop synchronization. Does not propagate errors.
-class WaitResolveCommand extends OutputCommand {
-  constructor({ handler, args = null, arguments: legacyArgs = null, pos = null }) {
+class WaitResolveCommand extends ChannelCommand {
+  constructor({ channelName, args = null, arguments: legacyArgs = null, pos = null }) {
     super({
-      handler,
+      channelName,
       command: null,
       args: args || legacyArgs || [],
       subpath: null,
@@ -266,20 +266,20 @@ class WaitResolveCommand extends OutputCommand {
     // isObservable is intentionally false: routing through _applyMutable ensures
     // this command waits for all pending observables, which is the sync guarantee
     // concurrency-limited loops depend on. No copy-on-write concern: this command
-    // is only ever applied to the __waited__ var output (ValueOutput), which has
+    // is only ever applied to the __waited__ var channel (VarChannel), which has
     // no _beforeApplyCommand COW logic.
   }
 
-  async apply(output) {
-    super.apply(output);
+  async apply(channel) {
+    super.apply(channel);
     const value = Array.isArray(this.arguments) && this.arguments.length > 0
       ? this.arguments[0]
       : undefined;
     try {
       const { resolveSingle } = require('./resolve');
       const resolved = await resolveSingle(value);
-      if (output) {
-        output._setTarget(resolved);
+      if (channel) {
+        channel._setTarget(resolved);
       }
       return resolved;
     } catch (err) {
@@ -290,11 +290,11 @@ class WaitResolveCommand extends OutputCommand {
   }
 }
 
-// Invokes a named data handler method (e.g., set, push) on a data output's DataHandler. Corresponds to @data directives in scripts.
-class DataCommand extends OutputCommand {
-  constructor({ handler, command, args = null, arguments: legacyArgs = null, pos = null }) {
+// Invokes a named data method (e.g., set, push) on a data channel's DataHandler. Corresponds to @data directives in scripts.
+class DataCommand extends ChannelCommand {
+  constructor({ channelName, command, args = null, arguments: legacyArgs = null, pos = null }) {
     super({
-      handler,
+      channelName,
       command: command || null,
       args: args || legacyArgs || [],
       subpath: null,
@@ -302,20 +302,20 @@ class DataCommand extends OutputCommand {
     });
   }
 
-  apply(output) {
-    super.apply(output);
-    if (!output || !output._base) return;
+  apply(channel) {
+    super.apply(channel);
+    if (!channel || !channel._base) return;
     const rawPath = Array.isArray(this.arguments) && this.arguments.length > 0 ? this.arguments[0] : null;
     const dataPath = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
     const poisonErrors = this.extractPoisonFromArgs();
     // Preserve existing poison on a data path for non-set operations, but still
     // merge any new poison that arrived through arguments.
     if (this.command !== 'set') {
-      const existing = readDataValueAtPath(output._base.data, dataPath);
+      const existing = readDataValueAtPath(channel._base.data, dataPath);
       if (isPoison(existing) || isPoisonError(existing)) {
         if (poisonErrors.length > 0) {
           setDataPoisonAtPath(
-            output,
+            channel,
             this.arguments,
             this.toPoisonValue(poisonErrors)
           );
@@ -325,43 +325,43 @@ class DataCommand extends OutputCommand {
     }
     if (poisonErrors.length > 0) {
       setDataPoisonAtPath(
-        output,
+        channel,
         this.arguments,
         this.toPoisonValue(poisonErrors)
       );
       return;
     }
-    const method = this.command ? output._base[this.command] : output._base;
+    const method = this.command ? channel._base[this.command] : channel._base;
     if (typeof method !== 'function') {
       setDataPoisonAtPath(
-        output,
+        channel,
         this.arguments,
         this.toPoisonValue([
-          contextualizeOutputError(output, this.pos, new Error(`has no method '${this.command}'`))
+          contextualizeOutputError(channel, this.pos, new Error(`has no method '${this.command}'`))
         ])
       );
       return;
     }
     try {
-      method.apply(output._base, this.arguments);
-      output._setTarget(output._base.data);
+      method.apply(channel._base, this.arguments);
+      channel._setTarget(channel._base.data);
     } catch (err) {
       setDataPoisonAtPath(
-        output,
+        channel,
         this.arguments,
         this.toPoisonValue([
-          contextualizeOutputError(output, this.pos, err)
+          contextualizeOutputError(channel, this.pos, err)
         ])
       );
     }
   }
 }
 
-// Calls a method on a sink output object (or a sub-path within it). Errors poison the output target.
-class SinkCommand extends OutputCommand {
-  constructor({ handler, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
+// Calls a method on a sink channel object (or a sub-path within it). Errors poison the channel target.
+class SinkCommand extends ChannelCommand {
+  constructor({ channelName, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
     super({
-      handler,
+      channelName,
       command: command || null,
       args: args || legacyArgs || [],
       subpath: subpath || null,
@@ -369,39 +369,39 @@ class SinkCommand extends OutputCommand {
     });
   }
 
-  apply(output) {
-    super.apply(output);
-    if (!output) return;
+  apply(channel) {
+    super.apply(channel);
+    if (!channel) return;
     const isRootRepair = this.command === 'repair' && (!this.subpath || this.subpath.length === 0);
-    if (!isRootRepair && isPoison(output._getTarget())) {
+    if (!isRootRepair && isPoison(channel._getTarget())) {
       return;
     }
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      output._setTarget(this.toPoisonValue(poisonErrors));
+      channel._setTarget(this.toPoisonValue(poisonErrors));
       return;
     }
-    const sink = output._sink;
+    const sink = channel._sink;
     const target = resolveSubpath(sink, this.subpath);
     const method = this.command ? (target && target[this.command]) : target;
 
     if (isRootRepair) {
-      output._setTarget(undefined);
+      channel._setTarget(undefined);
       if (typeof method !== 'function') {
         return;
       }
       const repairResult = method.apply(target, this.arguments);
       if (repairResult && typeof repairResult.then === 'function') {
         return Promise.resolve(repairResult).catch((err) => {
-          output._setTarget(this.toPoisonValue([contextualizeOutputError(output, this.pos, err)]));
+          channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
         });
       }
       return;
     }
 
     if (typeof method !== 'function') {
-      output._setTarget(this.toPoisonValue([
-        contextualizeOutputError(output, this.pos, new Error(`Sink method '${this.command}' not found`))
+      channel._setTarget(this.toPoisonValue([
+        contextualizeOutputError(channel, this.pos, new Error(`Sink method '${this.command}' not found`))
       ]));
       return;
     }
@@ -410,21 +410,21 @@ class SinkCommand extends OutputCommand {
       const result = method.apply(target, this.arguments);
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).catch((err) => {
-          output._setTarget(this.toPoisonValue([contextualizeOutputError(output, this.pos, err)]));
+          channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
         });
       }
       return result;
     } catch (err) {
-      output._setTarget(this.toPoisonValue([contextualizeOutputError(output, this.pos, err)]));
+      channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
     }
   }
 }
 
 // Calls a method on a sequence sink in source order and resolves the deferred result promise with the return value. Mutating — waits for prior observables.
-class SequenceCallCommand extends OutputCommand {
-  constructor({ handler, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null, withDeferredResult = false }) {
+class SequenceCallCommand extends ChannelCommand {
+  constructor({ channelName, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null, withDeferredResult = false }) {
     super({
-      handler,
+      channelName,
       command: command || null,
       args: args || legacyArgs || [],
       subpath: subpath || null,
@@ -438,9 +438,9 @@ class SequenceCallCommand extends OutputCommand {
     }
   }
 
-  apply(output) {
-    super.apply(output);
-    if (!output) return undefined;
+  apply(channel) {
+    super.apply(channel);
+    if (!channel) return undefined;
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
       const err = new PoisonError(poisonErrors);
@@ -476,7 +476,7 @@ class SequenceCallCommand extends OutputCommand {
       return result;
     };
 
-    const sink = output._ensureSinkResolved ? output._ensureSinkResolved() : output._sink;
+    const sink = channel._ensureSinkResolved ? channel._ensureSinkResolved() : channel._sink;
     if (sink && typeof sink.then === 'function') {
       return Promise.resolve(sink).then(execute);
     }
@@ -485,10 +485,10 @@ class SequenceCallCommand extends OutputCommand {
 }
 
 // Reads a property from a sequence sink in source order and resolves the deferred result promise with the value. Observable — applied immediately without waiting for pending mutating commands.
-class SequenceGetCommand extends OutputCommand {
-  constructor({ handler, command, subpath = null, pos = null, withDeferredResult = false }) {
+class SequenceGetCommand extends ChannelCommand {
+  constructor({ channelName, command, subpath = null, pos = null, withDeferredResult = false }) {
     super({
-      handler,
+      channelName,
       command: command || null,
       args: [],
       subpath: subpath || null,
@@ -503,8 +503,8 @@ class SequenceGetCommand extends OutputCommand {
     }
   }
 
-  apply(output) {
-    if (!output) return undefined;
+  apply(channel) {
+    if (!channel) return undefined;
 
     const execute = (sink) => {
       const target = resolveSubpath(sink, this.subpath);
@@ -513,7 +513,7 @@ class SequenceGetCommand extends OutputCommand {
       return value;
     };
 
-    const sink = output._ensureSinkResolved ? output._ensureSinkResolved() : output._sink;
+    const sink = channel._ensureSinkResolved ? channel._ensureSinkResolved() : channel._sink;
     if (sink && typeof sink.then === 'function') {
       return Promise.resolve(sink).then(execute, (err) => {
         this.rejectResult(err);
@@ -526,10 +526,10 @@ class SequenceGetCommand extends OutputCommand {
 
 // Executes a `!`-path read operation in source order. Skips (rejects) if the path is already poisoned. Observable.
 class SequentialPathReadCommand extends Command {
-  constructor({ handler, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
+  constructor({ channelName, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
     super({ withDeferredResult });
-    this.handler = handler;
-    this.pathKey = pathKey || handler;
+    this.channelName = channelName;
+    this.pathKey = pathKey || this.channelName;
     this.operation = operation;
     this.repair = !!repair;
     this.pos = pos || { lineno: 0, colno: 0 };
@@ -598,10 +598,10 @@ class RepairReadCommand extends SequentialPathReadCommand {
 
 // Executes a `!`-path write/call operation in source order. Poisons the path on failure so subsequent commands on the same path are skipped. Mutating.
 class SequentialPathWriteCommand extends Command {
-  constructor({ handler, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
+  constructor({ channelName, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
     super({ withDeferredResult });
-    this.handler = handler;
-    this.pathKey = pathKey || handler;
+    this.channelName = channelName;
+    this.pathKey = pathKey || this.channelName;
     this.operation = operation;
     this.repair = !!repair;
     this.pos = pos || { lineno: 0, colno: 0 };
@@ -688,11 +688,11 @@ class ErrorCommand extends Command {
   }
 }
 
-// Writes poison directly into an output's target: pushes a PoisonedValue onto a text buffer, or replaces a data/var/sink target with one.
+// Writes poison directly into a channel target: pushes a PoisonedValue onto a text buffer, or replaces a data/var/sink target with one.
 class TargetPoisonCommand extends Command {
-  constructor({ handler, errors = null, pos = null }) {
+  constructor({ channelName, errors = null, pos = null }) {
     super();
-    this.handler = handler;
+    this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
   }
@@ -722,11 +722,11 @@ class TargetPoisonCommand extends Command {
   }
 }
 
-// Captures the current output state (with poison inspection) as a deferred value. Used for `snapshot()` calls and explicit `return data/text.snapshot()`. Observable.
+// Captures the current channel state (with poison inspection) as a deferred value. Used for `snapshot()` calls and explicit `return data/text.snapshot()`. Observation command.
 class SnapshotCommand extends Command {
-  constructor({ handler, pos = null }) {
+  constructor({ channelName, pos = null }) {
     super({ withDeferredResult: true });
-    this.handler = handler;
+    this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
@@ -739,7 +739,7 @@ class SnapshotCommand extends Command {
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
     if (!output || typeof output._resolveSnapshotCommandResult !== 'function') {
-      this.rejectResult(contextualize(new Error('SnapshotCommand requires an output handler with _resolveSnapshotCommandResult()')));
+      this.rejectResult(contextualize(new Error('SnapshotCommand requires a channel with _resolveSnapshotCommandResult()')));
       return;
     }
 
@@ -762,11 +762,11 @@ class SnapshotCommand extends Command {
   }
 }
 
-// Captures the raw output target without poison inspection. Used for overwrite semantics (e.g., var-output set_path) where poisoned leaves may be replaced by the write. Observable.
+// Captures the raw channel target without poison inspection. Used for overwrite semantics (e.g., var-channel set_path) where poisoned leaves may be replaced by the write. Observation command.
 class RawSnapshotCommand extends Command {
-  constructor({ handler, pos = null }) {
+  constructor({ channelName, pos = null }) {
     super({ withDeferredResult: true });
-    this.handler = handler;
+    this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
@@ -779,7 +779,7 @@ class RawSnapshotCommand extends Command {
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
     if (!output || typeof output._getTarget !== 'function') {
-      this.rejectResult(contextualize(new Error('RawSnapshotCommand requires an output handler with _getTarget()')));
+      this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a channel with _getTarget()')));
       return;
     }
 
@@ -791,11 +791,11 @@ class RawSnapshotCommand extends Command {
   }
 }
 
-// Resolves to a boolean indicating whether the output currently holds a poisoned (error) value. Observable.
+// Resolves to a boolean indicating whether the channel currently holds a poisoned (error) value. Observation command.
 class IsErrorCommand extends Command {
-  constructor({ handler, pos = null }) {
+  constructor({ channelName, pos = null }) {
     super({ withDeferredResult: true });
-    this.handler = handler;
+    this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
@@ -808,7 +808,7 @@ class IsErrorCommand extends Command {
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
     if (!output || typeof output._isErrorNow !== 'function') {
-      this.rejectResult(contextualize(new Error('IsErrorCommand requires an output handler with _isErrorNow()')));
+      this.rejectResult(contextualize(new Error('IsErrorCommand requires a channel with _isErrorNow()')));
       return;
     }
 
@@ -827,11 +827,11 @@ class IsErrorCommand extends Command {
   }
 }
 
-// Resolves to the current error on the output (a PoisonError or null). Observable.
+// Resolves to the current error on the channel (a PoisonError or null). Observation command.
 class GetErrorCommand extends Command {
-  constructor({ handler, pos = null }) {
+  constructor({ channelName, pos = null }) {
     super({ withDeferredResult: true });
-    this.handler = handler;
+    this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
@@ -844,7 +844,7 @@ class GetErrorCommand extends Command {
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
     if (!output || typeof output._getErrorNow !== 'function') {
-      this.rejectResult(contextualize(new Error('GetErrorCommand requires an output handler with _getErrorNow()')));
+      this.rejectResult(contextualize(new Error('GetErrorCommand requires a channel with _getErrorNow()')));
       return;
     }
 
@@ -863,11 +863,11 @@ class GetErrorCommand extends Command {
   }
 }
 
-// Snapshots the current output state for `try/resume` guard entry. The captured state is passed to a later RestoreGuardStateCommand. Observable.
+// Snapshots the current channel state for `try/resume` guard entry. The captured state is passed to a later RestoreGuardStateCommand. Observation command.
 class CaptureGuardStateCommand extends Command {
-  constructor({ handler, pos = null }) {
+  constructor({ channelName, pos = null }) {
     super({ withDeferredResult: true });
-    this.handler = handler;
+    this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
@@ -880,7 +880,7 @@ class CaptureGuardStateCommand extends Command {
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
     if (!output || typeof output._captureGuardState !== 'function') {
-      this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires an output handler with _captureGuardState()')));
+      this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a channel with _captureGuardState()')));
       return;
     }
 
@@ -899,11 +899,11 @@ class CaptureGuardStateCommand extends Command {
   }
 }
 
-// Calls `_repairNow()` on a sink output to repair it within a guard block. Carries a deferred result.
+// Calls `_repairNow()` on a sink channel to repair it within a guard block. Carries a deferred result.
 class SinkRepairCommand extends Command {
-  constructor({ handler, pos = null }) {
+  constructor({ channelName, pos = null }) {
     super({ withDeferredResult: true });
-    this.handler = handler;
+    this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
@@ -914,7 +914,7 @@ class SinkRepairCommand extends Command {
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
     if (!output || typeof output._repairNow !== 'function') {
-      this.rejectResult(contextualize(new Error('SinkRepairCommand requires a sink output handler with _repairNow()')));
+      this.rejectResult(contextualize(new Error('SinkRepairCommand requires a sink channel with _repairNow()')));
       return;
     }
 
@@ -933,13 +933,13 @@ class SinkRepairCommand extends Command {
   }
 }
 
-// Captures the current text output state (including poison) for `try/resume` guard entry.
+// Captures the current text channel state (including poison) for `try/resume` guard entry.
 // The captured state is passed to a later RestoreGuardStateCommand. Observable.
 // @todo - not implemented, implement as a general CaptureGuardStateCommand?
 class TextCheckpointCommand extends Command {
-  constructor({ handler, pos = null }) {
+  constructor({ channelName, pos = null }) {
     super({ withDeferredResult: true });
-    this.handler = handler;
+    this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
@@ -952,7 +952,7 @@ class TextCheckpointCommand extends Command {
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
     if (!output || typeof output._captureTextCheckpoint !== 'function') {
-      this.rejectResult(contextualize(new Error('TextCheckpointCommand requires a text output handler with _captureTextCheckpoint()')));
+      this.rejectResult(contextualize(new Error('TextCheckpointCommand requires a text channel with _captureTextCheckpoint()')));
       return;
     }
 
@@ -971,11 +971,11 @@ class TextCheckpointCommand extends Command {
   }
 }
 
-// Restores a previously captured guard state to the output, overwriting the current target with the saved snapshot. Carries a deferred result.
+// Restores a previously captured guard state to the channel, overwriting the current target with the saved snapshot. Carries a deferred result.
 class RestoreGuardStateCommand extends Command {
-  constructor({ handler, target, pos = null }) {
+  constructor({ channelName, target, pos = null }) {
     super({ withDeferredResult: true });
-    this.handler = handler;
+    this.channelName = channelName;
     this.target = target;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
@@ -1009,9 +1009,9 @@ class RestoreGuardStateCommand extends Command {
 
 module.exports = {
   Command,
-  OutputCommand,
+  ChannelCommand,
   TextCommand,
-  ValueCommand,
+  VarCommand,
   WaitResolveCommand,
   DataCommand,
   SinkCommand,

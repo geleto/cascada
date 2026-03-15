@@ -2,7 +2,7 @@
 
 const {
   TextCommand,
-  ValueCommand,
+  VarCommand,
   DataCommand,
   SinkCommand
 } = require('./commands');
@@ -12,11 +12,11 @@ const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = requ
 const { RESOLVE_MARKER } = require('./resolve');
 const ASYNC_POISON_BOX_KEY = Symbol.for('cascada.asyncArgPoisonBox');
 
-class Output {
-  constructor(frame, buffer, outputName, context, outputType = null, target = undefined, base = null) {
+class Channel {
+  constructor(frame, buffer, channelName, context, channelType = null, target = undefined, base = null) {
     //this._frame = frame;
-    this._outputName = outputName;//@todo rename to name
-    this._outputType = outputType || outputName;//@todo rename to type
+    this._outputName = channelName;//@todo rename to name
+    this._outputType = channelType || channelName;//@todo rename to type
     this._context = context;
     this._buffer = buffer;
     this._target = target;
@@ -47,33 +47,33 @@ class Output {
     let entry;
     if (this._outputType === 'text') {
       entry = new TextCommand({
-        handler: this._outputName,
+        channelName: this._outputName,
         args,
         normalizeArgs: true,
         pos: { lineno: 0, colno: 0 }
       });
     } else if (this._outputType === 'var') {
-      entry = new ValueCommand({
-        handler: this._outputName,
+      entry = new VarCommand({
+        channelName: this._outputName,
         args,
         pos: { lineno: 0, colno: 0 }
       });
     } else if (this._outputType === 'data') {
       entry = new DataCommand({
-        handler: this._outputName,
+        channelName: this._outputName,
         command: command || null,
         args,
         pos: { lineno: 0, colno: 0 }
       });
     } else if (this._outputType === 'sink') {
       entry = new SinkCommand({
-        handler: this._outputName,
+        channelName: this._outputName,
         command: command || null,
         args,
         pos: { lineno: 0, colno: 0 }
       });
     } else {
-      throw new Error(`Unsupported output type '${this._outputType}' for command enqueueing`);
+      throw new Error(`Unsupported channel type '${this._outputType}' for command enqueueing`);
     }
     this._buffer.add(entry, this._outputName);
   }
@@ -133,7 +133,7 @@ class Output {
   }
 
   _getCurrentResult() {
-    throw new Error(`Output type '${this._outputType}' must implement _getCurrentResult()`);
+    throw new Error(`Channel type '${this._outputType}' must implement _getCurrentResult()`);
   }
 
   _recordError(err, cmd = null) {
@@ -153,7 +153,7 @@ class Output {
   }
 
   _beforeApplyCommand(cmd) {
-    // Hook for output types that need copy-on-write before mutations.
+    // Hook for channel types that need copy-on-write before mutations.
   }
 
   _applyCommand(cmd) {
@@ -247,8 +247,8 @@ class Output {
   }
 }
 
-// Shared properties exposed on output facades (proxy/callable).
-// These must read/write the underlying Output instance.
+// Shared properties exposed on channel facades (proxy/callable).
+// These must read/write the underlying Channel instance.
 const OUTPUT_API_PROPS = new Set([
   '_outputName',
   '_outputType',
@@ -263,10 +263,10 @@ const OUTPUT_API_PROPS = new Set([
   '_completionResolved'
 ]);
 
-// Create a facade that can be callable (text/value) or dynamic-command (data).
-// The proxy makes _target/_base/_buffer read/write-through to the Output instance
+// Create a facade that can be callable (text/var) or dynamic-command (data).
+// The proxy makes _target/_base/_buffer read/write-through to the Channel instance
 // so the flattener's writes are visible to snapshot().
-function createOutputFacade(output, options) {
+function createChannelFacade(output, options) {
   const { callable, dynamicCommands } = options;
   const target = callable
     ? (...args) => output.invoke(...args)
@@ -330,7 +330,7 @@ function createOutputFacade(output, options) {
         if (prop === 'snapshot' || prop === 'isError' || prop === 'getError') {
           return undefined;
         }
-        // Proxy allows arbitrary output commands (e.g., output.set(...)) without
+        // Proxy allows arbitrary channel commands (e.g., channel.set(...)) without
         // predefining methods on the class. It preserves the dynamic command API.
         return (...args) => output._enqueueCommand(prop, args);
       }
@@ -347,7 +347,7 @@ function createOutputFacade(output, options) {
   });
 }
 
-class TextOutput extends Output {
+class TextChannel extends Channel {
   constructor(frame, buffer, outputName, context, outputType) {
     super(frame, buffer, outputName, context, outputType, [], null);
   }
@@ -381,9 +381,9 @@ class TextOutput extends Output {
   }
 }
 
-class ValueOutput extends Output {
+class VarChannel extends Channel {
   constructor(frame, buffer, outputName, context, outputType) {
-    // Keep declaration-only var outputs aligned with `none` semantics.
+    // Keep declaration-only var channels aligned with `none` semantics.
     // This sets the default snapshot to null without enqueuing a write command.
     super(frame, buffer, outputName, context, outputType, null, null);
   }
@@ -398,7 +398,7 @@ class ValueOutput extends Output {
   }
 }
 
-class SequentialPathOutput extends Output {
+class SequentialPathChannel extends Channel {
   constructor(frame, buffer, outputName, context, outputType) {
     super(frame, buffer, outputName, context, outputType, true, null);
     this._sequentialPathPoisonErrors = null;
@@ -463,7 +463,7 @@ class SequentialPathOutput extends Output {
   }
 }
 
-class DataOutput extends Output {
+class DataChannel extends Channel {
   constructor(frame, buffer, outputName, context, outputType) {
     const env = context && context.env ? context.env : null;
     const base = new DataHandler(context && context.getVariables ? context.getVariables() : {}, env);
@@ -539,41 +539,41 @@ class DataOutput extends Output {
   }
 }
 
-function createOutput(frame, buffer, outputName, context, outputType = null) {
-  const type = outputType || outputName;
+function createChannel(frame, buffer, channelName, context, channelType = null) {
+  const type = channelType || channelName;
   if (type === 'text') {
-    // Text output is callable; args are appended to the text buffer.
-    return createOutputFacade(new TextOutput(frame, buffer, outputName, context, type), {
+    // Text channel is callable; args are appended to the text buffer.
+    return createChannelFacade(new TextChannel(frame, buffer, channelName, context, type), {
       callable: true,
       dynamicCommands: false
     });
   }
   if (type === 'var') {
-    // Value output is callable; args replace the current value.
-    return createOutputFacade(new ValueOutput(frame, buffer, outputName, context, type), {
+    // Var channel is callable; args replace the current value.
+    return createChannelFacade(new VarChannel(frame, buffer, channelName, context, type), {
       callable: true,
       dynamicCommands: false
     });
   }
   if (type === 'sequential_path') {
-    return createOutputFacade(new SequentialPathOutput(frame, buffer, outputName, context, type), {
+    return createChannelFacade(new SequentialPathChannel(frame, buffer, channelName, context, type), {
       callable: false,
       dynamicCommands: false
     });
   }
   if (type === 'data') {
-    // Data output supports arbitrary commands (set, push, merge, etc.).
-    return createOutputFacade(new DataOutput(frame, buffer, outputName, context, type), {
+    // Data channel supports arbitrary commands (set, push, merge, etc.).
+    return createChannelFacade(new DataChannel(frame, buffer, channelName, context, type), {
       callable: false,
       dynamicCommands: true
     });
   }
-  throw new Error(`Unsupported output type '${type}'`);
+  throw new Error(`Unsupported channel type '${type}'`);
 }
 
-class SinkOutput extends Output {
-  constructor(frame, buffer, outputName, context, sink) {
-    super(frame, buffer, outputName, context, 'sink', undefined, null);
+class SinkChannel extends Channel {
+  constructor(frame, buffer, channelName, context, sink) {
+    super(frame, buffer, channelName, context, 'sink', undefined, null);
     this._sink = sink;
     this._sinkReady = false;
     this._sinkReadyPromise = null;
@@ -750,13 +750,13 @@ class SinkOutput extends Output {
   }
 }
 
-function createSinkOutput(frame, buffer, outputName, context, sink) {
-  return new SinkOutput(frame, buffer, outputName, context, sink);
+function createSinkChannel(frame, buffer, channelName, context, sink) {
+  return new SinkChannel(frame, buffer, channelName, context, sink);
 }
 
-class SequenceOutput extends SinkOutput {
-  constructor(frame, buffer, outputName, context, sink) {
-    super(frame, buffer, outputName, context, sink);
+class SequenceChannel extends SinkChannel {
+  constructor(frame, buffer, channelName, context, sink) {
+    super(frame, buffer, channelName, context, sink);
     this._outputType = 'sequence';
   }
 
@@ -813,54 +813,54 @@ class SequenceOutput extends SinkOutput {
   }
 }
 
-function createSequenceOutput(frame, buffer, outputName, context, sink) {
-  return new SequenceOutput(frame, buffer, outputName, context, sink);
+function createSequenceChannel(frame, buffer, channelName, context, sink) {
+  return new SequenceChannel(frame, buffer, channelName, context, sink);
 }
 
-function getOutput(frame, outputName) {
+function getChannel(frame, channelName) {
   let current = frame;
   while (current) {
-    if (current._outputs && Object.prototype.hasOwnProperty.call(current._outputs, outputName)) {
-      return current._outputs[outputName];
+    if (current._outputs && Object.prototype.hasOwnProperty.call(current._outputs, channelName)) {
+      return current._outputs[channelName];
     }
-    // Outputs follow the same scoping rules as variables: lexical parent chain only.
+    // Channels follow the same scoping rules as variables: lexical parent chain only.
     current = current.parent;
   }
   return undefined;
 }
 
-function declareOutput(frame, buffer, outputName, outputType, context, initializer = null) {
+function declareChannel(frame, buffer, channelName, channelType, context, initializer = null) {
   frame._outputs = frame._outputs || Object.create(null);
 
   const targetBuffer = buffer;
   if (!targetBuffer) {
     // No implicit CommandBuffer creation here by design.
     // Buffer ownership/creation must come from root/managed scope-root/async block setup.
-    throw new Error(`Output "${outputName}" declared without an active CommandBuffer`);
+    throw new Error(`Channel "${channelName}" declared without an active CommandBuffer`);
   }
 
   targetBuffer._outputTypes = targetBuffer._outputTypes || Object.create(null);
-  targetBuffer._outputTypes[outputName] = outputType;
+  targetBuffer._outputTypes[channelName] = channelType;
 
-  const output = (outputType === 'sink')
-    ? createSinkOutput(frame, targetBuffer, outputName, context, initializer)
-    : (outputType === 'sequence')
-      ? createSequenceOutput(frame, targetBuffer, outputName, context, initializer)
-      : createOutput(frame, targetBuffer, outputName, context, outputType);
+  const output = (channelType === 'sink')
+    ? createSinkChannel(frame, targetBuffer, channelName, context, initializer)
+    : (channelType === 'sequence')
+      ? createSequenceChannel(frame, targetBuffer, channelName, context, initializer)
+      : createChannel(frame, targetBuffer, channelName, context, channelType);
 
   output._buffer = targetBuffer;
-  frame._outputs[outputName] = output;
+  frame._outputs[channelName] = output;
 
   //if (buffer._registerOutput) {
-  targetBuffer._registerOutput(outputName, output);//@todo - this happens always?
+  targetBuffer._registerOutput(channelName, output);//@todo - this happens always?
   /*} else if (buffer._outputs instanceof Map) {
     buffer._outputs.set(outputName, output);
     output._iterator.bindToCurrentBuffer();
   }*/
 
-  if (outputType === 'sink' || outputType === 'sequence') {
-    targetBuffer._outputHandlers = targetBuffer._outputHandlers || Object.create(null);
-    targetBuffer._outputHandlers[outputName] = output;
+  if (channelType === 'sink' || channelType === 'sequence') {
+    targetBuffer._channelRegistry = targetBuffer._channelRegistry || Object.create(null);
+    targetBuffer._channelRegistry[channelName] = output;
   }
 
   return output;
@@ -873,19 +873,19 @@ function finalizeUnobservedSinks(frame, context) {
 }
 
 module.exports = {
-  Output,
-  DataOutput,
-  TextOutput,
-  ValueOutput,
-  SequentialPathOutput,
+  Channel,
+  DataChannel,
+  TextChannel,
+  VarChannel,
+  SequentialPathChannel,
   inspectTargetForErrors,
-  createOutput,
-  SinkOutput,
-  createSinkOutput,
-  SequenceOutput,
-  createSequenceOutput,
-  getOutput,
-  declareOutput,
+  createChannel,
+  SinkChannel,
+  createSinkChannel,
+  SequenceChannel,
+  createSequenceChannel,
+  getChannel,
+  declareChannel,
   finalizeUnobservedSinks
 };
 

@@ -26,7 +26,7 @@
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{{ value }}', env);
       const source = tmpl._compileSource();
-      expect(source).to.contain(`handler: "${DEFAULT_TEMPLATE_TEXT_OUTPUT}"`);
+      expect(source).to.contain(`channelName: "${DEFAULT_TEMPLATE_TEXT_OUTPUT}"`);
       expect(source).to.contain('new runtime.TextCommand');
     });
 

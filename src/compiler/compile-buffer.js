@@ -2,19 +2,19 @@
  * CompileBuffer - Output buffer management module
  *
  * Handles all output buffering operations for Cascada's deferred output system.
- * Manages buffer stacks, async buffer operations, and output command compilation.
+ * Manages buffer stacks, async buffer operations, and channel command compilation.
  */
 
 const nodes = require('../nodes');
 const {
-  validateOutputObservationCall
+  validateChannelObservationCall
 } = require('./validation');
-const OUTPUT_COMMAND_CLASS = {
+const CHANNEL_COMMAND_CLASS = {
   data: 'DataCommand',
   sink: 'SinkCommand',
   sequence: 'SequenceCallCommand',
   text: 'TextCommand',
-  var: 'ValueCommand'
+  var: 'VarCommand'
 };
 const DEFAULT_TEMPLATE_TEXT_OUTPUT = '__text__';
 
@@ -46,7 +46,7 @@ class CompileBuffer {
       const parentArg = parentBufferId || 'null';
       this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, frame);`);
       if (!this.compiler.scriptMode) {
-        this.compiler.emit.line(`let ${textId} = runtime.declareOutput(frame, ${bufferId}, "${this.currentTextOutputName}", "text", context, null);`);
+        this.compiler.emit.line(`let ${textId} = runtime.declareChannel(frame, ${bufferId}, "${this.currentTextOutputName}", "text", context, null);`);
       }
     } else {
       this.compiler.emit.line(`let ${bufferId} = "";`);
@@ -85,7 +85,7 @@ class CompileBuffer {
   _emitTemplateTextCommandExpression(valueExpression, positionNode, normalizeArgs = false) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    return `new runtime.TextCommand({ handler: "${this.currentTextOutputName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
+    return `new runtime.TextCommand({ channelName: "${this.currentTextOutputName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
   }
 
   _emitPositionLiteral(positionNode) {
@@ -99,14 +99,14 @@ class CompileBuffer {
     const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
     if (!staticPath || staticPath.length === 0) {
       this.compiler.fail(
-        'Invalid command syntax. Expected format is handler(...) or handler.command(...) or handler.subpath.command(...).',
+        'Invalid command syntax. Expected format is channel(...) or channel.command(...) or channel.subpath.command(...).',
         node.lineno, node.colno, node
       );
     }
 
-    const handler = staticPath[0];
-    const outputDecl = this.compiler.analysis.findDeclaration(node._analysis, handler);
-    const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
+    const channelName = staticPath[0];
+    const channelDecl = this.compiler.analysis.findDeclaration(node._analysis, channelName);
+    const channelType = node.channelType || (channelDecl ? channelDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
     const isObservationCall = isCallNode &&
@@ -114,25 +114,25 @@ class CompileBuffer {
       (command === 'snapshot' || command === 'isError' || command === 'getError');
 
     if (isObservationCall) {
-      validateOutputObservationCall(this.compiler, { node, command, handler, outputType });
+      validateChannelObservationCall(this.compiler, { node, command, channelName, channelType });
       if (command === 'snapshot') {
-        this.compiler.emit(`new runtime.SnapshotCommand({ handler: '${handler}', pos: ${this._emitPositionLiteral(node)} })`);
+        this.compiler.emit(`new runtime.SnapshotCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
         return;
       }
       if (command === 'isError') {
-        this.compiler.emit(`new runtime.IsErrorCommand({ handler: '${handler}', pos: ${this._emitPositionLiteral(node)} })`);
+        this.compiler.emit(`new runtime.IsErrorCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
         return;
       }
-      this.compiler.emit(`new runtime.GetErrorCommand({ handler: '${handler}', pos: ${this._emitPositionLiteral(node)} })`);
+      this.compiler.emit(`new runtime.GetErrorCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
       return;
     }
 
-    if (outputType === 'sequence') {
+    if (channelType === 'sequence') {
       if (isCallNode) {
         if (!command) {
-          this.compiler.fail('Invalid sequence command syntax: expected sequenceOutput.method(...)', node.lineno, node.colno, node);
+          this.compiler.fail('Invalid sequence command syntax: expected sequenceChannel.method(...)', node.lineno, node.colno, node);
         }
-        this.compiler.emit(`new runtime.SequenceCallCommand({ handler: '${handler}', command: '${command}', `);
+        this.compiler.emit(`new runtime.SequenceCallCommand({ channelName: '${channelName}', command: '${command}', `);
         if (subpath && subpath.length > 0) {
           this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
         }
@@ -143,9 +143,9 @@ class CompileBuffer {
       }
 
       if (!command) {
-        this.compiler.fail('Invalid sequence read syntax: expected sequenceOutput.path', node.lineno, node.colno, node);
+        this.compiler.fail('Invalid sequence read syntax: expected sequenceChannel.path', node.lineno, node.colno, node);
       }
-      this.compiler.emit(`new runtime.SequenceGetCommand({ handler: '${handler}', command: '${command}', `);
+      this.compiler.emit(`new runtime.SequenceGetCommand({ channelName: '${channelName}', command: '${command}', `);
       if (subpath && subpath.length > 0) {
         this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
       }
@@ -153,29 +153,29 @@ class CompileBuffer {
       return;
     }
 
-    const commandClass = OUTPUT_COMMAND_CLASS[outputType];
+    const commandClass = CHANNEL_COMMAND_CLASS[channelType];
     if (!commandClass) {
       this.compiler.fail(
-        `Compiler error: analysis did not resolve a declared output target for '${handler}'.`,
+        `Compiler error: analysis did not resolve a declared channel target for '${channelName}'.`,
         node.lineno,
         node.colno,
         node
       );
     }
-    this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
+    this.compiler.emit(`new runtime.${commandClass}({ channelName: '${channelName}', `);
     if (command) {
       this.compiler.emit(`command: '${command}', `);
     }
-    if (outputType === 'text') {
+    if (channelType === 'text') {
       this.compiler.emit('normalizeArgs: true, ');
     }
-    if (outputType === 'sink' && subpath && subpath.length > 0) {
+    if (channelType === 'sink' && subpath && subpath.length > 0) {
       this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
     }
     let argList = node.call.args;
     const asyncArgs = argList.isAsync;
-    if (outputType === 'data') {
-      // For data outputs, we create a new "virtual" AST for the arguments,
+    if (channelType === 'data') {
+      // For data channels, we create a new "virtual" AST for the arguments,
       // where the first argument is a path like "user.posts[0].title" that
       // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
       const originalArgs = node.call.args.children;
@@ -201,7 +201,7 @@ class CompileBuffer {
     }
 
     this.compiler.emit('args: ');
-    // Output commands are constructed with unresolved args; resolution/normalization
+    // Channel commands are constructed with unresolved args; resolution/normalization
     // happens once in runtime right before command.apply().
     this.compiler._compileAggregate(argList, frame, '[', ']', false, true);
     this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
@@ -233,7 +233,7 @@ class CompileBuffer {
     // WaitResolveCommand resolves plain promises and aggregate roots; runtime
     // command apply intentionally swallows resolution errors (timing-only wait).
     this.compiler.emit.line(
-      `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ handler: "${waitedOutputName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedOutputName}");`
+      `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedOutputName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedOutputName}");`
     );
   }
 
@@ -279,27 +279,27 @@ class CompileBuffer {
   // === HANDLER ANALYSIS ===
 
   /**
-   * Recursively collect all output handlers written to within a node's subtree.
-   * Used to determine which handlers need poison markers when branch is skipped.
+   * Recursively collect all channels written to within a node's subtree.
+   * Used to determine which channels need poison markers when branch is skipped.
    *
    * @param {Node} node - AST node to analyze
-   * @returns {Set<string>} Set of handler names (template text handler, data, etc.)
+   * @returns {Set<string>} Set of channel names (template text channel, data, etc.)
    */
   // === OUTPUT COMMAND COMPILATION ===
 
   /**
-   * Compile output command: handler.method(args)
-   * Handles output variables (data/text/value/sink) and custom sinks
+   * Compile channel command: channel.method(args)
+   * Handles declared channels (data/text/value/sink) and custom sinks
    */
-  compileOutputCommand(node, frame) {
+  compileChannelCommand(node, frame) {
     // Preserve output routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
     const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
-    const handler = this.compiler.sequential._extractStaticPathRoot(pathNode);
+    const channelName = this.compiler.sequential._extractStaticPathRoot(pathNode);
 
     this.asyncAddValueToBuffer(node, frame, (resultVar, f) => {
       this.compiler.emit(`${resultVar} = `);
       this._compileCommandConstruction(node, f);
-    }, node, handler);
+    }, node, channelName);
   }
 
   // === BUFFER EMISSION ===
@@ -336,7 +336,8 @@ class CompileBuffer {
   /**
    * Add value to buffer (async mode with error handling)
    */
-  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName, emitTextCommand = false) {
+  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, channelName = null, outputName, emitTextCommand = false) {
+    void channelName;
     const returnId = this.compiler._tmpid();
     if (this.compiler.asyncMode) {
       this.compiler.emit.asyncClosureDepth++;
@@ -395,14 +396,14 @@ class CompileBuffer {
     node,
     frame,
     positionNode = node,
-    handlerName = null,
+    channelName = null,
     outputName,
     emitTextCommand = false,
     normalizeTextArgs = false,
     emitFunc = null,
     afterValueReady = null
   ) {
-    void handlerName;
+    void channelName;
     if (!this.compiler.asyncMode) {
       this.compiler.emit(`${this.currentBuffer} += `);
       if (typeof emitFunc === 'function') {

@@ -1,7 +1,7 @@
 const {
   RESERVED_DECLARATION_NAMES,
   validateGuardVariablesDeclared,
-  validateOutputDeclarationNode
+  validateChannelDeclarationNode
 } = require('./validation');
 
 const parser = require('../parser');
@@ -52,14 +52,14 @@ class Compiler extends CompilerBase {
   }
 
   /**
-   * Emit a runtime prelink call that attaches `childBufferExpr` to handler lanes
+   * Emit a runtime prelink call that attaches `childBufferExpr` to channel lanes
    * on `parentBufferExpr` when those lanes are present in `presenceMapExpr`.
    *
    * `insertPos` is used for block functions where prelinking must be injected
    * before block body code is emitted.
    */
-  emitLinkWithParentCompositionBuffer(handlers, parentBufferExpr, childBufferExpr, presenceMapExpr, insertPos = null) {
-    const snippet = `runtime.linkWithParentCompositionBuffer(${parentBufferExpr}, ${childBufferExpr}, ${JSON.stringify(handlers)}, ${presenceMapExpr});`;
+  emitLinkWithParentCompositionBuffer(channelNames, parentBufferExpr, childBufferExpr, presenceMapExpr, insertPos = null) {
+    const snippet = `runtime.linkWithParentCompositionBuffer(${parentBufferExpr}, ${childBufferExpr}, ${JSON.stringify(channelNames)}, ${presenceMapExpr});`;
 
     if (typeof insertPos === 'number') {
       this.emit.insertLine(insertPos, snippet);
@@ -119,7 +119,7 @@ class Compiler extends CompilerBase {
             if (node.isAsync && !resolveArgs) {
               //when args are not resolved, the contentArgs are promises
               this.emit.asyncBlockRender(node, callFrame, function (f) {
-                this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+                this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, f);
               }, null, arg); // Use content arg node for position
             }
@@ -130,7 +130,7 @@ class Compiler extends CompilerBase {
 
               this.emit.withScopedSyntax(() => {
                 this.emit.asyncBlockRender(node, callFrame, function (f) {
-                  this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+                  this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
                   this.compile(arg, f);
                 }, 'cb', arg); // Use content arg node for position
                 this.emit.line(';');
@@ -179,13 +179,13 @@ class Compiler extends CompilerBase {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
 
-      const callTextHandler = this.buffer.currentTextOutputName;
+      const callTextChannelName = this.buffer.currentTextOutputName;
       frame = this.buffer.asyncAddToBufferScoped(
         node,
         frame,
         positionNode,
-        callTextHandler,
-        callTextHandler,
+        callTextChannelName,
+        callTextChannelName,
         true,
         this.asyncMode,
         (innerFrame) => {
@@ -211,13 +211,13 @@ class Compiler extends CompilerBase {
 
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      const callbackTextHandler = this.buffer.currentTextOutputName;
+      const callbackTextChannelName = this.buffer.currentTextOutputName;
       frame = this.buffer.asyncAddToBufferScoped(
         node,
         frame,
         positionNode,
-        callbackTextHandler,
-        callbackTextHandler,
+        callbackTextChannelName,
+        callbackTextChannelName,
         true,
         this.asyncMode,
         () => {
@@ -363,7 +363,7 @@ class Compiler extends CompilerBase {
 
   compileAsyncVarSet(node, frame) {
     if (!this.asyncMode) {
-      this.fail('async var output assignments are only supported in async mode', node.lineno, node.colno, node);
+      this.fail('async var channel assignments are only supported in async mode', node.lineno, node.colno, node);
     }
     const ids = [];
     const isDeclarationOnly = !!node.declarationOnly;
@@ -377,7 +377,7 @@ class Compiler extends CompilerBase {
       const isOwnDeclaration = !!(visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis);
 
       if (isOwnDeclaration) {
-        this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
+        this.emit(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
       } else {
         if (!(visibleDeclaration && visibleDeclaration.type === 'var')) {
           this.fail(
@@ -439,7 +439,7 @@ class Compiler extends CompilerBase {
       hasAssignedValue = true;
     }
 
-    // 3. Second pass: emit output commands + export.
+    // 3. Second pass: emit channel commands + export.
     node.targets.forEach((target, i) => {
       const name = target.value;
       const valueId = ids[i];
@@ -447,7 +447,7 @@ class Compiler extends CompilerBase {
       if (hasAssignedValue) {
         this.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
           this.emit(
-            `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+            `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
           );
         }, node, name);
       }
@@ -486,7 +486,7 @@ class Compiler extends CompilerBase {
   compileSwitch(node, frame) {
     const switchResult = this.buffer.asyncBufferNode(node, frame, false, false, node.expr, (blockFrame) => {
       const branchPositions = [];
-      const branchHandlers = []; // Track handlers per branch
+      const branchChannels = []; // Track channels per branch
       let catchPoisonPos;
       const caseCreatesScope = this.scriptMode || this.asyncMode;
 
@@ -522,16 +522,16 @@ class Compiler extends CompilerBase {
           this.emit.asyncBlock(c, blockFrame, caseCreatesScope, (f) => {
             this.compile(c.body, f);
 
-            // Collect handlers from this branch
+            // Collect channels from this branch
             if (this.asyncMode) {
-              branchHandlers.push(new Set(c.body._analysis.usedOutputs || []));
+              branchChannels.push(new Set(c.body._analysis.usedOutputs || []));
             }
           }, c.body); // Pass body as code position
           this.emit.line('break;');
         } else {
           // Empty case body (fall-through)
           if (this.asyncMode) {
-            branchHandlers.push(new Set());
+            branchChannels.push(new Set());
           }
         }
       });
@@ -547,20 +547,20 @@ class Compiler extends CompilerBase {
         this.emit.asyncBlock(node, blockFrame, caseCreatesScope, (f) => {
           this.compile(node.default, f);
 
-          // Collect handlers from default
+          // Collect channels from default
           if (this.asyncMode) {
-            branchHandlers.push(new Set(node.default._analysis.usedOutputs || []));
+            branchChannels.push(new Set(node.default._analysis.usedOutputs || []));
           }
         }, node.default); // Pass default as code position
       } else if (this.asyncMode) {
-        // No default case - add empty handler placeholder for collection.
-        branchHandlers.push(new Set());
+        // No default case - add empty channel placeholder for collection.
+        branchChannels.push(new Set());
       }
 
       this.emit('}'); // Close switch
 
       if (this.asyncMode) {
-        // Add catch block to poison variables and handlers when switch expression fails
+        // Add catch block to poison variables and channels when switch expression fails
         const errorCtx = this._createErrorContext(node, node.expr);
         this.emit('} catch (e) {');
         this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorCtx.lineno}, ${errorCtx.colno}, "${errorCtx.errorContextString}", context.path);`);
@@ -569,20 +569,20 @@ class Compiler extends CompilerBase {
         this.emit('}'); // No re-throw - execution continues with poisoned vars
       }
 
-      // Fill in the poison handling code (handler poisoning)
+      // Fill in the poison handling code (channel poisoning)
       if (this.asyncMode) {
-        // Combine handlers from all branches
-        const allHandlers = new Set();
-        branchHandlers.forEach(handlers => {
-          handlers.forEach(h => allHandlers.add(h));
+        // Combine channels from all branches
+        const allChannels = new Set();
+        branchChannels.forEach(channels => {
+          channels.forEach(channelName => allChannels.add(channelName));
         });
 
-        const hasHandlers = allHandlers.size > 0;
+        const hasChannels = allChannels.size > 0;
 
-        if (hasHandlers) {
-          for (const handler of allHandlers) {
+        if (hasChannels) {
+          for (const channelName of allChannels) {
             this.emit.insertLine(catchPoisonPos,
-              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
           }
         }
       }
@@ -624,17 +624,17 @@ class Compiler extends CompilerBase {
     node.isAsync = true;
 
     const guardResult = this.buffer.asyncBufferNode(node, frame, true, false, node, (blockFrame) => {
-      // Guard blocks should keep output writes scoped to the guard buffer.
-      blockFrame.outputScope = true;
+      // Guard blocks should keep channel writes scoped to the guard buffer.
+      blockFrame.channelScope = true;
       const previousGuardDepth = this.guardDepth;
       this.guardDepth = previousGuardDepth + 1;
 
       try {
         // 2. Link for explicit reversion (optional, if we want to support manual revert)
-        this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+        this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
         let guardRepairLinePos = null;
-        const outputGuardInitLinePos = this.codebuf.length;
-        let outputGuardStateVar = null;
+        const channelGuardInitLinePos = this.codebuf.length;
+        let channelGuardStateVar = null;
         this.emit.line('');
         if (guardStateVar) {
           this.emit.line(`const ${guardStateVar} = runtime.guard.init(cb);`);
@@ -647,7 +647,7 @@ class Compiler extends CompilerBase {
         this.compile(node.body, blockFrame);
 
         // Resolve and Validate Sequence Targets
-        // Sequence lock mutations are tracked via used output handlers.
+        // Sequence lock mutations are tracked via used channel names.
         const resolvedSequenceTargets = new Set();
         const modifiedLocks = new Set();
         const bodyUsedOutputs = Array.from(node.body._analysis.usedOutputs || []);
@@ -706,31 +706,31 @@ class Compiler extends CompilerBase {
           );
         }
 
-        let guardHandlers = this._getGuardedOutputNames(
+        let guardChannels = this._getGuardedOutputNames(
           bodyUsedOutputs,
           guardTargets,
           node.body._analysis
         );
         if (resolvedSequenceTargets.size > 0) {
-          const merged = new Set(guardHandlers);
+          const merged = new Set(guardChannels);
           for (const lockName of resolvedSequenceTargets) {
             merged.add(lockName);
           }
-          guardHandlers = Array.from(merged);
+          guardChannels = Array.from(merged);
         }
         const bodyDeclaredOutputs = Array.from((node.body._analysis.declaredOutputs || new Map()).keys());
         if (bodyDeclaredOutputs.length > 0) {
-          const merged = new Set(guardHandlers);
+          const merged = new Set(guardChannels);
           for (const name of bodyDeclaredOutputs) {
             merged.add(name);
           }
-          guardHandlers = Array.from(merged);
+          guardChannels = Array.from(merged);
         }
-        if (guardHandlers.length > 0) {
-          outputGuardStateVar = this._tmpid();
+        if (guardChannels.length > 0) {
+          channelGuardStateVar = this._tmpid();
           this.emit.insertLine(
-            outputGuardInitLinePos,
-            `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(guardHandlers)}, ${this.buffer.currentBuffer}, cb);`
+            channelGuardInitLinePos,
+            `const ${channelGuardStateVar} = runtime.guard.initChannelSnapshots(frame, ${JSON.stringify(guardChannels)}, ${this.buffer.currentBuffer}, cb);`
           );
         }
 
@@ -742,7 +742,7 @@ class Compiler extends CompilerBase {
         // 5. Check Buffer/Variables for Poison
         const guardErrorsVar = this._tmpid();
         this.emit.line(
-          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardHandlers)}, ${outputGuardStateVar || 'null'});`
+          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardChannels)}, ${channelGuardStateVar || 'null'});`
         );
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
@@ -750,11 +750,11 @@ class Compiler extends CompilerBase {
           this.emit.asyncBlock(node, blockFrame, true, (f) => {
             if (node.errorVar) {
               // Guard recovery error variable is already declared in analysis;
-              // async lowering only needs the runtime var-output registration.
-              this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
+              // async lowering only needs the runtime var-channel registration.
+              this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
               this.buffer.asyncAddValueToBuffer(node, f, (resultVar) => {
                 this.emit(
-                  `${resultVar} = new runtime.ValueCommand({ handler: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+                  `${resultVar} = new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
                 );
               }, node, node.errorVar);
             }
@@ -784,20 +784,20 @@ class Compiler extends CompilerBase {
       return [];
     }
 
-    if (guardTargets.handlerSelector === '*') {
+    if (guardTargets.channelSelector === '*') {
       return used;
     }
 
-    const hasNamedHandlers = Array.isArray(guardTargets.handlerSelector) && guardTargets.handlerSelector.length > 0;
-    const hasTypedHandlers = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
-    if (hasNamedHandlers || hasTypedHandlers) {
-      const guardedSet = new Set(hasNamedHandlers ? guardTargets.handlerSelector : []);
-      // Template implicit text output uses an internal handler name (__text__...).
-      // Preserve selector ergonomics: guarding `text` targets the active text handler.
+    const hasNamedChannels = Array.isArray(guardTargets.channelSelector) && guardTargets.channelSelector.length > 0;
+    const hasTypedChannels = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
+    if (hasNamedChannels || hasTypedChannels) {
+      const guardedSet = new Set(hasNamedChannels ? guardTargets.channelSelector : []);
+      // Template implicit text output uses an internal channel name (__text__...).
+      // Preserve selector ergonomics: guarding `text` targets the active text channel.
       if (!this.scriptMode && guardedSet.has('text')) {
         guardedSet.add(this.buffer.currentTextOutputName);
       }
-      const guardedTypes = new Set(hasTypedHandlers ? guardTargets.typeTargets : []);
+      const guardedTypes = new Set(hasTypedChannels ? guardTargets.typeTargets : []);
       return used.filter((name) => {
         if (guardedSet.has(name)) {
           return true;
@@ -805,9 +805,9 @@ class Compiler extends CompilerBase {
         if (guardedTypes.size === 0) {
           return false;
         }
-        const outputDecl = this.analysis.findDeclaration(analysis, name);
-        if (outputDecl) {
-          return guardedTypes.has(outputDecl.type);
+        const channelDecl = this.analysis.findDeclaration(analysis, name);
+        if (channelDecl) {
+          return guardedTypes.has(channelDecl.type);
         }
         if (!this.scriptMode && name === this.buffer.currentTextOutputName && guardedTypes.has('text')) {
           return true;
@@ -817,14 +817,14 @@ class Compiler extends CompilerBase {
     }
 
     if (guardTargets.variableTargetsAll) {
-      // In async mode, script/template vars are output-backed; guard var should
-      // therefore target var outputs touched inside the guard block.
+      // In async mode, script/template vars are channel-backed; guard var should
+      // therefore target var channels touched inside the guard block.
       return used.filter((name) => {
         if (name && name.charAt(0) === '!') {
           return false;
         }
-        const outputDecl = this.analysis.findDeclaration(analysis, name);
-        return !!(outputDecl && outputDecl.type === 'var');
+        const channelDecl = this.analysis.findDeclaration(analysis, name);
+        return !!(channelDecl && channelDecl.type === 'var');
       });
     }
 
@@ -833,18 +833,18 @@ class Compiler extends CompilerBase {
       return used;
     }
 
-    // Variable/sequence-only guards do not guard output handlers.
+    // Variable/sequence-only guards do not guard channels.
     return [];
   }
 
   _getGuardTargets(guardNode, frame) {
-    const handlerTargetsRaw = Array.isArray(guardNode && guardNode.handlerTargets) &&
-      guardNode.handlerTargets.length > 0
-      ? guardNode.handlerTargets
+    const channelTargetsRaw = Array.isArray(guardNode && guardNode.channelTargets) &&
+      guardNode.channelTargets.length > 0
+      ? guardNode.channelTargets
       : null;
-    let handlerSelector = !handlerTargetsRaw
+    let channelSelector = !channelTargetsRaw
       ? null
-      : (handlerTargetsRaw.includes('@') ? '*' : handlerTargetsRaw);
+      : (channelTargetsRaw.includes('@') ? '*' : channelTargetsRaw);
     const typeTargets = Array.isArray(guardNode && guardNode.typeTargets) && guardNode.typeTargets.length > 0
       ? guardNode.typeTargets
       : null;
@@ -859,39 +859,39 @@ class Compiler extends CompilerBase {
     const variableValidationTargets = [];
 
     if (Array.isArray(variableTargetsRaw) && variableTargetsRaw.length > 0) {
-      const resolvedHandlers = new Set(Array.isArray(handlerSelector) ? handlerSelector : []);
+      const resolvedChannels = new Set(Array.isArray(channelSelector) ? channelSelector : []);
 
       for (const name of variableTargetsRaw) {
-        const outputDecl = this.analysis.findDeclaration(guardNode._analysis, name);
-        const isDeclaredVar = !!(outputDecl && outputDecl.type === 'var');
+        const channelDecl = this.analysis.findDeclaration(guardNode._analysis, name);
+        const isDeclaredVar = !!(channelDecl && channelDecl.type === 'var');
 
         if (isDeclaredVar) {
           variableValidationTargets.push(name);
         }
-        if (outputDecl) {
-          resolvedHandlers.add(name);
+        if (channelDecl) {
+          resolvedChannels.add(name);
         }
-        if (!this.scriptMode && !isDeclaredVar && !outputDecl && name === 'text') {
-          resolvedHandlers.add(this.buffer.currentTextOutputName);
+        if (!this.scriptMode && !isDeclaredVar && !channelDecl && name === 'text') {
+          resolvedChannels.add(this.buffer.currentTextOutputName);
           continue;
         }
-        if (!isDeclaredVar && !outputDecl) {
+        if (!isDeclaredVar && !channelDecl) {
           variableValidationTargets.push(name);
         }
       }
 
-      if (handlerSelector !== '*') {
-        handlerSelector = resolvedHandlers.size > 0 ? Array.from(resolvedHandlers) : null;
+      if (channelSelector !== '*') {
+        channelSelector = resolvedChannels.size > 0 ? Array.from(resolvedChannels) : null;
       }
     }
     const sequenceTargets = Array.isArray(guardNode && guardNode.sequenceTargets) && guardNode.sequenceTargets.length > 0
       ? guardNode.sequenceTargets
       : null;
 
-    const hasAnySelectors = !!handlerSelector || !!typeTargets || hasVariableTargetsSelector || !!sequenceTargets;
+    const hasAnySelectors = !!channelSelector || !!typeTargets || hasVariableTargetsSelector || !!sequenceTargets;
 
     return {
-      handlerSelector,
+      channelSelector,
       typeTargets,
       variableTargetsAll,
       variableValidationTargets: variableValidationTargets.length > 0 ? variableValidationTargets : null,
@@ -909,9 +909,9 @@ class Compiler extends CompilerBase {
     const branchCreatesScope = this.scriptMode || this.asyncMode;
     const ifResult = this.buffer.asyncBufferNode(node, frame, false, false, node.cond, (blockFrame) => {
       let catchPoisonPos;
-      let trueBranchHandlers = new Set();
-      let falseBranchHandlers = new Set();
-      let allHandlers = new Set();
+      let trueBranchChannels = new Set();
+      let falseBranchChannels = new Set();
+      let allBranchChannels = new Set();
 
       if (this.asyncMode) {
         const condResultId = this._tmpid();
@@ -947,19 +947,19 @@ class Compiler extends CompilerBase {
         this.emit('');
         this.emit('}');  // No re-throw - execution continues with poisoned vars
 
-        trueBranchHandlers = new Set(node.body._analysis.usedOutputs || []);
-        falseBranchHandlers = node.else_
+        trueBranchChannels = new Set(node.body._analysis.usedOutputs || []);
+        falseBranchChannels = node.else_
           ? new Set(node.else_._analysis.usedOutputs || [])
           : new Set();
-        allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
+        allBranchChannels = new Set([...trueBranchChannels, ...falseBranchChannels]);
 
-        // Fill in the poison handling code for handlers when condition fails.
-        const hasHandlers = allHandlers.size > 0;
+        // Fill in the poison handling code for channels when condition fails.
+        const hasChannels = allBranchChannels.size > 0;
 
-        if (hasHandlers) {
-          for (const handler of allHandlers) {
+        if (hasChannels) {
+          for (const channelName of allBranchChannels) {
             this.emit.insertLine(catchPoisonPos,
-              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
           }
         }
       } else {
@@ -1179,15 +1179,15 @@ class Compiler extends CompilerBase {
     const snapshotVar = this._tmpid();
     this.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
       if (node.isAsync) {
-        // Async macro bindings are var outputs so assignment/read semantics
+        // Async macro bindings are var channels so assignment/read semantics
         // match value-command ordering instead of frame-local var behavior.
-        this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "caller", "var", context, null);`);
+        this.emit.line(`runtime.declareChannel(frame, ${bufferId}, "caller", "var", context, null);`);
         args.forEach((arg) => {
-          this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "${arg.value}", "var", context, null);`);
+          this.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${arg.value}", "var", context, null);`);
         });
         if (kwargs) {
           kwargs.children.forEach((pair) => {
-            this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "${pair.key.value}", "var", context, null);`);
+            this.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${pair.key.value}", "var", context, null);`);
           });
         }
 
@@ -1301,7 +1301,7 @@ class Compiler extends CompilerBase {
   _emitMacroBindingInit(frame, bufferId, name, emitValueExpression, positionNode = null) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    this.emit(`${bufferId}.add(new runtime.ValueCommand({ handler: '${name}', args: [`);
+    this.emit(`${bufferId}.add(new runtime.VarCommand({ channelName: '${name}', args: [`);
     emitValueExpression();
     this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), "${name}");`);
   }
@@ -1333,11 +1333,11 @@ class Compiler extends CompilerBase {
     // Expose the macro to the templates
     var name = node.name.value;
     if (this.asyncMode) {
-      // Expose the macro as a var output.
-      this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
+      // Expose the macro as a var channel.
+      this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
       this.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
         this.emit(
-          `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+          `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
         );
       }, node, name);
       // Only root-compile macro declarations can ever be exported.
@@ -1451,13 +1451,13 @@ class Compiler extends CompilerBase {
 
   compileCapture(node, frame) {
     // we need to temporarily override the current buffer id as 'output'
-    // so the set block writes to the capture output instead of the buffer
+    // so the set block writes to the capture channel instead of the buffer
     const buffer = this.buffer.currentBuffer;
     const textOutput = this.buffer.currentTextOutputVer;
     const textOutputName = this.buffer.currentTextOutputName;
     const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
     this.buffer.currentBuffer = 'output';
-    this.buffer.currentTextOutputVer = 'output_textOutputVar';
+    this.buffer.currentTextOutputVer = 'output_textChannelVar';
     if (!this.scriptMode) {
       this.buffer.currentTextOutputName = captureTextOutputName;
     }
@@ -1483,7 +1483,7 @@ class Compiler extends CompilerBase {
           this.emit.line('return undefined;');
           this.emit.line('}).call(this, frame);');
         } else {
-          this.emit.line(`let output_textOutputVar = runtime.declareOutput(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
+          this.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
           this.compile(n.body, f);//write to output
           //this.emit.line('await astate.waitAllClosures(1)');
           this.emit.line(`let ${res} = await currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
@@ -1523,13 +1523,13 @@ class Compiler extends CompilerBase {
   compileOutput(node, frame) {
     if (this.scriptMode) {
       this.fail(
-        'Script mode does not support template output nodes. Use declared outputs and command instead.',
+        'Script mode does not support template output nodes. Use declared channels and command instead.',
         node && node.lineno,
         node && node.colno,
         node || undefined
       );
     }
-    const textHandler = this.buffer.currentTextOutputName;
+    const textChannelName = this.buffer.currentTextOutputName;
     if (this.asyncMode) {
       const children = node.children;
       children.forEach(child => {
@@ -1537,7 +1537,7 @@ class Compiler extends CompilerBase {
           if (child.value) {
             this.buffer.addToBuffer(node, frame, function () {
               this.compileLiteral(child, frame);
-            }, child, textHandler, true);
+            }, child, textChannelName, true);
           }
           return;
         }
@@ -1550,8 +1550,8 @@ class Compiler extends CompilerBase {
           node,
           frame,
           child,
-          textHandler,
-          textHandler,
+          textChannelName,
+          textChannelName,
           true,
           true,
           (innerFrame, valueId) => {
@@ -1573,7 +1573,7 @@ class Compiler extends CompilerBase {
         if (child.value) {
           this.buffer.addToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
-          }, child, textHandler, false);
+          }, child, textChannelName, false);
         }
         return;
       }
@@ -1588,7 +1588,7 @@ class Compiler extends CompilerBase {
           this.emit(`,${child.lineno},${child.colno}, context)`);
         }
         this.emit(', env.opts.autoescape)');
-      }, child, textHandler, false);
+      }, child, textChannelName, false);
     });
   }
 
@@ -1714,12 +1714,12 @@ class Compiler extends CompilerBase {
     }
 
     this.emit.beginEntryFunction(node, 'root', frame);
-    this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
     const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
       : [];
     for (const name of sequenceLocks) {
-      this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
+      this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
     // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
@@ -1732,7 +1732,7 @@ class Compiler extends CompilerBase {
       this.emit.line('astate.waitAllClosures().then(async () => {');
 
       if (this.hasDynamicExtends) {
-        // Dynamic extends: resolve from var output or context only.
+        // Dynamic extends: resolve from var channel or context only.
         // Do not fall back to frame lookup.
         this.emit.line(`  let finalParent = await runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
         if (this.hasStaticExtends) {
@@ -1809,15 +1809,15 @@ class Compiler extends CompilerBase {
       }
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       // Prelink must be emitted before block body compilation so snapshot commands
-      // produced by block symbol reads are reachable on the proper handler lanes.
+      // produced by block symbol reads are reachable on the proper channel lanes.
       const blockPrelinkPos = this.codebuf.length;
       this.emit.line('');
       this.compile(block.body, tmpFrame);
       if (this.asyncMode) {
         const usedOutputs = Array.from(block.body._analysis.usedOutputs || []);
-        const prelinkHandlers = usedOutputs.filter((hname) => hname !== this.buffer.currentTextOutputName);
+        const prelinkChannels = usedOutputs.filter((hname) => hname !== this.buffer.currentTextOutputName);
         this.emitLinkWithParentCompositionBuffer(
-          prelinkHandlers,
+          prelinkChannels,
           'parentBuffer',
           this.buffer.currentBuffer,
           'parentBuffer._outputs',
@@ -1934,22 +1934,22 @@ class Compiler extends CompilerBase {
     this.emit.line('return;');
   }
 
-  analyzeOutputDeclaration(node) {
+  analyzeChannelDeclaration(node) {
     node.name._analysis = { declarationTarget: true };
     const name = node.name.value;
     return {
-      declares: [{ name, type: node.outputType, initializer: node.initializer || null }],
+      declares: [{ name, type: node.channelType, initializer: node.initializer || null }],
       uses: [name]
     };
   }
 
-  compileOutputDeclaration(node, frame) {
-    const outputType = node.outputType;
+  compileChannelDeclaration(node, frame) {
+    const channelType = node.channelType;
     const nameNode = node.name;
-    validateOutputDeclarationNode(this, {
+    validateChannelDeclarationNode(this, {
       node,
       nameNode,
-      outputType,
+      channelType,
       hasInitializer: !!node.initializer,
       asyncMode: this.asyncMode,
       scriptMode: this.scriptMode,
@@ -1957,20 +1957,20 @@ class Compiler extends CompilerBase {
     });
     const name = nameNode.value;
 
-    this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "${outputType}", context, `);
-    if (outputType === 'sink' || outputType === 'sequence') {
+    this.emit(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
+    if (channelType === 'sink' || channelType === 'sequence') {
       this.compile(node.initializer, frame);
     } else {
       this.emit('null');
     }
     this.emit.line(');');
 
-    if (outputType === 'var' && node.initializer) {
+    if (channelType === 'var' && node.initializer) {
       const initNode = node.initializer;
       const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
       this.buffer.asyncAddValueToBuffer(initNode, frame, function (resultVar, f) {
-        this.emit(`${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [`);
+        this.emit(`${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [`);
         this._compileExpression(initNode, f, true, initNode);
         this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} })`);
       }, initNode, name);
@@ -1978,38 +1978,38 @@ class Compiler extends CompilerBase {
   }
 
 
-  analyzeOutputCommand(node) {
-    // @todo - uses, mutates shall be collected by the expression analysis, not by the output
+  analyzeChannelCommand(node) {
+    // @todo - uses, mutates shall be collected by the expression analysis, not by channel commands
     // and also we have to check all commands
     const callNode = node.call instanceof nodes.FunCall ? node.call : null;
     const path = this.sequential._extractStaticPath(callNode ? callNode.name : node.call);
     if (!path || path.length === 0) {
       return {};
     }
-    const handler = path[0];
-    // isObservation — does this output command read rather than mutate?
+    const channelName = path[0];
+    // isObservation — does this channel command read rather than mutate?
     // Two cases emit an observable (isObservable=true) command at runtime:
     //   1. Call to a read-only method: snapshot(), isError(), getError()
     //      (emits SnapshotCommand / IsErrorCommand / GetErrorCommand).
     //      __checkpoint is excluded — it has no compile path yet.
-    //   2. Non-call property read on a sequence output (emits SequenceGetCommand).
+    //   2. Non-call property read on a sequence channel (emits SequenceGetCommand).
     //      Non-sequence non-call accesses are mutations, so the declaration type
     //      is checked before classifying.
     // Everything else is a mutation: { uses, mutates } makes the async block wait
     // for pending observables and triggers copy-on-write in DataOutput.
-    const outputDecl = handler ? this.analysis.findDeclaration(node._analysis, handler) : null;
-    const isSequenceGet = !callNode && outputDecl && outputDecl.type === 'sequence';
+    const channelDecl = channelName ? this.analysis.findDeclaration(node._analysis, channelName) : null;
+    const isSequenceGet = !callNode && channelDecl && channelDecl.type === 'sequence';
     const isObservation = isSequenceGet ||
       (callNode && path.length === 2 &&
        (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError'));
-    return isObservation ? { uses: [handler] } : { uses: [handler], mutates: [handler] };
+    return isObservation ? { uses: [channelName] } : { uses: [channelName], mutates: [channelName] };
   }
 
-  compileOutputCommand(node, frame) {
+  compileChannelCommand(node, frame) {
     if (!this.scriptMode) {
-      this.fail('Output commands are only supported in script mode', node.lineno, node.colno, node);
+      this.fail('Channel commands are only supported in script mode', node.lineno, node.colno, node);
     }
-    this.buffer.compileOutputCommand(node, frame);
+    this.buffer.compileChannelCommand(node, frame);
   }
 
 }

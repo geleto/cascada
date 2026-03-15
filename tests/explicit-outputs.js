@@ -1301,7 +1301,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         await render(script);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.contain('Cannot declare output');
+        expect(err.message).to.contain('Cannot declare channel');
       }
     });
 
@@ -1696,7 +1696,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         await render(script);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.contain('sink outputs must have an initializer');
+        expect(err.message).to.contain('sink channels must have an initializer');
       }
     });
 
@@ -1708,7 +1708,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         await render(script);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.contain('sequence outputs must have an initializer');
+        expect(err.message).to.contain('sequence channels must have an initializer');
       }
     });
 
@@ -1748,7 +1748,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         await render(script);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.contain('Cannot declare output');
+        expect(err.message).to.contain('Cannot declare channel');
       }
     });
 

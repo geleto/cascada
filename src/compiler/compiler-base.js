@@ -70,8 +70,8 @@ class CompilerBase extends Obj {
 
   _generateErrorContext(node, positionNode) {
     if (!node) return 'UnknownContext';
-    // Special case for OutputCommand for more descriptive errors
-    if (node.typename === 'OutputCommand' && node.call && node.call.name) {
+    // Special case for ChannelCommand for more descriptive errors
+    if (node.typename === 'ChannelCommand' && node.call && node.call.name) {
       const staticPath = this.sequential._extractStaticPath(node.call.name);
       if (staticPath) {
         return staticPath.join('.');
@@ -388,19 +388,19 @@ class CompilerBase extends Obj {
       }
       if (declaredOutput.type === 'var') {
         if (!this.scriptMode && this.inBlock) {
-          // Block functions can read var outputs declared in the child root buffer
+          // Block functions can read var channels declared in the child root buffer
           // while executing under a parent block buffer. Use runtime var lookup
           // there so cross-tree reads resolve against the producer buffer.
-          this.emit(`runtime.varOutputLookup(frame, "${name}", ${this.buffer.currentBuffer})`);
+          this.emit(`runtime.varChannelLookup(frame, "${name}", ${this.buffer.currentBuffer})`);
           return;
         }
-        // Value outputs are read as point-in-stream snapshots when used as symbols.
+        // Var channels are read as point-in-stream snapshots when used as symbols.
         // This makes `x` equivalent to `x.snapshot()` in expressions.
         this.buffer.emitAddSnapshot(frame, name, node);
         return;
       }
       this.fail(
-        `Output '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
+        `Channel '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
         node.lineno,
         node.colno,
         node
@@ -466,7 +466,7 @@ class CompilerBase extends Obj {
       if (useContextOnlyInheritanceLookup) {
         const contextRef = this._tmpid();
         // Preserve context-first semantics for non-output names, then only fall back
-        // to output-aware lookup for dynamic var-output visibility.
+        // to channel-aware lookup for dynamic var-channel visibility.
         this.emit('(() => {');
         this.emit(`const ${contextRef} = context.lookup("${name}");`);
         this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
@@ -593,9 +593,9 @@ class CompilerBase extends Obj {
     // Ensure failMsg is properly escaped for embedding in the generated string
 
     if (testName === 'error' && this.asyncMode) {
-      const outputName = this._getObservedOutputName(node.left, frame);
-      if (outputName) {
-        this.buffer.emitAddIsError(frame, outputName, node.left);
+      const channelName = this._getObservedChannelName(node.left, frame);
+      if (channelName) {
+        this.buffer.emitAddIsError(frame, channelName, node.left);
         return;
       }
       // Special case for 'is error' in async mode. We do not want to await the
@@ -719,9 +719,9 @@ class CompilerBase extends Obj {
 
   compilePeekError(node, frame) {
     if (this.asyncMode) {
-      const outputName = this._getObservedOutputName(node.target, frame);
-      if (outputName) {
-        this.buffer.emitAddGetError(frame, outputName, node.target);
+      const channelName = this._getObservedChannelName(node.target, frame);
+      if (channelName) {
+        this.buffer.emitAddGetError(frame, channelName, node.target);
         return;
       }
     }
@@ -730,20 +730,20 @@ class CompilerBase extends Obj {
     this.emit(')');
   }
 
-  _getObservedOutputName(targetNode, frame) {
+  _getObservedChannelName(targetNode, frame) {
     if (!this.scriptMode || !this.asyncMode || !targetNode) {
       return null;
     }
     // Sequence-marked targets (path! / path!!) are handled by sequential-path
-    // compilation and must not be reinterpreted as var-output observation.
+    // compilation and must not be reinterpreted as var-channel observation.
     if (targetNode.sequential) {
       return null;
     }
 
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
-      const outputDecl = this.analysis.findDeclaration(targetNode._analysis, name);
-      if (outputDecl) {
+      const channelDecl = this.analysis.findDeclaration(targetNode._analysis, name);
+      if (channelDecl) {
         return name;
       }
       return null;
@@ -752,8 +752,8 @@ class CompilerBase extends Obj {
     if (targetNode instanceof nodes.FunCall) {
       const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
-        const outputDecl = this.analysis.findDeclaration(targetNode._analysis, candidate);
-        if (outputDecl) {
+        const channelDecl = this.analysis.findDeclaration(targetNode._analysis, candidate);
+        if (channelDecl) {
           return candidate;
         }
       }
@@ -916,7 +916,7 @@ class CompilerBase extends Obj {
   analyzeFunCall(node, analysisPass) {
     const uses = [];
     const mutates = [];
-    let specialOutputCall = null;
+    let specialChannelCall = null;
     const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
     if (sequenceLockLookup) {
       uses.push(sequenceLockLookup.key);
@@ -936,16 +936,16 @@ class CompilerBase extends Obj {
             return null;
           }
 
-          const outputName = sequencePath[0];
-          const outputDecl = analysisPass.findDeclaration(node._analysis, outputName);
-          if (!outputDecl) {
+          const channelName = sequencePath[0];
+          const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
+          if (!channelDecl) {
             return null;
           }
 
           const methodName = sequencePath[sequencePath.length - 1];
           return {
-            outputName,
-            outputType: outputDecl.type,
+            channelName,
+            channelType: channelDecl.type,
             methodName,
             subpath: sequencePath.slice(1, -1),
             isObservation:
@@ -955,14 +955,14 @@ class CompilerBase extends Obj {
         })()
         : null;
     if (callFacts) {
-      uses.push(callFacts.outputName);
+      uses.push(callFacts.channelName);
       if (!callFacts.isObservation) {
-        mutates.push(callFacts.outputName);
+        mutates.push(callFacts.channelName);
       }
-      specialOutputCall = callFacts;
+      specialChannelCall = callFacts;
     }
 
-    return { uses, mutates, specialOutputCall };
+    return { uses, mutates, specialChannelCall };
   }
 
   compileFunCall(node, frame) {
@@ -975,7 +975,7 @@ class CompilerBase extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (this.asyncMode) {
-      if (this._compileSpecialOutputFunCall(node, frame)) {
+      if (this._compileSpecialChannelFunCall(node, frame)) {
         return;
       }
 
@@ -1022,23 +1022,23 @@ class CompilerBase extends Obj {
     }
   }
 
-  _compileSpecialOutputFunCall(node, frame) {
+  _compileSpecialChannelFunCall(node, frame) {
     if (!this.scriptMode) {
       return false;
     }
-    const specialOutputCall = node._analysis && node._analysis.specialOutputCall;
-    if (!specialOutputCall) {
+    const specialChannelCall = node._analysis && node._analysis.specialChannelCall;
+    if (!specialChannelCall) {
       return false;
     }
-    if (specialOutputCall.outputType === 'var') {
+    if (specialChannelCall.channelType === 'var') {
       // Var should behave like a normal value in expressions:
       // implicit var read first, then regular member/method access.
       return false;
     }
-    if (this._compileOutputObservationFunCall(node, frame, specialOutputCall)) {
+    if (this._compileChannelObservationFunCall(node, frame, specialChannelCall)) {
       return true;
     }
-    return this._compileSequenceOutputFunCall(node, frame, specialOutputCall);
+    return this._compileSequenceChannelFunCall(node, frame, specialChannelCall);
   }
 
   _assertSequenceRootIsContextPath(frame, lockKey, node) {
@@ -1057,41 +1057,41 @@ class CompilerBase extends Obj {
     }
   }
 
-  _compileOutputObservationFunCall(node, frame, specialOutputCall) {
-    if (specialOutputCall.subpath.length !== 0) {
+  _compileChannelObservationFunCall(node, frame, specialChannelCall) {
+    if (specialChannelCall.subpath.length !== 0) {
       return false;
     }
     validateSinkSnapshotInGuard(this, {
       node,
-      command: specialOutputCall.methodName,
-      outputType: specialOutputCall.outputType
+      command: specialChannelCall.methodName,
+      channelType: specialChannelCall.channelType
     });
-    if (specialOutputCall.methodName === 'snapshot') {
-      this.buffer.emitAddSnapshot(frame, specialOutputCall.outputName, node);
+    if (specialChannelCall.methodName === 'snapshot') {
+      this.buffer.emitAddSnapshot(frame, specialChannelCall.channelName, node);
       return true;
     }
-    if (specialOutputCall.methodName === 'isError') {
-      this.buffer.emitAddIsError(frame, specialOutputCall.outputName, node);
+    if (specialChannelCall.methodName === 'isError') {
+      this.buffer.emitAddIsError(frame, specialChannelCall.channelName, node);
       return true;
     }
-    if (specialOutputCall.methodName === 'getError') {
-      this.buffer.emitAddGetError(frame, specialOutputCall.outputName, node);
+    if (specialChannelCall.methodName === 'getError') {
+      this.buffer.emitAddGetError(frame, specialChannelCall.channelName, node);
       return true;
     }
     return false;
   }
 
-  _compileSequenceOutputFunCall(node, frame, specialOutputCall) {
-    if (specialOutputCall.outputType !== 'sequence' || specialOutputCall.methodName === 'snapshot') {
+  _compileSequenceChannelFunCall(node, frame, specialChannelCall) {
+    if (specialChannelCall.channelType !== 'sequence' || specialChannelCall.methodName === 'snapshot') {
       return false;
     }
     this._compileAggregate(node.args, frame, '[', ']', false, false, function (resolvedArgs) {
       this.emit('return ');
       this.buffer.emitAddSequenceCall(
         frame,
-        specialOutputCall.outputName,
-        specialOutputCall.methodName,
-        specialOutputCall.subpath,
+        specialChannelCall.channelName,
+        specialChannelCall.methodName,
+        specialChannelCall.subpath,
         resolvedArgs,
         node
       );

@@ -12,7 +12,7 @@
   let TextCommand;
   let DataCommand;
   let CommandBuffer;
-  let createOutput;
+  let createChannel;
   let scopeBoundaries;
 
   if (typeof require !== 'undefined') {
@@ -29,7 +29,7 @@
     TextCommand = runtime.TextCommand;
     DataCommand = runtime.DataCommand;
     CommandBuffer = runtime.CommandBuffer;
-    createOutput = runtime.createOutput;
+    createChannel = runtime.createChannel;
     scopeBoundaries = require('../../src/compiler/scope-boundaries');
   } else {
     expect = window.expect;
@@ -43,7 +43,7 @@
     TextCommand = nunjucks.runtime.TextCommand;
     DataCommand = nunjucks.runtime.DataCommand;
     CommandBuffer = nunjucks.runtime.CommandBuffer;
-    createOutput = nunjucks.runtime.createOutput;
+    createChannel = nunjucks.runtime.createChannel;
     scopeBoundaries = nunjucks.compiler.scopeBoundaries || null;
   }
 
@@ -1938,7 +1938,7 @@
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x }}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(source).to.contain('__waited__');
-      expect(source).to.contain('runtime.declareOutput(frame,');
+      expect(source).to.contain('runtime.declareChannel(frame,');
     });
 
     it('emits canonical loop runtime aliases with loop#<id>', function () {
@@ -2112,7 +2112,7 @@
       const buffer = new CommandBuffer(ctx, null, { parent: null }, true);
       const frame = { parent: null };
 
-      createOutput(frame, buffer, 'text', ctx, 'text');
+      createChannel(frame, buffer, 'text', ctx, 'text');
 
       const deferred = createDeferred();
       buffer.add(new TextCommand({
@@ -2135,7 +2135,7 @@
       await waitPromise;
       expect(settled).to.be(true);
 
-      const snapshot = await buffer.getOutput('text').finalSnapshot();
+      const snapshot = await buffer.getChannel('text').finalSnapshot();
       expect(snapshot).to.be('done');
     });
 
@@ -2144,8 +2144,8 @@
       const buffer = new CommandBuffer(ctx, null, { parent: null }, true);
       const frame = { parent: null };
 
-      createOutput(frame, buffer, 'text', ctx, 'text');
-      createOutput(frame, buffer, 'data', ctx, 'data');
+      createChannel(frame, buffer, 'text', ctx, 'text');
+      createChannel(frame, buffer, 'data', ctx, 'data');
 
       const deferred = createDeferred();
       buffer.add(new DataCommand({
@@ -2174,8 +2174,8 @@
       await waitPromise;
       expect(settled).to.be(true);
 
-      const textSnapshot = await buffer.getOutput('text').finalSnapshot();
-      const dataSnapshot = await buffer.getOutput('data').finalSnapshot();
+      const textSnapshot = await buffer.getChannel('text').finalSnapshot();
+      const dataSnapshot = await buffer.getChannel('data').finalSnapshot();
       expect(textSnapshot).to.be('x');
       expect(dataSnapshot).to.eql({ value: 1 });
     });
@@ -2185,7 +2185,7 @@
     it('maps base handler names to canonical aliases in add()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
-      createOutput({ parent: null }, buffer, 'loop#4', ctx, 'text');
+      createChannel({ parent: null }, buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({
@@ -2202,7 +2202,7 @@
       const ctx = { path: 'alias-snapshot.njk' };
       const frame = { parent: null };
       const buffer = new CommandBuffer(ctx, null, frame, false);
-      createOutput(frame, buffer, 'loop#4', ctx, 'text');
+      createChannel(frame, buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
       buffer.addText('A', { lineno: 1, colno: 1 }, 'loop');
@@ -2263,7 +2263,7 @@
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
       const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
-      createOutput({ parent: null }, buffer, 'loop#4', ctx, 'text');
+      createChannel({ parent: null }, buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({

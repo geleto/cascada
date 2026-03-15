@@ -129,7 +129,7 @@ class IfAsync extends If {
 
 class Guard extends Node {
   get fields() {
-    return ['body', 'handlerTargets', 'typeTargets', 'variableTargets', 'sequenceTargets', 'recoveryBody', 'errorVar'];
+    return ['body', 'channelTargets', 'typeTargets', 'variableTargets', 'sequenceTargets', 'recoveryBody', 'errorVar'];
   }
 }
 
@@ -252,9 +252,9 @@ class CallAssign extends Node {
   }
 }
 
-class OutputDeclaration extends Node {
-  get typename() { return 'OutputDeclaration'; }
-  get fields() { return ['outputType', 'name', 'initializer']; }
+class ChannelDeclaration extends Node {
+  get typename() { return 'ChannelDeclaration'; }
+  get fields() { return ['channelType', 'name', 'initializer']; }
 }
 
 class Switch extends Node {
@@ -392,8 +392,8 @@ class Do extends NodeList {
   get typename() { return 'Do'; }
 }
 
-class OutputCommand extends Node {
-  get typename() { return 'OutputCommand'; }
+class ChannelCommand extends Node {
+  get typename() { return 'ChannelCommand'; }
   get fields() { return ['call']; }
 }
 
@@ -497,7 +497,7 @@ module.exports = {
   Include: Include,
   Set: Set,
   CallAssign: CallAssign,
-  OutputDeclaration: OutputDeclaration,
+  ChannelDeclaration: ChannelDeclaration,
   Switch: Switch,
   Case: Case,
   LookupVal: LookupVal,
@@ -524,7 +524,7 @@ module.exports = {
   CallExtension: CallExtension,
   CallExtensionAsync: CallExtensionAsync,
   Do: Do,
-  OutputCommand: OutputCommand,
+  ChannelCommand: ChannelCommand,
 
   printNodes: printNodes
 };

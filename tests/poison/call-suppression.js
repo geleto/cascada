@@ -34,24 +34,24 @@
   function setupSequentialRuntimeForTests(root) {
     const context = { path: 'test', env: {} };
     const currentBuffer = runtime.createCommandBuffer(context, null, root);
-    runtime.declareOutput(root, currentBuffer, '!lockKey', 'sequential_path', context, null);
+    runtime.declareChannel(root, currentBuffer, '!lockKey', 'sequential_path', context, null);
     return currentBuffer;
   }
 
   async function expectLockPoison(lock, root, lockKey = '!lockKey') {
-    const output = runtime.getOutput(root, lockKey);
+    const output = runtime.getChannel(root, lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(Array.isArray(errs) && errs.length > 0).to.be(true);
   }
 
   async function expectLockTrue(lock, root, lockKey = '!lockKey') {
-    const output = runtime.getOutput(root, lockKey);
+    const output = runtime.getChannel(root, lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
   }
 
   async function expectLockValue(lock, value, root, lockKey = '!lockKey') {
-    const output = runtime.getOutput(root, lockKey);
+    const output = runtime.getChannel(root, lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
     expect(output._getCurrentResult()).to.equal(value);
@@ -498,7 +498,7 @@
         root = new AsyncFrame();
         frame = root.push(false);
         currentBuffer = setupSequentialRuntimeForTests(root);
-        runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
+        runtime.getChannel(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialCallWrapValue(

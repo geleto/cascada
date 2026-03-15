@@ -116,24 +116,24 @@ function promisify(fn) {
 }
 
 /**
- * Link a composed child buffer into selected parent handler lanes.
+ * Link a composed child buffer into selected parent channel lanes.
  *
- * The compiler provides a conservative handler candidate list; this helper
+ * The compiler provides a conservative channel candidate list; this helper
  * performs a runtime intersection against `presenceMap` (typically child `_outputs`)
  * to avoid linking lanes that do not exist for the child.
  */
-function linkWithParentCompositionBuffer(parentBuffer, childBuffer, handlers, presenceMap) {
-  if (!parentBuffer || !childBuffer || !Array.isArray(handlers) || handlers.length === 0) {
+function linkWithParentCompositionBuffer(parentBuffer, childBuffer, channelNames, presenceMap) {
+  if (!parentBuffer || !childBuffer || !Array.isArray(channelNames) || channelNames.length === 0) {
     return;
   }
   if (!(presenceMap instanceof Map)) {
     return;
   }
-  for (let i = 0; i < handlers.length; i++) {
-    const handler = handlers[i];
-    const resolvedHandler = childBuffer._resolveHandlerName(handler);
-    if (presenceMap.has(resolvedHandler)) {
-      parentBuffer.addBuffer(childBuffer, resolvedHandler);
+  for (let i = 0; i < channelNames.length; i++) {
+    const channelName = channelNames[i];
+    const resolvedChannelName = childBuffer._resolveChannelName(channelName);
+    if (presenceMap.has(resolvedChannelName)) {
+      parentBuffer.addBuffer(childBuffer, resolvedChannelName);
     }
   }
 }
@@ -159,21 +159,21 @@ module.exports = {
   // Frame classes
   Frame: frame.Frame,
   AsyncFrame: frame.AsyncFrame,
-  Output: output.Output,
-  DataOutput: output.DataOutput,
-  TextOutput: output.TextOutput,
-  ValueOutput: output.ValueOutput,
-  SequentialPathOutput: output.SequentialPathOutput,
-  createOutput: output.createOutput,
-  SinkOutput: output.SinkOutput,
-  createSinkOutput: output.createSinkOutput,
-  SequenceOutput: output.SequenceOutput,
-  createSequenceOutput: output.createSequenceOutput,
-  getOutput: output.getOutput,
-  declareOutput: output.declareOutput,
-  OutputCommand: commands.OutputCommand,
+  Channel: output.Channel,
+  DataChannel: output.DataChannel,
+  TextChannel: output.TextChannel,
+  VarChannel: output.VarChannel,
+  SequentialPathChannel: output.SequentialPathChannel,
+  createChannel: output.createChannel,
+  SinkChannel: output.SinkChannel,
+  createSinkChannel: output.createSinkChannel,
+  SequenceChannel: output.SequenceChannel,
+  createSequenceChannel: output.createSequenceChannel,
+  getChannel: output.getChannel,
+  declareChannel: output.declareChannel,
+  ChannelCommand: commands.ChannelCommand,
   TextCommand: commands.TextCommand,
-  ValueCommand: commands.ValueCommand,
+  VarCommand: commands.VarCommand,
   WaitResolveCommand: commands.WaitResolveCommand,
   DataCommand: commands.DataCommand,
   SinkCommand: commands.SinkCommand,
@@ -226,7 +226,7 @@ module.exports = {
   memberLookupAsync: lookup.memberLookupAsync,
   memberLookupScript: lookup.memberLookupScript,
   memberLookupScriptAsync: lookup.memberLookupScriptAsync,
-  varOutputLookup: lookup.varOutputLookup,
+  varChannelLookup: lookup.varChannelLookup,
   contextOrFrameLookup: lookup.contextOrFrameLookup,
   contextOrVarLookup: lookup.contextOrVarLookup,
   contextOrVarLookupScript: lookup.contextOrVarLookupScript,

@@ -7,8 +7,8 @@ let TextCommand;
 let DataCommand;
 let SinkCommand;
 let CommandBuffer;
-let createOutput;
-let createSinkOutput;
+let createChannel;
+let createSinkChannel;
 let createPoison;
 let isPoisonError;
 
@@ -19,8 +19,8 @@ if (typeof require !== 'undefined') {
   DataCommand = require('../../src/runtime/runtime').DataCommand;
   SinkCommand = require('../../src/runtime/runtime').SinkCommand;
   CommandBuffer = require('../../src/runtime/runtime').CommandBuffer;
-  createOutput = require('../../src/runtime/runtime').createOutput;
-  createSinkOutput = require('../../src/runtime/runtime').createSinkOutput;
+  createChannel = require('../../src/runtime/runtime').createChannel;
+  createSinkChannel = require('../../src/runtime/runtime').createSinkChannel;
   createPoison = require('../../src/runtime/runtime').createPoison;
   isPoisonError = require('../../src/runtime/runtime').isPoisonError;
   expectAsyncError = require('../util').expectAsyncError;
@@ -31,8 +31,8 @@ if (typeof require !== 'undefined') {
   DataCommand = nunjucks.runtime.DataCommand;
   SinkCommand = nunjucks.runtime.SinkCommand;
   CommandBuffer = nunjucks.runtime.CommandBuffer;
-  createOutput = nunjucks.runtime.createOutput;
-  createSinkOutput = nunjucks.runtime.createSinkOutput;
+  createChannel = nunjucks.runtime.createChannel;
+  createSinkChannel = nunjucks.runtime.createSinkChannel;
   createPoison = nunjucks.runtime.createPoison;
   isPoisonError = nunjucks.runtime.isPoisonError;
   expectAsyncError = nunjucks.util.expectAsyncError;
@@ -77,7 +77,7 @@ describe('output.finalSnapshot', function () {
   const makeOutput = (buffer, ctx, outputName) => {
     const name = outputName || 'text';
     const frame = { parent: null };
-    return createOutput(frame, buffer, name, ctx || null, name);
+    return createChannel(frame, buffer, name, ctx || null, name);
   };
   const flatten = (buffer, ctx, outputName) => (
     makeOutput(buffer, ctx, outputName).finalSnapshot()
@@ -85,7 +85,7 @@ describe('output.finalSnapshot', function () {
   const flattenSink = (commands, ctx, outputName, sink) => {
     const buffer = new CommandBuffer(ctx, null, { parent: null });
     const frame = { parent: null };
-    const sinkOutput = createSinkOutput(frame, buffer, outputName, ctx || null, sink);
+    const sinkOutput = createSinkChannel(frame, buffer, outputName, ctx || null, sink);
 
     buffer._outputTypes = Object.create(null);
     buffer._outputTypes[outputName] = 'sink';
@@ -102,10 +102,10 @@ describe('output.finalSnapshot', function () {
     return sink;
   };
   const cmd = (spec) => {
-    if (spec.handler === 'data') {
+    if (spec.channelName === 'data' || spec.handler === 'data') {
       return new DataCommand(spec);
     }
-    if (spec.handler === 'text') {
+    if (spec.channelName === 'text' || spec.handler === 'text') {
       return new TextCommand(spec);
     }
     return new SinkCommand(spec);
@@ -245,7 +245,7 @@ describe('output.finalSnapshot', function () {
     it('should resolve snapshot at command position before later writes', async function () {
       const buffer = new CommandBuffer(context, null, { parent: null });
       const frame = { parent: null };
-      const textOut = createOutput(frame, buffer, 'text', context, 'text');
+      const textOut = createChannel(frame, buffer, 'text', context, 'text');
 
       textOut('A');
       const snap = buffer.addSnapshot('text', { lineno: 0, colno: 0 });
@@ -270,7 +270,7 @@ describe('output.finalSnapshot', function () {
     it('finalSnapshot should wait for owning output completion', async function () {
       const buffer = new CommandBuffer(context, null, { parent: null });
       const frame = { parent: null };
-      const out = createOutput(frame, buffer, 'text', context, 'text');
+      const out = createChannel(frame, buffer, 'text', context, 'text');
       out('late');
 
       const early = await Promise.race([

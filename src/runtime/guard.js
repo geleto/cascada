@@ -1,5 +1,5 @@
 
-const { getOutput } = require('./output');
+const { getChannel } = require('./output');
 
 function init(cb = null) {
   const guardState = {
@@ -11,28 +11,28 @@ function init(cb = null) {
   return guardState;
 }
 
-function initOutputSnapshots(frame, handlerNames = null, buffer = null, cb = null) {
+function initChannelSnapshots(frame, channelNames = null, buffer = null, cb = null) {
   const state = {
     snapshots: Object.create(null),
     sequenceTransactions: [],
-    sequentialPathHandlers: [],
+    sequentialPathChannels: [],
     sequenceErrors: [],
     setupPromises: [],
     fatalCb: cb
   };
 
-  const targets = handlerNames ?? [];
+  const targets = channelNames ?? [];
 
-  for (const handlerName of targets) {
-    const output = getOutput(frame, handlerName);
-    if (!output) {
+  for (const channelName of targets) {
+    const channel = getChannel(frame, channelName);
+    if (!channel) {
       continue;
     }
-    if (output._outputType === 'sequence') {
-      const tx = { handlerName, output, active: false, token: undefined, beginPromise: null };
-      if (typeof output.beginTransaction === 'function') {
+    if (channel._outputType === 'sequence') {
+      const tx = { channelName, channel, active: false, token: undefined, beginPromise: null };
+      if (typeof channel.beginTransaction === 'function') {
         try {
-          tx.beginPromise = Promise.resolve(output.beginTransaction()).then((result) => {
+          tx.beginPromise = Promise.resolve(channel.beginTransaction()).then((result) => {
             if (result && result.active) {
               tx.active = true;
               tx.token = result.token;
@@ -47,13 +47,13 @@ function initOutputSnapshots(frame, handlerNames = null, buffer = null, cb = nul
       state.sequenceTransactions.push(tx);
       continue;
     }
-    if (output._outputType === 'sequential_path') {
-      state.sequentialPathHandlers.push(handlerName);
+    if (channel._outputType === 'sequential_path') {
+      state.sequentialPathChannels.push(channelName);
       continue;
     }
-    const capturePromise = buffer.addCaptureGuardState(handlerName, { lineno: 0, colno: 0 })
+    const capturePromise = buffer.addCaptureGuardState(channelName, { lineno: 0, colno: 0 })
       .then((capturedState) => {
-        state.snapshots[handlerName] = capturedState;
+        state.snapshots[channelName] = capturedState;
       });
     state.setupPromises.push(capturePromise);
   }
@@ -61,49 +61,49 @@ function initOutputSnapshots(frame, handlerNames = null, buffer = null, cb = nul
   return state;
 }
 
-async function restoreOutputs(buffer, outputGuardState) {
-  if (!outputGuardState || !buffer) {
+async function restoreChannels(buffer, channelGuardState) {
+  if (!channelGuardState || !buffer) {
     return [];
   }
 
   const errors = [];
 
-  const snapshotNames = Object.keys(outputGuardState.snapshots || {});
+  const snapshotNames = Object.keys(channelGuardState.snapshots || {});
   if (snapshotNames.length > 0) {
-    const restorePromises = snapshotNames.map((handlerName) =>
+    const restorePromises = snapshotNames.map((channelName) =>
       buffer.addRestoreGuardState(
-        handlerName,
-        outputGuardState.snapshots[handlerName],
+        channelName,
+        channelGuardState.snapshots[channelName],
         { lineno: 0, colno: 0 }
-      ).catch((err) => reportAndThrow(outputGuardState.fatalCb, err))
+      ).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
     );
     await Promise.all(restorePromises);
   }
 
-  const sequentialPathHandlers = Array.isArray(outputGuardState.sequentialPathHandlers)
-    ? outputGuardState.sequentialPathHandlers
+  const sequentialPathChannels = Array.isArray(channelGuardState.sequentialPathChannels)
+    ? channelGuardState.sequentialPathChannels
     : [];
-  if (sequentialPathHandlers.length > 0) {
-    const repairPromises = sequentialPathHandlers.map((handlerName) =>
+  if (sequentialPathChannels.length > 0) {
+    const repairPromises = sequentialPathChannels.map((channelName) =>
       buffer.addSequentialPathWrite(
-        handlerName,
+        channelName,
         () => true,
         { lineno: 0, colno: 0 },
         true
-      ).catch((err) => reportAndThrow(outputGuardState.fatalCb, err))
+      ).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
     );
     await Promise.all(repairPromises);
   }
 
-  const txErrors = await settleSequenceTransactions(outputGuardState, 'rollback');
+  const txErrors = await settleSequenceTransactions(channelGuardState, 'rollback');
   if (txErrors.length > 0) {
     errors.push(...txErrors);
   }
   return errors;
 }
 
-async function finalizeGuard(guardState, buffer, allowedHandlers, outputGuardState) {
-  const bufferErrors = await collectOutputErrors(buffer, allowedHandlers);
+async function finalizeGuard(guardState, buffer, allowedChannels, channelGuardState) {
+  const bufferErrors = await collectChannelErrors(buffer, allowedChannels);
   const sequenceErrors = [];
   if (guardState) {
     if (guardState.detectionPromises && guardState.detectionPromises.length > 0) {
@@ -115,16 +115,16 @@ async function finalizeGuard(guardState, buffer, allowedHandlers, outputGuardSta
   }
   const guardErrors = bufferErrors.concat(sequenceErrors);
 
-  if (outputGuardState && guardErrors.length === 0) {
-    const commitErrors = await settleSequenceTransactions(outputGuardState, 'commit');
+  if (channelGuardState && guardErrors.length === 0) {
+    const commitErrors = await settleSequenceTransactions(channelGuardState, 'commit');
     if (commitErrors.length > 0) {
       guardErrors.push(...commitErrors);
     }
   }
 
   if (guardErrors.length > 0) {
-    if (outputGuardState) {
-      const rollbackErrors = await restoreOutputs(buffer, outputGuardState);
+    if (channelGuardState) {
+      const rollbackErrors = await restoreChannels(buffer, channelGuardState);
       if (rollbackErrors.length > 0) {
         guardErrors.push(...rollbackErrors);
       }
@@ -135,32 +135,32 @@ async function finalizeGuard(guardState, buffer, allowedHandlers, outputGuardSta
   return guardErrors;
 }
 
-async function collectOutputErrors(buffer, allowedHandlers) {
+async function collectChannelErrors(buffer, allowedChannels) {
 
-  const names = resolveGuardOutputNames(buffer, allowedHandlers);
+  const names = resolveGuardChannelNames(buffer, allowedChannels);
   const allErrors = [];
 
-  for (const outputName of names) {
-    const outputError = await buffer.addGetError(outputName, { lineno: 0, colno: 0 });
-    if (!outputError) {
+  for (const channelName of names) {
+    const channelError = await buffer.addGetError(channelName, { lineno: 0, colno: 0 });
+    if (!channelError) {
       continue;
     }
-    if (Array.isArray(outputError.errors) && outputError.errors.length > 0) {
-      allErrors.push(...outputError.errors);
+    if (Array.isArray(channelError.errors) && channelError.errors.length > 0) {
+      allErrors.push(...channelError.errors);
       continue;
     }
-    allErrors.push(outputError);
+    allErrors.push(channelError);
   }
 
   return allErrors;
 }
 
-function resolveGuardOutputNames(buffer, allowedHandlers) {
-  if (Array.isArray(allowedHandlers)) {
-    if (allowedHandlers.length === 0) {
+function resolveGuardChannelNames(buffer, allowedChannels) {
+  if (Array.isArray(allowedChannels)) {
+    if (allowedChannels.length === 0) {
       return [];
     }
-    return Array.from(new Set(allowedHandlers));
+    return Array.from(new Set(allowedChannels));
   }
   return Object.keys(buffer.arrays || Object.create(null));
 }
@@ -179,14 +179,14 @@ function repairSequenceOutputs(buffer, guardState, lockNames) {
 
   for (const lockName of lockNames) {
     const detectPromise = buffer.addGetError(lockName, { lineno: 0, colno: 0 })
-      .then((outputError) => {
-        if (!outputError) {
+      .then((channelError) => {
+        if (!channelError) {
           return true;
         }
-        if (Array.isArray(outputError.errors) && outputError.errors.length > 0) {
-          guardState.sequenceErrors.push(...outputError.errors);
+        if (Array.isArray(channelError.errors) && channelError.errors.length > 0) {
+          guardState.sequenceErrors.push(...channelError.errors);
         } else {
-          guardState.sequenceErrors.push(outputError);
+          guardState.sequenceErrors.push(channelError);
         }
         return true;
       })
@@ -204,45 +204,45 @@ function repairSequenceOutputs(buffer, guardState, lockNames) {
   }
 }
 
-async function settleSequenceTransactions(outputGuardState, mode) {
+async function settleSequenceTransactions(channelGuardState, mode) {
   const errors = [];
-  if (!outputGuardState || !Array.isArray(outputGuardState.sequenceTransactions)) {
+  if (!channelGuardState || !Array.isArray(channelGuardState.sequenceTransactions)) {
     return errors;
   }
 
-  if (Array.isArray(outputGuardState.setupPromises) && outputGuardState.setupPromises.length > 0) {
-    const settledSetup = await Promise.allSettled(outputGuardState.setupPromises);
+  if (Array.isArray(channelGuardState.setupPromises) && channelGuardState.setupPromises.length > 0) {
+    const settledSetup = await Promise.allSettled(channelGuardState.setupPromises);
     const failedSetup = settledSetup.find((result) => result && result.status === 'rejected');
     if (failedSetup) {
       const setupErr = failedSetup.reason instanceof Error
         ? failedSetup.reason
         : new Error(String(failedSetup.reason));
-      reportAndThrow(outputGuardState.fatalCb, setupErr);
+      reportAndThrow(channelGuardState.fatalCb, setupErr);
     }
   }
 
-  if (Array.isArray(outputGuardState.sequenceErrors) && outputGuardState.sequenceErrors.length > 0) {
-    errors.push(...outputGuardState.sequenceErrors);
-    outputGuardState.sequenceErrors.length = 0;
+  if (Array.isArray(channelGuardState.sequenceErrors) && channelGuardState.sequenceErrors.length > 0) {
+    errors.push(...channelGuardState.sequenceErrors);
+    channelGuardState.sequenceErrors.length = 0;
   }
 
-  for (let i = outputGuardState.sequenceTransactions.length - 1; i >= 0; i--) {
-    const tx = outputGuardState.sequenceTransactions[i];
+  for (let i = channelGuardState.sequenceTransactions.length - 1; i >= 0; i--) {
+    const tx = channelGuardState.sequenceTransactions[i];
     try {
       if (tx.beginPromise) {
         await tx.beginPromise;
       }
-      if (!tx || !tx.output) {
+      if (!tx || !tx.channel) {
         continue;
       }
       if (!tx.active) {
         continue;
       }
-      const fn = mode === 'commit' ? tx.output.commitTransaction : tx.output.rollbackTransaction;
+      const fn = mode === 'commit' ? tx.channel.commitTransaction : tx.channel.rollbackTransaction;
       if (typeof fn !== 'function') {
         continue;
       }
-      await Promise.resolve(fn.call(tx.output, tx));
+      await Promise.resolve(fn.call(tx.channel, tx));
     } catch (err) {
       errors.push(err);
     }
@@ -252,10 +252,10 @@ async function settleSequenceTransactions(outputGuardState, mode) {
 
 module.exports = {
   init,
-  initOutputSnapshots,
+  initChannelSnapshots,
   finalizeGuard,
   repairSequenceOutputs,
-  restoreOutputs
+  restoreChannels
 };
 
 function reportAndThrow(cb, err) {

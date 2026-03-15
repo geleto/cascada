@@ -41,21 +41,21 @@ function checkFinishedBuffer(buffer) {
   }
 }
 
-function ensureSequentialPathOutput(frame, pathKey) {
-  const { getOutput } = require('./output');
-  const output = getOutput(frame, pathKey);
+function ensureSequentialPathChannel(frame, pathKey) {
+  const { getChannel } = require('./output');
+  const channel = getChannel(frame, pathKey);
 
-  if (!output) {
-    throw new Error(`Sequential path '${pathKey}' was not predeclared as output (expected compile-time declaration)`);
+  if (!channel) {
+    throw new Error(`Sequential path '${pathKey}' was not predeclared as a channel (expected compile-time declaration)`);
   }
 
-  if (output._outputType !== 'sequential_path') {
-    throw new Error(`Sequential path '${pathKey}' is declared with incompatible output type '${output._outputType || 'unknown'}'`);
+  if (channel._outputType !== 'sequential_path') {
+    throw new Error(`Sequential path '${pathKey}' is declared with incompatible channel type '${channel._outputType || 'unknown'}'`);
   }
 }
 
 module.exports = {
   checkFrameBalance,
   checkFinishedBuffer,
-  ensureSequentialPathOutput
+  ensureSequentialPathChannel
 };

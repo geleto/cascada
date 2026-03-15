@@ -128,7 +128,7 @@ class Parser extends Obj {
         this.dropLeadingWhitespace = true;
       }
     } else {
-      const label = (name === 'output_command' || name === 'command') ? 'output' : name;
+      const label = (name === 'channel_command' || name === 'command') ? 'command' : name;
       this.fail('expected block end in ' + label + ' statement');
     }
 
@@ -740,39 +740,39 @@ class Parser extends Obj {
     return this._parseVarLikeDeclaration('var', 'declaration', 'endvar', 'parseVar');
   }
 
-  parseOutputDeclaration() {
+  parseChannelDeclaration() {
     const tag = this.peekToken();
-    const outputType = tag.value;
-    if (!this.skipSymbol(outputType)) {
-      this.fail('parseOutputDeclaration: expected output declaration', tag.lineno, tag.colno);
+    const channelType = tag.value;
+    if (!this.skipSymbol(channelType)) {
+      this.fail('parseChannelDeclaration: expected channel declaration', tag.lineno, tag.colno);
     }
 
     const nameNode = this.parsePrimary();
     if (!(nameNode instanceof nodes.Symbol)) {
-      this.fail('parseOutputDeclaration: output name expected', tag.lineno, tag.colno);
+      this.fail('parseChannelDeclaration: channel name expected', tag.lineno, tag.colno);
     }
 
     let initializer = null;
-    if (outputType === 'sink' || outputType === 'sequence') {
+    if (channelType === 'sink' || channelType === 'sequence') {
       if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-        this.fail(`parseOutputDeclaration: ${outputType} outputs must have an initializer`, tag.lineno, tag.colno);
+        this.fail(`parseChannelDeclaration: ${channelType} channels must have an initializer`, tag.lineno, tag.colno);
       }
       initializer = this.parseExpression();
     } else {
       if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-        if (outputType === 'var') {
+        if (channelType === 'var') {
           initializer = this.parseExpression();
         } else {
-          this.fail(`parseOutputDeclaration: ${outputType} outputs cannot have initializers`, tag.lineno, tag.colno);
+          this.fail(`parseChannelDeclaration: ${channelType} channels cannot have initializers`, tag.lineno, tag.colno);
         }
       }
-      if ((outputType === 'data' || outputType === 'text') && initializer) {
-        this.fail(`parseOutputDeclaration: ${outputType} outputs cannot have initializers`, tag.lineno, tag.colno);
+      if ((channelType === 'data' || channelType === 'text') && initializer) {
+        this.fail(`parseChannelDeclaration: ${channelType} channels cannot have initializers`, tag.lineno, tag.colno);
       }
     }
 
     this.advanceAfterBlockEnd(tag.value);
-    return new nodes.OutputDeclaration(tag.lineno, tag.colno, outputType, nameNode, initializer);
+    return new nodes.ChannelDeclaration(tag.lineno, tag.colno, channelType, nameNode, initializer);
   }
 
   parseSwitch() {
@@ -860,19 +860,19 @@ class Parser extends Obj {
     return new nodes.Do(doTok.lineno, doTok.colno, exprs);
   }
 
-  parseOutputCommand() {
+  parseChannelCommand() {
     const tag = this.peekToken();
-    let outputType = null;
-    if (this.skipSymbol('output')) {
+    let channelType = null;
+    if (this.skipSymbol('channel_command')) {
       if (this.peekToken().type !== lexer.TOKEN_SYMBOL) {
-        this.fail('parseOutputCommand: expected output type', tag.lineno, tag.colno);
+        this.fail('parseChannelCommand: expected channel type', tag.lineno, tag.colno);
       }
-      outputType = this.nextToken().value;
-      if (outputType !== 'data' && outputType !== 'text' && outputType !== 'var' && outputType !== 'sink' && outputType !== 'sequence') {
-        this.fail(`parseOutputCommand: unsupported output type '${outputType}'`, tag.lineno, tag.colno);
+      channelType = this.nextToken().value;
+      if (channelType !== 'data' && channelType !== 'text' && channelType !== 'var' && channelType !== 'sink' && channelType !== 'sequence') {
+        this.fail(`parseChannelCommand: unsupported channel type '${channelType}'`, tag.lineno, tag.colno);
       }
-    } else if (!this.skipSymbol('command') && !this.skipSymbol('output_command')) {
-      this.fail('parseOutputCommand: expected output or command', tag.lineno, tag.colno);
+    } else if (!this.skipSymbol('command')) {
+      this.fail('parseChannelCommand: expected command or channel_command', tag.lineno, tag.colno);
     }
 
     // Parse the entire function call expression
@@ -880,9 +880,9 @@ class Parser extends Obj {
 
     this.advanceAfterBlockEnd(tag.value);
 
-    const node = new nodes.OutputCommand(tag.lineno, tag.colno, call);
-    if (outputType) {
-      node.outputType = outputType;
+    const node = new nodes.ChannelCommand(tag.lineno, tag.colno, call);
+    if (channelType) {
+      node.channelType = channelType;
     }
     return node;
   }
@@ -893,7 +893,7 @@ class Parser extends Obj {
       this.fail('parseGuard: expected guard', tag.lineno, tag.colno);
     }
 
-    const handlerTargets = [];
+    const channelTargets = [];
     const typeTargets = [];
     const variableTargets = [];
     const sequenceTargets = [];
@@ -919,8 +919,8 @@ class Parser extends Obj {
       } else if (this.skipValue(lexer.TOKEN_OPERATOR, '*')) {
         rawSelector = '*';
         hasStarSelector = true;
-        // '*' expands to all handlers, all sequences, and marks that we need all variables
-        handlerTargets.push('@');
+        // '*' expands to all channels, all sequences, and marks that we need all variables
+        channelTargets.push('@');
         sequenceTargets.push('!');
       } else if (this.peekToken().type === lexer.TOKEN_SYMBOL) {
         // Variable, Handler, or Sequence
@@ -954,7 +954,7 @@ class Parser extends Obj {
       first = false;
     }
 
-    if (hasStarSelector && (handlerTargets.length > 1 || typeTargets.length > 0 || hasVarSelector || variableTargets.length > 0 || sequenceTargets.length > 1)) {
+    if (hasStarSelector && (channelTargets.length > 1 || typeTargets.length > 0 || hasVarSelector || variableTargets.length > 0 || sequenceTargets.length > 1)) {
       this.fail('guard: "*" cannot be combined with other selectors', tag.lineno, tag.colno);
     }
 
@@ -984,8 +984,8 @@ class Parser extends Obj {
     }
 
     let guardExpandsAllVariables = false;
-    if (handlerTargets.length === 0 && typeTargets.length === 0 && !hasVarSelector && variableTargets.length === 0 && sequenceTargets.length === 0) {
-      handlerTargets.push('@');
+    if (channelTargets.length === 0 && typeTargets.length === 0 && !hasVarSelector && variableTargets.length === 0 && sequenceTargets.length === 0) {
+      channelTargets.push('@');
       sequenceTargets.push('!');
     }
     if (hasStarSelector) {
@@ -996,7 +996,7 @@ class Parser extends Obj {
       tag.lineno,
       tag.colno,
       body,
-      handlerTargets.length > 0 ? handlerTargets : null,
+      channelTargets.length > 0 ? channelTargets : null,
       typeTargets.length > 0 ? typeTargets : null,
       (guardExpandsAllVariables || hasVarSelector) ? '*' : (variableTargets.length > 0 ? variableTargets : null),
       sequenceTargets.length > 0 ? sequenceTargets : null,
@@ -1072,7 +1072,7 @@ class Parser extends Obj {
       case 'text':
       case 'sink':
       case 'sequence':
-        return this.parseOutputDeclaration();
+        return this.parseChannelDeclaration();
       case 'macro':
         return this.parseMacro();
       case 'call':
@@ -1089,10 +1089,9 @@ class Parser extends Obj {
         return this.parseSwitch();
       case 'do':
         return this.parseDo();
-      case 'output':
       case 'command':
-      case 'output_command':
-        return this.parseOutputCommand();
+      case 'channel_command':
+        return this.parseChannelCommand();
       case 'guard':
         return this.parseGuard();
       case 'revert':
@@ -1825,7 +1824,7 @@ class Parser extends Obj {
 
         // Only create Output node if data is non-empty after whitespace stripping
         // This prevents empty TemplateData nodes in the AST that would cause
-        // unnecessary 'text' handler poisoning in script mode
+        // unnecessary 'text' channel poisoning in script mode
         if (data.length > 0) {
           buf.push(new nodes.Output(tok.lineno,
             tok.colno,

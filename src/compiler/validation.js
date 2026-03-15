@@ -45,7 +45,7 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
 }
 
 /**
- * Validate that write attempts from read-only scopes do not target outer variables/outputs.
+ * Validate that write attempts from read-only scopes do not target outer variables/channels.
  * @param {Compiler} compiler - The compiler instance
  * @param {object} options
  * @param {Frame} options.frame - Current frame
@@ -55,40 +55,40 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
  * @param {boolean} options.mutatingOuterRef - True when assignment targets an outer-scope binding
  */
 /**
- * Validate output declaration statement constraints.
+ * Validate channel declaration statement constraints.
  * @param {Compiler} compiler - The compiler instance
  * @param {object} options
- * @param {Node} options.node - Output declaration node
+ * @param {Node} options.node - Channel declaration node
  * @param {Node} options.nameNode - Name node
- * @param {string} options.outputType - data|text|var|sink|sequence
+ * @param {string} options.channelType - data|text|var|sink|sequence
  * @param {boolean} options.hasInitializer - Whether initializer exists
  * @param {boolean} options.asyncMode - Compiler async mode
  * @param {boolean} options.scriptMode - Compiler script mode
  * @param {boolean} options.isNameSymbol - Whether nameNode is a Symbol
  */
-function validateOutputDeclarationNode(compiler, {
+function validateChannelDeclarationNode(compiler, {
   node,
   nameNode,
-  outputType,
+  channelType,
   hasInitializer,
   asyncMode,
   scriptMode,
   isNameSymbol
 }) {
   if (!asyncMode) {
-    compiler.fail('Output declarations are only supported in async mode', node.lineno, node.colno, node);
+    compiler.fail('Channel declarations are only supported in async mode', node.lineno, node.colno, node);
   }
   if (!scriptMode) {
-    compiler.fail('Output declarations are only supported in script mode', node.lineno, node.colno, node);
+    compiler.fail('Channel declarations are only supported in script mode', node.lineno, node.colno, node);
   }
   if (!isNameSymbol) {
-    compiler.fail('Output declaration name must be a symbol', node.lineno, node.colno, node);
+    compiler.fail('Channel declaration name must be a symbol', node.lineno, node.colno, node);
   }
-  if ((outputType === 'data' || outputType === 'text') && hasInitializer) {
-    compiler.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
+  if ((channelType === 'data' || channelType === 'text') && hasInitializer) {
+    compiler.fail(`${channelType} channels cannot have initializers`, node.lineno, node.colno, node);
   }
-  if ((outputType === 'sink' || outputType === 'sequence') && !hasInitializer) {
-    compiler.fail(`${outputType} outputs must have an initializer`, node.lineno, node.colno, node);
+  if ((channelType === 'sink' || channelType === 'sequence') && !hasInitializer) {
+    compiler.fail(`${channelType} channels must have an initializer`, node.lineno, node.colno, node);
   }
 }
 
@@ -98,33 +98,33 @@ function validateOutputDeclarationNode(compiler, {
  * @param {object} options
  * @param {Node} options.node - Position node
  * @param {string} options.command - snapshot|isError|getError
- * @param {string|null} options.outputType - Output type
+ * @param {string|null} options.channelType - Channel type
  */
-function validateSinkSnapshotInGuard(compiler, { node, command, outputType }) {
-  if (command === 'snapshot' && outputType === 'sink' && compiler.guardDepth > 0) {
+function validateSinkSnapshotInGuard(compiler, { node, command, channelType }) {
+  if (command === 'snapshot' && channelType === 'sink' && compiler.guardDepth > 0) {
     compiler.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
   }
 }
 
 /**
- * Validate observation call constraints for output symbols.
+ * Validate observation call constraints for channel symbols.
  * @param {Compiler} compiler - The compiler instance
  * @param {object} options
- * @param {Node} options.node - OutputCommand node
+ * @param {Node} options.node - ChannelCommand node
  * @param {string} options.command - snapshot|isError|getError
- * @param {string} options.handler - Output symbol name
- * @param {string|null} options.outputType - Declared output type
+ * @param {string} options.channelName - Channel symbol name
+ * @param {string|null} options.channelType - Declared channel type
  */
-function validateOutputObservationCall(compiler, { node, command, handler, outputType }) {
+function validateChannelObservationCall(compiler, { node, command, channelName, channelType }) {
   if (node.call && node.call.args && node.call.args.children && node.call.args.children.length > 0) {
     compiler.fail(
-      `${command}() does not accept arguments on output '${handler}'.`,
+      `${command}() does not accept arguments on channel '${channelName}'.`,
       node.lineno,
       node.colno,
       node
     );
   }
-  validateSinkSnapshotInGuard(compiler, { node, command, outputType });
+  validateSinkSnapshotInGuard(compiler, { node, command, channelType });
 }
 
 
@@ -134,7 +134,7 @@ module.exports = {
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
   validateGuardVariablesDeclared,
-  validateOutputDeclarationNode,
+  validateChannelDeclarationNode,
   validateSinkSnapshotInGuard,
-  validateOutputObservationCall
+  validateChannelObservationCall
 };

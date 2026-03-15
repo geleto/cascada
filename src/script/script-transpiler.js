@@ -14,13 +14,13 @@
  *     - `var user = ...`      → `{% var user = ... %}`
  *     - `user = "new name"`   → `{% set user = "new name" %}`
  *
- * 3.  **Explicit Output Variables**
- *     - `text text` declares a text output variable; `text("Hello")` emits text.
+ * 3.  **Explicit Channel Variables**
+ *     - `text text` declares a text channel variable; `text("Hello")` emits text.
  *       `text("Hello")`       → `{% command text("Hello") %}`
- *     - Data assembly uses explicit data outputs with path-based commands.
+ *     - Data assembly uses explicit data channels with path-based commands.
  *       `data data` + `data.user.id = 1` → `{% command data.set(["user","id"], 1) %}`
  *       `data.tags.push("a")` → `{% command data.push(["tags"], "a") %}`
- *     - Sink outputs call methods directly on declared sinks.
+ *     - Sink channels call methods directly on declared sinks.
  *       `sink db = makeDb(); db.insert(...)` → `{% command db.insert(...) %}`
  *
  * 4.  **`capture` Removal**
@@ -163,7 +163,7 @@ class ScriptTranspiler {
       ...Object.values(this.SYNTAX.blockPairs)
     ]);
 
-    // Reserved declaration names are not allowed for script vars or outputs.
+    // Reserved declaration names are not allowed for script vars or channels.
     this.RESERVED_DECLARATION_NAMES = RESERVED_DECLARATION_NAMES;
 
     // Track block stack for declaration/assignment blocks
@@ -190,47 +190,47 @@ class ScriptTranspiler {
       operatorStart: ['=', '+', '-', '*', '/', '&', '|'],
     };
 
-    // Output scopes track declared outputs in nested blocks.
-    this.outputScopes = [this._createOutputScope()];
+    // Channel scopes track declared channels in nested blocks.
+    this.channelScopes = [this._createChannelScope()];
 
-    // Aliases for injected core outputs in generated templates.
-    this.CORE_OUTPUT_ALIASES = {
+    // Aliases for injected core channels in generated templates.
+    this.CORE_CHANNEL_ALIASES = {
       data: 'dat',
       text: 'tex',
       value: 'val'
     };
 
-    this._useCoreOutputAliases = false;
+    this._useCoreChannelAliases = false;
   }
 
-  getCurrentOutputScope() {
-    return this.outputScopes[this.outputScopes.length - 1];
+  getCurrentChannelScope() {
+    return this.channelScopes[this.channelScopes.length - 1];
   }
 
-  _createOutputScope(parentAccess = 'inherit') {
+  _createChannelScope(parentAccess = 'inherit') {
     return {
-      outputs: new Map(),
+      channels: new Map(),
       parentAccess
     };
   }
 
-  pushOutputScope(parentAccess = 'inherit') {
-    this.outputScopes.push(this._createOutputScope(parentAccess));
+  pushChannelScope(parentAccess = 'inherit') {
+    this.channelScopes.push(this._createChannelScope(parentAccess));
   }
 
-  popOutputScope() {
-    if (this.outputScopes.length === 1) {
+  popChannelScope() {
+    if (this.channelScopes.length === 1) {
       return;
     }
-    this.outputScopes.pop();
+    this.channelScopes.pop();
   }
 
-  isOutputInScope(name) {
+  isChannelInScope(name) {
     let readOnly = false;
-    for (let i = this.outputScopes.length - 1; i >= 0; i--) {
-      const scope = this.outputScopes[i];
-      if (scope.outputs.has(name)) {
-        const info = scope.outputs.get(name);
+    for (let i = this.channelScopes.length - 1; i >= 0; i--) {
+      const scope = this.channelScopes[i];
+      if (scope.channels.has(name)) {
+        const info = scope.channels.get(name);
         return { type: info.type, writable: !readOnly };
       }
       if (scope.parentAccess === 'none') {
@@ -243,42 +243,42 @@ class ScriptTranspiler {
     return null;
   }
 
-  declareOutput(name, type) {
-    const scope = this.getCurrentOutputScope();
-    if (scope.outputs.has(name)) {
-      const existingType = scope.outputs.get(name).type;
+  declareChannel(name, type) {
+    const scope = this.getCurrentChannelScope();
+    if (scope.channels.has(name)) {
+      const existingType = scope.channels.get(name).type;
       if (type === 'var' && existingType !== 'var') {
-        throw new Error(`Cannot declare variable '${name}' because an output with the same name is already declared.`);
+        throw new Error(`Cannot declare variable '${name}' because a channel with the same name is already declared.`);
       }
       if (type !== 'var' && existingType === 'var') {
-        throw new Error(`Cannot declare output '${name}' because a variable with the same name is already declared`);
+        throw new Error(`Cannot declare channel '${name}' because a variable with the same name is already declared`);
       }
       if (type === 'var') {
         throw new Error(`Identifier '${name}' has already been declared.`);
       }
-      throw new Error(`Output '${name}' already declared in this scope`);
+      throw new Error(`Channel '${name}' already declared in this scope`);
     }
 
     // Keep script-transpiler validation aligned with compiler behavior:
-    // output declarations cannot shadow declarations from parent scopes.
-    for (let i = this.outputScopes.length - 2; i >= 0; i--) {
-      const parentScope = this.outputScopes[i];
-      if (parentScope.outputs.has(name)) {
-        const parentType = parentScope.outputs.get(name).type;
+    // channel declarations cannot shadow declarations from parent scopes.
+    for (let i = this.channelScopes.length - 2; i >= 0; i--) {
+      const parentScope = this.channelScopes[i];
+      if (parentScope.channels.has(name)) {
+        const parentType = parentScope.channels.get(name).type;
         if (type === 'var' && parentType !== 'var') {
-          throw new Error(`Cannot declare variable '${name}' because an output with the same name is already declared.`);
+          throw new Error(`Cannot declare variable '${name}' because a channel with the same name is already declared.`);
         }
         if (type !== 'var' && parentType === 'var') {
-          throw new Error(`Cannot declare output '${name}' because a variable with the same name is already declared`);
+          throw new Error(`Cannot declare channel '${name}' because a variable with the same name is already declared`);
         }
         if (type === 'var') {
           throw new Error(`Identifier '${name}' has already been declared.`);
         }
-        throw new Error(`Output '${name}' cannot shadow an output declared in a parent scope`);
+        throw new Error(`Channel '${name}' cannot shadow a channel declared in a parent scope`);
       }
     }
 
-    scope.outputs.set(name, { type });
+    scope.channels.set(name, { type });
   }
 
   /**
@@ -559,7 +559,7 @@ class ScriptTranspiler {
    * @param {Object} tcom - Parsed command object with path, command, and extra args (ending in ')' unless multiline
    * @return {string} The generic syntax command string
    */
-  _transpileDataCommand(tcom, multiline, handlerName = 'data') {
+  _transpileDataCommand(tcom, multiline, channelName = 'data') {
     // Convert new syntax to generic syntax
     // data: data.user.name.set("Alice")
     // generic: data.set(user.name, "Alice")
@@ -605,7 +605,7 @@ class ScriptTranspiler {
 
     const addComma = refArgs.trim() !== ')';//this happens with empty args or on multiline, where we may not have the ')'
 
-    return `@${handlerName}.${tcom.command}(${pathArgument}${addComma ? ',' : ''}${args}`;
+    return `@${channelName}.${tcom.command}(${pathArgument}${addComma ? ',' : ''}${args}`;
   }
 
   /**
@@ -832,7 +832,7 @@ class ScriptTranspiler {
   _assertNonReservedDeclarationNames(names, lineIndex) {
     for (const name of names) {
       if (this.RESERVED_DECLARATION_NAMES.has(name)) {
-        throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or output name at line ${lineIndex + 1}`);
+        throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or channel name at line ${lineIndex + 1}`);
       }
     }
   }
@@ -938,7 +938,7 @@ class ScriptTranspiler {
         this._assertNonReservedDeclarationNames(declaredNames, lineIndex);
         if (declarationTag === 'var') {
           for (const name of declaredNames) {
-            this.declareOutput(name, 'var');
+            this.declareChannel(name, 'var');
           }
         }
       }
@@ -980,7 +980,7 @@ class ScriptTranspiler {
         this._assertNonReservedDeclarationNames(declaredNames, lineIndex);
         if (declarationTag === 'var') {
           for (const name of declaredNames) {
-            this.declareOutput(name, 'var');
+            this.declareChannel(name, 'var');
           }
         }
       }
@@ -1011,9 +1011,9 @@ class ScriptTranspiler {
     }
   }
 
-  _formatOutputCommand(outputType, commandContent, includeOutputType = false) {
-    if (includeOutputType) {
-      return `${outputType} ${commandContent}`;
+  _formatChannelCommand(channelType, commandContent, includeChannelType = false) {
+    if (includeChannelType) {
+      return `${channelType} ${commandContent}`;
     }
     return commandContent;
   }
@@ -1026,11 +1026,11 @@ class ScriptTranspiler {
     const { segments, remainingBuffer, append, operator } = parsed;
 
     if (!remainingBuffer) {
-      throw new Error(`Invalid output command syntax at line ${lineIndex + 1}: Missing arguments.`);
+      throw new Error(`Invalid channel command syntax at line ${lineIndex + 1}: Missing arguments.`);
     }
 
     if (!remainingBuffer.startsWith('(')) {
-      throw new Error(`Invalid output command syntax at line ${lineIndex + 1}: Expected '(...)' for arguments.`);
+      throw new Error(`Invalid channel command syntax at line ${lineIndex + 1}: Expected '(...)' for arguments.`);
     }
 
     const args = remainingBuffer.substring(1);
@@ -1046,14 +1046,14 @@ class ScriptTranspiler {
       }
       const commandSegment = segments[segments.length - 1];
       if (!commandSegment.startsWith('.')) {
-        throw new Error(`Invalid output command syntax at line ${lineIndex + 1}: Command cannot be a bracket expression.`);
+        throw new Error(`Invalid channel command syntax at line ${lineIndex + 1}: Command cannot be a bracket expression.`);
       }
       command = commandSegment.slice(1);
       pathSegments = segments.slice(0, -1);
     }
 
     if (!this._isValidIdentifier(command)) {
-      throw new Error(`Invalid output command syntax at line ${lineIndex + 1}: '${command}' is not a valid identifier.`);
+      throw new Error(`Invalid channel command syntax at line ${lineIndex + 1}: '${command}' is not a valid identifier.`);
     }
 
     if (pathSegments.length > 0) {
@@ -1073,37 +1073,37 @@ class ScriptTranspiler {
   _processOutputOperation(parseResult, lineIndex) {
     const code = parseResult.codeContent;
     const trimmed = code.trimStart();
-    const outputName = this._getLeadingIdentifier(trimmed);
-    if (!outputName) return false;
+    const channelName = this._getLeadingIdentifier(trimmed);
+    if (!channelName) return false;
 
-    const outputInfo = this.isOutputInScope(outputName);
-    if (!outputInfo) return false;
-    const outputType = outputInfo.type;
+    const channelInfo = this.isChannelInScope(channelName);
+    if (!channelInfo) return false;
+    const channelType = channelInfo.type;
 
-    const after = trimmed.substring(outputName.length);
+    const after = trimmed.substring(channelName.length);
     const afterTrimmed = after.trimStart();
     if (!afterTrimmed) return false;
 
     const opStart = afterTrimmed[0];
     if (opStart === '=') {
-      if (outputType === 'sequence') {
-        throw new Error(`sequence output '${outputName}' does not support assignment at line ${lineIndex + 1}`);
+      if (channelType === 'sequence') {
+        throw new Error(`sequence channel '${channelName}' does not support assignment at line ${lineIndex + 1}`);
       }
 
       const assignmentExpr = afterTrimmed.slice(1).trimStart();
       if (!assignmentExpr) return false;
 
-      if (outputType === 'data') {
+      if (channelType === 'data') {
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'command';
         parseResult.blockType = null;
-        parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(null, ${assignmentExpr})`, false);
-      } else if (outputType === 'text') {
+        parseResult.codeContent = this._formatChannelCommand(channelType, `${channelName}.set(null, ${assignmentExpr})`, false);
+      } else if (channelType === 'text') {
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'command';
         parseResult.blockType = null;
-        parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(${assignmentExpr})`, false);
-      } else if (outputType === 'var') {
+        parseResult.codeContent = this._formatChannelCommand(channelType, `${channelName}.set(${assignmentExpr})`, false);
+      } else if (channelType === 'var') {
         const firstExprWord = this._getFirstWord(assignmentExpr);
         if (firstExprWord === 'capture') {
           throw new Error(`Capture blocks are no longer supported at line ${lineIndex + 1}`);
@@ -1112,13 +1112,13 @@ class ScriptTranspiler {
           parseResult.lineType = 'TAG';
           parseResult.blockType = this.BLOCK_TYPE.START;
           parseResult.tagName = 'call_assign';
-          parseResult.codeContent = `set ${outputName} = ${afterCall}`;
+          parseResult.codeContent = `set ${channelName} = ${afterCall}`;
           this.callBlockStack.push('call_assign');
         } else {
           parseResult.lineType = 'TAG';
           parseResult.tagName = 'set';
           parseResult.blockType = null;
-          parseResult.codeContent = `${outputName} = ${assignmentExpr}`;
+          parseResult.codeContent = `${channelName} = ${assignmentExpr}`;
         }
       } else {
         return false;
@@ -1128,14 +1128,14 @@ class ScriptTranspiler {
     }
     if (!['.', '(', '['].includes(opStart)) return false;
 
-    if (outputType === 'data') {
+    if (channelType === 'data') {
       const parsed = this._parseDataCommandFromOutput(after, lineIndex);
 
       if (parsed.directCall) {
         const argsPreview = (parsed.args || '').trimStart();
         const hasExplicitPathArg = argsPreview.startsWith('null') || argsPreview.startsWith('[');
         if (!hasExplicitPathArg && parsed.command) {
-          const genericSyntaxCommand = this._transpileDataCommand(parsed, false, outputName);
+          const genericSyntaxCommand = this._transpileDataCommand(parsed, false, channelName);
           let commandContent = genericSyntaxCommand.substring(1);
           if (parsed.append) {
             if (parseResult.continuesToNext) {
@@ -1147,14 +1147,14 @@ class ScriptTranspiler {
           parseResult.lineType = 'TAG';
           parseResult.tagName = 'command';
           parseResult.blockType = null;
-          parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
+          parseResult.codeContent = this._formatChannelCommand(channelType, commandContent, false);
           return true;
         }
-        // Direct method call on output root (e.g., myData.set(...)) - keep as-is.
+        // Direct method call on channel root (e.g., myData.set(...)) - keep as-is.
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'command';
         parseResult.blockType = null;
-        parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
+        parseResult.codeContent = this._formatChannelCommand(channelType, trimmed, false);
         return true;
       }
 
@@ -1162,7 +1162,7 @@ class ScriptTranspiler {
         return false;
       }
 
-      const genericSyntaxCommand = this._transpileDataCommand(parsed, false, outputName);
+      const genericSyntaxCommand = this._transpileDataCommand(parsed, false, channelName);
       let commandContent = genericSyntaxCommand.substring(1); // remove '@'
 
       if (parsed.append) {
@@ -1176,14 +1176,14 @@ class ScriptTranspiler {
       parseResult.lineType = 'TAG';
       parseResult.tagName = 'command';
       parseResult.blockType = null;
-      parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
+      parseResult.codeContent = this._formatChannelCommand(channelType, commandContent, false);
       return true;
     }
 
-    if (outputType === 'sequence') {
+    if (channelType === 'sequence') {
       const parsed = this._parseDataCommandFromOutput(after, lineIndex);
       if (parsed.operatorUsed) {
-        throw new Error(`sequence output '${outputName}' does not support property assignment at line ${lineIndex + 1}`);
+        throw new Error(`sequence channel '${channelName}' does not support property assignment at line ${lineIndex + 1}`);
       }
       if (parsed.command === 'snapshot' && parsed.segments.length === 0) {
         return false;
@@ -1191,13 +1191,13 @@ class ScriptTranspiler {
       parseResult.lineType = 'TAG';
       parseResult.tagName = 'command';
       parseResult.blockType = null;
-      parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
+      parseResult.codeContent = this._formatChannelCommand(channelType, trimmed, false);
       return true;
     }
 
-    if (outputType === 'var') {
+    if (channelType === 'var') {
       if (opStart === '(') {
-        throw new Error(`var output '${outputName}' does not support callable assignment at line ${lineIndex + 1}; use '${outputName} = ...'`);
+        throw new Error(`var channel '${channelName}' does not support callable assignment at line ${lineIndex + 1}; use '${channelName} = ...'`);
       }
       return false;
     }
@@ -1205,42 +1205,42 @@ class ScriptTranspiler {
     parseResult.lineType = 'TAG';
     parseResult.tagName = 'command';
     parseResult.blockType = null;
-    parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
+    parseResult.codeContent = this._formatChannelCommand(channelType, trimmed, false);
     return true;
   }
 
   _parseOutputDeclaration(codeContent, lineIndex) {
     const trimmed = codeContent.trim();
-    const outputType = this._getFirstWord(trimmed);
-    if (!outputType) return null;
-    if (!(outputType === 'data' || outputType === 'text' || outputType === 'sink' || outputType === 'sequence')) {
+    const channelType = this._getFirstWord(trimmed);
+    if (!channelType) return null;
+    if (!(channelType === 'data' || channelType === 'text' || channelType === 'sink' || channelType === 'sequence')) {
       return null;
     }
 
-    const remainder = trimmed.substring(outputType.length).trim();
+    const remainder = trimmed.substring(channelType.length).trim();
     const nameMatch = remainder.match(/^([A-Za-z_][A-Za-z0-9_]*)\b/);
     if (!nameMatch) {
-      throw new Error(`Invalid output declaration at line ${lineIndex + 1}`);
+      throw new Error(`Invalid channel declaration at line ${lineIndex + 1}`);
     }
     const name = nameMatch[1];
     if (this.RESERVED_DECLARATION_NAMES.has(name)) {
-      throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or output name at line ${lineIndex + 1}`);
+      throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or channel name at line ${lineIndex + 1}`);
     }
     const initializer = remainder.substring(name.length).trim();
-    return { outputType, name, initializer };
+    return { channelType, name, initializer };
   }
 
   _processOutputDeclaration(parseResult, lineIndex) {
     const decl = this._parseOutputDeclaration(parseResult.codeContent, lineIndex);
     if (!decl) {
-      throw new Error(`Invalid output declaration at line ${lineIndex + 1}`);
+      throw new Error(`Invalid channel declaration at line ${lineIndex + 1}`);
     }
 
-    this.declareOutput(decl.name, decl.outputType);
+    this.declareChannel(decl.name, decl.channelType);
 
     parseResult.lineType = 'TAG';
-    parseResult.tagName = decl.outputType;
-    parseResult.codeContent = parseResult.codeContent.substring(decl.outputType.length + 1).trim();
+    parseResult.tagName = decl.channelType;
+    parseResult.codeContent = parseResult.codeContent.substring(decl.channelType.length + 1).trim();
     parseResult.blockType = null;
   }
 
@@ -1311,7 +1311,7 @@ class ScriptTranspiler {
     }
 
     if (code.startsWith('@')) {
-      throw new Error(`Legacy '@' output commands are no longer supported at line ${lineIndex + 1}`);
+      throw new Error(`Legacy '@' channel commands are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'value' && this._isAssignment(code, lineIndex)) {
       throw new Error(`Explicit 'value' declarations are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'var') {
@@ -1319,7 +1319,7 @@ class ScriptTranspiler {
     } else if (this._isOutputDeclarationLine(firstWord, code)) {
       this._processOutputDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {
-      // Output operation was processed
+      // Channel operation was processed
     } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'sink' || firstWord === 'sequence') &&
       this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
@@ -1415,15 +1415,15 @@ class ScriptTranspiler {
     }
   }
 
-  _updateOutputScopesForLine(processedLine) {
+  _updateChannelScopesForLine(processedLine) {
     if (!processedLine || processedLine.isContinuation) return;
 
     if (processedLine.blockType === this.BLOCK_TYPE.MIDDLE) {
       // New branch scope (else/elif/case/default/recover)
-      const current = this.getCurrentOutputScope();
+      const current = this.getCurrentChannelScope();
       const parentAccess = current ? current.parentAccess : 'inherit';
-      this.popOutputScope();
-      this.pushOutputScope(parentAccess);
+      this.popChannelScope();
+      this.pushChannelScope(parentAccess);
       return;
     }
 
@@ -1434,12 +1434,12 @@ class ScriptTranspiler {
       } else if (processedLine.tagName === 'call' || processedLine.tagName === 'call_assign') {
         parentAccess = 'readonly';
       }
-      this.pushOutputScope(parentAccess);
+      this.pushChannelScope(parentAccess);
       return;
     }
 
     if (processedLine.blockType === this.BLOCK_TYPE.END) {
-      this.popOutputScope();
+      this.popChannelScope();
     }
   }
 
@@ -1449,9 +1449,9 @@ class ScriptTranspiler {
 
     if (!processedLine.isContinuation && processedLine.lineType === 'TAG') {
       if (processedLine.tagName === 'command') {
-        codeContent = this._mapCoreOutputCall(codeContent);
+        codeContent = this._mapCoreChannelCall(codeContent);
       } else if (processedLine.tagName === 'data' || processedLine.tagName === 'text') {
-        codeContent = this._mapCoreOutputName(codeContent || '');
+        codeContent = this._mapCoreChannelName(codeContent || '');
       }
     }
     if (processedLine.inlinePrefix) {
@@ -1584,8 +1584,8 @@ class ScriptTranspiler {
    * @return {Object} Object with template string and possible error
    */
   scriptToTemplate(scriptStr, options = {}) {
-    this._useCoreOutputAliases = !!options.useCoreOutputAliases;
-    this.outputScopes = [this._createOutputScope()];
+    this._useCoreChannelAliases = !!options.useCoreOutputAliases;
+    this.channelScopes = [this._createChannelScope()];
     this.callBlockStack = [];
     // Split into lines
     const lines = scriptStr.split('\n');
@@ -1610,13 +1610,13 @@ class ScriptTranspiler {
         processedLine.tagName === 'call') {
         this.callBlockStack.push('call');
       }
-      this._updateOutputScopesForLine(processedLine);
+      this._updateChannelScopesForLine(processedLine);
 
       if (processedLine.injectLines && processedLine.injectLines.length > 0) {
         processedLine.injectLines.forEach((injected) => {
           const injectedLine = this._processLine(injected, state, i);
           processedLines.push(injectedLine);
-          this._updateOutputScopesForLine(injectedLine);
+          this._updateChannelScopesForLine(injectedLine);
         });
       }
     }
@@ -1641,21 +1641,21 @@ class ScriptTranspiler {
     return output;
   }
 
-  _mapCoreOutputName(name) {
-    if (!this._useCoreOutputAliases) {
+  _mapCoreChannelName(name) {
+    if (!this._useCoreChannelAliases) {
       return name;
     }
-    return this.CORE_OUTPUT_ALIASES[name] || name;
+    return this.CORE_CHANNEL_ALIASES[name] || name;
   }
 
-  _mapCoreOutputCall(callString) {
-    if (!this._useCoreOutputAliases) {
+  _mapCoreChannelCall(callString) {
+    if (!this._useCoreChannelAliases) {
       return callString;
     }
     if (!callString) return callString;
     const match = callString.match(/^(\s*)([A-Za-z_$][A-Za-z0-9_$]*)(.*)$/);
     if (!match) return callString;
-    const mapped = this._mapCoreOutputName(match[2]);
+    const mapped = this._mapCoreChannelName(match[2]);
     if (mapped === match[2]) return callString;
     return `${match[1]}${mapped}${match[3]}`;
   }

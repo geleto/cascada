@@ -216,7 +216,7 @@
         await env.renderScriptString(script);
         throw new Error('Should have thrown');
       } catch (e) {
-        expect(e.message).to.contain(`Output 'outerData' is read-only in this scope.`);
+        expect(e.message).to.contain(`Channel 'outerData' is read-only in this scope.`);
       }
     });
   });

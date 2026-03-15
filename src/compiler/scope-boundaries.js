@@ -46,7 +46,7 @@ function isDeclarationSite(node, ctx = {}) {
     return _isSetLikeDeclaration(node);
   }
 
-  if (node instanceof nodes.OutputDeclaration) {
+  if (node instanceof nodes.ChannelDeclaration) {
     return true;
   }
 
@@ -73,7 +73,7 @@ function extractDeclaredSymbols(node, ctx = {}) {
     return (node.targets || []).filter((target) => target instanceof nodes.Symbol);
   }
 
-  if (node instanceof nodes.OutputDeclaration) {
+  if (node instanceof nodes.ChannelDeclaration) {
     return node.name instanceof nodes.Symbol ? [node.name] : [];
   }
 

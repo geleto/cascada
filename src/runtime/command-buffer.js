@@ -29,9 +29,9 @@ class CommandBuffer {
     this.parent = parent;
     this.finished = false;
 
-    // Create arrays namespace (handlers created lazily on first write/snapshot).
+    // Create arrays namespace (channels created lazily on first write/snapshot).
     this.arrays = Object.create(null);
-    // Shared registry of Output objects for this buffer hierarchy.
+    // Shared registry of Channel objects for this buffer hierarchy.
     this._outputs = parent ? parent._outputs : new Map();
     // Iterators currently visiting this buffer keyed by output name.
     this._visitingIterators = new Map();
@@ -52,11 +52,11 @@ class CommandBuffer {
     }
   }
 
-  _registerOutput(handlerName, output) {
+  _registerOutput(channelName, output) {
     if (!(this._outputs instanceof Map)) {
       this._outputs = new Map();
     }
-    this._outputs.set(handlerName, output);
+    this._outputs.set(channelName, output);
 
     const iterator = ensureOutputIterator(output);
     if (iterator) {
@@ -73,7 +73,7 @@ class CommandBuffer {
     if (!iterator || !outputName) {
       return;
     }
-    const resolvedOutputName = this._resolveHandlerName(outputName);
+    const resolvedOutputName = this._resolveChannelName(outputName);
     this._visitingIterators.set(resolvedOutputName, iterator);
     if (this._enableWaitApplied) {
       this._activeWaitAppliedCount++;
@@ -84,7 +84,7 @@ class CommandBuffer {
     if (!iterator || !outputName) {
       return;
     }
-    const resolvedOutputName = this._resolveHandlerName(outputName);
+    const resolvedOutputName = this._resolveChannelName(outputName);
     const current = this._visitingIterators.get(resolvedOutputName);
     if (current === iterator) {
       this._visitingIterators.delete(resolvedOutputName);
@@ -112,7 +112,7 @@ class CommandBuffer {
       ? pos
       : { lineno: 0, colno: 0 };
     const cmd = new TextCommand({
-      handler: 'text',
+      channelName: 'text',
       args: [value],
       pos: textPos
     });
@@ -127,12 +127,12 @@ class CommandBuffer {
 
   add(value, outputName) {
     checkFinishedBuffer(this);
-    const resolvedOutputName = this._resolveHandlerName(outputName);
-    // Normalize command handler/path keys at ingress so all downstream runtime
+    const resolvedOutputName = this._resolveChannelName(outputName);
+    // Normalize command channel/path keys at ingress so all downstream runtime
     // lookups operate on canonical output names.
     if (!isCommandBuffer(value) && value && typeof value === 'object') {
-      if (Object.prototype.hasOwnProperty.call(value, 'handler')) {
-        value.handler = resolvedOutputName;
+      if (Object.prototype.hasOwnProperty.call(value, 'channelName')) {
+        value.channelName = resolvedOutputName;
       }
       if (Object.prototype.hasOwnProperty.call(value, 'pathKey')) {
         value.pathKey = resolvedOutputName;
@@ -162,7 +162,7 @@ class CommandBuffer {
 
   addSequenceGet(outputName, command, subpath = null, pos = null) {
     const cmd = new SequenceGetCommand({
-      handler: outputName,
+      channelName: outputName,
       command: command || null,
       subpath: Array.isArray(subpath) ? subpath : [],
       pos: pos || { lineno: 0, colno: 0 },
@@ -173,7 +173,7 @@ class CommandBuffer {
 
   addSequenceCall(outputName, command, subpath = null, args = null, pos = null) {
     const cmd = new SequenceCallCommand({
-      handler: outputName,
+      channelName: outputName,
       command: command || null,
       subpath: Array.isArray(subpath) ? subpath : [],
       args: Array.isArray(args) ? args : [],
@@ -186,7 +186,7 @@ class CommandBuffer {
   addSequentialPathRead(outputName, operation, pos = null, repair = false) {
     const CommandClass = repair ? RepairReadCommand : SequentialPathReadCommand;
     const cmd = new CommandClass({
-      handler: outputName,
+      channelName: outputName,
       pathKey: outputName,
       operation,
       pos: pos || { lineno: 0, colno: 0 },
@@ -198,7 +198,7 @@ class CommandBuffer {
   addSequentialPathWrite(outputName, operation, pos = null, repair = false) {
     const CommandClass = repair ? RepairWriteCommand : SequentialPathWriteCommand;
     const cmd = new CommandClass({
-      handler: outputName,
+      channelName: outputName,
       pathKey: outputName,
       operation,
       pos: pos || { lineno: 0, colno: 0 },
@@ -209,11 +209,11 @@ class CommandBuffer {
 
   addSnapshot(outputName, pos = null) {
     const cmd = new SnapshotCommand({
-      handler: outputName,
+      channelName: outputName,
       pos
     });
     if (this.finished) {
-      const resolvedOutputName = this._resolveHandlerName(outputName);
+      const resolvedOutputName = this._resolveChannelName(outputName);
       const output = this._outputs.get(resolvedOutputName);
       const path = (this._context && this._context.path) ? this._context.path : null;
       if (!output._buffer.finished) {
@@ -235,11 +235,11 @@ class CommandBuffer {
   // the current output target directly.
   addRawSnapshot(outputName, pos = null) {
     const cmd = new RawSnapshotCommand({
-      handler: outputName,
+      channelName: outputName,
       pos
     });
     if (this.finished) {
-      const resolvedOutputName = this._resolveHandlerName(outputName);
+      const resolvedOutputName = this._resolveChannelName(outputName);
       const output = this._outputs.get(resolvedOutputName);
       const path = (this._context && this._context.path) ? this._context.path : null;
       if (!output._buffer.finished) {
@@ -258,7 +258,7 @@ class CommandBuffer {
 
   addIsError(outputName, pos = null) {
     const cmd = new IsErrorCommand({
-      handler: outputName,
+      channelName: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
     return this._addCommand(cmd, outputName);
@@ -266,7 +266,7 @@ class CommandBuffer {
 
   addGetError(outputName, pos = null) {
     const cmd = new GetErrorCommand({
-      handler: outputName,
+      channelName: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
     return this._addCommand(cmd, outputName);
@@ -274,7 +274,7 @@ class CommandBuffer {
 
   addCaptureGuardState(outputName, pos = null) {
     const cmd = new CaptureGuardStateCommand({
-      handler: outputName,
+      channelName: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
     return this._addCommand(cmd, outputName);
@@ -282,7 +282,7 @@ class CommandBuffer {
 
   addSinkRepair(outputName, pos = null) {
     const cmd = new SinkRepairCommand({
-      handler: outputName,
+      channelName: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
     return this._addCommand(cmd, outputName);
@@ -290,7 +290,7 @@ class CommandBuffer {
 
   addRestoreGuardState(outputName, target, pos = null) {
     const cmd = new RestoreGuardStateCommand({
-      handler: outputName,
+      channelName: outputName,
       target,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
@@ -328,7 +328,7 @@ class CommandBuffer {
       return cmd.promise;
     };
 
-    // Snapshot-on-finished-buffer is allowed only after the entire output stream is complete.
+    // Snapshot-on-finished-buffer is allowed only after the entire channel stream is complete.
     if (!output._completionResolved && output._completionPromise) {
       return Promise.resolve(output._completionPromise).then(applySnapshot);
     }
@@ -364,14 +364,14 @@ class CommandBuffer {
     }
   }
 
-  getOutput(outputName = 'text') {
-    const resolvedOutputName = this._resolveHandlerName(outputName);
+  getChannel(outputName = 'text') {
+    const resolvedOutputName = this._resolveChannelName(outputName);
     if (!(this._outputs instanceof Map)) {
       throw new Error('CommandBuffer outputs are unavailable');
     }
     const output = this._outputs.get(resolvedOutputName);
     if (!output) {
-      throw new Error(`CommandBuffer output '${resolvedOutputName}' is unavailable`);
+      throw new Error(`CommandBuffer channel '${resolvedOutputName}' is unavailable`);
     }
     return output;
   }
@@ -429,7 +429,7 @@ class CommandBuffer {
     this._boundaryAliases = inherited;
   }
 
-  _resolveHandlerName(name) {
+  _resolveChannelName(name) {
     if (typeof name !== 'string') {
       return name;
     }

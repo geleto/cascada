@@ -118,18 +118,18 @@ class CompileLoop {
         useLoopValues,
         loopVarNames
       );
-      const bodyHandlers = node.isAsync ? new Set(node.body._analysis.usedOutputs || []) : null;
+      const bodyChannels = node.isAsync ? new Set(node.body._analysis.usedOutputs || []) : null;
 
       // Compile else block and collect metadata
       let elseFuncId = 'null';
-      let elseHandlers = null;
+      let elseChannels = null;
 
       if (node.else_) {
         elseFuncId = this.compiler._tmpid();
         this.compiler.emit(`let ${elseFuncId} = `);
 
         this._compileLoopElse(node, blockFrame, sequentialLoopBody);
-        elseHandlers = node.isAsync ? new Set(node.else_._analysis.usedOutputs || []) : null;
+        elseChannels = node.isAsync ? new Set(node.else_._analysis.usedOutputs || []) : null;
       }
 
       // Build asyncOptions code string if in async mode
@@ -137,8 +137,8 @@ class CompileLoop {
       if (node.isAsync) {
         asyncOptionsCode = `{
           sequential: ${sequentialLoopBody},
-          bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
-          elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
+          bodyChannels: ${JSON.stringify(bodyChannels ? Array.from(bodyChannels) : [])},
+          elseChannels: ${JSON.stringify(elseChannels ? Array.from(elseChannels) : [])},
           concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
           errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
         }`;
@@ -193,7 +193,7 @@ class CompileLoop {
         ? (node.body && node.body._analysis && node.body._analysis.waitedOutputName)
         : null;
       if (limitedWaitedOutputName) {
-        this.compiler.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedOutputName}", "var", context, null);`);
+        this.compiler.emit.line(`runtime.declareChannel(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedOutputName}", "var", context, null);`);
       }
 
       const compileIterationBody = () => {
@@ -271,10 +271,10 @@ class CompileLoop {
 
         if (whileConditionNode) {
           if (catchPoisonPos !== null) {
-            const bodyHandlers = node.isAsync ? new Set(node.body._analysis.usedOutputs || []) : null;
-            if (bodyHandlers && bodyHandlers.size > 0) {
-              for (const handler of bodyHandlers) {
-                this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+            const bodyChannels = node.isAsync ? new Set(node.body._analysis.usedOutputs || []) : null;
+            if (bodyChannels && bodyChannels.size > 0) {
+              for (const channelName of bodyChannels) {
+                this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
               }
             }
           }
@@ -339,19 +339,19 @@ class CompileLoop {
   _emitLoopValueDeclarations(node, loopVars) {
     const buffer = this.compiler.buffer.currentBuffer;
     loopVars.forEach((name) => {
-      this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${name}", "var", context, null);`);
+      this.compiler.emit.line(`runtime.declareChannel(frame, ${buffer}, "${name}", "var", context, null);`);
     });
     if (node.loopRuntimeName) {
-      this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
+      this.compiler.emit.line(`runtime.declareChannel(frame, ${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
     }
   }
 
-  _emitLoopValueAssignment(node, outputName, valueExpr, frame) {
+  _emitLoopValueAssignment(node, channelName, valueExpr, frame) {
     this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
       this.compiler.emit(
-        `${resultVar} = new runtime.ValueCommand({ handler: '${outputName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+        `${resultVar} = new runtime.VarCommand({ channelName: '${channelName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
       );
-    }, node, outputName);
+    }, node, channelName);
   }
 
   _emitLoopBindings(node, loopVars, loopIndex, loopLength, isLast, frame, useLoopValues) {

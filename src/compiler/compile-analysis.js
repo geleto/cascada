@@ -3,7 +3,7 @@
 const nodes = require('../nodes');
 
 /**
- * Output analysis pre-pass.
+ * Channel analysis pre-pass.
  *
  * This pass annotates AST nodes with `_analysis` metadata and precomputes
  * declaration/use/mutation sets without changing compile-time behavior yet.
@@ -370,7 +370,7 @@ class CompileAnalysis {
             this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
           }
         } else if (decl.explicit !== false &&
-          (analysis.node.typename === 'Set' || analysis.node.typename === 'OutputDeclaration')) {
+          (analysis.node.typename === 'Set' || analysis.node.typename === 'ChannelDeclaration')) {
           if (currentScopeDecl && currentScopeDecl.declarationOrigin !== declarationOrigin) {
             this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
           }
@@ -409,14 +409,14 @@ class CompileAnalysis {
     if (decl.type !== 'var') {
       if (conflictingDecl && conflictingDecl.type === 'var') {
         this.compiler.fail(
-          `Cannot declare output '${decl.name}' because a variable with the same name is already declared`,
+          `Cannot declare channel '${decl.name}' because a variable with the same name is already declared`,
           lineno,
           colno,
           originNode || undefined
         );
       }
       this.compiler.fail(
-        `Cannot declare output '${decl.name}': already declared`,
+        `Cannot declare channel '${decl.name}': already declared`,
         lineno,
         colno,
         originNode || undefined
@@ -442,7 +442,7 @@ class CompileAnalysis {
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
     this.compiler.fail(
-      `Identifier '${decl.name}' is reserved and cannot be used as a variable or output name.`,
+      `Identifier '${decl.name}' is reserved and cannot be used as a variable or channel name.`,
       lineno,
       colno,
       originNode || undefined
@@ -542,9 +542,9 @@ class CompileAnalysis {
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
 
-    if (originNode && originNode.typename === 'OutputCommand') {
+    if (originNode && originNode.typename === 'ChannelCommand') {
       this.compiler.fail(
-        `Unsupported output command target '${name}'. Output commands must target declared outputs (data/text/var/sink/sequence).`,
+        `Unsupported command target '${name}'. Commands must target declared channels (data/text/var/sink/sequence).`,
         lineno,
         colno,
         originNode || undefined
@@ -584,7 +584,7 @@ class CompileAnalysis {
       );
     }
     this.compiler.fail(
-      `Output '${name}' is read-only in this scope.`,
+      `Channel '${name}' is read-only in this scope.`,
       lineno,
       colno,
       originNode || undefined

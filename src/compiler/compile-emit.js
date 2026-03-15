@@ -59,7 +59,7 @@ module.exports = class CompileEmit {
       ? node._analysis.textOutput
       : DEFAULT_TEMPLATE_TEXT_OUTPUT;
     this.compiler.buffer.currentBuffer = 'output';
-    this.compiler.buffer.currentTextOutputVer = 'output_textOutputVar';
+    this.compiler.buffer.currentTextOutputVer = 'output_textChannelVar';
     this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : rootTextOutputName;
     this.compiler.buffer.currentWaitedOutputName = null;
     this.scopeClosers = '';
@@ -324,7 +324,7 @@ module.exports = class CompileEmit {
 
     //text only? Why not just use currentBuffer?
     const textOutputName = this.compiler.buffer.currentTextOutputName;
-    this.line(`let ${id}_textOutputVar = runtime.declareOutput(frame, ${id}, "${textOutputName}", "text", context, null);`);
+    this.line(`let ${id}_textOutputVar = runtime.declareChannel(frame, ${id}, "${textOutputName}", "text", context, null);`);
     const prevBuffer = this.compiler.buffer.currentBuffer;
     const prevTextOutput = this.compiler.buffer.currentTextOutputVer;
     const prevTextOutputName = this.compiler.buffer.currentTextOutputName;

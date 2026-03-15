@@ -44,21 +44,21 @@ class CompileInheritance {
   }
 
   _emitValueImportBinding(frame, name, sourceVar, node) {
-    this.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+    this.emit.line(`runtime.declareChannel(frame, ${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
       this.emit(
-        `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+        `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
       );
     }, node, name);
     this.emit.line(`if(frame.topLevel) { context.addExport("${name}"); }`);
   }
 
   /**
-   * Collect canonical runtime handler names that should be prelinked for include composition.
+   * Collect canonical runtime channel names that should be prelinked for include composition.
    *
-   * Include composition snapshots visible declared var outputs by nearest lexical
+   * Include composition snapshots visible declared var channels by nearest lexical
    * name. Mirror that here so nested/shadowed loop metadata links only the
-   * currently visible handler lane for each name.
+   * currently visible channel lane for each name.
    */
   _collectIncludeLinkCandidates(analysis) {
     return this.compiler.analysis.getIncludeVisibleVarOutputs(analysis)
@@ -410,8 +410,8 @@ class CompileInheritance {
       this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
       // Includes run in a separate template/frame. To preserve caller-visible
-      // var-output reads, copy context vars and inject currently-declared
-      // var outputs as snapshot promises from the active command buffer.
+      // var-channel reads, copy context vars and inject currently-declared
+      // var channels as snapshot promises from the active command buffer.
       // This keeps ordering semantics and leaves include logic declaration-driven.
       this.emit.line(`let ${includeVarsVar} = Object.assign({}, context.getVariables());`);
       this._emitDeclaredValueSnapshots(node._analysis, f, includeVarsVar, node);
@@ -436,7 +436,7 @@ class CompileInheritance {
       );
       this.emit.line(`  return composed.addSnapshot("${includeOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
       this.emit.line('});');
-      this.emit.line(`${resultVar} = new runtime.TextCommand({ handler: "${this.compiler.buffer.currentTextOutputName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} });`);
+      this.emit.line(`${resultVar} = new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextOutputName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} });`);
       // Include boundary completion in limited-loop waited output.
       // Wait on the composed include snapshot promise (timing unit), not on the
       // command object created for parent enqueue.

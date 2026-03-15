@@ -116,7 +116,7 @@ class DataHandler {
       if (keyType !== 'string' && keyType !== 'number') {
         const pathString = path.slice(0, i).join('.');
         throw new Error(
-          `Invalid path segment for Output Command. Expected a string or number but got a ${keyType} ([${key}]) in path '${pathString}[...]'`
+          `Invalid path segment for channel command. Expected a string or number but got a ${keyType} ([${key}]) in path '${pathString}[...]'`
         );
       }
 

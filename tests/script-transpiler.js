@@ -212,8 +212,8 @@ describe('Script Transpiler', () => {
 
     describe('processLine', () => {
       it('should correctly process a text statement', () => {
-        scriptTranspiler.outputScopes = [scriptTranspiler._createOutputScope()];
-        scriptTranspiler.declareOutput('outText', 'text');
+        scriptTranspiler.channelScopes = [scriptTranspiler._createChannelScope()];
+        scriptTranspiler.declareChannel('outText', 'text');
         const line = 'outText(value)';
         const state = { inMultiLineComment: false, stringState: null };
 

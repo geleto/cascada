@@ -8,12 +8,12 @@ const {
   RuntimePromise,
   collectErrors,
 } = require('./errors');
-const { LOOKUP_DYNAMIC_OUTPUT_LINKING } = require('../feature-flags');
+const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 
 const {
   resolveDuo
 } = require('./resolve');
-const { getOutput } = require('./output');
+const { getChannel } = require('./output');
 
 /**
  * Sync member lookup for templates.
@@ -245,56 +245,56 @@ function contextOrFrameLookup(context, frame, name) {
 }
 
 /**
- * Var-output lookup for template symbol aliases.
+ * Var-channel lookup for template symbol aliases.
  * Does NOT read frame variables.
- * - If var output exists in active buffer hierarchy, return ordered snapshot.
+ * - If var channel exists in active buffer hierarchy, return ordered snapshot.
  * - Otherwise, fall back to context lookup (globals/context vars).
  */
 function contextOrVarLookup(_context, frame, name, currentBuffer) {
-  const outputRead = varOutputLookup(frame, name, currentBuffer);
-  if (outputRead !== undefined) {
-    return outputRead;
+  const channelRead = varChannelLookup(frame, name, currentBuffer);
+  if (channelRead !== undefined) {
+    return channelRead;
   }
   return _context.lookup(name);
 }
 
 /**
- * Output-only lookup for known declared var outputs.
- * Returns undefined when no output binding is available.
+ * Channel-only lookup for known declared var channels.
+ * Returns undefined when no channel binding is available.
  *
  * Ordering rule:
- * - If the output owner buffer is in the current buffer ancestry, snapshot from
+ * - If the channel owner buffer is in the current buffer ancestry, snapshot from
  *   current buffer lane (ordered read).
  * - Otherwise, use finalSnapshot() directly (cross-tree / completed-owner read).
  */
-function varOutputLookup(frame, name, currentBuffer) {
-  let output = getOutput(frame, name);
-  if (!output && currentBuffer && currentBuffer._outputs instanceof Map) {
-    output = currentBuffer._outputs.get(name);
+function varChannelLookup(frame, name, currentBuffer) {
+  let channel = getChannel(frame, name);
+  if (!channel && currentBuffer && currentBuffer._outputs instanceof Map) {
+    channel = currentBuffer._outputs.get(name);
   }
-  if (!output) {
+  if (!channel) {
     return undefined;
   }
-  if (isBufferInAncestry(currentBuffer, output._buffer)) {
+  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
     if (currentBuffer && currentBuffer.parent && currentBuffer.parent.finished) {
-      return output.finalSnapshot();
+      return channel.finalSnapshot();
     }
-    // Optional dynamic mode: lazily link current read buffer into the handler lane.
+    // Optional dynamic mode: lazily link current read buffer into the channel lane.
     // This is intentionally flag-guarded so structural prelinking remains the default model,
     // but dynamic compositions can opt in without changing compiler wiring.
-    if (LOOKUP_DYNAMIC_OUTPUT_LINKING) {
-      ensureReadOutputLink(currentBuffer, output, name);
+    if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
+      ensureReadChannelLink(currentBuffer, channel, name);
     }
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
-  return output.finalSnapshot();
+  return channel.finalSnapshot();
 }
 
 /**
- * Context/frame/output lookup for scripts.
+ * Context/frame/channel lookup for scripts.
  * Order:
  * 1) declared frame variable
- * 2) declared output snapshot in current buffer
+ * 2) declared channel snapshot in current buffer
  * 3) script-mode context lookup (throws if missing)
  */
 function contextOrVarLookupScript(context, frame, name, currentBuffer) {
@@ -302,15 +302,15 @@ function contextOrVarLookupScript(context, frame, name, currentBuffer) {
   if (f) {
     return val;
   }
-  const outputRead = varOutputLookupScript(frame, name, currentBuffer);
-  if (outputRead !== undefined) {
-    return outputRead;
+  const channelRead = varChannelLookupScript(frame, name, currentBuffer);
+  if (channelRead !== undefined) {
+    return channelRead;
   }
   return context.lookupScriptMode(name);
 }
 
 /**
- * Async context/frame/output lookup for scripts.
+ * Async context/frame/channel lookup for scripts.
  * Returns poison for missing names via context.lookupScriptModeAsync.
  */
 function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, errorContext = null) {
@@ -318,55 +318,55 @@ function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, erro
   if (f) {
     return val;
   }
-  const outputRead = varOutputLookupScript(frame, name, currentBuffer);
-  if (outputRead !== undefined) {
-    return outputRead;
+  const channelRead = varChannelLookupScript(frame, name, currentBuffer);
+  if (channelRead !== undefined) {
+    return channelRead;
   }
   return context.lookupScriptModeAsync(name, errorContext);
 }
 
-// Script-mode output lookup variant:
+// Script-mode channel lookup variant:
 // for cross-tree reads, prefer producer-buffer snapshots while producer is live
-// to avoid waiting on full finalization of the output stream.
-function varOutputLookupScript(frame, name, currentBuffer) {
-  let output = getOutput(frame, name);
-  if (!output && currentBuffer && currentBuffer._outputs instanceof Map) {
-    output = currentBuffer._outputs.get(name);
+// to avoid waiting on full finalization of the channel stream.
+function varChannelLookupScript(frame, name, currentBuffer) {
+  let channel = getChannel(frame, name);
+  if (!channel && currentBuffer && currentBuffer._outputs instanceof Map) {
+    channel = currentBuffer._outputs.get(name);
   }
-  if (!output) {
+  if (!channel) {
     return undefined;
   }
-  if (isBufferInAncestry(currentBuffer, output._buffer)) {
+  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
     if (currentBuffer && currentBuffer.parent && currentBuffer.parent.finished) {
-      return output.finalSnapshot();
+      return channel.finalSnapshot();
     }
-    if (LOOKUP_DYNAMIC_OUTPUT_LINKING) {
-      ensureReadOutputLink(currentBuffer, output, name);
+    if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
+      ensureReadChannelLink(currentBuffer, channel, name);
     }
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
-  if (output._buffer && !output._buffer.finished) {
-    return output._buffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  if (channel._buffer && !channel._buffer.finished) {
+    return channel._buffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
-  return output.finalSnapshot();
+  return channel.finalSnapshot();
 }
 
-// Dynamically links the current read buffer into the target handler lane once.
-// This is used only when LOOKUP_DYNAMIC_OUTPUT_LINKING is enabled.
-function ensureReadOutputLink(currentBuffer, output, outputName) {
-  if (!currentBuffer || !output || output._buffer === currentBuffer) {
+// Dynamically links the current read buffer into the target channel lane once.
+// This is used only when LOOKUP_DYNAMIC_CHANNEL_LINKING is enabled.
+function ensureReadChannelLink(currentBuffer, channel, channelName) {
+  if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
     return;
   }
   const parent = currentBuffer.parent;
   if (!parent || typeof parent.addBuffer !== 'function') {
     return;
   }
-  currentBuffer._readOutputLinks = currentBuffer._readOutputLinks || Object.create(null);
-  if (currentBuffer._readOutputLinks[outputName]) {
+  currentBuffer._readChannelLinks = currentBuffer._readChannelLinks || Object.create(null);
+  if (currentBuffer._readChannelLinks[channelName]) {
     return;
   }
-  parent.addBuffer(currentBuffer, outputName);
-  currentBuffer._readOutputLinks[outputName] = true;
+  parent.addBuffer(currentBuffer, channelName);
+  currentBuffer._readChannelLinks[channelName] = true;
 }
 
 // Returns true when `ancestor` is on the parent chain of `buffer`.
@@ -388,7 +388,7 @@ module.exports = {
   memberLookupAsync,
   memberLookupScriptAsync,
   contextOrFrameLookup,
-  varOutputLookup,
+  varChannelLookup,
   contextOrVarLookup,
   contextOrVarLookupScript,
   contextOrVarLookupScriptAsync,

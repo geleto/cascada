@@ -152,7 +152,7 @@ class Context extends Obj {
       return;
     }
 
-    // Deferred exports are intended for async value-output paths.
+    // Deferred exports are intended for async var-channel paths.
     // Legacy/sync call sites pass an initial value and publish immediately.
     if (arguments.length > 1) {
       this.ctx[name] = initialValue;
@@ -174,8 +174,8 @@ class Context extends Obj {
       if (typeof resolve !== 'function') {
         continue;
       }
-      const output = runtime.getOutput(frame, name);
-      resolve(output.finalSnapshot());
+      const channel = runtime.getChannel(frame, name);
+      resolve(channel.finalSnapshot());
     }
   }
 

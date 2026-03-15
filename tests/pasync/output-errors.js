@@ -10,28 +10,28 @@ const {
 } = require('../../src/runtime/errors');
 const {
   TextCommand,
-  ValueCommand,
+  VarCommand,
   DataCommand,
   SinkCommand,
   SequenceCallCommand
 } = require('../../src/runtime/commands');
 const {
-  Output,
-  TextOutput,
-  ValueOutput,
-  DataOutput,
-  SinkOutput,
+  Channel,
+  TextChannel,
+  VarChannel,
+  DataChannel,
+  SinkChannel,
   inspectTargetForErrors,
-  createOutput,
-  createSinkOutput
+  createChannel,
+  createSinkChannel
 } = require('../../src/runtime/output');
 
 describe('output errors', function () {
   describe('output commands step2 poison encoding', function () {
     it('TextCommand encodes poison into target instead of throwing', () => {
-      const output = new TextOutput(null, null, 'text', null, 'text');
+      const output = new TextChannel(null, null, 'text', null, 'text');
       const poison = createPoison([new Error('text poison')]);
-      const cmd = new TextCommand({ handler: 'text', args: ['ok', poison], pos: { lineno: 1, colno: 1 } });
+      const cmd = new TextCommand({ channelName: 'text', args: ['ok', poison], pos: { lineno: 1, colno: 1 } });
 
       cmd.apply(output);
 
@@ -40,9 +40,9 @@ describe('output errors', function () {
       expect(output._target[0].errors[0].message).to.contain('text poison');
     });
 
-    it('ValueCommand poisons target on invalid arity', () => {
-      const output = new ValueOutput(null, null, 'value', null, 'value');
-      const cmd = new ValueCommand({ handler: 'value', args: [1, 2], pos: { lineno: 1, colno: 1 } });
+    it('VarCommand poisons target on invalid arity', () => {
+      const output = new VarChannel(null, null, 'value', null, 'value');
+      const cmd = new VarCommand({ channelName: 'value', args: [1, 2], pos: { lineno: 1, colno: 1 } });
 
       cmd.apply(output);
 
@@ -51,16 +51,16 @@ describe('output errors', function () {
     });
 
     it('DataCommand writes poison to addressed path and allows later repair overwrite', async () => {
-      const output = new DataOutput(null, null, 'data', null, 'data');
+      const output = new DataChannel(null, null, 'data', null, 'data');
       const poison = createPoison([new Error('data poison')]);
       const bad = new DataCommand({
-        handler: 'data',
+        channelName: 'data',
         command: 'set',
         args: [['x'], poison],
         pos: { lineno: 1, colno: 1 }
       });
       const fix = new DataCommand({
-        handler: 'data',
+        channelName: 'data',
         command: 'set',
         args: [['x'], 'ok'],
         pos: { lineno: 2, colno: 1 }
@@ -77,9 +77,9 @@ describe('output errors', function () {
     });
 
     it('DataCommand encodes missing-method failure into addressed path', () => {
-      const output = new DataOutput(null, null, 'data', null, 'data');
+      const output = new DataChannel(null, null, 'data', null, 'data');
       const cmd = new DataCommand({
-        handler: 'data',
+        channelName: 'data',
         command: 'doesNotExist',
         args: [['x'], 1],
         pos: { lineno: 1, colno: 1 }
@@ -107,20 +107,20 @@ describe('output errors', function () {
         }
       };
 
-      const output = new SinkOutput(null, null, 'logger', null, sink);
+      const output = new SinkChannel(null, null, 'logger', null, sink);
 
-      await new SinkCommand({ handler: 'logger', command: 'write', args: ['ok'] }).apply(output);
-      await new SinkCommand({ handler: 'logger', command: 'write', args: ['boom'] }).apply(output);
+      await new SinkCommand({ channelName: 'logger', command: 'write', args: ['ok'] }).apply(output);
+      await new SinkCommand({ channelName: 'logger', command: 'write', args: ['boom'] }).apply(output);
       expect(isPoison(output._target)).to.be(true);
 
-      await new SinkCommand({ handler: 'logger', command: 'write', args: ['skipped'] }).apply(output);
+      await new SinkCommand({ channelName: 'logger', command: 'write', args: ['skipped'] }).apply(output);
       expect(calls).to.eql(['ok']);
 
-      await new SinkCommand({ handler: 'logger', command: 'repair', args: [] }).apply(output);
+      await new SinkCommand({ channelName: 'logger', command: 'repair', args: [] }).apply(output);
       expect(output._target).to.be(undefined);
       expect(calls).to.eql(['ok', 'repair']);
 
-      await new SinkCommand({ handler: 'logger', command: 'write', args: ['after'] }).apply(output);
+      await new SinkCommand({ channelName: 'logger', command: 'write', args: ['after'] }).apply(output);
       expect(calls).to.eql(['ok', 'repair', 'after']);
     });
 
@@ -130,10 +130,10 @@ describe('output errors', function () {
           throw new Error('should not run');
         }
       };
-      const output = new SinkOutput(null, null, 'seq', null, sink);
+      const output = new SinkChannel(null, null, 'seq', null, sink);
       const poison = createPoison([new Error('arg poison')]);
       const cmd = new SequenceCallCommand({
-        handler: 'seq',
+        channelName: 'seq',
         command: 'exec',
         args: [poison],
         withDeferredResult: true
@@ -184,7 +184,7 @@ describe('output errors', function () {
     });
 
     it('caches inspection by state version and invalidates on writes', async () => {
-      const output = new Output(null, null, 'x', null, 'value', 1, null);
+      const output = new Channel(null, null, 'x', null, 'value', 1, null);
       let inspectCalls = 0;
       output._inspectTargetForErrors = async () => {
         inspectCalls += 1;
@@ -205,7 +205,7 @@ describe('output errors', function () {
     it('does not expose observation methods on output facades', async () => {
       const fakeBuffer = { _registerOutput() { } };
       const frame = { parent: null };
-      const out = createOutput(frame, fakeBuffer, 'out', null, 'data');
+      const out = createChannel(frame, fakeBuffer, 'out', null, 'data');
 
       expect(out.snapshot).to.be(undefined);
       expect(out.isError).to.be(undefined);
@@ -224,7 +224,7 @@ describe('output errors', function () {
       const frame = { parent: null };
       const sink = { repair() { } };
 
-      const out = createSinkOutput(frame, fakeBuffer, 'logger', null, sink);
+      const out = createSinkChannel(frame, fakeBuffer, 'logger', null, sink);
       await out.repair();
 
       expect(calls).to.eql([['repair', 'logger']]);

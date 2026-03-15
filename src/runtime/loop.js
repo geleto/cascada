@@ -2,7 +2,7 @@
 
 const lib = require('../lib');
 const { createPoison, isPoison, isPoisonError, PoisonError, handleError } = require('./errors');
-const { ValueCommand } = require('./commands');
+const { VarCommand } = require('./commands');
 
 const STOP_WHILE = Symbol('STOP_WHILE');
 
@@ -41,20 +41,20 @@ function asyncEach(arr, dimen, iter, cb) {
 function asyncAll(arr, dimen, func, cb) {
   var finished = 0;
   var len;
-  var outputArr;
+  var resultArr;
 
   function done(i, output) {
     finished++;
-    outputArr[i] = output;
+    resultArr[i] = output;
 
     if (finished === len) {
-      cb(null, outputArr.join(''));
+      cb(null, resultArr.join(''));
     }
   }
 
   if (lib.isArray(arr)) {
     len = arr.length;
-    outputArr = new Array(len);
+    resultArr = new Array(len);
 
     if (len === 0) {
       cb(null, '');
@@ -81,7 +81,7 @@ function asyncAll(arr, dimen, func, cb) {
   } else {
     const keys = lib.keys(arr || {});
     len = keys.length;
-    outputArr = new Array(len);
+    resultArr = new Array(len);
 
     if (len === 0) {
       cb(null, '');
@@ -135,9 +135,9 @@ function createLoopBindings(index, len, last) {
   return loopMeta;
 }
 
-function setLoopValueBindings(handler, index, len, last, pos) {
-  return new ValueCommand({
-    handler,
+function setLoopValueBindings(channelName, index, len, last, pos) {
+  return new VarCommand({
+    channelName,
     args: [createLoopBindings(index, len, last)],
     pos
   });
@@ -646,11 +646,11 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
 }
 
 /**
- * Poison body/else handler effects when loop input fails before/during iteration.
+ * Poison body/else channel effects when loop input fails before/during iteration.
  *
  * @param {AsyncFrame} frame - The loop frame
  * @param {Object} buffer - The CommandBuffer instance
- * @param {Object} asyncOptions - Options containing write counts and handlers
+ * @param {Object} asyncOptions - Options containing write counts and channels
  * @param {Array} errors - Array of error objects to propagate
  * @param {boolean} didIterate - Whether any iterations occurred
  */
@@ -658,10 +658,10 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
   //replace the errors with the handleError'd errors
   errors = errors.map(error => handleError(error, asyncOptions.errorContext.lineno, asyncOptions.errorContext.colno, asyncOptions.errorContext.errorContextString, asyncOptions.errorContext.path));
 
-  // Poison body handler effects.
-  if (asyncOptions.bodyHandlers && asyncOptions.bodyHandlers.length > 0) {
-    for (const handler of asyncOptions.bodyHandlers) {
-      buffer.addPoison(errors, handler);
+  // Poison body channel effects.
+  if (asyncOptions.bodyChannels && asyncOptions.bodyChannels.length > 0) {
+    for (const channelName of asyncOptions.bodyChannels) {
+      buffer.addPoison(errors, channelName);
     }
   }
 
@@ -669,10 +669,10 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
     return;// we don't poison the else side-effects if we had at least one iteration
   }
 
-  // Poison else handler effects.
-  if (asyncOptions.elseHandlers && asyncOptions.elseHandlers.length > 0) {
-    for (const handler of asyncOptions.elseHandlers) {
-      buffer.addPoison(errors, handler);
+  // Poison else channel effects.
+  if (asyncOptions.elseChannels && asyncOptions.elseChannels.length > 0) {
+    for (const channelName of asyncOptions.elseChannels) {
+      buffer.addPoison(errors, channelName);
     }
   }
 }

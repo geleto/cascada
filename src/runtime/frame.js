@@ -101,13 +101,13 @@ class Frame {
     return new Frame();
   }
 
-  markOutputBufferScope(buffer) {
+  markChannelBufferScope(buffer) {
     if (buffer && buffer.arrays) {
-      const outputArrays = Object.keys(buffer.arrays);
-      outputArrays.forEach((name) => {
+      const channelArrays = Object.keys(buffer.arrays);
+      channelArrays.forEach((name) => {
         const target = buffer.arrays[name];
         if (target && typeof target === 'object') {
-          target._outputScopeRoot = true;
+          target._channelScopeRoot = true;
         }
       });
       return;
@@ -117,7 +117,7 @@ class Frame {
       buffer = buffer.output;
     }
     if (buffer && typeof buffer === 'object') {
-      buffer._outputScopeRoot = true;
+      buffer._channelScopeRoot = true;
     }
   }
 }
