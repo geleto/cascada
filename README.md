@@ -50,7 +50,7 @@ The engine intelligently analyzes your code, automatically executing independent
 
 ### ✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.
 Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
-This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
+This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its async state.
 
 ### 🎭 One Engine, Two Modes
 This parallel-first philosophy is the foundation for both of its powerful modes:
@@ -86,20 +86,22 @@ Cascada replaces traditional try/catch exceptions with a data-centric error mode
     ```javascript
     import { AsyncEnvironment } from 'cascada-engine';
     const env = new AsyncEnvironment();
-    const script = `// Set initial user object
-      @data.user = {name: 'Alice', id: 123, log: "User profile created. "}
-      // Append to a string property within the data object
-      @data.user.log.append(" Login successful.")`;
-
-    // The 'data' output focuses the result on the data object
-    const { user } = await env.renderScriptString(script, {}, { output: 'data' });
+    const script = `
+      data result
+      result.user = {name: 'Alice', id: 123, log: "User profile created. "}
+      // Append to a string property within the data channel
+      result.user.log.append(" Login successful.")
+      return result.snapshot()
+    `;
+    const { user } = await env.renderScriptString(script, {});
     console.log(user.name); // Alice
     console.log(user.log);  // User profile created. Login successful.
+    ```
 
 ## Core Concepts (Deeper Dive)
 
 At its core, Cascada offers a set of powerful features available in both its templating and scripting modes.
-The sections below go deeper into Cascada’s execution model. You don’t need to understand everything here to get started.
+The sections below go deeper into Cascada's execution model. You don't need to understand everything here to get started.
 
 
 <table>
@@ -122,8 +124,10 @@ var user = fetchUser(123)
 var config = fetchSiteConfig()
 
 // Waits for both to complete before use
-@data.greeting = "Welcome, " + user.name
-@data.theme = "Theme: " + config.theme
+return {
+  greeting: "Welcome, " + user.name,
+  theme: "Theme: " + config.theme
+}
 ```
 
 </details>
@@ -164,7 +168,7 @@ var user = getUser()
 var posts = getPosts(user.id)
 var footer = getFooter()
 
-@text("User: " + user.name)
+return "User: " + user.name
 ```
 
 </details>
@@ -202,11 +206,13 @@ Work with **promises, `async` functions, and `async` iterators** as if they were
 // fetchComments is an async iterator.
 var post = fetchPost(42)
 
+text output
 // Waits for post to resolve, then iterates
 // over the async comments iterator.
 for comment in fetchComments(post.id)
-  @text(comment.author + ": " + comment.body)
+  output(comment.author + ": " + comment.body)
 endfor
+return output.snapshot()
 ```
 
 </details>
@@ -244,9 +250,9 @@ For functions with **side effects** (e.g., database writes), the `!` marker enfo
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
+// 'account' is provided via context
 // The `!` on deposit() creates a
 // sequence for the 'account' path.
-var account = getBankAccount()
 
 //1. Set initial Deposit:
 account!.deposit(100)
@@ -261,8 +267,8 @@ account!.withdraw(50)
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
+{# 'account' is provided via context #}
 {# The `!` on deposit() creates a sequence for 'account'. #}
-{% set account = getBankAccount() %}
 
 {% do account!.deposit(100) %}
 {% do account.getStatus() %}
@@ -275,9 +281,11 @@ account!.withdraw(50)
 <tr>
 <td valign="top">
 
-### Declarative Data Assembly (`@` Commands)
+### Declarative Data Assembly (Channels)
 
-In scripts, **Output Commands**, marked with the `@` sigil, follow a **"Collect, Execute, Assemble"** model: they are buffered during parallel execution and then applied sequentially to build a final result, guaranteeing a predictable output order. The built-in `@data` handler provides a rich set of declarative commands for building structured data, including assignment (`=`), array manipulation (`.push`), object merging (`.merge`), and even direct arithmetic (`+=`, `++`) or string (`.append`) operations.
+Cascada provides **channel types** (`data`, `text`, `sink`, `sequence`) for declarative, ordered output assembly. Channel writes execute concurrently as soon as their inputs are ready, but the final assembled result always matches source-code order—giving you the performance of parallelism with the predictability of sequential code.
+
+The `data` channel is particularly powerful for building structured objects and arrays from parallel loops. All writes run concurrently, and the assembled result is always in source order.
 
 </td>
 <td valign="top">
@@ -288,7 +296,8 @@ In scripts, **Output Commands**, marked with the `@` sigil, follow a **"Collect,
 // Assume fetchProductDetails for
 // ID 205 is the slowest.
 var productIds = [101, 205, 302]
-@data.report.totalReviews = 0 // Initialize
+data report
+report.totalReviews = 0 // Initialize
 
 // Each loop iteration runs in parallel.
 for id in productIds
@@ -300,35 +309,14 @@ for id in productIds
   // built in the order of `productIds`
   // [101, 205, 302], not the order in
   // which the data resolves.
-  @data.report.products.push({
+  report.products.push({
     id: details.id,
     name: details.name,
     reviewCount: reviews.length
   })
-  @data.report.totalReviews += reviews.length
+  report.totalReviews += reviews.length
 endfor
-```
-</details>
-<details>
-<summary><strong>Using `capture` for Inline Data Assembly</strong></summary>
-
-```javascript
-// Use `capture` to run parallel operations
-// and assign the assembled object to a variable.
-var userProfile = capture :data
-  // These run in parallel
-  var details = fetchUserDetails(123)
-  var prefs = fetchUserPrefs(123)
-
-  // Assemble the final object
-  @data.id = details.id
-  @data.name = details.name
-  @data.theme = prefs.theme
-endcapture
-
-// 'userProfile' is now a clean object:
-// { id: 123, name: "Alice", theme: "dark" }
-@data.profile = userProfile
+return report.snapshot()
 ```
 </details>
 <details>
@@ -351,20 +339,20 @@ endcapture
 <tr>
 <td valign="top">
 
-### Custom Command Handlers
+### External Stateful Objects (`sink`)
 
-For scripts, the **Command Handlers** feature lets you create domain-specific logic by registering classes that receive and process `@` commands. These commands are guaranteed to execute in source order after all other async logic has completed. This is perfect for tasks like logging, database operations, or even drawing to a canvas.
+The `sink` channel wraps an external stateful object and applies its method calls in **source-code order**, even when the surrounding code runs in parallel. Use it when the important thing is sending ordered commands to an object, not getting a return value from each call.
 
 </td>
 <td valign="top">
-<details>
-  <summary><strong>Custom Handler Class (JavaScript)</strong></summary>
+<details open>
+  <summary><strong>Stateful Object (JavaScript)</strong></summary>
 
   ```javascript
   // Turtle graphics on an HTML5 Canvas
   class CanvasTurtle {
-    constructor(context) {
-      this.ctx = context.canvas.getContext('2d');
+    constructor(canvas) {
+      this.ctx = canvas.getContext('2d');
       this.x = this.ctx.canvas.width / 2;
       this.y = this.ctx.canvas.height / 2;
       this.angle = -90; // Start pointing up
@@ -382,26 +370,27 @@ For scripts, the **Command Handlers** feature lets you create domain-specific lo
   ```
 </details>
 <details open>
-  <summary><strong>Using the Custom Handler (Cascada Script)</strong></summary>
+  <summary><strong>Using a sink (Cascada Script)</strong></summary>
 
   ```javascript
   // Draw an 8-sided star using canvas
-  const env = new AsyncEnvironment();
-  env.addCommandHandlerClass('turtle', CanvasTurtle);
+  // 'canvasTurtle' is provided via context
+  sink turtle = canvasTurtle
 
-  // Use it in your script to draw a star.
-  const script = `
-    @turtle.begin()
-    for i in range(8)
-      @turtle.forward(60)
-      @turtle.turn(135)
-    endfor
-    @turtle.stroke('cyan')`;
+  turtle.begin()
+  for i in range(8)
+    turtle.forward(60)
+    turtle.turn(135)
+  endfor
+  turtle.stroke('cyan')
+  ```
 
-  // Provide the canvas context when rendering.
+  ```javascript
+  // Provide the turtle instance when rendering.
   env.renderScriptString(script, {
-    canvas:
+    canvasTurtle: new CanvasTurtle(
       document.querySelector('canvas')
+    )
   });
   ```
 </details>
@@ -422,25 +411,26 @@ Macros allow you to define reusable chunks of logic. In templates, they're great
 ```javascript
 // This macro fetches a user's details and
 // recent activity in parallel and builds a summary.
-macro buildUserSummary(userId) : data
+macro buildUserSummary(userId)
   // Run three async calls concurrently
   var details = fetchUserDetails(userId)
   var posts = fetchUserPosts(userId)
   var comments = fetchUserComments(userId)
 
-  // Assemble the result using @data commands
-  @data.name = details.name
-  @data.postCount = posts.length
-  @data.commentCount = comments.length
+  // Return a composed result object
+  return {
+    name: details.name,
+    postCount: posts.length,
+    commentCount: comments.length
+  }
 endmacro
 
 // Call the macro for two different users in parallel.
 var user1 = buildUserSummary(101)
 var user2 = buildUserSummary(102)
 
-// Assemble the final report.
-@data.report.user1Summary = user1
-@data.report.user2Summary = user2
+// Compose the final report.
+return { report: { user1Summary: user1, user2Summary: user2 } }
 ```
 </details>
 <details>
@@ -480,9 +470,7 @@ var user2 = buildUserSummary(102)
 
 ### Resilient Error Handling
 
-**Note**: This feature is under development.
-
-Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structure lets you catch errors, define **conditional retry logic** with `resume`, and provide a final fallback. The special `resume.count` variable is **automatically managed by the engine** to track retry attempts.
+Handle runtime errors gracefully with `guard`/`recover`. This structure lets you attempt risky operations and automatically restore selected state on failure, providing a clean recovery path. The `is error` test detects failures, and the `#` operator inspects error details.
 
 </td>
 <td valign="top">
@@ -490,33 +478,29 @@ Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structur
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-try
+var result
+guard
   // Attempt a fallible operation
   var image = generateImage(prompt)
-  @data.result.imageUrl = image.url
-resume resume.count < 3
-  // Retry up to 3 times
-  @text("Retrying attempt " + resume.count)
-except
-  // Handle permanent failure
-  @data.result.error = "Failed: " + error.message
-endtry
+  result = { imageUrl: image.url }
+recover err
+  // Handle failure — guarded state already restored
+  result = { error: "Failed: " + err#message }
+endguard
+return result
 ```
 </details>
 <details>
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
-{% try %}
+{% guard %}
   {# Attempt a fallible operation #}
   {% set image = generateImage(prompt) %}
   <img src="{{ image.url }}" />
-{% resume resume.count < 3 %}
-  <p>Retrying attempt {{ resume.count }}...</p>
-{% except %}
-  <p class="error">Image generation failed:
-  {{ error.message }}</p>
-{% endtry %}
+{% recover %}
+  <p class="error">Image generation failed.</p>
+{% endguard %}
 ```
 </details>
 </td>
@@ -533,9 +517,9 @@ Cascada's parallel-first core powers two distinct syntaxes, each tailored for a 
 
 ### Data-First: Cascada Script
 
-For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds specialized `@` commands for declaratively building structured data results.
+For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds **channels** (`data`, `text`, `sink`, `sequence`) for structured output assembly.
 - **Clean, delimiter-free syntax**
-- **Data assembly commands**: `@data.set`, `@data.push`, `@data.merge`
+- **Channels for structured output**: `data`, `text`, `sink`, `sequence`
 - **Focus on logic and orchestration**
 
 </td>
@@ -545,23 +529,25 @@ For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada S
 
 ```javascript
 // 1. Generate a plan with an LLM call.
+data result
 var plan = makePlan(
   "Analyze competitor's new feature")
-@data.result.plan = plan
+result.plan = plan
 
 // 2. Each step runs in parallel.
 for step in plan.steps
   var stepResult =
     executeStep(step.instruction)
-  @data.result.stepResults.push({
+  result.stepResults.push({
     step: step.title,
     result: stepResult
   })
 endfor
 
 // 3. Summarize the results once complete
-var summary = summarize(result.stepResults)
-@data.result.summary = summary
+result.summary = summarize(
+  result.snapshot().stepResults)
+return result.snapshot()
 ```
 </details>
 </td>
@@ -621,18 +607,18 @@ import { AsyncEnvironment } from 'cascada-engine';
 const env = new AsyncEnvironment();
 const script = `
   // The 'user' promise resolves automatically
-  @data.result.greet = "Hello, " + user.name
+  return "Hello, " + user.name
 `;
 const context = {
   // Pass in an async function or a promise
   user: fetchUser(123)
 };
 
-const data = await env.renderScriptString(
-  script, context, { output: 'data' }
+const result = await env.renderScriptString(
+  script, context
 );
-// { result: { greet: 'Hello, Alice' } }
-console.log(data);
+// 'Hello, Alice'
+console.log(result);
 ```
 </details>
 </td>
@@ -697,7 +683,7 @@ const contentAgent = create.Script({
       topic: "the future of AI-powered development",
       qualityThreshold: 8, maxRevisions: 3, minRevisions: 1
     },
-    script: `:data
+    script: `
       var revisionCount = 0
       var currentDraft = draftGenerator({ topic: topic }).text
       var critique = critiqueGenerator({ draft: currentDraft }).object
@@ -709,7 +695,7 @@ const contentAgent = create.Script({
         critique = critiqueGenerator({ draft: currentDraft }).object
       endwhile
 
-      @data = { finalDraft: currentDraft, finalScore: critique.score, revisionCount: revisionCount }`,
+      return { finalDraft: currentDraft, finalScore: critique.score, revisionCount: revisionCount }`,
 });
 
 // Run the agent
