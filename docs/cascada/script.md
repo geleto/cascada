@@ -228,6 +228,10 @@ copy[0]  // 1 - copy is independent
 
 This ensures parallel operations never interfere—each variable owns its data independently.
 
+**Performance Note**
+
+Cascada uses optimized techniques so that assignments do not copy entire values. Values may be shared internally until modified, at which point only the affected parts are copied as needed. This keeps memory usage and performance overhead low while preserving the simple independent value semantics shown in the examples.
+
 **Property Assignment**
 
 You can directly assign to object properties and array elements:
