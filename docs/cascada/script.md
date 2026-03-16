@@ -1,7 +1,7 @@
 # Cascada Script Documentation
 
 > **Note:** Output focus directives (`:data`, `:text`, `:value`, and custom `:handler` focus) have been removed.
-> Use explicit `return` statements (e.g., `return data.snapshot()`) to shape results.
+> Use explicit `return` statements (e.g., `return result.snapshot()`) to shape results.
 
 [Download as Markdown](https://raw.githubusercontent.com/geleto/cascada/master/docs/cascada/script.md)
 
@@ -48,11 +48,12 @@ In short, Cascada lets developers **write clear, linear logic** while the engine
 - [Cascada's Execution Model](#cascadas-execution-model)
 - [Language Fundamentals](#language-fundamentals)
 - [Control Flow](#control-flow)
-- [Building Outputs Declaratively](#building-outputs-declaratively)
+- [Channels](#channels)
 - [Managing Side Effects: Sequential Execution](#managing-side-effects-sequential-execution)
 - [Error Handling](#error-handling)
-- [Macros and Reusability](#macros-and-reusability)
-- [Imports and Modules](#imports-and-modules)
+- [Macros and Reusable Components](#macros-and-reusable-components)
+- [Return Statements](#return-statements)
+- [Modular Scripts](#modular-scripts)
 - [Extending Cascada](#extending-cascada)
 - [API Reference](#api-reference)
 - [Development Status and Roadmap](#development-status-and-roadmap)
@@ -64,7 +65,7 @@ In short, Cascada lets developers **write clear, linear logic** while the engine
   npm install cascada-engine
   ```
 
-Here's a simple of executing a script.
+Here's a simple example of executing a script.
 
 ```javascript
 import { AsyncEnvironment } from 'cascada-engine';
@@ -72,18 +73,16 @@ import { AsyncEnvironment } from 'cascada-engine';
 const env = new AsyncEnvironment();
 const script = `
   // The 'user' promise resolves automatically
-  @data.result.greet = "Hello, " + user.name
+  return "Hello, " + user.name
 `;
 const context = {
   // Pass in an async function or a promise
   user: fetchUser(123)
 };
 
-const data = await env.renderScriptString(
-  script, context, { output: 'data' }
-);
-// { result: { greet: 'Hello, Alice' } }
-console.log(data);
+const result = await env.renderScriptString(script, context);
+// 'Hello, Alice'
+console.log(result);
 ```
 
 The syntax is familiar, but the execution is fundamentally different. To understand how Cascada achieves effortless concurrency, read the next section on Cascada's execution model.
@@ -125,7 +124,45 @@ Cascada Script offers a modern, expressive syntax designed to be instantly famil
 
 ## Language Fundamentals
 
-This section covers the syntax and fundamental constructs for writing scripts. While the syntax is familiar to JavaScript developers, its semantics differ due to the parallel-by-default execution model described above.
+### Features at a Glance
+
+What makes Cascada Script remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages — no async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic; the engine handles the parallelism.
+
+| Feature | Syntax | Notes |
+|---|---|---|
+| Variable declaration | `var name = value` | Always declare before use with `var` |
+| Assignment | `name = value`, `obj.prop = value` | Re-assign declared vars; supports `+=`, `-=`, `*=`, etc. |
+| Arithmetic | `+`, `-`, `*`, `/`, `//`, `%`, `**` | `//` is integer division, `**` is exponentiation |
+| Comparisons | `==`, `!=`, `<`, `>`, `<=`, `>=`, `===` | Standard comparisons |
+| Logic | `and`, `or`, `not` | Word-form boolean operators |
+| Strings | `"text"`, `'text'` | Concatenation with `+` |
+| Arrays | `[1, 2, 3]` | Array literals |
+| Objects / dicts | `{key: "value"}` | Object literals |
+| Expressions | `obj.prop`, `arr[i]`, `2*x + 1` | Member access, indexing, compound expressions; any expression is a valid standalone statement |
+| Inline if (ternary) | `a if condition else b` | Conditional expression |
+| Conditionals | `if / elseif / else / endif` | Standard branching |
+| Switch | `switch / case / default / endswitch` | Multi-way branching |
+| Parallel loop | `for item in list / endfor` | Iterations run concurrently |
+| Sequential loop | `each item in list / endeach` | Iterations run in strict order |
+| While loop | `while condition / endwhile` | Condition-based loop |
+| Filters | `value \| filterName(args)` | Transform values with built-in or custom filters |
+| Function calls | `funcName(a, b, keyword=c)` | Call context functions, globals, or macro results |
+| Macros | `macro name(args) … endmacro` | Define reusable, callable script components |
+| Imports | `import "file" as ns` | Modular code organization across files |
+| Comments | `// line`, `/* block */` | Standard comment syntax |
+
+Everything above is the language you already know. Cascada adds a small set of simple purpose-built constructs on top:
+
+| Cascada Feature | Syntax | Purpose |
+|---|---|---|
+| Implicit parallelism | *(no syntax)* | Independent operations run concurrently automatically |
+| `data` channel | `data name` | Build structured objects and arrays from parallel code — writes are concurrent, result is in source order |
+| `text` channel | `text name` | Generate text from parallel code, assembled in source order |
+| `sink` channel | `sink name = obj` | Send ordered commands to an external stateful object |
+| `sequence` channel | `sequence name = obj` | Sequential reads and calls on an external object |
+| Sequential operator | `obj!.method()`, `obj!.prop` | Enforce strict execution order on a context object path |
+| Guard | `guard [targets] / recover err / endguard` | Transaction-like block: auto-restores channel/sequence state on error |
+| Dataflow error propagation | `value is error`, `value#message` | Failures flow as values that poison  thrown exceptions; inspect with `#` |
 
 ### Core Syntax and Expressions
 
@@ -140,7 +177,7 @@ Cascada Script removes the visual noise of the [template syntax](template.md) wh
 - **Standard Comments**: Use JavaScript-style comments (`//` and `/* */`)
 - **Code**: Any standalone line that isn't a recognized command (e.g., `var`, `if`, `for`, `import`) or tag is treated as an expression. For example:
   ```
-  items.push("value")
+  computeTotal(items, tax)
   ```
 
 ### Variable Declaration and Assignment
@@ -160,24 +197,9 @@ var report
 var x, y = 100
 ```
 
-#### Declaring External Variables with `extern`
+#### Variable Assignment and Value Semantics
 
-> **⚠️ NOT IMPLEMENTED:** This part of the scross-script dependencies feature that is not yet implemented, see [Development Status and Roadmap](#development-status-and-roadmap) for details.
-
-Use `extern` to declare a variable that is expected to be provided by an including script (via `include` or `extends`), not from the global context. External variables cannot be initialized at declaration but can be changed later.
-
-```javascript
-// In 'component.script'
-extern currentUser, theme
-
-if not currentUser.isAuthenticated
-  // Re-assigning an extern variable is allowed
-  theme = "guest"
-endif
-```
-
-#### Assigning to Existing Variables with `=`
-Use the `=` operator to assign or re-assign a value to any **previously declared** variable (`var` or `extern`). Using `=` on an undeclared variable will cause a compile-time error.
+Use the `=` operator to assign or re-assign a value to a **previously declared** variable. Using `=` on an undeclared variable will cause a compile-time error.
 
 ```javascript
 var name = "Alice"
@@ -186,31 +208,27 @@ name = "Bob" // OK: Re-assigning a declared variable
 // Re-assign multiple existing variables at once
 x, y = 200 // OK, if x and y were previously declared
 
-// ERROR: 'username' was never declared with 'var' or 'extern'
+// ERROR: 'username' was never declared with 'var'
 username = "Charlie"
 ```
 
-#### Value Semantics
-
-Assignment creates an independent copy. Objects and arrays are deep copied, not shared by reference.
+**Assignment creates an independent copy.** Objects and arrays are deep copied, not shared by reference.
 
 ```javascript
 var a = {x: 1, y: 2}
 var b = a              // b receives a deep copy
 a.x = 10
-@text(b.x)  // 1 - b is independent
+b.x  // 1 - b is independent
 
 var nums = [1, 2, 3]
 var copy = nums        // copy receives a deep copy
 nums[0] = 99
-@text(copy[0])  // 1 - copy is independent
+copy[0]  // 1 - copy is independent
 ```
 
 This ensures parallel operations never interfere—each variable owns its data independently.
 
-**Context objects follow the same value semantics:** When you assign a context object property to a variable, you get an independent deep copy. Any subsequent changes to that variable will not affect the original context object. However, changes to the variable are live and will be visible to all code that uses that variable.
-
-#### Property Assignment
+**Property Assignment**
 
 You can directly assign to object properties and array elements:
 
@@ -222,48 +240,123 @@ var items = [1, 2, 3]
 items[0] = 100
 ```
 
+When you assign an async value to a property, code that reads that property waits for the value to resolve:
+
 ```javascript
 var point = {x: 1, y: 2}
 point.x = slowApiCall()
-@text(point.y)  // Waits for point.x to complete
-
-var items = [1, 2, 3]
-items[0] = slowApiCall()
-@text(items[1])  // Waits for items[0] to complete
-```
-
-**\* *Note:** Property Assignment is a **script-only feature** and is not available in the Cascada template language. Similar to Nunjucks, templates can access object properties and array elements for reading, but cannot modify them directly.
-
-#### Building Intermediate Values Without `capture`
-`capture...endcapture` is no longer supported in scripts.
-
-Use normal variables plus output snapshots (`data.snapshot()`, `text.snapshot()`, `value.snapshot()`) and explicit `return` statements to build intermediate and final results.
-
-```javascript
-var rawUserData = fetchUser(123)
-var user = {
-  id: rawUserData.id,
-  username: rawUserData.name | title,
-  status: "active" if rawUserData.isActive == 1 else "inactive"
+return {
+  x: point.x,  // waits because this value is being read
+  y: point.y   // no wait needed — point.y is already resolved
 }
 ```
 
-#### Variable Scoping and Shadowing
-Cascada Script does not allow variable shadowing. You cannot declare a variable in a child scope (e.g., inside a `for` loop or `if` block) if a variable with the same name already exists in a parent scope. This helps prevent common bugs and improves code clarity.
+**\* *Note:** Property Assignment is a **script-only feature** and is not available in the Cascada template language.
+
+#### Mutation Methods and Side Effects
+
+Direct assignment (`=` and property `=`) is the safe, idiomatic way to update values in Cascada. **Mutation methods** — methods that modify an existing value in-place rather than producing a new one — are a different matter. Common examples are `.push()` on arrays and repeated string concatenation via a mutating method. These are **side effects** in exactly the same sense as writing to a database or calling a stateful external service.
+
+In parallel code, calling `.push()` on the same plain `var` from multiple concurrent branches races — whichever branch runs last wins, and source-code order is not preserved:
+
+```javascript
+// ⚠️ UNSAFE in a parallel 'for' loop — iterations are concurrent
+var items = []
+for id in ids
+  var item = fetchItem(id)
+  items.push(item)   // order not guaranteed
+endfor
+```
+
+Two safe alternatives:
+
+**`data` channel (preferred for parallel code)** — writes execute concurrently, but the assembled result always matches source-code order:
+
+```javascript
+data items
+for id in ids
+  var item = fetchItem(id)
+  items.values.push(item)   // concurrent writes, ordered result
+endfor
+return items.snapshot()
+```
+
+**Sequential `!` operator** — enforces strict execution order. Only available on static paths from the script's context (not on local `var` values); see [Managing Side Effects: Sequential Execution](#managing-side-effects-sequential-execution).
+
+```javascript
+// 'collection' is a context object — ! makes each push wait for the previous one
+for id in ids
+  var item = fetchItem(id)
+  collection!.push(item)   // sequential; the loop body itself is still parallel
+endfor
+```
+
+Use `data` channels when you need ordered collection from parallel code. Reserve `!` for interactions with stateful external objects in the context.
+
+**Scoping: No Reuse of Visible Names**
+
+You cannot declare a variable in an inner scope (e.g., inside a `for` loop or `if` block) if a variable with the same name is already declared in an outer scope. This prevents accidental overwrites in parallel execution.
 
 ```javascript
 var item = "parent"
 for i in range(2)
-  // This would cause a compile-time ERROR, because 'item'
-  // is already declared in the parent scope.
+  // ERROR: 'item' is already declared in the outer scope.
   var item = "child " + i
 endfor
 ```
 
-#### Handling `null` and `undefined` Values
-Unlike Nunjucks/Cascada templates, which silently return `undefined` when accessing properties of `null` or `undefined` values, Cascada Script throws runtime errors. This stricter approach catches potential bugs early and ensures more predictable script execution.
+Variables declared inside control-flow blocks (`if`, `for`, `switch`, etc.) are **local to that block** and are not visible outside it.
 
-In Cascada Script, the keyword `none` is used to represent null/undefined values. When you declare a variable without an initial value, it defaults to `none`:
+```javascript
+if condition
+  var local = "only visible here"
+endif
+// ERROR: 'local' is not defined here
+```
+
+To use a value both inside and outside a block, declare it in the outer scope first:
+
+```javascript
+var status = "default"
+if condition
+  status = "updated"  // assigns to the outer variable
+endif
+// 'status' is visible and possibly updated here
+```
+
+**Handling `none` (null)**
+
+The keyword `none` represents `null` in Cascada Script. Accessing properties of `none` throws a runtime error, unlike Nunjucks templates which silently return `undefined`. Variables declared without an initial value default to `none`:
+
+```javascript
+var report  // defaults to none (null)
+```
+
+### The Context Object
+
+The **context** is the plain JavaScript object you pass when running a script. It is how you inject external data, functions, and services into Cascada:
+
+```javascript
+const result = await env.renderScriptString(script, {
+  userId: 123,
+  fetchUser: (id) => db.users.findById(id),
+  db: myDatabase
+});
+```
+
+Inside the script, context properties are accessed by name just like any other variable:
+
+```javascript
+var user = fetchUser(userId)
+return user.name
+```
+
+**Context values follow the same value semantics as variables:** when you assign a context property to a `var`, you get an independent deep copy. Any changes to that variable do not affect the original context object.
+
+```javascript
+var config = appConfig      // deep copy — changes here won't affect appConfig
+config.debug = true
+```
 
 ### Literals, Operators, and Expressions
 
@@ -310,30 +403,33 @@ You can create regular expressions by prefixing the expression with `r`.
 ```javascript
 var emailRegex = r/^[^\s@]+@[^\s@]+\.[^\s@]+$/
 if emailRegex.test(user.email)
-  @text("Valid email address.")
+  // Valid email address.
 endif
 ```
 
 ### Filters and Global Functions
 
-Cascada Script supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions). You can use them just as you would in a template.
+Cascada Script supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions).
 
 #### Filters
 Filters are applied with the pipe `|` operator.
 ```javascript
 var title = "a tale of two cities" | title
-@text(title) // "A Tale Of Two Cities"
-
 var users = ["Alice", "Bob"]
-@text("Users: " + (users | join(", "))) // "Users: Alice, Bob"
+return {
+  title: title,           // "A Tale Of Two Cities"
+  users: users | join(", ")  // "Alice, Bob"
+}
 ```
 
 #### Global Functions
 Global functions like `range` can be called directly.
 ```javascript
+data items
 for i in range(3)
-  @text("Item " + i) // Prints Item 0, Item 1, Item 2
+  items.values.push("Item " + i)
 endfor
+return items.snapshot()
 ```
 
 #### Additional Global Functions
@@ -342,11 +438,14 @@ endfor
 The `cycler` function creates an object that cycles through a set of values each time its `next()` method is called.
 
 ```javascript
+// cycler requires sequential order — use 'each' so calls to next() stay in order
+data report
 var rowClass = cycler("even", "odd")
-for item in items
+each item in items
   // First item gets "even", second "odd", third "even", etc.
-  @data.push(report.rows, { class: rowClass.next(), value: item })
-endfor
+  report.rows.push({ class: rowClass.next(), value: item })
+endeach
+return report.snapshot()
 ```
 
 ##### `joiner([separator])`
@@ -355,11 +454,10 @@ The `joiner` creates a function that returns the separator (default is `,`) on e
 ```javascript
 var comma = joiner(", ")
 var output = ""
-for tag in ["rock", "pop", "jazz"]
-  // The first call to comma() returns "", subsequent calls return ", "
+each tag in ["rock", "pop", "jazz"]
   output = output + comma() + tag
-endfor
-@text(output) // "rock, pop, jazz"
+endeach
+// output is "rock, pop, jazz"
 ```
 
 ## Control Flow
@@ -371,7 +469,7 @@ This section covers control flow constructs. Remember that Cascada's parallel-by
 ```
 if condition
   // statements
-elif anotherCondition
+elseif anotherCondition
   // statements
 else
   // statements
@@ -395,24 +493,27 @@ Switch statements provide a clean way to handle multiple conditional branches ba
 **Example:**
 ```javascript
 var orderStatus = order.status
+var nextStep
+var notification
+var trackingUrl
 
 switch orderStatus
 case "pending"
-  @data.nextStep = "process_payment"
-  @data.notification = "awaiting_payment"
+  nextStep = "process_payment"
+  notification = "awaiting_payment"
 case "confirmed"
-  @data.nextStep = "prepare_shipment"
-  @data.notification = "order_confirmed"
+  nextStep = "prepare_shipment"
+  notification = "order_confirmed"
 case "shipped"
-  @data.nextStep = "track_delivery"
-  @data.trackingUrl = getTrackingUrl(order.id)
+  nextStep = "track_delivery"
+  trackingUrl = getTrackingUrl(order.id)
 default
-  @data.nextStep = "review_order"
-  @data.notification = "unknown_status"
+  nextStep = "review_order"
+  notification = "unknown_status"
 endswitch
 ```
 
-**Important:** Unlike many languages, Cascada's `switch` does not have fall-through behavior. Each `case` branch is independent and automatically breaks after execution. Variables declared within a `case` or `default` branch are scoped to that branch.
+**Important:** Unlike C-style languages, Cascada's `switch` does **not** have fall-through behavior — each `case` exits automatically without needing a `break`. The `default` branch runs when no `case` matches.
 
 ### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
@@ -422,10 +523,12 @@ Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators
 
 ```javascript
 // Each iteration runs concurrently, fetching user details in parallel
+data result
 for userId in userIds
   var user = fetchUserDetails(userId)
-  @data.users.push(user)
+  result.users.push(user)  // data channel preserves source-code order
 endfor
+return result.snapshot()
 ```
 
 **Concurrency Limits**
@@ -443,24 +546,28 @@ You can iterate over various collection types:
 
 *   **Arrays**:
     ```javascript
-    var items = [{ title: "foo", id: 1 }, { title: "bar", id: 2 }];
+    data result
+    var items = [{ title: "foo", id: 1 }, { title: "bar", id: 2 }]
     for item in items
-      @data.posts.push({ id: item.id, title: item.title })
+      result.posts.push({ id: item.id, title: item.title })
     endfor
+    return result.snapshot()
     ```
 *   **Objects/Dictionaries**:
     Iterates over keys and values. Note that concurrency limits (`of N`) are ignored for plain objects.
     ```javascript
+    text log
     var food = { ketchup: '5 tbsp', mustard: '1 tbsp' }
     for ingredient, amount in food
-      @text("Use " + amount + " of " + ingredient)
+      log("Use " + amount + " of " + ingredient)
     endfor
     ```
 *   **Unpacking Arrays**:
     ```javascript
     var points = [[0, 1, 2], [5, 6, 7]]
+    text log
     for x, y, z in points
-      @text("Point: " + x + ", " + y + ", " + z)
+      log("Point: " + x + ", " + y + ", " + z)
     endfor
     ```
 *   **Async Iterators**:
@@ -469,7 +576,6 @@ You can iterate over various collection types:
     **Context Setup:**
     ```javascript
     const context = {
-      // A simple async generator that yields numbers with a delay
       generateNumbers: async function* () {
         yield 1;
         await new Promise(r => setTimeout(r, 100));
@@ -480,23 +586,25 @@ You can iterate over various collection types:
 
     **Script:**
     ```javascript
+    text log
     for num in generateNumbers()
-      @text("Received: " + num)
+      log("Received: " + num)
     endfor
     ```
 
 **Automatic Sequential Fallback**
-For safety, a `for` loop will automatically switch to **sequential execution** (waiting for one iteration to finish before starting the next) if you introduce dependencies between iterations. This happens if you:
+For safety, a `for` loop will automatically switch to **sequential execution** if you introduce dependencies between iterations. This happens if you:
 1.  **Modify a shared variable** (e.g., `total = total + 1`).
-2.  Use the sequential execution operator (`!`) on a function call inside the loop (see [Sequential Execution Control](#managing-side-effects-sequential-execution)).
+2.  Use the sequential execution operator (`!`) on a function call inside the loop.
 
 **The `else` block**
 A `for` loop can have an `else` block that is executed only if the collection is empty:
 ```javascript
+text log
 for item in []
-  @text("This will not be printed.")
+  log("Item: " + item.name)
 else
-  @text("The collection was empty.")
+  log("The collection was empty.")
 endfor
 ```
 
@@ -510,11 +618,11 @@ endwhile
 ```
 
 ##### `each` Loops: Iterate Sequentially
-For cases where you need to iterate over a collection but **preserve a strict sequential order**, use an `each` loop. It has the same syntax as a `for` loop but guarantees that each iteration completes before the next one begins.
+For cases where you need to iterate over a collection but **preserve strict sequential order**, use an `each` loop. It has the same syntax as a `for` loop but guarantees that each iteration completes before the next one begins.
 
 ```
 each item in collection
-  // Statements run sequentially for each item
+  // Each iteration completes before the next one starts
 endeach
 ```
 
@@ -529,7 +637,7 @@ These properties are available in **all** loop types and modes:
 *   `loop.first`: `true` if this is the first iteration.
 
 **Length-Dependent Properties**
-Properties that require knowledge of the total collection size include:
+Properties that require knowledge of the total collection size:
 *   `loop.length`: The total number of items in the sequence.
 *   `loop.last`: `true` if this is the last iteration.
 *   `loop.revindex`: The number of iterations until the end (1-indexed).
@@ -538,17 +646,16 @@ Properties that require knowledge of the total collection size include:
 Use the following guidelines to determine if these properties are available:
 
 1.  **Arrays and Objects:**
-    ✅ **Always Available.** Because the size of an array or object is known upfront, these properties are available regardless of whether the loop is running in parallel, sequentially, or with a concurrency limit.
+    ✅ **Always Available.** Because the size of an array or object is known upfront, these properties are available regardless of whether the loop runs in parallel, sequentially, or with a concurrency limit.
 
 2.  **Parallel Async Iterators:**
-    ✅ **Available (Async).** When iterating over an async iterator in default parallel mode, Cascada resolves `loop.length` and `loop.last` only after the **iteration** (fetching all items) has finished.
-    *Note:* This does **not** block the execution of the loop bodies - they will still run concurrently as items arrive - but expressions dependent on `loop.length` will wait until the end of the stream to evaluate.
+    ✅ **Available (Async).** Cascada resolves `loop.length` and `loop.last` only after the **iteration** (fetching all items) has finished. This does **not** block the execution of loop bodies — they still run concurrently as items arrive — but expressions dependent on `loop.length` will wait until the end of the stream to evaluate.
 
 3.  **Sequential or Constrained Async Iterators:**
-    ❌ **Not Available.** When an async iterator is restricted - either by an explicit `each`, a concurrency limit (`of N`), or an [automatic sequential fallback](#automatic-sequential-fallback) - it behaves like a stream or a `while` loop. Cascada cannot see the end of the stream in advance, so `loop.length` and `loop.last` are undefined.
+    ❌ **Not Available.** When an async iterator is restricted — by `each`, a concurrency limit (`of N`), or automatic sequential fallback — it behaves like a stream. Cascada cannot see the end of the stream in advance, so `loop.length` and `loop.last` are undefined.
 
 4.  **`while` Loops:**
-    ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations are complete.
+    ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations complete.
 
 
 ### Error handling and recovery with conditionals and loops
@@ -561,21 +668,22 @@ If the condition of an `if` statement (or the expression of a `switch` statement
 
 ```javascript
 var user = fetchUser(userId)  // May fail
+var accessLevel  // declare in outer scope
 
 // If user is an Error Value, both branches are skipped
-// and any variables/outputs they modify become poisoned
+// and accessLevel becomes poisoned (it would have been modified)
 if user.role == "admin"
-  @data.accessLevel = "full"
+  accessLevel = "full"
 else
-  @data.accessLevel = "limited"
+  accessLevel = "limited"
 endif
 
-// If user was an error, @data.accessLevel is now poisoned
+// If user was an error, accessLevel is now poisoned
 ```
 
-This behavior is important to understand: it's not just that the code doesn't execute - any outputs or variables that would have been assigned in any of the branches (`if`/`else` or `case`/`default`) become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
+This behavior is important to understand: it's not just that the code doesn't execute — any variables or outputs that would have been assigned in any of the branches become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
 
-**Note:** `switch` statements behave identically - if the switch expression is an Error Value, all `case` and `default` branches are skipped and their outputs become poisoned.
+**Note:** `switch` statements behave identically — if the switch expression is an Error Value, all `case` and `default` branches are skipped and their outputs become poisoned.
 
 #### Error handling with loops
 
@@ -583,30 +691,38 @@ If a loop's iterable evaluates to an Error Value, the loop body is skipped and t
 
 ```javascript
 var posts = fetchPosts()  // May fail
+data out
 
 // If posts is an Error Value, loop body is skipped
-// and any variables/outputs it modifies become poisoned
+// and out becomes poisoned
 for post in posts
-  @data.titles.push(post.title)
+  out.titles.push(post.title)
 endfor
 
-// If posts was an error, @data.titles is now poisoned
+// If posts was an error, out is now poisoned
 ```
 
-Similar to conditionals, the loop doesn't just skip execution - any outputs or variables that the loop body would have modified become poisoned, ensuring error detection downstream.
+Similar to conditionals, the loop doesn't just skip execution — any outputs or variables that the loop body would have modified become poisoned, ensuring error detection downstream.
 
 For details on detecting and recovering from errors in your scripts, see the [Error Handling](#error-handling) section.
 
 
-## Building Outputs Declaratively with `@`
+## Channels
 
-Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by an executable scope, such as the entire **script** or a **[macro](#macros-and-reusable-components)**.
+Channels are named values you build over time. You write into them with assignments and method calls, and read the current assembled value with `snapshot()`. They are the main tool for ordered writes and external interactions in Cascada Script: their writes run as soon as their inputs are ready, and the final assembled result still follows source-code order.
 
-All output operations use a standard function-call syntax, such as `@handler.method(...)`. This approach separates the *definition* of your final output from the *execution* of your asynchronous logic, allowing Cascada to run independent operations in parallel while ensuring your data is assembled correctly and in a predictable order.
+| Declaration | Type | Purpose |
+|---|---|---|
+| `data name` | Data channel | Build structured objects and arrays |
+| `text name` | Text channel | Build a text string |
+| `sink name = initializer` | Sink channel | Send ordered commands to an external object |
+| `sequence name = initializer` | Sequence channel | Sequential reads and calls on an external object |
+
+Use `name.snapshot()` to read a channel's current value. `snapshot()` is an observable operation — it waits for any pending writes to finish before returning. Because of that, it is more expensive than reading a plain `var`, so prefer `var` for simple cases and reach for channels when you need ordered assembly or external interaction.
 
 ### A Simple Example
 
-Before diving into the theory, let's look at how a few commands work together to build a JSON object.
+Before diving into the details, here's how a few channel commands work together to build a structured object.
 
 <table>
 <tr>
@@ -615,25 +731,25 @@ Before diving into the theory, let's look at how a few commands work together to
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// This script builds a user object.
-// The :data directive focuses the output to
-// get just the data property.
-:data
+// Declare a data channel
+data result
 
 var userId = 123
 var userProfile = { name: "Alice", email: "alice@example.com" }
 var userSettings = { notifications: true, theme: "light" }
 
-@data.user.id = userId
-@data.user.name = userProfile.name
+result.user.id = userId
+result.user.name = userProfile.name
 
-// @data.push: Adds an item to an array
-@data.user.roles.push("editor")
-@data.user.roles.push("viewer")
+// push: Adds an item to an array
+result.user.roles.push("editor")
+result.user.roles.push("viewer")
 
-// @data.merge: Combines properties into an object
-@data.user.settings.merge(userSettings)
-@data.user.settings.theme = "dark" // Overwrite one setting
+// merge: Combines properties into an object
+result.user.settings.merge(userSettings)
+result.user.settings.theme = "dark" // Overwrite one setting
+
+return result.snapshot()
 ```
 </details>
 </td>
@@ -662,15 +778,13 @@ var userSettings = { notifications: true, theme: "light" }
 </tr>
 </table>
 
-### The Core Concept: Collect, Execute, Assemble
+### How Channel Writes Are Ordered
 
-Instead of being executed immediately, `@` commands are stored in order and applied at the end of each **execution scope** (the main script or a [macro](#macros-and-reusable-components)):
+Channel writes execute as soon as their required input data is available, following the same data-driven scheduling as the rest of Cascada. The key guarantee is that the **assembled result is always in source-code order**, regardless of when individual writes actually execute.
 
-1.  **Collect:** As your script runs, Cascada collects `@` commands into a buffer, preserving their source-code order.
-2.  **Execute:** All other logic - `var` assignments, `async` function calls, `for` loops - runs to completion. Independent async operations happen concurrently, maximizing performance.
-3.  **Assemble:** Once all other logic in the current scope has finished, Cascada dispatches the buffered `@` commands **sequentially** to their handlers to build the final result for that scope.
+> **Note:** Direct assignment to `var` is safe in concurrent code — Cascada tracks data dependencies automatically. But mutation methods like `.push()` are side effects: when called from parallel branches on the same `var`, their order is not guaranteed. Use a `data` channel when you need ordered collection or assembly from parallel code. See [Mutation Methods and Side Effects](#mutation-methods-and-side-effects) for details.
 
-This model is especially powerful for parallel operations, as shown below. The `for` loop dispatches all `fetchEmployeeDetails` calls in parallel. Only after they have *all* completed does the engine begin executing the buffered `@data.push` commands, using the data that was fetched.
+This makes channels especially powerful for parallel operations. In the example below, all `fetchEmployeeDetails` calls run concurrently. Each `push` to the channel executes as soon as its `details` variable is ready, and the final array reflects the source-code order of the loop iterations.
 
 <table>
 <tr>
@@ -679,20 +793,22 @@ This model is especially powerful for parallel operations, as shown below. The `
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-:data
+data report
 var employeeIds = fetchEmployeeIds()
 
 // Each loop iteration runs in parallel.
 for id in employeeIds
   var details = fetchEmployeeDetails(id)
 
-  // This command is buffered. It runs after all
-  // fetches are done, using the 'details' variable.
-  @data.company.employees.push({
+  // Executes as soon as 'details' is ready.
+  // Final array always reflects source-code order.
+  report.company.employees.push({
     id: details.id,
     name: details.name
   })
 endfor
+
+return report.snapshot()
 ```
 </details>
 </td>
@@ -715,100 +831,10 @@ endfor
 </tr>
 </table>
 
-### Output Handlers: `@data`, `@text`, `@value`, and Custom Logic
+### The `data` Channel: Building Structured Data
+The `data` channel is the main tool for constructing structured output. It is especially useful when parallel code needs to build arrays or objects in a predictable order — all writes execute concurrently, but the assembled result always matches source-code order. This is the right alternative to [mutation methods on plain `var` values](#mutation-methods-and-side-effects), which race in parallel code.
 
-Every `@` command is directed to an **output handler**. The handler determines what action is performed. Cascada provides three built-in handlers and allows you to [define your own for custom logic](#creating-custom-output-command-handlers).
-
-*   **`@data`**: The built-in handler for building structured data (objects, arrays, strings and numbers).
-*   **`@text`**: The built-in handler for generating a simple string of text.
-*   **`@value`**: The built-in handler for capturing a single value. The last value set becomes the output.
-*   **Custom Handlers**: You can define your own handlers for domain-specific tasks where a sequence of operations is important, such as drawing graphics (`@turtle.forward(50)`), logging, or writing to a database (`@db.users.insert(...)`).
-
-Handler methods are executed synchronously during the "Assemble" step. For asynchronous tasks, your handler can use internal buffering or other state management techniques to collect commands and dispatch them asynchronously.
-
-### Understanding the Result Object
-
-Any executable scope - the entire script or a macro - produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
-
-For example, a scope that uses the `data`, `text`, and a [custom `turtle` handler](#creating-custom-output-command-handlers) will produce a result object like this:
-```json
-{
-  "data": { "report": { "title": "Q3 Summary" } },
-  "text": "Report generation completed.",
-  "turtle": { "x": 100, "y": 50, "angle": 90 }
-}
-```
-
-### Focusing the Output (`:data`, `:text`, `:handlerName`)
-
-Often, you only need one piece of the result. You can **focus the output** using a colon (`:`) followed by the name of the desired handler (`data`, `text`, or a custom handler name). This **output focus directive** changes the return value of its scope from the full result object to just the single property you specified.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script (Unfocused)</strong></summary>
-
-```javascript
-// No directive. Returns the full result object.
-@data.report.title = "Q3 Summary"
-@text("Report generation complete.")
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value (Unfocused)</strong></summary>
-
-```json
-{
-  "data": {
-    "report": {
-      "title": "Q3 Summary"
-    }
-  },
-  "text": "Report generation complete."
-}
-```
-</details>
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script (Focused with <code>:data</code>)</strong></summary>
-
-```javascript
-// The :data directive filters the final return value.
-:data
-
-@data.report.title = "Q3 Summary"
-@text("Report generation complete.")
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value (Focused)</strong></summary>
-
-```json
-{
-  "report": {
-    "title": "Q3 Summary"
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
-### Built-in Output Handlers
-
-#### The `@data` Handler: Building Structured Data
-The `@data` handler is the primary tool for constructing your script's `data` object. It provides a declarative, easy-to-read syntax for building complex data structures. All `@data` commands are collected during the script's execution and then applied in order to assemble the final data object.
-
-Here's a simple example of how it works:
+Here's a simple example:
 
 <table>
 <tr>
@@ -817,17 +843,18 @@ Here's a simple example of how it works:
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// The ':data' directive focuses the output
-:data
+data out
 
 // Set a simple value
-@data.user.name = "Alice"
+out.user.name = "Alice"
 // Initialize 'logins' and increment it
-@data.user.logins = 0
-@data.user.logins++
+out.user.logins = 0
+out.user.logins++
 
 // The 'roles' array is created automatically on first push
-@data.user.roles.push("editor")
+out.user.roles.push("editor")
+
+return out.snapshot()
 ```
 </details>
 </td>
@@ -849,361 +876,342 @@ Here's a simple example of how it works:
 </tr>
 </table>
 
----
+#### Implicit Initialization in `data`
 
-**Note:** Currently, `@data` commands can only be used on the left side of an expression to **write** data. Reading from `@data` on the right side is not yet supported, as the final data object is assembled *after* the main script logic runs.
+The `data` channel automatically initializes **structural values** when assembling output. This allows data to be built declaratively without manual setup.
 
-**Valid:**
-```
-@data.user.name = "George"
-```
-
-**Invalid:**
-```
-// This will cause an error because you cannot read from @data yet.
-@data.user.alias = @data.user.name
-```
-This functionality will be implemented in a future release.
-
-##### Implicit Initialization in `@data`
-
-The `@data` output handler automatically initializes **structural values** when assembling output. This allows data to be built declaratively without manual setup, while preventing silent type coercion for scalars.
-
-###### What `@data` Initializes Automatically
-
-Within the `@data` handler, missing paths are initialized on first **structural operation**:
+###### What `data` Initializes Automatically
 
 * **Objects (`{}`)**
   Created on first property write or object operation (`merge`, `deepMerge`).
 
   ```cascada
-  @data.user.name = "Alice"
-  @data.settings.merge({ theme: "dark" })
+  out.user.name = "Alice"
+  out.settings.merge({ theme: "dark" })
   ```
 
 * **Arrays (`[]`)**
   Created on first array operation.
 
   ```cascada
-  @data.items.push("a")
+  out.items.push("a")
   ```
 
-* **Strings (`""`)  -  string operations only**
+* **Strings (`""`) — string operations only**
   Created on first string-specific operation.
 
   ```cascada
-  @data.log.append("Started\n")
-  @data.title += "!"
+  out.log.append("Started\n")
+  out.title += "!"
   ```
 
-###### What `@data` Does *Not* Initialize
+###### What `data` Does *Not* Initialize
 
 Scalar values must be explicitly initialized before use:
 
 * **Numbers**
 
   ```cascada
-  @data.count = 0
-  @data.count++
+  out.count = 0
+  out.count++
   ```
 
 * **Booleans / logical values**
 
   ```cascada
-  @data.ready = false
-  @data.ready ||= true
+  out.ready = false
+  out.ready ||= true
   ```
-
-Attempting numeric or logical operations on an uninitialized `@data` path results in a runtime error.
 
 ###### Summary
 
-| Type    | Auto-initialized by `@data` | Notes                  |
-| ------- | --------------------------- | ---------------------- |
-| Object  | Yes                         | Structural operations  |
-| Array   | Yes                         | Structural operations  |
-| String  | Yes                         | String operations only |
-| Number  | No                          | Must initialize        |
-| Boolean | No                          | Must initialize        |
+| Type    | Auto-initialized | Notes                  |
+| ------- | ---------------- | ---------------------- |
+| Object  | Yes              | Structural operations  |
+| Array   | Yes              | Structural operations  |
+| String  | Yes              | String operations only |
+| Number  | No               | Must initialize        |
+| Boolean | No               | Must initialize        |
 
-##### `@data` Operations
+#### `data` Operations
 Below is a detailed list of all available commands and operators.
 
 **Assignment and Deletion**
-The most common operations involve setting or removing a value at a given path.
 
 | Command | Description |
 |---|---|
-| `@data.path = value` | **Replaces** the value at `path`. Creates objects/arrays as needed. This is a shortcut for the underlying `set` method. |
-| `@data.path.delete()` | **Deletes** the value at `path` by setting it to `undefined`, which typically removes the key from the final JSON output. |
+| `name.path = value` | **Replaces** the value at `path`. Creates objects/arrays as needed. Shorthand for `set`. |
+| `name.path.delete()` | **Deletes** the value at `path`. |
 
 **Array Operations**
-These methods are used for array manipulation. Methods that are destructive (like `.pop()` or `.sort()`) modify the array in-place, while methods that return new values (like `.at()` or `.arraySlice()`) will replace the value at `path` with the result.
-If the target path does not exist when a method is called, an empty array is created first.
 
 | Command | Description |
 |---|---|
-| `@data.path.push(value)` | Appends an element to the array at `path`. |
-| `@data.path.concat(value)` | Concatenates another array or value to the array at `path`. |
-| `@data.path.pop()` | Removes the last element from the array at `path`. |
-| `@data.path.shift()` | Removes the first element from the array at `path`. |
-| `@data.path.unshift(value)`| Adds one or more elements to the beginning of the array at `path`. |
-| `@data.path.reverse()` | Reverses the order of the elements in the array at `path` in-place. |
-| `@data.path.at(index)` | Replaces the value at `path` with the element at the specified `index`. |
-| `@data.path.sort()` | Sorts the array at `path` in-place. |
-| `@data.path.sortWith(func)` | Sorts the array at `path` in-place using a custom comparison function. |
-| `@data.path.arraySlice(start, [end])`| Replaces the array at `path` with a new array containing the extracted section. |
+| `name.path.push(value)` | Appends an element to the array at `path`. |
+| `name.path.concat(value)` | Concatenates another array or value to the array at `path`. |
+| `name.path.pop()` | Removes the last element from the array at `path`. |
+| `name.path.shift()` | Removes the first element from the array at `path`. |
+| `name.path.unshift(value)`| Adds one or more elements to the beginning of the array at `path`. |
+| `name.path.reverse()` | Reverses the order of the elements in-place. |
+| `name.path.at(index)` | Replaces `path` with the element at the specified `index`. |
+| `name.path.sort()` | Sorts the array at `path` in-place. |
+| `name.path.sortWith(func)` | Sorts the array using a custom comparison function. |
+| `name.path.arraySlice(start, [end])`| Replaces `path` with a slice of the array. |
 
 **Object Manipulation**
-These methods are used for combining objects.
 
 | Command | Description |
 |---|---|
-| `@data.path.merge(value)` | Merges the properties of an object into the object at `path`. This is a shallow merge. |
-| `@data.path.deepMerge(value)`| Deeply merges the properties of an object into the object at `path`. |
+| `name.path.merge(value)` | Merges the properties of an object into the object at `path`. Shallow merge. |
+| `name.path.deepMerge(value)`| Deeply merges the properties of an object into the object at `path`. |
 
 **Arithmetic Operations**
-These operators provide a concise way to perform numeric modifications. They require the target to be a number.
+These operators require the target to be a number (must be initialized first).
 
 | Command | Description |
 |---|---|
-| `@data.path += value` | Adds a number to the target. |
-| `@data.path -= value` | Subtracts a number from the target. |
-| `@data.path *= value` | Multiplies the target by a number. |
-| `@data.path /= value` | Divides the target by a number. |
-| `@data.path++` | Increments the target number by 1. |
-| `@data.path--` | Decrements the target number by 1. |
+| `name.path += value` | Adds a number to the target. |
+| `name.path -= value` | Subtracts a number from the target. |
+| `name.path *= value` | Multiplies the target by a number. |
+| `name.path /= value` | Divides the target by a number. |
+| `name.path++` | Increments the target number by 1. |
+| `name.path--` | Decrements the target number by 1. |
+| `name.path.min(value)` | Replaces target with `min(target, value)`. |
+| `name.path.max(value)` | Replaces target with `max(target, value)`. |
 
 **String Operations**
-These methods perform common string transformations. The result of the operation replaces the original string value at `path`. If the target path does not exist when a method is called, an empty string is created first.
+String is created automatically if the path does not exist.
 
 | Command | Description |
 |---|---|
-| `@data.path += value` | Appends a string to the target string. |
-| `@data.path.append(value)`| Appends a string to the string value at `path`. |
-| `@data.path.toUpperCase()` | Replaces the string at `path` with its uppercase version. |
-| `@data.path.toLowerCase()` | Replaces the string at `path` with its lowercase version. |
-| `@data.path.slice(start, [end])` | Replaces the string at `path` with the extracted section. |
-| `@data.path.substring(start, [end])`| Replaces the string at `path` with the extracted section (no negative indices). |
-| `@data.path.trim()` | Replaces the string at `path` with a version with whitespace removed from both ends. |
-| `@data.path.trimStart()` | Replaces the string at `path` with a version with whitespace removed from the start. |
-| `@data.path.trimEnd()` | Replaces the string at `path` with a version with whitespace removed from the end. |
-| `@data.path.replace(find, replace)` | Replaces the string at `path` with a new string where the first occurrence of a substring is replaced. |
-| `@data.path.replaceAll(find, replace)` | Replaces the string at `path` with a new string where all occurrences of a substring are replaced. |
-| `@data.path.split([separator])` | Replaces the string at `path` with a new array of substrings. |
-| `@data.path.charAt(index)` | Replaces the string at `path` with the character at the specified index. |
-| `@data.path.repeat(count)` | Replaces the string at `path` with a new string repeated `count` times. |
+| `name.path += value` | Appends a string to the target. |
+| `name.path.append(value)`| Appends a string to the string value at `path`. |
+| `name.path.toUpperCase()` | Replaces with uppercase version. |
+| `name.path.toLowerCase()` | Replaces with lowercase version. |
+| `name.path.slice(start, [end])` | Replaces with the extracted section. |
+| `name.path.substring(start, [end])`| Replaces with the extracted section (no negative indices). |
+| `name.path.trim()` | Removes whitespace from both ends. |
+| `name.path.trimStart()` | Removes leading whitespace. |
+| `name.path.trimEnd()` | Removes trailing whitespace. |
+| `name.path.replace(find, replace)` | Replaces the first occurrence. |
+| `name.path.replaceAll(find, replace)` | Replaces all occurrences. |
+| `name.path.split([separator])` | Replaces with an array of substrings. |
+| `name.path.charAt(index)` | Replaces with the character at the specified index. |
+| `name.path.repeat(count)` | Repeats the string `count` times. |
 
 **Logical & Bitwise Operations**
-These operators are shortcuts for common logical and bitwise operations.
 
 | Command | Description |
 |---|---|
-| `@data.path &&= value` | Performs a logical AND assignment (`target = target && value`). |
-| `@data.path \|\|= value` | Performs a logical OR assignment (`target = target || value`). |
-| `@data.path &= value` | Performs a bitwise AND assignment. |
-| `@data.path \|= value` | Performs a bitwise OR assignment. |
-| `@data.path.not()` | Replaces the target with its logical NOT (`!target`). |
-| `@data.path.bitNot()` | Replaces the target number with its bitwise NOT (`~target`). |
-
-##### Handling `undefined` and `null` Targets
-The `@data` handler is designed to be robust but also safe. Its behavior with non-existent (`undefined`) or `null` targets depends on the type of operation:
-
-*   **Structure-building methods** (like `.push()`, `.merge()`, `.append()`) will gracefully handle an `undefined` target. For example, if you call `.push()` on a path that doesn't exist, Cascada will automatically create an empty array before pushing the new element.
-*   **Arithmetic and Logical operators** (`+=`, `--`, `&&=`, etc.) are stricter. To prevent silent errors and unexpected results (like `null + 1` evaluating to `1`), these operators will throw a runtime error if the target path is `undefined` or `null`. You must explicitly initialize a value (e.g., `@data.counter = 0`) before you can increment or add to it.
-
-#### The `@text` Command: Generating Text
-The `@text(value)` command is a convenient shorthand for the `{{ value }}` output syntax found in the Cascada templating engine. It appends its `value` to a simple text stream, which populates the `text` property of the result object. This stream is completely separate from the `data` object.
-
-```javascript
-@text("Processing user " + userId + "...")
-for item in items
-  @text("Item: " + item.name)
-endfor
-@text("...done.")
-```
+| `name.path &&= value` | Logical AND assignment. |
+| `name.path \|\|= value` | Logical OR assignment. |
+| `name.path &= value` | Bitwise AND assignment. |
+| `name.path \|= value` | Bitwise OR assignment. |
+| `name.path.not()` | Logical NOT. |
+| `name.path.bitNot()` | Bitwise NOT. |
 
 #### Advanced Pathing
 
-Paths in `@data` commands are highly flexible.
+Paths in `data` commands are highly flexible.
 
-*   **Dynamic Paths**: Paths can include variables and expressions, allowing you to target structures dynamically.
+*   **Dynamic Paths**: Paths can include variables and expressions.
     ```javascript
     for user in userList
-      // Use the user's ID to set their status in the report object
-      @data.report.users[user.id].status = "processed"
+      result.report.users[user.id].status = "processed"
     endfor
     ```
-*   **Root-Level Modification**: Use the `@data` handler directly to modify the root of the `data` object itself.
+*   **Root-Level Modification**: Use the channel directly to replace the root.
     ```javascript
     // Replaces the entire data object with a new one
-    @data = { status: "complete", timestamp: now() }
+    result = { status: "complete", timestamp: now() }
     ```
-    While it defaults to an object, you can also re-assign the root to a different type, such as an array or a string. After re-assignment, you can use methods appropriate for that type directly on `@data`.
+    After re-assignment, you can use methods appropriate for the new type:
     ```javascript
-    // Re-assign the root to be an array before pushing to it.
-    @data = []
-    @data.push("first item")
+    result = []
+    result.push("first item")
     ```
-*   **Array Index Targeting**: Target specific array indices with square brackets. The empty bracket notation `[]` always refers to the last item added in the script's sequential order, **not** the most recently pushed item in terms of operation completion. Due to implicit concurrency, the order of completion can vary, but Cascada Script ensures consistency by following the script's logical sequence.
+*   **Array Index Targeting**: Target specific array indices with square brackets. The empty bracket notation `[]` refers to the last item added in the script's sequential order.
     ```javascript
-    // Target a specific index
-    @data.users[0].permissions.push("read")
+    result.users[0].permissions.push("read")
 
-    // Target the last item added in the script's sequence
-    @data.users.push({ name: "Charlie" })
-    // The path 'users[]' now refers to Charlie's object
-    @data.users[].permissions.push("read") // Affects "Charlie"
+    result.users.push({ name: "Charlie" })
+    result.users[].permissions.push("read") // Affects "Charlie"
     ```
 
-#### The `@value` Handler: Capturing a Single Value
+#### Handling Missing and `none` Targets
+*   **Structure-building methods** (`.push()`, `.merge()`, `.append()`) can create the needed structure when the target path does not exist yet.
+*   **Arithmetic and logical operators** (`+=`, `--`, `&&=`, etc.) throw a runtime error if the target is `none`/`null` or missing. Initialize explicitly first.
 
-The `@value` handler provides a simple way to return a single value from a scope (script or macro). Unlike `@data`, which builds up a structured object, `@value` simply captures whatever value you last set.
+### The `text` Channel: Generating Text
+
+The `text` channel builds a string of text.
+
+```javascript
+text log
+log("Processing user " + userId + "...")
+for item in items
+  log("Item: " + item.name)
+endfor
+log("...done.")
+return log.snapshot()
+```
+
+Two write forms:
+
+| Syntax | Description |
+|---|---|
+| `name(expr)` | Appends `expr` to the text stream |
+| `name = expr` | Overwrites the entire text with `expr` |
+
+### The `sink` Channel
+
+In programming, a **sink** is an object you send commands to. In Cascada, a `sink` channel wraps an external object from the context and applies its method calls in source-code order. Use it when the important thing is sending ordered commands, not getting a return value from each call.
+
+```javascript
+// JS setup — the sink object comes from context
+const context = {
+  logger: {
+    entries: [],
+    write(msg) { this.entries.push(msg); },
+    snapshot() { return this.entries.join('\n'); }
+  }
+};
+```
+
+```javascript
+// Script
+sink log = logger  // 'logger' is provided via context
+log.write("start")
+log.write("done")
+return log.snapshot()
+// "start\ndone"
+```
+
+You can also call methods on sub-paths:
+
+```javascript
+sink collector = services.collector
+collector.events.push("a")
+collector.events.push("b")
+return collector.snapshot()
+```
 
 **Key characteristics:**
-- **Simple assignment**: The last value set becomes the output
-- **Two syntax options**: Function call style `@value(expr)` or assignment style `@value = expr`
-- **Returns the raw value**: When focused with `:value`, returns just the value (not wrapped in an object)
-- **Useful for macros**: Perfect for macros that compute and return a single result
+- The initializer **must** come from the context object (same restriction as `!` sequential paths)
+- Call methods on the sink: `name.method(...)`, including sub-paths
+- Read results via `name.snapshot()`
+- Snapshot resolution tries (in order): `snapshot()`, `getReturnValue()`, `finalize()`, the sink object itself
+- **`name.snapshot()` is invalid inside a `guard` block** — the guard is transactional; reading a mid-transaction snapshot can expose state that may be rolled back
 
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script</strong></summary>
+**Difference from `sequence`:** A `sink` is for ordered commands where each call is mainly about the side effect. A `sequence` is for ordered reads and calls where you also need the returned value right away.
 
-```javascript
-:value
+### The `sequence` Channel
 
-var x = 5
-var y = 10
-
-// Both syntaxes work:
-@value(x + y)
-
-// Or using assignment syntax:
-// @value = x * 2
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value</strong></summary>
+A `sequence` wraps an external object with **strictly sequential** access. All reads and calls happen in source-code order, serialized with the rest of the sequence.
 
 ```javascript
-15
+sequence db = services.db
+var user = db.getUser(1)
+var state = db.connectionState
+return { user: user, state: state }
 ```
-</details>
-</td>
-</tr>
-</table>
-
-**Example: Macro returning a computed value**
 
 ```javascript
-macro computeTotal(items) :value
-  var sum = 0
-  for item in items
-    sum = sum + item.price
-  endfor
-  @value = sum
-endmacro
-
-var total = computeTotal([
-  { price: 10 },
-  { price: 20 },
-  { price: 30 }
-])
-
-@data.total = total.value  // Without :value focus on macro
+sequence db = services.db
+var id = db.api.client.getId()
+return id
 ```
 
-With the `:value` focus directive on the macro, the macro returns just the computed number directly:
+**Key characteristics:**
+- The initializer **must** come from the context object
+- Supports value-returning calls: `var x = seq.method(args)`
+- Supports property reads: `var s = seq.status`
+- Supports nested sub-path calls: `var id = seq.api.client.getId()`
+- Supports `snapshot()`: `var snap = seq.snapshot()`
+- **Property assignment is a compile error**: `seq.status = "x"` is not allowed
+
+Show an invalid property assignment:
 
 ```javascript
-macro computeTotal(items) :value
-  var sum = 0
-  for item in items
-    sum = sum + item.price
-  endfor
-  @value = sum
-endmacro
-
-var total = computeTotal([...])
-@data.total = total  // Direct value, no .value property needed
+sequence db = services.db
+db.connectionState = "offline"  // ❌ compile error — assignment not allowed
 ```
 
-**Comparison with `@data`:**
+> ⚠️ Guard transaction hooks (`begin`/`commit`/`rollback`) are available, but this area is still evolving.
 
-| Feature | `@data` | `@value` |
-|---------|---------|----------|
-| **Purpose** | Build complex structured data | Return a single value |
-| **Syntax** | `@data.path.to.property = value` | `@value(value)` or `@value = value` |
-| **Output** | Object with nested structure | Single value of any type |
-| **Best for** | Assembling reports, APIs, configs | Simple computations, utilities |
+**Guard transaction integration:**
+If the sequence object provides `begin()`, `commit()`, and `rollback()` hooks, `guard` will use them automatically. Missing hooks are tolerated. Hook errors become guard errors.
 
-### Important Distinction: `@` Commands vs. `!` Sequential Execution
+```javascript
+sequence tx = services.tx
+guard tx
+  var a = tx.step("A")
+  var b = tx.step("B")
+endguard
+return { a: a, b: b }
+```
 
-It is crucial to understand the difference between these two features, as they solve different problems.
+With transaction hooks, a failed guard can roll the sequence back before recovery code runs:
 
-*   **`@` Output Commands:**
-    *   **Purpose:** For **assembling a result** from a buffer after data is fetched.
-    *   **Timing:** They are processed *after* their containing scope finishes its main evaluation. This delay may not be optimal if the operations need to have side effects as early as possible.
-    *   **Nature:** They are for data construction and sequential logic, not for controlling live async operations.
+```javascript
+sequence tx = services.tx
+var state = "starting"
 
-*   **`!` Sequential Execution:**
-    *   **Purpose:** For **controlling the order of live, async operations** that have side effects (e.g., database writes).
-    *   **Timing:** It forces one async call to wait for another to finish *during* the main script evaluation, ensuring operations run as early as possible.
-    *   **Nature:** It manages the real-time execution flow of asynchronous functions, and their results are immediately available to the next line of code.
+guard tx, state
+  state = "running"
+  tx.step("A")
+  tx.fail()
+  state = "done"
+recover err
+  state = "rolled back"
+endguard
+```
+
+### The `sequence` Channel vs. `!`
+
+`sequence` and `!` both give you ordering, but they solve different problems:
+
+| | `sequence` | `!` marker |
+|---|---|---|
+| **What it is** | A declared channel | A marker on a static context path |
+| **What it is for** | Ordered reads and calls on one object | Ordering side effects on one path |
+| **Return values** | Read immediately in normal expressions | Mainly used for side-effectful operations |
+| **Example** | `var user = db.getUser(1)` | `db!.insert(user)` |
+
+Use `sequence` when the object itself is your ordered interface. Use `!` when you want to serialize side effects on a context path.
 
 For details on the `!` operator, see [Sequential Execution Control](#managing-side-effects-sequential-execution).
 
 
-### Error handling and recovery with output handlers
+### Error handling and recovery with channels
 
-When an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This means the handler's final output will be an Error Value, which causes the current macro or script render promise to be rejected.
+When an Error Value is written to a channel, that channel becomes **poisoned**. This means the channel's final output will be an Error Value, which causes the current script's `snapshot()` or `return` to fail.
 
 ```javascript
+data out
 var user = fetchUser(userId)  // May fail
 
-// If user is an Error Value, this write poisons @data
-@data.userName = user.name
+// If user is an Error Value, this write poisons out
+out.userName = user.name
 
-// The script will now fail with a rejected promise
+// out is now poisoned — returning it will fail the script
+return out.snapshot()
 ```
 
-You can protect output handlers from poisoning and recover from errors using two mechanisms:
-
-#### Using `guard` blocks
-
-The `guard` block automatically protects output handlers within its scope. If any error occurs inside the guard, the handlers are automatically reverted to their state at the start of the guard block:
+You can protect channels from poisoning and recover from errors using `guard` blocks:
 
 ```javascript
+data out
 guard
   var payload = fetchData()  // May fail
-  @data.result = payload
-recover
-  @data.result = "fallback value"
+  out.result = payload
+recover err
+  out.result = "fallback value"
 endguard
+return out.snapshot()
 ```
 
 For details, see [Protecting State with `guard`](#protecting-state-with-guard).
-
-#### Using `_revert()`
-
-You can manually reset a handler using `@handler._revert()` or the `revert` statement:
-
-```javascript
-var content = fetchContent()  // May fail
-@data.page = content
-
-if content is error
-  @data._revert()  // Reset @data to its state before the assignment
-  @data.page = "Error loading content"
-endif
-```
-
-For details, see [Manually Recovering Output Handlers with `_revert()`](#manually-recovering-output-handlers-with-_revert).
 
 
 ## Managing Side Effects: Sequential Execution
@@ -1212,15 +1220,10 @@ For functions with **side effects** (e.g., database writes), the `!` marker enfo
 
 ```javascript
 // The `!` on deposit() creates a
-// sequence for the 'account' path.
-var account = getBankAccount()
-
-//1. Set initial Deposit:
-account!.deposit(100)
-//2. Get updated status after initial deposit:
-account.getStatus()
-//3. Withdraw money after getStatus()
-account!.withdraw(50)
+// sequence for the 'bank.account' path.
+bank.account!.deposit(100)
+bank.account.getStatus()
+bank.account!.withdraw(50)
 ```
 
 For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
@@ -1280,21 +1283,16 @@ var myDb = db
 performWork(myDb)
 ```
 
-The engine uses object identity from the context to guarantee sequential ordering. Copying to local variables breaks this guarantee, which is why the restriction exists.
-
 
 ## Error Handling
 
-**Note**: This feature is under development.
+Cascada's parallel-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
 
-Cascada's parallel-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Also, there may already be code that executes after the try statement. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
-
-This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result. When an operation in one part of your script fails, it has no effect on unrelated parallel operations - they continue executing, maximizing throughput and resilience.
+This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result.
 
 ### Error Handling Fundamentals
 
 #### Error Handling in Action
-
 Here's a concrete example showing how error propagation works in parallel execution:
 
 ```javascript
@@ -1304,19 +1302,19 @@ var posts = fetchPosts(123)    // ❌ fails with network error
 var comments = fetchComments() // ✅ succeeds
 
 // Only operations depending on 'posts' are affected
-@data.username = user.name           // ✅ works fine
-@data.commentCount = comments.length // ✅ works fine
-@data.postCount = posts.length       // ❌ becomes an error
-@data.summary = posts + " analysis"  // ❌ becomes an error
+var username = user.name           // ✅ works fine
+var commentCount = comments.length // ✅ works fine
+var postCount = posts.length       // ❌ becomes an error
+var summary = posts + " analysis"  // ❌ becomes an error
 
 // You can detect and repair the error
 if posts is error
-  @data.postCount = 0  // ✅ assign a fallback
-  @data.summary = ''   // ✅ assign a fallback
+  postCount = 0  // ✅ assign a fallback
+  summary = ''   // ✅ assign a fallback
 endif
-```
 
-In this example, the failure of `fetchPosts()` only affects operations that depend on the `posts` variable. The `user` and `comments` operations complete successfully and their results are available immediately.
+return { username: username, commentCount: commentCount, postCount: postCount, summary: summary }
+```
 
 #### The Core Mechanism: Error Propagation
 
@@ -1343,18 +1341,17 @@ Once an Error Value is created, it automatically spreads to any dependent operat
 #### Control Flow
 
 * **Loops:**
-  A loop whose iterable is an Error Value will not execute its body. The error propagates to all variables and outputs that would have been affected by the loop.
-
-  ```javascript
+  A loop whose iterable is an Error Value will not execute its body. The error propagates to all variables and outputs that would have been affected.
+    ```javascript
+  var itemCount = 0
   for item in myErrorList
-    // This entire block is skipped
-    @data.items.push(item.name)
+    itemCount = itemCount + 1
   endfor
-  // ❌ @data is now poisoned
+  // ❌ itemCount is now poisoned
   ```
 
 * **Conditionals:**
-  If a conditional test evaluates to an Error Value, neither the `if` nor `else` branch executes. The error propagates to **all variables modified by either branch** and to **any output handlers** those branches write to.
+  If a conditional test evaluates to an Error Value, neither the `if` nor `else` branch executes. The error propagates to all variables modified by either branch.
 
   ```javascript
   if myErrorCondition
@@ -1367,16 +1364,11 @@ Once an Error Value is created, it automatically spreads to any dependent operat
 
 #### Output & Effects
 
-* **Output Handlers:**
-  If an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This causes the **return value** of the current script or macro to become an **Error Value** instead of normal output, which will reject the render promise. See [How Scripts Fail](#how-scripts-fail-from-error-values-to-rejected-promises) for details.
-
-  ```javascript
-  @data.user = myError  // ❌ Poisons the @data handler
-  // The entire script will now fail and reject its promise
-  ```
+* **Channels:**
+  If an Error Value is written to a channel, that channel becomes **poisoned**, causing the script to fail when the channel is read or returned.
 
 * **Sequential Side-Effect Paths:**
-  If a call in a sequential execution path (marked with `!`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value without executing, preserving the sequential guarantee even in failure. For details on sequential execution, see [Sequential Execution Control](#managing-side-effects-sequential-execution).
+  If a call in a sequential execution path (marked with `!`) fails, that path becomes **poisoned**. Later operations using the same `!path` will instantly yield an Error Value without executing.
 
   ```javascript
   context.database!.connect()      // ❌ fails
@@ -1387,10 +1379,8 @@ Once an Error Value is created, it automatically spreads to any dependent operat
 This mechanism ensures that once an operation fails, all dependent results and outputs reflect that failure, maintaining data integrity across both parallel and sequential execution flows.
 #### Deciding When to Handle Errors
 
-A key design decision in Cascada scripts is choosing where to handle errors versus letting them propagate.
-
 **❌ Do not handle errors, let them propagate when:**
-- The operation is critical to the final output (e.g., fetching the primary data for a report)
+- The operation is critical to the final output
 - You want the entire script to fail if this operation fails
 - The error should bubble up to the calling JavaScript/TypeScript code
 - There's no reasonable fallback or default value
@@ -1398,7 +1388,7 @@ A key design decision in Cascada scripts is choosing where to handle errors vers
 
 **✅ Handle errors locally when:**
 - You have a sensible fallback or default value
-- The operation is optional or non-critical to the final result
+- The operation is optional or non-critical
 - You're implementing retry logic for transient failures
 - You're aggregating results where partial success is acceptable
 - You want to collect multiple errors for reporting without halting execution
@@ -1407,20 +1397,19 @@ A key design decision in Cascada scripts is choosing where to handle errors vers
 ```javascript
 // ❌ Critical operation - let it propagate and fail the script
 var primaryData = fetchCriticalData()
-@data.report = primaryData.summary  // Will fail if primaryData is an error
 
 // ✅ Optional enhancement - handle locally
 var recommendations = fetchRecommendations()
 if recommendations is error
-  // Not critical, use empty array as fallback
-  recommendations = []
+  recommendations = []  // Not critical, use empty array as fallback
 endif
-@data.recommendations = recommendations  // Always succeeds
+
+return { report: primaryData.summary, recommendations: recommendations }
 ```
 
 #### How Scripts Fail: From Error Values to Rejected Promises
 
-An important distinction in Cascada's error model: **an error is treated as data *within* the script**. A script only fails and rejects its render promise when an unhandled Error Value reaches and "poisons" a final output handler (like `@data` or `@text`).
+A script only fails and rejects its render promise when an unhandled Error Value reaches and poisons a channel or is returned.
 
 **Internal Error Handling:**
 If you handle all errors internally using `is error` tests and repair them by assigning normal values, the script completes successfully even though errors occurred during execution:
@@ -1429,30 +1418,29 @@ If you handle all errors internally using `is error` tests and repair them by as
 var user = fetchUser(999)  // ❌ Returns an error
 
 if user is error
-  user = { name: "Guest" }  // ✅ Repaired - no longer an error
+  user = { name: "Guest" }  // ✅ Repaired
 endif
 
-@data.username = user.name  // ✅ Script succeeds, outputs: { username: "Guest" }
+return user.name  // ✅ Script succeeds: "Guest"
 ```
 
 **Script Failure:**
-When an Error Value reaches an output command without being handled, the promise rejects with an Error Value, see the [Anatomy of an Error Value](#anatomy-of-an-error-value) section:
+When an Error Value is returned or reaches a channel without being handled, the promise rejects. See the [Anatomy of an Error Value](#anatomy-of-an-error-value) section:
 
 ```javascript
 var user = fetchUser(999)  // ❌ Returns an error
-@data.user = user  // ❌ Unhandled error reaches output - script fails
+return user.name  // ❌ Unhandled error — script fails
 ```
 
-In your JavaScript/TypeScript code, you can catch and inspect this detailed error:
+In JavaScript/TypeScript, you can catch and inspect the error:
 
 ```javascript
 try {
   const result = await env.renderScript('getUserData.casc', { userId: 999 });
 } catch (err) {
   // err is a PoisonError with rich diagnostic information
-  console.log(err.message);  // Summary of all failures
+  console.log(err.message);
 
-  // Inspect individual errors for detailed diagnostics
   err.errors.forEach(error => {
     console.log(`Error at ${error.path}:${error.lineno}:${error.colno}`);
     console.log(`Operation: ${error.operation}`);
@@ -1470,22 +1458,18 @@ This boundary between internal error handling (Error Values as data) and externa
 
 #### Detecting and Repairing Errors
 
-The fundamental way to detect if a variable holds an Error Value is the `is error` test. Once a failure is detected, you can "repair" the situation by re-assigning the variable, which prevents the error from propagating further.
+The fundamental way to detect if a variable holds an Error Value is the `is error` test. Once detected, you can "repair" it by re-assigning the variable.
 
 **Example: Assigning a Fallback Value**
 ```javascript
-// fetchUser(999) is assumed to fail and return an Error Value
-var user = fetchUser(999)
+var user = fetchUser(999)  // assumed to fail
 
 if user is error
-  // The fetch failed. Log the error and repair the 'user' variable
-  // by assigning a default user object.
-  @data.log = "Failed to fetch user: " + user#message
+  var msg = user#message  // peek at the error details
   user = { name: "Guest", isDefault: true }
 endif
 
-// This next line can now execute without failing, because 'user' was repaired.
-@data.username = user.name
+return user.name  // 'Alice' or 'Guest' depending on success
 ```
 
 **Example: Retrying a Failed Operation**
@@ -1494,9 +1478,8 @@ var retries = 0
 var user
 var success = false
 
-// Try to fetch the user up to 3 times
 while retries < 3 and not success
-  user = fetchUser(123) // This operation might fail transiently
+  user = fetchUser(123)
   if user is not error
     success = true
   else
@@ -1504,14 +1487,11 @@ while retries < 3 and not success
   endif
 endwhile
 
-// After the loop, check if the operation was ever successful
 if user is error
-  // All retries failed, assign a default value
-  @data.log = "Fetching user failed after 3 retries."
   user = { name: "Guest", isDefault: true }
 endif
 
-@data.username = user.name
+return user
 ```
 
 #### Peeking Inside Errors with `#`
@@ -1522,61 +1502,57 @@ Because of error propagation, a standard property access like `myError.message` 
 var failedUser = fetchUser(999)
 
 if failedUser is error
-  // Use '#' to access properties of the Error Value
-  @text("Operation failed!")
-  @text("Origin: " + failedUser#source.origin)
-  @text("Message: " + failedUser#message)
+  var message = failedUser#message
+  var origin = failedUser#source.origin
 endif
 ```
 
-**Important**: Peeking at a non-poisoned path or handler returns a poison value. Always check with `is error` before peeking:
+**`x#` returns `none` when `x` is not an error.** Always check with `is error` before peeking:
 
 ```javascript
 context.db!.insert(data)  // ✅ Succeeds
 
-// ❌ WRONG: Peeking at non-poisoned path returns poison
-var msg = context.db!#message
+// ❌ WRONG: Peeking at healthy value returns none, not an error
+var msg = context.db!#message  // none - not useful
 
 // ✅ CORRECT: Check first, then peek
+var msg
 if context.db! is error
-  var msg = context.db!#message  // Safe
+  msg = context.db!#message  // Safe
 endif
 ```
+
 #### Anatomy of an Error Value
 
-An Error Value is a rich object designed for easy debugging, containing detailed information about what went wrong and where. You can read it by using the peek operator (`#`).
+An Error Value is a rich object designed for easy debugging. Access its properties with the `#` peek operator.
 
-*   **`errors`**: (array) A list of one or more underlying error objects that contributed to this failure. Each object provides detailed context about a specific failure:
-    *   **`message`**: (string) The specific error message for this particular failure.
-    *   **`name`**: (string) A custom name for business-logic errors (e.g., `'ValidationError'`, `'NotFoundError'`).
-    *   **`lineno`**: (number) The line number in the source file where the error occurred.
-    *   **`colno`**: (number) The column number on the line where the error occurred.
-    *   **`path`**: (string) The name of the script or template file where the error originated.
-    *   **`operation`**: (string) A technical description of the internal operation the engine was performing when the error occurred. Examples include `FunCall` (function call), `LookupVal` (property access like `user.name`), `Add` (a `+` operation), or `Output(FunCall)` (an error while rendering the output of a function call).
-    *   **`cause`**: (object | null) If the error originated from the JavaScript environment (e.g., from a native function or an external library), this property holds the original JavaScript `Error` object, providing access to the original stack trace and error details.
-*   **`message`**: (string) A summary message that combines the messages from all the individual errors contained in the `errors` array.
+*   **`errors`**: (array) A list of one or more underlying error objects:
+    *   **`message`**: (string) The specific error message.
+    *   **`name`**: (string) A custom name for business-logic errors (e.g., `'ValidationError'`).
+    *   **`lineno`**: (number) The line number where the error occurred.
+    *   **`colno`**: (number) The column number.
+    *   **`path`**: (string) The script file where the error originated.
+    *   **`operation`**: (string) A description of the internal operation (e.g., `FunCall`, `LookupVal`, `Add`).
+    *   **`cause`**: (object | null) The original JavaScript `Error` object, if applicable.
+*   **`message`**: (string) A summary of all individual error messages.
+
 #### Handling Multiple Concurrent Errors
 
-When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original, individual errors. This ensures that no error is lost and you get a complete picture of all failures.
-
-**Example: Multiple Concurrent Failures**
+When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original errors.
 
 ```javascript
-// Three parallel operations that all fail
-var user = fetchUser(999)        // ❌ fails: "User not found"
-var profile = fetchProfile(999)  // ❌ fails: "Profile service unavailable"
-var settings = fetchSettings(999) // ❌ fails: "Settings database timeout"
+var user = fetchUser(999)        // ❌ fails
+var profile = fetchProfile(999)  // ❌ fails
+var settings = fetchSettings(999) // ❌ fails
 
-// Using all three creates a PoisonError containing all failures
 var summary = user.name + " - " + profile.bio + " - " + settings.theme
 
 if summary is error
-  // summary#errors is an array with all three original errors
-  @data.errorCount = summary#errors | length  // 3
+  var count = summary#errors | length  // 3
 
-  // Iterate through all the failures
+  data errorLog
   for err in summary#errors
-    @data.errorLog.push({
+    errorLog.errors.push({
       message: err#message,
       source: err#source.origin
     })
@@ -1584,8 +1560,6 @@ if summary is error
 
   summary = "User data unavailable"
 endif
-
-@data.userSummary = summary
 ```
 
 This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a parallel batch rather than just the first one encountered.
@@ -1594,10 +1568,10 @@ This aggregation is particularly valuable in error reporting and debugging, as y
 
 #### Repairing Sequential Paths with `!!`
 
-When a sequential path becomes poisoned, all subsequent operations on that path immediately return errors without executing. The `!!` operator provides two ways to recover:
+When a sequential path becomes poisoned, the `!!` operator provides two ways to recover:
 
 **Repair the Path:**
-Use `!!` alone to clear the poison state, allowing subsequent operations to execute normally.
+Use `!!` alone to clear the poison state.
 
 ```javascript
 context.db!.insert(data)  // ❌ Fails and poisons the path
@@ -1608,7 +1582,7 @@ context.db!.insert(otherData)  // ✅ Now executes
 ```
 
 **Repair and Execute:**
-Use `!!` before a method call to repair the path and then execute the method, even if the path was poisoned.
+Use `!!` before a method call to repair the path and then execute the method.
 
 ```javascript
 context.db!.beginTransaction()
@@ -1619,11 +1593,10 @@ context.db!.insert(profileData)   // ❌ Skipped due to poison
 context.db!!.rollback()
 ```
 
-This is particularly useful for cleanup operations that must run regardless of whether previous operations failed:
+This is particularly useful for cleanup operations that must run regardless of failure:
 
 ```javascript
 var file = context.fileSystem!.open(path)
-
 context.fileSystem!.writeHeader(metadata)
 var writeResult = context.fileSystem!.writeData(data)  // ❌ Might fail
 
@@ -1632,18 +1605,16 @@ context.fileSystem!!.close()
 ```
 
 **Checking Path State:**
-You can check if a sequential path is poisoned using the `is error` test:
-
 ```javascript
 context.api!.sendRequest(data)  // ❌ Might fail
 
 if context.api! is error
-  @data.error = context.api!#message  // Peek at the error
+  var message = context.api!#message
   context.api!!  // Repair the path
 endif
 ```
-#### Protecting State with `guard`
 
+#### Protecting State with `guard`
 
 The `guard` block provides **controlled, transaction-like recovery** for your script. It allows you to attempt complex operations with the confidence that if something goes wrong, Cascada will automatically restore selected state.
 
@@ -1655,28 +1626,26 @@ You can think of `guard` like a save point: if the block finishes in an error, t
 guard [targets...]
   // 1. Attempt risky operations
   // 2. Changes to guarded targets are tracked for recovery
-recover err  // (Optional)
-  // 3. Runs ONLY if the guard block remains poisoned (failed)
+recover err  // (Optional — binds the error payload for inspection)
+  // 3. Runs ONLY if the guard block remains poisoned
   // 4. Guarded state has already been restored
-  // 5. 'err' contains the error or errors that caused recovery
 endguard
 ```
 
 ---
 
-#### Default Protection: Outputs & Sequences
+#### Default Protection: Channels & Sequences
 
 By default, a `guard` block (with no arguments) protects:
 
-1. **All Output Handlers** (`@data`, `@text`, etc.)
-   Writes made inside the block are discarded on error using `_revert()`. Manual calls to `@._revert()` or the `revert` statement inside the guard are scoped to that guard's buffer as well, so they never leak past the guard boundary.
+1. **All channels** (`data`, `text`, `sink`, `sequence`)
+   Writes made inside the block are discarded on error.
 
-2. **All Sequential Paths** (`!`)
-   If a path (such as `db!`) becomes poisoned, it is automatically repaired using `!!`.
-   Note: Paths are hierarchical - guarding `api!` also guards `api.db!`, `api.connection!`, etc.
+2. **All sequential-operation lock paths** (`!`)
+   If a path such as `db!` becomes poisoned, it is automatically repaired with `!!`.
+   Paths are hierarchical - guarding `api!` also guards `api.db!`, `api.connection!`, etc.
 
 **Variables are NOT protected by default.**
-This is a deliberate design choice to preserve parallel execution.
 
 ##### Example: Database Transaction
 
@@ -1684,23 +1653,27 @@ This is a deliberate design choice to preserve parallel execution.
 // db! is a sequential path from context
 db!.beginTransaction()
 
+data out
+
 guard
-  @data.status = "processing"
+  out.status = "processing"
 
   db!.insert(user)
   db!.update(account) // ❌ Assume this fails
 
   db!.commit()
-  @data.status = "success"
+  out.status = "success"
 
 recover err
   // STATE RESTORED:
-  // - @data changes inside the guard are reverted
+  // - data channel writes inside the guard are reverted
   // - db! is repaired and safe to use
 
   db!.rollback()
-  @data.error = "Transaction failed: " + err#message
+  out.error = "Transaction failed: " + err#message
 endguard
+
+return out.snapshot()
 ```
 
 ---
@@ -1710,23 +1683,30 @@ endguard
 You can explicitly specify what the guard should protect.
 
 ```javascript
-// Protects the @data handler, the db! path, and the 'status' variable
-guard data, db!, status
+// Protects the out data channel, the db! path, and the 'status' variable
+guard out, db!, status
 ```
 
 ##### Selectors
 
 | Selector | Meaning |
 |----------|---------|
-| `handler1, handler2` | Protect specific output handlers by declared name (for example `output`, `result`, `logger`). |
-| `data, text, value, sink, sequence` | Protect handlers by output type (all used handlers declared with that type inside the guard). |
-| `path1!, path2!` | Protect specific sequential paths (e.g. `db!`, `cache.sub!`). |
-| `!` | Protect all sequential paths touched inside the guard. |
-| `var` | Protect all variables written inside the guard (same variable scope as `guard *`, but without guarding handlers/sequences unless selected). |
-| `var1, var2` | Protect specific script variables. |
-| `*` | Protect everything (all handlers, all sequence paths, and every variable written inside the guard). Cannot be combined with any other selector. |
+| `guard` (no selectors) | Global guard: protects all channels and sequential-operation locks touched inside the block |
+| `guard *` | Protect everything (all channels, all lock paths, all variables written inside the guard) |
+| `guard var` | Protect all variables written inside the guard |
+| `guard data` | Protect all `data` channel declarations touched inside the guard |
+| `guard text` | Protect all `text` channel declarations touched inside the guard |
+| `guard sink` | Protect all `sink` channel declarations touched inside the guard |
+| `guard sequence` | Protect all `sequence` channel declarations touched inside the guard |
+| `guard name1, name2` | Protect specific declaration names (channels or variables) |
+| `guard lock!` | Protect a specific sequential-operation lock path (e.g., `db!`) |
+| `guard !` | Protect all sequential-operation lock paths touched inside the guard |
 
-> `*` cannot be combined with any other selector.
+> **Rules:**
+> - `*` cannot be combined with any other selector
+> - Duplicate selectors are invalid
+> - Selectors do not use `@name` syntax
+> - Lock selectors (`lock!`, `!`) are for sequential-operation lock paths, not `sequence` channels
 
 **Hierarchical Protection of Sequential Paths:**
 ```javascript
@@ -1737,12 +1717,7 @@ guard api!
 endguard
 ```
 
-Guarding `api!` protects all child paths. To guard only a specific child:
-```javascript
-guard api.db!  // Only protects api.db! and its children
-```
-
-##### Example: Protecting a Specific Variable or Type
+##### Example: Protecting Specific Variables or Channel Types
 
 ```javascript
 var attempts = 0
@@ -1757,10 +1732,8 @@ guard attempts, data
   riskyOperation() // ❌ Fails
 recover err
   // 'attempts' is restored to 0
-  // '@data' writes are reverted (via `data` type selector)
-  // 'lastLog' remains "Trying..."
-
-  @text("Failed after " + attempts + " attempts.")
+  // 'data' channel writes are reverted (all data channels)
+  // 'lastLog' remains "Trying..." (not protected, so not restored)
 endguard
 ```
 
@@ -1776,7 +1749,7 @@ endguard
 ```
 
 **⚠️ Performance warning**
-When variables are protected (via `guard *` or explicit variable names), the value of each such variable is only released after the guard finishes modifying all protected variables, outputs, and sequential paths. Any code that depends on such a variable must wait, which can reduce parallelism. Use `guard *` only for small, tightly scoped operations where consistency is more important than concurrency.
+When variables are protected (via `guard *` or explicit variable names), any code that depends on such variables must wait for the guard to finish. This can reduce parallelism. Use `guard *` only for small, tightly scoped operations.
 
 ---
 
@@ -1786,124 +1759,51 @@ The `recover` block is optional. If omitted, the guard silently restores protect
 
 If present, it runs only if the guard finishes poisoned:
 
-* Guarded outputs have already been reverted via `_revert()`
-* Guarded sequential paths have already been repaired via `!!`
+* Guarded channels have already been reverted
+* Guarded sequential paths have already been repaired
 * Guarded variables have already been restored
 * `recover err` provides access to the final `PoisonError` via the `#` peek operator
 
-> Note: If all errors are detected and repaired inside the guard (for example using `is error`), the guard is considered successful and no recovery occurs.
+> Note: If all errors are detected and repaired inside the guard (using `is error`), the guard is considered successful and no recovery occurs.
 
-#### Manually Recovering Output Handlers with `_revert()`
+#### Manually Reverting Channel State
 
-While `guard` provides automatic protection for a block of code, you may sometimes need manual control to "fix" an output handler that has become poisoned within the current flow. Unlike variables (which can be reassigned) or sequential locks (which can be repaired with `!!`), output handlers accumulate changes, so they require a specific reset mechanism.
+> ⚠️ **Work in progress:** The `revert` statement for manually resetting channel state inside a `guard` block is not yet available in script mode.
 
-Calling `@handler._revert()` resets that handler to the state it was in at the beginning of the **current output scope**. Use `@._revert()` when you want to revert **all** handlers in the scope at once, or write the `revert` statement, which is the script-language shorthand for the same universal operation. Any of these forms discard all writes (successful or failed) made within that scope and remove the poison status.
+When implemented, `revert` will reset all channels in the current output scope to their state at the start of the nearest enclosing scope boundary (e.g., the start of the `guard` block). This provides fine-grained control complementing automatic guard recovery.
 
-**The `revert` Statement (Scripts)**
-`revert` is a standalone statement (no `@`) that immediately behaves as if you called `@._revert()`. It is available anywhere a normal statement can appear, including within `if`/`else`, loop bodies, guards, and macros. Because it resets every handler in the current output scope, reach for `@handler._revert()` when you need to surgically fix just one handler and `revert` when you deliberately want a clean slate for the entire scope.
-
-```javascript
-guard
-  var payload = riskyFetch()
-
-  if payload is error
-    revert             // clears the guard's buffered output
-    @data.status = "fallback"
-    @data.error = payload#message
-  else
-    @data.status = "ok"
-    @data.payload = payload
-  endif
-endguard
-```
-
-**Output Scopes**
-The "checkpoint" that `_revert()` restores to is the start of the nearest enclosing scope boundary. These boundaries now include:
-1.  `guard` blocks (including their private buffers when inserted into a parent output)
-2.  `include` and `call` buffers that stage output before merging into the parent scope
-3.  Isolated scopes such as `macro` and `caller` blocks, both of which flatten immediately after they finish
-4.  The Script or Template root (if none of the above apply)
-
-**Usage**
-*   **Supported Handlers:** Works on `@data`, `@text`, and any custom handlers.
-*   **Root Only:** Call `_revert()` on a handler root (e.g., `@data._revert()`) or use the universal `@._revert()` / `revert` forms. Subpaths such as `@data.user._revert()` remain invalid.
-
-**Example: Resetting `@data` on failure**
-
-```javascript
-// 1. Write some initial data
-@data.timestamp = now()
-
-// 2. This operation fails and poisons the @data handler
-var content = fetchContent()
-@data.content = content
-
-// 3. Check if the handler is poisoned
-if content is error
-  // 4. Revert @data to the start of the script/scope
-  // This removes 'timestamp' AND the error from 'fetchContent'
-  @data._revert()   // Handler-specific reset
-  // or, to reset every handler at once:
-  // @._revert()
-  // revert
-
-  // 5. Write a clean fallback response
-  @data.error = "Content unavailable"
-endif
-```
-
-**Example: Resetting `@text` in script scope**
-
-```javascript
-@text("Starting operation...")
-var result = riskyOperation()
-
-if result is error
-   // Reverts only to the start of the current output scope
-   revert          // same as @._revert()
-   @text("Operation failed.")
-else
-   @text(" Success!")
-endif
-```
-
-For a deeper dive into how the runtime tracks these buffers and boundaries, see `docs/code/output-revert.md`.
 #### Error Handling with Sequential Operations
 
-When using [sequential execution paths](#managing-side-effects-sequential-execution) marked with `!`, error handling follows the same principles described above but respects the sequential guarantee.
-
 ```javascript
-var db = context.db
-
 db!.beginTransaction()
 
-// These operations run sequentially
 var insertResult = db!.insert("users", userData)
 var updateResult = db!.update("profiles", profileData)
 
-// Check if any operation failed
-if db! is error
-  // Path is poisoned, cleanup
-  db!!.rollback()
+var status
+var errorMsg
 
-  @data.status = "transaction_failed"
-  @data.error = db!#message
+if db! is error
+  db!!.rollback()
+  status = "transaction_failed"
+  errorMsg = db!#message
 else
   db!.commit()
-  @data.status = "success"
+  status = "success"
 endif
+
+return { status: status, error: errorMsg }
 ```
 
-The key difference is that in a sequential chain, if any operation fails, all subsequent operations on that path are immediately skipped and return errors, maintaining the sequential guarantee even in failure scenarios.
 ## Macros and Reusable Components
 
-Macros allow you to define reusable chunks of logic that build and return structured data objects. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
+Macros allow you to define reusable chunks of logic that build and return values. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
 
-Macros implicitly return the structured object built by the [Output Commands](#the-handler-system-using--output-commands) (`@data =`, `@data.push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
+Macros use `return` to return values, or implicitly return `none` if no `return` is present. Channels declared inside a macro are local to the macro.
 
 ### Defining and Calling a Macro
 
-A macro can perform its own internal, parallel async operations and then assemble a return value. You can specify an output focus directive (like `:data`) either on the macro definition line or on the first line of the body.
+A macro can call async functions and use `return` to provide its result. Like a script, it runs to completion before its return value is available to the caller.
 
 <table>
 <tr>
@@ -1912,27 +1812,24 @@ A macro can perform its own internal, parallel async operations and then assembl
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-macro buildDepartment(deptId) : data
+macro buildDepartment(deptId)
   // These two async calls run in parallel.
   var manager = fetchManager(deptId)
   var team = fetchTeamMembers(deptId)
 
-  // Assemble the macro's return value.
-  @data.department.manager = manager.name
-  @data.department.teamSize = team.length
+  return { manager: manager.name, teamSize: team.length }
 endmacro
 
-// Call the macro. 'salesDept' becomes the data object.
+// Call the macro. 'salesDept' is the returned object.
 var salesDept = buildDepartment("sales")
 
-// Use the returned object in the main script's assembly.
-@data.company.sales = salesDept
+return { company: { sales: salesDept } }
 ```
 </details>
 </td>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Final Return Value (`:data` focused)</strong></summary>
+<summary><strong>Final Return Value</strong></summary>
 
 ```json
 {
@@ -1955,62 +1852,35 @@ Macros support keyword arguments, allowing for more explicit and flexible calls.
 ```javascript
 // Macro with default arguments
 macro input(name, value="", type="text")
-  : data
-  @data.field.name = name
-  @data.field.value = value
-  @data.field.type = type
+  return { name: name, value: value, type: type }
 endmacro
 
 // Calling with mixed and keyword arguments
-var passwordField = input("pass", type="text")
-@data.result.password = passwordField.field
+var passwordField = input("pass", type="password")
+return passwordField
+// { name: "pass", value: "", type: "password" }
 ```
 
-### Output Scopes and Focusing in Macros
+### Returning a Computed Value
 
-Like the main script body, a macro's output can be focused using a directive such as `:data`. This controls the macro's return value, making it easier to consume. The example below shows a macro that returns a clean data object, which is then assigned to a variable.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Macro with <code>:data</code> focus</strong></summary>
+Macros can `return` any value — a primitive, an object literal, a variable, or a channel snapshot:
 
 ```javascript
-// The :data directive filters the macro's
-// return value to be just the data object.
-macro buildUser(name)
-  : data
-  @data.user.name = name
-  @data.user.active = true
+macro computeTotal(items)
+  var sum = 0
+  for item in items
+    sum = sum + item.price
+  endfor
+  return sum
 endmacro
 
-// 'userObject' is now a clean object,
-// not { data: { user: ... } }.
-var userObject = buildUser("Alice")
-
-@data.company.manager = userObject.user
+var total = computeTotal([
+  { price: 10 },
+  { price: 20 },
+  { price: 30 }
+])
+return total  // 60
 ```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value of Script</strong></summary>
-
-```json
-{
-  "company": {
-    "manager": {
-      "name": "Alice",
-      "active": true
-    }
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
 
 ### Dynamic Call Blocks (`call`)
 
@@ -2018,12 +1888,24 @@ A `call` block lets you pass a chunk of code to a macro as a callback. The macro
 
 #### Syntax
 
+In **scripts**, `call` blocks must be used in assignment form:
+
 ```javascript
-call macroName(args)
-  (param1, param2) :data    // Declare parameters and return type
-  // Block body
+var x = call macroName(args)
+  (param1, param2)  // Declare parameters
+  // Block body — use return to provide the value
+  return someValue
 endcall
 ```
+
+Or the assignment form without initialization:
+```javascript
+x = call macroName(args)
+  // ...
+endcall
+```
+
+Bare `call` blocks (without assignment) are not supported in scripts.
 
 The macro invokes the callback by passing arguments:
 
@@ -2035,46 +1917,29 @@ endmacro
 
 If no parameters are needed, the `()` can be omitted from the call block.
 
-#### Capturing the Call Result (Assignment Form)
-
-In **scripts**, a `call` block can be used as an expression and assigned to a variable. This works for both:
-
-- **Initialization**: `var x = call ... endcall`
-- **Assignment**: `x = call ... endcall`
-
-```javascript
-var squared = call map([1, 2, 3])
-  (n) :value
-  @value = n * n
-endcall
-```
-
 #### Example: Grid Generator
 
 ```javascript
 macro grid(rows, cols)
+  data cells
   for y in range(rows)
     for x in range(cols)
       var cell = caller(x, y)  // Pass coordinates
-      @data.cells.push(cell)
+      cells.items.push(cell)
     endfor
   endfor
+  return cells.snapshot()
 endmacro
 
-call grid(3, 3)
-  (x, y) :data  // Use :data when building a structured object
-  @data.position = [x, y]
-  @data.value = x * 10 + y
+var gridResult = call grid(3, 3)
+  (x, y)
+  return { position: [x, y], value: x * 10 + y }
 endcall
 
-// Result: { cells: [{ position: [0,0], value: 0 }, ...] }
+return gridResult
 ```
 
-**Tip:** Use `:value` when the callback computes a single value, and `:data` when building a structured object.
-
 #### Example: Simple Value Transformation
-
-When each callback returns a single computed value, use `:value` for cleaner code:
 
 ```javascript
 macro sum(items)
@@ -2083,15 +1948,14 @@ macro sum(items)
     var value = caller(item)
     total = total + value
   endfor
-  @data.sum = total
+  return total
 endmacro
 
-call sum([{price: 10}, {price: 20}, {price: 30}])
-  (item) :value
-  @value = item.price
+var result = call sum([{price: 10}, {price: 20}, {price: 30}])
+  (item)
+  return item.price
 endcall
-
-// Result: { sum: 60 }
+return result  // 60
 ```
 
 #### Example: Error Handling
@@ -2099,23 +1963,25 @@ endcall
 ```javascript
 macro withRetry(maxAttempts)
   var attempts = 0
-  var result = null
+  var result = none
 
-  while attempts < maxAttempts and result is null
-    result = caller()  // No parameters
+  while attempts < maxAttempts and result is none
+    result = caller()
     if result is error
-      result = null
-      attempts += 1
+      result = none
+      attempts = attempts + 1
     endif
   endwhile
 
-  @data.result = result
+  return result
 endmacro
 
-call withRetry(3)
-  :data  // No () needed when no parameters
-  @data.user = fetchUser(userId)
+var userData = call withRetry(3)
+  var user = fetchUser(userId)
+  return user
 endcall
+
+return userData
 ```
 
 #### Variable Scope
@@ -2126,20 +1992,21 @@ The call block runs with access to variables from where it was written, not the 
 macro processItem(transformer)
   var internalVar = "macro scope"
   var result = caller(transformer)
-  @data.result = result
+  return result
 endmacro
 
 var outerVar = "call scope"
 
-call processItem(item)
-  (item) :data
-  @data.item = item
-  @data.context = outerVar      // ✅ Can access outerVar
-  @data.internal = internalVar  // ❌ Cannot access internalVar
+var processed = call processItem(item)
+  (item)
+  // ✅ Can access outerVar; ❌ Cannot access internalVar
+  return { item: item, context: outerVar }
 endcall
+
+return processed
 ```
 
-In addition, the call block's access to the parent scope is **read-only**:
+The call block's access to the parent scope is **read-only**:
 
 - **Reads** can see variables from the parent scope (where the call block was written).
 - **Writes** (e.g. `x = ...`, `var x = ...`) do **not** propagate to the parent scope. They create/modify variables in the call block's own scope.
@@ -2148,87 +2015,11 @@ This ensures the call block remains decoupled from the macro's implementation de
 
 #### How Call Blocks Work
 
-- **Parameters**: Explicitly passed via `caller(args)` and declared in `(params)`
-- **Return value**: The object, text or other handler result produced by the block (controlled by focus), captured by `caller()`
-- **Result Construction**: Output writes (like `@data`) build this return value instead of modifying the parent scope
-- **Caller's context**: Block reads variables from where it was written, not the macro's scope
-- **Execution control**: Macro decides when and how many times to invoke `caller()`
-
-## Templates vs Scripts
-
-In **templates**, `caller()` is used for layout composition where the call block writes directly to the parent's output handlers.
-
-In **scripts**, `caller()` works as a callback that receives parameters and returns isolated results - useful for data processing, filtering, and transformation patterns.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Template Mode: Layout Composition</strong></summary>
-
-```njk
-{% macro card(title) %}
-<div class="card">
-  <h2>{{ title }}</h2>
-  {{ caller() }}
-</div>
-{% endmacro %}
-
-{% call card("Welcome") %}
-  <p>Hello!</p>
-{% endcall %}
-```
-
-**Output:**
-```html
-<div class="card">
-  <h2>Welcome</h2>
-  <p>Hello!</p>
-</div>
-```
-
-**Output:**
-```html
-<div class="card">
-  <h2>Welcome</h2>
-  <p>Hello!</p>
-</div>
-```
-
-Call block output goes directly to parent handlers.
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Script Mode: Data Callbacks</strong></summary>
-
-```javascript
-macro map(items)
-  for item in items
-    var result = caller(item)
-    @data.results.push(result)
-  endfor
-endmacro
-
-call map([1, 2, 3])
-  (n) :value
-  @value = n * n
-endcall
-```
-
-**Output:**
-```json
-{
-  "results": [ 1, 4, 9 ]
-}
-```
-
-Call block returns isolated data via parameters.
-
-</details>
-</td>
-</tr>
-</table>
+- **Parameters**: The macro explicitly passes values via `caller(args)`, declared as `(params)` in the call block header
+- **Return value**: The value provided by `return` in the call block body is returned by `caller()` in the macro
+- **Caller's context**: The block reads variables from the scope where it was written, not the macro's internal scope
+- **Execution control**: The macro decides when — and how many times — to invoke `caller()`
+- **Isolated scope**: Writes inside the call block stay local; the macro sees only what `caller()` returns
 
 ### Error handling and recovery with macros
 
@@ -2236,42 +2027,54 @@ When an Error Value is passed as an argument to a macro, the macro body is skipp
 For comprehensive information on error handling, see the [Error Handling](#error-handling) section.
 
 
-## Modular Scripts
-**Note:** This functionality is under active development. Currently you can not safely access mutable fariables from a parent script.
+## Return Statements
 
-Cascada provides powerful tools for composing scripts, promoting code reuse and the separation of concerns. This allows you to break down complex workflows into smaller, maintainable files. The three primary mechanisms for this are [`import`](#importing-libraries-with-import) for namespaced libraries, [`include`](#including-scripts-with-include) for embedding content, and [`extends`/`block`](#script-inheritance-with-extends-and-block) for script inheritance.
+Use `return` to explicitly shape what a script or macro produces. Without a `return`, scripts and macros return `none`.
+
+```javascript
+// Return a simple value
+return 42
+
+// Return a variable
+return user
+
+// Return an object literal
+return { name: user.name, count: items.length }
+
+// Build with plain variables and return them directly
+var report = { name: user.name, count: items.length }
+return report
+
+// Use snapshot() only when you are intentionally building through a channel
+data reportData
+reportData.user.name = "Alice"
+return reportData.snapshot()
+```
+
+`snapshot()` captures the assembled state of a channel at that point, waiting for all pending writes to complete. It can be called anywhere after the channel is declared.
+
+For most cases, returning a `var` or a plain object literal is simpler than declaring a channel. Use channels when you need ordered writes, structured path updates, text building, or `sink`/`sequence` behavior.
+
+
+## Modular Scripts
+**Note:** This functionality is under active development. Currently you cannot safely access mutable variables from a parent script.
+
+Cascada provides powerful tools for composing scripts, promoting code reuse and the separation of concerns. This allows you to break down complex workflows into smaller, maintainable files. The three primary mechanisms are [`import`](#importing-libraries-with-import) for namespaced libraries, [`include`](#including-scripts-with-include) for embedding content, and [`extends`/`block`](#script-inheritance-with-extends-and-block) for script inheritance.
 
 ### Declaring Cross-Script Dependencies
 
 > **⚠️ NOT IMPLEMENTED:** This feature is not yet available in the current version of Cascada. See [Development Status and Roadmap](#development-status-and-roadmap) for details.
 
-To enable its powerful parallel execution model, Cascada's compiler must understand all variable dependencies at compile time. When you split your logic across multiple files, you must explicitly declare how these files share variables. This creates a clear "contract" between scripts and allows the engine to understand the variable dependencies for concurrent execution.
+To enable its powerful parallel execution model, Cascada's compiler must understand all variable dependencies at compile time. When you split your logic across multiple files, you must explicitly declare how these files share variables using three keywords:
 
-This contract is formed by three keywords:
-
-*   **`extern`**: Used in the *called* script (the one being included or imported). It declares which variables it **expects** to receive from a parent script. It is a declaration of need.
-    ```cascada
-    // in component.script
-    extern user, theme // Declares that this script needs 'user' and 'theme'
-    ```
-
-*   **`reads`**: Used in the *calling* script on an `import`, `include`, or `block` statement. It grants **read-only permission** to the specified variables.
-    ```cascada
-    // in main.script
-    include "component.script" reads user, theme
-    ```
-
-*   **`modifies`**: Used in the *calling* script, just like `reads`. It grants **full read and write permission** to the specified variables, allowing the called script to change their values in the parent scope.
-    ```cascada
-    // in main.script
-    include "component.script" reads user modifies theme
-    ```
+*   **`extern`**: Used in the *called* script. Declares which variables it **expects** to receive from a parent script.
+*   **`reads`**: Used in the *calling* script. Grants **read-only permission** to the specified variables.
+*   **`modifies`**: Used in the *calling* script. Grants **full read and write permission** to the specified variables.
 
 ### Importing Libraries with `import`
 Use `import` to load a script as a library of reusable, stateless components, primarily macros. By default, an `import` is completely isolated: it does not execute and cannot access the parent's variables or global context.
 
 #### Importing a Namespace with `as`
-This is the cleanest way to share utility functions, binding all of a script's exported macros and variables to a single namespace object.
 
 <table>
 <tr>
@@ -2280,9 +2083,8 @@ This is the cleanest way to share utility functions, binding all of a script's e
 <summary><strong><code>utils.script</code></strong></summary>
 
 ```cascada
-// Defines a reusable macro for formatting.
-macro formatUser(user) : data
-  @data.fullName = user.firstName + " " + user.lastName
+macro formatUser(user)
+  return user.firstName + " " + user.lastName
 endmacro
 ```
 </details>
@@ -2292,13 +2094,12 @@ endmacro
 <summary><strong><code>main.script</code></strong></summary>
 
 ```cascada
-// Import the macros from utils.script into the 'utils' namespace.
 import "utils.script" as utils
 
 var user = fetchUser(1)
-var formatted = utils.formatUser(user)
+var fullName = utils.formatUser(user)
 
-@data.user = formatted
+return { user: fullName }
 ```
 </details>
 </td>
@@ -2315,8 +2116,8 @@ Use `from ... import` to pull specific macros into the current script's namespac
 <summary><strong><code>utils.script</code></strong></summary>
 
 ```cascada
-macro formatUser(user) : data
-  @data.fullName = user.firstName + " " + user.lastName
+macro formatUser(user)
+  return user.firstName + " " + user.lastName
 endmacro
 ```
 </details>
@@ -2330,57 +2131,7 @@ from "utils.script" import formatUser
 
 var user = fetchUser(1)
 var formattedUser = formatUser(user)
-
-@data.user = formattedUser
-```
-</details>
-</td>
-</tr>
-</table>
-
-#### Stateful Imports with `reads` and `modifies`
-To create stateful libraries (e.g., a logging utility) that can interact with the caller's state, an `import` must be explicitly granted permissions. This turns a typically stateless `import` into a powerful tool for modular, state-aware logic.
-
-*   Use `reads` and `modifies` on the `import` statement to grant access to specific script variables from the parent. The imported script must declare these variables using `extern`.
-*   Use the special `context` keyword in **`reads context`** to grant the imported script **read-only access to the global context object** (the data passed in from your JavaScript code). This syntax is unique to the `import` statement.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>logger.script</code></strong></summary>
-
-```cascada
-// This library declares that it needs a 'log_messages'
-// variable from whatever script imports it.
-extern log_messages
-
-// This macro provides the "function" to be called.
-macro add(message)
-  // It modifies the 'log_messages' variable from the parent scope,
-  // because the parent explicitly granted permission.
-  log_messages.push(message)
-endmacro
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>main.script</code></strong></summary>
-
-```cascada
-// The main script defines the state to be modified.
-var log_messages = []
-
-// Import the 'add' macro and explicitly grant it
-// permission to modify the 'log_messages' variable.
-from "logger.script" import add as log modifies log_messages
-
-// Call the imported macro. It can now modify our local state.
-log("Process started.")
-log("User authenticated.")
-
-@data.final_log = log_messages
+return formattedUser
 ```
 </details>
 </td>
@@ -2388,7 +2139,7 @@ log("User authenticated.")
 </table>
 
 ### Including Scripts with `include`
-Use `include` to execute another script within the current script's scope. This is useful for breaking a large workflow into smaller, stateful components. An `include` automatically shares the global context. As described above, you must use `reads` and `modifies` to grant access to parent variables, and the included script must declare them with `extern`.
+Use `include` to execute another script within the current script's scope. Unlike `import`, the included script runs immediately and has access to the global context. Use `reads` and `modifies` to grant access to parent variables (the included script must declare them with `extern`).
 
 <table>
 <tr>
@@ -2402,7 +2153,8 @@ Use `include` to execute another script within the current script's scope. This 
 extern user, usageStats
 
 // Use these variables to build its part of the data.
-@data.widget.user.name = user.name
+data out
+out.widget.user.name = user.name
 
 // Modify a variable from the parent scope.
 usageStats.widgetLoads++
@@ -2420,7 +2172,7 @@ var usageStats = { widgetLoads: 0 }
 // Include the component, defining its permissions.
 include "user_widget.script" reads user modifies usageStats
 
-@data.stats = usageStats
+return usageStats
 ```
 </details>
 </td>
@@ -2431,73 +2183,21 @@ include "user_widget.script" reads user modifies usageStats
 Use `extends` for an "inversion of control" pattern, where a "child" script provides specific implementations for placeholder `block`s defined in a "base" script.
 
 #### Scoping in `extends` and `block`
-When a child script extends a base script, they effectively merge into a single scope.
 - **Shared State & Contract:** The base script uses `reads` and `modifies` on the `block` definition to declare a "contract" for which variables the child's implementation can access. The child script must use `extern` to declare these variables.
-- **Top-Level `var` in Child:** Variables declared with `var` at the top level of the child script (outside any `block`) are set *before* the base script's layout is executed, so the base script can see and use them.
-- **`var` Inside a `block`:** Variables declared inside a `block` are **temporary and local** to that block's execution. They cannot be seen by the base script or other blocks, preventing side effects.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>base_workflow.script</code> (Base)</strong></summary>
-
-```cascada
-var inputData = loadInitialData()
-var result = { processed: false }
-
-// Define a block contract. Child scripts can read
-// 'inputData' and both read and write to 'result'.
-block process_data reads inputData modifies result
-  // Default processing logic.
-  result.defaultProcessed = true
-endblock
-
-// This will use the final value of 'result',
-// which may have been changed by the child script.
-if result.processed
-  saveResult(result)
-endif
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>custom_workflow.script</code> (Child)</strong></summary>
-
-```cascada
-extends "base_workflow.script"
-
-// Declare variables from the base script.
-extern inputData, result
-
-// Override the 'process_data' block.
-block process_data
-  var enhancedData = enhance(inputData)
-
-  // Modify the shared 'result' object
-  result.summary = summarize(enhancedData)
-  result.processed = true
-endblock
-```
-</details>
-</td>
-</tr>
-</table>
+- **Top-Level `var` in Child:** Variables declared at the top level of the child script (outside any `block`) are set before the base script's layout is executed.
+- **`var` Inside a `block`:** Variables declared inside a `block` are local to that block and cannot be seen by the base script or other blocks.
 
 ## Extending Cascada
 
-### Customizing the `@data` Handler
-You can add your own custom methods or override existing ones for the built-in `@data` handler using `env.addDataMethods()`. This method takes an object where each key is a method name and each value is a function that defines the custom logic.
-
-This is a powerful way to create reusable, domain-specific logic. Your custom methods are defined in JavaScript and can be called from within your Cascada scripts like any built-in method.
+### Customizing `data` Channel Methods
+You can add your own custom methods or override existing ones for the built-in `data` channel using `env.addDataMethods()`. This method takes an object where each key is a method name and each value is a function that defines the custom logic.
 
 A custom data method has the following signature:
 
 ```javascript
 // In your JS setup
 env.addDataMethods({
-  // methodName is how you'll call it in the script: @data.path.methodName(...)
+  // methodName is how you'll call it in the script: name.path.methodName(...)
   methodName: function(target, ...args) {
     // ... your logic ...
     return newValue;
@@ -2507,136 +2207,105 @@ env.addDataMethods({
 
 **Parameters:**
 
-*   `target`: The current value at the path the command is targeting. For example, in `@data.users[0].name.append("!")`, the `target` passed to the `append` method would be the current string value of `users[0].name`. If the path doesn't exist yet, `target` will be `undefined`. Your method should often handle this case, for instance by creating a default array or object.
-*   `...args`: A list of the arguments passed to the method in the script. For a call like `@data.users.upsert(newUser, { overwrite: true })`, the `args` array would be `[newUser, { overwrite: true }]`.
+*   `target`: The current value at the path the command is targeting. If the path doesn't exist yet, `target` will be `undefined`.
+*   `...args`: A list of the arguments passed to the method in the script.
 
 **Return Value:**
 
-The value returned by your function determines the new state of the data at the target path.
-
-*   **If you return any value** (an object, array, string, number, etc.), it **replaces** the `target` value at that path. For in-place mutations (like modifying an array), you must return the mutated `target` itself to save the changes.
-*   **If you return `undefined`**, it signals to the engine to **delete** the property at that path. This is equivalent to `delete parent[key]`.
+*   **If you return any value**, it **replaces** the `target` value at that path.
+*   **If you return `undefined`**, it signals the engine to **delete** the property at that path.
 
 **Overriding Operators:**
 
-All shortcut operators (`+=`, `++`, `&&=`, etc.) are mapped to underlying methods. By overriding these methods, you can fundamentally change the behavior of the operators.
+All shortcut operators (`+=`, `++`, `&&=`, etc.) are mapped to underlying methods.
 
 | Operator | Corresponding Method |
 |---|---|
-| `@... = value` | `set(target, value)` |
-| `@... += value` | `add(target, value)` |
-| `@... -= value` | `subtract(target, value)` |
-| `@... *= value` | `multiply(target, value)` |
-| `@... /= value` | `divide(target, value)` |
-| `@...++` | `increment(target)` |
-| `@...--` | `decrement(target)` |
-| `@... &&= value` | `and(target, value)` |
-| `@... \|\|= value` | `or(target, value)` |
-| `@... &= value` | `bitAnd(target, value)` |
-| `@... \|= value` | `bitOr(target, value)` |
+| `name.path = value` | `set(target, value)` |
+| `name.path += value` | `add(target, value)` |
+| `name.path -= value` | `subtract(target, value)` |
+| `name.path *= value` | `multiply(target, value)` |
+| `name.path /= value` | `divide(target, value)` |
+| `name.path++` | `increment(target)` |
+| `name.path--` | `decrement(target)` |
+| `name.path &&= value` | `and(target, value)` |
+| `name.path \|\|= value` | `or(target, value)` |
+| `name.path &= value` | `bitAnd(target, value)` |
+| `name.path \|= value` | `bitOr(target, value)` |
 
 
-**Example: Adding a custom `@data.upsert` command.**
-Here's how you can add a new `upsert` method that either updates an existing item in an array or adds it if it's not found. This example demonstrates handling an `undefined` target and returning the modified array.
+**Example: Adding a custom `upsert` method.**
 
 ```javascript
 // --- In your JavaScript setup ---
 env.addDataMethods({
   upsert: (target, newItem) => {
-    // 1. Handle the case where the path doesn't exist yet.
     if (!Array.isArray(target)) {
-      target = []; // Initialize target as a new array.
+      target = [];
     }
-
-    // 2. Implement the upsert logic.
     const index = target.findIndex(item => item.id === newItem.id);
     if (index > -1) {
-      // Item found, so update it.
       Object.assign(target[index], newItem);
     } else {
-      // Item not found, so add it.
       target.push(newItem);
     }
-
-    // 3. Return the modified array to save the changes.
     return target;
   }
 });
 
 // --- In your Cascada Script ---
-// 'users' doesn't exist yet, but `upsert` will create the array.
-@data.users.upsert({ id: 1, name: "Alice" })
-
-// Now call it again to update Alice's record.
-@data.users.upsert({ id: 1, name: "Alice", status: "active" })
+data out
+out.users.upsert({ id: 1, name: "Alice" })
+out.users.upsert({ id: 1, name: "Alice", status: "active" })
+return out.snapshot()
 ```
 
-### Creating Custom Output Command Handlers
-For advanced use cases, you can define **Custom Output Command Handlers**. These are classes that receive and process `@` commands, allowing you to create powerful, domain-specific logic.
+### Creating Custom Command Handlers
+For advanced use cases, you can define **Custom Command Handlers** in JavaScript. These are objects or classes with methods that your script calls through a `sink` channel.
 
 #### Registering and Using Handlers
-You register handlers with a unique name. To use a named handler, prefix the command with the handler's name and a dot.
+You can register handlers on the environment, and you can also expose handler objects through the script context. Use class registration when you want a fresh instance for each render, or provide an instance directly when you want to reuse the same object.
 
-**Example: Using a `turtle` handler.**
 ```javascript
 // --- In your JavaScript setup ---
 env.addCommandHandlerClass('turtle', CanvasTurtle);
-
-// --- In your Cascada Script ---
-@turtle.begin()
-@turtle.forward(50)
-@turtle.stroke('cyan')
 ```
 
 #### Handler Implementation Patterns
-Cascada supports two powerful patterns for how your handler classes are instantiated and used.
 
 **Pattern 1: The Factory (Clean Slate per Render)**
-Provide a **class** using `env.addCommandHandlerClass(name, handlerClass)`. For each render, the engine creates a new, clean instance, passing the `context` to its `constructor`. This is the recommended pattern for most use cases.
+Provide a **class** using `env.addCommandHandlerClass(name, handlerClass)`. For each render, the engine creates a new, clean instance, passing the `context` to its `constructor`.
 
 ```javascript
-// --- In your JavaScript setup (Handler Class) ---
 class CanvasTurtle {
-  // The constructor receives the runtime context
   constructor(context) {
     this.ctx = context.canvas.getContext('2d');
-    // ... setup logic ...
   }
   forward(dist) { /* ... */ }
   turn(deg) { /* ... */ }
 }
 
-// --- In your JavaScript setup (Registration) ---
 env.addCommandHandlerClass('turtle', CanvasTurtle);
 ```
 
 **Pattern 2: The Singleton (Persistent State)**
-Provide a pre-built **instance** using `env.addCommandHandler(name, handlerInstance)`. The same instance is used across all render calls, which is useful for accumulating state (e.g., logging). If the handler has an `_init(context)` method, the engine will call it before each run.
+Provide a pre-built **instance** using `env.addCommandHandler(name, handlerInstance)`. The same instance is used across all render calls. If the handler has an `_init(context)` method, the engine will call it before each run.
 
 ```javascript
-// --- In your JavaScript setup (Handler Class) ---
 class CommandLogger {
   constructor() { this.log = []; }
-  // This hook is called before each script run
-  _init(context) { this.log.push(`--- START (User: ${context.userId}) ---`); }
-  _call(command, ...args) { this.log.push(`${command}: ${JSON.stringify(args)}`); }
+  _init(context) { this.log.push(`--- START ---`); }
+  write(message) { this.log.push(message); }
 }
 
-// --- In your JavaScript setup (Registration) ---
 const logger = new CommandLogger();
 env.addCommandHandler('audit', logger);
 ```
 
 #### Contributing to the Result Object: The `getReturnValue` Method
-A handler can optionally implement a `getReturnValue()` method.
-*   If `getReturnValue()` **is implemented**, its return value will be used as the value for the handler's key in the final result object.
-*   If it **is not implemented**, the handler instance itself will be used.
-
-This is how the built-in `@data` handler provides a clean data object in the final result, rather than the `DataHandler` instance itself.
+A handler can optionally implement a `getReturnValue()` method. If implemented, its return value is used for the handler's output. If not implemented, the handler instance itself is used. The built-in `data` channel uses this to provide a clean data object.
 
 #### Example: A Turtle Graphics Handler
-
-Here's a complete example of a handler that implements turtle graphics commands:
 
 ```javascript
 class TurtleHandler {
@@ -2647,7 +2316,7 @@ class TurtleHandler {
   }
 
   invoke(target, method, args) {
-    if (target.length === 0) {  // Root-level commands like @turtle.forward(50)
+    if (target.length === 0) {
       switch (method) {
         case 'forward':
           const distance = args[0];
@@ -2665,42 +2334,37 @@ class TurtleHandler {
   }
 
   finalize() {
-    return {
-      x: this.x,
-      y: this.y,
-      angle: this.angle
-    };
+    return { x: this.x, y: this.y, angle: this.angle };
   }
 }
 
-// Register the handler
 env.addCommandHandlerClass('turtle', TurtleHandler);
 ```
 
 **Using the Handler:**
-```javascript
-@turtle.forward(100)
-@turtle.turn(90)
-@turtle.forward(50)
-```
 
-**Result:**
-```json
-{
-  "turtle": {
-    "x": 50,
-    "y": 100,
-    "angle": 90
-  }
-}
+Provide the handler object through the context and use it via a `sink` channel:
+
+```javascript
+// JS setup
+const context = {
+  turtleHandler: new TurtleHandler()
+};
+
+// Script
+sink turtle = turtleHandler
+turtle.forward(100)
+turtle.turn(90)
+turtle.forward(50)
+return turtle.snapshot()
+// { x: 50, y: 100, angle: 90 }
 ```
 
 ### Handler Lifecycle
 
-1. **`init()`** is called at the start of each output scope (script or macro)
-2. Commands are buffered during execution
-3. **`invoke()`** is called for each buffered command during the Assembly phase
-4. **`finalize()`** is called to produce the final value
+1. The sink object is created or provided before the script runs.
+2. Script commands call methods on that object in source-code order.
+3. `snapshot()`, `getReturnValue()`, or `finalize()` can provide the final value.
 
 #### Registration Options
 
@@ -2708,174 +2372,135 @@ env.addCommandHandlerClass('turtle', TurtleHandler);
     ```javascript
     env.addCommandHandlerClass('name', HandlerClass)
     ```
-    Creates a new instance for each script execution. Use this when your handler needs isolated state per execution.
 
 *   **Instance Registration (Singleton Pattern):**
     ```javascript
     env.addCommandHandler('name', handlerInstance)
     ```
-    Reuses the same instance across all executions. Use this for handlers that aggregate data across multiple script runs or manage shared resources.
 
 ## API Reference
 
-Cascada builds upon the robust Nunjucks API, extending it with a powerful new execution model for scripts. This reference focuses on the APIs specific to Cascada Script, including the `AsyncEnvironment`, the distinction between `Script` and `Template` objects, and methods for extending the engine's capabilities.
+Cascada builds upon the robust Nunjucks API, extending it with a powerful new execution model for scripts. This reference focuses on the APIs specific to Cascada Script.
 
 For details on features inherited from Nunjucks, such as the full range of built-in filters and advanced loader options, please consult the official [Nunjucks API documentation](https://mozilla.github.io/nunjucks/api.html).
 
 ### Key Distinction: Script vs. Template
 
-Cascada introduces a clear separation between two types of assets:
-
-*   **Script**: A file or string designed for **logic and data orchestration**. Scripts use features like `var`, `for`, `if`, and `@` output commands to execute asynchronous operations, compose data, and produce a structured result (typically a JavaScript object or array). Their primary goal is to *build data*.
-*   **Template**: A file or string designed for **presentation and text generation**. Templates use `{{ variable }}` and `{% tag %}` syntax to render a final string output, such as HTML, XML, or Markdown. Their primary goal is to *render text*.
-
-The API provides distinct methods and classes for working with each type.
+*   **Script**: A file or string designed for **logic and data orchestration**. Scripts use features like `var`, `for`, `if`, channel declarations (`data`, `text`, `sink`, `sequence`), and explicit `return` to execute asynchronous operations and produce a structured result. Their primary goal is to *build data*.
+*   **Template**: A file or string designed for **presentation and text generation**. Templates use `{{ variable }}` and `{% tag %}` syntax to render a final string output. Their primary goal is to *render text*.
 
 ### AsyncEnvironment Class
 
-The `AsyncEnvironment` is the primary class for orchestrating and executing Cascada Scripts. It is fully asynchronous and all its rendering methods return Promises. It's the central hub for managing configuration, loaders, filters, and extensions.
+The `AsyncEnvironment` is the primary class for orchestrating and executing Cascada Scripts. All its rendering methods return Promises.
 
 #### Execution
-These methods execute a script or template and return the final result.
 
 *   `asyncEnvironment.renderScript(scriptName, [context])`
-    Loads and executes a script from a file using the configured loader. Returns a `Promise` that resolves with the script's output.
+    Loads and executes a script from a file using the configured loader.
 
     ```javascript
-    // Assuming 'scripts/getUser.casc' exists and a loader is configured.
     const userData = await env.renderScript('getUser.casc', { userId: 123 });
     ```
 
 *   `asyncEnvironment.renderScriptString(source, [context])`
-    Executes a script from a raw string. This is useful for dynamic or simple scripts. Returns a `Promise` that resolves with the script's output.
+    Executes a script from a raw string.
 
     ```javascript
-    const script =
-    `:data
-    @data.user.name = "Alice"`;
+    const script = `
+      var user = { name: "Alice" }
+      return user
+    `;
     const result = await env.renderScriptString(script);
-    // result is: { user: { name: "Alice" } }
+    // { name: "Alice" }
     ```
 
 *   `asyncEnvironment.renderTemplate(templateName, [context])`
 *   `asyncEnvironment.renderTemplateString(templateSource, [context])`
-    Renders a traditional Nunjucks template to a string. These methods work just like their Nunjucks counterparts but return Promises.
+    Renders a traditional Nunjucks template to a string.
 
 
 #### Configuration
 
-You create an environment instance by calling its constructor, optionally passing in loaders and configuration options.
-
 *   `new AsyncEnvironment([loaders], [opts])`
     Creates a new environment.
     *   `loaders`: A single loader or an array of loaders to find script/template files.
-    *   `opts`: An object with configuration flags:
-        *   `autoescape` (default: `true`): If `true`, automatically escapes output from templates to prevent XSS attacks.
-        *   `trimBlocks` (default: `false`): Automatically remove the first newline after a block tag.
-        *   `lstripBlocks` (default: `false`): Automatically strip leading whitespace from a block tag.
-        *   For other options, see the Nunjucks documentation.
+    *   `opts`: Configuration flags:
+        *   `autoescape` (default: `true`): Automatically escapes template output.
+        *   `trimBlocks` (default: `false`): Remove the first newline after a block tag.
+        *   `lstripBlocks` (default: `false`): Strip leading whitespace from a block tag.
 
     ```javascript
     const { AsyncEnvironment, FileSystemLoader } = require('cascada-engine');
 
-    // Configure the environment to load files from the 'scripts' directory
     const env = new AsyncEnvironment(new FileSystemLoader('scripts'), {
       trimBlocks: true
     });
     ```
 
 **Loaders**
-
 Loaders are objects that tell the environment how to find and load your scripts and templates from a source, such as the filesystem, a database, or a network.
 
-*   **Built-in Loaders:** Cascada comes with several useful loaders inherited from Nunjucks:
+*   **Built-in Loaders:**
     *   **`FileSystemLoader`**: (Node.js only) Loads files from the local filesystem.
-    *   **`WebLoader`**: (Browser only) Loads files over HTTP from a given base URL.
-    *   **`PrecompiledLoader`**: Loads assets from a precompiled JavaScript object, offering the best performance for production.
-
+    *   **`WebLoader`**: (Browser only) Loads files over HTTP.
+    *   **`PrecompiledLoader`**: Loads assets from a precompiled JavaScript object.
     You can pass a single loader or an array of loaders to the `AsyncEnvironment` constructor. If an array is provided, Cascada will try each loader in order until one successfully finds the requested file.
 
-```javascript
-const env = new AsyncEnvironment([
-  new FileSystemLoader('scripts'),
-  new PrecompiledLoader(precompiledData)
-]);
-```
-
-*   **Custom Loaders:** You can create a custom loader by providing either a simple function or a more structured class. The engine automatically handles both synchronous and asynchronous loaders. If a loader can't find an asset, it should return `null` to allow fallback to the next loader in the chain.
-
-    **1. The Simple Way: A Loader Function**
-    For simple cases, a loader can be a function that takes the asset name and returns its content as a string, or a `Promise` that resolves to the content.
-
-    **2. Adding Metadata with `LoaderSource`**
-    For more control, your loader function (or class method) can return a `LoaderSource` object: `{ src, path, noCache }`.
-    *   `src`: The script or template source code.
-    *   `path`: The resolved path, used for error reporting and debugging.
-    *   `noCache`: A boolean that, if `true`, prevents this specific asset from being cached by the environment.
-
     ```javascript
-    // A custom loader that fetches scripts from a network
+    const env = new AsyncEnvironment([
+      new FileSystemLoader('scripts'),
+      new PrecompiledLoader(precompiledData)
+    ]);
+    ```
+
+*   **Custom Loaders:** Create a custom loader by providing a function or class. Return `null` to allow fallback to the next loader.
+
+    **Loader Function:**
+    ```javascript
     const networkLoader = async (name) => {
       const response = await fetch(`https://my-cdn.com/scripts/${name}`);
       if (!response.ok) return null;
       const src = await response.text();
-      // Return a LoaderSource object for better debugging and caching control
       return { src, path: name, noCache: false };
     };
     ```
 
-    **3. The Advanced Way: A Loader Class**
-    For the most power and flexibility, create a class that implements the loader interface. This allows for features like relative path resolution (`import`, `include`) and event-driven cache invalidation.
-
-    A loader class has one required method and several optional ones for advanced functionality:
+    **Loader Class:**
 
     | Method | Description | Required? |
     |---|---|:---:|
-    | `load(name)` | The core method. Loads an asset by name and returns its content (as a string or `LoaderSource` object), or `null` if not found. Can be async. | **Yes** |
-    | `isRelative(name)` | Returns `true` if a filename is relative (e.g., `./component.script`). Used for `include`, `import`, and `extends`. | No |
-    | `resolve(from, to)`| Resolves a relative path (`to`) based on the path of a parent script (`from`). | No |
-    | `on(event, handler)` | Listens for environment events (`'load'`, `'update'`). Useful for advanced caching strategies. | No |
+    | `load(name)` | Loads an asset by name. Returns string, `LoaderSource`, or `null`. | **Yes** |
+    | `isRelative(name)` | Returns `true` if a filename is relative. | No |
+    | `resolve(from, to)`| Resolves a relative path. | No |
+    | `on(event, handler)` | Listens for environment events. | No |
 
-    Here is an example of a class-based loader that supports relative paths:
     ```javascript
-    // A custom loader that fetches scripts from a database and handles relative paths
     class DatabaseLoader {
       constructor(db) { this.db = db; }
 
-      // The required 'load' method can be synchronous or asynchronous
       async load(name) {
-        const scriptRecord = await this.db.scripts.findByName(name);
-        if (!scriptRecord) return null;
-        // Return a LoaderSource object with the content and path
-        return { src: scriptRecord.sourceCode, path: name, noCache: false };
+        const record = await this.db.scripts.findByName(name);
+        if (!record) return null;
+        return { src: record.sourceCode, path: name, noCache: false };
       }
 
-      // Optional method to identify relative paths
       isRelative(filename) {
         return filename.startsWith('./') || filename.startsWith('../');
       }
 
-      // Optional method to resolve relative paths
       resolve(from, to) {
-        // This is a simplified example; a real implementation would use a
-        // library like 'path' or a URL resolver.
         const fromDir = from.substring(0, from.lastIndexOf('/'));
         return `${fromDir}/${to}`;
       }
     }
-
-    const env = new AsyncEnvironment(new DatabaseLoader(myDbConnection));
     ```
 
-    **4. Running Loaders Concurrently**
-
-The **`raceLoaders(loaders)`** function creates a single, optimized loader that runs multiple loaders concurrently and returns the result from the first one that succeeds. This is ideal for scenarios where you want to implement fallback mechanisms (e.g., try a CDN, then a local cache) or simply load from the fastest available source without waiting for slower ones.
+    **Running Loaders Concurrently:**
+    The **`raceLoaders(loaders)`** function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds.
 
     ```javascript
     const { raceLoaders, FileSystemLoader, WebLoader } = require('cascada-engine');
 
-    // This loader will try to fetch from the web first, but if that is slow
-    // or fails, it will fall back to the filesystem loader.
     const fastLoader = raceLoaders([
       new WebLoader('https://my-cdn.com/scripts/'),
       new FileSystemLoader('scripts/backup/')
@@ -2886,29 +2511,23 @@ The **`raceLoaders(loaders)`** function creates a single, optimized loader that 
 
 #### Compilation and Caching
 
-For better performance, the environment can compile and cache assets.
-
 *   `asyncEnvironment.getScript(scriptName)`
-    Retrieves a compiled `AsyncScript` object for the given `scriptName`, loading it via the configured loader if it's not already in the cache. Returns a `Promise` that resolves with the `AsyncScript` instance.
+    Retrieves a compiled `AsyncScript` object, loading and caching it if not already cached.
 
 *   `asyncEnvironment.getTemplate(templateName)`
-    Retrieves a compiled `AsyncTemplate` object. Works similarly to `getScript`.
+    Retrieves a compiled `AsyncTemplate` object.
 
     ```javascript
-    // Get a compiled script once
     const compiledScript = await env.getScript('process_data.casc');
 
-    // Render it multiple times with different contexts
     const result1 = await compiledScript.render({ input: 'data1' });
     const result2 = await compiledScript.render({ input: 'data2' });
     ```
 
 #### Extending the Engine
 
-You can add custom, reusable logic to any environment.
-
 *   `asyncEnvironment.addGlobal(name, value)`
-    Adds a global variable or function that is accessible in all scripts and templates.
+    Adds a global variable or function accessible in all scripts and templates.
 
     ```javascript
     env.addGlobal('utils', {
@@ -2919,23 +2538,23 @@ You can add custom, reusable logic to any environment.
     ```
 
 *   `asyncEnvironment.addFilter(name, func, [isAsync])`
-    Adds a custom filter that can be used in both scripts and templates with the `|` operator.
+    Adds a custom filter for use with the `|` operator.
 
 *   `asyncEnvironment.addDataMethods(methods)`
-    Extends the built-in `@data` handler with your own methods.
+    Extends the built-in `data` channel with custom methods.
 
     ```javascript
     env.addDataMethods({
-      // Called via @data.path.incrementBy(10)
       incrementBy: (target, amount) => (target || 0) + amount,
     });
+    // In script: name.path.incrementBy(10)
     ```
 
 *   `asyncEnvironment.addCommandHandlerClass(name, handlerClass)`
-    Registers a **factory** for a custom output command handler. A new instance of `handlerClass` is created for each script run.
+    Registers a **factory** for a custom command handler. A new instance is created for each script run.
 
 *   `asyncEnvironment.addCommandHandler(name, handlerInstance)`
-    Registers a **singleton** instance of a custom output command handler. The same object is used across all script runs.
+    Registers a **singleton** instance of a custom command handler.
 
 ### Compiled Objects: `AsyncScript`
 
@@ -2946,7 +2565,7 @@ When you compile an asset, you get a reusable object that can be rendered effici
 Represents a compiled Cascada Script.
 
 *   `asyncScript.render([context])`
-    Executes the compiled script with the given `context`, returning a `Promise` that resolves with the result (typically a data object).
+    Executes the compiled script with the given `context`, returning a `Promise` that resolves with the result.
 
 #### `AsyncTemplate`
 
@@ -2957,21 +2576,19 @@ Represents a compiled Nunjucks Template.
 
 ### Precompiling for Production
 
-For maximum performance, you should precompile your scripts and templates into JavaScript ahead of time. This eliminates all parsing and compilation overhead at runtime, allowing your application to load assets instantly.
-
-Cascada provides functions to precompile files or strings directly to JavaScript:
+For maximum performance, precompile your scripts and templates into JavaScript ahead of time:
 
 *   `precompileScript(path, [opts])`
 *   `precompileTemplate(path, [opts])`
 
-The resulting JavaScript string can be saved to a `.js` file and loaded in your application using the `PrecompiledLoader`. A key option is `opts.env`, which ensures that any custom filters, global functions, or command handlers you've added are correctly included in the compiled output.
+The resulting JavaScript can be saved to a `.js` file and loaded using the `PrecompiledLoader`. A key option is `opts.env`, which ensures custom filters, global functions, and data methods are included in the compiled output.
 
-**For a comprehensive guide on all precompilation options and advanced usage, please refer to the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
+**For a comprehensive guide on precompilation options, see the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
 
 ## Development Status and Roadmap
 
 ### Development Status
-Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
+Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. I am working hard to improve everything and welcome your contributions and feedback.
 
 ### Differences from classic Nunjucks
 
@@ -2983,37 +2600,30 @@ So: async builds get safer block-local semantics; fully synchronous templates ke
 ### Roadmap
 This roadmap outlines key features and enhancements that are planned or currently in progress.
 
-
 -   **Streaming support** - see the [Streaming Proposal](https://github.com/geleto/cascada/blob/master/docs/cascada/streaming.md)
 
 -   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
-    Support declaring variable dependencies wtih the `extern`, `reads`, and `modifies` keywords.
-
--   **Reading from the `@data` Object** in output operations
-    Enabling the ability to read from the `@data` object on the right side of `@data` expressions (e.g., `@data.user.name = @data.form.firstName + ' ' + @data.form.lastName`). This will allow for more powerfull data composition.
+    Support declaring variable dependencies with the `extern`, `reads`, and `modifies` keywords.
 
 -   **Expanded Sequential Execution (`!`) Support**
-    Enhancing the `!` marker to work on variables and not just objects from the global context. This is especially important for macro arguments as macros don't have access to the context object.
+    Enhancing the `!` marker to work on variables and not just objects from the global context.
 
 -   **Compound Assignment for Variables (`+=`, `-=`, etc.)**
-    Extending support for compound assignment operators (`+=`, `*=`, etc.) to regular variables (this is currently supported only for `@data` assignments). Like their `@data` counterparts, the default behavior of each operator will be overridable with custom methods.
+    Extending support for compound assignment operators to regular variables.
 
 -   **Root-Level Sequential Operator**
-    Allowing the sequential execution operator `!` to be used directly on root-level function calls (e.g., `!.saveToDatabase(data)`), simplifying syntax for global functions with side effects.
-
--   **Expanded Built-in `@data` Methods**
-    Adding comprehensive support for standard JavaScript array and string methods (e.g., `slice`, `replace`, `min`, `max`) as first-class operations within the `@data` handler.
+    Allowing the sequential execution operator `!` to be used directly on root-level function calls.
 
 -   **Enhanced Error Reporting**
-    Improving the debugging experience by providing detailed syntax and runtime error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
+    Improving the debugging experience with detailed syntax and runtime error messages.
 
 -   **Automated Dependency Declaration Tool**
-    A command-line tool that analyzes modular scripts (import, include, extends) to infer cross-file variable dependencies. This tool will automatically add the required extern, reads, and modifies declarations to your script files.
+    A command-line tool that analyzes modular scripts to infer cross-file variable dependencies.
 
 -   **Execution Replay and Debugging**
-    Creating an advanced logging system, via a dedicated output handler, to capture the entire execution trace. This will allow developers to replay and inspect the sequence of operations and variable states for complex debugging.
+    A dedicated logging system to capture the entire execution trace.
 
 -   **OpenTelemetry Integration for Observability**
-    Implementing native support for tracing using the OpenTelemetry standard. This will capture the inputs and outputs of scripts and templates, as well as the arguments and return values of individual function calls. This integration is designed for high-level observability, enabling developers to monitor data flow, analyze performance, and track costs (e.g., token usage in LLM calls) with platforms like MLflow's tracing system. It focuses on key I/O points rather than a complete execution trace.
+    Native support for tracing using the OpenTelemetry standard.
 
 -   **Robustness and Concurrency Validation**
