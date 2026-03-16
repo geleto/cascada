@@ -1,8 +1,5 @@
 # Cascada Script Documentation
 
-> **Note:** Output focus directives (`:data`, `:text`, `:value`, and custom `:handler` focus) have been removed.
-> Use explicit `return` statements (e.g., `return result.snapshot()`) to shape results.
-
 [Download as Markdown](https://raw.githubusercontent.com/geleto/cascada/master/docs/cascada/script.md)
 
 [Markdown for AI Coding Agents](https://raw.githubusercontent.com/geleto/cascada/refs/heads/master/docs/cascada/script-agent.md)
@@ -596,11 +593,6 @@ You can iterate over various collection types:
     endfor
     ```
 
-**Automatic Sequential Fallback**
-For safety, a `for` loop will automatically switch to **sequential execution** if you introduce dependencies between iterations. This happens if you:
-1.  **Modify a shared variable** (e.g., `total = total + 1`).
-2.  Use the sequential execution operator (`!`) on a function call inside the loop.
-
 **The `else` block**
 A `for` loop can have an `else` block that is executed only if the collection is empty:
 ```javascript
@@ -656,7 +648,7 @@ Use the following guidelines to determine if these properties are available:
     ✅ **Available (Async).** Cascada resolves `loop.length` and `loop.last` only after the **iteration** (fetching all items) has finished. This does **not** block the execution of loop bodies — they still run concurrently as items arrive — but expressions dependent on `loop.length` will wait until the end of the stream to evaluate.
 
 3.  **Sequential or Constrained Async Iterators:**
-    ❌ **Not Available.** When an async iterator is restricted — by `each`, a concurrency limit (`of N`), or automatic sequential fallback — it behaves like a stream. Cascada cannot see the end of the stream in advance, so `loop.length` and `loop.last` are undefined.
+    ❌ **Not Available.** When an async iterator is restricted — by `each` or a concurrency limit (`of N`) — it behaves like a stream. Cascada cannot see the end of the stream in advance, so `loop.length` and `loop.last` are undefined.
 
 4.  **`while` Loops:**
     ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations complete.
