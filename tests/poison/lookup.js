@@ -36,12 +36,6 @@
     return currentBuffer;
   }
 
-  async function expectLockPoison(lock, root) {
-    const output = runtime.getChannel(root, '!lockKey');
-    const errs = output._getSequentialPathPoisonErrors();
-    expect(Array.isArray(errs) && errs.length > 0).to.be(true);
-  }
-
   async function expectLockTrue(lock, root) {
     const output = runtime.getChannel(root, '!lockKey');
     const errs = output._getSequentialPathPoisonErrors();

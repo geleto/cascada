@@ -2233,8 +2233,8 @@
           expect(res.trim()).to.eql('expected');
         });
 
-        finish(done);
-      });
+      finish(done);
+    });
 
     it('should allow observation-like method calls in template call blocks', function (done) {
       render(
