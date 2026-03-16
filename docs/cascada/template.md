@@ -1,8 +1,5 @@
 # Cascada Template Documentation
 
-> **Note:** Output focus directives (`:data`, `:text`, `:value`, and custom `:handler` focus) have been removed.
-> Use explicit `return` statements (e.g., `return data.snapshot()`) to shape results in scripts.
-
 **Reference Documentation:**
 
 * [Cascada Script Documentation](https://geleto.github.io/cascada-script/) — Complete reference for Cascada Script features
@@ -12,7 +9,7 @@ This document focuses on the **differences** between Cascada Script and Cascada 
 
 ---
 
-Cascada Templates provide an alternative syntax for writing Cascada workflows using a template-based approach similar to Nunjucks/Jinja2. While Cascada Script is optimized for data orchestration with explicit output commands, Cascada Templates are ideal for text generation with embedded logic.
+Cascada Templates provide an alternative syntax for writing Cascada workflows using a template-based approach similar to Nunjucks/Jinja2. While Cascada Script is optimized for data orchestration with explicit channel declarations, Cascada Templates are ideal for text generation with embedded logic.
 
 Cascada maintains full compatibility with Nunjucks when running in non-async mode.
 
@@ -20,42 +17,43 @@ Cascada maintains full compatibility with Nunjucks when running in non-async mod
 
 Cascada Templates are built on top of Nunjucks and support most Cascada Script **control-flow and expression** features, but with these key differences:
 
-* **Text output is the default** — Content outside tags renders as text (no `@text()` needed)
+* **Text output is the default** — Content outside tags renders as text; in scripts, use a `text` channel to build text output explicitly
 * **Expressions in `{{ }}`** — Use double braces for value interpolation
-* **No `@` output handlers** — The `@data`, `@text`, and custom handlers aren't used
+* **No channels** — The `data`, `text`, `sink`, and `sequence` channel types are script-only; templates only output text
 * **Tags use `{% %}`** — All logic goes inside tag delimiters (use standard Nunjucks whitespace control where needed)
-* **`set` for variables and assignment** — Use Nunjucks `{% set %}` syntax instead of Script’s `var` and `=`
+* **`set` for variables and assignment** — Use Nunjucks `{% set %}` syntax instead of Script's `var` and `=`
 * **`do` for execution-only expressions** — Standalone calls and sequence path repair (`!!`) use `{% do %}`
 
 ## Script ↔ Template Syntax Reference
 
 | Feature                  | Cascada Script                                             | Cascada Template                                                             |
 | ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **Text Output**          | `@text("Hello " + user.name)`                              | `Hello {{ user.name }}`                                                      |
-| **Expressions**          | `@text(total * 1.2)`                                       | `{{ total * 1.2 }}`                                                          |
+| **Text channel**         | `text t`                                                   | *(text output is implicit — no declaration needed)*                          |
+| **Text Output**          | `t("Hello " + user.name)`                                  | `Hello {{ user.name }}`                                                      |
+| **Expressions**          | `t(total * 1.2)`                                           | `{{ total * 1.2 }}`                                                          |
 | **Variable Declaration** | `var user = fetchUser(1)`                                  | `{% set user = fetchUser(1) %}`                                              |
 | **Assignment**           | `count = count + 1`                                        | `{% set count = count + 1 %}`                                                |
 | **Multiple Variables**   | `var x, y = none`                                          | `{% set x, y = none %}`                                                      |
 | **Comments**             | `// Single line`<br>`/* Multi line */`                     | `{# Single or multi-line #}`                                                 |
-| **Filters**              | `@text(name \| upper)`                                     | `{{ name \| upper }}`                                                        |
-| **Filter with Args**     | `@text(items \| join(", "))`                               | `{{ items \| join(", ") }}`                                                  |
-| **Execution-only Call**  | `items.push("new")`                                        | `{% do items.push("new") %}`                                                 |
+| **Filters**              | `t(name \| upper)`                                         | `{{ name \| upper }}`                                                        |
+| **Filter with Args**     | `t(items \| join(", "))`                                   | `{{ items \| join(", ") }}`                                                  |
+| **Execution-only Call**  | `service.notify(user)`                                     | `{% do service.notify(user) %}`                                              |
 | **Sequence Path Repair** | `user.profile!!`                                           | `{% do user.profile!! %}`                                                    |
-| **If Statement**         | `if user.age >= 18`<br>  `...`<br>`endif`                  | `{% if user.age >= 18 %}`<br>  `...`<br>`{% endif %}`                        |
-| **For Loop**             | `for item in items`<br>  `...`<br>`endfor`                 | `{% for item in items %}`<br>  `...`<br>`{% endfor %}`                       |
-| **Each Loop**            | `each item in items`<br>  `...`<br>`endeach`               | `{% each item in items %}`<br>  `...`<br>`{% endeach %}`                     |
-| **While Loop**           | `while count < 10`<br>  `...`<br>`endwhile`                | `{% while count < 10 %}`<br>  `...`<br>`{% endwhile %}`                      |
-| **Switch**               | `switch value`<br>  `case 1`<br>    `...`<br>`endswitch`   | `{% switch value %}`<br>  `{% case 1 %}`<br>    `...`<br>`{% endswitch %}`   |
-| **Macro Definition**     | `macro greet(name)`<br>  `...`<br>`endmacro`               | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
-| **Macro Calls**          | `greet("Alice")`                                           | `{{ greet("Alice") }}`                                                       |
-| **Call Block**           | `call wrapper()`<br>  `(x) :data`<br>  `...`<br>`endcall`  | `{% call wrapper() %}`<br>  `...`<br>`{% endcall %}`                         |
-| **Call Block Assignment**| `var x = call wrapper()`<br>  `(x) :data`<br>  `...`<br>`endcall`<br>`x = call wrapper() ... endcall` | *(script only)* |
+| **If Statement**         | `if user.age >= 18`<br>  `...`<br>`elseif ...`<br>  `...`<br>`else`<br>  `...`<br>`endif` | `{% if user.age >= 18 %}`<br>  `...`<br>`{% elseif ... %}`<br>  `...`<br>`{% else %}`<br>  `...`<br>`{% endif %}` |
+| **For Loop**             | `for item in items`<br>  `...`<br>`endfor`                 | `{% for item in items %}`<br>  `...`<br>`{% endfor %}`                       |
+| **Each Loop**            | `each item in items`<br>  `...`<br>`endeach`               | `{% each item in items %}`<br>  `...`<br>`{% endeach %}`                     |
+| **While Loop**           | `while count < 10`<br>  `...`<br>`endwhile`                | `{% while count < 10 %}`<br>  `...`<br>`{% endwhile %}`                      |
+| **Switch**               | `switch value`<br>  `case 1`<br>    `...`<br>`endswitch`   | `{% switch value %}`<br>  `{% case 1 %}`<br>    `...`<br>`{% endswitch %}`   |
+| **Macro Definition**     | `macro greet(name)`<br>  `...`<br>`endmacro`               | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
+| **Macro Calls**          | `var result = greet("Alice")`                              | `{{ greet("Alice") }}`                                                       |
+| **Call Block**           | `var x = call wrapper()`<br>  `(param)`<br>  `return value`<br>`endcall` | `{% call wrapper() %}`<br>  `...`<br>`{% endcall %}`              |
 | **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}`                                                             |
-| **Block Assignment**     | *(not available in script mode anymore)*                   | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
+| **Block Assignment**     | *(not available in scripts)*                               | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
 | **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
 | **Include**              | `include "header.html"`                                    | `{% include "header.html" %}`                                                |
-| **Import**               | `from "utils.html" import helper`                          | `{% from "utils.html" import helper %}`                                      |
-| **Guard Block**          | `guard`<br>  `...`<br>  `recover`<br>  `...`<br>`endguard` | `{% guard %}`<br>  `...`<br>  `{% recover %}`<br>  `...`<br>`{% endguard %}` |
+| **Import namespace**     | `import "utils.html" as utils`                             | `{% import "utils.html" as utils %}`                                         |
+| **Import names**         | `from "utils.html" import helper`                          | `{% from "utils.html" import helper %}`                                      |
+| **Guard Block**          | `guard`<br>  `...`<br>  `recover`<br>  `...`<br>`endguard` | `{% guard %}`<br>  `...`<br>  `{% recover %}`<br>  `...`<br>`{% endguard %}` |
 | **Revert**               | `revert`                                                   | `{% revert %}`                                                               |
 
 ## Examples
@@ -63,18 +61,19 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 ### Script Example
 
 ```javascript
-:text
-
 var user = fetchUser(userId)
 var posts = fetchPosts(user.id)
 
-@text("# User Profile\n\n")
-@text("Name: " + user.name + "\n")
-@text("Posts:\n")
+text output
+output("# User Profile\n\n")
+output("Name: " + user.name + "\n")
+output("Posts:\n")
 
 for post in posts
-  @text("- " + post.title + "\n")
+  output("- " + post.title + "\n")
 endfor
+
+return output.snapshot()
 ```
 
 ### Equivalent Template
@@ -92,34 +91,9 @@ Posts:
 {% endfor %}
 ```
 
-## Block Assignment in Templates
-
-Templates use Nunjucks block assignment syntax:
-
-```nunjucks
-{% set summary %}
-  Total: {{ items.length }} items
-{% endset %}
-```
-
-This is the template equivalent for capturing a rendered fragment into a variable.
-
 ## The `do` Tag
 
-The `{% do %}` tag executes expressions without rendering any output. Use it when you want something to **run**, not render.
-
-In Script mode, the equivalent is simply writing the expression on its own line (without a keyword or assignment).
-
-### Execution-only Calls
-
-```nunjucks
-{% set items = [] %}
-{% do items.push("first") %}
-{% do items.push("second") %}
-{% do logger.info("Added " + items.length + " items") %}
-
-Items: {{ items | join(", ") }}
-```
+The `{% do %}` tag executes expressions without rendering any output. In Script mode, the equivalent is simply writing the expression on its own line.
 
 ### Sequence Path Repair (`!!`)
 
@@ -134,96 +108,69 @@ Database: {{ config.database.connection.host }}
 ```
 
 
+## Render vs Return: The Core Difference
+
+Templates and scripts have a fundamentally different output model:
+
+- **Templates render** — macros, call blocks, and the template itself write text directly to an output stream. `{{ expr }}` interpolates inline; `caller()` renders the call block's content inline at the point of invocation.
+- **Scripts return** — macros and call blocks produce values via explicit `return`. `caller()` returns the value that the call block body returned. The script's final result is whatever `return` produces (a plain value, a channel snapshot, or a composed object).
+
+This means the same logical structure behaves differently across modes:
+
+| | Cascada Script | Cascada Template |
+|---|---|---|
+| **Macro result** | Returned as a value — assign with `var result = myMacro(args)` | Rendered inline — invoke with `{{ myMacro(args) }}` |
+| **`caller()` result** | Returns the call block's `return` value | Renders the call block's content inline |
+| **Script/template result** | Explicit `return value` or `return ch.snapshot()` | Text accumulated in the output stream |
+
 ## Call Blocks and `caller()`
 
-Call blocks allow passing executable code to macros as callbacks. The key difference between Script and Template modes is **what `caller()` returns**.
-
-### Script Mode: Returns Isolated Results
-
-In Script mode, `caller()` returns an isolated result controlled by the focus directive (`:data`, `:text`, etc.):
+In Script mode, `caller()` returns the value explicitly returned by the call block body. Call blocks must always use assignment form:
 
 ```javascript
 macro map(items)
+  data results
   for item in items
-    var result = caller(item)  // Captures isolated result
-    @data.results.push(result)
+    var result = caller(item)   // receives the call block's return value
+    results.items.push(result)
   endfor
+  return results.snapshot()
 endmacro
 
-call map([1, 2, 3])
-  (n) :data  // Focus directive specifies return type
-  @data.squared = n * n
+var mapped = call map([1, 2, 3])
+  (n)
+  return n * n   // explicit return — this is what caller() receives
 endcall
 ```
-
-You can also **assign** a call block directly in scripts:
 
 ```javascript
-var result = call map([1, 2, 3])
-  (n) :data
-  @data.squared = n * n
+// assignment form (only form supported in scripts):
+var x = call wrapper(args)
+  (param)
+  return value
 endcall
 ```
 
-**Key points:**
-- Call block builds output in **isolation**
-- Result is **captured** by the macro using `var result = caller()`
-- Focus directive (`:data`) determines what is returned
-- Used for data processing, filtering, and transformations
-
-### Template Mode: Writes to Parent Output
-
-In Template mode, `caller()` writes **directly to the parent's output** (no isolation):
-
-```nunjucks
-{% macro card(title) %}
-<div class="card">
-  <h2>{{ title }}</h2>
-  {{ caller() }}  {# Inline output #}
-</div>
-{% endmacro %}
-
-{% call card("Welcome") %}
-  <p>Hello!</p>  {# No focus, no isolation #}
-{% endcall %}
-```
-
-**Output:**
-```html
-<div class="card">
-  <h2>Welcome</h2>
-  <p>Hello!</p>
-</div>
-```
-
-**Key points:**
-- Call block output appears **inline** where `caller()` is invoked
-- No return value or focus directive
-- Used for layout composition and content wrapping
 
 ## `guard`, `recover`, and `revert`
 
-Cascada Templates support the same execution-control constructs as Cascada Script.
-In templates, their relevant effect is that **text output from a scope may be skipped**.
-
-### `guard` / `recover`
-
-A `guard` defines a protected scope.
-If the guard fails, **text output from the guarded block is skipped**.
-An optional `recover` block may render alternative text on failure.
-
-```nunjucks
-{% guard %}
-  {% do riskyCall() %}
-  Operation succeeded.
-{% recover err %}
-  Operation failed: {{ err.message }}
-{% endguard %}
-```
+`guard` and `recover` work the same as in scripts. In templates, the relevant effect is that **text output from the guarded scope is discarded** if the guard fails (rather than restoring channel state, which is the script use case).
 
 ### `revert`
 
-`revert` unconditionally skips text output from the current macro or template scope.
+`revert` unconditionally triggers rollback of the current guard scope, discarding its output and running the `recover` block if present.
+
+```nunjucks
+{% guard %}
+  {% set result = riskyCall() %}
+  {% if result is error %}
+    {% revert %}
+  {% endif %}
+  Result: {{ result }}
+{% recover %}
+  Could not load result.
+{% endguard %}
+```
 
 ## Variable Scoping in Async Mode
 
@@ -235,18 +182,21 @@ In async Cascada templates, `if` and `switch` create local variable scopes. Vari
 
 In async mode, variable scope changed:
 
-* `include` in async termplates retains access to parent-scope variables (for example, values set with `{% set %}` before the include).
+* `include` in async templates retains access to parent-scope variables (for example, values set with `{% set %}` before the include).
 * `extends` and `super` in scripts and async templates no longer can read parent-scope template variables.
 
 ## Unsupported Features
 
-The following Cascada Script features are **not available** in templates:
+### Script features not available in templates
 
-* **Output handlers**: `@data`, `@text`, and custom `@` commands (including all `@data.path` operations)
-* **Output focus directives**: `:data`, `:text`, `:handlerName`
-* **Property assignment**: `obj.prop = value` is not supported
+* **Channels**: `data`, `text`, `sink`, and `sequence` channel declarations are script-only
+* **Property assignment**: `obj.prop = value` is not supported; use `{% set obj = ... %}` to reassign entire variables
 
-**Note:** Templates only output text, so focus directives are not needed. Use `{% set var %}...{% endset %}` for block assignment. Like Nunjucks, property assignment is not supported—use `{% set %}` to reassign entire variables.
+### Template features not available in scripts
+
+* **Implicit text output**: scripts have no implicit text rendering; use a `text` channel and return `t.snapshot()`
+* **Block assignment** (`{% set var %}...{% endset %}`): not available in scripts; use a `text` channel instead
+* **`{{ }}` interpolation and `{% %}` tags**: script syntax uses no delimiters
 
 ## When to Use Templates vs Script
 
