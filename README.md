@@ -10,6 +10,8 @@
 
 Both share the same core philosophy: **write clear, linear logic while the engine handles parallel execution, ordering guarantees, and error propagation automatically.**
 
+What makes them remarkable is precisely how unremarkable they appear. There's no special syntax, no await, no Promise.all - just clean code that is instantly familiar to developers and happens to execute concurrently.
+
 **The problem they solve:** Traditional async/await often forces you to choose between readable sequential code OR maximum concurrency. Cascada gives you both. Independent operations run in parallel automatically, while the engine manages dependencies and assembles results deterministically.
 
 **How it works:**
