@@ -123,7 +123,7 @@ Cascada Script offers a modern, expressive syntax designed to be instantly famil
 
 ### Features at a Glance
 
-What makes Cascada Script remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages — no async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic; the engine handles the parallelism.
+What makes Cascada Script remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages - no async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic; the engine handles the parallelism.
 
 | Feature | Syntax | Notes |
 |---|---|---|
@@ -153,7 +153,7 @@ Everything above is the language you already know. Cascada adds a small set of s
 | Cascada Feature | Syntax | Purpose |
 |---|---|---|
 | Implicit parallelism | *(no syntax)* | Independent operations run concurrently automatically |
-| `data` channel | `data name` | Build structured objects and arrays from parallel code — writes are concurrent, result is in source order |
+| `data` channel | `data name` | Build structured objects and arrays from parallel code - writes are concurrent, result is in source order |
 | `text` channel | `text name` | Generate text from parallel code, assembled in source order |
 | `sink` channel | `sink name = obj` | Send ordered commands to an external stateful object |
 | `sequence` channel | `sequence name = obj` | Sequential reads and calls on an external object |
@@ -248,7 +248,7 @@ var point = {x: 1, y: 2}
 point.x = slowApiCall()
 return {
   x: point.x,  // waits because this value is being read
-  y: point.y   // no wait needed — point.y is already resolved
+  y: point.y   // no wait needed - point.y is already resolved
 }
 ```
 
@@ -256,43 +256,45 @@ return {
 
 #### Mutation Methods and Side Effects
 
-Direct assignment (`=` and property `=`) is the safe, idiomatic way to update values in Cascada. **Mutation methods** — methods that modify an existing value in-place rather than producing a new one — are a different matter. Common examples are `.push()` on arrays and repeated string concatenation via a mutating method. These are **side effects** in exactly the same sense as writing to a database or calling a stateful external service.
+Direct assignment (`=` and property `=`) is the safe, idiomatic way to update values in Cascada. **Mutation methods** - methods that modify an existing value in-place rather than producing a new one - are a different matter. This includes standard JavaScript array and string methods like `.push()`, `.splice()`, `.sort()`, and `.concat()`. These are **side effects** in exactly the same sense as writing to a database or calling a stateful external service.
 
-In parallel code, calling `.push()` on the same plain `var` from multiple concurrent branches races — whichever branch runs last wins, and source-code order is not preserved:
+Calling a mutation method on a plain `var` inside a parallel `for` loop is unsafe - iterations run concurrently, so whichever branch finishes last wins and source-code order is not preserved:
 
 ```javascript
-// ⚠️ UNSAFE in a parallel 'for' loop — iterations are concurrent
+// ❌ UNSAFE - parallel iterations race on the same var
 var items = []
 for id in ids
-  var item = fetchItem(id)
-  items.push(item)   // order not guaranteed
+  items.push(fetchItem(id))  // order not guaranteed
 endfor
 ```
 
-Two safe alternatives:
+Three tools handle this correctly:
 
-**`data` channel (preferred for parallel code)** — writes execute concurrently, but the assembled result always matches source-code order:
-
+**`data` channel (preferred for building collections)** - writes run concurrently and the assembled result always matches source-code order:
 ```javascript
-data items
+data result
 for id in ids
   var item = fetchItem(id)
-  items.values.push(item)   // concurrent writes, ordered result
+  result.items.push(item)
 endfor
-return items.snapshot()
+return result.snapshot()
 ```
 
-**Sequential `!` operator** — enforces strict execution order. Only available on static paths from the script's context (not on local `var` values); see [Managing Side Effects: Sequential Execution](#managing-side-effects-sequential-execution).
-
+**`each` loop (sequential iteration)** - runs one iteration at a time, making mutation methods on a plain `var` safe:
 ```javascript
-// 'collection' is a context object — ! makes each push wait for the previous one
-for id in ids
-  var item = fetchItem(id)
-  collection!.push(item)   // sequential; the loop body itself is still parallel
-endfor
+var items = []
+each id in ids
+  items.push(fetchItem(id))  // safe: each iteration completes before the next starts
+endeach
 ```
 
-Use `data` channels when you need ordered collection from parallel code. Reserve `!` for interactions with stateful external objects in the context.
+**`!` operator (for context objects)** - serializes calls on an object from the script context; see [Managing Side Effects: Sequential Execution](#managing-side-effects-sequential-execution):
+```javascript
+// 'collection' is a context object
+for id in ids
+  collection!.push(fetchItem(id))  // sequential; rest of the loop still runs in parallel
+endfor
+```
 
 **Scoping: No Reuse of Visible Names**
 
@@ -355,7 +357,7 @@ return user.name
 **Context values follow the same value semantics as variables:** when you assign a context property to a `var`, you get an independent deep copy. Any changes to that variable do not affect the original context object.
 
 ```javascript
-var config = appConfig      // deep copy — changes here won't affect appConfig
+var config = appConfig      // deep copy - changes here won't affect appConfig
 config.debug = true
 ```
 
@@ -426,11 +428,10 @@ return {
 #### Global Functions
 Global functions like `range` can be called directly.
 ```javascript
-data items
+// range(n) returns [0, 1, ..., n-1]
 for i in range(3)
-  items.values.push("Item " + i)
+  processItem(i)  // called with i = 0, 1, 2
 endfor
-return items.snapshot()
 ```
 
 #### Additional Global Functions
@@ -439,14 +440,14 @@ return items.snapshot()
 The `cycler` function creates an object that cycles through a set of values each time its `next()` method is called.
 
 ```javascript
-// cycler requires sequential order — use 'each' so calls to next() stay in order
-data report
+// cycler requires sequential order - use 'each' so calls to next() stay in order
+data rows = []
 var rowClass = cycler("even", "odd")
 each item in items
   // First item gets "even", second "odd", third "even", etc.
-  report.rows.push({ class: rowClass.next(), value: item })
+  rows.push({ class: rowClass.next(), value: item })
 endeach
-return report.snapshot()
+return rows.snapshot()
 ```
 
 ##### `joiner([separator])`
@@ -514,7 +515,7 @@ default
 endswitch
 ```
 
-**Important:** Unlike C-style languages, Cascada's `switch` does **not** have fall-through behavior — each `case` exits automatically without needing a `break`. The `default` branch runs when no `case` matches.
+**Important:** Unlike C-style languages, Cascada's `switch` does **not** have fall-through behavior - each `case` exits automatically without needing a `break`. The `default` branch runs when no `case` matches.
 
 ### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
@@ -645,10 +646,10 @@ Use the following guidelines to determine if these properties are available:
     ✅ **Always Available.** Because the size of an array or object is known upfront, these properties are available regardless of whether the loop runs in parallel, sequentially, or with a concurrency limit.
 
 2.  **Parallel Async Iterators:**
-    ✅ **Available (Async).** Cascada resolves `loop.length` and `loop.last` only after the **iteration** (fetching all items) has finished. This does **not** block the execution of loop bodies — they still run concurrently as items arrive — but expressions dependent on `loop.length` will wait until the end of the stream to evaluate.
+    ✅ **Available (Async).** Cascada resolves `loop.length` and `loop.last` only after the **iteration** (fetching all items) has finished. This does **not** block the execution of loop bodies - they still run concurrently as items arrive - but expressions dependent on `loop.length` will wait until the end of the stream to evaluate.
 
 3.  **Sequential or Constrained Async Iterators:**
-    ❌ **Not Available.** When an async iterator is restricted — by `each` or a concurrency limit (`of N`) — it behaves like a stream. Cascada cannot see the end of the stream in advance, so `loop.length` and `loop.last` are undefined.
+    ❌ **Not Available.** When an async iterator is restricted - by `each` or a concurrency limit (`of N`) - it behaves like a stream. Cascada cannot see the end of the stream in advance, so `loop.length` and `loop.last` are undefined.
 
 4.  **`while` Loops:**
     ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations complete.
@@ -677,9 +678,9 @@ endif
 // If user was an error, accessLevel is now poisoned
 ```
 
-This behavior is important to understand: it's not just that the code doesn't execute — any variables or outputs that would have been assigned in any of the branches become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
+This behavior is important to understand: it's not just that the code doesn't execute - any variables or outputs that would have been assigned in any of the branches become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
 
-**Note:** `switch` statements behave identically — if the switch expression is an Error Value, all `case` and `default` branches are skipped and their outputs become poisoned.
+**Note:** `switch` statements behave identically - if the switch expression is an Error Value, all `case` and `default` branches are skipped and their outputs become poisoned.
 
 #### Error handling with loops
 
@@ -698,7 +699,7 @@ endfor
 // If posts was an error, out is now poisoned
 ```
 
-Similar to conditionals, the loop doesn't just skip execution — any outputs or variables that the loop body would have modified become poisoned, ensuring error detection downstream.
+Similar to conditionals, the loop doesn't just skip execution - any outputs or variables that the loop body would have modified become poisoned, ensuring error detection downstream.
 
 For details on detecting and recovering from errors in your scripts, see the [Error Handling](#error-handling) section.
 
@@ -714,7 +715,7 @@ Channels are named values you build over time. You write into them with assignme
 | `sink name = initializer` | Sink channel | Send ordered commands to an external object |
 | `sequence name = initializer` | Sequence channel | Sequential reads and calls on an external object |
 
-Use `name.snapshot()` to read a channel's current value. `snapshot()` is an observable operation — it waits for any pending writes to finish before returning. Because of that, it is more expensive than reading a plain `var`, so prefer `var` for simple cases and reach for channels when you need ordered assembly or external interaction.
+Use `name.snapshot()` to read a channel's current value. `snapshot()` is an observable operation - it waits for any pending writes to finish before returning. Because of that, it is more expensive than reading a plain `var`, so prefer `var` for simple cases and reach for channels when you need ordered assembly or external interaction.
 
 ### A Simple Example
 
@@ -778,7 +779,7 @@ return result.snapshot()
 
 Channel writes execute as soon as their required input data is available, following the same data-driven scheduling as the rest of Cascada. The key guarantee is that the **assembled result is always in source-code order**, regardless of when individual writes actually execute.
 
-> **Note:** Direct assignment to `var` is safe in concurrent code — Cascada tracks data dependencies automatically. But mutation methods like `.push()` are side effects: when called from parallel branches on the same `var`, their order is not guaranteed. Use a `data` channel when you need ordered collection or assembly from parallel code. See [Mutation Methods and Side Effects](#mutation-methods-and-side-effects) for details.
+> **Note:** Direct assignment to `var` is safe in concurrent code - Cascada tracks data dependencies automatically. But mutation methods like `.push()` are side effects: when called from parallel branches on the same `var`, their order is not guaranteed. Use a `data` channel when you need ordered collection or assembly from parallel code. See [Mutation Methods and Side Effects](#mutation-methods-and-side-effects) for details.
 
 This makes channels especially powerful for parallel operations. In the example below, all `fetchEmployeeDetails` calls run concurrently. Each `push` to the channel executes as soon as its `details` variable is ready, and the final array reflects the source-code order of the loop iterations.
 
@@ -828,7 +829,7 @@ return report.snapshot()
 </table>
 
 ### The `data` Channel: Building Structured Data
-The `data` channel is the main tool for constructing structured output. It is especially useful when parallel code needs to build arrays or objects in a predictable order — all writes execute concurrently, but the assembled result always matches source-code order. This is the right alternative to [mutation methods on plain `var` values](#mutation-methods-and-side-effects), which race in parallel code.
+The `data` channel is the main tool for constructing structured output. It is especially useful when parallel code needs to build arrays or objects in a predictable order - all writes execute concurrently, but the assembled result always matches source-code order. This is the right alternative to [mutation methods on plain `var` values](#mutation-methods-and-side-effects), which race in parallel code.
 
 Here's a simple example:
 
@@ -893,7 +894,7 @@ The `data` channel automatically initializes **structural values** when assembli
   out.items.push("a")
   ```
 
-* **Strings (`""`) — string operations only**
+* **Strings (`""`) - string operations only**
   Created on first string-specific operation.
 
   ```cascada
@@ -1064,7 +1065,7 @@ Two write forms:
 In programming, a **sink** is an object you send commands to. In Cascada, a `sink` channel wraps an external object from the context and applies its method calls in source-code order. Use it when the important thing is sending ordered commands, not getting a return value from each call.
 
 ```javascript
-// JS setup — the sink object comes from context
+// JS setup - the sink object comes from context
 const context = {
   logger: {
     entries: [],
@@ -1097,7 +1098,7 @@ return collector.snapshot()
 - Call methods on the sink: `name.method(...)`, including sub-paths
 - Read results via `name.snapshot()`
 - Snapshot resolution tries (in order): `snapshot()`, `getReturnValue()`, `finalize()`, the sink object itself
-- **`name.snapshot()` is invalid inside a `guard` block** — the guard is transactional; reading a mid-transaction snapshot can expose state that may be rolled back
+- **`name.snapshot()` is invalid inside a `guard` block** - the guard is transactional; reading a mid-transaction snapshot can expose state that may be rolled back
 
 **Difference from `sequence`:** A `sink` is for ordered commands where each call is mainly about the side effect. A `sequence` is for ordered reads and calls where you also need the returned value right away.
 
@@ -1130,7 +1131,7 @@ Show an invalid property assignment:
 
 ```javascript
 sequence db = services.db
-db.connectionState = "offline"  // ❌ compile error — assignment not allowed
+db.connectionState = "offline"  // ❌ compile error - assignment not allowed
 ```
 
 > ⚠️ Guard transaction hooks (`begin`/`commit`/`rollback`) are available, but this area is still evolving.
@@ -1190,7 +1191,7 @@ var user = fetchUser(userId)  // May fail
 // If user is an Error Value, this write poisons out
 out.userName = user.name
 
-// out is now poisoned — returning it will fail the script
+// out is now poisoned - returning it will fail the script
 return out.snapshot()
 ```
 
@@ -1425,7 +1426,7 @@ When an Error Value is returned or reaches a channel without being handled, the 
 
 ```javascript
 var user = fetchUser(999)  // ❌ Returns an error
-return user.name  // ❌ Unhandled error — script fails
+return user.name  // ❌ Unhandled error - script fails
 ```
 
 In JavaScript/TypeScript, you can catch and inspect the error:
@@ -1546,13 +1547,13 @@ var summary = user.name + " - " + profile.bio + " - " + settings.theme
 if summary is error
   var count = summary#errors | length  // 3
 
-  data errorLog
-  for err in summary#errors
-    errorLog.errors.push({
+  data errorList = []
+  each err in summary#errors
+    errorList.push({
       message: err#message,
       source: err#source.origin
     })
-  endfor
+  endeach
 
   summary = "User data unavailable"
 endif
@@ -1622,7 +1623,7 @@ You can think of `guard` like a save point: if the block finishes in an error, t
 guard [targets...]
   // 1. Attempt risky operations
   // 2. Changes to guarded targets are tracked for recovery
-recover err  // (Optional — binds the error payload for inspection)
+recover err  // (Optional - binds the error payload for inspection)
   // 3. Runs ONLY if the guard block remains poisoned
   // 4. Guarded state has already been restored
 endguard
@@ -1859,7 +1860,7 @@ return passwordField
 
 ### Returning a Computed Value
 
-Macros can `return` any value — a primitive, an object literal, a variable, or a channel snapshot:
+Macros can `return` any value - a primitive, an object literal, a variable, or a channel snapshot:
 
 ```javascript
 macro computeTotal(items)
@@ -1889,7 +1890,7 @@ In **scripts**, `call` blocks must be used in assignment form:
 ```javascript
 var x = call macroName(args)
   (param1, param2)  // Declare parameters
-  // Block body — use return to provide the value
+  // Block body - use return to provide the value
   return someValue
 endcall
 ```
@@ -1917,11 +1918,11 @@ If no parameters are needed, the `()` can be omitted from the call block.
 
 ```javascript
 macro grid(rows, cols)
-  data cells
+  data cells = []
   for y in range(rows)
     for x in range(cols)
       var cell = caller(x, y)  // Pass coordinates
-      cells.items.push(cell)
+      cells.push(cell)
     endfor
   endfor
   return cells.snapshot()
@@ -2014,7 +2015,7 @@ This ensures the call block remains decoupled from the macro's implementation de
 - **Parameters**: The macro explicitly passes values via `caller(args)`, declared as `(params)` in the call block header
 - **Return value**: The value provided by `return` in the call block body is returned by `caller()` in the macro
 - **Caller's context**: The block reads variables from the scope where it was written, not the macro's internal scope
-- **Execution control**: The macro decides when — and how many times — to invoke `caller()`
+- **Execution control**: The macro decides when - and how many times - to invoke `caller()`
 - **Isolated scope**: Writes inside the call block stay local; the macro sees only what `caller()` returns
 
 ### Error handling and recovery with macros

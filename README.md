@@ -5,8 +5,8 @@
 
 **Cascada** is a data-orchestration engine for JavaScript and TypeScript applications, designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
-- **[Cascada Script](https://geleto.github.io/cascada-script/)** — A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
-- **[Cascada Template](docs/cascada/templating.md)** — Template syntax with the same parallel execution capabilities for dynamic content generation
+- **[Cascada Script](https://geleto.github.io/cascada-script/)** - A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
+- **[Cascada Template](docs/cascada/templating.md)** - Template syntax with the same parallel execution capabilities for dynamic content generation
 
 Both share the same core philosophy: **write clear, linear logic while the engine handles parallel execution, ordering guarantees, and error propagation automatically.**
 
@@ -16,11 +16,11 @@ What makes them remarkable is precisely how unremarkable they appear. There's no
 
 **How it works:**
 
-* ⚡ **Parallel by default** — Independent operations execute concurrently without `async`, `await`, or promise management
-* 🚦 **Data-driven execution** — Operations run automatically when their inputs are ready, eliminating race conditions by design
-* ➡️ **Sequential when needed** — Use a simple `!` marker to enforce ordering for side-effectful operations
-* 📋 **Deterministic outputs** — Concurrent execution, sequential results—final outputs assemble exactly as written
-* ☣️ **Errors as data** — Failures propagate through the dataflow without stopping unrelated work
+* ⚡ **Parallel by default** - Independent operations execute concurrently without `async`, `await`, or promise management
+* 🚦 **Data-driven execution** - Operations run automatically when their inputs are ready, eliminating race conditions by design
+* ➡️ **Sequential when needed** - Use a simple `!` marker to enforce ordering for side-effectful operations
+* 📋 **Deterministic outputs** - Concurrent execution, sequential results—final outputs assemble exactly as written
+* ☣️ **Errors as data** - Failures propagate through the dataflow without stopping unrelated work
 
 **Perfect for:**
 - AI and LLM orchestration
@@ -89,15 +89,18 @@ Cascada replaces traditional try/catch exceptions with a data-centric error mode
     import { AsyncEnvironment } from 'cascada-engine';
     const env = new AsyncEnvironment();
     const script = `
-      data result
-      result.user = {name: 'Alice', id: 123, log: "User profile created. "}
-      // Append to a string property within the data channel
-      result.user.log.append(" Login successful.")
-      return result.snapshot()
+      // fetchUser and fetchSettings run in parallel
+      var user = fetchUser(123)
+      var settings = fetchSettings(123)
+      return { greeting: "Hello, " + user.name, theme: settings.theme }
     `;
-    const { user } = await env.renderScriptString(script, {});
-    console.log(user.name); // Alice
-    console.log(user.log);  // User profile created. Login successful.
+    const context = {
+      fetchUser: async (id) => ({ name: 'Alice', id }),
+      fetchSettings: async (id) => ({ theme: 'dark' })
+    };
+    const result = await env.renderScriptString(script, context);
+    console.log(result.greeting); // Hello, Alice
+    console.log(result.theme);    // dark
     ```
 
 ## Core Concepts (Deeper Dive)
@@ -137,7 +140,7 @@ return {
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
-{# fetchUser() and fetchConfig() are independent #}
+{# fetchUser(), fetchConfig() are independent #}
 {# and will run in parallel. #}
 {% set user = fetchUser(123) %}
 {% set config = fetchSiteConfig() %}
@@ -163,9 +166,9 @@ While independent operations run in parallel, Cascada ensures that **dependent o
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// getUser() and getFooter() run in parallel.
+// getUser(), getFooter() run in parallel.
 // getPosts(user.id) depends on `user`, so it
-// waits for getUser() to complete before starting.
+// waits for getUser() to complete
 var user = getUser()
 var posts = getPosts(user.id)
 var footer = getFooter()
@@ -228,10 +231,12 @@ return output.snapshot()
 
 <h1>{{ post.title }}</h1>
 <ul>
-  {# The loop iterates after post is resolved #}
+  {# Iterates after post is resolved #}
   {# over the async comments iterator. #}
   {% for comment in fetchComments(post.id) %}
-    <li>{{ comment.author }}: {{ comment.body }}</li>
+    <li>
+{{ comment.author }}: {{ comment.body }}
+    </li>
   {% endfor %}
 </ul>
 ```
@@ -270,7 +275,7 @@ account!.withdraw(50)
 
 ```njk
 {# 'account' is provided via context #}
-{# The `!` on deposit() creates a sequence for 'account'. #}
+{# `!account` creates a sequence for the path #}
 
 {% do account!.deposit(100) %}
 {% do account.getStatus() %}
@@ -301,13 +306,13 @@ var productIds = [101, 205, 302]
 data report
 report.totalReviews = 0 // Initialize
 
-// Each loop iteration runs in parallel.
+// Each iteration runs in parallel.
 for id in productIds
   // fetch concurrently:
   var details = fetchProductDetails(id)
   var reviews = fetchProductReviews(id)
 
-  // The final `report.products` array is
+  // The `report.products` array is
   // built in the order of `productIds`
   // [101, 205, 302], not the order in
   // which the data resolves.
@@ -325,8 +330,8 @@ return report.snapshot()
 <summary><strong>Cascada Template (Predictable Output)</strong></summary>
 
 ```njk
-{# The final HTML is always assembled sequentially, #}
-{# regardless of which fetch finishes first. #}
+{# The HTML is assembled sequentially, #}
+{# iregardless of which fetch finishes first #}
 <div class="slow-data">
   {{ fetchSlowData() }}
 </div>
@@ -359,15 +364,23 @@ The `sink` channel wraps an external stateful object and applies its method call
       this.y = this.ctx.canvas.height / 2;
       this.angle = -90; // Start pointing up
     }
-    begin() { this.ctx.beginPath(); this.ctx.moveTo(this.x, this.y); }
+    begin() {
+      this.ctx.beginPath();
+      this.ctx.moveTo(this.x, this.y);
+    }
     forward(dist) {
       const rad = this.angle * (Math.PI / 180);
       this.x += dist * Math.cos(rad);
       this.y += dist * Math.sin(rad);
       this.ctx.lineTo(this.x, this.y);
     }
-    turn(deg) { this.angle = (this.angle + deg) % 360; }
-    stroke(color) { this.ctx.strokeStyle = color ?? 'white'; this.ctx.stroke(); }
+    turn(deg) {
+      this.angle = (this.angle + deg) % 360;
+    }
+    stroke(color) {
+      this.ctx.strokeStyle = color ?? 'white';
+      this.ctx.stroke();
+    }
   }
   ```
 </details>
@@ -388,7 +401,7 @@ The `sink` channel wraps an external stateful object and applies its method call
   ```
 
   ```javascript
-  // Provide the turtle instance when rendering.
+  // Provide the turtle instance
   env.renderScriptString(script, {
     canvasTurtle: new CanvasTurtle(
       document.querySelector('canvas')
@@ -411,8 +424,8 @@ Macros allow you to define reusable chunks of logic. In templates, they're great
 <summary><strong>Cascada Script (Data-Building Macro)</strong></summary>
 
 ```javascript
-// This macro fetches a user's details and
-// recent activity in parallel and builds a summary.
+// Ftches a user's details and recent
+// activity in parallel to build a summary.
 macro buildUserSummary(userId)
   // Run three async calls concurrently
   var details = fetchUserDetails(userId)
@@ -427,12 +440,17 @@ macro buildUserSummary(userId)
   }
 endmacro
 
-// Call the macro for two different users in parallel.
+// Get both summarries in parallel:
 var user1 = buildUserSummary(101)
 var user2 = buildUserSummary(102)
 
 // Compose the final report.
-return { report: { user1Summary: user1, user2Summary: user2 } }
+return {
+    report: {
+      user1Summary: user1,
+      user2Summary: user2
+    }
+  }
 ```
 </details>
 <details>
@@ -449,8 +467,12 @@ return { report: { user1Summary: user1, user2Summary: user2 } }
     <h2>{{ user.name }}</h2>
     <ul>
       {# These two fetches run in parallel #}
-      <li>Followers: {{ fetchStats(user.id).followerCount }}</li>
-      <li>Latest Post: "{{ fetchLatestPost(user.id).title }}"</li>
+      <li>Followers:
+{{ fetchStats(user.id).followerCount }}
+      </li>
+      <li>Latest Post:
+"{{ fetchLatestPost(user.id).title }}"
+      </li>
     </ul>
   </div>
 {% endmacro %}
@@ -486,7 +508,8 @@ guard
   var image = generateImage(prompt)
   result = { imageUrl: image.url }
 recover err
-  // Handle failure — guarded state already restored
+  // Handle failure
+  // guarded state already restored
   result = { error: "Failed: " + err#message }
 endguard
 return result
