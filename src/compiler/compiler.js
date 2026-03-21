@@ -509,9 +509,7 @@ class Compiler extends CompilerBase {
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
-    const switchResult = this.buffer.asyncBufferNode(node, frame, false, false, node.expr, (blockFrame) => {
-      const branchPositions = [];
-      const branchChannels = []; // Track channels per branch
+    const switchResult = this.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
       let catchPoisonPos;
       const caseCreatesScope = this.scriptMode || this.asyncMode;
 
@@ -533,53 +531,39 @@ class Compiler extends CompilerBase {
         this.emit(') {');
       }
 
-      // Compile cases
-      node.cases.forEach((c, i) => {
+      // Compile cases — synchronously, no inner asyncBlock wrappers
+      node.cases.forEach((c) => {
         this.emit('case ');
         this._compileAwaitedExpression(c.cond, blockFrame, false);
         this.emit(': ');
 
-        branchPositions.push(this.codebuf.length);
-        this.emit('');
-
         if (c.body.children.length) {
-          // Use case body 'c.body' as position node for this block
-          this.emit.asyncBlock(c, blockFrame, caseCreatesScope, (f) => {
-            this.compile(c.body, f);
-
-            // Collect channels from this branch
-            if (this.asyncMode) {
-              branchChannels.push(new Set(c.body._analysis.usedChannels || []));
-            }
-          }, c.body); // Pass body as code position
-          this.emit.line('break;');
-        } else {
-          // Empty case body (fall-through)
-          if (this.asyncMode) {
-            branchChannels.push(new Set());
+          let caseFrame = blockFrame;
+          if (caseCreatesScope) {
+            caseFrame = blockFrame.push();
+            this.emit.line('frame = frame.push();');
           }
+          this.compile(c.body, caseFrame);
+          if (caseCreatesScope) {
+            this.emit.line('frame = frame.pop();');
+          }
+          this.emit.line('break;');
         }
       });
 
-      // Compile default case, if present
+      // Compile default case, if present — synchronously
       if (node.default) {
         this.emit('default: ');
 
-        branchPositions.push(this.codebuf.length);
-        this.emit('');
-
-        // Use default body 'node.default' as position node for this block
-        this.emit.asyncBlock(node, blockFrame, caseCreatesScope, (f) => {
-          this.compile(node.default, f);
-
-          // Collect channels from default
-          if (this.asyncMode) {
-            branchChannels.push(new Set(node.default._analysis.usedChannels || []));
-          }
-        }, node.default); // Pass default as code position
-      } else if (this.asyncMode) {
-        // No default case - add empty channel placeholder for collection.
-        branchChannels.push(new Set());
+        let defaultFrame = blockFrame;
+        if (caseCreatesScope) {
+          defaultFrame = blockFrame.push();
+          this.emit.line('frame = frame.push();');
+        }
+        this.compile(node.default, defaultFrame);
+        if (caseCreatesScope) {
+          this.emit.line('frame = frame.pop();');
+        }
       }
 
       this.emit('}'); // Close switch
@@ -592,19 +576,17 @@ class Compiler extends CompilerBase {
         catchPoisonPos = this.codebuf.length;
         this.emit('');
         this.emit('}'); // No re-throw - execution continues with poisoned vars
-      }
 
-      // Fill in the poison handling code (channel poisoning)
-      if (this.asyncMode) {
-        // Combine channels from all branches
+        // Collect channels from all branches via _analysis (available before compilation)
         const allChannels = new Set();
-        branchChannels.forEach(channels => {
-          channels.forEach(channelName => allChannels.add(channelName));
+        node.cases.forEach(c => {
+          (c.body._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
         });
+        if (node.default) {
+          (node.default._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
+        }
 
-        const hasChannels = allChannels.size > 0;
-
-        if (hasChannels) {
+        if (allChannels.size > 0) {
           for (const channelName of allChannels) {
             this.emit.insertLine(catchPoisonPos,
               `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);

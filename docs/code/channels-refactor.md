@@ -439,7 +439,7 @@ Migrate from simplest to most complex to catch regressions early:
 3. ✅ **`compileDo`** — `asyncBlock` + `Promise.all` removed; expressions evaluated inline. `do` is now fire-and-forget for async side effects (consistent with "Implicitly Parallel" model). `emitOwnWaitedConcurrencyResolve` preserved for limited-loop `__waited__` timing (Tier 2, required `compileReturn` rewrite first)
 4. ✅ **`compileReturn`** — `waitAllClosures` removed; return value added as `VarCommand` to return channel synchronously (completed in prior chat)
 5. ✅ **`compileIf`** — `asyncBufferNode` + two inner `asyncBlock` branch wrappers replaced by `runControlFlowBlockNode`; branches now compile synchronously inside the outer async fn with explicit `frame.push()`/`frame.pop()` (Tier 3). Adds `runtime.runControlFlowBlock`, `compile-buffer.runControlFlowBlockNode`, `compile-emit.getLinkedChannelsArg`.
-6. `compileSwitch` — same pattern as `compileIf` (Tier 3)
+6. ✅ **`compileSwitch`** — same pattern as `compileIf`: `asyncBufferNode` + per-case `asyncBlock` wrappers replaced by `runControlFlowBlockNode` with case bodies compiled synchronously. `branchChannels` collection simplified: reads `c.body._analysis.usedChannels` directly (available before compilation, no need to collect inside async block callbacks) (Tier 3)
 7. `compileFor` (parallel) — async iterable (Tier 4)
 8. `compileFor` (sequential / `each`) — remove `waitAllClosures(1)` emitted by `asyncBlockEnd` for sequential loop bodies (`compile-emit.js:227`); sequential ordering guaranteed by command-buffer insertion order (Tier 4)
 9. ✅ **Remove `WaitResolveCommand` for `var x = expr` and `set_path` in limited loops** — `emitOwnWaitedConcurrencyResolve` removed from `compileAsyncVarSet`. The VarCommand's promise arg is already awaited by the buffer iterator as it processes the iteration buffer's var channel — the `WaitResolveCommand` in `__waited__N` was doubly tracking the same promise. Only codegen tests needed updating; no runtime regressions.
@@ -601,9 +601,11 @@ The two inner `asyncBlock` calls for branches were purely for closure tracking a
 
 ---
 
-#### `compileSwitch` — switch / case
+#### `compileSwitch` — switch / case ✅ migrated
 
-Identical pattern to `compileIf`. One `runControlFlowBlock` for the discriminant; each case branch emits commands synchronously inside the async fn. The per-case `asyncBlock` wrappers are deleted.
+Identical pattern to `compileIf`. One `runControlFlowBlock` for the discriminant; each case branch emits commands synchronously with `frame.push()`/`frame.pop()`. The per-case `asyncBlock` wrappers are deleted.
+
+One simplification over `compileIf`: the old code collected `branchChannels` inside each `asyncBlock` callback (after `compile(c.body, f)`). Since `_analysis` is fully populated before compilation starts, `c.body._analysis.usedChannels` is readable at any point — `allChannels` is now computed directly after the switch block is emitted, without any per-branch collection structure.
 
 ---
 
