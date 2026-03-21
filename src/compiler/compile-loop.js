@@ -48,19 +48,27 @@ class CompileLoop {
     const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const useLoopValues = node.isAsync;
-    const forResult = this.compiler.buffer.asyncBufferNode(node, frame, true, false, sourcePositionNode, (blockFrame) => {
+    const forResult = this.compiler.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
+      // runControlFlowBlockNode's non-async path is a simple pass-through without scope.
+      // Emit runtime frame.push/pop manually to scope loop variable bindings for sync loops.
+      let innerFrame = blockFrame;
+      if (!node.isAsync) {
+        innerFrame = blockFrame.push(false, true);
+        this.compiler.emit.line('frame = frame.push();');
+      }
+
       // Evaluate the array expression
       const arr = this.compiler._tmpid();
 
       if (iteratorCompiler) {
         // Gets the `{ "var": 1 }` style counts from compileWhile.
-        iteratorCompiler(sourcePositionNode, blockFrame, arr);
+        iteratorCompiler(sourcePositionNode, innerFrame, arr);
       } else {
         // Loop source expression is control-flow input, not iteration-body work.
         // Keep it out of the loop body's own waited channel tracking scope.
         this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${arr} = `);
-          this.compiler._compileExpression(node.arr, blockFrame, false);
+          this.compiler._compileExpression(node.arr, innerFrame, false);
           this.compiler.emit.line(';');
         });
       }
@@ -72,7 +80,7 @@ class CompileLoop {
         // It must not be tracked as iteration-body waited channel work.
         this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${limitVar} = `);
-          this.compiler._compileExpression(node.concurrentLimit, blockFrame, false);
+          this.compiler._compileExpression(node.concurrentLimit, innerFrame, false);
           this.compiler.emit.line(';');
         });
       }
@@ -83,7 +91,7 @@ class CompileLoop {
         if (node.isAsync && useLoopValues) {
           return;
         }
-        blockFrame.set(name, name);
+        innerFrame.set(name, name);
       };
 
       if (loopVarNames) {
@@ -110,7 +118,7 @@ class CompileLoop {
       const hasConcurrentLimit = Boolean(node.concurrentLimit);
       this._compileLoopBody(
         node,
-        blockFrame,
+        innerFrame,
         loopVars,
         sequentialLoopBody,
         hasConcurrentLimit,
@@ -128,7 +136,7 @@ class CompileLoop {
         elseFuncId = this.compiler._tmpid();
         this.compiler.emit(`let ${elseFuncId} = `);
 
-        this._compileLoopElse(node, blockFrame, sequentialLoopBody);
+        this._compileLoopElse(node, innerFrame, sequentialLoopBody);
         elseChannels = node.isAsync ? new Set(node.else_._analysis.usedChannels || []) : null;
       }
 
@@ -156,6 +164,10 @@ class CompileLoop {
       });
       this.compiler.emit(`], ${asyncOptionsCode});`);
 
+      if (!node.isAsync) {
+        this.compiler.emit.line('frame = frame.pop();');
+        innerFrame.pop();
+      }
     });
 
     frame = forResult.frame;
