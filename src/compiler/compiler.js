@@ -444,8 +444,6 @@ class Compiler extends CompilerBase {
       this.emit(`let ${pathValueId} = `);
       this._compileExpression(node.value, frame, true);
       this.emit.line(';');
-      this.buffer.emitOwnWaitedConcurrencyResolve(frame, pathValueId, node.value || node);
-
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
       this.buffer.emitAddRawSnapshot(frame, targetName, node);
@@ -460,7 +458,6 @@ class Compiler extends CompilerBase {
       this.emit(ids.join(' = ') + ' = ');
       this._compileExpression(node.value, frame, true, node.value);
       this.emit.line(';');
-      this.buffer.emitOwnWaitedConcurrencyResolve(frame, ids[0], node.value);
       hasAssignedValue = true;
     } else if (node.body) {
       this.emit(ids.join(' = ') + ' = ');

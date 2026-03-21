@@ -415,9 +415,10 @@ Migrate from simplest to most complex to catch regressions early:
 6. `compileSwitch` — same pattern as `compileIf` (Tier 3)
 7. `compileFor` (parallel) — async iterable (Tier 4)
 8. `compileFor` (sequential / `each`) — remove `waitAllClosures` (Tier 4)
-9. `compileWhile` — async condition, loop body (Tier 4)
-10. `compileInclude` / `compileExtends` / `compileImport` — multi-step async (Tier 4)
-11. `compileMacro`, `compileGuard`, `compileRoot` — complex, defer to last (Tier 5)
+9. **`emitOwnWaitedConcurrencyResolve` for `{{ asyncExpr }}`** — remove `WaitResolveCommand` from pure text output in limited loops (Tier 4, after `compileFor`). Audit results: removed for `var x = expr` and `set_path` (VarCommand already tracked by buffer iterator — only codegen tests needed updating, no runtime regressions). Removal for `{{ asyncExpr }}` caused 13 runtime failures: loop body still uses `astate.asyncBlock` so the TextCommand is added asynchronously and the text iterator can enter the iteration buffer before it arrives, making `WaitResolveCommand` the only reliable timing anchor. Once `compileFor` adds commands synchronously the TextCommand will be present at iterator-visit time and this call becomes redundant too.
+10. `compileWhile` — async condition, loop body (Tier 4)
+11. `compileInclude` / `compileExtends` / `compileImport` — multi-step async (Tier 4)
+12. `compileMacro`, `compileGuard`, `compileRoot` — complex, defer to last (Tier 5)
 
 After each migration, run the full test suite before proceeding.
 
