@@ -925,6 +925,23 @@ class CompilerBase extends Obj {
       return { uses, mutates };
     }
 
+    // caller() calls link a child composition buffer to the parent and output text.
+    // caller() is template-only: it links a composition buffer and mutates the text channel.
+    // Keep the async block open so linkWithParentCompositionBuffer fires before waitAllClosures.
+    if (!this.scriptMode && node.name) {
+      const isCallerCall =
+        (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
+        this.sequential._extractStaticPathRoot(node.name) === 'caller';
+      if (isCallerCall) {
+        const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
+        if (textChannel) {
+          uses.push(textChannel);
+          mutates.push(textChannel);
+        }
+        return { uses, mutates };
+      }
+    }
+
     const callFacts =
       this.asyncMode &&
       this.scriptMode &&

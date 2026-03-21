@@ -407,7 +407,7 @@ As each loop `compileXXX` method is migrated, this line is removed. Sequential o
 ### Migration order (suggested)
 
 Migrate from simplest to most complex to catch regressions early:
-1. `compileOutput` — remove `asyncAddToBufferScoped`, add `TextCommand` synchronously (Tier 1, no control-flow async)
+1. ✅ **`compileOutput`** — partially migrated: pure value expressions now add `TextCommand` synchronously; `caller()` expressions keep `asyncAddToBufferScoped` (see note below) (Tier 1)
 2. `compileAsyncVarSet` step 3 / `compileChannelDeclaration` — remove `asyncAddValueToBuffer`, add commands synchronously (Tier 1)
 3. `compileDo` — remove the outer `asyncBlock` and `Promise.all` wait; just evaluate expressions (Tier 1)
 4. `compileReturn` — remove `waitAllClosures`; evaluate, resolve, mark finished (Tier 2)
@@ -431,28 +431,42 @@ These methods currently use `asyncAddToBufferScoped`, `asyncAddToBuffer`, or `as
 
 ---
 
-#### `compileOutput` — `{{ expr }}` template output
+#### `compileOutput` — `{{ expr }}` template output ✅ partially migrated
 
 **Current:** Each non-literal child (every `{{ expr }}`) is wrapped in `asyncAddToBufferScoped`, which fires an `asyncBlock` per child. A `forceWrapRootExpression` flag forces expressions that internally add commands (like channel commands) into the async block to avoid out-of-order concurrent additions.
 
-**New:** Compile the expression directly (result may be a promise), add a `TextCommand` synchronously to the current buffer. No async block. No `asyncAddToBufferScoped`.
+**Implemented:** Discriminate on `child._analysis?.mutatedChannels?.size > 0`:
+- **Pure value expressions** (`{{ user.name }}`, `{{ getUser() }}`, regular macro calls, etc.): add `TextCommand` synchronously — no async block. The result may be a promise; `resolveCommandArgumentsForApply` handles it at apply time.
+- **Channel-mutating expressions** (`{{ caller() }}` and sequential `!` calls): keep `asyncAddToBufferScoped` with `forceWrapRootExpression=true`.
 
 ```js
-// New compileOutput (async mode)
-children.forEach(child => {
-  if (child instanceof nodes.TemplateData) {
-    if (child.value) {
-      currentBuffer.add(new TextCommand({ channelName: textChannelName, args: [child.value], ... }), textChannelName);
-    }
-    return;
-  }
-  let t1 = this._compileExpression(child, frame, false); // result may be promise
-  currentBuffer.add(new TextCommand({ channelName: textChannelName, args: [t1], normalizeArgs: true, ... }), textChannelName);
-  this.buffer.emitOwnWaitedConcurrencyResolve(frame, t1, child); // __waited__ stays
-});
+if (child._analysis?.mutatedChannels?.size > 0 && !this.buffer.currentWaitedChannelName) {
+  // caller() or !-call: keep async block (see note below)
+  frame = this.buffer.asyncAddToBufferScoped(node, frame, child, ..., true, true,
+    (innerFrame) => { this._compileExpression(child, innerFrame, true, child); }, ...);
+} else {
+  // Pure value: synchronous TextCommand
+  const returnId = this._tmpid();
+  this.emit.line(`let ${returnId};`);
+  this.emit(`${returnId} = `);
+  this._compileExpression(child, frame, false, child);
+  this.emit.line(';');
+  const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
+  this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
+  this.buffer.emitOwnWaitedConcurrencyResolve(frame, returnId, child);
+}
 ```
 
-**`forceWrapRootExpression` disappears.** The comment in the current code already explains why: "In the future, when we make the CommandBuffer tree synchronously before any expression evaluation, this will not be needed anymore." That future is now.
+**Why `caller()` still needs the async block:** The caller body (compiled from `{% call %}...{% endcall %}`) calls `runtime.linkWithParentCompositionBuffer` synchronously at the start of its execution to insert its `CommandBuffer` into the parent's buffer tree. This must happen before `waitAllClosures()` fires and calls `markFinishedAndPatchLinks()` on the parent buffer (which would make it reject further `addBuffer` calls). The inner async block created by `asyncAddToBufferScoped` tracks the `caller()` call as an active closure, preventing `waitAllClosures()` from completing too early. Regular macro calls do NOT need this — they return a text snapshot as a plain value with no buffer linking.
+
+**`_expressionAddsCommands` deleted.** This was the previous ad-hoc AST walk that detected `caller()` and `!` calls. It is now replaced by `child._analysis?.mutatedChannels?.size > 0`, which is correct after the analysis fixes below.
+
+**`forceWrapRootExpression` deleted** from non-`caller()` path — it is no longer needed since commands are added synchronously.
+
+**Prerequisite: analysis fixes required before this migration could be correct:**
+- `analyzeFunCall` (compiler-base.js): added detection of `caller()` function calls (both direct `caller()` and path-rooted forms). These calls now produce `mutates: [textChannel]`, making them visible in `mutatedChannels`. Without this, `caller()` calls would fall through to the sync path and crash at runtime.
+- `analyzeCallExtension` / `analyzeCallExtensionAsync` (compiler.js): new methods declaring `mutates: [textChannel]`. These statement-level extension tags use `asyncAddToBufferScoped` internally but had no analysis.
+- `analyzeIfAsync` (compiler.js): new method delegating to `analyzeIf`, ensuring `IfAsync` branches get `createScope: true` set correctly.
 
 ---
 

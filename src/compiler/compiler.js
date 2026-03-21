@@ -69,6 +69,20 @@ class Compiler extends CompilerBase {
   }
 
 
+  analyzeCallExtension(node) {
+    if (this.scriptMode) {
+      return {};
+    }
+    const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
+    return textChannel
+      ? { uses: [textChannel], mutates: [textChannel] }
+      : {};
+  }
+
+  analyzeCallExtensionAsync(node) {
+    return this.analyzeCallExtension(node);
+  }
+
   compileCallExtension(node, frame) {
     this._compileCallExtension(node, frame, false);
   }
@@ -1010,6 +1024,10 @@ class Compiler extends CompilerBase {
     frame = ifResult.frame;
   }
 
+  analyzeIfAsync(node) {
+    return this.analyzeIf(node);
+  }
+
   compileIfAsync(node, frame) {
     if (node.isAsync) {
       this.compileIf(node, frame);
@@ -1541,28 +1559,37 @@ class Compiler extends CompilerBase {
           }
           return;
         }
-        // This is temporary, it is not exactly about mutating output, but about
-        // Adding any command to the buffer
-        // In the future, when we make the CommandBuffer tree synchronously before any expression evaluation,
-        // This will not be needed anymore
-        const forceWrapRootExpression = this._expressionAddsCommands(child) && !this.buffer.currentWaitedChannelName;
-        frame = this.buffer.asyncAddToBufferScoped(
-          node,
-          frame,
-          child,
-          textChannelName,
-          textChannelName,
-          true,
-          true,
-          (innerFrame, valueId) => {
-            // Keep command args unresolved for apply-time resolution/error handling.
-            this._compileExpression(child, innerFrame, forceWrapRootExpression, child);
-          },
-          (innerFrame, valueId) => {
-            // Step 3: expression-root waited emission for limited-loop own waited output.
-            this.buffer.emitOwnWaitedConcurrencyResolve(innerFrame, valueId, child);
-          }
-        );
+        if (child._analysis?.mutatedChannels?.size > 0 && !this.buffer.currentWaitedChannelName) {
+          // Expression mutates channels (e.g. caller() links a composition buffer):
+          // keep async block to track execution and prevent waitAllClosures() from
+          // finishing the parent buffer before linkWithParentCompositionBuffer fires.
+          frame = this.buffer.asyncAddToBufferScoped(
+            node,
+            frame,
+            child,
+            textChannelName,
+            textChannelName,
+            true,
+            true,
+            (innerFrame) => {
+              this._compileExpression(child, innerFrame, true, child);
+            },
+            (innerFrame, valueId) => {
+              this.buffer.emitOwnWaitedConcurrencyResolve(innerFrame, valueId, child);
+            }
+          );
+        } else {
+          // Pure value expression: add TextCommand synchronously, no async block needed.
+          // Any promise in args is resolved at apply time by resolveCommandArgumentsForApply.
+          const returnId = this._tmpid();
+          this.emit.line(`let ${returnId};`);
+          this.emit(`${returnId} = `);
+          this._compileExpression(child, frame, false, child);
+          this.emit.line(';');
+          const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
+          this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
+          this.buffer.emitOwnWaitedConcurrencyResolve(frame, returnId, child);
+        }
       });
       return;
     }
@@ -1618,57 +1645,6 @@ class Compiler extends CompilerBase {
     }
 
     return children;
-  }
-
-  // temp implementation, will use mutatedChannels instead
-  // Will create the CommandBuffer tree before any expression evaluation
-  // (but each node will know its current command buffer)
-  _expressionAddsCommands(node) {
-    if (!node) {
-      return false;
-    }
-
-    let mutatesOutput = false;
-    const visit = (current) => {
-      if (!current || mutatesOutput) {
-        return;
-      }
-
-      if (current instanceof nodes.FunCall) {
-        const callee = current.name;
-        if (callee instanceof nodes.Symbol && callee.value === 'caller') {
-          mutatesOutput = true;
-          return;
-        }
-        const root = this.sequential._extractStaticPathRoot(callee);
-        if (root === 'caller') {
-          mutatesOutput = true;
-          return;
-        }
-      }
-
-      if (current.typename === 'Caller') {
-        mutatesOutput = true;
-        return;
-      }
-
-      // Mutation-only detection: sequence PATH reads (1) are observational and must
-      // not force wrapping; LOCK/CONTENDED entries indicate side-effecting calls.
-      if (current.sequenceOperations && current.sequenceOperations.size > 0) {
-        for (const value of current.sequenceOperations.values()) {
-          if (value !== 1) {
-            mutatesOutput = true;
-            return;
-          }
-        }
-      }
-
-      const children = this._getImmediateChildren(current);
-      children.forEach(visit);
-    };
-
-    visit(node);
-    return mutatesOutput;
   }
 
   analyzeRoot(node) {
