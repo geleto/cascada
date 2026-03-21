@@ -1,6 +1,6 @@
 'use strict';
 
-const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence']);
+const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', '__return__']);
 
 /**
  * Track the depth of a frame at compile-time for balance validation.

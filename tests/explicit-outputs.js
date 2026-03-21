@@ -357,6 +357,33 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ value: 42 });
     });
 
+    it('should return undefined when no explicit return is provided', async () => {
+      const script = `
+        data myData
+        myData.x = 1
+      `;
+      const result = await render(script);
+      expect(result).to.be(undefined);
+    });
+
+    it('should distinguish no return from explicit return with no expression', async () => {
+      const noReturnScript = `
+        data myData
+        myData.x = 1
+      `;
+      const explicitReturnScript = `
+        data myData
+        myData.x = 1
+        return
+      `;
+
+      const noReturnResult = await render(noReturnScript);
+      const explicitReturnResult = await render(explicitReturnScript);
+
+      expect(noReturnResult).to.be(undefined);
+      expect(explicitReturnResult).to.be(undefined);
+    });
+
     it('should allow multiple snapshots at different points', async () => {
       const script = `
         data myData
@@ -505,6 +532,32 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       `;
       const result = await render(script);
       expect(result).to.eql({ data: { x: 1 }, other: 42, flag: true });
+    });
+
+    it('should reject when root return value is a rejecting promise', async () => {
+      const script = `
+        return failingAsync()
+      `;
+      try {
+        await render(script, {
+          failingAsync: async () => {
+            throw new Error('root return failed');
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('root return failed');
+      }
+    });
+
+    it('should resolve RESOLVE_MARKER objects returned from root', async () => {
+      const script = `
+        return { user: { name: delayed("Alice", 20) }, count: delayed(2, 10) }
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.eql({ user: { name: 'Alice' }, count: 2 });
     });
 
     // Skipped: early return is not supported yet.
@@ -1434,6 +1487,24 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       `;
       const result = await render(script);
       expect(result).to.eql({ items: [{ value: 1 }, { value: 2 }], texts: ['v1', 'v2'] });
+    });
+
+    it('should preserve async return values through macros and caller blocks', async () => {
+      const script = `
+        macro wrap()
+          return caller()
+        endmacro
+
+        var result = call wrap()
+          return delayed({ ok: true, nested: { value: 7 } }, 20)
+        endcall
+
+        return result
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.eql({ ok: true, nested: { value: 7 } });
     });
 
     // Skipped: caller with arguments is not supported yet.

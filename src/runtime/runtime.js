@@ -138,6 +138,8 @@ function linkWithParentCompositionBuffer(parentBuffer, childBuffer, channelNames
   }
 }
 
+const RETURN_UNSET = Symbol.for('cascada.returnUnset');
+
 module.exports = {
   makeMacro,
   makeKeywordArgs,
@@ -152,6 +154,7 @@ module.exports = {
   promisify,
   withPath,
   linkWithParentCompositionBuffer,
+  RETURN_UNSET,
   SafeString: outputValue.SafeString,
   copySafeness: outputValue.copySafeness,
   markSafe: outputValue.markSafe,

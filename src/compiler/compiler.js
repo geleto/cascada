@@ -18,6 +18,8 @@ const CompileAnalysis = require('./compile-analysis');
 const CompileRename = require('./compile-rename');
 const CompilerBase = require('./compiler-base');
 
+const RETURN_CHANNEL_NAME = '__return__';
+
 class Compiler extends CompilerBase {
   init(templateName, options) {
     // Initialize base properties like codebuf, asyncMode, etc.
@@ -42,6 +44,22 @@ class Compiler extends CompilerBase {
 
   isReservedDeclarationName(name) {
     return RESERVED_DECLARATION_NAMES.has(name);
+  }
+
+  emitDeclareReturnChannel(frame, bufferExpr) {
+    this.emit.line(
+      `runtime.declareChannel(frame, ${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
+    );
+  }
+
+  emitReturnChannelSnapshot(bufferExpr, positionNode, resultVar) {
+    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
+    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
+    this.emit.line(
+      `const ${resultVar}_snapshot = ${bufferExpr}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${lineno}, colno: ${colno}});`
+    );
+    this.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
+    this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? undefined : value);`);
   }
 
   //@todo - move to compile-base
@@ -1195,6 +1213,9 @@ class Compiler extends CompilerBase {
       if (node.isAsync) {
         // Async macro bindings are var channels so assignment/read semantics
         // match value-command ordering instead of frame-local var behavior.
+        if (this.scriptMode) {
+          this.emitDeclareReturnChannel(managedFrame, bufferId);
+        }
         this.emit.line(`runtime.declareChannel(frame, ${bufferId}, "caller", "var", context, null);`);
         args.forEach((arg) => {
           this.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${arg.value}", "var", context, null);`);
@@ -1272,7 +1293,13 @@ class Compiler extends CompilerBase {
       if (node.isAsync) {
         const errorCheck = `if (${err}) throw ${err};`;
         if (this.scriptMode) {
-          returnStatement = `astate.waitAllClosures().then(() => {${bufferId}.markFinishedAndPatchLinks();${errorCheck}return undefined;})`;
+          const returnVar = this._tmpid();
+          returnStatement = `astate.waitAllClosures().then(async () => {` +
+            `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
+            `${bufferId}.markFinishedAndPatchLinks();` +
+            `${errorCheck}` +
+            `return ${returnVar}_snapshot;` +
+            `})`;
         } else {
           // Snapshot must be enqueued before this managed buffer is finished.
           this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
@@ -1323,6 +1350,7 @@ class Compiler extends CompilerBase {
   analyzeMacro(node) {
     const declares = [];
     const declaresInParent = [];
+    declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
     declares.push({ name: 'caller', type: 'var', initializer: null });
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
@@ -1456,11 +1484,15 @@ class Compiler extends CompilerBase {
   }
 
   analyzeCapture(node) {
-    return {
+    const analysis = {
       createScope: true,
       scopeBoundary: false,
       textOutput: this.scriptMode ? null : `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL}${this._tmpid()}`
     };
+    if (this.scriptMode) {
+      analysis.declares = [{ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true }];
+    }
+    return analysis;
   }
 
   compileCapture(node, frame) {
@@ -1492,10 +1524,9 @@ class Compiler extends CompilerBase {
         f._returnWaitCount = 1;
 
         if (this.scriptMode) {
-          this.emit.line(`let ${res} = (async function(frame) {`);
+          this.emitDeclareReturnChannel(f, 'currentBuffer');
           this.compile(n.body, f);//write to output
-          this.emit.line('return undefined;');
-          this.emit.line('}).call(this, frame);');
+          this.emitReturnChannelSnapshot('currentBuffer', node.body, res);
         } else {
           this.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
           this.compile(n.body, f);//write to output
@@ -1647,6 +1678,8 @@ class Compiler extends CompilerBase {
     const declares = [];
     if (!this.scriptMode) {
       declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
+    } else {
+      declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
     }
     const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
@@ -1687,6 +1720,9 @@ class Compiler extends CompilerBase {
 
     this.emit.beginEntryFunction(node, 'root', frame);
     this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    if (this.scriptMode) {
+      this.emitDeclareReturnChannel(frame, this.buffer.currentBuffer);
+    }
     const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
       : [];
@@ -1724,10 +1760,9 @@ class Compiler extends CompilerBase {
       this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
       this.emit.line('  } else {');
       if (this.scriptMode) {
-        // In script mode, explicit return is preferred, but scripts without return
-        // must still complete instead of hanging.
-        this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line('    cb(null, undefined);');
+        const returnVar = this._tmpid();
+        this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
+        this.emit.line(`    cb(null, runtime.resolveSingle(${returnVar}));`);
       } else {
         this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
         this.emit.line(`    cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);
@@ -1854,45 +1889,20 @@ class Compiler extends CompilerBase {
   }
 
   compileReturn(node, frame) {
-    const returnTarget = (frame && frame._seesRootScope) ? 'root' : 'function';
     const hasValue = !!node.value;
 
     if (this.asyncMode) {
       const resultVar = this._tmpid();
-      if (returnTarget === 'root') {
-        const errorContext = this._generateErrorContext(node);
-        this.emit.line('return astate.waitAllClosures(0).then(async () => {');
-        this.emit(`  let ${resultVar} = `);
-        if (hasValue) {
-          this._compileExpression(node.value, frame, true, node);
-        } else {
-          this.emit('undefined');
-        }
-        this.emit.line(';');
-        this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
-        this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
-        this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line('  cb(null, resolved);');
-        this.emit.line('}).catch(e => {');
-        this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${errorContext}", context.path);`);
-        this.emit.line('  cb(err);');
-        this.emit.line('});');
+      this.emit(`let ${resultVar} = `);
+      if (hasValue) {
+        this._compileExpression(node.value, frame, true, node);
       } else {
-        const waitCount = (frame && frame._returnWaitCount !== undefined) ? frame._returnWaitCount : 0;
-        this.emit.line(`return astate.waitAllClosures(${waitCount}).then(async () => {`);
-        this.emit(`  let ${resultVar} = `);
-        if (hasValue) {
-          this._compileExpression(node.value, frame, true, node);
-        } else {
-          this.emit('undefined');
-        }
-        this.emit.line(';');
-        this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
-        this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
-        this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line('  return resolved;');
-        this.emit.line('});');
+        this.emit('undefined');
       }
+      this.emit.line(';');
+      this.emit.line(
+        `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${RETURN_CHANNEL_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}");`
+      );
       return;
     }
 
@@ -1904,6 +1914,12 @@ class Compiler extends CompilerBase {
     }
     this.emit.line(');');
     this.emit.line('return;');
+  }
+
+  analyzeReturn() {
+    return {
+      mutates: [RETURN_CHANNEL_NAME]
+    };
   }
 
   analyzeChannelDeclaration(node) {

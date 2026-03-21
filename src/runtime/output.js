@@ -382,10 +382,10 @@ class TextChannel extends Channel {
 }
 
 class VarChannel extends Channel {
-  constructor(frame, buffer, channelName, context, channelType) {
-    // Keep declaration-only var channels aligned with `none` semantics.
-    // This sets the default snapshot to null without enqueuing a write command.
-    super(frame, buffer, channelName, context, channelType, null, null);
+  constructor(frame, buffer, channelName, context, channelType, initialValue = null) {
+    // Keep declaration-only var channels aligned with `none` semantics unless
+    // a caller provides an explicit initializer.
+    super(frame, buffer, channelName, context, channelType, initialValue, null);
   }
 
   invoke(value) {
@@ -539,7 +539,7 @@ class DataChannel extends Channel {
   }
 }
 
-function createChannel(frame, buffer, channelName, context, channelType = null) {
+function createChannel(frame, buffer, channelName, context, channelType = null, initializer = null) {
   const type = channelType || channelName;
   if (type === 'text') {
     // Text channel is callable; args are appended to the text buffer.
@@ -550,7 +550,7 @@ function createChannel(frame, buffer, channelName, context, channelType = null) 
   }
   if (type === 'var') {
     // Var channel is callable; args replace the current value.
-    return createChannelFacade(new VarChannel(frame, buffer, channelName, context, type), {
+    return createChannelFacade(new VarChannel(frame, buffer, channelName, context, type, initializer), {
       callable: true,
       dynamicCommands: false
     });
@@ -846,7 +846,7 @@ function declareChannel(frame, buffer, channelName, channelType, context, initia
     ? createSinkChannel(frame, targetBuffer, channelName, context, initializer)
     : (channelType === 'sequence')
       ? createSequenceChannel(frame, targetBuffer, channelName, context, initializer)
-      : createChannel(frame, targetBuffer, channelName, context, channelType);
+      : createChannel(frame, targetBuffer, channelName, context, channelType, initializer);
 
   channel._buffer = targetBuffer;
   frame._channels[channelName] = channel;

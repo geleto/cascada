@@ -219,6 +219,10 @@ class CompileAnalysis {
           if (!decl || decl.type !== 'var') {
             return;
           }
+          if ((name === '__return__') || (decl.runtimeName === '__return__')) {
+            //do not expose __return__ to included templates, as it is only meaningful in the context of the caller template
+            return;
+          }
           const runtimeName = decl.runtimeName || name;
           const baseName = this.getBaseChannelName(runtimeName);
           if (visibleNames.has(baseName)) {
@@ -432,6 +436,9 @@ class CompileAnalysis {
   }
 
   _validateReservedDeclarationName(analysis, decl) {
+    if (decl && decl.internal) {
+      return;
+    }
     if (!this.compiler || !this.compiler.isReservedDeclarationName || !this.compiler.isReservedDeclarationName(decl.name)) {
       return;
     }

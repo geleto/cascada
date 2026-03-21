@@ -1211,7 +1211,10 @@ class CompilerBase extends Obj {
   }
 
   analyzeCaller(node) {
-    const declares = [{ name: 'caller', type: 'var', initializer: null }];
+    const declares = [
+      { name: 'caller', type: 'var', initializer: null },
+      { name: '__return__', type: 'var', initializer: null, internal: true }
+    ];
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
         arg._analysis = { declarationTarget: true };
