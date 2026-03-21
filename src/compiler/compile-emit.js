@@ -385,7 +385,8 @@ module.exports = class CompileEmit {
 
   // @todo - optimize this:
   // similar for writes we can do some optimizations
-  getAsyncBlockArgs(node, frame) {
+  getLinkedChannelsArg(node, frame) {
+    void frame;
     const usedChannels = Array.from(node._analysis.usedChannels || []);
     const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
     const linkedChannels = usedChannels.filter((name) => {
@@ -403,7 +404,11 @@ module.exports = class CompileEmit {
     if (this.compiler.buffer.currentWaitedChannelName) {
       linkedChannels.push(this.compiler.buffer.currentWaitedChannelName);
     }
-    const channelArgs = linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
+    return linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
+  }
+
+  getAsyncBlockArgs(node, frame) {
+    const channelArgs = this.getLinkedChannelsArg(node, frame);
     return `({ usedChannels: ${channelArgs} })`;
   }
 };

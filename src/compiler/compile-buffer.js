@@ -7,7 +7,9 @@
 
 const nodes = require('../nodes');
 const {
-  validateChannelObservationCall
+  validateChannelObservationCall,
+  trackCompileTimeFrameDepth,
+  validateCompileTimeFrameBalance
 } = require('./validation');
 const CHANNEL_COMMAND_CLASS = {
   data: 'DataCommand',
@@ -451,6 +453,57 @@ class CompileBuffer {
    * - any value -> exposed as result
    * - { result, sequential } -> custom result + dynamic sequential flag for asyncBlockEnd
    */
+  /**
+   * Emit a `runtime.runControlFlowBlock` call for control-flow nodes (if, switch).
+   * Compared to `asyncBufferNode`, this does NOT wrap the branch bodies in their own
+   * async blocks — the emitFunc is expected to compile branches synchronously.
+   *
+   * For non-async nodes falls through to a plain synchronous call (like asyncBufferNode).
+   */
+  runControlFlowBlockNode(node, frame, emitFunc = null) {
+    if (node.isAsync) {
+      const parentBufferArg = this.currentBuffer;
+      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+
+      this.compiler.emit(
+        `runtime.runControlFlowBlock(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, currentBuffer) => {`
+      );
+      this.compiler.emit.asyncClosureDepth++;
+
+      const newFrame = frame.push(false, false);
+      trackCompileTimeFrameDepth(newFrame, frame);
+
+      const prevBuffer = this.currentBuffer;
+      const prevTextChannelVar = this.currentTextChannelVar;
+      const prevTextChannelName = this.currentTextChannelName;
+      this.currentBuffer = 'currentBuffer';
+
+      let callbackValue;
+      try {
+        if (typeof emitFunc === 'function') {
+          callbackValue = emitFunc(newFrame, 'currentBuffer', prevBuffer);
+        }
+      } finally {
+        this.compiler.emit.asyncClosureDepth--;
+        this.compiler.emit.line('}, false);');
+        validateCompileTimeFrameBalance(newFrame, this.compiler, node);
+        this.currentBuffer = prevBuffer;
+        this.currentTextChannelVar = prevTextChannelVar;
+        this.currentTextChannelName = prevTextChannelName;
+      }
+
+      const result = callbackValue && typeof callbackValue === 'object' &&
+        Object.prototype.hasOwnProperty.call(callbackValue, 'result')
+        ? callbackValue.result
+        : callbackValue;
+      return { frame: newFrame.pop(), result };
+    }
+
+    // Non-async: pass through without async wrapping (mirrors asyncBufferNode non-async path)
+    const result = typeof emitFunc === 'function' ? emitFunc(frame, this.currentBuffer, this.currentBuffer) : undefined;
+    return { frame, result };
+  }
+
   asyncBufferNode(node, frame, createScope = false, sequential = false, positionNode = node, emitFunc = null) {
     if (node.isAsync) {
       const parentBufferArg = this.currentBuffer;

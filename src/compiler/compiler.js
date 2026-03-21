@@ -932,11 +932,8 @@ class Compiler extends CompilerBase {
     }
 
     const branchCreatesScope = this.scriptMode || this.asyncMode;
-    const ifResult = this.buffer.asyncBufferNode(node, frame, false, false, node.cond, (blockFrame) => {
+    const ifResult = this.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
       let catchPoisonPos;
-      let trueBranchChannels = new Set();
-      let falseBranchChannels = new Set();
-      let allBranchChannels = new Set();
 
       if (this.asyncMode) {
         const condResultId = this._tmpid();
@@ -949,18 +946,32 @@ class Compiler extends CompilerBase {
 
         this.emit(`if (${condResultId}) {`);
 
-        // Use node.body as the position node for the true branch block
-        this.emit.asyncBlock(node, blockFrame, branchCreatesScope, (f) => {
-          this.compile(node.body, f);
-        }, node.body); // Pass body as code position
+        // True branch — synchronous inside the runControlFlowBlock async fn
+        {
+          let trueFrame = blockFrame;
+          if (branchCreatesScope) {
+            trueFrame = blockFrame.push();
+            this.emit.line('frame = frame.push();');
+          }
+          this.compile(node.body, trueFrame);
+          if (branchCreatesScope) {
+            this.emit.line('frame = frame.pop();');
+          }
+        }
 
         this.emit('} else {');
 
+        // False branch — synchronous
         if (node.else_) {
-          // Use node.else_ as the position node for the false branch block
-          this.emit.asyncBlock(node, blockFrame, branchCreatesScope, (f) => {
-            this.compile(node.else_, f);
-          }, node.else_); // Pass else as code position
+          let falseFrame = blockFrame;
+          if (branchCreatesScope) {
+            falseFrame = blockFrame.push();
+            this.emit.line('frame = frame.push();');
+          }
+          this.compile(node.else_, falseFrame);
+          if (branchCreatesScope) {
+            this.emit.line('frame = frame.pop();');
+          }
         }
         this.emit('}');
 
@@ -972,23 +983,21 @@ class Compiler extends CompilerBase {
         this.emit('');
         this.emit('}');  // No re-throw - execution continues with poisoned vars
 
-        trueBranchChannels = new Set(node.body._analysis.usedChannels || []);
-        falseBranchChannels = node.else_
+        const trueBranchChannels = new Set(node.body._analysis.usedChannels || []);
+        const falseBranchChannels = node.else_
           ? new Set(node.else_._analysis.usedChannels || [])
           : new Set();
-        allBranchChannels = new Set([...trueBranchChannels, ...falseBranchChannels]);
+        const allBranchChannels = new Set([...trueBranchChannels, ...falseBranchChannels]);
 
         // Fill in the poison handling code for channels when condition fails.
-        const hasChannels = allBranchChannels.size > 0;
-
-        if (hasChannels) {
+        if (allBranchChannels.size > 0) {
           for (const channelName of allBranchChannels) {
             this.emit.insertLine(catchPoisonPos,
               `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
           }
         }
       } else {
-        // Sync mode
+        // Sync mode (unchanged)
         this.emit('if(');
         this._compileAwaitedExpression(node.cond, blockFrame, false);
         this.emit('){');
