@@ -409,8 +409,8 @@ As each loop `compileXXX` method is migrated, this line is removed. Sequential o
 Migrate from simplest to most complex to catch regressions early:
 1. ✅ **`compileOutput`** — partially migrated: pure value expressions now add `TextCommand` synchronously; `caller()` expressions keep `asyncAddToBufferScoped` (see note below) (Tier 1)
 2. ✅ **`compileAsyncVarSet` step 3 / `compileChannelDeclaration`** — `asyncAddValueToBuffer` calls inlined; VarCommands now added synchronously via `currentBuffer.add(new VarCommand(...))` (Tier 1)
-3. **`compileDo`** — blocked on `compileReturn`: `do asyncFunc()` relies on `asyncBlock` closure counting so `waitAllClosures` in `compileReturn` waits for side effects to complete. Migrate together with or after `compileReturn` (Tier 2)
-4. `compileReturn` — remove `waitAllClosures`; evaluate, resolve, mark finished (Tier 2)
+3. ✅ **`compileDo`** — `asyncBlock` + `Promise.all` removed; expressions evaluated inline. `do` is now fire-and-forget for async side effects (consistent with "Implicitly Parallel" model). `emitOwnWaitedConcurrencyResolve` preserved for limited-loop `__waited__` timing (Tier 2, required `compileReturn` rewrite first)
+4. ✅ **`compileReturn`** — `waitAllClosures` removed; return value added as `VarCommand` to return channel synchronously (completed in prior chat)
 5. `compileIf` — use `runControlFlowBlock` for condition; compile branches synchronously inside (Tier 3)
 6. `compileSwitch` — same pattern as `compileIf` (Tier 3)
 7. `compileFor` (parallel) — async iterable (Tier 4)

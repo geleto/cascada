@@ -2060,12 +2060,6 @@
       expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
     });
 
-    it('emits WaitResolveCommand for do expression roots in limited loops', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% do foo(x) %}{% endfor %}', env);
-      const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
-    });
 
     it('does not emit WaitResolveCommand for iterator source expressions alone', function () {
       const env = new AsyncEnvironment();

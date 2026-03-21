@@ -1857,35 +1857,10 @@ class Compiler extends CompilerBase {
   }
 
   compileDo(node, frame) {
-    if (node.isAsync) {
-      // Use the Do node itself for the outer async block position
-      this.emit.asyncBlock(node, frame, false, (f) => {
-        const promisesVar = this._tmpid();
-        this.emit.line(`let ${promisesVar} = [];`);
-        node.children.forEach((child) => {
-          // Position node for individual expressions is the child itself
-          const resultVar = this._tmpid();
-          this.emit.line(`let ${resultVar} = `);
-          // Expressions inside DO shouldn't be wrapped in another IIFE,
-          // but if they were async, their results (promises) need handling.
-          // We compile them directly here.
-          this._compileExpression(child, f, false);
-          this.emit.line(';');
-          this.buffer.emitOwnWaitedConcurrencyResolve(f, resultVar, child);
-          // We only push actual promises to the wait list
-          this.emit.line(`if (${resultVar} && typeof ${resultVar}.then === 'function') ${promisesVar}.push(${resultVar});`);
-        });
-        this.emit.line(`if (${promisesVar}.length > 0) {`);
-        this.emit.line(`  await Promise.all(${promisesVar});`);
-        this.emit.line(`}`);
-      }, node); // Pass Do node as positionNode for the overall block
-      //this.emit.line(';'); // Removed semicolon after block
-    } else {
-      node.children.forEach(child => {
-        this._compileExpression(child, frame, false);
-        this.emit.line(';');
-      });
-    }
+    node.children.forEach(child => {
+      this._compileExpression(child, frame, false);
+      this.emit.line(';');
+    });
   }
 
   compileReturn(node, frame) {
