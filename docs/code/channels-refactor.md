@@ -414,11 +414,12 @@ Migrate from simplest to most complex to catch regressions early:
 5. `compileIf` — use `runControlFlowBlock` for condition; compile branches synchronously inside (Tier 3)
 6. `compileSwitch` — same pattern as `compileIf` (Tier 3)
 7. `compileFor` (parallel) — async iterable (Tier 4)
-8. `compileFor` (sequential / `each`) — remove `waitAllClosures` (Tier 4)
-9. **`emitOwnWaitedConcurrencyResolve` for `{{ asyncExpr }}`** — remove `WaitResolveCommand` from pure text output in limited loops (Tier 4, after `compileFor`). Audit results: removed for `var x = expr` and `set_path` (VarCommand already tracked by buffer iterator — only codegen tests needed updating, no runtime regressions). Removal for `{{ asyncExpr }}` caused 13 runtime failures: loop body still uses `astate.asyncBlock` so the TextCommand is added asynchronously and the text iterator can enter the iteration buffer before it arrives, making `WaitResolveCommand` the only reliable timing anchor. Once `compileFor` adds commands synchronously the TextCommand will be present at iterator-visit time and this call becomes redundant too.
-10. `compileWhile` — async condition, loop body (Tier 4)
-11. `compileInclude` / `compileExtends` / `compileImport` — multi-step async (Tier 4)
-12. `compileMacro`, `compileGuard`, `compileRoot` — complex, defer to last (Tier 5)
+8. `compileFor` (sequential / `each`) — remove `waitAllClosures(1)` emitted by `asyncBlockEnd` for sequential loop bodies (`compile-emit.js:227`); sequential ordering guaranteed by command-buffer insertion order (Tier 4)
+9. ✅ **Remove `WaitResolveCommand` for `var x = expr` and `set_path` in limited loops** — `emitOwnWaitedConcurrencyResolve` removed from `compileAsyncVarSet`. The VarCommand's promise arg is already awaited by the buffer iterator as it processes the iteration buffer's var channel — the `WaitResolveCommand` in `__waited__N` was doubly tracking the same promise. Only codegen tests needed updating; no runtime regressions.
+10. **Remove `WaitResolveCommand` for `{{ asyncExpr }}` in limited loops** — `emitOwnWaitedConcurrencyResolve` removal from `compileOutput` (pure text path) blocked on `compileFor` migration (Tier 4). Attempted removal caused 13 runtime failures: the loop body still uses `astate.asyncBlock` so the TextCommand is added asynchronously — the text iterator can enter the iteration buffer before the TextCommand arrives, making `WaitResolveCommand` the only reliable timing anchor. Once `compileFor` adds loop body commands synchronously, the TextCommand will be present at iterator-visit time and this call becomes redundant too.
+11. `compileWhile` — async condition, loop body (Tier 4)
+12. `compileInclude` / `compileExtends` / `compileImport` — multi-step async (Tier 4)
+13. `compileMacro`, `compileGuard`, `compileRoot` — remove remaining `waitAllClosures()` calls: root return statements (`compiler.js:1294/1309`) and template root finish (`compiler.js:1737`); complex interdependencies, defer to last (Tier 5)
 
 After each migration, run the full test suite before proceeding.
 
