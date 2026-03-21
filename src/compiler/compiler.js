@@ -459,11 +459,7 @@ class Compiler extends CompilerBase {
       const valueId = ids[i];
 
       if (hasAssignedValue) {
-        this.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
-          this.emit(
-            `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
-          );
-        }, node, name);
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
       }
 
       if (name.charAt(0) !== '_' && hasAssignedValue) {
@@ -1945,11 +1941,10 @@ class Compiler extends CompilerBase {
       const initNode = node.initializer;
       const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
-      this.buffer.asyncAddValueToBuffer(initNode, frame, function (resultVar, f) {
-        this.emit(`${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [`);
-        this._compileExpression(initNode, f, true, initNode);
-        this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} })`);
-      }, initNode, name);
+      this.emit(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [`);
+      this._compileExpression(initNode, frame, true, initNode);
+      this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+      this.emit.line('');
     }
   }
 
