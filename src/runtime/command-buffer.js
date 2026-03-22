@@ -28,21 +28,36 @@ class CommandBuffer {
     this._context = context;
     this.parent = parent;
     this.finished = false;
-
+    // Aggregate buffer completion. This remains because some callers still need
+    // a whole-buffer lifecycle signal, and because waitApplied currently resolves
+    // against whole-buffer completion rather than per-channel completion.
+    this._finishedChannels = Object.create(null);
+    // Per-channel close requests. A requested channel may finish immediately if
+    // nothing else can still arrive on that lane for this buffer.
+    this._finishRequestedChannels = Object.create(null);
+    // Buffer-wide close request. This remains distinct from per-channel state
+    // because the runtime still needs an explicit "all lanes are closing now"
+    // transition before aggregate `finished` can be derived safely.
+    this._finishAllChannelsRequested = false;
+    // Channels that are referenced by nested buffers and should be considered for finish completion.
+    this._linkedChannels = Object.create(null);
+    // Channels declared/owned by this specific buffer. We keep this separate
+    // because `_channels` is shared across the whole hierarchy.
+    this._ownedChannels = Object.create(null);
     // Create arrays namespace (channels created lazily on first write/snapshot).
     this.arrays = Object.create(null);
     // Shared registry of Channel objects for this buffer hierarchy.
     this._channels = parent ? parent._channels : new Map();
+
     // Iterators currently visiting this buffer keyed by channel name.
     this._visitingIterators = new Map();
-    // finish was requested and will complete once finish preconditions are met.
-    this._finishRequested = false;
-    // waitApplied tracking is only needed for limited-loop iteration buffers.
+
+    // waitApplied tracking exists only until waitApplied is removed.
     this._enableWaitApplied = enableWaitApplied;
     if (this._enableWaitApplied) {
-      // Number of active iterator presences currently traversing this buffer.
+      // waitApplied-only: number of active iterator presences in this buffer.
       this._activeWaitAppliedCount = 0;
-      // Deferred waitApplied promise state.
+      // waitApplied-only deferred promise state.
       this._waitAppliedPromise = null;
       this._waitAppliedResolve = null;
     }
@@ -53,10 +68,13 @@ class CommandBuffer {
   }
 
   _registerChannel(channelName, channel) {
+    const resolvedChannelName = this._resolveChannelName(channelName);
     if (!(this._channels instanceof Map)) {
       this._channels = new Map();
     }
-    this._channels.set(channelName, channel);
+    this._channels.set(resolvedChannelName, channel);
+    this._ownedChannels[resolvedChannelName] = true;
+    this._finishKnownChannelIfRequested(resolvedChannelName);
 
     const iterator = ensureChannelIterator(channel);
     if (iterator) {
@@ -65,8 +83,36 @@ class CommandBuffer {
   }
 
   markFinishedAndPatchLinks() {
-    this._finishRequested = true;
+    this._finishAllChannelsRequested = true;
+    const channelNames = this._collectKnownChannelNames();
+    for (let i = 0; i < channelNames.length; i++) {
+      this.requestChannelFinish(channelNames[i]);
+    }
     this._tryCompleteFinish();
+  }
+
+  requestChannelFinish(channelName) {
+    const resolvedChannelName = this._resolveChannelName(channelName);
+    if (!resolvedChannelName) {
+      return;
+    }
+    this._finishRequestedChannels[resolvedChannelName] = true;
+    this._finishKnownChannelIfRequested(resolvedChannelName);
+    this._tryCompleteFinish();
+  }
+
+  markChannelFinished(channelName) {
+    // Backward-compatible alias. Channel finish is now a request lifecycle, not
+    // a separate immediate state transition API.
+    this.requestChannelFinish(channelName);
+  }
+
+  isFinished(channelName = null) {
+    if (channelName === null || channelName === undefined) {
+      return this.finished;
+    }
+    const resolvedChannelName = this._resolveChannelName(channelName);
+    return this._finishedChannels[resolvedChannelName] === true;
   }
 
   onEnterBuffer(iterator, channelName) {
@@ -96,6 +142,8 @@ class CommandBuffer {
   }
 
   waitApplied() {
+    // waitApplied-only API. Once waitApplied is removed this promise plumbing
+    // and the aggregate `finished` dependency can likely go with it.
     if (this._isWaitAppliedReady()) {
       return Promise.resolve();
     }
@@ -126,8 +174,8 @@ class CommandBuffer {
   }
 
   add(value, channelName) {
-    checkFinishedBuffer(this);
     const resolvedChannelName = this._resolveChannelName(channelName);
+    checkFinishedBuffer(this, resolvedChannelName);
     // Normalize command channel/path keys at ingress so all downstream runtime
     // lookups operate on canonical channel names.
     if (!isCommandBuffer(value) && value && typeof value === 'object') {
@@ -149,6 +197,9 @@ class CommandBuffer {
       value.parent = this;
       if (this._boundaryAliases) {
         value._inheritBoundaryAliases(this._boundaryAliases);
+      }
+      if (typeof value._registerLinkedChannel === 'function') {
+        value._registerLinkedChannel(resolvedChannelName);
       }
     }
 
@@ -212,13 +263,13 @@ class CommandBuffer {
       channelName,
       pos
     });
-    if (this.finished) {
+    if (this.isFinished(channelName)) {
       const resolvedChannelName = this._resolveChannelName(channelName);
       const output = this._channels.get(resolvedChannelName);
       const path = (this._context && this._context.path) ? this._context.path : null;
-      if (!output._buffer.finished) {
+      if (!output._buffer.isFinished(resolvedChannelName)) {
         throw new RuntimeFatalError(
-          'Snapshot command on finished buffer is allowed only if the whole channel stream is finished',
+          'Snapshot command on finished buffer is allowed only if the target channel stream is finished',
           pos?.lineno ?? 0,
           pos?.colno ?? 0,
           null,
@@ -238,13 +289,13 @@ class CommandBuffer {
       channelName,
       pos
     });
-    if (this.finished) {
+    if (this.isFinished(channelName)) {
       const resolvedChannelName = this._resolveChannelName(channelName);
       const output = this._channels.get(resolvedChannelName);
       const path = (this._context && this._context.path) ? this._context.path : null;
-      if (!output._buffer.finished) {
+      if (!output._buffer.isFinished(resolvedChannelName)) {
         throw new RuntimeFatalError(
-          'Raw snapshot command on finished buffer is allowed only if the whole channel stream is finished',
+          'Raw snapshot command on finished buffer is allowed only if the target channel stream is finished',
           pos?.lineno ?? 0,
           pos?.colno ?? 0,
           null,
@@ -298,8 +349,7 @@ class CommandBuffer {
   }
 
   _addCommand(cmd, channelName) {
-
-    if (!this.finished) {
+    if (!this.isFinished(channelName)) {
       this.add(cmd, channelName);
       return cmd.promise;
     }
@@ -328,7 +378,7 @@ class CommandBuffer {
       return cmd.promise;
     };
 
-    // Snapshot-on-finished-buffer is allowed only after the entire channel stream is complete.
+    // Snapshot-on-finished-buffer is allowed only after the target channel stream is complete.
     if (!channel._completionResolved && channel._completionPromise) {
       return Promise.resolve(channel._completionPromise).then(applySnapshot);
     }
@@ -344,23 +394,26 @@ class CommandBuffer {
   }
 
   _tryCompleteFinish() {
-    if (!this._finishRequested || this.finished) {
+    if (this.finished) {
       return;
     }
+    if (!this._finishAllChannelsRequested) {
+      return;
+    }
+    const channelNames = this._collectKnownChannelNames();
+    for (let i = 0; i < channelNames.length; i++) {
+      if (!this._finishedChannels[channelNames[i]]) {
+        return;
+      }
+    }
     this.finished = true;
-    this._notifyBufferFinished();
     this._resolveWaitAppliedIfReady();
   }
 
-  _notifyBufferFinished() {
-    const seen = new Set();
-
-    for (const iterator of this._visitingIterators.values()) {
-      if (!iterator || seen.has(iterator)) {
-        continue;
-      }
-      seen.add(iterator);
-      iterator.onBufferFinished(this);
+  _notifyChannelFinished(channelName) {
+    const iterator = this._visitingIterators.get(channelName);
+    if (iterator) {
+      iterator.onBufferFinished(this, channelName);
     }
   }
 
@@ -377,6 +430,7 @@ class CommandBuffer {
   }
 
   _isWaitAppliedReady() {
+    // waitApplied-only aggregate completion check.
     if (!this._enableWaitApplied) {
       return this.finished;
     }
@@ -439,6 +493,53 @@ class CommandBuffer {
     }
     const mapped = this._boundaryAliases && this._boundaryAliases[name];
     return mapped || name;
+  }
+
+  _collectKnownChannelNames() {
+    const names = new Set();
+    const arrayNames = Object.keys(this.arrays);
+    for (let i = 0; i < arrayNames.length; i++) {
+      names.add(arrayNames[i]);
+    }
+    const ownedNames = Object.keys(this._ownedChannels);
+    for (let i = 0; i < ownedNames.length; i++) {
+      names.add(ownedNames[i]);
+    }
+    const linkedNames = Object.keys(this._linkedChannels);
+    for (let i = 0; i < linkedNames.length; i++) {
+      names.add(linkedNames[i]);
+    }
+    const iteratorNames = Array.from(this._visitingIterators.keys());
+    for (let i = 0; i < iteratorNames.length; i++) {
+      names.add(iteratorNames[i]);
+    }
+    return Array.from(names);
+  }
+
+  _markChannelFinished(channelName) {
+    if (!channelName || this._finishedChannels[channelName]) {
+      return;
+    }
+    this._finishedChannels[channelName] = true;
+    this._notifyChannelFinished(channelName);
+  }
+
+  _registerLinkedChannel(channelName) {
+    if (!channelName) {
+      return;
+    }
+    const resolvedChannelName = this._resolveChannelName(channelName);
+    this._linkedChannels[resolvedChannelName] = true;
+    this._finishKnownChannelIfRequested(resolvedChannelName);
+  }
+
+  _finishKnownChannelIfRequested(channelName) {
+    if (!channelName) {
+      return;
+    }
+    if (this._finishAllChannelsRequested || this._finishRequestedChannels[channelName]) {
+      this._markChannelFinished(channelName);
+    }
   }
 }
 

@@ -31,8 +31,14 @@ function checkFrameBalance(frame, parent) {
  * @param {Object} buffer - The CommandBuffer to check
  * @throws {Error} If buffer is finished
  */
-function checkFinishedBuffer(buffer) {
-  if (buffer && buffer.finished) {
+function checkFinishedBuffer(buffer, channelName = null) {
+  if (!buffer) {
+    return;
+  }
+  const isFinished = (channelName !== null && channelName !== undefined && typeof buffer.isFinished === 'function')
+    ? buffer.isFinished(channelName)
+    : buffer.finished;
+  if (isFinished) {
     throw new Error(
       'Cannot add command to finished CommandBuffer. ' +
       'This indicates a timing issue where commands are being added after ' +

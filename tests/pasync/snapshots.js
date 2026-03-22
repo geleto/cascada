@@ -282,6 +282,34 @@ describe('channel.finalSnapshot', function () {
       expect(resolved).to.equal('late');
     });
 
+    it('tracks finished state per channel', async function () {
+      const buffer = new CommandBuffer(context, null, { parent: null });
+      const frame = { parent: null };
+      const text = createChannel(frame, buffer, 'text', context, 'text');
+      const data = createChannel(frame, buffer, 'data', context, 'data');
+
+      text('later');
+      data.set(['ready'], 1);
+
+      buffer.markChannelFinished('data');
+
+      expect(buffer.isFinished('data')).to.be(true);
+      expect(buffer.isFinished('text')).to.be(false);
+      expect(buffer.finished).to.be(false);
+
+      const dataSnapshot = await buffer.addSnapshot('data', { lineno: 0, colno: 0 });
+      expect(dataSnapshot).to.eql({ ready: 1 });
+
+      text(' now');
+      buffer.markChannelFinished('text');
+
+      expect(buffer.finished).to.be(false);
+      buffer.markFinishedAndPatchLinks();
+      expect(buffer.finished).to.be(true);
+      const textSnapshot = await text.finalSnapshot();
+      expect(textSnapshot).to.equal('later now');
+    });
+
     it('should handle an empty buffer', async function () {
       const buffer = createBuffer([], context, 'text');
       const result = await flatten(buffer, context, 'text');

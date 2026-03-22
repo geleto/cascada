@@ -3179,6 +3179,27 @@ describe('Cascada Script: Channel commands', function () {
       // But wrapper does not write data anyway.
     });
 
+    it('should not hang when filtered call block declares an unused sibling channel', async () => {
+      const script = `
+        text mainText
+        macro wrapper()
+           var content = caller()
+           return { text: content }
+        endmacro
+
+        var wrapped = call wrapper()
+          text innerText
+          data unusedData
+          innerText("Inner")
+          return innerText.snapshot()
+        endcall
+
+        mainText(wrapped.text)
+        return mainText.snapshot()`;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('Inner');
+    });
+
     it('should filter channel to data when using filter', async () => {
       const script = `
         text output

@@ -276,6 +276,9 @@ function varChannelLookup(frame, name, currentBuffer) {
     return undefined;
   }
   if (isBufferInAncestry(currentBuffer, channel._buffer)) {
+    // This boundary check is intentionally buffer-wide rather than channel-wide.
+    // When the immediate parent buffer is fully complete, ordered lane snapshots
+    // are no longer needed from this descendant read point.
     if (currentBuffer && currentBuffer.parent && currentBuffer.parent.finished) {
       return channel.finalSnapshot();
     }
@@ -337,6 +340,8 @@ function varChannelLookupScript(frame, name, currentBuffer) {
     return undefined;
   }
   if (isBufferInAncestry(currentBuffer, channel._buffer)) {
+    // Intentionally aggregate: this is a read-boundary transition, not a claim
+    // about whether the specific channel lane is finished on the parent.
     if (currentBuffer && currentBuffer.parent && currentBuffer.parent.finished) {
       return channel.finalSnapshot();
     }
@@ -345,7 +350,7 @@ function varChannelLookupScript(frame, name, currentBuffer) {
     }
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
-  if (channel._buffer && !channel._buffer.finished) {
+  if (channel._buffer && !channel._buffer.isFinished(name)) {
     return channel._buffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
   return channel.finalSnapshot();

@@ -21,7 +21,10 @@ class BufferIterator {
     this._requestAdvance();
   }
 
-  onBufferFinished(buffer) {
+  onBufferFinished(buffer, channelName) {
+    if (channelName && channelName !== this.channelName) {
+      return;
+    }
     this._requestAdvance();
   }
 
@@ -89,9 +92,9 @@ class BufferIterator {
           }
         }
       }
-      else if (buffer.finished && this.stack.length > 1) {
+      else if (buffer.isFinished(this.channelName) && this.stack.length > 1) {
         this._leaveCurrentToParent();
-      } else if (buffer.finished) {
+      } else if (buffer.isFinished(this.channelName)) {
         this.stack.pop();
         this._setCurrentBuffer(null);
         this.finished = true;

@@ -296,14 +296,38 @@
       it('should handle super() calls in conditional extends', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}parent content{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if useParent %}
-			  {% extends "parent.njk" %}
+				{% if useParent %}
+				  {% extends "parent.njk" %}
 			{% endif %}
 			{% block content %}{{ super() }} + child{% endblock %}
 		  `);
 
         const result = await env.renderTemplate('child.njk', { useParent: true });
         expect(result.trim()).to.equal('P[parent content + child]');
+      });
+
+      it('should handle include inside conditional extends when included child emits no local text', async () => {
+        loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
+        loader.addTemplate('empty-logic.njk', `
+				{% if flag %}
+				  {% set local = 1 %}
+				{% endif %}
+			  `);
+        loader.addTemplate('child.njk', `
+				{% if useParent %}
+				  {% extends "parent.njk" %}
+				{% endif %}
+				{% block content %}
+				  {% include "empty-logic.njk" %}
+				  content
+				{% endblock %}
+			  `);
+
+        const result = await env.renderTemplate('child.njk', {
+          useParent: true,
+          flag: true
+        });
+        expect(result.replace(/\s+/g, '')).to.equal('P[content]');
       });
     });
 

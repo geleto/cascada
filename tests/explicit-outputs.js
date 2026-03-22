@@ -457,6 +457,44 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.be('A');
     });
 
+    it('should not block a text snapshot on later async work in a different channel', async () => {
+      const script = `
+        text out
+        data info
+        out("ready")
+        var snap = out.snapshot()
+        info.value = slowValue()
+        return { snap: snap, final: out.snapshot(), data: info.snapshot() }
+      `;
+      const result = await render(script, {
+        slowValue: () => delay(20, 7)
+      });
+      expect(result).to.eql({
+        snap: 'ready',
+        final: 'ready',
+        data: { value: 7 }
+      });
+    });
+
+    it('should not block a data snapshot on later async work in a different channel', async () => {
+      const script = `
+        data info
+        text out
+        info.value = 1
+        var snap = info.snapshot()
+        out(slowText())
+        return { snap: snap, current: info.snapshot(), text: out.snapshot() }
+      `;
+      const result = await render(script, {
+        slowText: () => delay(20, 'later')
+      });
+      expect(result).to.eql({
+        snap: { value: 1 },
+        current: { value: 1 },
+        text: 'later'
+      });
+    });
+
     // Skipped: early return is not supported yet.
     it.skip('should support early return', async () => {
       const script = `
