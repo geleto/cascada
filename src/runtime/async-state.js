@@ -60,12 +60,7 @@ class AsyncState {
     let newBuffer = null;
     if (createOutputBuffer) {
       const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
-      newBuffer = runtime.createCommandBuffer(bufferContext, null, childFrame);
-      if (parentBuffer && Array.isArray(usedChannels)) {
-        for (const channelName of usedChannels) {
-          parentBuffer.addBuffer(newBuffer, channelName);
-        }
-      }
+      newBuffer = runtime.createCommandBuffer(bufferContext, null, childFrame, usedChannels, parentBuffer);
     }
 
     const childState = this._enterAsyncBlock();

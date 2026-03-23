@@ -85,6 +85,7 @@ The high-level rule is:
 - root expressions inside waited-loop-owned bodies add WRCs,
 - composition boundaries add WRCs,
 - control-flow inputs do not.
+- async control-flow blocks inside waited-loop-owned bodies contribute one parent-visible waited unit and may also own child-local waited tracking.
 
 ## Root Expression Rule
 
@@ -139,6 +140,32 @@ The following are excluded from waited-root tracking:
 
 These expressions are awaited inline because they determine control flow, but they do not define iteration completion.
 
+This exclusion applies to the control expressions themselves.
+
+It does not mean async control-flow blocks are invisible to waited-loop completion. When an async `if` / `elif` / `switch` appears inside a waited-loop-owned body, the control-flow block contributes a waited completion unit as a block.
+
+## Async Control-Flow Inside Waited Loops
+
+Async control-flow blocks inside sequential or bounded loop iterations need stricter handling than ordinary root expressions.
+
+The implemented model is:
+
+1. the async control-flow block gets its own child buffer,
+2. in waited-loop scope that child buffer also gets its own child-local waited channel,
+3. branch-local root expressions write WRCs into that child-local waited channel,
+4. the parent iteration sees the whole control-flow block as one waited unit by waiting on the control-flow block's child waited-channel `finalSnapshot()`.
+
+This avoids two failure modes:
+
+- finishing the parent iteration too early, before async branch work has actually completed
+- trying to add parent-level waited markers from branch code after the parent iteration buffer is already finishing
+
+So the rule is:
+
+- control-flow conditions themselves are excluded from waited-root tracking
+- async control-flow blocks are still tracked as waited work
+- inside waited-loop scope, they are tracked through their own child waited channel, not by flattening child buffers into the parent `__waited__` lane
+
 ## Nested Loops
 
 ### Nested Unlimited Loops
@@ -178,6 +205,8 @@ It tracks local `WaitResolveCommand` leaves and must not contain child buffers.
 
 Nested control-flow buffers are applied through their own channels and iterators. The `__waited__` iterator remains in the current iteration buffer and processes waited commands in source order.
 
+When async control-flow appears inside waited-loop scope, the child control-flow buffer therefore cannot be linked directly into the parent iteration waited lane. Instead, the child control-flow buffer owns its own waited channel, and the parent iteration tracks that child as one waited unit.
+
 ## Runtime Cleanup Contract
 
 `AsyncState.asyncBlock(...)` always finalizes the child buffer in cleanup by calling `markFinishedAndPatchLinks()`, even on error. This guarantees parent output chaining can continue.
@@ -209,5 +238,6 @@ When reading or changing this implementation, the main architectural rules are:
 2. `childBuffer.markFinishedAndPatchLinks()` must happen before `finalSnapshot()`.
 3. `compileExpression(...)` is the only place ordinary root expressions should emit waited WRCs.
 4. Conditions, loop sources, and scheduling expressions are explicit opt-outs from waited-root tracking.
-5. Nested sequential/bounded loops own their own waited channel; nested unrestricted loops propagate upward.
-6. Composition boundaries contribute waited completion as boundary units.
+5. Async control-flow blocks inside waited-loop scope own a child-local waited channel and contribute one parent waited unit.
+6. Nested sequential/bounded loops own their own waited channel; nested unrestricted loops propagate upward.
+7. Composition boundaries contribute waited completion as boundary units.

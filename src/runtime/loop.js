@@ -1,14 +1,13 @@
 'use strict';
 
 const lib = require('../lib');
-const { createPoison, isPoison, isPoisonError, PoisonError, handleError } = require('./errors');
+const { createPoison, isPoison, isPoisonError, PoisonError, RuntimeFatalError, handleError } = require('./errors');
 const { VarCommand } = require('./commands');
 
 const arrayFrom = Array.from;
 const supportsIterators = (
   typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
 );
-
 function asyncEach(arr, dimen, iter, cb) {
   if (lib.isArray(arr)) {
     const len = arr.length;
@@ -456,8 +455,6 @@ async function iterateArraySequential(arr, loopBody, loopVars, errorContext) {
     let value = arr[i];
     const isLast = i === arr.length - 1;
 
-
-
     let res;
     if (loopVars.length === 1) {
       res = loopBody(value, i, len, isLast, errorContext);
@@ -490,8 +487,6 @@ function iterateArrayParallel(arr, loopBody, loopVars, errorContext) {
   for (let i = 0; i < arr.length; i++) {
     let value = arr[i];
     const isLast = i === arr.length - 1;
-
-
 
     if (loopVars.length === 1) {
       loopBody(value, i, len, isLast, errorContext);
@@ -629,11 +624,11 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
     } else {
       // Parallel (unbounded) object iteration – same semantics as before
       for (let i = 0; i < len; i++) {
-        const key = keys[i];
-        let value = arr[key];
-        const isLast = i === len - 1;
+          const key = keys[i];
+          let value = arr[key];
+          const isLast = i === len - 1;
 
-        loopBody(key, value, i, len, isLast);
+          loopBody(key, value, i, len, isLast);
         // Non-sequential bodies may be async; each body registers its own async block.
         // We deliberately do *not* await loopBody here – same as existing parallel behaviour.
       }
@@ -691,10 +686,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         arr = await arr;
       } catch (err) {
         // Promise rejected - poison both body and else
-        //const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
         const errors = isPoisonError(err) ? err.errors : [err];
         poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
-        throw err; // Re-throw for upstream handling
+        return;
       }
     }
 
@@ -708,6 +702,15 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
 
   let didIterate = false;
 
+  if (arr && typeof arr === 'object' && !Array.isArray(arr) && !(isAsync && typeof arr[Symbol.asyncIterator] === 'function')) {
+    arr = fromIterator(arr);
+    if (arr && !Array.isArray(arr) && loopVars.length !== 2) {
+      throw new Error(
+        `Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`
+      );
+    }
+  }
+
   try {
     // Resolve and validate concurrentLimit if present
     let maxConcurrency = asyncOptions ? asyncOptions.concurrentLimit : null;
@@ -717,7 +720,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       if (isPoison(maxConcurrency)) {
         const errors = maxConcurrency.errors || [maxConcurrency];
         poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
-        await createPoison(errors, errorContext);
+        return;
       }
 
       // 2. If it's a Promise (thenable), await it
@@ -729,13 +732,13 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
           if (isPoison(maxConcurrency)) {
             const errors = maxConcurrency.errors || [maxConcurrency];
             poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
-            await createPoison(errors, errorContext);
+            return;
           }
         } catch (err) {
           // Promise rejected - poison both body and else
           const errors = isPoisonError(err) ? err.errors : [err];
           poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
-          throw err; // Re-throw for upstream handling
+          return;
         }
       }
 
@@ -746,7 +749,14 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       } else {
         const numericLimit = Number(maxConcurrency);
         if (typeof maxConcurrency !== 'number' || !Number.isFinite(numericLimit) || numericLimit <= 0) {
-          await createPoison(new Error('concurrentLimit must be a positive number or 0 / null / undefined'), errorContext);
+          poisonLoopEffects(
+            loopFrame,
+            buffer,
+            asyncOptions,
+            [new Error('concurrentLimit must be a positive number or 0 / null / undefined')],
+            false
+          );
+          return;
         }
         maxConcurrency = numericLimit;
         if (numericLimit === 1) {
@@ -780,8 +790,6 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       }
     }
     else if (arr) {
-      arr = fromIterator(arr);
-
       if (Array.isArray(arr)) {
         const len = arr.length;
         const effectiveSequential = sequential || limitSequentialOverride;
@@ -802,12 +810,14 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       }
     }
   } catch (err) {
+    if (!asyncOptions || err instanceof RuntimeFatalError) {
+      throw err;
+    }
     const errors = isPoisonError(err) ? err.errors : [err];
     didIterate = errors[errors.length - 1]?.didIterate || false;
     // if we had at least one iteration, we won't poison the else side-effects
     poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
-    // Re-throw the error so it propagates to the caller
-    throw err;
+    return;
   }
 
   // Handle else execution.

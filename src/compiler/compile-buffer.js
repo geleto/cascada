@@ -463,6 +463,7 @@ class CompileBuffer {
       const parentBufferArg = this.currentBuffer;
       const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
       const trackAsSingleWaitedUnit = this.compiler.asyncMode && !!this.currentWaitedChannelName;
+      const controlFlowWaitedChannelName = trackAsSingleWaitedUnit ? `__waited__${this.compiler._tmpid()}` : null;
       const controlFlowPromiseId = trackAsSingleWaitedUnit ? this.compiler._tmpid() : null;
 
       if (controlFlowPromiseId) {
@@ -486,8 +487,9 @@ class CompileBuffer {
       const prevWaitedOwnerBuffer = this.currentWaitedOwnerBuffer;
       this.currentBuffer = 'currentBuffer';
       if (trackAsSingleWaitedUnit) {
-        this.currentWaitedChannelName = null;
-        this.currentWaitedOwnerBuffer = null;
+        this.currentWaitedChannelName = controlFlowWaitedChannelName;
+        this.currentWaitedOwnerBuffer = 'currentBuffer';
+        this.compiler.emit.line(`runtime.declareChannel(frame, currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
       }
 
       let callbackValue;
@@ -497,7 +499,8 @@ class CompileBuffer {
         }
       } finally {
         this.compiler.emit.asyncClosureDepth--;
-        this.compiler.emit.line('}, false);');
+        const waitedChannelArg = controlFlowWaitedChannelName ? `"${controlFlowWaitedChannelName}"` : 'null';
+        this.compiler.emit.line(`}, ${waitedChannelArg});`);
         this.currentBuffer = prevBuffer;
         this.currentTextChannelVar = prevTextChannelVar;
         this.currentTextChannelName = prevTextChannelName;

@@ -13,6 +13,7 @@ Implemented and validated:
 - Root/value work such as template output, `set`, `do`, `return`, script `var`, and var-channel initializers is emitted synchronously as commands whose arguments may be promises.
 - Sequential and bounded loops no longer use `waitAllClosures(1)` as an iteration-completion fallback.
 - Sequential and bounded loop completion is driven by the per-iteration `__waited__` channel, as described in [waited-loops.md](C:\Projects\cascada\docs\code\waited-loops.md).
+- Async control-flow inside waited-loop bodies now uses a child-local waited channel, and the parent loop tracks that control-flow block as one waited unit.
 - The old "closure anchor" `WaitResolveCommand` model in loop tests has been removed.
 
 Still transitional:
@@ -157,6 +158,7 @@ Important nuance learned during implementation:
 - in Phase 1, the helper still delegates to `astate.asyncBlock`
 - control-flow blocks inside waited-loop bodies must be treated as one waited completion unit
 - branch-local root expressions inside those control-flow buffers must not try to add leaf waited markers back into an already-closing parent iteration buffer
+- the working solution is for those control-flow child buffers to own their own waited channel inside waited-loop scope
 
 ```js
 // runtime.js
@@ -268,6 +270,7 @@ One important refinement came out of the waited-loop migration:
 - outside waited loops, nested control flow is just another child buffer
 - inside a sequential or bounded loop iteration, an async control-flow block contributes **one waited unit as a block**
 - in that waited scope, branch internals should not emit parent-level leaf `WaitResolveCommand`s directly
+- instead, the control-flow child buffer owns its own waited channel, and the parent waits on that child waited channel's completion
 
 Why:
 - the iteration `__waited__` channel is intentionally flat
@@ -276,7 +279,7 @@ Why:
 
 So the implemented rule is:
 - ordinary root expressions emit waited markers in their owning waited buffer
-- nested async control-flow inside a waited iteration is tracked as one parent-visible waited unit via the `runControlFlowBlock(...)` promise
+- nested async control-flow inside a waited iteration is tracked as one parent-visible waited unit via the child control-flow waited-channel completion promise
 
 ```js
 runtime.runControlFlowBlock(parentBuffer, ['__text__'], frame, context,
@@ -488,7 +491,7 @@ Migrate from simplest to most complex to catch regressions early:
 8. ✅ **`compileFor` (sequential / `each`)** — completed. `waitAllClosures(1)` was removed from sequential loop-body completion, but the final implementation required more than simply deleting the line:
    - loop value bindings and loop metadata bindings were changed to synchronous command emission
    - nested sequential / bounded loops now add one explicit parent waited unit via their `runtime.iterate(...)` promise
-   - nested async control-flow blocks inside waited-loop bodies now add one explicit parent waited unit via their `runControlFlowBlock(...)` promise
+   - nested async control-flow blocks inside waited-loop bodies now add one explicit parent waited unit via their child control-flow waited-channel completion promise
    - compiler/codegen tests were updated from the old "closure anchor" model to the new waited-unit model
 9. ✅ **Remove `WaitResolveCommand` for `var x = expr` and `set_path` in limited loops** — `emitOwnWaitedConcurrencyResolve` removed from `compileAsyncVarSet`. The VarCommand's promise arg is already awaited by the buffer iterator as it processes the iteration buffer's var channel — the `WaitResolveCommand` in `__waited__N` was doubly tracking the same promise. Only codegen tests needed updating; no runtime regressions.
 10. **Remove `WaitResolveCommand` for `{{ asyncExpr }}` in limited loops** — `emitOwnWaitedConcurrencyResolve` removal from `compileOutput` (pure text path) blocked on `compileFor` migration (Tier 4). Attempted removal caused 13 runtime failures: the loop body still uses `astate.asyncBlock` so the TextCommand is added asynchronously — the text iterator can enter the iteration buffer before the TextCommand arrives, making `WaitResolveCommand` the only reliable timing anchor. Once `compileFor` adds loop body commands synchronously, the TextCommand will be present at iterator-visit time and this call becomes redundant too.

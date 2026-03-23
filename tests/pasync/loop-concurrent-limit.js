@@ -349,48 +349,167 @@
         }
       });
 
-      it('concurrentLimit loop async if branches with async roots complete cleanly and preserve output order', async () => {
+      it('concurrentLimit loop async if branches block the next outer iteration until branch work finishes', async () => {
         const context = {
+          branchActive: 0,
+          startedDuringBranch: 0,
+          async enterOuter() {
+            if (context.branchActive > 0) {
+              context.startedDuringBranch++;
+            }
+            return '';
+          },
           async choose(item) {
             await delay(2);
             return item % 2 === 0;
           },
           async oddWork(item) {
-            await delay(8);
-            return `O${item}`;
+            context.branchActive++;
+            try {
+              await delay(8);
+              return `O${item}`;
+            } finally {
+              context.branchActive--;
+            }
           },
           async evenWork(item) {
-            await delay(8);
-            return `E${item}`;
+            context.branchActive++;
+            try {
+              await delay(8);
+              return `E${item}`;
+            } finally {
+              context.branchActive--;
+            }
           }
         };
 
-        const template = '{% for item in [1,2,3] of 1 %}{% if choose(item) %}{{ evenWork(item) }}{% else %}{{ oddWork(item) }}{% endif %}|{% endfor %}';
+        const template = '{% for item in [1,2,3] of 1 %}{{ enterOuter() }}{% if choose(item) %}{{ evenWork(item) }}{% else %}{{ oddWork(item) }}{% endif %}|{% endfor %}';
         const result = await env.renderTemplateString(template, context);
 
         expect(result).to.equal('O1|E2|O3|');
+        expect(context.startedDuringBranch).to.be(0);
+        expect(context.branchActive).to.be(0);
       });
 
-      it('concurrentLimit loop include inside async if completes cleanly and preserves output order', async () => {
+      it('concurrentLimit loop include inside async if blocks the next outer iteration until include work finishes', async () => {
         const loader = new StringLoader();
         const localEnv = new AsyncEnvironment(loader);
         const context = {
+          includeActive: 0,
+          startedDuringInclude: 0,
+          async enterOuter() {
+            if (context.includeActive > 0) {
+              context.startedDuringInclude++;
+            }
+            return '';
+          },
           async choose(item) {
             await delay(2);
             return item !== 2;
           },
           async slowInclude(item) {
-            await delay(8);
-            return `I${item}`;
+            context.includeActive++;
+            try {
+              await delay(8);
+              return `I${item}`;
+            } finally {
+              context.includeActive--;
+            }
           }
         };
 
         loader.addTemplate('cl-branch-include-child.njk', '{{ slowInclude(item) }}');
         loader.addTemplate('cl-branch-include-parent.njk',
-          '{% for item in [1,2,3] of 1 %}{% if choose(item) %}{% include "cl-branch-include-child.njk" %}{% else %}S{{ item }}{% endif %}|{% endfor %}');
+          '{% for item in [1,2,3] of 1 %}{{ enterOuter() }}{% if choose(item) %}{% include "cl-branch-include-child.njk" %}{% else %}S{{ item }}{% endif %}|{% endfor %}');
 
         const result = await localEnv.renderTemplate('cl-branch-include-parent.njk', context);
         expect(result).to.equal('I1|S2|I3|');
+        expect(context.startedDuringInclude).to.be(0);
+        expect(context.includeActive).to.be(0);
+      });
+
+      it('concurrentLimit loop async if condition rejection stays in poison flow', async () => {
+        const context = {
+          async shouldRender(item) {
+            await delay(2);
+            if (item === 2) {
+              throw new Error('if condition failed');
+            }
+            return true;
+          }
+        };
+
+        const template = `
+        {%- for item in [1,2] of 1 -%}
+          {%- if shouldRender(item) -%}I{{ item }}{%- endif -%}
+        {%- endfor -%}
+        `;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail('Expected poisoned async if condition to reject');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.message).to.contain('if condition failed');
+          expect(err.message).to.not.contain('ControlFlowAsyncBlock');
+        }
+      });
+
+      it('concurrentLimit loop async switch expression rejection stays in poison flow', async () => {
+        const context = {
+          async pick(item) {
+            await delay(2);
+            if (item === 2) {
+              throw new Error('switch expression failed');
+            }
+            return item;
+          }
+        };
+
+        const template = `
+        {%- for item in [1,2] of 1 -%}
+          {%- switch pick(item) -%}
+            {%- case 1 -%}A
+            {%- case 2 -%}B
+            {%- default -%}C
+          {%- endswitch -%}
+        {%- endfor -%}
+        `;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail('Expected poisoned async switch expression to reject');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.message).to.contain('switch expression failed');
+          expect(err.message).to.not.contain('ControlFlowAsyncBlock');
+        }
+      });
+
+      it('hard object-loop arity failure inside async control flow remains a real error', async () => {
+        const context = {
+          catalog: { a: 1, b: 2 },
+          async gate() {
+            await delay(2);
+            return true;
+          }
+        };
+
+        const template = `
+        {%- for item in [1] of 1 -%}
+          {%- if gate() -%}
+            {%- for key in catalog of 2 -%}{{ key }}{%- endfor -%}
+          {%- endif -%}
+        {%- endfor -%}
+        `;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail('Expected hard object-loop arity error');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(false);
+          expect(err.message).to.contain('Expected two variables for key/value iteration');
+        }
       });
 
       it('keeps outer of 1 blocked until nested async while work completes', async () => {
@@ -2422,25 +2541,25 @@
       expect(countWaitResolveCommands(source)).to.be(1);
     });
 
-    it('emits one WaitResolveCommand when async work appears only in if/elif conditions', function () {
+    it('emits parent and child WaitResolveCommands when async work appears only in if/elif conditions', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if condA(x) %}{% elif condB(x) %}{% endif %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(1);
+      expect(countWaitResolveCommands(source)).to.be(2);
     });
 
-    it('emits one WaitResolveCommand when async branch roots are wrapped by async control flow', function () {
+    it('emits branch-local and parent WaitResolveCommands when async branch roots are wrapped by async control flow', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if cond(x) %}{{ foo(x) }}{% else %}{{ bar(x) }}{% endif %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(1);
+      expect(countWaitResolveCommands(source)).to.be(3);
     });
 
-    it('emits one parent WaitResolveCommand for a nested limited loop statement with no body roots', function () {
+    it('emits parent and child WaitResolveCommands for a nested limited loop statement with no body roots', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% for y in ys of 2 %}{% endfor %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(1);
+      expect(countWaitResolveCommands(source)).to.be(2);
     });
 
     it('emits one WaitResolveCommand for async switch completion inside a limited loop', function () {

@@ -505,8 +505,15 @@ function ensureChannelIterator(channel) {
   return channel._iterator;
 }
 
-function createCommandBuffer(context, parent = null, frame = null) {
-  return new CommandBuffer(context, parent, frame);
+function createCommandBuffer(context, parent = null, frame = null, linkedChannels = null, linkedParent = null) {
+  const buffer = new CommandBuffer(context, parent, frame);
+  const linkTarget = linkedParent || parent;
+  if (linkTarget && Array.isArray(linkedChannels)) {
+    for (let i = 0; i < linkedChannels.length; i++) {
+      linkTarget.addBuffer(buffer, linkedChannels[i]);
+    }
+  }
+  return buffer;
 }
 
 function isCommandBuffer(value) {
