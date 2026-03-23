@@ -48,7 +48,6 @@ class CommandBuffer {
 
     // Iterators currently visiting this buffer keyed by channel name.
     this._visitingIterators = new Map();
-
     if (parent && parent._boundaryAliases) {
       // Propagate include-boundary alias projection down the buffer tree.
       this._inheritBoundaryAliases(parent._boundaryAliases);

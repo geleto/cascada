@@ -2548,7 +2548,7 @@
       expect(countWaitResolveCommands(source)).to.be(2);
     });
 
-    it('emits branch-local and parent WaitResolveCommands when async branch roots are wrapped by async control flow', function () {
+    it('emits control-flow and branch-root WaitResolveCommands when async text branch roots are wrapped by async control flow', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if cond(x) %}{{ foo(x) }}{% else %}{{ bar(x) }}{% endif %}{% endfor %}', env);
       const source = tmpl._compileSource();

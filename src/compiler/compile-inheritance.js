@@ -45,11 +45,9 @@ class CompileInheritance {
 
   _emitValueImportBinding(frame, name, sourceVar, node) {
     this.emit.line(`runtime.declareChannel(frame, ${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-    this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
-      this.emit(
-        `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
-      );
-    }, node, name);
+    this.emit.line(
+      `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
+    );
     this.emit.line(`if(frame.topLevel) { context.addExport("${name}"); }`);
   }
 
@@ -104,28 +102,20 @@ class CompileInheritance {
     const id = this._compileGetTemplateOrScript(node, frame, false, false, true);
 
     if (node.isAsync) {
-      const res = this.compiler._tmpid();
-      this.emit(`${id} = `);
-      this.emit.asyncBlockValue(node, frame, (n, f) => {
-        this.emit(`let ${res} = (await ${id}).getExported(${n.withContext
-          ? `context.getVariables(), frame, astate, cb`
-          : `null, null, astate, cb`
-        });`);
-      }, res, node);
-      // Step 7: include import boundary completion in limited-loop waited output.
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, id, node);
-      //this.emit.line(';');
+      const exportedId = this.compiler._tmpid();
+      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${node.withContext
+        ? `context.getVariables(), frame, astate, cb`
+        : `null, null, astate, cb`
+      }));`);
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, exportedId, node);
+      this._emitValueImportBinding(frame, target, exportedId, node);
+      return;
     } else {
       this.emit.addScopeLevel();
       this.emit.line(id + '.getExported(' +
         (node.withContext ? 'context.getVariables(), frame, ' : '') +
         this.compiler._makeCallback(id));
       this.emit.addScopeLevel();
-    }
-
-    if (this.compiler.asyncMode) {
-      this._emitValueImportBinding(frame, target, id, node);
-      return;
     }
 
     frame.set(target, id);
@@ -142,17 +132,12 @@ class CompileInheritance {
     const importedId = this._compileGetTemplateOrScript(node, frame, false, false, true);
 
     if (node.isAsync) {
-      // Get the exported object from the template
-      const res = this.compiler._tmpid();
+      const exportedId = this.compiler._tmpid();
       const bindingIds = [];
-      this.emit(`${importedId} = `);
-      // Use node as position node for the getExported part
-      this.emit.asyncBlockValue(node, frame, (n, f) => {
-        this.emit(`let ${res} = (await ${importedId}).getExported(${n.withContext
-          ? `context.getVariables(), frame, astate, cb`
-          : `null, null, astate, cb`
-        });`);
-      }, res, node);
+      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${node.withContext
+        ? `context.getVariables(), frame, astate, cb`
+        : `null, null, astate, cb`
+      }));`);
 
       // Now extract each individual variable from the exported object
       node.names.children.forEach((nameNode) => {
@@ -174,7 +159,7 @@ class CompileInheritance {
 
         // Create individual promise for this variable - await ${importedId} which now holds the exported object
         this.emit.line(`let ${id} = (async () => { try {`);
-        this.emit.line(`  let exported = await ${importedId};`);
+        this.emit.line(`  let exported = await ${exportedId};`);
         this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
         this.emit.line(`    return exported["${name}"];`);
         this.emit.line(`  } else {`);
@@ -192,7 +177,7 @@ class CompileInheritance {
         this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, boundaryCompletion, node);
       } else {
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, importedId, node);
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, exportedId, node);
       }
     } else {
       // Sync mode remains unchanged
@@ -331,21 +316,17 @@ class CompileInheritance {
       if (node.asyncStoreIn) {
         this.emit.line(`let ${node.asyncStoreIn} = ${parentTemplateId};`);
       }
-
-      frame = this.emit.asyncBlockBegin(node, frame, false, node.template);
-      const templateVar = this.compiler._tmpid();
-      this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
-
-      // ALWAYS store in parentTemplate for block registration (and static case)
-      this.emit.line(`parentTemplate = ${templateVar};`);
-
-      // Register blocks while still inside async block
-      this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
-      this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
-      this.emit.line('}');
-
-      this.emit.line('context.finishAsyncBlocks()');
-      frame = this.emit.asyncBlockEnd(node, frame, false, node.template, null, false);
+      const extendsResult = this.compiler.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
+        const templateVar = this.compiler._tmpid();
+        this.emit.line(`let ${templateVar} = await runtime.resolveSingle(${parentTemplateId});`);
+        this.emit.line(`parentTemplate = ${templateVar};`);
+        this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
+        this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
+        this.emit.line('}');
+        this.emit.line('await context.finishAsyncBlocks();');
+        return blockFrame;
+      });
+      frame = extendsResult.frame;
     } else {
       // SYNC MODE
       this.emit.line(`parentTemplate = ${parentTemplateId};`);
@@ -384,9 +365,7 @@ class CompileInheritance {
       this.compileIncludeSync(node, frame);
       return;
     }
-    // Keep include command enqueue synchronous in the parent buffer. The command
-    // argument carries the async include completion promise.
-    this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar, f) => {
+    const includeResult = this.compiler.buffer.runControlFlowBlockNode(node, frame, (f) => {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
@@ -417,12 +396,11 @@ class CompileInheritance {
       this.emit.line(`let ${aliasMapVar} = {};`);
       this._emitDeclaredValueAliasMap(node._analysis, aliasMapVar);
 
-      // Resolve template promise, then compose and snapshot.
-      this.emit.line(`let ${includeTextPromise} = runtime.resolveSingle(${templateVar}).then(function(resolvedTemplate){`);
-      this.emit.line(`  const composed = resolvedTemplate._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
+      this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
+      this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
       // Compose child buffer with base->canonical aliases (e.g. loop -> loop#7)
       // so natural names used inside included templates target the right lane.
-      this.emit.line(`  composed._setBoundaryAliases(${aliasMapVar});`);
+      this.emit.line(`composed._setBoundaryAliases(${aliasMapVar});`);
       // Structural prelinking: attach composed child to parent lanes up front so
       // include-time symbol snapshots do not depend on lookup-time dynamic linking.
       const includeLinkCandidates = this._collectIncludeLinkCandidates(node._analysis);
@@ -433,14 +411,15 @@ class CompileInheritance {
         'composed',
         'composed._channels'
       );
-      this.emit.line(`  return composed.addSnapshot("${includeOutputChannelName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
-      this.emit.line('});');
-      this.emit.line(`${resultVar} = new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} });`);
+      this.emit.line(`let ${includeTextPromise} = composed.addSnapshot("${includeOutputChannelName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
       // Include boundary completion in limited-loop waited output.
       // Wait on the composed include snapshot promise (timing unit), not on the
       // command object created for parent enqueue.
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, includeTextPromise, node);
-    }, node, this.compiler.buffer.currentTextChannelName, false);
+      return f;
+    });
+    frame = includeResult.frame;
   }
 
   compileIncludeSync(node, frame) {

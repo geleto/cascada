@@ -33,18 +33,16 @@ const noopTmplSrc = {
 const noopTmplSrcAsync = {
   type: 'code',
   obj: {
-    // The signature must be updated to accept compositionMode.
     root(env, context, frame, runtime, astate, cb, compositionMode = false) {
       try {
         if (!compositionMode) {
-          // Only call the success callback if not in composition mode.
           cb(null, '');
+          return;
         }
-        // In composition mode, we do nothing and let the caller handle success.
-        // We still need to return an empty value, like a real template would.
-        if (compositionMode) {
-          return ''; // A real template would return [], but '' works for snapshot-based composition.
-        }
+        const output = runtime.createCommandBuffer(context, null, frame);
+        runtime.declareChannel(frame, output, '__text__', 'text', context, null);
+        output.markFinishedAndPatchLinks();
+        return output;
       } catch (e) {
         const err = handleError(e, null, null, null, context ? context.path : null);
         cb(err);
