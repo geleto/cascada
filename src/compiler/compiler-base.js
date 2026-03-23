@@ -1333,8 +1333,36 @@ class CompilerBase extends Obj {
     }
   }
 
-  // @todo - audit compileExpression and wrapping
-  // @todo - _compileExpression should take care of it's own async block wrapping
+  // Statement/root-expression wrapper.
+  // In __waited__ scope, root expressions add exactly one completion marker
+  // unless the caller opts out for control/composition inputs.
+  // `_compileExpression` stays recursive and never emits waited markers itself.
+  compileExpression(node, frame, forceWrap, positionNode, excludeFromWaitedRootTracking = false) {
+    const shouldEmitOwnWaitedResolve = this.asyncMode &&
+      this.buffer.currentWaitedChannelName &&
+      !excludeFromWaitedRootTracking;
+
+    if (!shouldEmitOwnWaitedResolve) {
+      this._compileExpression(node, frame, forceWrap, positionNode);
+      return;
+    }
+
+    const resultId = this._tmpid();
+    const waitedChannelName = this.buffer.currentWaitedChannelName;
+    const posLiteral = this.buffer._emitPositionLiteral(positionNode ?? node);
+
+    this.emit('(() => { ');
+    this.emit(`let ${resultId} = `);
+    this._compileExpression(node, frame, forceWrap, positionNode);
+    this.emit('; ');
+    this.emit(`${this.buffer.currentBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${resultId}], pos: ${posLiteral} }), "${waitedChannelName}"); `);
+    this.emit(`return ${resultId}; `);
+    this.emit('})()');
+  }
+
+  // @todo - audit remaining `_compileExpression` root call sites and move them to
+  // `compileExpression` unless they are intentional subexpressions/exclusions.
+  // @todo - `_compileExpression` should take care of its own async block wrapping.
   // @todo - !!!  make the CommandBuffer tree synchronously before any expression evaluation
   //         each node will know its current command buffer
   _compileExpression(node, frame, forceWrap, positionNode) {

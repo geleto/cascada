@@ -78,7 +78,7 @@ class ChannelCommand extends Command {
     super();
     this.channelName = channelName;
     this.command = command;
-    this.arguments = args || legacyArgs || [];
+    this.arguments = normalizeCommandArgsForDeferredHandling(args || legacyArgs || []);
     this.subpath = subpath;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
@@ -110,6 +110,24 @@ class ChannelCommand extends Command {
   apply(ctx) {
     void ctx;
   }
+}
+
+function normalizeCommandArgsForDeferredHandling(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeCommandArgsForDeferredHandling);
+  }
+  if (isPoison(value) || isPoisonError(value)) {
+    return value;
+  }
+  if (value && typeof value.then === 'function') {
+    const wrapped = Promise.resolve(value).then(
+      (resolved) => resolved,
+      (err) => { throw err; }
+    );
+    wrapped.catch(() => {});
+    return wrapped;
+  }
+  return value;
 }
 
 // Appends one or more text values to a text channel's buffer array, or replaces it on `set`.

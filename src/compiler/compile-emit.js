@@ -199,7 +199,7 @@ module.exports = class CompileEmit {
   asyncBlock(node, frame, createScope, emitFunc, positionNode = node) {
     const aframe = this.asyncBlockBegin(node, frame, createScope, positionNode);
     emitFunc(aframe);
-    this.asyncBlockEnd(node, aframe, createScope, false, positionNode, null, false, false); // Pass sequentialLoopBody=false by default
+    this.asyncBlockEnd(node, aframe, createScope, positionNode, null, false, false);
   }
 
   asyncBlockBegin(node, frame, createScope, positionNode = node) {
@@ -219,19 +219,14 @@ module.exports = class CompileEmit {
     return frame;
   }
 
-  asyncBlockEnd(node, frame, createScope, sequentialLoopBody = false, positionNode = node, parentBufferArg, createOutputBuffer, hasConcurrencyLimit = false) {
+  asyncBlockEnd(node, frame, createScope, positionNode = node, parentBufferArg, createOutputBuffer) {
     if (node.isAsync) {
-      if (sequentialLoopBody) {
-        // Wait for child async blocks spawned within this iteration
-        // before proceeding to finally/catch.
-        this.line('await astate.waitAllClosures(1);');
-      }
       this.asyncClosureDepth--;
       this.line('}');
       const asyncMetaArg = this.getAsyncBlockArgs(node, frame);
       const resolvedParentBufferArg = parentBufferArg || this.compiler.buffer.currentBuffer || 'null';
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
-      this.line(`, runtime, frame, ${asyncMetaArg}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb, ${hasConcurrencyLimit})`);
+      this.line(`, runtime, frame, ${asyncMetaArg}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb)`);
       this.line(';');
     }
     if (createScope && !node.isAsync) {
@@ -401,9 +396,9 @@ module.exports = class CompileEmit {
       }
       return !declaredChannels.has(name);
     });
-    if (this.compiler.buffer.currentWaitedChannelName) {
-      linkedChannels.push(this.compiler.buffer.currentWaitedChannelName);
-    }
+    // Do not link currentWaitedChannelName here.
+    // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
+    // Nested control-flow buffers are applied through their own channels/iterators.
     return linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
   }
 

@@ -4,13 +4,13 @@
   let expect;
   let AsyncEnvironment;
   let AsyncTemplate;
+  let AsyncScript;
   let StringLoader;
   let delay;
   let createPoison;
   let isPoisonError;
   let parser;
   let TextCommand;
-  let DataCommand;
   let CommandBuffer;
   let createChannel;
   let scopeBoundaries;
@@ -20,6 +20,7 @@
     const envModule = require('../../src/environment/environment');
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
+    AsyncScript = envModule.AsyncScript;
     StringLoader = require('../util').StringLoader;
     delay = require('../util').delay;
     const runtime = require('../../src/runtime/runtime');
@@ -27,7 +28,6 @@
     isPoisonError = runtime.isPoisonError;
     parser = require('../../src/parser');
     TextCommand = runtime.TextCommand;
-    DataCommand = runtime.DataCommand;
     CommandBuffer = runtime.CommandBuffer;
     createChannel = runtime.createChannel;
     scopeBoundaries = require('../../src/compiler/scope-boundaries');
@@ -35,13 +35,13 @@
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     AsyncTemplate = nunjucks.AsyncTemplate;
+    AsyncScript = nunjucks.AsyncScript;
     StringLoader = window.util.StringLoader;
     delay = window.util.delay;
     createPoison = nunjucks.createPoison;
     isPoisonError = nunjucks.isPoisonError;
     parser = nunjucks.parser;
     TextCommand = nunjucks.runtime.TextCommand;
-    DataCommand = nunjucks.runtime.DataCommand;
     CommandBuffer = nunjucks.runtime.CommandBuffer;
     createChannel = nunjucks.runtime.createChannel;
     scopeBoundaries = nunjucks.compiler.scopeBoundaries || null;
@@ -168,6 +168,185 @@
           '{% for loop in [10,20,30] of 2 %}{% include "cl-shadow-child.njk" %}{% endfor %}');
         const result = await localEnv.renderTemplate('cl-shadow-parent.njk', {});
         expect(result).to.equal('V10|V20|V30|');
+      });
+
+      it('concurrentLimit loop super() reuses async base block content correctly inside the loop body', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        const context = {
+          superActive: 0,
+          async enterOuter() {
+            return '';
+          },
+          async leaveOuter() {
+            return '';
+          },
+          calls: 0,
+          async slowBase() {
+            context.superActive++;
+            context.calls++;
+            try {
+              await delay(8);
+              return 'B';
+            } finally {
+              context.superActive--;
+            }
+          }
+        };
+
+        loader.addTemplate('cl-super-base.njk', '{% block content %}{{ slowBase() }}{% endblock %}');
+        loader.addTemplate('cl-super-child.njk',
+          '{% extends "cl-super-base.njk" %}{% block content %}{% for item in [1,2] of 1 %}{{ enterOuter() }}{{ super() }}{{ leaveOuter() }}|{% endfor %}{% endblock %}');
+
+        const result = await localEnv.renderTemplate('cl-super-child.njk', context);
+        expect(result).to.equal('B|B|');
+        expect(context.calls).to.be(1);
+        expect(context.superActive).to.be(0);
+      });
+
+      it('concurrentLimit loop import waits for imported async exports before next outer iteration', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        const context = {
+          importActive: 0,
+          startedDuringImport: 0,
+          async enterOuter() {
+            if (context.importActive > 0) {
+              context.startedDuringImport++;
+            }
+            return '';
+          },
+          async leaveOuter() {
+            return '';
+          },
+          calls: 0,
+          async slowImportValue() {
+            context.importActive++;
+            context.calls++;
+            try {
+              await delay(8);
+              return 'I';
+            } finally {
+              context.importActive--;
+            }
+          }
+        };
+
+        loader.addTemplate('cl-import-lib.njk', '{% set imported = slowImportValue() %}');
+        loader.addTemplate('cl-import-parent.njk',
+          '{% for item in [1,2] of 1 %}{{ enterOuter() }}{% import "cl-import-lib.njk" as lib with context %}{{ leaveOuter() }}{{ lib.imported }}|{% endfor %}');
+
+        const result = await localEnv.renderTemplate('cl-import-parent.njk', context);
+        expect(result).to.equal('I|I|');
+        expect(context.calls).to.be(2);
+        expect(context.startedDuringImport).to.be(0);
+      });
+
+      it('concurrentLimit loop from-import waits for imported async exports before next outer iteration', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        const context = {
+          importActive: 0,
+          startedDuringImport: 0,
+          async enterOuter() {
+            if (context.importActive > 0) {
+              context.startedDuringImport++;
+            }
+            return '';
+          },
+          async leaveOuter() {
+            return '';
+          },
+          calls: 0,
+          async slowImportValue() {
+            context.importActive++;
+            context.calls++;
+            try {
+              await delay(8);
+              return 'F';
+            } finally {
+              context.importActive--;
+            }
+          }
+        };
+
+        loader.addTemplate('cl-from-lib.njk', '{% set exportedValue = slowImportValue() %}');
+        loader.addTemplate('cl-from-parent.njk',
+          '{% for item in [1,2] of 1 %}{{ enterOuter() }}{% from "cl-from-lib.njk" import exportedValue with context %}{{ leaveOuter() }}{{ exportedValue }}|{% endfor %}');
+
+        const result = await localEnv.renderTemplate('cl-from-parent.njk', context);
+        expect(result).to.equal('F|F|');
+        expect(context.calls).to.be(2);
+        expect(context.startedDuringImport).to.be(0);
+      });
+
+      it('concurrentLimit loop import poisons when imported async exports reject', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        const context = {
+          async failImport() {
+            await delay(4);
+            throw new Error('import export failed');
+          }
+        };
+
+        loader.addTemplate('cl-import-poison-lib.njk', '{% set imported = failImport() %}');
+        loader.addTemplate('cl-import-poison-parent.njk',
+          '{% for item in [1,2] of 1 %}{% import "cl-import-poison-lib.njk" as lib with context %}{{ lib.imported }}{% endfor %}');
+
+        try {
+          await localEnv.renderTemplate('cl-import-poison-parent.njk', context);
+          expect().fail('Expected import export rejection to poison the loop');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors[0].message).to.contain('import export failed');
+        }
+      });
+
+      it('concurrentLimit loop from-import poisons when imported async exports reject', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        const context = {
+          async failImport() {
+            await delay(4);
+            throw new Error('from-import export failed');
+          }
+        };
+
+        loader.addTemplate('cl-from-poison-lib.njk', '{% set exportedValue = failImport() %}');
+        loader.addTemplate('cl-from-poison-parent.njk',
+          '{% for item in [1,2] of 1 %}{% from "cl-from-poison-lib.njk" import exportedValue with context %}{{ exportedValue }}{% endfor %}');
+
+        try {
+          await localEnv.renderTemplate('cl-from-poison-parent.njk', context);
+          expect().fail('Expected from-import export rejection to poison the loop');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors[0].message).to.contain('from-import export failed');
+        }
+      });
+
+      it('concurrentLimit loop super() poisons when async base block content rejects', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        const context = {
+          async failBase() {
+            await delay(4);
+            throw new Error('super base failed');
+          }
+        };
+
+        loader.addTemplate('cl-super-poison-base.njk', '{% block content %}{{ failBase() }}{% endblock %}');
+        loader.addTemplate('cl-super-poison-child.njk',
+          '{% extends "cl-super-poison-base.njk" %}{% block content %}{% for item in [1,2] of 1 %}{{ super() }}{% endfor %}{% endblock %}');
+
+        try {
+          await localEnv.renderTemplate('cl-super-poison-child.njk', context);
+          expect().fail('Expected async super rejection to poison the loop');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors[0].message).to.contain('super base failed');
+        }
       });
 
       it('inner loop concurrentLimit expression reads parent loop metadata', async () => {
@@ -360,6 +539,54 @@
 
         await env.renderTemplateString(template, context);
         expect(context.outerMax).to.be(1);
+      });
+
+      it('keeps outer of 1 blocked until nested unbounded loop work completes', async () => {
+        const context = {
+          outer: [1, 2],
+          inner: [1, 2, 3],
+          outerActive: 0,
+          outerMax: 0,
+          innerActive: 0,
+          innerMax: 0,
+          async enterOuter(id) {
+            void id;
+            context.outerActive++;
+            context.outerMax = Math.max(context.outerMax, context.outerActive);
+            return '';
+          },
+          async leaveOuter(id) {
+            void id;
+            context.outerActive--;
+            return '';
+          },
+          async innerWork(o, i) {
+            void o;
+            void i;
+            context.innerActive++;
+            context.innerMax = Math.max(context.innerMax, context.innerActive);
+            try {
+              await delay(8);
+            } finally {
+              context.innerActive--;
+            }
+            return '';
+          }
+        };
+
+        const template = `
+        {%- for o in outer of 1 -%}
+          {{ enterOuter(o) }}
+          {%- for i in inner -%}
+            {{ innerWork(o, i) }}
+          {%- endfor -%}
+          {{ leaveOuter(o) }}
+        {%- endfor -%}
+        `;
+
+        await env.renderTemplateString(template, context);
+        expect(context.outerMax).to.be(1);
+        expect(context.innerMax).to.be.greaterThan(1);
       });
     });
 
@@ -1982,18 +2209,53 @@
       expect(source).to.not.contain('new runtime.WaitResolveCommand');
     });
 
-    it('emits exactly one WaitResolveCommand for an aggregate root expression in a limited loop', function () {
+    it('emits exactly two WaitResolveCommands (aggregate root expression + closure anchor) in a limited loop', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ [x + 1, x * 2, (x + 3)] }}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(1);
+      expect(countWaitResolveCommands(source)).to.be(2);
     });
 
-    it('does not emit extra child waits for aggregate children in a limited loop expression root', function () {
+    it('does not emit extra child waits for aggregate children: only aggregate root + closure anchor', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ [foo(x), bar(x), baz(x)] }}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(1);
+      expect(countWaitResolveCommands(source)).to.be(2);
+    });
+
+    it('emits WaitResolveCommand for limited-loop set roots', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% set y = foo(x) %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(2);
+    });
+
+    it('emits WaitResolveCommand for limited-loop do roots', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% do foo(x) %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(2);
+    });
+
+    it('emits WaitResolveCommand for limited-loop script var roots', function () {
+      const env = new AsyncEnvironment();
+      const script = new AsyncScript('for x in xs of 2\n  var y = foo(x)\nendfor\nreturn data.snapshot()', env);
+      const source = script._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(2);
+    });
+
+    it('emits WaitResolveCommand for limited-loop return roots', function () {
+      const env = new AsyncEnvironment();
+      const script = new AsyncScript('for x in xs of 2\n  return foo(x)\nendfor\nreturn data.snapshot()', env);
+      const source = script._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(2);
+    });
+
+    it('emits WaitResolveCommand for limited-loop var-channel initializer roots', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% var y = foo(x) %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(2);
     });
 
     it('emits WaitResolveCommand for include boundary completion in limited loops', function () {
@@ -2055,25 +2317,32 @@
 
 
 
-    it('does not emit WaitResolveCommand for iterator source expressions alone', function () {
+    it('emits only the closure-anchor WaitResolveCommand when body has no async expressions (source expr alone)', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in makeItems() of 2 %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(0);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
-    it('does not emit WaitResolveCommand for concurrentLimit expressions alone', function () {
+    it('emits only the closure-anchor WaitResolveCommand when body has no async expressions (concurrentLimit expr alone)', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of limitExpr() %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(0);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
-    it('does not emit WaitResolveCommand for condition expressions alone in limited loops', function () {
+    it('emits only the closure-anchor WaitResolveCommand when body has no top-level async expressions (condition alone)', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if cond(x) %}{% endif %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(0);
+      expect(countWaitResolveCommands(source)).to.be(1);
+    });
+
+    it('emits only the closure-anchor WaitResolveCommand when async work appears only in if/elif conditions', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if condA(x) %}{% elif condB(x) %}{% endif %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
     it('emits WaitResolveCommand for super boundary usage inside limited-loop block body', function () {
@@ -2081,91 +2350,6 @@
       const tmpl = new AsyncTemplate('{% extends "base.njk" %}{% block b %}{% for x in xs of 2 %}{{ super() }}{% endfor %}{% endblock %}', env);
       const source = tmpl._compileSource();
       expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
-    });
-  });
-
-  describe('CommandBuffer.waitApplied', function () {
-    function createDeferred() {
-      let resolve;
-      let reject;
-      const promise = new Promise((res, rej) => {
-        resolve = res;
-        reject = rej;
-      });
-      return { promise, resolve, reject };
-    }
-
-    it('waits for delayed mutable apply in text channel', async function () {
-      const ctx = { path: 'wait-applied.njk' };
-      const buffer = new CommandBuffer(ctx, null, { parent: null }, true);
-      const frame = { parent: null };
-
-      createChannel(frame, buffer, 'text', ctx, 'text');
-
-      const deferred = createDeferred();
-      buffer.add(new TextCommand({
-        channelName: 'text',
-        args: [deferred.promise],
-        pos: { lineno: 1, colno: 1 }
-      }), 'text');
-
-      buffer.markFinishedAndPatchLinks();
-
-      let settled = false;
-      const waitPromise = buffer.waitApplied().then(() => {
-        settled = true;
-      });
-
-      await Promise.resolve();
-      expect(settled).to.be(false);
-
-      deferred.resolve('done');
-      await waitPromise;
-      expect(settled).to.be(true);
-
-      const snapshot = await buffer.getChannel('text').finalSnapshot();
-      expect(snapshot).to.be('done');
-    });
-
-    it('waits until all channel lanes in the buffer are applied', async function () {
-      const ctx = { path: 'wait-applied-multi.njk' };
-      const buffer = new CommandBuffer(ctx, null, { parent: null }, true);
-      const frame = { parent: null };
-
-      createChannel(frame, buffer, 'text', ctx, 'text');
-      createChannel(frame, buffer, 'data', ctx, 'data');
-
-      const deferred = createDeferred();
-      buffer.add(new DataCommand({
-        channelName: 'data',
-        command: 'set',
-        args: [['value'], 1],
-        pos: { lineno: 1, colno: 1 }
-      }), 'data');
-      buffer.add(new TextCommand({
-        channelName: 'text',
-        args: [deferred.promise],
-        pos: { lineno: 1, colno: 1 }
-      }), 'text');
-
-      buffer.markFinishedAndPatchLinks();
-
-      let settled = false;
-      const waitPromise = buffer.waitApplied().then(() => {
-        settled = true;
-      });
-
-      await Promise.resolve();
-      expect(settled).to.be(false);
-
-      deferred.resolve('x');
-      await waitPromise;
-      expect(settled).to.be(true);
-
-      const textSnapshot = await buffer.getChannel('text').finalSnapshot();
-      const dataSnapshot = await buffer.getChannel('data').finalSnapshot();
-      expect(textSnapshot).to.be('x');
-      expect(dataSnapshot).to.eql({ value: 1 });
     });
   });
 

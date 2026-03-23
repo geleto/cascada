@@ -198,6 +198,11 @@ class RuntimeFatalError extends RuntimeError {
 class RuntimePromise {
   constructor(promise, errorContext) {
     this.promise = Promise.resolve(promise);
+    // RuntimePromise instances are often passed around as values and awaited
+    // only later during output application. Mark the wrapped promise as handled
+    // immediately so delayed consumption does not trigger
+    // PromiseRejectionHandledWarning for internal async flows.
+    this.promise.catch(() => {});
     this.errorContext = errorContext;
   }
 

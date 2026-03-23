@@ -49,8 +49,7 @@ class AsyncState {
     asyncMeta,
     parentBuffer,
     createOutputBuffer,
-    cb,
-    hasConcurrencyLimit = false
+    cb
   ) {
     const usedChannels = asyncMeta && Array.isArray(asyncMeta.usedChannels)
       ? asyncMeta.usedChannels
@@ -61,7 +60,7 @@ class AsyncState {
     let newBuffer = null;
     if (createOutputBuffer) {
       const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
-      newBuffer = runtime.createCommandBuffer(bufferContext, null, childFrame, hasConcurrencyLimit);
+      newBuffer = runtime.createCommandBuffer(bufferContext, null, childFrame);
       if (parentBuffer && Array.isArray(usedChannels)) {
         for (const channelName of usedChannels) {
           parentBuffer.addBuffer(newBuffer, channelName);
@@ -73,19 +72,13 @@ class AsyncState {
 
     const activeBuffer = newBuffer || parentBuffer || null;
     const cleanup = () => {
-      let waitAppliedPromise = null;
-      // Finalize this block's buffer on both success and failure so parent
-      // chaining can progress in error paths as well.
+      // Always finalize the child buffer so parent iteration/output ordering can proceed,
+      // even if the block failed. Waited-loop completion itself comes from the block's
+      // returned promise, not from cleanup timing.
       if (newBuffer) {
         newBuffer.markFinishedAndPatchLinks();
-        // Limited-loop iterations must not complete until all mutable applies in
-        // this iteration buffer segment are drained.
-        if (hasConcurrencyLimit) {
-          waitAppliedPromise = newBuffer.waitApplied();
-        }
       }
       childState._leaveAsyncBlock();
-      return waitAppliedPromise;
     };
 
     const result = func(childState, childFrame, activeBuffer, parentBuffer || null);

@@ -12,7 +12,8 @@ class CompileLoop {
       // Synchronous case: remains the same, no changes needed.
       // @todo - use compileFor for the loop variable, etc...
       this.compiler.emit('while (');
-      this.compiler._compileExpression(node.cond, frame, false);
+      // While conditions are scheduler/control expressions, not waited-root work.
+      this.compiler.compileExpression(node.cond, frame, false, node.cond, true);
       this.compiler.emit(') {');
       this.compiler.compile(node.body, frame);
       this.compiler.emit('}');
@@ -68,7 +69,8 @@ class CompileLoop {
         // Keep it out of the loop body's own waited channel tracking scope.
         this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${arr} = `);
-          this.compiler._compileExpression(node.arr, innerFrame, false);
+          // The iterable source is loop scheduler input, not a root body result.
+          this.compiler.compileExpression(node.arr, innerFrame, false, node.arr, true);
           this.compiler.emit.line(';');
         });
       }
@@ -80,7 +82,8 @@ class CompileLoop {
         // It must not be tracked as iteration-body waited channel work.
         this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${limitVar} = `);
-          this.compiler._compileExpression(node.concurrentLimit, innerFrame, false);
+          // This value configures scheduling only, so exclude it from root tracking.
+          this.compiler.compileExpression(node.concurrentLimit, innerFrame, false, node.concurrentLimit, true);
           this.compiler.emit.line(';');
         });
       }
@@ -136,7 +139,7 @@ class CompileLoop {
         elseFuncId = this.compiler._tmpid();
         this.compiler.emit(`let ${elseFuncId} = `);
 
-        this._compileLoopElse(node, innerFrame, sequentialLoopBody);
+        this._compileLoopElse(node, innerFrame);
         elseChannels = node.isAsync ? new Set(node.else_._analysis.usedChannels || []) : null;
       }
 
@@ -194,14 +197,17 @@ class CompileLoop {
     const errorContext = this.compiler._tmpid();
     this.compiler.emit(`, ${loopIndex}, ${loopLength}, ${isLast}, ${errorContext}) {`);
 
-    // Use node.body as the position for the inner buffer block (loop body execution)
+    // Sequential and bounded loops gate the next iteration on the current
+    // child buffer's __waited__ completion.
+    const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
+
     if (node.isAsync) {
-      // when sequential, the loop body IIFE will await all closures (waitAllClosures)
-      // we return the IIFE promise so that awaiting the loop body will wait for all closures
+      // Async loop bodies always return the asyncBlock result directly.
       this.compiler.emit('return ');
     }
-    const bodyResult = this.compiler.buffer.asyncBufferNode(node, frame, bodyCreatesScope, false, node.body, (bodyFrame) => {
-      const limitedWaitedChannelName = hasConcurrencyLimit
+
+    const bodyResult = this.compiler.buffer.asyncBufferNode(node, frame, bodyCreatesScope, node.body, (bodyFrame) => {
+      const limitedWaitedChannelName = (hasConcurrencyLimit || sequentialLoopBody)
         ? (node.body && node.body._analysis && node.body._analysis.waitedOutputName)
         : null;
       if (limitedWaitedChannelName) {
@@ -235,8 +241,8 @@ class CompileLoop {
           this._emitLoopVarIterationBinding(node, varName, varName, bodyFrame, useLoopValues);
         }
 
-        // Compile Loop Condition (if while loop)
-        // We do this after destructuring but before body, in the same async block
+        // While conditions run inside the same async block, but stay out of __waited__
+        // because they drive control flow rather than iteration completion.
         let catchPoisonPos = null;
         let whileCondId;
 
@@ -258,8 +264,7 @@ class CompileLoop {
             catchPoisonPos = this.compiler.codebuf.length;
             this.compiler.emit.line(''); // Placeholder for poison injection
 
-            // We set whileCond to false so the loop logic (if !whileCond) below triggers termination
-            // But first we ensure 'return runtime.STOP_WHILE' is reached to stop iteration cleanly
+            // We set whileCond to false so the loop logic below terminates this iteration cleanly.
             this.compiler.emit(`  ${whileCondId} = false;`);
             this.compiler.emit('}');
           } else {
@@ -272,7 +277,7 @@ class CompileLoop {
           }
 
           this.compiler.emit(`if (!${whileCondId}) {`);
-          this.compiler.emit.line('  return runtime.STOP_WHILE;');
+          this.compiler.emit.line('  return false;');
           this.compiler.emit.line('}');
         }
 
@@ -292,13 +297,33 @@ class CompileLoop {
           }
         }
 
-        const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
+        // Finish the child buffer before finalSnapshot() so the parent iterator can
+        // descend into it. finalSnapshot() is the authoritative "iteration done" signal.
+        // The closure anchor is still transitional glue for nested asyncBlock closures.
+        if (shouldAwaitLoopBody) {
+          const closureWaitId = this.compiler._tmpid();
+          const waitedSnapshotId = this.compiler._tmpid();
+          this.compiler.emit.line(`const ${closureWaitId} = astate.waitAllClosures(1);`);
+          this.compiler.buffer.emitOwnWaitedConcurrencyResolve(bodyFrame, closureWaitId, null);
+          this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+          this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChannel("${limitedWaitedChannelName}").finalSnapshot();`);
+          if (whileConditionNode) {
+            this.compiler.emit.line(`await ${waitedSnapshotId};`);
+            this.compiler.emit.line('return true;');
+          } else {
+            this.compiler.emit.line(`return ${waitedSnapshotId};`);
+          }
+        }
+
         return {
           result: bodyFrame,
-          sequential: shouldAwaitLoopBody,
-          hasConcurrencyLimit: shouldAwaitLoopBody
+          hasConcurrencyLimit: false
         };
       };
+
+      if ((sequentialLoopBody || hasConcurrencyLimit) && !limitedWaitedChannelName) {
+        this.compiler.fail('compileFor: limited/sequential loop body has no waited channel — compiler analysis bug', node.lineno, node.colno, node);
+      }
 
       if (!limitedWaitedChannelName) {
         return compileIterationBody();
@@ -314,17 +339,11 @@ class CompileLoop {
     return bodyFrame;
   }
 
-  _compileLoopElse(node, frame, sequential) {
-    const awaitSequentialElse = false;//I think awaiting it like loop body is not needed
+  _compileLoopElse(node, frame) {
     const elseCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
 
     if (node.isAsync) {
       this.compiler.emit('(async function() {');
-      // must return the promise from its async block
-      // which when sequential will wait for all closures
-      if (awaitSequentialElse) {
-        this.compiler.emit('return ');
-      }
     } else {
       this.compiler.emit('function() {');
     }
@@ -334,7 +353,6 @@ class CompileLoop {
       node,
       frame,
       elseCreatesScope,
-      sequential && awaitSequentialElse,
       node.else_,
       (elseFrame) => {
         this.compiler.compile(node.else_, elseFrame);
@@ -432,7 +450,8 @@ class CompileLoop {
     this.compiler.emit.line('frame = frame.push();');
 
     this.compiler.emit('let ' + arr + ' = runtime.fromIterator(');
-    this.compiler._compileExpression(node.arr, frame, false);
+    // Legacy async-loop source is scheduling input, not waited-root work.
+    this.compiler.compileExpression(node.arr, frame, false, node.arr, true);
     this.compiler.emit.line(');');
 
     if (node.name instanceof nodes.Array) {

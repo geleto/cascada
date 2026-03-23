@@ -220,20 +220,13 @@ class CompileBuffer {
   }
 
   emitOwnWaitedConcurrencyResolve(frame, valueExpr, positionNode = null) {
-    // Limited-loop timing hook:
-    // Emit a WaitResolveCommand only when current compilation scope owns a
-    // waited channel (`__waited__*`). Outside that scope this is a no-op.
-    //
-    // This command is for iteration-completion timing only (used by waitApplied).
-    // It must not change functional error propagation semantics.
+    // Waited-loop bookkeeping: in __waited__ scope, root work contributes one
+    // timing-only WaitResolveCommand to the current iteration channel.
     const waitedChannelName = this.currentWaitedChannelName;
     if (!this.compiler.asyncMode || !waitedChannelName) {
       return;
     }
-    // Register as usage, not mutation: waited commands are bookkeeping and
-    // should not participate in output-mutation wrapping decisions.
-    // WaitResolveCommand resolves plain promises and aggregate roots; runtime
-    // command apply intentionally swallows resolution errors (timing-only wait).
+    // Register as usage, not mutation: __waited__ tracks completion, not output state.
     this.compiler.emit.line(
       `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedChannelName}");`
     );
@@ -504,7 +497,7 @@ class CompileBuffer {
     return { frame, result };
   }
 
-  asyncBufferNode(node, frame, createScope = false, sequential = false, positionNode = node, emitFunc = null) {
+  asyncBufferNode(node, frame, createScope = false, positionNode = node, emitFunc = null) {
     if (node.isAsync) {
       const parentBufferArg = this.currentBuffer;
       let nextFrame = this.compiler.emit.asyncBlockBegin(node, frame, createScope, positionNode);
@@ -522,16 +515,13 @@ class CompileBuffer {
           callbackValue = emitFunc(nextFrame, nestedBufferId, prevBuffer);
         }
       } finally {
-        const dynamicSequential = callbackValue?.sequential ?? sequential;
         nextFrame = this.compiler.emit.asyncBlockEnd(
           node,
           nextFrame,
           createScope,
-          dynamicSequential,
           positionNode,
           parentBufferArg,
-          true,
-          callbackValue?.hasConcurrencyLimit
+          true
         );
         this.currentBuffer = prevBuffer;
         this.currentTextChannelVar = prevTextChannelVar;

@@ -21,16 +21,13 @@ const { checkFinishedBuffer } = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
 
 class CommandBuffer {
-  constructor(context, parent = null, frame = null, enableWaitApplied = false) {
+  constructor(context, parent = null, frame = null) {
     if (!frame || typeof frame !== 'object') {
       throw new Error('CommandBuffer requires an owning frame');
     }
     this._context = context;
     this.parent = parent;
     this.finished = false;
-    // Aggregate buffer completion. This remains because some callers still need
-    // a whole-buffer lifecycle signal, and because waitApplied currently resolves
-    // against whole-buffer completion rather than per-channel completion.
     this._finishedChannels = Object.create(null);
     // Per-channel close requests. A requested channel may finish immediately if
     // nothing else can still arrive on that lane for this buffer.
@@ -52,15 +49,6 @@ class CommandBuffer {
     // Iterators currently visiting this buffer keyed by channel name.
     this._visitingIterators = new Map();
 
-    // waitApplied tracking exists only until waitApplied is removed.
-    this._enableWaitApplied = enableWaitApplied;
-    if (this._enableWaitApplied) {
-      // waitApplied-only: number of active iterator presences in this buffer.
-      this._activeWaitAppliedCount = 0;
-      // waitApplied-only deferred promise state.
-      this._waitAppliedPromise = null;
-      this._waitAppliedResolve = null;
-    }
     if (parent && parent._boundaryAliases) {
       // Propagate include-boundary alias projection down the buffer tree.
       this._inheritBoundaryAliases(parent._boundaryAliases);
@@ -121,9 +109,6 @@ class CommandBuffer {
     }
     const resolvedChannelName = this._resolveChannelName(channelName);
     this._visitingIterators.set(resolvedChannelName, iterator);
-    if (this._enableWaitApplied) {
-      this._activeWaitAppliedCount++;
-    }
   }
 
   onLeaveBuffer(iterator, channelName) {
@@ -135,24 +120,6 @@ class CommandBuffer {
     if (current === iterator) {
       this._visitingIterators.delete(resolvedChannelName);
     }
-    if (this._enableWaitApplied && this._activeWaitAppliedCount > 0) {
-      this._activeWaitAppliedCount--;
-    }
-    this._resolveWaitAppliedIfReady();
-  }
-
-  waitApplied() {
-    // waitApplied-only API. Once waitApplied is removed this promise plumbing
-    // and the aggregate `finished` dependency can likely go with it.
-    if (this._isWaitAppliedReady()) {
-      return Promise.resolve();
-    }
-    if (!this._waitAppliedPromise) {
-      this._waitAppliedPromise = new Promise((resolve) => {
-        this._waitAppliedResolve = resolve;
-      });
-    }
-    return this._waitAppliedPromise;
   }
 
   addText(value, pos = null, channelName = 'text') {
@@ -407,7 +374,6 @@ class CommandBuffer {
       }
     }
     this.finished = true;
-    this._resolveWaitAppliedIfReady();
   }
 
   _notifyChannelFinished(channelName) {
@@ -427,24 +393,6 @@ class CommandBuffer {
       throw new Error(`CommandBuffer channel '${resolvedChannelName}' is unavailable`);
     }
     return output;
-  }
-
-  _isWaitAppliedReady() {
-    // waitApplied-only aggregate completion check.
-    if (!this._enableWaitApplied) {
-      return this.finished;
-    }
-    return this.finished && this._activeWaitAppliedCount === 0;
-  }
-
-  _resolveWaitAppliedIfReady() {
-    if (!this._waitAppliedResolve || !this._isWaitAppliedReady()) {
-      return;
-    }
-    const resolve = this._waitAppliedResolve;
-    this._waitAppliedResolve = null;
-    this._waitAppliedPromise = null;
-    resolve();
   }
 
   _setBoundaryAliases(map) {
@@ -557,8 +505,8 @@ function ensureChannelIterator(channel) {
   return channel._iterator;
 }
 
-function createCommandBuffer(context, parent = null, frame = null, enableWaitApplied = false) {
-  return new CommandBuffer(context, parent, frame, enableWaitApplied);
+function createCommandBuffer(context, parent = null, frame = null) {
+  return new CommandBuffer(context, parent, frame);
 }
 
 function isCommandBuffer(value) {

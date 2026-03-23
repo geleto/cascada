@@ -148,10 +148,10 @@ const RETURN_UNSET = Symbol.for('cascada.returnUnset');
  * The asyncFn receives (childAstate, childFrame, childBuffer) and should compile
  * branch bodies synchronously inside — no inner astate.asyncBlock calls needed.
  */
-function runControlFlowBlock(astate, parentBuffer, usedChannels, f, context, cb, asyncFn, enableWaitApplied = false) {
+function runControlFlowBlock(astate, parentBuffer, usedChannels, f, context, cb, asyncFn) {
   void context;
   const asyncMeta = { usedChannels: usedChannels || null };
-  return astate.asyncBlock(asyncFn, module.exports, f, asyncMeta, parentBuffer, true, cb, enableWaitApplied);
+  return astate.asyncBlock(asyncFn, module.exports, f, asyncMeta, parentBuffer, true, cb);
 }
 
 module.exports = {
@@ -275,6 +275,5 @@ module.exports = {
   sequentialMemberLookupScriptAsyncValue: sequential.sequentialMemberLookupScriptAsyncValue,
   sequentialMemberLookupAsyncValue: sequential.sequentialMemberLookupAsyncValue,
   setPath: require('./set-path').setPath,
-  STOP_WHILE: loop.STOP_WHILE,
   whileIterator: loop.whileIterator
 };

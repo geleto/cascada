@@ -4,8 +4,6 @@ const lib = require('../lib');
 const { createPoison, isPoison, isPoisonError, PoisonError, handleError } = require('./errors');
 const { VarCommand } = require('./commands');
 
-const STOP_WHILE = Symbol('STOP_WHILE');
-
 const arrayFrom = Array.from;
 const supportsIterators = (
   typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
@@ -172,11 +170,11 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
         }
       }
 
-      // In sequential mode, we MUST await the body before the next iteration.
-      // If it throws, the outer catch will handle it and stop iteration.
+      // Sequential loops await the compiled body result directly.
+      // For async while loops, `false` is the explicit break sentinel.
       const resVal = await res;
 
-      if (resVal === STOP_WHILE) {
+      if (resVal === false) {
         break;
       }
 
@@ -866,7 +864,7 @@ async function* whileIterator() {
   while (true) {
     // This generator yields loop indices indefinitely.
     // The consumer (iterateAsyncSequential) controls termination.
-    // When the compiled while-loop body returns STOP_WHILE,
+    // When the compiled while-loop body returns false,
     // the consumer breaks its 'for await' loop.
     // This triggers the implicit .return() on this iterator,
     // safely terminating this generator execution.
@@ -886,7 +884,6 @@ module.exports = {
   poisonLoopEffects,
   iterate,
   whileConditionIterator,
-  whileIterator,
-  STOP_WHILE
+  whileIterator
 };
 

@@ -133,6 +133,8 @@ class Compiler extends CompilerBase {
           // Tag arguments are passed normally to the call. Note
           // that keyword arguments are turned into a single js
           // object as the last argument, if they exist.
+          // These are nested call arguments, not statement/root expressions,
+          // so they intentionally bypass waited-root tracking.
           this._compileExpression(arg, callFrame, false);
 
           if (i !== args.children.length - 1 || contentArgs.length) {
@@ -347,7 +349,7 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
     } else if (node.value) { // e.g., set x = 123
       this.emit(ids.join(' = ') + ' = ');
-      this._compileExpression(node.value, frame, true, node.value);
+      this.compileExpression(node.value, frame, true, node.value);
       this.emit.line(';');
     } else { // e.g., set x = capture ...
       this.emit(ids.join(' = ') + ' = ');
@@ -442,7 +444,7 @@ class Compiler extends CompilerBase {
       const targetName = node.targets[0].value;
       const pathValueId = this._tmpid();
       this.emit(`let ${pathValueId} = `);
-      this._compileExpression(node.value, frame, true);
+      this.compileExpression(node.value, frame, true, node.value);
       this.emit.line(';');
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
@@ -456,7 +458,7 @@ class Compiler extends CompilerBase {
       hasAssignedValue = true;
     } else if (node.value && !isDeclarationOnly) {
       this.emit(ids.join(' = ') + ' = ');
-      this._compileExpression(node.value, frame, true, node.value);
+      this.compileExpression(node.value, frame, true, node.value);
       this.emit.line(';');
       hasAssignedValue = true;
     } else if (node.body) {
@@ -630,7 +632,7 @@ class Compiler extends CompilerBase {
     // Guard blocks are always async boundaries
     node.isAsync = true;
 
-    const guardResult = this.buffer.asyncBufferNode(node, frame, true, false, node, (blockFrame) => {
+    const guardResult = this.buffer.asyncBufferNode(node, frame, true, node, (blockFrame) => {
       // Guard blocks should keep channel writes scoped to the guard buffer.
       blockFrame.channelScope = true;
       const previousGuardDepth = this.guardDepth;
@@ -1089,7 +1091,17 @@ class Compiler extends CompilerBase {
   }
 
   analyzeWhile(node, analysisPass) {
-    return this._analyzeLoopNodeDeclarations(node, analysisPass);
+    const result = this._analyzeLoopNodeDeclarations(node, analysisPass);
+    // Sequential loop bodies own a dedicated __waited__ channel.
+    // Analysis runs before async propagation, so assign the runtime channel name here.
+    if (node.body) {
+      node.body._analysis = Object.assign({}, node.body._analysis, {
+        waitedOutputName: (node.body._analysis && node.body._analysis.waitedOutputName)
+          ? node.body._analysis.waitedOutputName
+          : `__waited__${this._tmpid()}`
+      });
+    }
+    return result;
   }
 
   //todo - condition with sequence locks (test 2 identicsal sequence locks in the condition expression)
@@ -1106,7 +1118,17 @@ class Compiler extends CompilerBase {
   }
 
   analyzeAsyncEach(node, analysisPass) {
-    return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
+    const result = this._analyzeLoopNodeDeclarations(node, analysisPass, true);
+    // Sequential each-bodies own a dedicated __waited__ channel.
+    // Analysis runs before async propagation, so assign the runtime channel name here.
+    if (node.body) {
+      node.body._analysis = Object.assign({}, node.body._analysis, {
+        waitedOutputName: (node.body._analysis && node.body._analysis.waitedOutputName)
+          ? node.body._analysis.waitedOutputName
+          : `__waited__${this._tmpid()}`
+      });
+    }
+    return result;
   }
 
   compileAsyncEach(node, frame) {
@@ -1245,6 +1267,8 @@ class Compiler extends CompilerBase {
               name,
               () => {
                 this.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}") ? kwargs["${name}"] : `);
+                // Macro default values are fallback subexpressions for the
+                // binding, not standalone waited-root work.
                 this._compileExpression(pair.value, managedFrame, false);
               },
               pair
@@ -1266,6 +1290,8 @@ class Compiler extends CompilerBase {
             this.emit(`frame.set("${name}", `);
             this.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
             this.emit(` ? kwargs["${name}"] : `);
+            // Macro default values are fallback subexpressions for the
+            // binding, not standalone waited-root work.
             this._compileExpression(pair.value, managedFrame, false);
             this.emit(');');
           });
@@ -1587,10 +1613,7 @@ class Compiler extends CompilerBase {
             true,
             true,
             (innerFrame) => {
-              this._compileExpression(child, innerFrame, true, child);
-            },
-            (innerFrame, valueId) => {
-              this.buffer.emitOwnWaitedConcurrencyResolve(innerFrame, valueId, child);
+              this.compileExpression(child, innerFrame, true, child);
             }
           );
         } else {
@@ -1599,11 +1622,10 @@ class Compiler extends CompilerBase {
           const returnId = this._tmpid();
           this.emit.line(`let ${returnId};`);
           this.emit(`${returnId} = `);
-          this._compileExpression(child, frame, false, child);
+          this.compileExpression(child, frame, false, child);
           this.emit.line(';');
           const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
           this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
-          this.buffer.emitOwnWaitedConcurrencyResolve(frame, returnId, child);
         }
       });
       return;
@@ -1625,7 +1647,7 @@ class Compiler extends CompilerBase {
         if (this.throwOnUndefined) {
           this.emit('runtime.ensureDefined(');
         }
-        this._compileExpression(child, frame, false);
+        this.compileExpression(child, frame, false, child);
         if (this.throwOnUndefined) {
           this.emit(`,${child.lineno},${child.colno}, context)`);
         }
@@ -1846,7 +1868,7 @@ class Compiler extends CompilerBase {
 
   compileDo(node, frame) {
     node.children.forEach(child => {
-      this._compileExpression(child, frame, false);
+      this.compileExpression(child, frame, false, child);
       this.emit.line(';');
     });
   }
@@ -1858,7 +1880,7 @@ class Compiler extends CompilerBase {
       const resultVar = this._tmpid();
       this.emit(`let ${resultVar} = `);
       if (hasValue) {
-        this._compileExpression(node.value, frame, true, node);
+        this.compileExpression(node.value, frame, true, node);
       } else {
         this.emit('undefined');
       }
@@ -1871,7 +1893,7 @@ class Compiler extends CompilerBase {
 
     this.emit('cb(null, ');
     if (hasValue) {
-      this._compileExpression(node.value, frame, false, node);
+      this.compileExpression(node.value, frame, false, node);
     } else {
       this.emit('undefined');
     }
@@ -1920,10 +1942,18 @@ class Compiler extends CompilerBase {
       const initNode = node.initializer;
       const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
-      this.emit(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [`);
-      this._compileExpression(initNode, frame, true, initNode);
-      this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
-      this.emit.line('');
+      if (this.asyncMode) {
+        const initValueId = this._tmpid();
+        this.emit(`let ${initValueId} = `);
+        this.compileExpression(initNode, frame, true, initNode);
+        this.emit.line(';');
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+      } else {
+        this.emit(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [`);
+        this.compileExpression(initNode, frame, true, initNode);
+        this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        this.emit.line('');
+      }
     }
   }
 

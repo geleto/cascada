@@ -83,19 +83,16 @@ class CompileInheritance {
       //the AsyncEnviuronment.getTemplate returns a Promise
       this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
       this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
-      /*if (wrapInAsyncBlock) {
-        // Wrap the expression evaluation in an async block if needed, use template node position
-        this.emit.AsyncBlockValue(node.template, frame, (n, f) => {
-          this._compileExpression(n, f, true, positionNode);
-        }, undefined, positionNode);
-      } else {*/
-      this.compiler._compileExpression(node.template, frame, wrapInAsyncBlock, positionNode);
-      /*}*/
+      // Template/script lookup expressions feed composition boundaries, which
+      // emit their own completion tracking separately from root-expression WRCs.
+      this.compiler.compileExpression(node.template, frame, wrapInAsyncBlock, positionNode, true);
       this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this.compiler._makeCallback(parentTemplateId);
       this.emit(`env.get${this.compiler.scriptMode ? 'Script' : 'Template'}(`);
-      this.compiler._compileExpression(node.template, frame, false);
+      // Template/script lookup expressions feed composition boundaries, which
+      // emit their own completion tracking separately from root-expression WRCs.
+      this.compiler.compileExpression(node.template, frame, false, node.template, true);
       this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     }
 
@@ -348,7 +345,7 @@ class CompileInheritance {
       this.emit.line('}');
 
       this.emit.line('context.finishAsyncBlocks()');
-      frame = this.emit.asyncBlockEnd(node, frame, false, false, node.template, null, false);
+      frame = this.emit.asyncBlockEnd(node, frame, false, node.template, null, false);
     } else {
       // SYNC MODE
       this.emit.line(`parentTemplate = ${parentTemplateId};`);
@@ -403,7 +400,9 @@ class CompileInheritance {
 
       // Get the template name expression
       this.emit(`let ${templateNameVar} = `);
-      this.compiler._compileExpression(node.template, f, false);
+      // Include target lookup is handled by include/import boundary tracking,
+      // so it intentionally bypasses root waited-expression tracking.
+      this.compiler.compileExpression(node.template, f, false, node.template, true);
       this.emit.line(';');
 
       // Keep producer synchronous: carry async template lookup/render in promise chain.

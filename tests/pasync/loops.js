@@ -1695,6 +1695,74 @@
       expect(result.trim()).to.equal('Loop completed');
     });
 
+    it('should not run while body side effects when async condition is immediately false', async () => {
+      const context = {
+        bodyCalls: 0,
+        async shouldContinue() {
+          await delay(2);
+          return false;
+        },
+        async doWork() {
+          context.bodyCalls++;
+          await delay(2);
+          return 'WORK';
+        }
+      };
+
+      const template = `
+        {%- while shouldContinue() -%}
+          {{ doWork() }}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderTemplateString(template, context);
+      expect(result).to.equal('');
+      expect(context.bodyCalls).to.equal(0);
+    });
+
+    it('should not start the next while iteration until prior iteration waited work is finished', async () => {
+      const context = {
+        state: {
+          completedIterations: 0,
+          pendingBodyWork: 0,
+          startedWhilePendingBody: 0,
+          async shouldContinue() {
+            await delay(1);
+            if (this.pendingBodyWork > 0) {
+              this.startedWhilePendingBody++;
+            }
+            return this.completedIterations < 2;
+          },
+          async doWork() {
+            this.pendingBodyWork++;
+            try {
+              await delay(6);
+              return '';
+            } finally {
+              this.pendingBodyWork--;
+            }
+          },
+          async finishIteration() {
+            await delay(1);
+            this.completedIterations++;
+            return '';
+          }
+        }
+      };
+
+      const template = `
+        {%- while state.shouldContinue() -%}
+          {{ state.doWork() }}
+          {{ state.finishIteration() }}
+        {%- endwhile -%}
+      `;
+
+      await env.renderTemplateString(template, context);
+      expect(context.state.completedIterations).to.equal(2);
+      expect(context.state.startedWhilePendingBody).to.equal(0);
+      expect(context.state.pendingBodyWork).to.equal(0);
+    });
+
     it('should handle nested while loops without sequential operators', async () => {
       const context = {
         async getOuterMax() {
