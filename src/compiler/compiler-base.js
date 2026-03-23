@@ -1349,13 +1349,14 @@ class CompilerBase extends Obj {
 
     const resultId = this._tmpid();
     const waitedChannelName = this.buffer.currentWaitedChannelName;
+    const waitedOwnerBuffer = this.buffer.currentWaitedOwnerBuffer || this.buffer.currentBuffer;
     const posLiteral = this.buffer._emitPositionLiteral(positionNode ?? node);
 
     this.emit('(() => { ');
     this.emit(`let ${resultId} = `);
     this._compileExpression(node, frame, forceWrap, positionNode);
     this.emit('; ');
-    this.emit(`${this.buffer.currentBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${resultId}], pos: ${posLiteral} }), "${waitedChannelName}"); `);
+    this.emit(`${waitedOwnerBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${resultId}], pos: ${posLiteral} }), "${waitedChannelName}"); `);
     this.emit(`return ${resultId}; `);
     this.emit('})()');
   }

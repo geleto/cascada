@@ -349,6 +349,90 @@
         }
       });
 
+      it('concurrentLimit loop async if branches with async roots complete cleanly and preserve output order', async () => {
+        const context = {
+          async choose(item) {
+            await delay(2);
+            return item % 2 === 0;
+          },
+          async oddWork(item) {
+            await delay(8);
+            return `O${item}`;
+          },
+          async evenWork(item) {
+            await delay(8);
+            return `E${item}`;
+          }
+        };
+
+        const template = '{% for item in [1,2,3] of 1 %}{% if choose(item) %}{{ evenWork(item) }}{% else %}{{ oddWork(item) }}{% endif %}|{% endfor %}';
+        const result = await env.renderTemplateString(template, context);
+
+        expect(result).to.equal('O1|E2|O3|');
+      });
+
+      it('concurrentLimit loop include inside async if completes cleanly and preserves output order', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        const context = {
+          async choose(item) {
+            await delay(2);
+            return item !== 2;
+          },
+          async slowInclude(item) {
+            await delay(8);
+            return `I${item}`;
+          }
+        };
+
+        loader.addTemplate('cl-branch-include-child.njk', '{{ slowInclude(item) }}');
+        loader.addTemplate('cl-branch-include-parent.njk',
+          '{% for item in [1,2,3] of 1 %}{% if choose(item) %}{% include "cl-branch-include-child.njk" %}{% else %}S{{ item }}{% endif %}|{% endfor %}');
+
+        const result = await localEnv.renderTemplate('cl-branch-include-parent.njk', context);
+        expect(result).to.equal('I1|S2|I3|');
+      });
+
+      it('keeps outer of 1 blocked until nested async while work completes', async () => {
+        const context = {
+          innerActive: 0,
+          startedDuringInner: 0,
+          states: {
+            1: { i: 0 },
+            2: { i: 0 }
+          },
+          async enterOuter() {
+            if (context.innerActive > 0) {
+              context.startedDuringInner++;
+            }
+            return '';
+          },
+          async innerNext(item) {
+            const state = context.states[item];
+            await delay(2);
+            state.i++;
+            return state.i <= 2;
+          },
+          async innerWork(item) {
+            const state = context.states[item];
+            context.innerActive++;
+            try {
+              await delay(8);
+              return `${item}.${state.i}`;
+            } finally {
+              context.innerActive--;
+            }
+          }
+        };
+
+        const template = '{% for item in [1,2] of 1 %}{{ enterOuter() }}{% while innerNext(item) %}{{ innerWork(item) }}|{% endwhile %}{% endfor %}';
+        const result = await env.renderTemplateString(template, context);
+
+        expect(result).to.equal('1.1|1.2|2.1|2.2|');
+        expect(context.startedDuringInner).to.be(0);
+        expect(context.innerActive).to.be(0);
+      });
+
       it('inner loop concurrentLimit expression reads parent loop metadata', async () => {
         const loader = new StringLoader();
         const localEnv = new AsyncEnvironment(loader);
@@ -2209,53 +2293,53 @@
       expect(source).to.not.contain('new runtime.WaitResolveCommand');
     });
 
-    it('emits exactly two WaitResolveCommands (aggregate root expression + closure anchor) in a limited loop', function () {
+    it('emits exactly one WaitResolveCommand for an aggregate root expression in a limited loop', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ [x + 1, x * 2, (x + 3)] }}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(2);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
-    it('does not emit extra child waits for aggregate children: only aggregate root + closure anchor', function () {
+    it('does not emit extra child waits for aggregate children: only the aggregate root', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ [foo(x), bar(x), baz(x)] }}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(2);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
     it('emits WaitResolveCommand for limited-loop set roots', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% set y = foo(x) %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(2);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
     it('emits WaitResolveCommand for limited-loop do roots', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% do foo(x) %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(2);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
     it('emits WaitResolveCommand for limited-loop script var roots', function () {
       const env = new AsyncEnvironment();
       const script = new AsyncScript('for x in xs of 2\n  var y = foo(x)\nendfor\nreturn data.snapshot()', env);
       const source = script._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(2);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
     it('emits WaitResolveCommand for limited-loop return roots', function () {
       const env = new AsyncEnvironment();
       const script = new AsyncScript('for x in xs of 2\n  return foo(x)\nendfor\nreturn data.snapshot()', env);
       const source = script._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(2);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
     it('emits WaitResolveCommand for limited-loop var-channel initializer roots', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% var y = foo(x) %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(2);
+      expect(countWaitResolveCommands(source)).to.be(1);
     });
 
     it('emits WaitResolveCommand for include boundary completion in limited loops', function () {
@@ -2317,30 +2401,51 @@
 
 
 
-    it('emits only the closure-anchor WaitResolveCommand when body has no async expressions (source expr alone)', function () {
+    it('emits no WaitResolveCommand when body has no async expressions (source expr alone)', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in makeItems() of 2 %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(1);
+      expect(countWaitResolveCommands(source)).to.be(0);
     });
 
-    it('emits only the closure-anchor WaitResolveCommand when body has no async expressions (concurrentLimit expr alone)', function () {
+    it('emits no WaitResolveCommand when body has no async expressions (concurrentLimit expr alone)', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of limitExpr() %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(1);
+      expect(countWaitResolveCommands(source)).to.be(0);
     });
 
-    it('emits only the closure-anchor WaitResolveCommand when body has no top-level async expressions (condition alone)', function () {
+    it('emits one WaitResolveCommand for async control-flow completion when body has no top-level async expressions', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if cond(x) %}{% endif %}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(countWaitResolveCommands(source)).to.be(1);
     });
 
-    it('emits only the closure-anchor WaitResolveCommand when async work appears only in if/elif conditions', function () {
+    it('emits one WaitResolveCommand when async work appears only in if/elif conditions', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if condA(x) %}{% elif condB(x) %}{% endif %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(1);
+    });
+
+    it('emits one WaitResolveCommand when async branch roots are wrapped by async control flow', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if cond(x) %}{{ foo(x) }}{% else %}{{ bar(x) }}{% endif %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(1);
+    });
+
+    it('emits one parent WaitResolveCommand for a nested limited loop statement with no body roots', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% for y in ys of 2 %}{% endfor %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(1);
+    });
+
+    it('emits one WaitResolveCommand for async switch completion inside a limited loop', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% switch pick(x) %}{% case 1 %}{% case 2 %}{% default %}{% endswitch %}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(countWaitResolveCommands(source)).to.be(1);
     });

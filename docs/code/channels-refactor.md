@@ -2,7 +2,23 @@
 
 ## Overview
 
-The current compilation model wraps far too many operations in async blocks, awaits things that don't need awaiting, and uses closure-counting machinery (`astate`, `waitAllClosures`) that adds overhead without benefit. This document describes the target architecture and the migration strategy to get there incrementally.
+The historical compilation model wrapped far too many operations in async blocks, awaited things that did not need awaiting, and relied on closure-counting machinery (`astate`, `waitAllClosures`) to paper over timing problems in command emission. This document describes the target architecture, records the implementation progress so far, and captures the main lessons learned while migrating real compiler paths.
+
+## Current Status
+
+The refactor is now partially implemented, not just planned.
+
+Implemented and validated:
+- `runControlFlowBlock` / `runControlFlowBlockNode` are in use for async `if`, `switch`, and `for` lowering.
+- Root/value work such as template output, `set`, `do`, `return`, script `var`, and var-channel initializers is emitted synchronously as commands whose arguments may be promises.
+- Sequential and bounded loops no longer use `waitAllClosures(1)` as an iteration-completion fallback.
+- Sequential and bounded loop completion is driven by the per-iteration `__waited__` channel, as described in [waited-loops.md](C:\Projects\cascada\docs\code\waited-loops.md).
+- The old "closure anchor" `WaitResolveCommand` model in loop tests has been removed.
+
+Still transitional:
+- `runControlFlowBlock` still uses `astate.asyncBlock` internally in Phase 1.
+- `AsyncState` and root-level `waitAllClosures()` uses still exist outside the migrated paths.
+- Some migration notes below remain useful as history, but the completed items should be read as implemented behavior unless explicitly marked future work.
 
 ---
 
@@ -135,7 +151,12 @@ The async fn never throws (Cascada semantics). The helper's `.finally()` is a sa
 
 ## The New Helper: `runControlFlowBlock`
 
-Replaces `AsyncState.asyncBlock` at control-flow sites. Much simpler — no closure counting, no `astate`, no `waitAllClosures`.
+Replaces direct `AsyncState.asyncBlock` call sites at control-flow sites.
+
+Important nuance learned during implementation:
+- in Phase 1, the helper still delegates to `astate.asyncBlock`
+- control-flow blocks inside waited-loop bodies must be treated as one waited completion unit
+- branch-local root expressions inside those control-flow buffers must not try to add leaf waited markers back into an already-closing parent iteration buffer
 
 ```js
 // runtime.js
@@ -152,7 +173,7 @@ function runControlFlowBlock(parentBuffer, usedChannels, frame, context, asyncFn
 }
 ```
 
-Key properties:
+Target-architecture properties:
 - The child buffer is linked to all parent channels **synchronously** before the async fn starts.
 - The main code flow **does not wait** — it continues adding commands to `parentBuffer` immediately after this call.
 - `markFinishedAndPatchLinks` is called in `.finally()` so it always fires even if there is a compiler bug in the async fn.
@@ -241,7 +262,21 @@ parentBuffer.add(new TextCommand({ channelName: '__text__', args: [t1], pos }), 
 
 ## Nested Control Flow
 
-Nested control-flow blocks (e.g., an `if` inside a `for` body) work identically — `runControlFlowBlock` is called with `childBuf` (from the outer block) as `parentBuffer`. There is no special handling needed.
+Nested control-flow blocks (e.g., an `if` inside a `for` body) use `runControlFlowBlock` recursively with the outer child buffer as their parent.
+
+One important refinement came out of the waited-loop migration:
+- outside waited loops, nested control flow is just another child buffer
+- inside a sequential or bounded loop iteration, an async control-flow block contributes **one waited unit as a block**
+- in that waited scope, branch internals should not emit parent-level leaf `WaitResolveCommand`s directly
+
+Why:
+- the iteration `__waited__` channel is intentionally flat
+- nested control-flow buffers are not inserted into that `__waited__` lane
+- if branch-local async roots try to write waited markers into the parent iteration buffer after the iteration buffer is closing, they can hit "Cannot add command to finished CommandBuffer"
+
+So the implemented rule is:
+- ordinary root expressions emit waited markers in their owning waited buffer
+- nested async control-flow inside a waited iteration is tracked as one parent-visible waited unit via the `runControlFlowBlock(...)` promise
 
 ```js
 runtime.runControlFlowBlock(parentBuffer, ['__text__'], frame, context,
@@ -278,6 +313,11 @@ In the old model, marking a buffer finished required waiting for all child async
 
 The `finished` flag means "no more entries will be added to this buffer's arrays." The BufferIterator will still process all existing entries (including child buffers that are still running) before declaring a channel's stream exhausted.
 
+Practical lesson from the loop migration:
+- infrastructure commands that belong to an iteration itself must also be added before the buffer is allowed to finish
+- loop variable bindings and loop metadata bindings therefore cannot be emitted through `asyncAddValueToBuffer` or similar late async helpers
+- they must be added synchronously as ordinary commands, just like other value-async operations
+
 ---
 
 ## What Is Removed
@@ -309,7 +349,7 @@ The `finished` flag means "no more entries will be added to this buffer's arrays
 | `resolveCommandArgumentsForApply` | Unchanged — becomes more central as the primary place promises are awaited |
 | `CompileAnalysis` and `_analysis` metadata | Unchanged — `node.isAsync`, `usedChannels`, `declaredChannels` still drive decisions |
 | `propagateIsAsync` | Unchanged — `node.isAsync` is the gate for whether a control-flow site needs a child buffer |
-| `__waited__` / `waitApplied` / `enableWaitApplied` | Unchanged — limited-concurrency loop coordination stays as-is |
+| `__waited__` / `waitApplied` / `enableWaitApplied` | Concept unchanged — but the implementation now relies on waited-channel `finalSnapshot()` rather than closure-counting fallback for sequential / bounded loop completion |
 | Sequential path commands (`SequentialPathWriteCommand`, etc.) | Unchanged — deferred-result chaining via iterator still correct |
 | Poison system (`PoisonedValue`, `PoisonError`, `isPoison`, `isPoisonError`) | Unchanged |
 | `channel._recordError` / `addPoison` error paths | Unchanged |
@@ -429,7 +469,11 @@ currentBuffer.add(new TextCommand({ channelName: '__text__', args: [t1], pos }),
 await astate.waitAllClosures(1);
 ```
 
-As each loop `compileXXX` method is migrated, this line is removed. Sequential ordering is maintained by the order in which commands and child buffers are added to the parent buffer — no explicit waiting is needed. The `__waited__` mechanism for limited-concurrency loops is separate and unchanged.
+As each loop `compileXXX` method is migrated, this line is removed. Sequential ordering is maintained by the order in which commands and child buffers are added to the parent buffer — but for sequential and bounded loops the actual iteration completion signal is the iteration child buffer's `__waited__` channel `finalSnapshot()`, not generic closure counting.
+
+This turned out to matter for two cases:
+- nested sequential / bounded loops must contribute one explicit parent waited unit
+- async control-flow blocks inside waited-loop bodies must also contribute one explicit waited unit as a block
 
 ### Migration order (suggested)
 
@@ -441,12 +485,19 @@ Migrate from simplest to most complex to catch regressions early:
 5. ✅ **`compileIf`** — `asyncBufferNode` + two inner `asyncBlock` branch wrappers replaced by `runControlFlowBlockNode`; branches now compile synchronously inside the outer async fn with explicit `frame.push()`/`frame.pop()` (Tier 3). Adds `runtime.runControlFlowBlock`, `compile-buffer.runControlFlowBlockNode`, `compile-emit.getLinkedChannelsArg`.
 6. ✅ **`compileSwitch`** — same pattern as `compileIf`: `asyncBufferNode` + per-case `asyncBlock` wrappers replaced by `runControlFlowBlockNode` with case bodies compiled synchronously. `branchChannels` collection simplified: reads `c.body._analysis.usedChannels` directly (available before compilation, no need to collect inside async block callbacks) (Tier 3)
 7. ✅ **`compileFor` (parallel)** — outer `asyncBufferNode` replaced by `runControlFlowBlockNode`; non-async scope handling emitted manually (Tier 4)
-8. `compileFor` (sequential / `each`) — remove `waitAllClosures(1)` emitted by `asyncBlockEnd` for sequential loop bodies (`compile-emit.js:227`); sequential ordering guaranteed by command-buffer insertion order (Tier 4)
+8. ✅ **`compileFor` (sequential / `each`)** — completed. `waitAllClosures(1)` was removed from sequential loop-body completion, but the final implementation required more than simply deleting the line:
+   - loop value bindings and loop metadata bindings were changed to synchronous command emission
+   - nested sequential / bounded loops now add one explicit parent waited unit via their `runtime.iterate(...)` promise
+   - nested async control-flow blocks inside waited-loop bodies now add one explicit parent waited unit via their `runControlFlowBlock(...)` promise
+   - compiler/codegen tests were updated from the old "closure anchor" model to the new waited-unit model
 9. ✅ **Remove `WaitResolveCommand` for `var x = expr` and `set_path` in limited loops** — `emitOwnWaitedConcurrencyResolve` removed from `compileAsyncVarSet`. The VarCommand's promise arg is already awaited by the buffer iterator as it processes the iteration buffer's var channel — the `WaitResolveCommand` in `__waited__N` was doubly tracking the same promise. Only codegen tests needed updating; no runtime regressions.
 10. **Remove `WaitResolveCommand` for `{{ asyncExpr }}` in limited loops** — `emitOwnWaitedConcurrencyResolve` removal from `compileOutput` (pure text path) blocked on `compileFor` migration (Tier 4). Attempted removal caused 13 runtime failures: the loop body still uses `astate.asyncBlock` so the TextCommand is added asynchronously — the text iterator can enter the iteration buffer before the TextCommand arrives, making `WaitResolveCommand` the only reliable timing anchor. Once `compileFor` adds loop body commands synchronously, the TextCommand will be present at iterator-visit time and this call becomes redundant too.
 11. `compileWhile` — async condition, loop body (Tier 4)
 12. `compileInclude` / `compileExtends` / `compileImport` — multi-step async (Tier 4)
 13. `compileMacro`, `compileGuard`, `compileRoot` — remove remaining `waitAllClosures()` calls: root return statements (`compiler.js:1294/1309`) and template root finish (`compiler.js:1737`); complex interdependencies, defer to last (Tier 5)
+
+The `compileFor` migration also exposed an important diagnostic rule:
+- if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required
 
 After each migration, run the full test suite before proceeding.
 

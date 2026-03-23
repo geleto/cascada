@@ -49,6 +49,7 @@ class CompileLoop {
     const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const useLoopValues = node.isAsync;
+    const parentWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
     const forResult = this.compiler.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
       // runControlFlowBlockNode's non-async path is a simple pass-through without scope.
       // Emit runtime frame.push/pop manually to scope loop variable bindings for sync loops.
@@ -158,7 +159,14 @@ class CompileLoop {
       // Call the runtime iterate loop function
       // For sync loops: not awaited (fire-and-forget Promise). iterate() executes synchronously
       // internally (no awaits hit) and executes else block before returning.
-      this.compiler.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${node.isAsync ? this.compiler.buffer.currentBuffer : 'null'}, [`);
+      const loopOwnsWaitedCompletion = node.isAsync && (sequentialLoopBody || hasConcurrentLimit);
+      const shouldTrackNestedLoopCompletion = loopOwnsWaitedCompletion && !!parentWaitedChannelName;
+      const iteratePromiseId = node.isAsync ? this.compiler._tmpid() : null;
+      if (node.isAsync) {
+        this.compiler.emit(`let ${iteratePromiseId} = runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${this.compiler.buffer.currentBuffer}, [`);
+      } else {
+        this.compiler.emit(`runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, null, [`);
+      }
       loopVars.forEach((varName, index) => {
         if (index > 0) {
           this.compiler.emit(', ');
@@ -166,6 +174,14 @@ class CompileLoop {
         this.compiler.emit(`"${varName}"`);
       });
       this.compiler.emit(`], ${asyncOptionsCode});`);
+      if (shouldTrackNestedLoopCompletion) {
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(innerFrame, iteratePromiseId, node);
+      }
+      if (node.isAsync) {
+        this.compiler.emit.line(`await ${iteratePromiseId};`);
+      } else {
+        this.compiler.emit.line('');
+      }
 
       if (!node.isAsync) {
         this.compiler.emit.line('frame = frame.pop();');
@@ -299,12 +315,8 @@ class CompileLoop {
 
         // Finish the child buffer before finalSnapshot() so the parent iterator can
         // descend into it. finalSnapshot() is the authoritative "iteration done" signal.
-        // The closure anchor is still transitional glue for nested asyncBlock closures.
         if (shouldAwaitLoopBody) {
-          const closureWaitId = this.compiler._tmpid();
           const waitedSnapshotId = this.compiler._tmpid();
-          this.compiler.emit.line(`const ${closureWaitId} = astate.waitAllClosures(1);`);
-          this.compiler.buffer.emitOwnWaitedConcurrencyResolve(bodyFrame, closureWaitId, null);
           this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
           this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChannel("${limitedWaitedChannelName}").finalSnapshot();`);
           if (whileConditionNode) {
@@ -377,11 +389,10 @@ class CompileLoop {
   }
 
   _emitLoopValueAssignment(node, channelName, valueExpr, frame) {
-    this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
-      this.compiler.emit(
-        `${resultVar} = new runtime.VarCommand({ channelName: '${channelName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
-      );
-    }, node, channelName);
+    void frame;
+    this.compiler.emit.line(
+      `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${channelName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${channelName}');`
+    );
   }
 
   _emitLoopBindings(node, loopVars, loopIndex, loopLength, isLast, frame, useLoopValues) {
@@ -405,11 +416,10 @@ class CompileLoop {
   }
 
   _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame) {
-    this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
-      this.compiler.emit(
-        `${resultVar} = runtime.setLoopValueBindings('${node.loopRuntimeName}', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}})`
-      );
-    }, node, node.loopRuntimeName);
+    void frame;
+    this.compiler.emit.line(
+      `${this.compiler.buffer.currentBuffer}.add(runtime.setLoopValueBindings('${node.loopRuntimeName}', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}}), '${node.loopRuntimeName}');`
+    );
   }
 
   _compileAsyncLoopBindings(node, arr, i, len) {

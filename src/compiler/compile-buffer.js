@@ -27,6 +27,7 @@ class CompileBuffer {
     this.currentTextChannelVar = null;
     this.currentTextChannelName = DEFAULT_TEMPLATE_TEXT_CHANNEL;
     this.currentWaitedChannelName = null;
+    this.currentWaitedOwnerBuffer = null;
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
     // @otodo - evaluate these buffers, we shall be able to store
     // the values in the frame, the only probblem is when node.isAsync
@@ -66,11 +67,14 @@ class CompileBuffer {
   // Pass null to explicitly compile without an own waited channel.
   withOwnWaitedChannel(waitedChannelName, emitFunc) {
     const prevWaitedChannelName = this.currentWaitedChannelName;
+    const prevWaitedOwnerBuffer = this.currentWaitedOwnerBuffer;
     this.currentWaitedChannelName = waitedChannelName;
+    this.currentWaitedOwnerBuffer = waitedChannelName ? this.currentBuffer : null;
     try {
       return emitFunc();
     } finally {
       this.currentWaitedChannelName = prevWaitedChannelName;
+      this.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
     }
   }
 
@@ -221,14 +225,15 @@ class CompileBuffer {
 
   emitOwnWaitedConcurrencyResolve(frame, valueExpr, positionNode = null) {
     // Waited-loop bookkeeping: in __waited__ scope, root work contributes one
-    // timing-only WaitResolveCommand to the current iteration channel.
+    // timing-only WaitResolveCommand to the owning iteration buffer's channel.
     const waitedChannelName = this.currentWaitedChannelName;
+    const waitedOwnerBuffer = this.currentWaitedOwnerBuffer || this.currentBuffer;
     if (!this.compiler.asyncMode || !waitedChannelName) {
       return;
     }
     // Register as usage, not mutation: __waited__ tracks completion, not output state.
     this.compiler.emit.line(
-      `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedChannelName}");`
+      `${waitedOwnerBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedChannelName}");`
     );
   }
 
@@ -457,10 +462,18 @@ class CompileBuffer {
     if (node.isAsync) {
       const parentBufferArg = this.currentBuffer;
       const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+      const trackAsSingleWaitedUnit = this.compiler.asyncMode && !!this.currentWaitedChannelName;
+      const controlFlowPromiseId = trackAsSingleWaitedUnit ? this.compiler._tmpid() : null;
 
-      this.compiler.emit(
-        `runtime.runControlFlowBlock(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, currentBuffer) => {`
-      );
+      if (controlFlowPromiseId) {
+        this.compiler.emit(
+          `let ${controlFlowPromiseId} = runtime.runControlFlowBlock(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, currentBuffer) => {`
+        );
+      } else {
+        this.compiler.emit(
+          `runtime.runControlFlowBlock(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, currentBuffer) => {`
+        );
+      }
       this.compiler.emit.asyncClosureDepth++;
 
       const newFrame = frame.push(false, false);
@@ -469,7 +482,13 @@ class CompileBuffer {
       const prevBuffer = this.currentBuffer;
       const prevTextChannelVar = this.currentTextChannelVar;
       const prevTextChannelName = this.currentTextChannelName;
+      const prevWaitedChannelName = this.currentWaitedChannelName;
+      const prevWaitedOwnerBuffer = this.currentWaitedOwnerBuffer;
       this.currentBuffer = 'currentBuffer';
+      if (trackAsSingleWaitedUnit) {
+        this.currentWaitedChannelName = null;
+        this.currentWaitedOwnerBuffer = null;
+      }
 
       let callbackValue;
       try {
@@ -479,10 +498,15 @@ class CompileBuffer {
       } finally {
         this.compiler.emit.asyncClosureDepth--;
         this.compiler.emit.line('}, false);');
-        validateCompileTimeFrameBalance(newFrame, this.compiler, node);
         this.currentBuffer = prevBuffer;
         this.currentTextChannelVar = prevTextChannelVar;
         this.currentTextChannelName = prevTextChannelName;
+        this.currentWaitedChannelName = prevWaitedChannelName;
+        this.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
+        if (controlFlowPromiseId) {
+          this.emitOwnWaitedConcurrencyResolve(frame, controlFlowPromiseId, node);
+        }
+        validateCompileTimeFrameBalance(newFrame, this.compiler, node);
       }
 
       const result = callbackValue && typeof callbackValue === 'object' &&
