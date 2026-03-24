@@ -158,7 +158,6 @@ class CommandBuffer {
     const target = this.arrays[resolvedChannelName];
     target.push(value);
     const slot = target.length - 1;
-
     if (isCommandBuffer(value)) {
       value.parent = this;
       if (this._boundaryAliases) {

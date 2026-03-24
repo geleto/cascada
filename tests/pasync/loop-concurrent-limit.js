@@ -428,6 +428,43 @@
         expect(context.includeActive).to.be(0);
       });
 
+      it('concurrentLimit loop macro text waits for final text materialization before next outer iteration', async () => {
+        const context = {
+          activeMacroText: 0,
+          startedDuringMacroText: 0,
+          enterOuter() {
+            if (context.activeMacroText > 0) {
+              context.startedDuringMacroText++;
+            }
+            return '';
+          },
+          async beginWrap(item) {
+            context.activeMacroText++;
+            await delay(8);
+            return `B${item}`;
+          },
+          async endWrap(item) {
+            await delay(8);
+            context.activeMacroText--;
+            return `E${item}`;
+          },
+          async innerValue(item) {
+            await delay(2);
+            return `I${item}`;
+          }
+        };
+
+        const template = `
+        {% macro wrap(item) %}{{ beginWrap(item) }}({{ innerValue(item) }}){{ endWrap(item) }}{% endmacro %}
+        {% for item in [1,2] of 1 %}{{ enterOuter() }}{{ wrap(item) }}|{% endfor %}
+        `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.trim()).to.equal('B1(I1)E1|B2(I2)E2|');
+        expect(context.startedDuringMacroText).to.be(0);
+        expect(context.activeMacroText).to.be(0);
+      });
+
       it('concurrentLimit loop async if condition rejection stays in poison flow', async () => {
         const context = {
           async shouldRender(item) {

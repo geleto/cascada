@@ -4,6 +4,8 @@
 
 Sequential loops (`while`, `each`) and concurrency-limited loops (`for ... of N`) use a per-iteration `__waited__` channel to define when an iteration is complete.
 
+`__waited__` is loop-specific infrastructure. It is not a general async-boundary mechanism for macros, includes, callers, or other template/script scopes.
+
 An iteration is complete only when:
 
 1. its async body has finished enqueueing commands,
@@ -31,6 +33,8 @@ The loop runtime then awaits the `asyncBlock(...)` result directly.
 
 In other words, loop coordination no longer waits on deferred outer promises or special sentinels. It waits on the iteration child buffer's waited-channel completion.
 
+Outside sequential/bounded loop coordination, this mechanism is not used. Other async boundaries return ordinary values or promises, and parents only await them when they actually consume those values.
+
 ## Why `markFinishedAndPatchLinks()` Comes First
 
 `finalSnapshot()` resolves only after the parent buffer iterator descends into the child buffer and fully processes the requested channel.
@@ -57,6 +61,12 @@ For waited loops, this is the authoritative definition of "iteration finished":
 - not "some deferred loop promise resolved".
 
 The iteration is done when the `__waited__` channel is done.
+
+This should not be generalized into "every async template boundary uses `finalSnapshot()` plus `__waited__`." The authoritative rule is narrower:
+
+- loop iteration completion is defined by the iteration's `__waited__` channel,
+- text-producing boundaries may return promises derived from text-channel snapshots,
+- those promises only become part of `__waited__` when a waited loop needs them as one iteration-completion unit.
 
 ## While Loops
 
@@ -118,6 +128,8 @@ The following add WRCs when compiled inside a waited-loop-owned scope:
 - script `var` roots
 - `return` roots
 - async var-channel initializer roots
+
+If a template-mode boundary returns rendered text as a promise derived from its own text-channel snapshot, that returned promise may also be added to the parent iteration's `__waited__` as one waited unit. This is how waited loops account for text-producing child boundaries without turning `__waited__` into a general-purpose mechanism outside loops.
 
 Composition operations also add waited completion units:
 
@@ -197,6 +209,26 @@ Important cases:
 
 Template/script lookup expressions used to identify the composition target are root expressions structurally, but they are excluded from waited-root tracking. The composition boundary itself is the waited unit.
 
+Outside waited loops, these composition boundaries still return ordinary values or promises. Their parents do not eagerly await them just to keep command emission alive; they are awaited only when their values are consumed.
+
+## Text-Producing Boundaries Outside Waited Loops
+
+Template-mode boundaries such as macros, `caller()`-driven text, includes, and similar composed text helpers may return promises derived from a text channel snapshot.
+
+The important distinction is:
+
+- returning a promise of final text is normal,
+- using `__waited__` to track that promise is only for waited-loop iteration ownership.
+
+So outside sequential/bounded loop coordination:
+
+- no `__waited__` channel is created for these boundaries,
+- parents do not do extra waiting just because a child returned promised text,
+- command/buffer structure is registered immediately,
+- the promised text is awaited later only if some consumer actually needs the value.
+
+This keeps `__waited__` limited to loop coordination while still allowing text-producing boundaries to expose a structurally-correct final value.
+
 ## Command Buffer Shape
 
 The waited channel must stay flat.
@@ -218,6 +250,8 @@ Loop completion is defined by the promise returned from the compiled iteration b
 - for sequential and bounded loops, that promise is driven by waited-channel completion,
 - for async `while`, the promise resolves to `false` or `true` after the waited-channel rules above are satisfied.
 
+For non-loop async boundaries, cleanup still finalizes child buffers, but there is no loop-style waited channel to await. Those boundaries simply return values or promises to their caller.
+
 ## Error and Poison Behavior
 
 WRCs are timing-only bookkeeping. They do not change functional error propagation semantics.
@@ -236,8 +270,10 @@ When reading or changing this implementation, the main architectural rules are:
 
 1. Sequential and bounded async loop iterations complete via `childBuffer.getChannel(waitedChannelName).finalSnapshot()`.
 2. `childBuffer.markFinishedAndPatchLinks()` must happen before `finalSnapshot()`.
-3. `compileExpression(...)` is the only place ordinary root expressions should emit waited WRCs.
-4. Conditions, loop sources, and scheduling expressions are explicit opt-outs from waited-root tracking.
-5. Async control-flow blocks inside waited-loop scope own a child-local waited channel and contribute one parent waited unit.
-6. Nested sequential/bounded loops own their own waited channel; nested unrestricted loops propagate upward.
-7. Composition boundaries contribute waited completion as boundary units.
+3. `__waited__` is loop-only infrastructure, not a general async-boundary mechanism.
+4. `compileExpression(...)` is the only place ordinary root expressions should emit waited WRCs.
+5. Conditions, loop sources, and scheduling expressions are explicit opt-outs from waited-root tracking.
+6. Async control-flow blocks inside waited-loop scope own a child-local waited channel and contribute one parent waited unit.
+7. Nested sequential/bounded loops own their own waited channel; nested unrestricted loops propagate upward.
+8. Composition boundaries contribute waited completion as boundary units.
+9. Text-producing boundaries may return promises derived from text snapshots, but those promises enter `__waited__` only when a waited loop owns them.

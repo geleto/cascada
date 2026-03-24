@@ -20,6 +20,7 @@ Implemented and validated:
 
 Still transitional:
 - `AsyncState` and root-level `waitAllClosures()` uses still exist outside the migrated paths.
+- `_compileMacro` still relies on `astate.waitAllClosures()` to avoid finishing macro/caller buffers before nested composition linking has happened.
 - Some migration notes below remain useful as history, but the completed items should be read as implemented behavior unless explicitly marked future work.
 
 ---
@@ -497,10 +498,18 @@ Migrate from simplest to most complex to catch regressions early:
 9. ✅ **Remove `WaitResolveCommand` for `var x = expr` and `set_path` in limited loops** — `emitOwnWaitedConcurrencyResolve` removed from `compileAsyncVarSet`. The VarCommand's promise arg is already awaited by the buffer iterator as it processes the iteration buffer's var channel — the `WaitResolveCommand` in `__waited__N` was doubly tracking the same promise. Only codegen tests needed updating; no runtime regressions.
 11. ✅ **`compileWhile`** — effectively completed through the shared `compileFor`/`_compileFor` path used for async `while` lowering. Waited-loop completion, false-break handling, and nested waited ownership now follow the same model as other sequential loops.
 12. ✅ **`compileInclude` / `compileExtends` / `compileImport`** — completed. These inheritance/composition paths now use `runControlFlowBlock` for their async control-flow work, while imported bindings and include text commands are enqueued synchronously. `ignore missing` composition now returns a real empty composition buffer so include composition can rely on the normal boundary/snapshot contract.
-13. ❌ **`compileMacro`, `compileGuard`, `compileRoot`** — still pending. Root-level `waitAllClosures()` uses remain, and these areas still depend on the older closure-tracking model.
+13. ◐ **`compileMacro`, `compileGuard`, `compileRoot`** — partially completed. `compileRoot` still uses `waitAllClosures()` for final handoff, and `compileGuard` still needs a dedicated cleanup pass. `_compileMacro` also still uses `astate.waitAllClosures()` today.
+14. ◐ **Streamline `_compileMacro` / remove macro `waitAllClosures()`** — still pending. A direct removal experiment was not valid yet:
+   - nested async imports in macro/caller composition failed with `Cannot add command to finished CommandBuffer`
+   - caller sequencing tests stopped registering expected side-effect commands
+   - the concrete failure path goes through `runtime.linkWithParentCompositionBuffer(...)`, which means nested composition is still trying to attach to the parent after the macro buffer has already been finished
+   - simply switching macro return capture from pre-finish `addSnapshot(...)` to post-finish `finalSnapshot()` was also not valid yet: nested caller/import composition regressed because the macro return needs an earlier point-in-time capture until the structural completion boundary is redesigned
+   - this step needs a structural completion boundary for macro/caller composition before the `waitAllClosures()` fallback can be removed
 
 The `compileFor` migration also exposed an important diagnostic rule:
 - if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required
+
+The `_compileMacro` experiment produced exactly that failure shape. In that case the late work is nested composition linking (`linkWithParentCompositionBuffer(...)`) from macro/caller text paths, so macro cleanup still needs a stronger structural completion signal before its local `waitAllClosures()` can go away.
 
 After each migration, run the full test suite before proceeding.
 
@@ -717,7 +726,11 @@ Important implementation details that came out of the migration:
 
 ### Tier 5 — Complex, defer
 
-**`compileMacro`:** Uses `waitAllClosures` internally. The macro body compiles into a standalone function; when that function runs, commands are added synchronously. `waitAllClosures` can be removed once the macro body's `compileXXX` calls are all migrated.
+**`compileMacro`:** Still uses `waitAllClosures` internally, and that is currently required. A direct removal experiment failed in two concrete ways:
+- nested async imports in macro/caller composition hit `Cannot add command to finished CommandBuffer`
+- caller sequencing tests stopped registering expected side-effect commands
+
+That means the remaining issue is not generic async expression timing inside the macro body. The unresolved case is late structural work from macro/caller composition, especially `linkWithParentCompositionBuffer(...)`. `waitAllClosures` here should be treated as a temporary guard until macro/caller composition returns a structural completion signal that can replace it.
 
 **`compileGuard`:** Very complex — guard state snapshots, sequence repair, `CaptureGuardStateCommand`, `RestoreGuardStateCommand`. Migrate last after all simpler methods prove the pattern.
 

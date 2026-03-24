@@ -1218,7 +1218,6 @@ class Compiler extends CompilerBase {
     }
 
     let returnStatement;
-    const snapshotVar = this._tmpid();
     this.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
       if (node.isAsync) {
         // Async macro bindings are var channels so assignment/read semantics
@@ -1306,24 +1305,22 @@ class Compiler extends CompilerBase {
 
       if (node.isAsync) {
         const errorCheck = `if (${err}) throw ${err};`;
+        const closuresReadyVar = this._tmpid();
         if (this.scriptMode) {
           const returnVar = this._tmpid();
-          returnStatement = `astate.waitAllClosures().then(async () => {` +
+          this.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
+          returnStatement = `(async () => {` +
             `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
+            `await ${closuresReadyVar};` +
             `${bufferId}.markFinishedAndPatchLinks();` +
             `${errorCheck}` +
             `return ${returnVar}_snapshot;` +
-            `})`;
+            `})()`;
         } else {
-          // Snapshot must be enqueued before this managed buffer is finished.
-          this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
-
-          const needsSafeString = !this.scriptMode;
-          const safeStringCall = needsSafeString
-            ? `runtime.markSafe(${snapshotVar})`
-            : snapshotVar;
-
-          returnStatement = `astate.waitAllClosures().then(() => {${bufferId}.markFinishedAndPatchLinks();${errorCheck}return ${safeStringCall};})`;
+          const textSnapshotVar = this._tmpid();
+          this.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
+          this.emit.line(`const ${textSnapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
+          returnStatement = `(async () => {await ${closuresReadyVar};${bufferId}.markFinishedAndPatchLinks();${errorCheck}return Promise.resolve(${textSnapshotVar}).then((value) => runtime.markSafe(value));})()`;
         }
       } else {
         // Sync case
@@ -1600,10 +1597,10 @@ class Compiler extends CompilerBase {
           }
           return;
         }
-        if (child._analysis?.mutatedChannels?.size > 0 && !this.buffer.currentWaitedChannelName) {
+        if (child._analysis?.mutatedChannels?.size > 0) {
           // Expression mutates channels (e.g. caller() links a composition buffer):
-          // keep async block to track execution and prevent waitAllClosures() from
-          // finishing the parent buffer before linkWithParentCompositionBuffer fires.
+          // keep it in a dedicated async child buffer so late command emission never
+          // targets an already-finished parent buffer.
           frame = this.buffer.asyncAddToBufferScoped(
             node,
             frame,
@@ -1762,10 +1759,6 @@ class Compiler extends CompilerBase {
       }
 
       this.emit.line('  if(finalParent) {');
-      // Includes/imports in async mode may return CommandBuffer values from
-      // composition and insert them into the parent output buffer as child
-      // segments. Chain advancement through child slots requires each child
-      // root buffer to be marked finished once root execution has completed.
       this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
       this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
       this.emit.line('  } else {');
