@@ -498,13 +498,43 @@ Migrate from simplest to most complex to catch regressions early:
 9. ✅ **Remove `WaitResolveCommand` for `var x = expr` and `set_path` in limited loops** — `emitOwnWaitedConcurrencyResolve` removed from `compileAsyncVarSet`. The VarCommand's promise arg is already awaited by the buffer iterator as it processes the iteration buffer's var channel — the `WaitResolveCommand` in `__waited__N` was doubly tracking the same promise. Only codegen tests needed updating; no runtime regressions.
 11. ✅ **`compileWhile`** — effectively completed through the shared `compileFor`/`_compileFor` path used for async `while` lowering. Waited-loop completion, false-break handling, and nested waited ownership now follow the same model as other sequential loops.
 12. ✅ **`compileInclude` / `compileExtends` / `compileImport`** — completed. These inheritance/composition paths now use `runControlFlowBlock` for their async control-flow work, while imported bindings and include text commands are enqueued synchronously. `ignore missing` composition now returns a real empty composition buffer so include composition can rely on the normal boundary/snapshot contract.
-13. ◐ **`compileMacro`, `compileGuard`, `compileRoot`** — partially completed. `compileRoot` still uses `waitAllClosures()` for final handoff, and `compileGuard` still needs a dedicated cleanup pass. `_compileMacro` also still uses `astate.waitAllClosures()` today.
-14. ◐ **Streamline `_compileMacro` / remove macro `waitAllClosures()`** — still pending. A direct removal experiment was not valid yet:
+13. ◐ **Fix `caller()` / nested composition structural attachment** — prerequisite.
+   - this is the clearest current blocker
+   - today the concrete late-add failure still comes from `runtime.linkWithParentCompositionBuffer(...)`
+   - nested callers/imported macros can still try to attach composition buffers after the parent has already finished
+   - a direct attempt to keep the async text helper open by awaiting the mutating expression value first was also not valid: nested caller/import/sequencing cases deadlocked
+   - so this step cannot be implemented by "just wait for the caller() value before adding the final text command"
+   - the `caller()` composition buffer needs to be attached structurally as soon as the call boundary is scheduled, while final text materialization still stays on the normal value path
+   - relevant regressions/signals:
+   - nested async callers
+   - nested async caller error propagation
+   - nested imports through caller/macro composition
+   - sequential side effects inside `caller()`
+14. ◐ **Introduce early structural attachment for non-`caller()` composition child buffers** — prerequisite.
+   - after `caller()` is fixed, apply the same structural attachment model to the remaining composition boundaries that still attach too late
+15. ◐ **Introduce a dedicated structural completion signal for text/composition boundaries** — prerequisite.
+   - completion of a text/composition boundary is not always the same thing as the point-in-time return value it exposes
+   - simply switching from pre-finish `addSnapshot(...)` to post-finish `finalSnapshot()` was not valid yet in macro/caller paths
+   - the refactor needs a first-class way to distinguish:
+   - the value returned to the caller
+   - the structural completion signal a parent uses for lifetime/handoff timing
+16. ◐ **Migrate macro/caller boundaries onto the structural composition model** — pending after steps 13–15.
+   - `_compileMacro` still uses `astate.waitAllClosures()` today
+   - a direct `_compileMacro` removal experiment was not valid yet:
    - nested async imports in macro/caller composition failed with `Cannot add command to finished CommandBuffer`
    - caller sequencing tests stopped registering expected side-effect commands
-   - the concrete failure path goes through `runtime.linkWithParentCompositionBuffer(...)`, which means nested composition is still trying to attach to the parent after the macro buffer has already been finished
-   - simply switching macro return capture from pre-finish `addSnapshot(...)` to post-finish `finalSnapshot()` was also not valid yet: nested caller/import composition regressed because the macro return needs an earlier point-in-time capture until the structural completion boundary is redesigned
-   - this step needs a structural completion boundary for macro/caller composition before the `waitAllClosures()` fallback can be removed
+   - macro/caller completion therefore still needs the prerequisites from steps 13–15 first
+17. ◐ **Migrate root inheritance/composition handoff onto the structural composition model** — pending.
+   - `compileRoot` still uses `waitAllClosures()` for final handoff
+   - a direct `compileRoot` removal experiment was not valid yet:
+   - nested callers regressed with `Cannot add command to finished CommandBuffer`
+   - static/dynamic `extends` regressions produced empty output
+   - bounded `super()` regressions showed composed base-block text was no longer ready at the handoff point
+18. ◐ **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`** — pending after steps 13–17.
+   - this becomes the cleanup/removal step once macro/caller and root handoff have real structural completion signals
+19. ◐ **`compileGuard` major rework** — last.
+   - guard semantics and cleanup need a larger dedicated redesign
+   - do this after the macro/root completion-boundary work is in place
 
 The `compileFor` migration also exposed an important diagnostic rule:
 - if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required
