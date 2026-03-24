@@ -69,6 +69,7 @@ class CommandBuffer {
     }
   }
 
+  //@todo - rename this, maybe to finishBufferAndLetIteratorsExit
   markFinishedAndPatchLinks() {
     this._finishAllChannelsRequested = true;
     const channelNames = this._collectKnownChannelNames();
@@ -78,6 +79,7 @@ class CommandBuffer {
     this._tryCompleteFinish();
   }
 
+  //@todo - rename this, maybe to finishChannelAndLetIteratorExit
   requestChannelFinish(channelName) {
     const resolvedChannelName = this._resolveChannelName(channelName);
     if (!resolvedChannelName) {
