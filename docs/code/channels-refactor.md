@@ -69,6 +69,8 @@ Once all `compileXXX` methods have been migrated and no call site emits `astate.
 
 A command argument that is a promise (an unresolved async value) is perfectly fine — `resolveCommandArgumentsForApply` handles awaiting it when the BufferIterator applies the command. There is no need to await the value before adding the command.
 
+If we are only waiting to obtain the final value for a command argument, that waiting should not happen before the command is emitted. Emit the command synchronously with the value, promise, or chained promise (`Promise.resolve(value).then(...)`) as its argument. Promise-value consumption belongs in command `apply(...)`, not in compiler-emitted pre-resolution wrappers.
+
 A child `CommandBuffer` is needed in two cases:
 
 - when an async value determines **which commands get added at all** — i.e. it controls the structure of the command stream, not just the content of one argument
@@ -596,17 +598,20 @@ Migrate from simplest to most complex to catch regressions early:
      - `compileBlock` no longer depends on the old generic `asyncAddToBuffer(...)` path
    - The helper preserves the current producer-slot and local emitted-scope behavior that block/super/inheritance invocation still depends on, but gives that path its own explicit home before the later root handoff work.
 
-20. [PENDING] **Replace remaining `asyncAddToBufferScoped(...)` output paths with structural lowering**.
-   - Main remaining sites:
-     - `compileOutput` mutating-expression path
-     - async/custom extension text emission
-   - These are still old-style deferred text wrappers and should move either to synchronous command enqueueing or to an explicit structural child-buffer helper.
+20. ✅ **Replace remaining `asyncAddToBufferScoped(...)` output paths with structural lowering**.
+   - Implemented:
+     - `compileOutput` mutating-expression path now uses a dedicated structural helper instead of the old generic scoped async-buffer wrapper
+     - async/custom extension text emission uses the same dedicated structural text-output helper
+   - The old generic output wrapper is gone from these sites; the remaining behavior is now expressed as an explicit structural text-output boundary.
 
 21. [PENDING] **Replace remaining generic `emit.asyncBlockValue(...)` expression wrappers with more structural lowering**.
    - Main remaining sites:
      - expression-level async wrappers in `compiler-base.js`
      - script/template expression sites in `compiler.js`
    - This is a separate class from output/text buffering: these helpers currently wrap expression evaluation in generic async blocks and should be reviewed one by one for synchronous value flow vs true structural ownership.
+   - Explicit audit rule:
+     - if a wrapper is only waiting to obtain the final value for a command argument, remove that pre-resolution and emit the command synchronously with the value, promise, or chained promise as its argument
+     - only keep a structural helper when the path genuinely needs deferred command-buffer ownership, not just async value transformation
 
 22. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.
@@ -641,7 +646,7 @@ These methods currently use `asyncAddToBufferScoped`, `asyncAddToBuffer`, or `as
 
 #### `compileOutput` — `{{ expr }}` template output ✅ partially migrated
 
-**Current:** Literal output is already emitted synchronously as `TextCommand`. Some non-literal children still go through `asyncAddToBufferScoped`, which fires an `asyncBlock` per child. That remaining use is transitional and should be replaced by structural child-buffer lowering rather than kept as a permanent output mechanism.
+**Current:** Literal output is already emitted synchronously as `TextCommand`. Non-literal mutating children no longer use the old generic scoped async-buffer wrapper; they now go through a dedicated structural text-output helper that still owns a child buffer when late structure is genuinely possible.
 
 **Implemented:** Discriminate on `child._analysis?.mutatedChannels?.size > 0`:
 - **Pure value expressions** (`{{ user.name }}`, `{{ getUser() }}`, regular macro calls, etc.): add `TextCommand` synchronously — no async block. The result may be a promise; `resolveCommandArgumentsForApply` handles it at apply time.
@@ -655,10 +660,12 @@ Important clarification from the waited-loop work:
 - so there is no separate "remove text-root WRCs" migration step distinct from the root-expression waited model
 
 ```js
-if (child._analysis?.mutatedChannels?.size > 0 && !this.buffer.currentWaitedChannelName) {
-  // caller() or !-call: keep async block (see note below)
-  frame = this.buffer.asyncAddToBufferScoped(node, frame, child, ..., true, true,
-    (innerFrame) => { this._compileExpression(child, innerFrame, true, child); }, ...);
+if (child._analysis?.mutatedChannels?.size > 0) {
+  frame = this.buffer.asyncAddStructuralTextOutput(node, frame, child,
+    (innerFrame) => {
+      this._compileExpression(child, innerFrame, true, child);
+    },
+    true);
 } else {
   // Pure value: synchronous TextCommand
   const returnId = this._tmpid();
@@ -668,7 +675,6 @@ if (child._analysis?.mutatedChannels?.size > 0 && !this.buffer.currentWaitedChan
   this.emit.line(';');
   const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
   this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
-  this.buffer.emitOwnWaitedConcurrencyResolve(frame, returnId, child);
 }
 ```
 

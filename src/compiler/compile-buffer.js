@@ -411,28 +411,31 @@ class CompileBuffer {
   }
 
   /**
-   * Begin async buffer addition (split pattern)
+   * Emit deferred text output that still needs a structural child buffer.
+   *
+   * Use this only when the expression may add or link command structure later,
+   * so the parent cannot safely enqueue the final TextCommand synchronously.
+   * The expression itself still compiles against the parent buffer; the helper
+   * owns a child text buffer that receives the eventual TextCommand and closes
+   * when that deferred structural work is done.
    */
-  asyncAddToBufferScoped(
+  asyncAddStructuralTextOutput(
     node,
     frame,
     positionNode = node,
-    channelName = null,
-    targetChannelName,
-    emitTextCommand = false,
+    emitValue,
     normalizeTextArgs = false,
-    emitFunc,
     afterValueReady = null
   ) {
-    void channelName;
     if (!this.compiler.asyncMode) {
       this.compiler.emit(`${this.currentBuffer} += `);
-      emitFunc(frame, null);
+      emitValue(frame, null);
       this.compiler.emit.line(';');
       return frame;
     }
 
     const parentBufferExpr = this.currentBuffer;
+    const targetChannelName = this.currentTextChannelName;
     const asyncPromiseId = this.compiler._tmpid();
     this.compiler.emit.line(`let ${asyncPromiseId} = astate.asyncBlock(async (astate, frame, currentBuffer, parentBuffer) => {`);
     const valueId = this.compiler._tmpid();
@@ -445,20 +448,16 @@ class CompileBuffer {
     this.currentTextChannelVar = null;
     this.compiler.emit(`let ${valueId} = `);
 
-    emitFunc(innerFrame, valueId);
+    emitValue(innerFrame, valueId);
 
     this.compiler.emit.line(';');
     if (typeof afterValueReady === 'function') {
       afterValueReady(innerFrame, valueId);
     }
 
-    const valueExpr = emitTextCommand
-      ? this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs)
-      : valueId;
+    const valueExpr = this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs);
     this.compiler.emit.line(`currentBuffer.add(${valueExpr}, "${targetChannelName}");`);
-    if (emitTextCommand) {
-      this.compiler.emit.line(`currentBuffer.markFinishedAndPatchLinks();`);
-    }
+    this.compiler.emit.line('currentBuffer.markFinishedAndPatchLinks();');
     this.currentBuffer = prevBuffer;
     this.currentTextChannelVar = prevTextChannelVar;
 
@@ -466,9 +465,7 @@ class CompileBuffer {
     this.compiler.emit.line('}');
     const asyncMetaArg = this.compiler.emit.getAsyncBlockArgs(node, innerFrame);
     this.compiler.emit.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferExpr}, true, cb);`);
-    if (emitTextCommand) {
-      this.emitOwnWaitedConcurrencyResolve(frame, asyncPromiseId, positionNode);
-    }
+    this.emitOwnWaitedConcurrencyResolve(frame, asyncPromiseId, positionNode);
     return innerFrame.pop();
   }
 

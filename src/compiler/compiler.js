@@ -107,7 +107,6 @@ class Compiler extends CompilerBase {
   }
 
   /**
-   * Implements the call/caller() compilation.
    * CallExtension - no callback, can return either value or promise
    * CallExtensionAsync - uses callback, async = true. This was the way to handle the old nunjucks async
    * @todo - rewrite with _emitAggregate
@@ -213,32 +212,20 @@ class Compiler extends CompilerBase {
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
-
-      const callTextChannelName = this.buffer.currentTextChannelName;
-      frame = this.buffer.asyncAddToBufferScoped(
-        node,
-        frame,
-        positionNode,
-        callTextChannelName,
-        callTextChannelName,
-        true,
-        this.asyncMode,
-        (innerFrame) => {
-          if (this.asyncMode) {
-            this.emit('runtime.resolveSingle(');
-          } else {
-            this.emit('runtime.suppressValue(');
-          }
-          emitExtensionInvocation(innerFrame, ext);
-          if (this.asyncMode) {
-            this.emit(')');
-          } else {
-            this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
-          }
-        },
-        null,
-        false
-      );
+      if (this.asyncMode) {
+        const returnId = this._tmpid();
+        this.emit(`let ${returnId} = `);
+        emitExtensionInvocation(frame, ext);
+        this.emit.line(';');
+        const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
+        this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
+      } else {
+        this.buffer.addToBuffer(node, frame, () => {
+          this.emit('runtime.suppressValue(');
+          emitExtensionInvocation(frame, ext);
+          this.emit(`, ${autoescape} && env.opts.autoescape)`);
+        }, positionNode, this.buffer.currentTextChannelName, false);
+      }
     } else {
       //use the original nunjucks callback mechanism
       this.emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
@@ -246,15 +233,10 @@ class Compiler extends CompilerBase {
 
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      const callbackTextChannelName = this.buffer.currentTextChannelName;
-      frame = this.buffer.asyncAddToBufferScoped(
+      frame = this.buffer.asyncAddStructuralTextOutput(
         node,
         frame,
         positionNode,
-        callbackTextChannelName,
-        callbackTextChannelName,
-        true,
-        this.asyncMode,
         () => {
           if (this.asyncMode) {
             this.emit(`runtime.resolveSingle(${res})`);
@@ -262,6 +244,7 @@ class Compiler extends CompilerBase {
             this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
           }
         },
+        this.asyncMode,
         null
       );
 
@@ -1336,17 +1319,14 @@ class Compiler extends CompilerBase {
           // Expression mutates channels (e.g. caller() links a composition buffer):
           // keep it in a dedicated async child buffer so late command emission never
           // targets an already-finished parent buffer.
-          frame = this.buffer.asyncAddToBufferScoped(
+          frame = this.buffer.asyncAddStructuralTextOutput(
             node,
             frame,
             child,
-            textChannelName,
-            textChannelName,
-            true,
-            true,
             (innerFrame) => {
               this.compileExpression(child, innerFrame, true, child);
-            }
+            },
+            true
           );
         } else {
           // Pure value expression: add TextCommand synchronously, no async block needed.
