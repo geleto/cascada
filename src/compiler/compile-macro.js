@@ -129,12 +129,31 @@ class CompileMacro {
     return false;
   }
 
+  _parseMacroSignature(node) {
+    const compiler = this.compiler;
+    const args = [];
+    let kwargs = null;
+
+    node.args.children.forEach((arg, i) => {
+      if (i === node.args.children.length - 1 && arg instanceof nodes.Dict) {
+        kwargs = arg;
+      } else {
+        compiler.assertType(arg, nodes.Symbol);
+        args.push(arg);
+      }
+    });
+
+    return {
+      args,
+      kwargs,
+      realNames: [...args.map((n) => `l_${n.value}`), 'kwargs'],
+      argNames: args.map((n) => `"${n.value}"`),
+      kwargNames: ((kwargs && kwargs.children) || []).map((n) => `"${n.key.value}"`)
+    };
+  }
+
   _emitCallerBindingValue({ bufferId, rawCallerVar, allCallersBufferId, positionNode }) {
     const compiler = this.compiler;
-    if (!rawCallerVar || !allCallersBufferId) {
-      compiler.emit('kwargs.caller');
-      return;
-    }
     const invocationBufferId = compiler._tmpid();
     const invocationArgsId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
@@ -157,9 +176,6 @@ class CompileMacro {
 
   _emitMacroCallerSetup({ bufferId, rawCallerVar, allCallersBufferId }) {
     const compiler = this.compiler;
-    if (!rawCallerVar || !allCallersBufferId) {
-      return;
-    }
     compiler.emit.line(`let ${rawCallerVar} = kwargs.caller;`);
     compiler.emit.line(`let ${allCallersBufferId} = null;`);
     // __caller__ records when each invocation child buffer has finished
@@ -174,7 +190,7 @@ class CompileMacro {
     compiler.emit.line('}');
   }
 
-  _buildAsyncMacroReturnExpression({ node, bufferId, errVar, allCallersBufferId, hasCallerSupport }) {
+  _emitAsyncMacroReturn({ node, bufferId, errVar, allCallersBufferId, hasCallerSupport }) {
     const compiler = this.compiler;
     const errorCheck = `if (${errVar}) throw ${errVar};`;
     const closuresReadyVar = compiler._tmpid();
@@ -221,24 +237,106 @@ class CompileMacro {
     compiler.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), "${name}");`);
   }
 
-  _compileMacro(node, frame, keepFrame) {
+  _emitAsyncMacroBindings({ node, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId }) {
     const compiler = this.compiler;
-    var args = [];
-    var kwargs = null;
-    var funcId = 'macro_' + compiler._tmpid();
+    const hasCallerSupport = !!(rawCallerVar && allCallersBufferId);
 
-    node.args.children.forEach((arg, i) => {
-      if (i === node.args.children.length - 1 && arg instanceof nodes.Dict) {
-        kwargs = arg;
-      } else {
-        compiler.assertType(arg, nodes.Symbol);
-        args.push(arg);
-      }
+    if (compiler.scriptMode) {
+      compiler.emitDeclareReturnChannel(managedFrame, bufferId);
+    }
+
+    if (hasCallerSupport) {
+      this._emitMacroCallerSetup({
+        bufferId,
+        rawCallerVar,
+        allCallersBufferId
+      });
+    }
+
+    compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "caller", "var", context, null);`);
+    args.forEach((arg) => {
+      compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${arg.value}", "var", context, null);`);
+    });
+    if (kwargs) {
+      kwargs.children.forEach((pair) => {
+        compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${pair.key.value}", "var", context, null);`);
+      });
+    }
+
+    this._emitMacroBindingInit(
+      managedFrame,
+      bufferId,
+      'caller',
+      () => {
+        if (hasCallerSupport) {
+          this._emitCallerBindingValue({
+            bufferId,
+            rawCallerVar,
+            allCallersBufferId,
+            positionNode: node
+          });
+        } else {
+          compiler.emit('kwargs.caller');
+        }
+      },
+      node
+    );
+
+    args.forEach((arg) => {
+      this._emitMacroBindingInit(
+        managedFrame,
+        bufferId,
+        arg.value,
+        () => {
+          compiler.emit(`l_${arg.value}`);
+        },
+        arg
+      );
     });
 
-    const realNames = [...args.map((n) => `l_${n.value}`), 'kwargs'];
-    const argNames = args.map((n) => `"${n.value}"`);
-    const kwargNames = ((kwargs && kwargs.children) || []).map((n) => `"${n.key.value}"`);
+    if (kwargs) {
+      kwargs.children.forEach((pair) => {
+        const name = pair.key.value;
+        this._emitMacroBindingInit(
+          managedFrame,
+          bufferId,
+          name,
+          () => {
+            compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}") ? kwargs["${name}"] : `);
+            compiler._compileExpression(pair.value, managedFrame, false);
+          },
+          pair
+        );
+      });
+    }
+  }
+
+  _emitSyncMacroBindings({ managedFrame, args, kwargs }) {
+    const compiler = this.compiler;
+
+    compiler.emit.line('frame.set("caller", kwargs.caller);');
+    managedFrame.set('caller', 'kwargs.caller');
+    args.forEach((arg) => {
+      compiler.emit.line(`frame.set("${arg.value}", l_${arg.value});`);
+      managedFrame.set(arg.value, `l_${arg.value}`);
+    });
+
+    if (kwargs) {
+      kwargs.children.forEach((pair) => {
+        const name = pair.key.value;
+        compiler.emit(`frame.set("${name}", `);
+        compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
+        compiler.emit(` ? kwargs["${name}"] : `);
+        compiler._compileExpression(pair.value, managedFrame, false);
+        compiler.emit(');');
+      });
+    }
+  }
+
+  _compileMacro(node, frame, keepFrame) {
+    const compiler = this.compiler;
+    const funcId = 'macro_' + compiler._tmpid();
+    const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
 
     let currFrame;
     if (keepFrame) {
@@ -289,82 +387,17 @@ class CompileMacro {
 
     const emitAsyncMacroBody = (managedFrame, bufferId) => {
       if (node.isAsync) {
-        if (compiler.scriptMode) {
-          compiler.emitDeclareReturnChannel(managedFrame, bufferId);
-        }
-        this._emitMacroCallerSetup({
+        this._emitAsyncMacroBindings({
+          node,
+          managedFrame,
           bufferId,
+          args,
+          kwargs,
           rawCallerVar,
           allCallersBufferId
         });
-        compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "caller", "var", context, null);`);
-        args.forEach((arg) => {
-          compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${arg.value}", "var", context, null);`);
-        });
-        if (kwargs) {
-          kwargs.children.forEach((pair) => {
-            compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${pair.key.value}", "var", context, null);`);
-          });
-        }
-
-        this._emitMacroBindingInit(
-          managedFrame,
-          bufferId,
-          'caller',
-          () => this._emitCallerBindingValue({
-            bufferId,
-            rawCallerVar,
-            allCallersBufferId,
-            positionNode: node
-          }),
-          node
-        );
-
-        args.forEach((arg) => {
-          this._emitMacroBindingInit(
-            managedFrame,
-            bufferId,
-            arg.value,
-            () => {
-              compiler.emit(`l_${arg.value}`);
-            },
-            arg
-          );
-        });
-
-        if (kwargs) {
-          kwargs.children.forEach((pair) => {
-            const name = pair.key.value;
-            this._emitMacroBindingInit(
-              managedFrame,
-              bufferId,
-              name,
-              () => {
-                compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}") ? kwargs["${name}"] : `);
-                compiler._compileExpression(pair.value, managedFrame, false);
-              },
-              pair
-            );
-          });
-        }
       } else {
-        compiler.emit.line('frame.set("caller", kwargs.caller);');
-        managedFrame.set('caller', 'kwargs.caller');
-        args.forEach((arg) => {
-          compiler.emit.line(`frame.set("${arg.value}", l_${arg.value});`);
-          managedFrame.set(arg.value, `l_${arg.value}`);
-        });
-
-        if (kwargs) {
-          kwargs.children.forEach((pair) => {
-            const name = pair.key.value;
-            compiler.emit(`frame.set("${name}", `);
-            compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
-            compiler.emit(` ? kwargs["${name}"] : `);
-            compiler._compileExpression(pair.value, managedFrame, false);
-            compiler.emit(');');
-          });
-        }
+        this._emitSyncMacroBindings({ managedFrame, args, kwargs });
       }
 
       compiler.emit.withScopedSyntax(() => {
@@ -374,7 +407,7 @@ class CompileMacro {
       compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
 
       if (node.isAsync) {
-        returnStatement = this._buildAsyncMacroReturnExpression({
+        returnStatement = this._emitAsyncMacroReturn({
           node,
           bufferId,
           errVar: err,
