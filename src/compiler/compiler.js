@@ -211,23 +211,23 @@ class Compiler extends CompilerBase {
       return;
     }
 
-    if (noExtensionCallback || node.isAsync) {
+    if (this.asyncMode) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
-      if (this.asyncMode) {
-        const returnId = this._tmpid();
-        this.emit(`let ${returnId} = `);
+      const returnId = this._tmpid();
+      this.emit(`let ${returnId} = `);
+      emitExtensionInvocation(frame, ext);
+      this.emit.line(';');
+      const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
+      this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
+    } else if (noExtensionCallback || node.isAsync) {
+      const ext = this._tmpid();
+      this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
+      this.buffer.addToBuffer(node, frame, () => {
+        this.emit('runtime.suppressValue(');
         emitExtensionInvocation(frame, ext);
-        this.emit.line(';');
-        const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
-        this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
-      } else {
-        this.buffer.addToBuffer(node, frame, () => {
-          this.emit('runtime.suppressValue(');
-          emitExtensionInvocation(frame, ext);
-          this.emit(`, ${autoescape} && env.opts.autoescape)`);
-        }, positionNode, this.buffer.currentTextChannelName, false);
-      }
+        this.emit(`, ${autoescape} && env.opts.autoescape)`);
+      }, positionNode, this.buffer.currentTextChannelName, false);
     } else {
       //use the original nunjucks callback mechanism
       this.emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
@@ -1318,9 +1318,11 @@ class Compiler extends CompilerBase {
           return;
         }
         if (child._analysis?.mutatedChannels?.size > 0) {
-          // Expression mutates channels (e.g. caller() links a composition buffer):
-          // keep it in a dedicated async child buffer so late command emission never
-          // targets an already-finished parent buffer.
+          // Remaining intentional boundary case:
+          // expressions like caller() can still attach composition structure while
+          // evaluating, so this is not just "wait for a text value then emit text".
+          // Keep a dedicated child buffer here; pure value-only output stays on the
+          // synchronous TextCommand path below.
           frame = this.buffer.asyncAddStructuralTextOutput(
             node,
             frame,

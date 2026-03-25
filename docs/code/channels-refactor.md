@@ -626,9 +626,14 @@ Migrate from simplest to most complex to catch regressions early:
      - `compile-emit._compileRenderBoundary(...)` now lowers async render boundaries through a dedicated runtime `runRenderBoundary(...)` helper that creates an isolated unlinked child buffer, snapshots it, and cleans it up
    - This keeps content-render boundaries as explicit new-tree ownership without leaving raw compiler-emitted render `asyncBlock` code in place.
 
-23. [PENDING] **Replace remaining `asyncAddStructuralTextOutput(...)` sites where no real structural child buffer is needed**.
-   - This helper still owns some output-side `astate.asyncBlock(...)` usage.
-   - Each remaining site should be audited with the same rule used for extension text output:
+23. ✅ **Replace remaining `asyncAddStructuralTextOutput(...)` sites where no real structural child buffer is needed**.
+   - Completed:
+     - async template extension output no longer uses `asyncAddStructuralTextOutput(...)` for callback-style extension returns
+     - old callback-style extension output is now promisified and emitted as a synchronous `TextCommand` with a promise-valued arg
+   - Result of the final audit:
+     - the remaining `compileOutput(...)` mutating-expression path is a real structural boundary case
+     - expressions like `caller()` can still attach composition structure while evaluating, so that site still needs a child-buffer lifetime
+   - Current rule:
      - if the path only needs a final text value, enqueue `TextCommand` synchronously with a value/promise/chained-promise arg
      - keep the helper only where evaluation still needs real deferred child-buffer ownership
 
