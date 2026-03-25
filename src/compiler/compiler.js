@@ -339,9 +339,7 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
     } else { // e.g., set x = capture ...
       this.emit(ids.join(' = ') + ' = ');
-      this.emit.asyncBlockValue(node, frame, (n, f) => {
-        this.compile(n.body, f);
-      }, undefined, node.body);
+      this.compile(node.body, frame);
       this.emit.line(';');
     }
 
@@ -449,9 +447,7 @@ class Compiler extends CompilerBase {
       hasAssignedValue = true;
     } else if (node.body) {
       this.emit(ids.join(' = ') + ' = ');
-      this.emit.asyncBlockValue(node, frame, (n, f) => {
-        this.compile(n.body, f);
-      }, undefined, node.body);
+      this.compile(node.body, frame);
       this.emit.line(';');
       hasAssignedValue = true;
     }

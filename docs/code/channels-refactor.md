@@ -644,10 +644,15 @@ Migrate from simplest to most complex to catch regressions early:
      - the block invocation result is written into the child slot buffer
      - but the invoked block function still receives the enclosing parent buffer for visible-channel linking and composition semantics
 
-25. [PENDING] **Replace remaining capture/set-block async wrapper path**.
-   - Main current use: `compileCapture` in `compiler.js`.
-   - This is a non-expression ownership boundary and should be treated separately from generic expression cleanup.
-   - Set-block/capture lowering should eventually move off raw `asyncBlockValue(...)`, but only once its capture-buffer ownership model is redesigned clearly enough.
+25. [PARTIAL] **Replace remaining capture/set-block async wrapper path**.
+   - Completed:
+     - async set-block lowering in `compileSet(...)` / `compileAsyncVarSet(...)` no longer wraps the body in an extra outer `asyncBlockValue(...)`
+     - the set-block body already compiles as a capture boundary expression, so the old outer wrapper was redundant
+   - Remaining:
+     - `compileCapture(...)` itself still uses the older `asyncBlockValue(...)` path
+   - Current lesson:
+     - set-blocks were not a separate boundary type here; they were double-wrapping an existing capture boundary
+     - `compileCapture(...)` still needs its own dedicated redesign before this step can be fully closed
 
 26. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.
