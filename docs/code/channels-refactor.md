@@ -140,6 +140,7 @@ So the more precise rule is:
 
 - do not create child buffers merely because a value is async
 - do create child buffers for real ownership boundaries that start a new tree, even if the commands inside them are otherwise known synchronously
+- if neither rule applies, do not keep a compiler-emitted `astate.asyncBlock(...)` wrapper either; evaluate the value normally and add the command synchronously, even when the value itself may still be a promise
 
 ---
 
@@ -595,16 +596,30 @@ Migrate from simplest to most complex to catch regressions early:
      - `compileBlock` no longer depends on the old generic `asyncAddToBuffer(...)` path
    - The helper preserves the current producer-slot and local emitted-scope behavior that block/super/inheritance invocation still depends on, but gives that path its own explicit home before the later root handoff work.
 
-20. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
+20. [PENDING] **Replace remaining `asyncAddToBufferScoped(...)` output paths with structural lowering**.
+   - Main remaining sites:
+     - `compileOutput` mutating-expression path
+     - async/custom extension text emission
+   - These are still old-style deferred text wrappers and should move either to synchronous command enqueueing or to an explicit structural child-buffer helper.
+
+21. [PENDING] **Replace remaining generic `emit.asyncBlockValue(...)` expression wrappers with more structural lowering**.
+   - Main remaining sites:
+     - expression-level async wrappers in `compiler-base.js`
+     - script/template expression sites in `compiler.js`
+   - This is a separate class from output/text buffering: these helpers currently wrap expression evaluation in generic async blocks and should be reviewed one by one for synchronous value flow vs true structural ownership.
+
+22. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.
-   - This step also owns the remaining block/root/inheritance structural-attachment cleanup that was intentionally left out of step 14.
+   - This step owns the remaining root/block/inheritance structural-handoff cleanup after the old async-block output/expression helpers above are gone or isolated.
    - Based on the step 15 experiment, root/block handoff should only move to `finalSnapshot()` where the boundary cleanly owns the composed subtree; inherited block/super handoff likely still needs an explicit stronger completion boundary first.
-21. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+
+23. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
    - `compileMacro` is now blocked on the remaining completion-boundary work, not on the direct caller-output late-start path itself.
    - Latest experiment result:
      - direct deferred `caller()` output is fixed
      - but deferred control-flow sites can still start caller invocations after macro finalization would begin if `waitAllClosures()` is removed
-22. [PENDING] **`compileGuard` major rework**.
+
+24. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
 
 The `compileFor` migration also exposed an important diagnostic rule:
