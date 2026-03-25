@@ -411,7 +411,10 @@ class CompileInheritance {
         'composed',
         'composed._channels'
       );
-      this.emit.line(`let ${includeTextPromise} = composed.addSnapshot("${includeOutputChannelName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+      // Includes own a composed child text boundary. Use the child text channel's
+      // finalSnapshot() as the structural completion signal rather than adding an
+      // extra point-in-time snapshot command for that boundary.
+      this.emit.line(`let ${includeTextPromise} = composed.getChannel("${includeOutputChannelName}").finalSnapshot();`);
       this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
       // Include boundary completion in limited-loop waited output.
       // Wait on the composed include snapshot promise (timing unit), not on the

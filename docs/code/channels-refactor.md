@@ -1,4 +1,4 @@
-# Async Compilation Refactor: Sequential Commands & Control-Flow Buffers
+﻿# Async Compilation Refactor: Sequential Commands & Control-Flow Buffers
 
 ## Overview
 
@@ -544,18 +544,25 @@ Migrate from simplest to most complex to catch regressions early:
 14. ✅ **Introduce early structural attachment for non-`caller()` composition child buffers**.
    - Locally-created scope-root/composition buffers now link their parent-visible lanes at `runtime.createCommandBuffer(...)` creation time instead of creating the buffer first and attaching those lanes in a separate runtime step.
    - The remaining block/root/inheritance attachment work is no longer tracked here; it belongs to the dedicated root inheritance/composition handoff step below.
-15. [PENDING] **Introduce a dedicated structural completion signal for text/composition boundaries**.
+15. ✅ **Introduce a dedicated structural completion signal for text/composition boundaries**.
    - Keep the structural completion signal distinct from the point-in-time value a boundary returns.
-   - `finalSnapshot()` is likely part of the solution, but it should be used as structural completion only where that matches the boundary's ownership semantics.
-16. [PARTIAL] **Migrate macro/caller boundaries onto the structural composition model**.
+   - `compileInclude` now uses the composed child text channel's `finalSnapshot()` as the boundary's structural completion signal.
+   - What we learned: `finalSnapshot()` is valid when the boundary already owns the relevant composed text subtree cleanly.
+16. [PENDING] **Add a stronger structural completion boundary for nested macro/caller/import composition**.
+   - A direct `_compileMacro` switch to text `finalSnapshot()` is still not valid yet.
+   - Nested caller/import composition still needs a stronger completion boundary before macro finalization can stop relying on point-in-time text snapshots plus `waitAllClosures()`.
+17. [PARTIAL] **Migrate macro/caller boundaries onto the structural composition model**.
    - The caller structural-attachment model is implemented and macro/caller analysis and compilation now live in `compile-macro.js`.
    - `_compileMacro` still uses `astate.waitAllClosures()` today, so this step is not fully complete yet.
-17. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
+   - Latest experiment result: caller scheduling is structurally attached, but macro return/finalization still cannot switch directly from point-in-time text snapshots to `finalSnapshot()` without losing nested caller/import composition.
+18. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.
    - This step also owns the remaining block/root/inheritance structural-attachment cleanup that was intentionally left out of step 14.
-18. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+   - Based on the step 15 experiment, root/block handoff should only move to `finalSnapshot()` where the boundary cleanly owns the composed subtree; inherited block/super handoff likely still needs an explicit stronger completion boundary first.
+19. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
    - `compileMacro` is now blocked on the remaining completion-boundary work, not on caller structural attachment itself.
-19. [PENDING] **`compileGuard` major rework**.
+   - The current prerequisite is no longer generic caller attachment; it is the missing structural completion boundary for nested macro/caller/import composition and the matching root handoff case.
+20. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
    - `compileMacro` is now blocked on the remaining completion-boundary work, not on caller structural attachment itself.
 19. [PENDING] **`compileGuard` major rework**.
