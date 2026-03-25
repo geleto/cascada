@@ -247,7 +247,7 @@ class CompileInheritance {
     // blocks twice
 
     if (this.compiler.asyncMode) {
-      this.compiler.buffer.asyncAddToBuffer(node, frame, (id, f) => {
+      this.compiler.buffer.asyncAddBlockInvocationToBuffer(node, frame, (id, f) => {
         // The dynamic check runs when:
         // 1. We're at top level (!this.inBlock)
         // 2. There might be a dynamic parent (hasDynamicExtends OR hasStaticExtends)
@@ -278,7 +278,7 @@ class CompileInheritance {
         }
         // Step 7: block invocation boundary completion in limited-loop waited output.
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
-      }, node, null, this.compiler.buffer.currentTextChannelName, true);
+      }, node, this.compiler.buffer.currentTextChannelName);
     }
     else {
       let id = this.compiler._tmpid();

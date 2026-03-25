@@ -355,10 +355,16 @@ class CompileBuffer {
   }
 
   /**
-   * Add value to buffer (async mode with error handling)
+   * Emit a producer-slot async block invocation and enqueue its result on the
+   * current text channel.
+   *
+   * This is currently used by async block/super/inheritance invocation sites.
+   * Those sites already own their internal composition boundary and return a
+   * final text promise, but they still rely on this wrapper's producer-slot
+   * behavior and local emitted scope. Keep this helper dedicated to block-style
+   * invocation rather than routing them through generic async value helpers.
    */
-  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, channelName = null, targetChannelName, emitTextCommand = false) {
-    void channelName;
+  asyncAddBlockInvocationToBuffer(node, frame, renderFunction, positionNode = node, targetChannelName) {
     const returnId = this.compiler._tmpid();
     if (this.compiler.asyncMode) {
       this.compiler.emit.asyncClosureDepth++;
@@ -369,9 +375,7 @@ class CompileBuffer {
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.compiler.emit.line(';');
-      const valueExpr = emitTextCommand
-        ? this._emitTemplateTextCommandExpression(returnId, positionNode)
-        : returnId;
+      const valueExpr = this._emitTemplateTextCommandExpression(returnId, positionNode);
       this.compiler.emit.line(`return ${valueExpr};`);
       this.compiler.emit.line(`})(), "${targetChannelName}");`);
 
@@ -385,11 +389,7 @@ class CompileBuffer {
     } else {
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
-      if (this.compiler.asyncMode) {
-        this.emitAddCommand(frame, targetChannelName, returnId, positionNode, emitTextCommand);
-      } else {
-        this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
-      }
+      this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
     }
   }
 

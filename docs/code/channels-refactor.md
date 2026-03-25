@@ -573,7 +573,7 @@ Migrate from simplest to most complex to catch regressions early:
      - `compileOutput` no longer participates in caller scheduling bookkeeping; it may emit output structure, but `__caller__` registration belongs only to caller invocation
      - deferred/mutating caller expressions now go back through the normal tracked async child-buffer path, so loop/conditional/ternary-started caller work is still covered by `waitAllClosures()` before the macro snapshots `__caller__`
    - This removed the concrete late-start failure for the deferred `{{ caller() }}` cases that were still starting after the caller boundary had already been closed.
-   - This step no longer owns `waitAllClosures()` removal; that is tracked explicitly in step 20.
+   - This step no longer owns `waitAllClosures()` removal; that is tracked explicitly in step 21.
 17. ✅ **Audit other deferred call paths for late structural child-buffer creation**.
    - Result: no second caller-like path was found.
    - Checked:
@@ -587,18 +587,24 @@ Migrate from simplest to most complex to catch regressions early:
 18. ✅ **Migrate macro/caller boundaries onto the structural composition model**.
    - The caller structural-attachment model is implemented and macro/caller analysis and compilation live in `compile-macro.js`.
    - Transitional caller-specific compiler state was removed: `_compileMacro` no longer carries the old caller-support context/shadowing scaffolding now that `__caller__` ownership lives entirely in caller invocation code.
-   - The remaining `_compileMacro` `astate.waitAllClosures()` removal is tracked separately in step 20.
+   - The remaining `_compileMacro` `astate.waitAllClosures()` removal is tracked separately in step 21.
    - Latest experiment result: caller scheduling is structurally attached, but macro return/finalization still cannot switch directly from point-in-time text snapshots to `finalSnapshot()` without losing nested caller/import composition.
-19. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
+19. ✅ **Introduce a dedicated structural block-invocation emitter/helper before removing `asyncAddToBuffer` from block calls**.
+   - Implemented:
+     - async block invocation now uses a dedicated `asyncAddBlockInvocationToBuffer(...)` helper in `compile-buffer.js`
+     - `compileBlock` no longer depends on the old generic `asyncAddToBuffer(...)` path
+   - The helper preserves the current producer-slot and local emitted-scope behavior that block/super/inheritance invocation still depends on, but gives that path its own explicit home before the later root handoff work.
+
+20. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.
    - This step also owns the remaining block/root/inheritance structural-attachment cleanup that was intentionally left out of step 14.
    - Based on the step 15 experiment, root/block handoff should only move to `finalSnapshot()` where the boundary cleanly owns the composed subtree; inherited block/super handoff likely still needs an explicit stronger completion boundary first.
-20. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+21. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
    - `compileMacro` is now blocked on the remaining completion-boundary work, not on the direct caller-output late-start path itself.
    - Latest experiment result:
      - direct deferred `caller()` output is fixed
      - but deferred control-flow sites can still start caller invocations after macro finalization would begin if `waitAllClosures()` is removed
-21. [PENDING] **`compileGuard` major rework**.
+22. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
 
 The `compileFor` migration also exposed an important diagnostic rule:
