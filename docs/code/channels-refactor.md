@@ -541,9 +541,9 @@ Migrate from simplest to most complex to catch regressions early:
    - Async caller-capable macros now create one parent-linked all-callers buffer, one child buffer per `caller()` invocation, and one macro-local `__caller__` waited unit per invocation child buffer.
    - The caller path no longer depends on late `runtime.linkWithParentCompositionBuffer(...)` attachment.
    - Nested callers, imported-macro caller composition, caller sequencing, and caller parent-scope reads now pass on this model.
-14. [PARTIAL] **Introduce early structural attachment for non-`caller()` composition child buffers**.
+14. ✅ **Introduce early structural attachment for non-`caller()` composition child buffers**.
    - Locally-created scope-root/composition buffers now link their parent-visible lanes at `runtime.createCommandBuffer(...)` creation time instead of creating the buffer first and attaching those lanes in a separate runtime step.
-   - This is implemented for the managed scope-root buffer paths (`managedBlock` / `initManagedBuffer`). Root block / inheritance handoff still stays on the existing path and remains part of the later root-composition step.
+   - The remaining block/root/inheritance attachment work is no longer tracked here; it belongs to the dedicated root inheritance/composition handoff step below.
 15. [PENDING] **Introduce a dedicated structural completion signal for text/composition boundaries**.
    - Keep the structural completion signal distinct from the point-in-time value a boundary returns.
    - `finalSnapshot()` is likely part of the solution, but it should be used as structural completion only where that matches the boundary's ownership semantics.
@@ -552,7 +552,11 @@ Migrate from simplest to most complex to catch regressions early:
    - `_compileMacro` still uses `astate.waitAllClosures()` today, so this step is not fully complete yet.
 17. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.
+   - This step also owns the remaining block/root/inheritance structural-attachment cleanup that was intentionally left out of step 14.
 18. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+   - `compileMacro` is now blocked on the remaining completion-boundary work, not on caller structural attachment itself.
+19. [PENDING] **`compileGuard` major rework**.
+   - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
    - `compileMacro` is now blocked on the remaining completion-boundary work, not on caller structural attachment itself.
 19. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
@@ -824,3 +828,4 @@ That means the remaining issue is not generic async expression timing inside the
 ### Never changes
 
 `CommandBuffer`, `BufferIterator`, `Channel` subclasses, all command classes, `CompileAnalysis`, `CompileAsync`, `compile-sequential.js`, `compile-loop.js` (structure only), the poison system, and `resolveCommandArgumentsForApply`.
+

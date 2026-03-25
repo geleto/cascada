@@ -80,8 +80,7 @@ module.exports = class CompileEmit {
       this.compiler.buffer.currentBuffer,
       (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null,
       this.compiler.buffer.currentTextChannelVar,
-      linkedChannels,
-      (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null
+      linkedChannels
     );
     this.line('try {');
   }
@@ -174,8 +173,7 @@ module.exports = class CompileEmit {
         bufferId,
         parentBufferId,
         `${bufferId}_textOutputVar`,
-        linkedChannels,
-        parentBufferId
+        linkedChannels
       );
     }
 
