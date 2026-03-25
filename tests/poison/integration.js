@@ -51,6 +51,51 @@
         expect(err.message).to.contain('Value fetch failed');
       }
     });
+
+    it('should pass a poisoned value directly into a template macro', async () => {
+      const template = `
+        {% macro inspect(x) %}
+          {{ x }}
+        {% endmacro %}
+
+        {{ inspect(input) }}
+      `;
+
+      const context = {
+        input: runtime.createPoison(new Error('macro-template-poison'))
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.message).to.contain('macro-template-poison');
+      }
+    });
+
+    it('should pass a poisoned value directly into a script macro', async () => {
+      const script = `
+        macro inspect(x)
+          return x
+        endmacro
+
+        var val = input
+        return inspect(val)
+      `;
+
+      const context = {
+        input: runtime.createPoison(new Error('macro-script-poison'))
+      };
+
+      try {
+        await env.renderScriptString(script, context);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.message).to.contain('macro-script-poison');
+      }
+    });
   });
 
   describe('Error propagation in templates', () => {

@@ -33,6 +33,12 @@ function callWrap(obj, name, context, args, currentBuffer = null) {
  * Async call wrapper using sync-first hybrid pattern.
  */
 function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = null) {
+  if (obj && obj.isMacro) {
+    // Macros are promise/poison-transparent Cascada boundaries. They receive
+    // raw argument values and any thrown/rejected error must propagate as a
+    // real fatal error rather than being normalized into FunCall poison here.
+    return obj._invoke(context, args, currentBuffer);
+  }
 
   // Check if we need async path: obj or any arg is a promise
   const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
@@ -80,10 +86,8 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
     const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                    !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
-    const executionContext = (obj.isMacro || isGlobal) ? context : context.ctx;
-    const result = obj.isMacro
-      ? obj._invoke(executionContext, args, currentBuffer)
-      : obj.apply(executionContext, args);
+    const executionContext = isGlobal ? context : context.ctx;
+    const result = obj.apply(executionContext, args);
     if (result && typeof result.then === 'function') {// && !isPoison(result)) {
       // add context to the promise that will be applied if it rejects
       return new RuntimePromise(result, errorContext);
@@ -115,6 +119,13 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
     }
   } else if (isPoison(obj)) {
     errors.push(...obj.errors);
+  }
+
+  if (obj && obj.isMacro) {
+    // Macros are promise/poison-transparent Cascada boundaries. Keep promise-
+    // valued args untouched and let any thrown/rejected error propagate as a
+    // real fatal error to the nearest cb()-owning boundary.
+    return obj._invoke(context, args, currentBuffer);
   }
 
   // Await ALL args to collect all errors (never miss any error principle)
@@ -158,10 +169,8 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
     const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                    !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
-    const executionContext = (obj.isMacro || isGlobal) ? context : context.ctx;
-    const result = obj.isMacro
-      ? obj._invoke(executionContext, resolvedArgs, currentBuffer)
-      : obj.apply(executionContext, resolvedArgs);
+    const executionContext = isGlobal ? context : context.ctx;
+    const result = obj.apply(executionContext, resolvedArgs);
 
     // Wrap promise results to preserve error context
     if (result && typeof result.then === 'function') {

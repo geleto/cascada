@@ -1332,7 +1332,11 @@ class Compiler extends CompilerBase {
           }
           return;
         }
-        if (child._analysis?.mutatedChannels?.size > 0) {
+        const usesCallerBoundary =
+          this.macro.hasActiveCallerSupportContext() &&
+          this.macro._expressionUsesCaller(child);
+
+        if (child._analysis?.mutatedChannels?.size > 0 && !usesCallerBoundary) {
           // Expression mutates channels (e.g. caller() links a composition buffer):
           // keep it in a dedicated async child buffer so late command emission never
           // targets an already-finished parent buffer.
@@ -1351,11 +1355,18 @@ class Compiler extends CompilerBase {
         } else {
           // Pure value expression: add TextCommand synchronously, no async block needed.
           // Any promise in args is resolved at apply time by resolveCommandArgumentsForApply.
+          // Caller output inside caller-capable macros also uses this path so the
+          // real invocation buffer can be reserved before any argument awaits.
           const returnId = this._tmpid();
           this.emit.line(`let ${returnId};`);
           this.emit(`${returnId} = `);
           this.compileExpression(child, frame, false, child);
           this.emit.line(';');
+          if (usesCallerBoundary) {
+            const posLiteral = this.buffer._emitPositionLiteral(child);
+            const callerOwnerBuffer = this.macro.currentCallerSupportContext.bufferId;
+            this.emit.line(`${callerOwnerBuffer}.add(new runtime.WaitResolveCommand({ channelName: "__caller__", args: [${returnId}], pos: ${posLiteral} }), "__caller__");`);
+          }
           const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
           this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
         }

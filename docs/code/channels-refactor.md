@@ -540,7 +540,7 @@ Migrate from simplest to most complex to catch regressions early:
   - runtime `runControlFlowBlock(...)`
   - compiler `_compileControlFlowBlock(...)`
 - We should not keep ad hoc `astate.asyncBlock(...)` generation as a parallel long-term mechanism.
-1. ✅ **`compileOutput`** — partially migrated: pure value expressions now add `TextCommand` synchronously; `caller()` expressions keep `asyncAddToBufferScoped` (see note below) (Tier 1)
+1. ✅ **`compileOutput`** — partially migrated: pure value expressions now add `TextCommand` synchronously; remaining deferred output work is tracked separately and `__caller__` timing is owned only by caller invocation code (Tier 1)
 2. ✅ **`compileAsyncVarSet` step 3 / `compileChannelDeclaration`** — `asyncAddValueToBuffer` calls inlined; VarCommands now added synchronously via `currentBuffer.add(new VarCommand(...))` (Tier 1)
 3. ✅ **`compileDo`** — `asyncBlock` + `Promise.all` removed; expressions evaluated inline. `do` is now fire-and-forget for async side effects (consistent with "Implicitly Parallel" model). `emitOwnWaitedConcurrencyResolve` preserved for limited-loop `__waited__` timing (Tier 2, required `compileReturn` rewrite first)
 4. ✅ **`compileReturn`** — `waitAllClosures` removed; return value added as `VarCommand` to return channel synchronously (completed in prior chat)
@@ -567,14 +567,16 @@ Migrate from simplest to most complex to catch regressions early:
    - Keep the structural completion signal distinct from the point-in-time value a boundary returns.
    - `compileInclude` now uses the composed child text channel's `finalSnapshot()` as the boundary's structural completion signal.
    - What we learned: `finalSnapshot()` is valid when the boundary already owns the relevant composed text subtree cleanly.
-16. [PENDING] **Pre-create the real caller invocation buffer for deferred `caller()` output paths**.
-   - The concrete remaining late-start path is now identified:
-     - `{{ caller() }}` in template output still goes through `asyncAddToBufferScoped(...)`
-     - the deferred async block evaluates `runtime.callWrapAsync(...)`
-     - the per-invocation caller buffer is only created later inside `_emitCallerBindingValue(...)`
-     - that late `createCommandBuffer(... allCallersBufferId ...)` can still hit `Cannot add command to finished CommandBuffer`
-   - A follow-up experiment tried reserving that buffer from inside `callWrapAsync(...)`, but that was still too late: it still happened inside the deferred async block and reproduced the same failures when `_compileMacro` stopped waiting on closures.
-   - So the next structural fix is not another generic timing channel, and not late reservation from inside `callWrapAsync(...)`. It is to ensure deferred `caller()` evaluation starts with its real caller-invocation buffer already reserved/owned before that deferred block begins.
+16. [PARTIAL] **Pre-create the real caller invocation buffer for deferred `caller()` output paths**.
+   - Implemented:
+     - direct async `caller()` output inside caller-capable macros no longer uses the generic deferred text helper
+    - caller invocation owns `__caller__` timing completely: only caller invocation code may add `WaitResolveCommand` entries to the macro-local `__caller__` channel
+    - `compileOutput` must not participate in caller scheduling bookkeeping; it may emit output structure, but `__caller__` registration belongs only to caller invocation
+   - This removed the concrete late-start failure for the main deferred `{{ caller() }}` output path and restored the caller regressions to green.
+   - Still not enough to remove `_compileMacro`'s `waitAllClosures()`:
+    - the latest no-`waitAllClosures()` experiment still regressed deferred control-flow sites that start caller invocations later (for example loop/conditional-started caller invocations and nested imported caller composition)
+    - the next cleanup in this area is to remove the remaining caller-specific ownership from `compileOutput` and ensure the real invocation path reserves/tracks caller work by itself
+     - so step 16 is now the direct-caller-output fix, but not yet the full macro-completion fix
 17. [PENDING] **Audit other deferred call paths for late structural child-buffer creation**.
    - After the deferred `caller()` fix lands, look for the same shape elsewhere:
      - deferred evaluation
@@ -590,8 +592,10 @@ Migrate from simplest to most complex to catch regressions early:
    - This step also owns the remaining block/root/inheritance structural-attachment cleanup that was intentionally left out of step 14.
    - Based on the step 15 experiment, root/block handoff should only move to `finalSnapshot()` where the boundary cleanly owns the composed subtree; inherited block/super handoff likely still needs an explicit stronger completion boundary first.
 20. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
-   - `compileMacro` is now blocked on the remaining completion-boundary work, not on caller structural attachment itself.
-   - The current macro prerequisite is no longer generic caller attachment; it is fixing the deferred `caller()` path so the real invocation buffer is created early enough under the all-callers boundary.
+   - `compileMacro` is now blocked on the remaining completion-boundary work, not on the direct caller-output late-start path itself.
+   - Latest experiment result:
+     - direct deferred `caller()` output is fixed
+     - but deferred control-flow sites can still start caller invocations after macro finalization would begin if `waitAllClosures()` is removed
 21. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
 
@@ -614,14 +618,15 @@ These methods currently use `asyncAddToBufferScoped`, `asyncAddToBuffer`, or `as
 
 #### `compileOutput` — `{{ expr }}` template output ✅ partially migrated
 
-**Current:** Each non-literal child (every `{{ expr }}`) is wrapped in `asyncAddToBufferScoped`, which fires an `asyncBlock` per child. A `forceWrapRootExpression` flag forces expressions that internally add commands (like channel commands) into the async block to avoid out-of-order concurrent additions.
+**Current:** Literal output is already emitted synchronously as `TextCommand`. Some non-literal children still go through `asyncAddToBufferScoped`, which fires an `asyncBlock` per child. That remaining use is transitional and should be replaced by structural child-buffer lowering rather than kept as a permanent output mechanism.
 
 **Implemented:** Discriminate on `child._analysis?.mutatedChannels?.size > 0`:
 - **Pure value expressions** (`{{ user.name }}`, `{{ getUser() }}`, regular macro calls, etc.): add `TextCommand` synchronously — no async block. The result may be a promise; `resolveCommandArgumentsForApply` handles it at apply time.
-- **Channel-mutating expressions** (`{{ caller() }}` and sequential `!` calls): keep `asyncAddToBufferScoped` with `forceWrapRootExpression=true`.
+- **Channel-mutating expressions** still need structural child-buffer lowering, but caller-specific timing must not be handled here.
 
 Important clarification from the waited-loop work:
 - `compileOutput` itself does not own a special waited marker
+- `compileOutput` must not write to `__caller__`; that channel is owned only by caller invocation code
 - pure text roots still follow the same root-expression rule as other statement roots
 - in limited / sequential waited scope, `compileExpression(...)` emits the single root `WaitResolveCommand` for `{{ expr }}`
 - so there is no separate "remove text-root WRCs" migration step distinct from the root-expression waited model
@@ -644,7 +649,7 @@ if (child._analysis?.mutatedChannels?.size > 0 && !this.buffer.currentWaitedChan
 }
 ```
 
-**Why `caller()` still needs the async block:** The caller body (compiled from `{% call %}...{% endcall %}`) calls `runtime.linkWithParentCompositionBuffer` synchronously at the start of its execution to insert its `CommandBuffer` into the parent's buffer tree. This must happen before `waitAllClosures()` fires and calls `markFinishedAndPatchLinks()` on the parent buffer (which would make it reject further `addBuffer` calls). The inner async block created by `asyncAddToBufferScoped` tracks the `caller()` call as an active closure, preventing `waitAllClosures()` from completing too early. Regular macro calls do NOT need this — they return a text snapshot as a plain value with no buffer linking.
+**Current caller lesson:** caller scheduling must be owned by caller invocation code, not by `compileOutput`. If a `caller()` expression still needs deferred structural handling, the real invocation path must reserve and track its own child buffer early enough; `compileOutput` should not add `WaitResolveCommand` entries to `__caller__`.
 
 **`_expressionAddsCommands` deleted.** This was the previous ad-hoc AST walk that detected `caller()` and `!` calls. It is now replaced by `child._analysis?.mutatedChannels?.size > 0`, which is correct after the analysis fixes below.
 

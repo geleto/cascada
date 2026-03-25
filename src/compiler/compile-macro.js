@@ -8,6 +8,7 @@ const CALLER_SCHED_CHANNEL_NAME = '__caller__';
 class CompileMacro {
   constructor(compiler) {
     this.compiler = compiler;
+    this.currentCallerSupportContext = null;
   }
 
   analyzeCaller(node) {
@@ -81,8 +82,8 @@ class CompileMacro {
         });
       }
     }, undefined, node);
-    const macroDecl = { name: node.name.value, type: 'var', initializer: null };
-    const parentMacroDecl = { name: node.name.value, type: 'var', initializer: null, parentOwned: true };
+    const macroDecl = { name: node.name.value, type: 'var', initializer: null, isMacro: true };
+    const parentMacroDecl = { name: node.name.value, type: 'var', initializer: null, parentOwned: true, isMacro: true };
     declares.push(macroDecl);
     declaresInParent.push(parentMacroDecl);
     const hasCallerSupport = this._macroUsesCaller(node.body);
@@ -127,6 +128,21 @@ class CompileMacro {
       }
     }
     return false;
+  }
+
+  _expressionUsesCaller(node) {
+    return this._macroUsesCaller(node);
+  }
+
+  withCallerSupportContext(context, emitFunc) {
+    const prevContext = this.currentCallerSupportContext;
+    this.currentCallerSupportContext = context;
+    emitFunc();
+    this.currentCallerSupportContext = prevContext;
+  }
+
+  hasActiveCallerSupportContext() {
+    return !!this.currentCallerSupportContext;
   }
 
   _parseMacroSignature(node) {
@@ -195,37 +211,36 @@ class CompileMacro {
     const errorCheck = `if (${errVar}) throw ${errVar};`;
     const closuresReadyVar = compiler._tmpid();
     const callerReadyVar = hasCallerSupport ? compiler._tmpid() : null;
+    const callerSyncPrefix =
+      `await ${closuresReadyVar};` +
+      // Snapshot __caller__ only after deferred child closures have finished
+      // starting their caller() work, otherwise later loop/if-started caller
+      // invocations can still be missed.
+      (hasCallerSupport ? `const ${callerReadyVar} = ${bufferId}.addSnapshot("${CALLER_SCHED_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` : '') +
+      (hasCallerSupport ? `await ${callerReadyVar};` : '') +
+      (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.markFinishedAndPatchLinks();}` : '');
 
-    if (hasCallerSupport) {
-      // Observe the ordered completion of all caller-invocation child buffers
-      // before closing the shared all-callers boundary.
-      compiler.emit.line(`const ${callerReadyVar} = ${bufferId}.addSnapshot("${CALLER_SCHED_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
-    }
     compiler.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
 
     if (compiler.scriptMode) {
       const returnVar = compiler._tmpid();
       return `(async () => {` +
-        `await ${closuresReadyVar};` +
-        (hasCallerSupport ? `await ${callerReadyVar};` : '') +
-        (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.markFinishedAndPatchLinks();}` : '') +
+        callerSyncPrefix +
         `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
         `${bufferId}.markFinishedAndPatchLinks();` +
         `${errorCheck}` +
         `return ${returnVar}_snapshot;` +
         `})()`;
+    } else {
+      const textSnapshotVar = compiler._tmpid();
+      return `(async () => {` +
+        callerSyncPrefix +
+        `const ${textSnapshotVar} = ${bufferId}.addSnapshot("${compiler.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
+        `${bufferId}.markFinishedAndPatchLinks();` +
+        `${errorCheck}` +
+        `return Promise.resolve(${textSnapshotVar}).then((value) => runtime.markSafe(value));` +
+        `})()`;
     }
-
-    const textSnapshotVar = compiler._tmpid();
-    return `(async () => {` +
-      `await ${closuresReadyVar};` +
-      (hasCallerSupport ? `await ${callerReadyVar};` : '') +
-      (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.markFinishedAndPatchLinks();}` : '') +
-      `const ${textSnapshotVar} = ${bufferId}.addSnapshot("${compiler.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
-      `${bufferId}.markFinishedAndPatchLinks();` +
-      `${errorCheck}` +
-      `return Promise.resolve(${textSnapshotVar}).then((value) => runtime.markSafe(value));` +
-      `})()`;
   }
 
   _emitMacroBindingInit(frame, bufferId, name, emitValueExpression, positionNode = null) {
@@ -400,9 +415,17 @@ class CompileMacro {
         this._emitSyncMacroBindings({ managedFrame, args, kwargs });
       }
 
-      compiler.emit.withScopedSyntax(() => {
-        compiler.compile(node.body, managedFrame);
-      });
+      const emitMacroBody = () => {
+        compiler.emit.withScopedSyntax(() => {
+          compiler.compile(node.body, managedFrame);
+        });
+      };
+
+      if (macroNeedsCallerSupport) {
+        this.withCallerSupportContext({ bufferId, rawCallerVar, allCallersBufferId }, emitMacroBody);
+      } else {
+        emitMacroBody();
+      }
 
       compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
 

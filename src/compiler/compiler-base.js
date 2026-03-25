@@ -991,6 +991,11 @@ class CompilerBase extends Obj {
     }
 
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
+    const directMacroDecl =
+      node.name instanceof nodes.Symbol
+        ? this.analysis.findDeclaration(node._analysis, node.name.value)
+        : null;
+    const isDirectMacroCall = !!(directMacroDecl && directMacroDecl.isMacro);
 
     if (this.asyncMode) {
       if (this._compileSpecialChannelFunCall(node, frame)) {
@@ -1017,6 +1022,14 @@ class CompilerBase extends Obj {
         this.emit(`, frame, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         return;
       }
+      if (isDirectMacroCall) {
+        this.emit('runtime.invokeMacro(');
+        this.compile(node.name, frame);
+        this.emit(', context, ');
+        this._compileAggregate(node.args, frame, '[', ']', false, false);
+        this.emit(`, ${this.buffer.currentBuffer})`);
+        return;
+      }
       // Function name is dynamic, so resolve both function and arguments.
       const mergedNode = {
         isAsync: node.name.isAsync || node.args.isAsync,
@@ -1027,6 +1040,14 @@ class CompilerBase extends Obj {
         this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson}, ${this.buffer.currentBuffer});`);
       });
     } else {
+      if (isDirectMacroCall) {
+        this.emit('runtime.invokeMacro(');
+        this.compile(node.name, frame);
+        this.emit(', context, ');
+        this._compileAggregate(node.args, frame, '[', ']', false, false);
+        this.emit(`, ${this.buffer.currentBuffer})`);
+        return;
+      }
       // In sync mode, compile as usual.
       this.emit('runtime.callWrap(');
       this.compile(node.name, frame);
