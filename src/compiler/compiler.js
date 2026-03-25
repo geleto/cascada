@@ -1211,18 +1211,18 @@ class Compiler extends CompilerBase {
   }
 
   analyzeCapture(node) {
-    const analysis = {
+    return {
       createScope: true,
       scopeBoundary: false,
-      textOutput: this.scriptMode ? null : `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL}${this._tmpid()}`
+      textOutput: `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL}${this._tmpid()}`
     };
-    if (this.scriptMode) {
-      analysis.declares = [{ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true }];
-    }
-    return analysis;
   }
 
   compileCapture(node, frame) {
+    if (this.scriptMode) {
+      this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
+    }
+
     // we need to temporarily override the current buffer id as 'output'
     // so the set block writes to the capture channel instead of the buffer
     const buffer = this.buffer.currentBuffer;
@@ -1231,9 +1231,7 @@ class Compiler extends CompilerBase {
     const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
     this.buffer.currentBuffer = 'output';
     this.buffer.currentTextChannelVar = 'output_textChannelVar';
-    if (!this.scriptMode) {
-      this.buffer.currentTextChannelName = captureTextOutputName;
-    }
+    this.buffer.currentTextChannelName = captureTextOutputName;
     if (node.isAsync) {
       const res = this._tmpid();
       // Capture-only: pass explicit parent buffer override because capture
@@ -1250,18 +1248,12 @@ class Compiler extends CompilerBase {
         // Capture returns run inside an async block; wait for sibling closures.
         f._returnWaitCount = 1;
 
-        if (this.scriptMode) {
-          this.emitDeclareReturnChannel(f, 'currentBuffer');
-          this.compile(n.body, f);//write to output
-          this.emitReturnChannelSnapshot('currentBuffer', node.body, res);
-        } else {
-          this.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
-          this.compile(n.body, f);//write to output
-          //this.emit.line('await astate.waitAllClosures(1)');
-          this.emit.line(`let ${res} = await currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
-        }
+        this.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
+        this.compile(n.body, f);//write to output
+        //this.emit.line('await astate.waitAllClosures(1)');
+        this.emit.line(`let ${res} = await currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
-      }, res, node.body, true, !this.scriptMode, prevCaptureParentBuffer);
+      }, res, node.body, true, true, prevCaptureParentBuffer);
       this.buffer.currentBuffer = prevCaptureParentBuffer;
     }
     else {

@@ -648,6 +648,7 @@ Migrate from simplest to most complex to catch regressions early:
    - Completed:
      - async set-block lowering in `compileSet(...)` / `compileAsyncVarSet(...)` no longer wraps the body in an extra outer `asyncBlockValue(...)`
      - the set-block body already compiles as a capture boundary expression, so the old outer wrapper was redundant
+     - `compileCapture(...)` is now explicitly treated as template-only; the dead script-specific capture branch has been removed from its analysis/compilation path
    - Remaining:
      - `compileCapture(...)` itself still uses the older `asyncBlockValue(...)` path
    - Current lesson:
