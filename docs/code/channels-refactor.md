@@ -567,16 +567,13 @@ Migrate from simplest to most complex to catch regressions early:
    - Keep the structural completion signal distinct from the point-in-time value a boundary returns.
    - `compileInclude` now uses the composed child text channel's `finalSnapshot()` as the boundary's structural completion signal.
    - What we learned: `finalSnapshot()` is valid when the boundary already owns the relevant composed text subtree cleanly.
-16. [PARTIAL] **Pre-create the real caller invocation buffer for deferred `caller()` output paths**.
+16. ✅ **Pre-create the real caller invocation buffer for deferred `caller()` output paths**.
    - Implemented:
-     - direct async `caller()` output inside caller-capable macros no longer uses the generic deferred text helper
-    - caller invocation owns `__caller__` timing completely: only caller invocation code may add `WaitResolveCommand` entries to the macro-local `__caller__` channel
-    - `compileOutput` must not participate in caller scheduling bookkeeping; it may emit output structure, but `__caller__` registration belongs only to caller invocation
-   - This removed the concrete late-start failure for the main deferred `{{ caller() }}` output path and restored the caller regressions to green.
-   - Still not enough to remove `_compileMacro`'s `waitAllClosures()`:
-    - the latest no-`waitAllClosures()` experiment still regressed deferred control-flow sites that start caller invocations later (for example loop/conditional-started caller invocations and nested imported caller composition)
-    - the next cleanup in this area is to remove the remaining caller-specific ownership from `compileOutput` and ensure the real invocation path reserves/tracks caller work by itself
-     - so step 16 is now the direct-caller-output fix, but not yet the full macro-completion fix
+     - caller invocation owns `__caller__` timing completely: only caller invocation code may add `WaitResolveCommand` entries to the macro-local `__caller__` channel
+     - `compileOutput` no longer participates in caller scheduling bookkeeping; it may emit output structure, but `__caller__` registration belongs only to caller invocation
+     - deferred/mutating caller expressions now go back through the normal tracked async child-buffer path, so loop/conditional/ternary-started caller work is still covered by `waitAllClosures()` before the macro snapshots `__caller__`
+   - This removed the concrete late-start failure for the deferred `{{ caller() }}` cases that were still starting after the caller boundary had already been closed.
+   - This step no longer owns `waitAllClosures()` removal; that is tracked explicitly in step 20.
 17. [PENDING] **Audit other deferred call paths for late structural child-buffer creation**.
    - After the deferred `caller()` fix lands, look for the same shape elsewhere:
      - deferred evaluation
@@ -585,7 +582,7 @@ Migrate from simplest to most complex to catch regressions early:
    - Likely candidates include imported macro calls and root/inheritance-adjacent composition paths.
 18. [PARTIAL] **Migrate macro/caller boundaries onto the structural composition model**.
    - The caller structural-attachment model is implemented and macro/caller analysis and compilation now live in `compile-macro.js`.
-   - `_compileMacro` still uses `astate.waitAllClosures()` today, so this step is not fully complete yet.
+   - `_compileMacro` still uses `astate.waitAllClosures()` today, but removing it is tracked separately in step 20.
    - Latest experiment result: caller scheduling is structurally attached, but macro return/finalization still cannot switch directly from point-in-time text snapshots to `finalSnapshot()` without losing nested caller/import composition.
 19. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.
