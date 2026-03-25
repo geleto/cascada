@@ -1024,7 +1024,7 @@ class CompilerBase extends Obj {
       };
       this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson});`);
+        this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson}, ${this.buffer.currentBuffer});`);
       });
     } else {
       // In sync mode, compile as usual.
@@ -1036,7 +1036,7 @@ class CompilerBase extends Obj {
       // the function as 'this' which is part of the context object
       this.emit(', "' + funcName + '", context, ');
       this._compileAggregate(node.args, frame, '[', ']', false, false);
-      this.emit('))');
+      this.emit(`, ${this.buffer.currentBuffer}))`);
     }
   }
 
@@ -1229,10 +1229,40 @@ class CompilerBase extends Obj {
     };
   }
 
+  // Return the parent-owned channels that a caller body may observe, so the
+  // caller buffer can be linked only on those lanes.
+  _getCallerParentVisibleUsedChannels(node) {
+    if (!node || !node._analysis) {
+      return [];
+    }
+    const textChannelName = this.analysis && typeof this.analysis.getCurrentTextChannel === 'function'
+      ? this.analysis.getCurrentTextChannel(node._analysis)
+      : null;
+    const used = Array.from(node._analysis.usedChannels || []);
+    const declared = new Set((node._analysis.declaredChannels || new Map()).keys());
+    const parentVisibleUsedChannels = used.filter((name) => {
+      if (!name || name === textChannelName) {
+        return false;
+      }
+      const decl = this.analysis && this.analysis.findDeclaration
+        ? this.analysis.findDeclaration(node._analysis, name)
+        : null;
+      if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
+        return false;
+      }
+      return !declared.has(name);
+    });
+    return parentVisibleUsedChannels;
+  }
+
   compileCaller(node, frame) {
     // basically an anonymous "macro expression"
     this.emit('(function (){');
     const funcId = this._compileMacro(node, frame, true);
+    if (this.asyncMode) {
+      const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
+      this.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
+    }
     this.emit(`return ${funcId};})()`);
   }
 

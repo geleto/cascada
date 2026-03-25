@@ -1230,6 +1230,39 @@
       expect(eventLog).to.contain('log:Beta updated');
       expect(eventLog.length).to.be(4);
     });
+
+    it('should preserve per-invocation sequence order when a macro calls caller() multiple times', async function () {
+      const events = [];
+      const context = {
+        service: {
+          async run(label) {
+            await delay(label === 'A1' ? 10 : label === 'A2' ? 5 : label === 'B1' ? 8 : 3);
+            events.push(label);
+            return label;
+          }
+        }
+      };
+
+      const template = `
+        {% macro repeat() %}
+          <div class="first">{{ caller("A") }}</div>
+          <div class="second">{{ caller("B") }}</div>
+        {% endmacro %}
+
+        {% call(prefix) repeat() %}
+          {% do service!.run(prefix + "1") %}
+          {% do service!.run(prefix + "2") %}
+        {% endcall %}
+      `;
+
+      const rendered = await env.renderTemplateString(template, context);
+
+      expect(events.indexOf('A1')).to.be.lessThan(events.indexOf('A2'));
+      expect(events.indexOf('B1')).to.be.lessThan(events.indexOf('B2'));
+      expect(events).to.have.length(4);
+      expect(rendered).to.contain('first');
+      expect(rendered).to.contain('second');
+    });
     //End additional macro/caller tests
   });
 

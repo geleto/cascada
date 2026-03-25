@@ -12,7 +12,7 @@ const {
 /**
  * Sync call wrapper for templates.
  */
-function callWrap(obj, name, context, args) {
+function callWrap(obj, name, context, args, currentBuffer = null) {
   if (!obj) {
     throw new Error('Unable to call `' + name + '`, which is undefined or falsey');
   } else if (typeof obj !== 'function') {
@@ -22,13 +22,17 @@ function callWrap(obj, name, context, args) {
   const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                  !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
-  return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
+  const executionContext = (obj.isMacro || isGlobal) ? context : context.ctx;
+  if (obj.isMacro) {
+    return obj._invoke(executionContext, args, currentBuffer);
+  }
+  return obj.apply(executionContext, args);
 }
 
 /**
  * Async call wrapper using sync-first hybrid pattern.
  */
-function callWrapAsync(obj, name, context, args, errorContext) {
+function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = null) {
 
   // Check if we need async path: obj or any arg is a promise
   const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
@@ -38,7 +42,7 @@ function callWrapAsync(obj, name, context, args, errorContext) {
     // Must use async path to await all promises before making decisions
     // _callWrapAsyncComplex is async and returns poison when errors occur
     // When awaited, poison values throw PoisonError due to thenable protocol (by design)
-    return _callWrapAsyncComplex(obj, name, context, args, errorContext);
+    return _callWrapAsyncComplex(obj, name, context, args, errorContext, currentBuffer);
   }
 
   // All values are non-promises - collect all errors synchronously
@@ -76,7 +80,10 @@ function callWrapAsync(obj, name, context, args, errorContext) {
     const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                    !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
-    const result = obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
+    const executionContext = (obj.isMacro || isGlobal) ? context : context.ctx;
+    const result = obj.isMacro
+      ? obj._invoke(executionContext, args, currentBuffer)
+      : obj.apply(executionContext, args);
     if (result && typeof result.then === 'function') {// && !isPoison(result)) {
       // add context to the promise that will be applied if it rejects
       return new RuntimePromise(result, errorContext);
@@ -87,7 +94,7 @@ function callWrapAsync(obj, name, context, args, errorContext) {
   }
 }
 
-async function _callWrapAsyncComplex(obj, name, context, args, errorContext) {
+async function _callWrapAsyncComplex(obj, name, context, args, errorContext, currentBuffer = null) {
   const errors = [];
 
   // Await obj if it's a promise and check for poison
@@ -151,7 +158,10 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext) {
     const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                    !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
-    const result = obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, resolvedArgs);
+    const executionContext = (obj.isMacro || isGlobal) ? context : context.ctx;
+    const result = obj.isMacro
+      ? obj._invoke(executionContext, resolvedArgs, currentBuffer)
+      : obj.apply(executionContext, resolvedArgs);
 
     // Wrap promise results to preserve error context
     if (result && typeof result.then === 'function') {

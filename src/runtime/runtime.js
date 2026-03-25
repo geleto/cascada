@@ -15,7 +15,7 @@ const outputValue = require('./safe-output');
 const commands = require('./commands');
 
 function makeMacro(argNames, kwargNames, func, astate) {
-  const macro = function macro(...macroArgs) {
+  const invokeMacro = function invokeMacro(executionContext, macroArgs, currentBuffer = null) {
     var argCount = numArgs(macroArgs);
     var args;
     var kwargs = getKeywordArgs(macroArgs);
@@ -53,11 +53,24 @@ function makeMacro(argNames, kwargNames, func, astate) {
 
     if (astate) {
       args.push(astate.new());
+      args.push(currentBuffer);
     }
-    return func.apply(this, args);
+    return func.apply(executionContext, args);
+  };
+
+  const macro = function macro(...macroArgs) {
+    return invokeMacro(this, macroArgs, null);
   };
   macro.isMacro = true;
+  macro._invoke = invokeMacro;
   return macro;
+}
+
+function invokeMacro(macro, executionContext, args, currentBuffer = null) {
+  if (macro && typeof macro._invoke === 'function') {
+    return macro._invoke(executionContext, args, currentBuffer);
+  }
+  return macro.apply(executionContext, args);
 }
 
 function withPath(context, path, func) {
@@ -193,6 +206,7 @@ async function runControlFlowBlock(astate, parentBuffer, usedChannels, f, contex
 
 module.exports = {
   makeMacro,
+  invokeMacro,
   makeKeywordArgs,
   numArgs,
   suppressValue: outputValue.suppressValue,

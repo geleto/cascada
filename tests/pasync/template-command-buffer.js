@@ -30,6 +30,14 @@
       expect(source).to.contain('new runtime.TextCommand');
     });
 
+    it('should not emit caller scheduling machinery for macros without caller()', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}', env);
+      const source = tmpl._compileSource();
+      expect(source).to.not.contain('__caller__');
+      expect(source).to.not.contain('__callerUsedChannels');
+    });
+
     it('should preserve literal/interpolation parity and source ordering', async function () {
       const env = new AsyncEnvironment();
       const result = await env.renderTemplateString('A{{ one() }}B{{ two() }}C', {

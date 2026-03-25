@@ -642,6 +642,35 @@
           const rendered = await env.renderTemplateString(template, context);
           expect(rendered.trim()).to.equal('Outer(Inner(content))');
         });
+
+        it('should handle multiple caller invocations across loops and conditionals in the same macro', async () => {
+          const template = `
+            {%- macro wrap(items, includePrefix) -%}
+            {%- if includePrefix -%}
+              [{{ caller("prefix") }}]
+            {%- endif -%}
+            {%- for item in items -%}
+              [{{ caller(item) }}]
+            {%- endfor -%}
+            {%- endmacro -%}
+
+            {%- call(value) wrap(asyncItems, showPrefix) -%}
+              {{ asyncRender(value) }}
+            {%- endcall -%}
+          `;
+
+          const context = {
+            asyncItems: Promise.resolve(['a', 'b']),
+            showPrefix: Promise.resolve(true),
+            async asyncRender(value) {
+              await delay(value === 'prefix' ? 6 : 2);
+              return value.toUpperCase();
+            }
+          };
+
+          const rendered = await env.renderTemplateString(template, context);
+          expect(rendered.replace(/\s+/g, '')).to.equal('[PREFIX][A][B]');
+        });
       });
 
       describe('Async Caller with Control Structures', () => {

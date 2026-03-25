@@ -19,6 +19,7 @@ const CompileRename = require('./compile-rename');
 const CompilerBase = require('./compiler-base');
 
 const RETURN_CHANNEL_NAME = '__return__';
+const CALLER_SCHED_CHANNEL_NAME = '__caller__';
 
 class Compiler extends CompilerBase {
   init(templateName, options) {
@@ -85,7 +86,6 @@ class Compiler extends CompilerBase {
       this.emit.line(snippet);
     }
   }
-
 
   analyzeCallExtension(node) {
     if (this.scriptMode) {
@@ -1186,11 +1186,16 @@ class Compiler extends CompilerBase {
     // The `Caller` node (for `{{ caller() }}`) is a distinct typename.
     this.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
+    const macroNeedsCallerSupport = this.asyncMode && !!(node._analysis && node._analysis.hasCallerSupport);
+    const macroFunctionSignature = this.asyncMode
+      ? `function (${realNames.join(', ')}, astate, macroParentBuffer) {`
+      : `function (${realNames.join(', ')}) {`;
+
     this.emit.lines(
       `let ${funcId} = runtime.makeMacro(`,
       `[${argNames.join(', ')}], `,
       `[${kwargNames.join(', ')}], `,
-      `function (${realNames.join(', ')}, astate) {`
+      macroFunctionSignature
     );
 
     // Wrap the entire body in withPath to fork the context
@@ -1218,13 +1223,21 @@ class Compiler extends CompilerBase {
     }
 
     let returnStatement;
-    this.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
+    const rawCallerVar = macroNeedsCallerSupport ? this._tmpid() : null;
+    const allCallersBufferId = macroNeedsCallerSupport ? this._tmpid() : null;
+
+    const emitAsyncMacroBody = (managedFrame, bufferId) => {
       if (node.isAsync) {
         // Async macro bindings are var channels so assignment/read semantics
         // match value-command ordering instead of frame-local var behavior.
         if (this.scriptMode) {
           this.emitDeclareReturnChannel(managedFrame, bufferId);
         }
+        this._emitMacroCallerSetup({
+          bufferId,
+          rawCallerVar,
+          allCallersBufferId
+        });
         this.emit.line(`runtime.declareChannel(frame, ${bufferId}, "caller", "var", context, null);`);
         args.forEach((arg) => {
           this.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${arg.value}", "var", context, null);`);
@@ -1239,9 +1252,12 @@ class Compiler extends CompilerBase {
           managedFrame,
           bufferId,
           'caller',
-          () => {
-            this.emit('kwargs.caller');
-          },
+          () => this._emitCallerBindingValue({
+            bufferId,
+            rawCallerVar,
+            allCallersBufferId,
+            positionNode: node
+          }),
           node
         );
 
@@ -1304,24 +1320,13 @@ class Compiler extends CompilerBase {
       this.emit.line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
 
       if (node.isAsync) {
-        const errorCheck = `if (${err}) throw ${err};`;
-        const closuresReadyVar = this._tmpid();
-        if (this.scriptMode) {
-          const returnVar = this._tmpid();
-          this.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
-          returnStatement = `(async () => {` +
-            `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
-            `await ${closuresReadyVar};` +
-            `${bufferId}.markFinishedAndPatchLinks();` +
-            `${errorCheck}` +
-            `return ${returnVar}_snapshot;` +
-            `})()`;
-        } else {
-          const textSnapshotVar = this._tmpid();
-          this.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
-          this.emit.line(`const ${textSnapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
-          returnStatement = `(async () => {await ${closuresReadyVar};${bufferId}.markFinishedAndPatchLinks();${errorCheck}return Promise.resolve(${textSnapshotVar}).then((value) => runtime.markSafe(value));})()`;
-        }
+        returnStatement = this._buildAsyncMacroReturnExpression({
+          node,
+          bufferId,
+          errVar: err,
+          allCallersBufferId,
+          hasCallerSupport: macroNeedsCallerSupport
+        });
       } else {
         // Sync case
         const needsSafeString = !this.scriptMode;
@@ -1329,7 +1334,25 @@ class Compiler extends CompilerBase {
           ? `new runtime.SafeString(${bufferId})`
           : bufferId;
       }
-    }, keepFrame ? this.buffer.currentBuffer : null, node.body);
+    };
+
+    if (node.isAsync && node.typename === 'Caller') {
+      const prevBuffer = this.buffer.currentBuffer;
+      const prevTextChannelVar = this.buffer.currentTextChannelVar;
+      const callerTextChannelVar = !this.scriptMode ? this._tmpid() : null;
+      if (!this.scriptMode) {
+        this.emit.line(`let ${callerTextChannelVar} = runtime.declareChannel(frame, macroParentBuffer, "${this.buffer.currentTextChannelName}", "text", context, null);`);
+      }
+      this.buffer.currentBuffer = 'macroParentBuffer';
+      this.buffer.currentTextChannelVar = callerTextChannelVar;
+      emitAsyncMacroBody(currFrame, 'macroParentBuffer');
+      this.buffer.currentBuffer = prevBuffer;
+      this.buffer.currentTextChannelVar = prevTextChannelVar;
+    } else {
+      this.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
+        emitAsyncMacroBody(managedFrame, bufferId);
+      }, keepFrame ? this.buffer.currentBuffer : null, node.body);
+    }
 
     this.emit.line(`return ${returnStatement};`);
 
@@ -1377,7 +1400,128 @@ class Compiler extends CompilerBase {
     const parentMacroDecl = { name: node.name.value, type: 'var', initializer: null, parentOwned: true };
     declares.push(macroDecl);
     declaresInParent.push(parentMacroDecl);
-    return { createScope: true, scopeBoundary: true, declares, declaresInParent };
+    const hasCallerSupport = this._macroUsesCaller(node.body);
+    const declaresExtra = hasCallerSupport
+      ? [{ name: CALLER_SCHED_CHANNEL_NAME, type: 'var', initializer: null, internal: true }]
+      : [];
+    return {
+      createScope: true,
+      scopeBoundary: true,
+      declares: declares.concat(declaresExtra),
+      declaresInParent,
+      hasCallerSupport
+    };
+  }
+
+  _macroUsesCaller(node) {
+    if (!node) {
+      return false;
+    }
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        if (this._macroUsesCaller(node[i])) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (!(node instanceof nodes.Node)) {
+      return false;
+    }
+    if (node instanceof nodes.FunCall && node.name) {
+      const isCallerCall =
+        (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
+        this.sequential._extractStaticPathRoot(node.name) === 'caller';
+      if (isCallerCall) {
+        return true;
+      }
+    }
+    for (let i = 0; i < node.fields.length; i++) {
+      if (this._macroUsesCaller(node[node.fields[i]])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  _emitCallerBindingValue({ bufferId, rawCallerVar, allCallersBufferId, positionNode }) {
+    if (!rawCallerVar || !allCallersBufferId) {
+      this.emit('kwargs.caller');
+      return;
+    }
+    const invocationBufferId = this._tmpid();
+    const invocationArgsId = this._tmpid();
+    const invocationFinishedId = this._tmpid();
+    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
+    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
+
+    // See docs/code/caller.md for the full caller-boundary architecture.
+    // The macro body can use caller(), but a particular invocation only has a
+    // caller boundary when it was invoked through a call block.
+    // Each caller() invocation gets its own child buffer under the macro-local
+    // all-callers buffer so multiple invocations can schedule independently.
+    this.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
+    this.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
+    this.emit(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${allCallersBufferId}, frame, ${rawCallerVar}.__callerUsedChannels || null);`);
+    this.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
+    this.emit(`${bufferId}.add(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${lineno}, colno: ${colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
+    this.emit(`return Promise.resolve(runtime.invokeMacro(${rawCallerVar}, context, ${invocationArgsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.markFinishedAndPatchLinks());`);
+    this.emit(`} : ${rawCallerVar})`);
+  }
+
+  _emitMacroCallerSetup({ bufferId, rawCallerVar, allCallersBufferId }) {
+    if (!rawCallerVar || !allCallersBufferId) {
+      return;
+    }
+    this.emit.line(`let ${rawCallerVar} = kwargs.caller;`);
+    this.emit.line(`let ${allCallersBufferId} = null;`);
+    // __caller__ records when each invocation child buffer has finished
+    // receiving commands, so the macro can close the shared caller boundary
+    // only after all started caller() invocations have been scheduled.
+    this.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${CALLER_SCHED_CHANNEL_NAME}", "var", context, null);`);
+    // Caller-capable macros still allow plain invocations with no caller block.
+    this.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
+    // The all-callers buffer is parent-linked because caller() may emit
+    // parent-visible observable commands, unlike the isolated macro buffer.
+    this.emit.line(`  ${allCallersBufferId} = runtime.createCommandBuffer(context, macroParentBuffer || null, frame, ${rawCallerVar}.__callerUsedChannels || null);`);
+    this.emit.line('}');
+  }
+
+  _buildAsyncMacroReturnExpression({ node, bufferId, errVar, allCallersBufferId, hasCallerSupport }) {
+    const errorCheck = `if (${errVar}) throw ${errVar};`;
+    const closuresReadyVar = this._tmpid();
+    const callerReadyVar = hasCallerSupport ? this._tmpid() : null;
+
+    if (hasCallerSupport) {
+      // Observe the ordered completion of all caller-invocation child buffers
+      // before closing the shared all-callers boundary.
+      this.emit.line(`const ${callerReadyVar} = ${bufferId}.addSnapshot("${CALLER_SCHED_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
+    }
+    this.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
+
+    if (this.scriptMode) {
+      const returnVar = this._tmpid();
+      return `(async () => {` +
+        `await ${closuresReadyVar};` +
+        (hasCallerSupport ? `await ${callerReadyVar};` : '') +
+        (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.markFinishedAndPatchLinks();}` : '') +
+        `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
+        `${bufferId}.markFinishedAndPatchLinks();` +
+        `${errorCheck}` +
+        `return ${returnVar}_snapshot;` +
+        `})()`;
+    }
+
+    const textSnapshotVar = this._tmpid();
+    return `(async () => {` +
+      `await ${closuresReadyVar};` +
+      (hasCallerSupport ? `await ${callerReadyVar};` : '') +
+      (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.markFinishedAndPatchLinks();}` : '') +
+      `const ${textSnapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
+      `${bufferId}.markFinishedAndPatchLinks();` +
+      `${errorCheck}` +
+      `return Promise.resolve(${textSnapshotVar}).then((value) => runtime.markSafe(value));` +
+      `})()`;
   }
 
   compileMacro(node, frame) {

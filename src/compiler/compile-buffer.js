@@ -455,7 +455,6 @@ class CompileBuffer {
     this.compiler.emit.line(`currentBuffer.add(${valueExpr}, "${targetChannelName}");`);
     if (emitTextCommand) {
       this.compiler.emit.line(`currentBuffer.markFinishedAndPatchLinks();`);
-      this.compiler.emit.line(`return currentBuffer.getChannel("${targetChannelName}").finalSnapshot();`);
     }
     this.currentBuffer = prevBuffer;
     this.currentTextChannelVar = prevTextChannelVar;

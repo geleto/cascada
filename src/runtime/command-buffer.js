@@ -45,6 +45,8 @@ class CommandBuffer {
     this.arrays = Object.create(null);
     // Shared registry of Channel objects for this buffer hierarchy.
     this._channels = parent ? parent._channels : new Map();
+    this._finishedPromise = null;
+    this._finishedResolver = null;
 
     // Iterators currently visiting this buffer keyed by channel name.
     this._visitingIterators = new Map();
@@ -67,6 +69,18 @@ class CommandBuffer {
     if (iterator) {
       iterator.bindToCurrentBuffer();
     }
+  }
+
+  getFinishedPromise() {
+    if (this.finished) {
+      return Promise.resolve();
+    }
+    if (!this._finishedPromise) {
+      this._finishedPromise = new Promise((resolve) => {
+        this._finishedResolver = resolve;
+      });
+    }
+    return this._finishedPromise;
   }
 
   //@todo - rename this, maybe to finishBufferAndLetIteratorsExit
@@ -374,6 +388,11 @@ class CommandBuffer {
       }
     }
     this.finished = true;
+    if (this._finishedResolver) {
+      this._finishedResolver();
+      this._finishedResolver = null;
+      this._finishedPromise = null;
+    }
   }
 
   _notifyChannelFinished(channelName) {

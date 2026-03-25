@@ -175,6 +175,52 @@
       expect(result).to.eql({ snap: 10, isError: false, error: null });
     });
 
+    it('should support multiple caller invocations across different control-flow paths', async () => {
+      const script = `
+        macro visit(includePrefix)
+          var out = []
+          if includePrefix
+            out.push(caller("prefix"))
+          endif
+          out.push(caller("tail"))
+          return out
+        endmacro
+
+        var result = call visit(true) (itemValue)
+          return itemValue
+        endcall
+
+        return result`;
+
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql(['prefix', 'tail']);
+    });
+
+    it('should support nested script callers reading outer variables', async () => {
+      const script = `
+        var outer = "O"
+
+        macro outerWrap()
+          return caller()
+        endmacro
+
+        macro innerWrap()
+          return caller()
+        endmacro
+
+        var result = call outerWrap()
+          var innerResult = call innerWrap()
+            return outer + "-I"
+          endcall
+          return innerResult + "-X"
+        endcall
+
+        return result`;
+
+      const result = await env.renderScriptString(script);
+      expect(result).to.be('O-I-X');
+    });
+
     it('should reject outer value mutation commands inside call blocks', async () => {
       const script = `
         var outer = 10
