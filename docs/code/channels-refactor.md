@@ -17,6 +17,16 @@ Implemented and validated:
 - Async control-flow inside waited-loop bodies now uses a child-local waited channel, and the parent loop tracks that control-flow block as one waited unit.
 - The old "closure anchor" `WaitResolveCommand` model in loop tests has been removed.
 - `runControlFlowBlock` now owns child-buffer creation/linking directly; it no longer delegates to `astate.asyncBlock`.
+- The `caller()` structural-attachment model from [caller.md](C:\Projects\cascada\docs\code\caller.md) is implemented.
+- Macro/caller analysis and compilation now live in `compile-macro.js`, which owns:
+  - `analyzeMacro` / `compileMacro` / `_compileMacro`
+  - `analyzeCaller` / `compileCaller`
+  - caller scheduling helpers and caller-channel filtering
+- Async caller-capable macros now use:
+  - an isolated macro buffer
+  - a parent-linked all-callers buffer for parent-visible observable caller work
+  - one child buffer per `caller()` invocation
+  - a macro-local `__caller__` timing channel to track per-invocation buffer scheduling completion
 
 Still transitional:
 - `AsyncState` and root-level `waitAllClosures()` uses still exist outside the migrated paths.
@@ -526,32 +536,26 @@ Migrate from simplest to most complex to catch regressions early:
 9. ✅ **Remove `WaitResolveCommand` for `var x = expr` and `set_path` in limited loops** — `emitOwnWaitedConcurrencyResolve` removed from `compileAsyncVarSet`. The VarCommand's promise arg is already awaited by the buffer iterator as it processes the iteration buffer's var channel — the `WaitResolveCommand` in `__waited__N` was doubly tracking the same promise. Only codegen tests needed updating; no runtime regressions.
 11. ✅ **`compileWhile`** — effectively completed through the shared `compileFor`/`_compileFor` path used for async `while` lowering. Waited-loop completion, false-break handling, and nested waited ownership now follow the same model as other sequential loops.
 12. ✅ **`compileInclude` / `compileExtends` / `compileImport`** — completed. These inheritance/composition paths now use `runControlFlowBlock` for their async control-flow work, while imported bindings and include text commands are enqueued synchronously. `ignore missing` composition now returns a real empty composition buffer so include composition can rely on the normal boundary/snapshot contract.
-13. ? **Fix `caller()` / nested composition structural attachment** � prerequisite.
-   - See [caller.md](c:\Projects\cascada\docs\code\caller.md) for the architecture and implementation details.
-   - This remains the clearest current blocker: late structural attachment still comes from `runtime.linkWithParentCompositionBuffer(...)`.
-   - Nested callers/imported macros can still try to attach composition buffers after the parent has already finished.
-14. ? **Introduce early structural attachment for non-`caller()` composition child buffers** � prerequisite.
-   - After step 13, apply the same structural attachment model to the remaining composition boundaries that still attach too late.
-15. ? **Introduce a dedicated structural completion signal for text/composition boundaries** � prerequisite.
+13. ✅ **Fix `caller()` / nested composition structural attachment**.
+   - See [caller.md](c:\Projects\cascada\docs\code\caller.md) for the final architecture and implementation details.
+   - Async caller-capable macros now create one parent-linked all-callers buffer, one child buffer per `caller()` invocation, and one macro-local `__caller__` waited unit per invocation child buffer.
+   - The caller path no longer depends on late `runtime.linkWithParentCompositionBuffer(...)` attachment.
+   - Nested callers, imported-macro caller composition, caller sequencing, and caller parent-scope reads now pass on this model.
+14. [PARTIAL] **Introduce early structural attachment for non-`caller()` composition child buffers**.
+   - Locally-created scope-root/composition buffers now link their parent-visible lanes at `runtime.createCommandBuffer(...)` creation time instead of creating the buffer first and attaching those lanes in a separate runtime step.
+   - This is implemented for the managed scope-root buffer paths (`managedBlock` / `initManagedBuffer`). Root block / inheritance handoff still stays on the existing path and remains part of the later root-composition step.
+15. [PENDING] **Introduce a dedicated structural completion signal for text/composition boundaries**.
    - Keep the structural completion signal distinct from the point-in-time value a boundary returns.
    - `finalSnapshot()` is likely part of the solution, but it should be used as structural completion only where that matches the boundary's ownership semantics.
-16. ◐ **Migrate macro/caller boundaries onto the structural composition model** — pending after steps 13–15.
-   - `_compileMacro` still uses `astate.waitAllClosures()` today
-   - a direct `_compileMacro` removal experiment was not valid yet:
-   - nested async imports in macro/caller composition failed with `Cannot add command to finished CommandBuffer`
-   - caller sequencing tests stopped registering expected side-effect commands
-   - macro/caller completion therefore still needs the prerequisites from steps 13–15 first
-17. ◐ **Migrate root inheritance/composition handoff onto the structural composition model** — pending.
-   - `compileRoot` still uses `waitAllClosures()` for final handoff
-   - a direct `compileRoot` removal experiment was not valid yet:
-   - nested callers regressed with `Cannot add command to finished CommandBuffer`
-   - static/dynamic `extends` regressions produced empty output
-   - bounded `super()` regressions showed composed base-block text was no longer ready at the handoff point
-18. ◐ **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`** — pending after steps 13–17.
-   - this becomes the cleanup/removal step once macro/caller and root handoff have real structural completion signals
-19. ◐ **`compileGuard` major rework** — last.
-   - guard semantics and cleanup need a larger dedicated redesign
-   - do this after the macro/root completion-boundary work is in place
+16. [PARTIAL] **Migrate macro/caller boundaries onto the structural composition model**.
+   - The caller structural-attachment model is implemented and macro/caller analysis and compilation now live in `compile-macro.js`.
+   - `_compileMacro` still uses `astate.waitAllClosures()` today, so this step is not fully complete yet.
+17. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
+   - `compileRoot` still uses `waitAllClosures()` for final handoff.
+18. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+   - `compileMacro` is now blocked on the remaining completion-boundary work, not on caller structural attachment itself.
+19. [PENDING] **`compileGuard` major rework**.
+   - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
 
 The `compileFor` migration also exposed an important diagnostic rule:
 - if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required

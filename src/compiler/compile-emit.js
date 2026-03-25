@@ -54,7 +54,7 @@ module.exports = class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  beginEntryFunction(node, name, frame = null) {
+  beginEntryFunction(node, name, frame = null, linkedChannels = null) {
     const rootTextChannelName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
       : DEFAULT_TEMPLATE_TEXT_CHANNEL;
@@ -79,7 +79,9 @@ module.exports = class CompileEmit {
     this.compiler.buffer.initManagedBuffer(
       this.compiler.buffer.currentBuffer,
       (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null,
-      this.compiler.buffer.currentTextChannelVar
+      this.compiler.buffer.currentTextChannelVar,
+      linkedChannels,
+      (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null
     );
     this.line('try {');
   }
@@ -135,15 +137,34 @@ module.exports = class CompileEmit {
       nextFrame = frame.push();
     }
 
-    let linkInsertPos = null;
     let parentBufferId = null;
     let bufferId = null;
     let prevBuffer = null;
     let prevTextChannelVar = null;
+    let linkedChannels = null;
     if (createScopeRootBuffer) {
       parentBufferId = parentBufferOverride !== undefined
         ? parentBufferOverride
         : (this.compiler.buffer.currentBuffer || null);
+      if (parentBufferId && analysisNode && analysisNode._analysis) {
+        // For locally-created scope-root buffers, structural parent-visible lanes
+        // should be attached at buffer creation time rather than in a later
+        // runtime prelink step.
+        const used = Array.from(analysisNode._analysis.usedChannels || []);
+        const declared = new Set((analysisNode._analysis.declaredChannels || new Map()).keys());
+        linkedChannels = used.filter((name) => {
+          if (name === this.compiler.buffer.currentTextChannelName) {
+            return false;
+          }
+          const decl = this.compiler.analysis && this.compiler.analysis.findDeclaration
+            ? this.compiler.analysis.findDeclaration(analysisNode._analysis, name)
+            : null;
+          if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
+            return false;
+          }
+          return !declared.has(name);
+        });
+      }
       bufferId = this.compiler._tmpid();
       prevBuffer = this.compiler.buffer.currentBuffer;
       prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
@@ -152,39 +173,15 @@ module.exports = class CompileEmit {
       this.compiler.buffer.initManagedBuffer(
         bufferId,
         parentBufferId,
-        `${bufferId}_textOutputVar`
+        `${bufferId}_textOutputVar`,
+        linkedChannels,
+        parentBufferId
       );
-      linkInsertPos = this.compiler.codebuf.length;
-      this.line('');
     }
 
     if (typeof emitFunc === 'function') {
       emitFunc(nextFrame, bufferId);
     }
-
-    if (createScopeRootBuffer && parentBufferId && analysisNode && analysisNode._analysis) {
-      const used = Array.from(analysisNode._analysis.usedChannels || []);
-      const declared = new Set((analysisNode._analysis.declaredChannels || new Map()).keys());
-      const foreignUsed = used.filter((name) => {
-        if (name === this.compiler.buffer.currentTextChannelName) {
-          return false;
-        }
-        const decl = this.compiler.analysis && this.compiler.analysis.findDeclaration
-          ? this.compiler.analysis.findDeclaration(analysisNode._analysis, name)
-          : null;
-        if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
-          return false;
-        }
-        return !declared.has(name);
-      });
-      if (foreignUsed.length > 0) {
-        // Use the shared runtime prelink helper to keep boundary-linking behavior
-        // consistent with include/block prelink paths.
-        const linkLine = `runtime.linkWithParentCompositionBuffer(${parentBufferId}, ${bufferId}, ${JSON.stringify(foreignUsed)}, ${bufferId}._channels);\n`;
-        this.insert(linkInsertPos, linkLine);
-      }
-    }
-
     if (createScopeRootBuffer) {
       this.compiler.buffer.currentBuffer = prevBuffer;
       this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;

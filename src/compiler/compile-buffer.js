@@ -43,11 +43,15 @@ class CompileBuffer {
    * @param {string|null} parentBufferId
    * @param {string} textChannelVar
    */
-  initManagedBuffer(bufferId, parentBufferId, textChannelVar) {
+  initManagedBuffer(bufferId, parentBufferId, textChannelVar, linkedChannels = null, linkedParentBufferId = null) {
     if (this.compiler.asyncMode) {
       const textId = textChannelVar || `${bufferId}_textChannelVar`;
       const parentArg = parentBufferId || 'null';
-      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, frame);`);
+      const linkedChannelsArg = Array.isArray(linkedChannels) && linkedChannels.length > 0
+        ? JSON.stringify(linkedChannels)
+        : 'null';
+      const linkedParentArg = linkedParentBufferId || 'null';
+      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, frame, ${linkedChannelsArg}, ${linkedParentArg});`);
       if (!this.compiler.scriptMode) {
         this.compiler.emit.line(`let ${textId} = runtime.declareChannel(frame, ${bufferId}, "${this.currentTextChannelName}", "text", context, null);`);
       }
