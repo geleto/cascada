@@ -9,7 +9,7 @@ The historical compilation model wrapped far too many operations in async blocks
 The refactor is now partially implemented, not just planned.
 
 Implemented and validated:
-- `runControlFlowBlock` / `runControlFlowBlockNode` are in use for async `if`, `switch`, and `for` lowering.
+- `runControlFlowBlock` / `_compileControlFlowBlock` are in use for async `if`, `switch`, and `for` lowering.
 - `compileInclude`, `compileExtends`, `compileImport`, and `compileFromImport` now use the channels-refactor model: control-flow async stays inside `runControlFlowBlock`, while command emission is synchronous.
 - Root/value work such as template output, `set`, `do`, `return`, script `var`, and var-channel initializers is emitted synchronously as commands whose arguments may be promises.
 - Sequential and bounded loops no longer use `waitAllClosures(1)` as an iteration-completion fallback.
@@ -37,15 +37,20 @@ Still transitional:
 
 ## Migration Strategy: Two Phases
 
-### Phase 1 — Introduce `runControlFlowBlock`, migrate `compileXXX` methods one by one
+### Phase 1 — Introduce `runControlFlowBlock`, migrate all compiler-emitted async blocks onto it
 
 The new `runControlFlowBlock` helper is added to the runtime. The original Phase 1 plan was to implement it on top of `astate.asyncBlock`, but the current code has already moved past that transitional shape: `runControlFlowBlock` now creates/links its child buffer itself while still using `AsyncState` for closure tracking and cleanup.
 
 Each `compileXXX` method is then migrated independently:
-- Replace `asyncBlockBegin` / `asyncBlockEnd` wrappers with `runControlFlowBlock` at control-flow sites only.
-- Move all non-control-flow command emission outside the async block — commands are added synchronously to the current buffer.
+- Replace compiler-emitted `astate.asyncBlock(...)` wrappers with the `runControlFlowBlock` model.
+- Use one compiler-side lowering helper, `_compileControlFlowBlock`, rather than many distinct compiler/runtime variants.
+- Move all non-control-flow command emission outside the deferred block — commands are added synchronously to the current buffer.
 - Remove `waitAllClosures` calls as each method is migrated.
-- Tests pass after each migration because `runControlFlowBlock` preserves the existing closure-tracking/cleanup contract while moving command emission and control-flow ownership into the new helper.
+- Tests pass after each migration because `runControlFlowBlock` preserves the existing closure-tracking/cleanup contract while moving command emission and structural child-buffer ownership into the new helper.
+
+Stronger target wording:
+- all compiler-emitted async blocks should be migrated onto this structural child-buffer model
+- distinctive behavior should live in the callback body and explicit arguments, not in a growing family of special runtime helpers
 
 ### Phase 2 — Drop `astate.asyncBlock`
 
@@ -190,9 +195,13 @@ The async fn never throws (Cascada semantics). The helper's `.finally()` is a sa
 
 ---
 
-## The New Helper: `runControlFlowBlock`
+## The Deferred Structural Child-Buffer Helper
 
-Replaces direct `AsyncState.asyncBlock` call sites at control-flow sites.
+The target model uses:
+- one runtime helper: `runControlFlowBlock(...)`
+- one compiler-side lowering helper: `_compileControlFlowBlock(...)`
+
+This pair should replace direct compiler-emitted `AsyncState.asyncBlock(...)` usage across the compiler.
 
 Important nuance learned during implementation:
 - in Phase 1, the helper still delegates to `astate.asyncBlock`
@@ -220,6 +229,12 @@ Target-architecture properties:
 - The main code flow **does not wait** — it continues adding commands to `parentBuffer` immediately after this call.
 - `markFinishedAndPatchLinks` is called in `.finally()` so it always fires even if there is a compiler bug in the async fn.
 - `enableWaitApplied` is only `true` for limited-concurrency loop iterations (`__waited__` mechanism, unchanged).
+
+Design goals:
+- keep `runControlFlowBlock(...)` as simple as possible
+- keep its arguments clear and structural
+- avoid many runtime variants of the same helper
+- implement distinctive behavior in the callback body and explicit arguments wherever possible
 
 ---
 
@@ -521,6 +536,10 @@ This turned out to matter for two cases:
 ### Migration order (suggested)
 
 Migrate from simplest to most complex to catch regressions early:
+- Wherever a compiler-emitted async block is still needed, the target is the same structural model:
+  - runtime `runControlFlowBlock(...)`
+  - compiler `_compileControlFlowBlock(...)`
+- We should not keep ad hoc `astate.asyncBlock(...)` generation as a parallel long-term mechanism.
 1. ✅ **`compileOutput`** — partially migrated: pure value expressions now add `TextCommand` synchronously; `caller()` expressions keep `asyncAddToBufferScoped` (see note below) (Tier 1)
 2. ✅ **`compileAsyncVarSet` step 3 / `compileChannelDeclaration`** — `asyncAddValueToBuffer` calls inlined; VarCommands now added synchronously via `currentBuffer.add(new VarCommand(...))` (Tier 1)
 3. ✅ **`compileDo`** — `asyncBlock` + `Promise.all` removed; expressions evaluated inline. `do` is now fire-and-forget for async side effects (consistent with "Implicitly Parallel" model). `emitOwnWaitedConcurrencyResolve` preserved for limited-loop `__waited__` timing (Tier 2, required `compileReturn` rewrite first)
@@ -548,24 +567,32 @@ Migrate from simplest to most complex to catch regressions early:
    - Keep the structural completion signal distinct from the point-in-time value a boundary returns.
    - `compileInclude` now uses the composed child text channel's `finalSnapshot()` as the boundary's structural completion signal.
    - What we learned: `finalSnapshot()` is valid when the boundary already owns the relevant composed text subtree cleanly.
-16. [PENDING] **Add a stronger structural completion boundary for nested macro/caller/import composition**.
-   - A direct `_compileMacro` switch to text `finalSnapshot()` is still not valid yet.
-   - Nested caller/import composition still needs a stronger completion boundary before macro finalization can stop relying on point-in-time text snapshots plus `waitAllClosures()`.
-17. [PARTIAL] **Migrate macro/caller boundaries onto the structural composition model**.
+16. [PENDING] **Pre-create the real caller invocation buffer for deferred `caller()` output paths**.
+   - The concrete remaining late-start path is now identified:
+     - `{{ caller() }}` in template output still goes through `asyncAddToBufferScoped(...)`
+     - the deferred async block evaluates `runtime.callWrapAsync(...)`
+     - the per-invocation caller buffer is only created later inside `_emitCallerBindingValue(...)`
+     - that late `createCommandBuffer(... allCallersBufferId ...)` can still hit `Cannot add command to finished CommandBuffer`
+   - A follow-up experiment tried reserving that buffer from inside `callWrapAsync(...)`, but that was still too late: it still happened inside the deferred async block and reproduced the same failures when `_compileMacro` stopped waiting on closures.
+   - So the next structural fix is not another generic timing channel, and not late reservation from inside `callWrapAsync(...)`. It is to ensure deferred `caller()` evaluation starts with its real caller-invocation buffer already reserved/owned before that deferred block begins.
+17. [PENDING] **Audit other deferred call paths for late structural child-buffer creation**.
+   - After the deferred `caller()` fix lands, look for the same shape elsewhere:
+     - deferred evaluation
+     - no pre-created structural child buffer
+     - later linked child-buffer creation under an owner boundary
+   - Likely candidates include imported macro calls and root/inheritance-adjacent composition paths.
+18. [PARTIAL] **Migrate macro/caller boundaries onto the structural composition model**.
    - The caller structural-attachment model is implemented and macro/caller analysis and compilation now live in `compile-macro.js`.
    - `_compileMacro` still uses `astate.waitAllClosures()` today, so this step is not fully complete yet.
    - Latest experiment result: caller scheduling is structurally attached, but macro return/finalization still cannot switch directly from point-in-time text snapshots to `finalSnapshot()` without losing nested caller/import composition.
-18. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
+19. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.
    - This step also owns the remaining block/root/inheritance structural-attachment cleanup that was intentionally left out of step 14.
    - Based on the step 15 experiment, root/block handoff should only move to `finalSnapshot()` where the boundary cleanly owns the composed subtree; inherited block/super handoff likely still needs an explicit stronger completion boundary first.
-19. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+20. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
    - `compileMacro` is now blocked on the remaining completion-boundary work, not on caller structural attachment itself.
-   - The current prerequisite is no longer generic caller attachment; it is the missing structural completion boundary for nested macro/caller/import composition and the matching root handoff case.
-20. [PENDING] **`compileGuard` major rework**.
-   - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
-   - `compileMacro` is now blocked on the remaining completion-boundary work, not on caller structural attachment itself.
-19. [PENDING] **`compileGuard` major rework**.
+   - The current macro prerequisite is no longer generic caller attachment; it is fixing the deferred `caller()` path so the real invocation buffer is created early enough under the all-callers boundary.
+21. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
 
 The `compileFor` migration also exposed an important diagnostic rule:
