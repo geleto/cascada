@@ -606,7 +606,7 @@ Migrate from simplest to most complex to catch regressions early:
 
 21. [PENDING] **Replace remaining generic `emit.asyncBlockValue(...)` expression wrappers with more structural lowering**.
    - Main remaining sites:
-     - expression-level async wrappers in `compiler-base.js`
+     - expression-level async wrappers in `compiler-base.js` (reduced; async filter nodes now compile directly to promise-valued expressions without their own internal `asyncBlockValue(...)` branch. A direct ternary/short-circuit branch simplification was tried and reverted because bounded-loop metadata expressions still hit late-buffer timing regressions there.)
      - script/template expression sites in `compiler.js`
    - This is a separate class from output/text buffering: these helpers currently wrap expression evaluation in generic async blocks and should be reviewed one by one for synchronous value flow vs true structural ownership.
    - Explicit audit rule:

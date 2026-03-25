@@ -1153,37 +1153,21 @@ class CompilerBase extends Obj {
 
     if (node.isAsync) {
       // Although filters are compiled differently to expressions -
-      // using temp var for the result so we can't wrap it as expression
-      // still we need to process it as expression for its arguments
-      // and wrap if the wrapInAsyncBlock is true
+      // they still compile to a normal promise-valued expression.
+      // Any outer structural wrapping should happen at the caller site,
+      // not here.
       this.sequential.processExpression(node, frame);
-      if (!node.wrapInAsyncBlock) {
-        const parts = [
-          function () {
-            this.emit(`env.getFilter("${node.name.value}")`);
-          },
-          ...node.args.children.map((arg) => function () {
-            this.compile(arg, frame);
-          })
-        ];
-        this._compileResolvedPartList(parts, function (result) {
-          this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
-        }, false);
-      } else {
-        this.emit.asyncBlockValue(node, frame, (n, f) => {
-          const parts = [
-            function () {
-              this.emit(`env.getFilter("${n.name.value}")`);
-            },
-            ...n.args.children.map((arg) => function () {
-              this.compile(arg, f);
-            })
-          ];
-          this._compileResolvedPartList(parts, function (result) {
-            this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
-          }, false);
-        }, undefined, node.args);
-      }
+      const parts = [
+        function () {
+          this.emit(`env.getFilter("${node.name.value}")`);
+        },
+        ...node.args.children.map((arg) => function () {
+          this.compile(arg, frame);
+        })
+      ];
+      this._compileResolvedPartList(parts, function (result) {
+        this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
+      }, false);
     } else {
       this.emit('env.getFilter("' + node.name.value + '").call(context, ');
       this._compileAggregate(node.args, frame, '', '', false, false);
@@ -1198,23 +1182,15 @@ class CompilerBase extends Obj {
 
     if (node.isAsync) {
       // Although filters are compiled differently to expressions,
-      // using temp var for the result so it can't be wrapped as expression
-      // still we need to process it as expression for its arguments
+      // they still compile to a normal promise-valued expression.
+      // Any outer structural wrapping should happen at the caller site,
+      // not here.
       this.sequential.processExpression(node, frame);
 
       this.emit.line(`let ${symbol} = `);
-      // Use node.args as the position node since it's what's being evaluated async
-      if (!node.wrapInAsyncBlock) {
-        this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
-          this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
-        });
-      } else {
-        this.emit.asyncBlockValue(node, frame, (n, f) => {
-          this._compileAggregate(n.args, f, '[', ']', true, false, function (result) {
-            this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
-          });
-        }, undefined, node.args);
-      }
+      this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
+        this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
+      });
       this.emit(';');
     } else {
       this.emit('env.getFilter("' + node.name.value + '").call(context, ');
