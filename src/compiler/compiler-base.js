@@ -1211,64 +1211,16 @@ class CompilerBase extends Obj {
   }
 
   analyzeCaller(node) {
-    const declares = [
-      { name: 'caller', type: 'var', initializer: null },
-      { name: '__return__', type: 'var', initializer: null, internal: true }
-    ];
-    node.args.children.forEach((arg) => {
-      if (arg instanceof nodes.Symbol) {
-        arg._analysis = { declarationTarget: true };
-        declares.push({ name: arg.value, type: 'var', initializer: null });
-      }
-    });
-    return {
-      createScope: true,
-      scopeBoundary: false,
-      parentReadOnly: true,
-      declares
-    };
-  }
-
-  // Return the parent-owned channels that a caller body may observe, so the
-  // caller buffer can be linked only on those lanes.
-  _getCallerParentVisibleUsedChannels(node) {
-    if (!node || !node._analysis) {
-      return [];
-    }
-    const textChannelName = this.analysis && typeof this.analysis.getCurrentTextChannel === 'function'
-      ? this.analysis.getCurrentTextChannel(node._analysis)
-      : null;
-    const used = Array.from(node._analysis.usedChannels || []);
-    const declared = new Set((node._analysis.declaredChannels || new Map()).keys());
-    const parentVisibleUsedChannels = used.filter((name) => {
-      if (!name || name === textChannelName) {
-        return false;
-      }
-      const decl = this.analysis && this.analysis.findDeclaration
-        ? this.analysis.findDeclaration(node._analysis, name)
-        : null;
-      if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
-        return false;
-      }
-      return !declared.has(name);
-    });
-    return parentVisibleUsedChannels;
+    return this.macro.analyzeCaller(node);
   }
 
   compileCaller(node, frame) {
-    // basically an anonymous "macro expression"
-    this.emit('(function (){');
-    const funcId = this._compileMacro(node, frame, true);
-    if (this.asyncMode) {
-      const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
-      this.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
-    }
-    this.emit(`return ${funcId};})()`);
+    return this.macro.compileCaller(node, frame);
   }
 
   // This method will be implemented in the derived Compiler class
   _compileMacro(node, frame, keepFrame) {
-    throw new Error('_compileMacro must be implemented in the derived class');
+    return this.macro._compileMacro(node, frame, keepFrame);
   }
 
   /**
