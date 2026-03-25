@@ -50,8 +50,8 @@ class CompileLoop {
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const useLoopValues = node.isAsync;
     const parentWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
-    const forResult = this.compiler.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
-      // runControlFlowBlockNode's non-async path is a simple pass-through without scope.
+    const forResult = this.compiler.buffer._compileControlFlowBlock(node, frame, (blockFrame) => {
+      // _compileControlFlowBlock's non-async path is a simple pass-through without scope.
       // Emit runtime frame.push/pop manually to scope loop variable bindings for sync loops.
       let innerFrame = blockFrame;
       if (!node.isAsync) {

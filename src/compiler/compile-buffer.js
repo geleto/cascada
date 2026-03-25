@@ -7,9 +7,7 @@
 
 const nodes = require('../nodes');
 const {
-  validateChannelObservationCall,
-  trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
+  validateChannelObservationCall
 } = require('./validation');
 const CHANNEL_COMMAND_CLASS = {
   data: 'DataCommand',
@@ -484,58 +482,8 @@ class CompileBuffer {
    *
    * For non-async nodes falls through to a plain synchronous call (like asyncBufferNode).
    */
-  runControlFlowBlockNode(node, frame, emitFunc = null) {
-    if (node.isAsync) {
-      const parentBufferArg = this.currentBuffer;
-      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
-      const trackAsSingleWaitedUnit = this.compiler.asyncMode && !!this.currentWaitedChannelName;
-      const controlFlowWaitedChannelName = trackAsSingleWaitedUnit ? `__waited__${this.compiler._tmpid()}` : null;
-      const controlFlowPromiseId = this.compiler._tmpid();
-
-      this.compiler.emit(
-        `let ${controlFlowPromiseId} = runtime.runControlFlowBlock(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, currentBuffer) => {`
-      );
-      this.compiler.emit.asyncClosureDepth++;
-
-      const newFrame = frame.push(false, false);
-      trackCompileTimeFrameDepth(newFrame, frame);
-
-      const prevBuffer = this.currentBuffer;
-      const prevTextChannelVar = this.currentTextChannelVar;
-      const prevTextChannelName = this.currentTextChannelName;
-      const prevWaitedChannelName = this.currentWaitedChannelName;
-      const prevWaitedOwnerBuffer = this.currentWaitedOwnerBuffer;
-      this.currentBuffer = 'currentBuffer';
-      if (trackAsSingleWaitedUnit) {
-        this.currentWaitedChannelName = controlFlowWaitedChannelName;
-        this.currentWaitedOwnerBuffer = 'currentBuffer';
-        this.compiler.emit.line(`runtime.declareChannel(frame, currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
-      }
-
-      const callbackValue = emitFunc ? emitFunc(newFrame, 'currentBuffer', prevBuffer) : undefined;
-      this.compiler.emit.asyncClosureDepth--;
-      const waitedChannelArg = controlFlowWaitedChannelName ? `"${controlFlowWaitedChannelName}"` : 'null';
-      this.compiler.emit.line(`}, ${waitedChannelArg});`);
-      this.currentBuffer = prevBuffer;
-      this.currentTextChannelVar = prevTextChannelVar;
-      this.currentTextChannelName = prevTextChannelName;
-      this.currentWaitedChannelName = prevWaitedChannelName;
-      this.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
-      if (controlFlowPromiseId) {
-        this.emitOwnWaitedConcurrencyResolve(frame, controlFlowPromiseId, node);
-      }
-      validateCompileTimeFrameBalance(newFrame, this.compiler, node);
-
-      const result = callbackValue && typeof callbackValue === 'object' &&
-        Object.prototype.hasOwnProperty.call(callbackValue, 'result')
-        ? callbackValue.result
-        : callbackValue;
-      return { frame: newFrame.pop(), result };
-    }
-
-    // Non-async: pass through without async wrapping (mirrors asyncBufferNode non-async path)
-    const result = typeof emitFunc === 'function' ? emitFunc(frame, this.currentBuffer, this.currentBuffer) : undefined;
-    return { frame, result };
+  _compileControlFlowBlock(node, frame, emitFunc = null) {
+    return this.compiler.boundaries._compileControlFlowBlock(this, node, frame, emitFunc);
   }
 
   asyncBufferNode(node, frame, createScope = false, positionNode = node, emitFunc = null) {

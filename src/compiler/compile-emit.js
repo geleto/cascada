@@ -291,86 +291,8 @@ module.exports = class CompileEmit {
     }
   }
 
-  asyncBlockRender(node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
-    if (!node.isAsync) {
-      const { bufferId: id } = this.managedBlock(frame, false, true, (blockFrame) => {
-        innerBodyFunction.call(this.compiler, blockFrame);
-      }, undefined, node);
-      if (this.compiler.asyncMode) {
-        this.line(`${id}.markFinishedAndPatchLinks();`);
-      }
-      if (callbackName) {
-        this.line(`${callbackName}(null, ${id});`);
-      }
-      this.line(`return ${id};`);
-      return;
-    }
-
-    frame = frame.push(false, false);//unscoped frame for the async block
-    // asyncBlockRender always materializes text output; ensure async block
-    // allocates a channel buffer via usedChannels.
-    //this.compiler.buffer.registerOutputUsage(frame, 'text');
-    this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) =>{`);
-
-    const id = this.compiler._tmpid();
-    // IMPORTANT: no managed-buffer initialization here.
-    // For async blocks, CommandBuffer is owned/created by AsyncState.asyncBlock.
-    this.line(`let ${id} = currentBuffer;`);
-    //this.line(`if (!${id}) { throw new Error("asyncBlockRender requires async block output buffer"); }`);
-
-    //text only? Why not just use currentBuffer?
-    const textChannelName = this.compiler.buffer.currentTextChannelName;
-    this.line(`let ${id}_textChannelVar = runtime.declareChannel(frame, ${id}, "${textChannelName}", "text", context, null);`);
-    const prevBuffer = this.compiler.buffer.currentBuffer;
-    const prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
-    const prevTextChannelName = this.compiler.buffer.currentTextChannelName;
-    this.compiler.buffer.currentBuffer = id;
-    this.compiler.buffer.currentTextChannelVar = `${id}_textChannelVar`;
-    this.compiler.buffer.currentTextChannelName = textChannelName;
-
-    const originalAsyncClosureDepth = this.asyncClosureDepth;
-    this.asyncClosureDepth = 0;
-
-    if (this.compiler.scriptMode) {
-      // Call blocks in script mode return values via explicit/implicit return.
-      frame._seesRootScope = false;
-      frame._returnWaitCount = 1;
-      this.compiler.emitDeclareReturnChannel(frame, id);
-      innerBodyFunction.call(this.compiler, frame);
-    } else {
-      innerBodyFunction.call(this.compiler, frame);
-    }
-
-    this.asyncClosureDepth = originalAsyncClosureDepth;
-    this.compiler.buffer.currentBuffer = prevBuffer;
-    this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
-    this.compiler.buffer.currentTextChannelName = prevTextChannelName;
-
-    if (this.compiler.scriptMode) {
-      this.compiler.emitReturnChannelSnapshot(id, positionNode, id);
-    } else {
-      this.line(`${id} = ${id}.addSnapshot("${textChannelName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
-    }
-
-    //return via callback or directly
-    if (callbackName) {
-      this.line(`  ${callbackName}(null, ${id});`);
-    }
-    this.line(`  return ${id};`);
-    this.line('}');
-    const asyncMetaArg = this.getAsyncBlockArgs(node, frame);
-    // asyncBlockRender materializes its own text snapshot and returns it to the caller.
-    // Linking this temporary render buffer into the parent text stream would duplicate
-    // content (once via parent traversal, once via returned snapshot).
-    const parentBufferArg = 'null';
-    if (callbackName) {
-      this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, true, ${callbackName})`);
-    } else {
-      this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, true, cb)`);
-    }
-
-    frame = frame.pop();
-    //in the non-callback case, using the rendered buffer will throw the error
+  _compileRenderBoundary(node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
+    return this.compiler.boundaries._compileRenderBoundary(this, node, frame, innerBodyFunction, callbackName, positionNode);
   }
 
   // @todo - optimize this:

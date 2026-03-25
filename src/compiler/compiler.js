@@ -16,6 +16,7 @@ const CompileLoop = require('./compile-loop');
 const CompileBuffer = require('./compile-buffer');
 const CompileAnalysis = require('./compile-analysis');
 const CompileMacro = require('./compile-macro');
+const CompileBoundaries = require('./compile-boundaries');
 const CompileRename = require('./compile-rename');
 const CompilerBase = require('./compiler-base');
 
@@ -40,6 +41,7 @@ class Compiler extends CompilerBase {
     this.buffer = new CompileBuffer(this);
     this.analysis = new CompileAnalysis(this);
     this.macro = new CompileMacro(this);
+    this.boundaries = new CompileBoundaries(this);
     this.rename = new CompileRename(this);
     this.analysisState = null;
   }
@@ -152,7 +154,7 @@ class Compiler extends CompilerBase {
           if (arg) {
             if (node.isAsync && !resolveArgs) {
               //when args are not resolved, the contentArgs are promises
-              this.emit.asyncBlockRender(node, callFrame, function (f) {
+              this.emit._compileRenderBoundary(node, callFrame, function (f) {
                 this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, f);
               }, null, arg); // Use content arg node for position
@@ -163,7 +165,7 @@ class Compiler extends CompilerBase {
               this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 
               this.emit.withScopedSyntax(() => {
-                this.emit.asyncBlockRender(node, callFrame, function (f) {
+                this.emit._compileRenderBoundary(node, callFrame, function (f) {
                   this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
                   this.compile(arg, f);
                 }, 'cb', arg); // Use content arg node for position
@@ -495,7 +497,7 @@ class Compiler extends CompilerBase {
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
-    const switchResult = this.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
+    const switchResult = this.buffer._compileControlFlowBlock(node, frame, (blockFrame) => {
       let catchPoisonPos;
       const caseCreatesScope = this.scriptMode || this.asyncMode;
 
@@ -900,7 +902,7 @@ class Compiler extends CompilerBase {
     }
 
     const branchCreatesScope = this.scriptMode || this.asyncMode;
-    const ifResult = this.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
+    const ifResult = this.buffer._compileControlFlowBlock(node, frame, (blockFrame) => {
       let catchPoisonPos;
 
       if (this.asyncMode) {

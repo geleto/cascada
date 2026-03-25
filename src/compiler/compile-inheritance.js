@@ -316,7 +316,7 @@ class CompileInheritance {
       if (node.asyncStoreIn) {
         this.emit.line(`let ${node.asyncStoreIn} = ${parentTemplateId};`);
       }
-      const extendsResult = this.compiler.buffer.runControlFlowBlockNode(node, frame, (blockFrame) => {
+      const extendsResult = this.compiler.buffer._compileControlFlowBlock(node, frame, (blockFrame) => {
         const templateVar = this.compiler._tmpid();
         this.emit.line(`let ${templateVar} = await runtime.resolveSingle(${parentTemplateId});`);
         this.emit.line(`parentTemplate = ${templateVar};`);
@@ -365,7 +365,7 @@ class CompileInheritance {
       this.compileIncludeSync(node, frame);
       return;
     }
-    const includeResult = this.compiler.buffer.runControlFlowBlockNode(node, frame, (f) => {
+    const includeResult = this.compiler.buffer._compileControlFlowBlock(node, frame, (f) => {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
