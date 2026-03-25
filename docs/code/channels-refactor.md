@@ -574,15 +574,20 @@ Migrate from simplest to most complex to catch regressions early:
      - deferred/mutating caller expressions now go back through the normal tracked async child-buffer path, so loop/conditional/ternary-started caller work is still covered by `waitAllClosures()` before the macro snapshots `__caller__`
    - This removed the concrete late-start failure for the deferred `{{ caller() }}` cases that were still starting after the caller boundary had already been closed.
    - This step no longer owns `waitAllClosures()` removal; that is tracked explicitly in step 20.
-17. [PENDING] **Audit other deferred call paths for late structural child-buffer creation**.
-   - After the deferred `caller()` fix lands, look for the same shape elsewhere:
-     - deferred evaluation
-     - no pre-created structural child buffer
-     - later linked child-buffer creation under an owner boundary
-   - Likely candidates include imported macro calls and root/inheritance-adjacent composition paths.
-18. [PARTIAL] **Migrate macro/caller boundaries onto the structural composition model**.
-   - The caller structural-attachment model is implemented and macro/caller analysis and compilation now live in `compile-macro.js`.
-   - `_compileMacro` still uses `astate.waitAllClosures()` today, but removing it is tracked separately in step 20.
+17. ✅ **Audit other deferred call paths for late structural child-buffer creation**.
+   - Result: no second caller-like path was found.
+   - Checked:
+     - dynamic/runtime-resolved macro calls through `callWrapAsync(...)` / `_callWrapAsyncComplex(...)`
+     - include composition prelinking
+     - block/super composition prelinking
+   - Conclusion:
+     - dynamic/imported macro calls may still be deferred as values, but they do not create a new parent-linked child buffer in the late caller-specific way that caused the `__caller__` regressions
+     - include and block composition already prelink their child buffers before body/composition work begins
+     - the remaining blockers are root/block/inheritance handoff timing and the broader removal of `asyncAddToBufferScoped` from output/control-flow-adjacent sites, not another hidden caller-like late child-buffer creation path
+18. ✅ **Migrate macro/caller boundaries onto the structural composition model**.
+   - The caller structural-attachment model is implemented and macro/caller analysis and compilation live in `compile-macro.js`.
+   - Transitional caller-specific compiler state was removed: `_compileMacro` no longer carries the old caller-support context/shadowing scaffolding now that `__caller__` ownership lives entirely in caller invocation code.
+   - The remaining `_compileMacro` `astate.waitAllClosures()` removal is tracked separately in step 20.
    - Latest experiment result: caller scheduling is structurally attached, but macro return/finalization still cannot switch directly from point-in-time text snapshots to `finalSnapshot()` without losing nested caller/import composition.
 19. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
    - `compileRoot` still uses `waitAllClosures()` for final handoff.

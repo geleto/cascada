@@ -8,7 +8,6 @@ const CALLER_SCHED_CHANNEL_NAME = '__caller__';
 class CompileMacro {
   constructor(compiler) {
     this.compiler = compiler;
-    this.currentCallerSupportContext = null;
   }
 
   analyzeCaller(node) {
@@ -128,21 +127,6 @@ class CompileMacro {
       }
     }
     return false;
-  }
-
-  _expressionUsesCaller(node) {
-    return this._macroUsesCaller(node);
-  }
-
-  withCallerSupportContext(context, emitFunc) {
-    const prevContext = this.currentCallerSupportContext;
-    this.currentCallerSupportContext = context;
-    emitFunc();
-    this.currentCallerSupportContext = prevContext;
-  }
-
-  hasActiveCallerSupportContext() {
-    return !!this.currentCallerSupportContext;
   }
 
   _parseMacroSignature(node) {
@@ -427,11 +411,7 @@ class CompileMacro {
         });
       };
 
-      if (macroNeedsCallerSupport) {
-        this.withCallerSupportContext({ bufferId, rawCallerVar, allCallersBufferId }, emitMacroBody);
-      } else {
-        emitMacroBody();
-      }
+      emitMacroBody();
 
       compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
 
