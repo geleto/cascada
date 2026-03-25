@@ -122,6 +122,34 @@ class CompileBoundaries {
     emitCompiler.line(`  return ${id};`);
     emitCompiler.line('})');
   }
+
+  _compileBlockInvocationBoundary(bufferCompiler, node, frame, renderFunction, positionNode = node, targetChannelName) {
+    const returnId = this.compiler._tmpid();
+    if (this.compiler.asyncMode) {
+      const parentBufferExpr = bufferCompiler.currentBuffer;
+      const linkedChannelsArg = JSON.stringify([targetChannelName]);
+      this.compiler.emit.asyncClosureDepth++;
+      frame = frame.push(false, false);
+
+      this.compiler.emit.line(
+        `runtime.runControlFlowBlock(astate, ${parentBufferExpr}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, blockBuffer) => {`
+      );
+      this.compiler.emit.line(`let ${returnId};`);
+      renderFunction.call(this.compiler, returnId, frame);
+      this.compiler.emit.line(';');
+      const valueExpr = bufferCompiler._emitTemplateTextCommandExpression(returnId, positionNode);
+      this.compiler.emit.line(`blockBuffer.add(${valueExpr}, "${targetChannelName}");`);
+      this.compiler.emit.asyncClosureDepth--;
+      this.compiler.emit.line('});');
+
+      return frame.pop();
+    }
+
+    this.compiler.emit.line(`let ${returnId};`);
+    renderFunction.call(this.compiler, returnId, frame);
+    this.compiler.emit.line(`${bufferCompiler.currentBuffer} += ${returnId};`);
+    return frame;
+  }
 }
 
 module.exports = CompileBoundaries;

@@ -637,9 +637,12 @@ Migrate from simplest to most complex to catch regressions early:
      - if the path only needs a final text value, enqueue `TextCommand` synchronously with a value/promise/chained-promise arg
      - keep the helper only where evaluation still needs real deferred child-buffer ownership
 
-24. [PENDING] **Replace remaining `asyncAddBlockInvocationToBuffer(...)` block/super/inheritance wrappers with a clearer structural boundary**.
-   - This path is already isolated into its own helper, but it still emits an `astate.asyncBlock(...)`.
-   - It likely needs a dedicated structural redesign rather than a trivial collapse, because block invocation still depends on producer-slot and local emitted-scope behavior.
+24. ✅ **Replace remaining `asyncAddBlockInvocationToBuffer(...)` block/super/inheritance wrappers with a clearer structural boundary**.
+   - Block invocation still needs its own child-buffer slot; a direct collapse to synchronous `TextCommand` emission regressed inheritance/block behavior.
+   - The working simplification is to lower this helper through `runControlFlowBlock(...)` instead of emitting a raw `astate.asyncBlock(...)`.
+   - Important implementation detail:
+     - the block invocation result is written into the child slot buffer
+     - but the invoked block function still receives the enclosing parent buffer for visible-channel linking and composition semantics
 
 25. [PENDING] **Replace remaining capture/set-block async wrapper path**.
    - Main current use: `compileCapture` in `compiler.js`.

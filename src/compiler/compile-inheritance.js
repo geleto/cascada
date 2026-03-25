@@ -247,7 +247,7 @@ class CompileInheritance {
     // blocks twice
 
     if (this.compiler.asyncMode) {
-      this.compiler.buffer.asyncAddBlockInvocationToBuffer(node, frame, (id, f) => {
+      this.compiler.boundaries._compileBlockInvocationBoundary(this.compiler.buffer, node, frame, (id, f) => {
         // The dynamic check runs when:
         // 1. We're at top level (!this.inBlock)
         // 2. There might be a dynamic parent (hasDynamicExtends OR hasStaticExtends)

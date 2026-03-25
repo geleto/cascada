@@ -362,35 +362,6 @@ class CompileBuffer {
    * behavior and local emitted scope. Keep this helper dedicated to block-style
    * invocation rather than routing them through generic async value helpers.
    */
-  asyncAddBlockInvocationToBuffer(node, frame, renderFunction, positionNode = node, targetChannelName) {
-    const returnId = this.compiler._tmpid();
-    if (this.compiler.asyncMode) {
-      this.compiler.emit.asyncClosureDepth++;
-      frame = frame.push(false, false);
-
-      this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      this.compiler.emit.line(`${this.currentBuffer}.add((() => {`);
-      this.compiler.emit.line(`let ${returnId};`);
-      renderFunction.call(this.compiler, returnId, frame);
-      this.compiler.emit.line(';');
-      const valueExpr = this._emitTemplateTextCommandExpression(returnId, positionNode);
-      this.compiler.emit.line(`return ${valueExpr};`);
-      this.compiler.emit.line(`})(), "${targetChannelName}");`);
-
-      this.compiler.emit.asyncClosureDepth--;
-      this.compiler.emit.line('}');
-      const asyncMetaArg = this.compiler.emit.getAsyncBlockArgs(node, frame);
-      this.compiler.emit.line(`, runtime, frame, ${asyncMetaArg}, ${this.currentBuffer}, false, cb);`);
-
-      frame = frame.pop();
-
-    } else {
-      this.compiler.emit.line(`let ${returnId};`);
-      renderFunction.call(this.compiler, returnId, frame);
-      this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
-    }
-  }
-
   /**
    * Add a value to the buffer without producer slot-fill wrapping.
    * Use when value construction does not require addAsyncArgsCommand producer semantics.
