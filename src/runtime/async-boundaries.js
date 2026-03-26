@@ -4,7 +4,7 @@ const errors = require('./errors');
 const buffer = require('./command-buffer');
 
 /**
- * Run a control-flow block (if/switch body) as a single async child buffer.
+ * Run a control-flow boundary (if/switch body) as a single async child buffer.
  * Phase 1 still uses AsyncState closure tracking, but this helper owns the
  * child buffer lifecycle so waited loops can optionally gate on a child-owned
  * waited channel instead of only on async function return.
@@ -12,7 +12,7 @@ const buffer = require('./command-buffer');
  * The asyncFn receives (childAstate, childFrame, childBuffer) and should compile
  * branch bodies synchronously inside - no inner astate.asyncBlock calls needed.
  */
-async function runControlFlowBlock(astate, parentBuffer, usedChannels, f, context, cb, asyncFn, waitedChannelName = null) {
+async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, context, cb, asyncFn, waitedChannelName = null) {
   void context;
   void cb;
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
@@ -83,6 +83,6 @@ async function runRenderBoundary(astate, f, context, cb, asyncFn) {
 }
 
 module.exports = {
-  runControlFlowBlock,
+  runControlFlowBoundary,
   runRenderBoundary
 };

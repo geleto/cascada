@@ -235,7 +235,7 @@ class Compiler extends CompilerBase {
 
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      frame = this.boundaries._compileStructuralTextOutputBoundary(
+      frame = this.boundaries.compileTextBoundary(
         this.buffer,
         node,
         frame,
@@ -247,8 +247,9 @@ class Compiler extends CompilerBase {
             this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
           }
         },
-        this.asyncMode,
-        null
+        {
+          useParentBufferForEmit: true
+        }
       );
 
       this.emit.addScopeLevel();
@@ -494,7 +495,7 @@ class Compiler extends CompilerBase {
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
-    const switchResult = this.buffer._compileControlFlowBlock(node, frame, (blockFrame) => {
+    const switchResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
       let catchPoisonPos;
       const caseCreatesScope = this.scriptMode || this.asyncMode;
 
@@ -899,7 +900,7 @@ class Compiler extends CompilerBase {
     }
 
     const branchCreatesScope = this.scriptMode || this.asyncMode;
-    const ifResult = this.buffer._compileControlFlowBlock(node, frame, (blockFrame) => {
+    const ifResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
       let catchPoisonPos;
 
       if (this.asyncMode) {
@@ -913,7 +914,7 @@ class Compiler extends CompilerBase {
 
         this.emit(`if (${condResultId}) {`);
 
-        // True branch — synchronous inside the runControlFlowBlock async fn
+        // True branch — synchronous inside the runControlFlowBoundary async fn
         {
           let trueFrame = blockFrame;
           if (branchCreatesScope) {
@@ -1225,15 +1226,14 @@ class Compiler extends CompilerBase {
     }
 
     if (node.isAsync) {
-      this.boundaries._compileCaptureBoundary(
+      this.boundaries.compileCaptureBoundary(
         this.buffer,
         node,
         frame,
         function (f) {
           this.compile(node.body, f);
         },
-        node.body,
-        this.buffer.currentBuffer
+        node.body
       );
     } else {
       // Sync capture still uses the legacy local output variable path.
@@ -1296,7 +1296,7 @@ class Compiler extends CompilerBase {
           // evaluating, so this is not just "wait for a text value then emit text".
           // Keep a dedicated child buffer here; pure value-only output stays on the
           // synchronous TextCommand path below.
-          frame = this.boundaries._compileStructuralTextOutputBoundary(
+          frame = this.boundaries.compileTextBoundary(
             this.buffer,
             node,
             frame,
@@ -1304,7 +1304,9 @@ class Compiler extends CompilerBase {
             (innerFrame) => {
               this.compileExpression(child, innerFrame, true, child);
             },
-            true
+            {
+              useParentBufferForEmit: true
+            }
           );
         } else {
           // Pure value expression: add TextCommand synchronously, no async block needed.

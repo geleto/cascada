@@ -169,7 +169,7 @@ module.exports = {
   promisify,
   withPath,
   linkWithParentCompositionBuffer,
-  runControlFlowBlock: asyncBoundaries.runControlFlowBlock,
+  runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,
   RETURN_UNSET,
   SafeString: outputValue.SafeString,

@@ -247,38 +247,53 @@ class CompileInheritance {
     // blocks twice
 
     if (this.compiler.asyncMode) {
-      this.compiler.boundaries._compileBlockInvocationBoundary(this.compiler.buffer, node, frame, (id, f) => {
-        // The dynamic check runs when:
-        // 1. We're at top level (!this.inBlock)
-        // 2. There might be a dynamic parent (hasDynamicExtends OR hasStaticExtends)
-        //    - hasDynamicExtends: Need to check frame variable
-        //    - hasStaticExtends with hasDynamicExtends: Dynamic can override static
-        const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
-        if (needsParentCheck) {
-          if (this.compiler.hasDynamicExtends) {
-            // Dynamic parent selection reads __parentTemplate via value/context path.
-            // Do not fall back to frame lookup here.
-            this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
-            if (this.compiler.hasStaticExtends) {
-              // Check both: dynamic can override static
-              this.emit.line('  if (!parent) parent = parentTemplate;');
+      this.compiler.boundaries.compileTextBoundary(
+        this.compiler.buffer,
+        node,
+        frame,
+        node,
+        (f, id) => {
+          this.emit.line(`let ${id};`);
+          // The dynamic check runs when:
+          // 1. We're at top level (!this.inBlock)
+          // 2. There might be a dynamic parent (hasDynamicExtends OR hasStaticExtends)
+          //    - hasDynamicExtends: Need to check frame variable
+          //    - hasStaticExtends with hasDynamicExtends: Dynamic can override static
+          const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
+          if (needsParentCheck) {
+            if (this.compiler.hasDynamicExtends) {
+              // Dynamic parent selection reads __parentTemplate via value/context path.
+              // Do not fall back to frame lookup here.
+              this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
+              if (this.compiler.hasStaticExtends) {
+                // Check both: dynamic can override static
+                this.emit.line('  if (!parent) parent = parentTemplate;');
+              }
+              this.emit.line('  return parent;');
+              this.emit.line('});');
+            } else {
+              // Only static extends (but in a context where dynamic might exist)
+              this.emit.line('const parentPromise = Promise.resolve(parentTemplate);');
             }
-            this.emit.line('  return parent;');
+            this.emit.line(`${id} = parentPromise.then((parent) => {`);
+            this.emit.line('  if (parent) return "";');
+            this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
             this.emit.line('});');
           } else {
-            // Only static extends (but in a context where dynamic might exist)
-            this.emit.line('const parentPromise = Promise.resolve(parentTemplate);');
+            this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
           }
-          this.emit.line(`${id} = parentPromise.then((parent) => {`);
-          this.emit.line('  if (parent) return "";');
-          this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
-          this.emit.line('});');
-        } else {
-          this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
+          // Step 7: block invocation boundary completion in limited-loop waited output.
+          this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
+        },
+        {
+          linkedChannelsArg: JSON.stringify([this.compiler.buffer.currentTextChannelName]),
+          callbackParams: '(astate, frame, blockBuffer)',
+          targetBufferExpr: 'blockBuffer',
+          normalizeTextArgs: false,
+          waitedPositionNode: null,
+          producerAssignsResult: true
         }
-        // Step 7: block invocation boundary completion in limited-loop waited output.
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
-      }, node, this.compiler.buffer.currentTextChannelName);
+      );
     }
     else {
       let id = this.compiler._tmpid();
@@ -316,7 +331,7 @@ class CompileInheritance {
       if (node.asyncStoreIn) {
         this.emit.line(`let ${node.asyncStoreIn} = ${parentTemplateId};`);
       }
-      const extendsResult = this.compiler.buffer._compileControlFlowBlock(node, frame, (blockFrame) => {
+      const extendsResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
         const templateVar = this.compiler._tmpid();
         this.emit.line(`let ${templateVar} = await runtime.resolveSingle(${parentTemplateId});`);
         this.emit.line(`parentTemplate = ${templateVar};`);
@@ -365,7 +380,7 @@ class CompileInheritance {
       this.compileIncludeSync(node, frame);
       return;
     }
-    const includeResult = this.compiler.buffer._compileControlFlowBlock(node, frame, (f) => {
+    const includeResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (f) => {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();

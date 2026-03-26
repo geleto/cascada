@@ -397,14 +397,14 @@ class CompileBuffer {
    * - { result, sequential } -> custom result + dynamic sequential flag for asyncBlockEnd
    */
   /**
-   * Emit a `runtime.runControlFlowBlock` call for control-flow nodes (if, switch).
+   * Emit a `runtime.runControlFlowBoundary` call for control-flow nodes (if, switch).
    * Compared to `asyncBufferNode`, this does NOT wrap the branch bodies in their own
    * async blocks — the emitFunc is expected to compile branches synchronously.
    *
    * For non-async nodes falls through to a plain synchronous call (like asyncBufferNode).
    */
-  _compileControlFlowBlock(node, frame, emitFunc = null) {
-    return this.compiler.boundaries._compileControlFlowBlock(this, node, frame, emitFunc);
+  _compileControlFlowBoundary(node, frame, emitFunc = null) {
+    return this.compiler.boundaries.compileControlFlowBoundary(this, node, frame, emitFunc);
   }
 
   asyncBufferNode(node, frame, createScope = false, positionNode = node, emitFunc = null) {
