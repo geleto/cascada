@@ -659,13 +659,22 @@ Migrate from simplest to most complex to catch regressions early:
    - This removes the last transitional block/root inheritance attachment path and makes block composition match the same early-link structural model used by the other migrated boundaries.
    - `compileRoot` still keeps its `waitAllClosures()` final handoff for now, but that remaining closure-counting cleanup is tracked separately in step 27.
 
-27. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+27. ✅ **Replace the last legacy `astate.asyncBlock(... createOutputBuffer ...)` path with an explicit structural text-output boundary helper**.
+   - The remaining nonconforming buffer-creation path was `asyncAddStructuralTextOutput(...)` in `compile-buffer.js`.
+   - That mutating-expression output case now lowers through a dedicated `_compileStructuralTextOutputBoundary(...)` helper in `compile-boundaries.js`.
+   - The child buffer is now created explicitly through `runControlFlowBlock(...)`, rather than by the generic legacy `AsyncState.asyncBlock(...)` helper deciding to allocate a buffer from a `createOutputBuffer` flag.
+   - Result:
+     - no remaining structural text-output path relies on generic async-block buffer creation
+     - the compiler now chooses that boundary explicitly
+     - the helper owns buffer creation / finishing directly
+
+28. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
    - `compileMacro` is now blocked on the remaining completion-boundary work, not on the direct caller-output late-start path itself.
    - Latest experiment result:
      - direct deferred `caller()` output is fixed
      - but deferred control-flow sites can still start caller invocations after macro finalization would begin if `waitAllClosures()` is removed
 
-28. [PENDING] **`compileGuard` major rework**.
+29. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
 
 The `compileFor` migration also exposed an important diagnostic rule:

@@ -388,56 +388,6 @@ class CompileBuffer {
    * owns a child text buffer that receives the eventual TextCommand and closes
    * when that deferred structural work is done.
    */
-  asyncAddStructuralTextOutput(
-    node,
-    frame,
-    positionNode = node,
-    emitValue,
-    normalizeTextArgs = false,
-    afterValueReady = null
-  ) {
-    if (!this.compiler.asyncMode) {
-      this.compiler.emit(`${this.currentBuffer} += `);
-      emitValue(frame, null);
-      this.compiler.emit.line(';');
-      return frame;
-    }
-
-    const parentBufferExpr = this.currentBuffer;
-    const targetChannelName = this.currentTextChannelName;
-    const asyncPromiseId = this.compiler._tmpid();
-    this.compiler.emit.line(`let ${asyncPromiseId} = astate.asyncBlock(async (astate, frame, currentBuffer, parentBuffer) => {`);
-    const valueId = this.compiler._tmpid();
-    this.compiler.emit.asyncClosureDepth++;
-
-    const innerFrame = frame.push(false, false);
-    const prevBuffer = this.currentBuffer;
-    const prevTextChannelVar = this.currentTextChannelVar;
-    this.currentBuffer = 'parentBuffer';
-    this.currentTextChannelVar = null;
-    this.compiler.emit(`let ${valueId} = `);
-
-    emitValue(innerFrame, valueId);
-
-    this.compiler.emit.line(';');
-    if (typeof afterValueReady === 'function') {
-      afterValueReady(innerFrame, valueId);
-    }
-
-    const valueExpr = this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs);
-    this.compiler.emit.line(`currentBuffer.add(${valueExpr}, "${targetChannelName}");`);
-    this.compiler.emit.line('currentBuffer.markFinishedAndPatchLinks();');
-    this.currentBuffer = prevBuffer;
-    this.currentTextChannelVar = prevTextChannelVar;
-
-    this.compiler.emit.asyncClosureDepth--;
-    this.compiler.emit.line('}');
-    const asyncMetaArg = this.compiler.emit.getAsyncBlockArgs(node, innerFrame);
-    this.compiler.emit.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferExpr}, true, cb);`);
-    this.emitOwnWaitedConcurrencyResolve(frame, asyncPromiseId, positionNode);
-    return innerFrame.pop();
-  }
-
   /**
    * Compile a node inside an async buffer boundary.
    * Uses local save/restore of current buffer aliases instead of begin/end caller pairing.

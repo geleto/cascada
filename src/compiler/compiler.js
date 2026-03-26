@@ -235,7 +235,8 @@ class Compiler extends CompilerBase {
 
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      frame = this.buffer.asyncAddStructuralTextOutput(
+      frame = this.boundaries._compileStructuralTextOutputBoundary(
+        this.buffer,
         node,
         frame,
         positionNode,
@@ -1295,7 +1296,8 @@ class Compiler extends CompilerBase {
           // evaluating, so this is not just "wait for a text value then emit text".
           // Keep a dedicated child buffer here; pure value-only output stays on the
           // synchronous TextCommand path below.
-          frame = this.buffer.asyncAddStructuralTextOutput(
+          frame = this.boundaries._compileStructuralTextOutputBoundary(
+            this.buffer,
             node,
             frame,
             child,

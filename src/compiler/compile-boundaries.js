@@ -151,6 +151,60 @@ class CompileBoundaries {
     return frame;
   }
 
+  _compileStructuralTextOutputBoundary(
+    bufferCompiler,
+    node,
+    frame,
+    positionNode = node,
+    emitValue,
+    normalizeTextArgs = false,
+    afterValueReady = null
+  ) {
+    if (!this.compiler.asyncMode) {
+      this.compiler.emit(`${bufferCompiler.currentBuffer} += `);
+      emitValue(frame, null);
+      this.compiler.emit.line(';');
+      return frame;
+    }
+
+    const parentBufferExpr = bufferCompiler.currentBuffer;
+    const targetChannelName = bufferCompiler.currentTextChannelName;
+    const valueId = this.compiler._tmpid();
+    const boundaryPromiseId = this.compiler._tmpid();
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+
+    this.compiler.emit.line(
+      `const ${boundaryPromiseId} = runtime.runControlFlowBlock(astate, ${parentBufferExpr}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, currentBuffer, parentBuffer) => {`
+    );
+    this.compiler.emit.asyncClosureDepth++;
+
+    const innerFrame = frame.push(false, false);
+    const prevBuffer = bufferCompiler.currentBuffer;
+    const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
+    bufferCompiler.currentBuffer = 'parentBuffer';
+    bufferCompiler.currentTextChannelVar = null;
+
+    this.compiler.emit(`let ${valueId} = `);
+    emitValue(innerFrame, valueId);
+    this.compiler.emit.line(';');
+
+    if (typeof afterValueReady === 'function') {
+      afterValueReady(innerFrame, valueId);
+    }
+
+    const valueExpr = bufferCompiler._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs);
+    this.compiler.emit.line(`currentBuffer.add(${valueExpr}, "${targetChannelName}");`);
+
+    bufferCompiler.currentBuffer = prevBuffer;
+    bufferCompiler.currentTextChannelVar = prevTextChannelVar;
+
+    this.compiler.emit.asyncClosureDepth--;
+    this.compiler.emit.line('});');
+
+    bufferCompiler.emitOwnWaitedConcurrencyResolve(frame, boundaryPromiseId, positionNode);
+    return innerFrame.pop();
+  }
+
   _compileCaptureBoundary(bufferCompiler, node, frame, innerBodyFunction, positionNode = node, parentBufferExpr = null) {
     const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
