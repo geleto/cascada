@@ -654,10 +654,10 @@ Migrate from simplest to most complex to catch regressions early:
      - set-blocks were not a separate boundary type here; they were double-wrapping an existing capture boundary
      - capture needed its own expression-valued linked child-buffer helper rather than a direct reuse of the isolated render-boundary helper
 
-26. [PENDING] **Migrate root inheritance/composition handoff onto the structural composition model**.
-   - `compileRoot` still uses `waitAllClosures()` for final handoff.
-   - This step owns the remaining root/block/inheritance structural-handoff cleanup after the old async-block output/expression helpers above are gone or isolated.
-   - Based on the step 15 experiment, root/block handoff should only move to `finalSnapshot()` where the boundary cleanly owns the composed subtree; inherited block/super handoff likely still needs an explicit stronger completion boundary first.
+26. ✅ **Migrate root inheritance/composition handoff onto the structural composition model**.
+   - Async block entry functions now prelink their parent-visible lanes at buffer creation time, instead of inserting a later `linkWithParentCompositionBuffer(...)` line into the block body.
+   - This removes the last transitional block/root inheritance attachment path and makes block composition match the same early-link structural model used by the other migrated boundaries.
+   - `compileRoot` still keeps its `waitAllClosures()` final handoff for now, but that remaining closure-counting cleanup is tracked separately in step 27.
 
 27. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
    - `compileMacro` is now blocked on the remaining completion-boundary work, not on the direct caller-output late-start path itself.

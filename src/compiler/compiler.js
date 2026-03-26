@@ -1503,28 +1503,16 @@ class Compiler extends CompilerBase {
       blockNames.push(name);
 
       let tmpFrame = frame.new();//new Frame();
-      this.emit.beginEntryFunction(block, `b_${name}`, tmpFrame);
+      const blockLinkedChannels = this.asyncMode
+        ? Array.from(block.body._analysis.usedChannels || []).filter((hname) => hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL)
+        : null;
+      this.emit.beginEntryFunction(block, `b_${name}`, tmpFrame, blockLinkedChannels);
 
       if (this.asyncMode) {
         this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
       }
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
-      // Prelink must be emitted before block body compilation so snapshot commands
-      // produced by block symbol reads are reachable on the proper channel lanes.
-      const blockPrelinkPos = this.codebuf.length;
-      this.emit.line('');
       this.compile(block.body, tmpFrame);
-      if (this.asyncMode) {
-        const usedChannels = Array.from(block.body._analysis.usedChannels || []);
-        const prelinkChannels = usedChannels.filter((hname) => hname !== this.buffer.currentTextChannelName);
-        this.emitLinkWithParentCompositionBuffer(
-          prelinkChannels,
-          'parentBuffer',
-          this.buffer.currentBuffer,
-          'parentBuffer._channels',
-          blockPrelinkPos
-        );
-      }
       if (this.asyncMode) {
         // Block functions in async mode return final text snapshots directly.
         this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
