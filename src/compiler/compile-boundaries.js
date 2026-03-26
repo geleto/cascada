@@ -150,6 +150,43 @@ class CompileBoundaries {
     this.compiler.emit.line(`${bufferCompiler.currentBuffer} += ${returnId};`);
     return frame;
   }
+
+  _compileCaptureBoundary(bufferCompiler, node, frame, innerBodyFunction, positionNode = node, parentBufferExpr = null) {
+    const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+    const outerParentBuffer = parentBufferExpr || bufferCompiler.currentBuffer;
+
+    this.compiler.emit(
+      `runtime.runControlFlowBlock(astate, ${outerParentBuffer}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, currentBuffer) => {`
+    );
+    this.compiler.emit.asyncClosureDepth++;
+
+    const innerFrame = frame.push(false, true);
+    const prevBuffer = bufferCompiler.currentBuffer;
+    const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
+    const prevTextChannelName = bufferCompiler.currentTextChannelName;
+
+    bufferCompiler.currentBuffer = 'currentBuffer';
+    bufferCompiler.currentTextChannelVar = 'output_textChannelVar';
+    bufferCompiler.currentTextChannelName = captureTextOutputName;
+
+    // Capture owns a separate text tree. The child buffer exists for that
+    // boundary, not because capture text values need pre-resolution.
+    this.compiler.emit.line('let output = currentBuffer;');
+    this.compiler.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
+
+    innerBodyFunction.call(this.compiler, innerFrame);
+    this.compiler.emit.line(`return currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
+
+    bufferCompiler.currentBuffer = prevBuffer;
+    bufferCompiler.currentTextChannelVar = prevTextChannelVar;
+    bufferCompiler.currentTextChannelName = prevTextChannelName;
+
+    this.compiler.emit.asyncClosureDepth--;
+    this.compiler.emit('})');
+
+    return { frame: innerFrame.pop() };
+  }
 }
 
 module.exports = CompileBoundaries;

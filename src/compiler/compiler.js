@@ -1223,40 +1223,26 @@ class Compiler extends CompilerBase {
       this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
     }
 
-    // we need to temporarily override the current buffer id as 'output'
-    // so the set block writes to the capture channel instead of the buffer
-    const buffer = this.buffer.currentBuffer;
-    const textChannelVar = this.buffer.currentTextChannelVar;
-    const textChannelName = this.buffer.currentTextChannelName;
-    const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
-    this.buffer.currentBuffer = 'output';
-    this.buffer.currentTextChannelVar = 'output_textChannelVar';
-    this.buffer.currentTextChannelName = captureTextOutputName;
     if (node.isAsync) {
-      const res = this._tmpid();
-      // Capture-only: pass explicit parent buffer override because capture
-      // temporarily rebinds currentBuffer to async callback scope for body writes.
-      // Remove with capture removal.
-      const prevCaptureParentBuffer = buffer;
-      this.buffer.currentBuffer = 'currentBuffer';
-      this.emit.asyncBlockValue(node, frame, (n, f) => {
-        //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
-        this.emit.line('let output = currentBuffer;');
-        //this.emit.line('if (!output) { throw new Error("Capture block requires async block output buffer"); }');
-        // Capture bodies should not be treated as root-scope returns.
-        f._seesRootScope = false;
-        // Capture returns run inside an async block; wait for sibling closures.
-        f._returnWaitCount = 1;
-
-        this.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
-        this.compile(n.body, f);//write to output
-        //this.emit.line('await astate.waitAllClosures(1)');
-        this.emit.line(`let ${res} = await currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
-        //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
-      }, res, node.body, true, true, prevCaptureParentBuffer);
-      this.buffer.currentBuffer = prevCaptureParentBuffer;
-    }
-    else {
+      this.boundaries._compileCaptureBoundary(
+        this.buffer,
+        node,
+        frame,
+        function (f) {
+          this.compile(node.body, f);
+        },
+        node.body,
+        this.buffer.currentBuffer
+      );
+    } else {
+      // Sync capture still uses the legacy local output variable path.
+      const buffer = this.buffer.currentBuffer;
+      const textChannelVar = this.buffer.currentTextChannelVar;
+      const textChannelName = this.buffer.currentTextChannelName;
+      const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
+      this.buffer.currentBuffer = 'output';
+      this.buffer.currentTextChannelVar = 'output_textChannelVar';
+      this.buffer.currentTextChannelName = captureTextOutputName;
       this.emit.line('(function() {');
       this.emit.line('let output = "";');
       this.emit.withScopedSyntax(() => {
@@ -1264,12 +1250,10 @@ class Compiler extends CompilerBase {
       });
       this.emit.line('return output;');
       this.emit.line('})()');
+      this.buffer.currentBuffer = buffer;
+      this.buffer.currentTextChannelVar = textChannelVar;
+      this.buffer.currentTextChannelName = textChannelName;
     }
-
-    // and of course, revert back to the old buffer id
-    this.buffer.currentBuffer = buffer;
-    this.buffer.currentTextChannelVar = textChannelVar;
-    this.buffer.currentTextChannelName = textChannelName;
   }
 
   // @todo - get rid of the asyncAddToBufferBegin after we have switch var to the new value implementation
