@@ -44,6 +44,7 @@ class CommandBuffer {
     // Create arrays namespace (channels created lazily on first write/snapshot).
     this.arrays = Object.create(null);
     // Shared registry of Channel objects for this buffer hierarchy.
+    // @todo - only usedChannels
     this._channels = parent ? parent._channels : new Map();
     this._finishedPromise = null;
     this._finishedResolver = null;

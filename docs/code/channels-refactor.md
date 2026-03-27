@@ -659,7 +659,7 @@ Migrate from simplest to most complex to catch regressions early:
 26. ✅ **Migrate root inheritance/composition handoff onto the structural composition model**.
    - Async block entry functions now prelink their parent-visible lanes at buffer creation time, instead of inserting a later `linkWithParentCompositionBuffer(...)` line into the block body.
    - This removes the last transitional block/root inheritance attachment path and makes block composition match the same early-link structural model used by the other migrated boundaries.
-   - `compileRoot` still keeps its `waitAllClosures()` final handoff for now, but that remaining closure-counting cleanup is tracked separately in step 27.
+   - `compileRoot` still keeps its `waitAllClosures()` final handoff for now, but that remaining closure-counting cleanup is tracked separately in the later audit/removal steps.
 
 27. ✅ **Replace the last legacy `astate.asyncBlock(... createOutputBuffer ...)` path with an explicit structural text-output boundary helper**.
    - The remaining nonconforming buffer-creation path was `asyncAddStructuralTextOutput(...)` in `compile-buffer.js`.
@@ -670,13 +670,61 @@ Migrate from simplest to most complex to catch regressions early:
      - the compiler now chooses that boundary explicitly
      - the helper owns buffer creation / finishing directly
 
-28. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
-   - `compileMacro` is now blocked on the remaining completion-boundary work, not on the direct caller-output late-start path itself.
+28. ✅ **Audit remaining non-expression async-block / closure-counting paths**.
+   - This step is diagnostic and should happen before removing the remaining `waitAllClosures()` fallbacks.
+   - Identify every remaining non-expression compiler/runtime path that still relies on:
+     - `astate.asyncBlock(...)`
+     - `astate.waitAllClosures(...)`
+     - or deferred command emission that may outlive the owning boundary
+   - Exclude generic expression-compilation wrappers for now; those are tracked separately and are not the current blocker.
+   - Current suspects:
+     - macro-body deferred structural boundaries
+     - root finalization
+     - any remaining non-expression helper that can still add commands after `markFinishedAndPatchLinks()`
+
+   Completed audit result:
+   - Remaining non-expression closure-counting waits are now concentrated in:
+     - `compile-macro.js` async macro finalization (`astate.waitAllClosures()`)
+     - `compiler.js` root finalization handoff (`astate.waitAllClosures()`)
+   - Remaining non-expression direct compiler-emitted async block:
+     - `compileGuard(...)` recovery path still uses `emit.asyncBlock(...)`
+   - Generic expression wrappers still exist in `compile-emit.js` / `compiler-base.js` (`asyncBlockValue(...)` and related callers), but those are explicitly out of scope for this step and are not the current blocker for macro/root cleanup.
+   - The older non-expression structural cases have already been migrated:
+     - control flow → `compileControlFlowBoundary(...)` / `runControlFlowBoundary(...)`
+     - render/content boundaries → `compileRenderBoundary(...)` / `runRenderBoundary(...)`
+     - structural text output → `compileTextBoundary(...)`
+     - capture/set-block boundary → `compileCaptureBoundary(...)`
+
+29. ✅ **Audit macro-body deferred structural call sites before removing macro `waitAllClosures()`**.
+   - The failed `_compileMacro` experiment shows the remaining blocker is not plain async value flow.
+   - The goal is to trace which macro-body paths can still start structural work late enough that caller invocation buffers or other child buffers are attached after macro finalization would begin.
+   - Focus on:
+     - `compileTextBoundary(...)` call sites inside macro bodies
+     - `compileCaptureBoundary(...)` / set-block capture paths inside macro bodies
+     - any remaining boundary start that can still schedule caller work after the macro return path starts
+   - Audit result:
+     - The relevant macro-body deferred boundary starts are:
+       - `compiler.js:compileOutput(...)` mutating-expression output path, which lowers through `compileTextBoundary(...)`
+       - `compiler.js:compileCapture(...)` / set-block capture path, which lowers through `compileCaptureBoundary(...)`
+     - `compileOutput(...)` is the primary remaining caller-sensitive site:
+       - expressions such as `caller()` still evaluate inside a deferred structural text boundary
+       - caller invocation then starts from within that boundary, which can happen late enough that macro finalization races it if `waitAllClosures()` is removed
+     - `compileCapture(...)` is still relevant because capture/set-block bodies can contain the same macro/caller composition patterns inside a capture-owned boundary
+     - The other `compileTextBoundary(...)` call sites are not the current macro blocker:
+       - old callback-style extension output is not part of the failing caller path
+       - inheritance/block invocation uses `compileTextBoundary(...)` too, but that is not the macro-body caller race reproduced by the failed step-28 experiment
+     - Conclusion:
+       - the remaining macro blocker is deferred structural boundary start timing inside macro bodies, not plain async value resolution
+       - step 30 should target those boundary-start semantics before trying to remove `_compileMacro`'s `waitAllClosures()` again
+
+30. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+   - `compileMacro` should only be tackled after steps 28 and 29 are complete.
    - Latest experiment result:
      - direct deferred `caller()` output is fixed
-     - but deferred control-flow sites can still start caller invocations after macro finalization would begin if `waitAllClosures()` is removed
+     - but deferred structural/control-flow boundary starts can still trigger caller invocation after macro finalization would begin if `waitAllClosures()` is removed
+   - Root finalization is still using the older closure-counting handoff and should be cleaned up after the macro-side blocker is resolved.
 
-29. [PENDING] **`compileGuard` major rework**.
+31. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
 
 The `compileFor` migration also exposed an important diagnostic rule:
