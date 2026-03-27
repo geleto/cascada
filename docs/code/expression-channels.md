@@ -68,7 +68,15 @@ Both paths emit any buffer side-effects synchronously — `peekError` behaves li
 
 #### Dynamic `FunCall` — the deferred `callWrapAsync` case
 
-For calls where the function is resolved at runtime (`resolveAll([func, ...args]).then(r => callWrapAsync(r[0], ..., currentBuffer))`), `callWrapAsync` is invoked inside the `.then` callback with `currentBuffer` passed in. For regular (non-macro) functions this just calls the function — no buffer commands. For dynamically-dispatched macro calls that happen to reach `invokeMacro`, the macro's child buffer creation happens asynchronously, after sibling operands' commands are already in the parent buffer. This is a separate concern from the control-flow ordering issue but follows from the same root cause.
+For calls where the function is resolved at runtime (`resolveAll([func, ...args]).then(r => callWrapAsync(r[0], ..., currentBuffer))`), `callWrapAsync` is invoked inside the `.then` callback with `currentBuffer` passed in. For regular (non-macro) functions this just calls the function — no buffer commands. For dynamically-dispatched macro calls that happen to reach `invokeMacro`, the macro's child buffer creation happens asynchronously, after sibling operands' commands are already in the parent buffer.
+
+This is not just a side note. It is the same structural problem class as the legacy `asyncBlockValue(...)` wrapper:
+
+- the current boundary has already been established
+- but the actual command-emitting macro/caller dispatch is deferred into a `.then(...)`
+- so buffer creation and command registration happen too late relative to the owning boundary's finish lifecycle
+
+This is exactly the shape that still shows up in nested `caller()` / call-block failures after the `asyncBlockValue(...)` layer is removed.
 
 ---
 
@@ -247,11 +255,12 @@ The pattern is analogous to `runControlFlowBoundary` for statements:
 
 The child buffer approach also resolves the poison propagation case: if the condition itself is poison or rejects, the child buffer receives `addPoison(...)` for all affected channels instead of emitting branch commands — exactly as `runControlFlowBoundary` does for `if`/`for`/`switch`.
 
-Before this control-flow rewrite, one prerequisite cleanup is needed:
+Before this control-flow rewrite, two prerequisite cleanups are needed:
 
 - remove legacy `wrapInAsyncBlock` / `asyncBlockValue(...)` wrapping from command-emitting non-control-flow expressions
+- remove deferred macro/caller dispatch through `.then(... callWrapAsync(...))` for command-emitting non-control-flow expression paths
 
-Those expressions are only safe under the "synchronous command emission during JS argument evaluation" argument if they actually emit in the current boundary synchronously. The legacy wrapper breaks that assumption.
+Those expressions are only safe under the "synchronous command emission during JS argument evaluation" argument if they actually emit in the current boundary synchronously. The legacy wrapper and deferred `.then(... callWrapAsync(...))` dispatch both break that assumption.
 
 ### Scope of the Fix
 
@@ -278,36 +287,44 @@ This is the same `node._analysis.usedChannels` (minus locally-declared channels)
    - Stop relying on `wrapInAsyncBlock` / `emit.asyncBlockValue(...)` for cases that are already safe under synchronous JS argument evaluation.
    - In particular, make sure command-emitting expressions such as `caller()`, sequence-path operations, and sequence-channel operations are reached synchronously in the current boundary.
 
-2. Delete `_assignAsyncWrappersAndReleases` in `compile-sequential.js`.
+2. Remove deferred macro/caller dispatch from non-control-flow expression paths.
+   - Do not route command-emitting macro/caller dispatch through `resolve...().then(... callWrapAsync(...))`.
+   - If the callee path can resolve to a macro/caller boundary, the structural dispatch must happen synchronously in the current boundary with raw promise-valued arguments, not in a later `.then(...)`.
+   - Immediate target: the dynamic `compileFunCall(...)` lowering in `compiler-base.js`.
+   - Treat other expression `.then(...)` sites such as arithmetic/unary operators, `is` tests, and aggregate resolution as value-only for now. They may still need cleanup later, but they are not the current boundary-ordering blocker unless they start dispatching command-emitting operations.
+
+3. Delete `_assignAsyncWrappersAndReleases` in `compile-sequential.js`.
    - The current wrapper-assignment pass should no longer force async expression wrapping for `LookupVal`, `FunCall`, or similar command-emitting forms.
    - The control-flow expression rewrite should replace this mechanism rather than coexist with it.
 
-3. Audit `_compileExpression(..., forceWrap)` call sites.
+4. Audit `_compileExpression(..., forceWrap)` call sites.
    - Remove forced expression wrapping where the enclosing statement/boundary already provides the required structure.
    - In particular, ensure boundary helpers such as structural text output / capture do not launch nested command-emitting expression work through `asyncBlockValue(...)` without a child buffer.
+   - Prioritize the `compileTextBoundary(...)` / `compileCaptureBoundary(...)` call chains, since those are the currently reproduced macro/caller boundary failures.
 
-4. Rewrite `compileInlineIf`.
+5. Rewrite `compileInlineIf`.
    - Replace the current `.then(...)` branch evaluation model with a child-buffer structural boundary when either branch may emit commands.
    - Keep the simpler value-only path for pure non-command-emitting branches.
 
-5. Rewrite `_compileBinOpShortCircuit` (`compileOr` / `compileAnd`).
+6. Rewrite `_compileBinOpShortCircuit` (`compileOr` / `compileAnd`).
    - Use the same child-buffer boundary approach for a command-emitting right operand.
    - Keep the existing simple value-only path when the right operand cannot emit commands.
 
-6. Preserve and reuse existing analysis.
+7. Preserve and reuse existing analysis.
    - Use `node._analysis.usedChannels` (filtered as usual) to determine which parent channels the child expression boundary must be linked into.
    - Do not introduce expression-specific runtime channel/linking rules if the existing analysis already provides the required structural information.
 
-7. Remove obsolete legacy helpers once the new paths are in place.
+8. Remove obsolete legacy helpers once the new paths are in place.
    - Remove remaining `wrapInAsyncBlock` checks and dead `asyncBlockValue(...)` call sites that were only serving the old expression-ordering workaround.
    - Keep any still-needed value-only async helper only if it does not defer command emission past the owning boundary.
 
-8. Verify with both ordering and boundary-timing regressions.
+9. Verify with both ordering and boundary-timing regressions.
    - Control-flow expression ordering:
      - ternary with `!` operations
      - `or` / `and` with command-emitting right side
      - sequence-channel operations inside those expressions
    - Boundary timing:
      - `caller()` inside expression output paths
+     - nested caller/call-block dispatch reached through `resolve...().then(callWrapAsync(...))`
      - macro/caller composition cases that previously relied on `waitAllClosures()`
      - any case where a deferred expression could add commands after an enclosing buffer called `markFinishedAndPatchLinks()`

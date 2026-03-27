@@ -709,6 +709,7 @@ Migrate from simplest to most complex to catch regressions early:
      - `compileOutput(...)` is the primary remaining caller-sensitive site:
        - expressions such as `caller()` still evaluate inside a deferred structural text boundary
        - caller invocation then starts from within that boundary, which can happen late enough that macro finalization races it if `waitAllClosures()` is removed
+       - after the `asyncBlockValue(...)` layer is removed, the next remaining late-start path is deferred macro/caller dispatch through `resolve...().then(callWrapAsync(...))`
      - `compileCapture(...)` is still relevant because capture/set-block bodies can contain the same macro/caller composition patterns inside a capture-owned boundary
      - The other `compileTextBoundary(...)` call sites are not the current macro blocker:
        - old callback-style extension output is not part of the failing caller path
@@ -722,6 +723,7 @@ Migrate from simplest to most complex to catch regressions early:
    - Latest experiment result:
      - direct deferred `caller()` output is fixed
      - but deferred structural/control-flow boundary starts can still trigger caller invocation after macro finalization would begin if `waitAllClosures()` is removed
+     - and the remaining non-control-flow expression blocker is deferred macro/caller dispatch through `.then(... callWrapAsync(...))`
    - Root finalization is still using the older closure-counting handoff and should be cleaned up after the macro-side blocker is resolved.
 
 31. [PENDING] **`compileGuard` major rework**.
