@@ -269,3 +269,45 @@ The child buffer must be linked into every channel that the branch bodies can wr
 - The sequence channels (`data`, `text`, named sequence channels) if sequence calls appear in either branch
 
 This is the same `node._analysis.usedChannels` (minus locally-declared channels) already computed by the analysis pass — the same set used by `runControlFlowBoundary` for statement-level control flow.
+
+---
+
+## Implementation Plan
+
+1. Remove legacy async expression wrapping from command-emitting non-control-flow expressions.
+   - Stop relying on `wrapInAsyncBlock` / `emit.asyncBlockValue(...)` for cases that are already safe under synchronous JS argument evaluation.
+   - In particular, make sure command-emitting expressions such as `caller()`, sequence-path operations, and sequence-channel operations are reached synchronously in the current boundary.
+
+2. Delete `_assignAsyncWrappersAndReleases` in `compile-sequential.js`.
+   - The current wrapper-assignment pass should no longer force async expression wrapping for `LookupVal`, `FunCall`, or similar command-emitting forms.
+   - The control-flow expression rewrite should replace this mechanism rather than coexist with it.
+
+3. Audit `_compileExpression(..., forceWrap)` call sites.
+   - Remove forced expression wrapping where the enclosing statement/boundary already provides the required structure.
+   - In particular, ensure boundary helpers such as structural text output / capture do not launch nested command-emitting expression work through `asyncBlockValue(...)` without a child buffer.
+
+4. Rewrite `compileInlineIf`.
+   - Replace the current `.then(...)` branch evaluation model with a child-buffer structural boundary when either branch may emit commands.
+   - Keep the simpler value-only path for pure non-command-emitting branches.
+
+5. Rewrite `_compileBinOpShortCircuit` (`compileOr` / `compileAnd`).
+   - Use the same child-buffer boundary approach for a command-emitting right operand.
+   - Keep the existing simple value-only path when the right operand cannot emit commands.
+
+6. Preserve and reuse existing analysis.
+   - Use `node._analysis.usedChannels` (filtered as usual) to determine which parent channels the child expression boundary must be linked into.
+   - Do not introduce expression-specific runtime channel/linking rules if the existing analysis already provides the required structural information.
+
+7. Remove obsolete legacy helpers once the new paths are in place.
+   - Remove remaining `wrapInAsyncBlock` checks and dead `asyncBlockValue(...)` call sites that were only serving the old expression-ordering workaround.
+   - Keep any still-needed value-only async helper only if it does not defer command emission past the owning boundary.
+
+8. Verify with both ordering and boundary-timing regressions.
+   - Control-flow expression ordering:
+     - ternary with `!` operations
+     - `or` / `and` with command-emitting right side
+     - sequence-channel operations inside those expressions
+   - Boundary timing:
+     - `caller()` inside expression output paths
+     - macro/caller composition cases that previously relied on `waitAllClosures()`
+     - any case where a deferred expression could add commands after an enclosing buffer called `markFinishedAndPatchLinks()`
