@@ -519,6 +519,29 @@ class CompilerBase extends Obj {
 
   compileInlineIf(node, frame) {
     if (node.isAsync) {
+      const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
+      if (hasCommandEffects) {
+        this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, frame, function(boundaryFrame) {
+          this.emit('const cond = await runtime.resolveSingle(');
+          this.compile(node.cond, boundaryFrame);
+          this.emit.line(');');
+          this.emit('if(cond) {');
+          this.emit('return ');
+          this.compile(node.body, boundaryFrame);
+          this.emit.line(';');
+          this.emit('} else {');
+          if (node.else_) {
+            this.emit('return ');
+            this.compile(node.else_, boundaryFrame);
+            this.emit.line(';');
+          } else {
+            this.emit.line('return "";');
+          }
+          this.emit('}');
+        });
+        return;
+      }
+
       this.emit('runtime.resolveSingle(');
       this.compile(node.cond, frame);
       this.emit(').then(async function(cond) {');
@@ -658,6 +681,23 @@ class CompilerBase extends Obj {
   _compileBinOpShortCircuit(node, frame, isOr) {
     // left || right -> if (left) return left; else return right;
     // left && right -> if (!left) return left; else return right;
+    const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
+    if (hasCommandEffects) {
+      this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, frame, function(boundaryFrame) {
+        this.emit('const left = await runtime.resolveSingle(');
+        this.compile(node.left, boundaryFrame);
+        this.emit.line(');');
+        const check = isOr ? 'left' : '!left';
+        this.emit(`if (${check}) {`);
+        this.emit.line('return left;');
+        this.emit('} else {');
+        this.emit('return ');
+        this.compile(node.right, boundaryFrame);
+        this.emit.line(';');
+        this.emit('}');
+      });
+      return;
+    }
 
     this.emit('runtime.resolveSingle(');
     this.compile(node.left, frame);

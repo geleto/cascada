@@ -415,7 +415,6 @@ class CompileBuffer {
       this.compiler.emit.line(`let ${nestedBufferId} = currentBuffer;`);
       const prevBuffer = this.currentBuffer;
       const prevTextChannelVar = this.currentTextChannelVar;
-      const prevTextChannelName = this.currentTextChannelName;
       this.currentBuffer = nestedBufferId;
       this.currentTextChannelVar = null;
 
@@ -430,7 +429,6 @@ class CompileBuffer {
       );
       this.currentBuffer = prevBuffer;
       this.currentTextChannelVar = prevTextChannelVar;
-      this.currentTextChannelName = prevTextChannelName;
 
       const result = callbackValue && typeof callbackValue === 'object' &&
         Object.prototype.hasOwnProperty.call(callbackValue, 'result')

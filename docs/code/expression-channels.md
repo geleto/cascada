@@ -279,6 +279,11 @@ The child buffer must be linked into every channel that the branch bodies can wr
 
 This is the same `node._analysis.usedChannels` (minus locally-declared channels) already computed by the analysis pass — the same set used by `runControlFlowBoundary` for statement-level control flow.
 
+Current status:
+- async `compileInlineIf` now uses a control-flow child buffer when the expression mutates channels
+- async `_compileBinOpShortCircuit` (`and` / `or`) now does the same
+- pure value-only async cases still stay on the lighter `.then(...)` path for now
+
 ---
 
 ## Implementation Plan
@@ -306,10 +311,12 @@ This is the same `node._analysis.usedChannels` (minus locally-declared channels)
 5. Rewrite `compileInlineIf`.
    - Replace the current `.then(...)` branch evaluation model with a child-buffer structural boundary when either branch may emit commands.
    - Keep the simpler value-only path for pure non-command-emitting branches.
+   - ✅ Command-emitting async ternary/inline-if paths now use a control-flow child buffer.
 
 6. Rewrite `_compileBinOpShortCircuit` (`compileOr` / `compileAnd`).
    - Use the same child-buffer boundary approach for a command-emitting right operand.
    - Keep the existing simple value-only path when the right operand cannot emit commands.
+   - ✅ Command-emitting async `and` / `or` paths now use a control-flow child buffer.
 
 7. Preserve and reuse existing analysis.
    - Use `node._analysis.usedChannels` (filtered as usual) to determine which parent channels the child expression boundary must be linked into.

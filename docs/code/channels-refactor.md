@@ -962,6 +962,8 @@ The template-side direct `caller()` output path now goes through a caller-specif
 - do direct structural dispatch in the current buffer for the boundary case
 - keep normal `callWrapAsync(...)` fallback for non-boundary callees
 
+On the expression side, command-emitting async `compileInlineIf` and async `_compileBinOpShortCircuit` (`and` / `or`) now also use control-flow child buffers. Pure value-only cases still use the lighter expression `.then(...)` lowering for now.
+
 **`compileGuard`:** Very complex — guard state snapshots, sequence repair, `CaptureGuardStateCommand`, `RestoreGuardStateCommand`. Migrate last after all simpler methods prove the pattern.
 
 **`compileRoot`:** Root orchestration with manual async chains and `waitAllClosures`. Migrate last.

@@ -10,6 +10,24 @@ class CompileBoundaries {
     this.compiler = compiler;
   }
 
+  compileExpressionControlFlowBoundary(bufferCompiler, node, frame, emitBody) {
+    const parentBufferArg = bufferCompiler.currentBuffer;
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+    const prevBuffer = bufferCompiler.currentBuffer;
+
+    // Reserve a structural child buffer synchronously before any async
+    // condition/operand resolution so later sibling operands stay ordered.
+    this.compiler.emit(`runtime.runControlFlowBoundary(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (astate, frame, currentBuffer) => {`);
+    this.compiler.emit.asyncClosureDepth++;
+    bufferCompiler.currentBuffer = 'currentBuffer';
+
+    emitBody.call(this.compiler, frame);
+
+    bufferCompiler.currentBuffer = prevBuffer;
+    this.compiler.emit.asyncClosureDepth--;
+    this.compiler.emit('})');
+  }
+
   compileControlFlowBoundary(bufferCompiler, node, frame, emitFunc = null) {
     if (node.isAsync) {
       const parentBufferArg = bufferCompiler.currentBuffer;
@@ -27,8 +45,6 @@ class CompileBoundaries {
       trackCompileTimeFrameDepth(newFrame, frame);
 
       const prevBuffer = bufferCompiler.currentBuffer;
-      const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
-      const prevTextChannelName = bufferCompiler.currentTextChannelName;
       const prevWaitedChannelName = bufferCompiler.currentWaitedChannelName;
       const prevWaitedOwnerBuffer = bufferCompiler.currentWaitedOwnerBuffer;
       bufferCompiler.currentBuffer = 'currentBuffer';
@@ -43,8 +59,6 @@ class CompileBoundaries {
       const waitedChannelArg = controlFlowWaitedChannelName ? `"${controlFlowWaitedChannelName}"` : 'null';
       this.compiler.emit.line(`}, ${waitedChannelArg});`);
       bufferCompiler.currentBuffer = prevBuffer;
-      bufferCompiler.currentTextChannelVar = prevTextChannelVar;
-      bufferCompiler.currentTextChannelName = prevTextChannelName;
       bufferCompiler.currentWaitedChannelName = prevWaitedChannelName;
       bufferCompiler.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
       if (controlFlowPromiseId) {
