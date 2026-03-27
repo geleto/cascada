@@ -234,6 +234,52 @@
         expect(isPoison(result)).to.be(true);
         expect(result.errors[0]).to.equal(err);
       });
+
+      it('should keep direct macro arguments raw', () => {
+        const argPromise = Promise.resolve('macro-arg');
+        const macro = {
+          isMacro: true,
+          _invoke(executionContext, args) {
+            expect(executionContext).to.equal(mockContext);
+            expect(args).to.have.length(1);
+            expect(args[0]).to.equal(argPromise);
+            return 'macro-result';
+          }
+        };
+
+        const result = runtime.callWrapAsync(
+          macro,
+          'macro',
+          mockContext,
+          [argPromise],
+          mockErrorContext
+        );
+
+        expect(result).to.equal('macro-result');
+      });
+
+      it('should keep raw macro arguments when async callee resolves to a macro', async () => {
+        const argPromise = Promise.resolve('macro-arg');
+        const macro = {
+          isMacro: true,
+          _invoke(executionContext, args) {
+            expect(executionContext).to.equal(mockContext);
+            expect(args).to.have.length(1);
+            expect(args[0]).to.equal(argPromise);
+            return 'macro-result';
+          }
+        };
+
+        const result = await runtime.callWrapAsync(
+          Promise.resolve(macro),
+          'macro',
+          mockContext,
+          [argPromise],
+          mockErrorContext
+        );
+
+        expect(result).to.equal('macro-result');
+      });
     });
 
     describe('callWrapAsync - Never Miss Any Error Principle', () => {
@@ -968,7 +1014,6 @@
   });
 
 })();
-
 
 
 

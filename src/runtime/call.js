@@ -5,9 +5,9 @@ const {
   isPoison,
   isPoisonError,
   handleError,
-  RuntimePromise,
-  collectErrors
+  RuntimePromise
 } = require('./errors');
+const { RESOLVE_MARKER, resolveAll } = require('./resolve');
 
 /**
  * Sync call wrapper for templates.
@@ -33,9 +33,7 @@ function callWrap(obj, name, context, args, currentBuffer = null) {
  * Async call wrapper using sync-first hybrid pattern.
  */
 function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = null) {
-  const argsIsPromise = args && typeof args.then === 'function' && !isPoison(args);
-
-  if (obj && obj.isMacro && !argsIsPromise) {
+  if (obj && obj.isMacro) {
     // Macros are promise/poison-transparent Cascada boundaries. They receive
     // raw argument values and any thrown/rejected error must propagate as a
     // real fatal error rather than being normalized into FunCall poison here.
@@ -44,9 +42,13 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
 
   // Check if we need async path: obj or any arg is a promise
   const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
-  const hasArgPromises = !argsIsPromise && Array.isArray(args) && args.some(arg => arg && typeof arg.then === 'function' && !isPoison(arg));
+  const hasAsyncArgs = Array.isArray(args) && args.some(arg =>
+    arg &&
+    !isPoison(arg) &&
+    (typeof arg.then === 'function' || arg[RESOLVE_MARKER])
+  );
 
-  if (objIsPromise || argsIsPromise || hasArgPromises) {
+  if (objIsPromise || hasAsyncArgs) {
     // Must use async path to await all promises before making decisions
     // _callWrapAsyncComplex is async and returns poison when errors occur
     // When awaited, poison values throw PoisonError due to thenable protocol (by design)
@@ -123,28 +125,6 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
     errors.push(...obj.errors);
   }
 
-  if (args && typeof args.then === 'function' && !isPoison(args)) {
-    try {
-      args = await args;
-      if (isPoison(args)) {
-        errors.push(...args.errors);
-      }
-    } catch (err) {
-      if (isPoisonError(err)) {
-        errors.push(...err.errors);
-      } else {
-        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        errors.push(contextualError);
-      }
-    }
-  } else if (isPoison(args)) {
-    errors.push(...args.errors);
-  }
-
-  if (!Array.isArray(args)) {
-    args = args == null ? [] : [args];
-  }
-
   if (obj && obj.isMacro) {
     // Macros are promise/poison-transparent Cascada boundaries. Keep promise-
     // valued args untouched and let any thrown/rejected error propagate as a
@@ -152,28 +132,23 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
     return obj._invoke(context, args, currentBuffer);
   }
 
-  // Await ALL args to collect all errors (never miss any error principle)
-  const argErrors = await collectErrors(args);
-  errors.push(...argErrors);
-
-  if (errors.length > 0) {
-    return createPoison(errors); // Errors already have position info from collectErrors
+  let resolvedArgs = args;
+  try {
+    resolvedArgs = await resolveAll(args);
+    if (isPoison(resolvedArgs)) {
+      errors.push(...resolvedArgs.errors);
+    }
+  } catch (err) {
+    if (isPoisonError(err)) {
+      errors.push(...err.errors);
+    } else {
+      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      errors.push(contextualError);
+    }
   }
 
-  // Resolve all arg promises
-  const resolvedArgs = [];
-  for (const arg of args) {
-    if (arg && typeof arg.then === 'function') {
-      try {
-        resolvedArgs.push(await arg);
-      } catch (err) {
-        // Should not happen as collectErrors already caught errors
-        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        return createPoison(isPoisonError(err) ? err.errors : [contextualError]);
-      }
-    } else {
-      resolvedArgs.push(arg);
-    }
+  if (errors.length > 0) {
+    return createPoison(errors);
   }
 
   // All resolved successfully - validate and call the function

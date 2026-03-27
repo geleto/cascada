@@ -14,10 +14,8 @@ class CompileMacro {
   isDirectCallerCall(node) {
     return !!(
       this.compiler.asyncMode &&
-      node &&
-      node.typename === 'FunCall' &&
-      node.name &&
-      node.name.typename === 'Symbol' &&
+      node?.typename === 'FunCall' &&
+      node.name?.typename === 'Symbol' &&
       node.name.value === 'caller' &&
       this.currentCallerBindingContext
     );

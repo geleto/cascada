@@ -295,9 +295,10 @@ Current status:
 2. Remove deferred macro/caller dispatch from non-control-flow expression paths.
    - Do not route command-emitting macro/caller dispatch through `resolve...().then(... callWrapAsync(...))`.
    - If the callee path can resolve to a macro/caller boundary, the structural dispatch must happen synchronously in the current boundary with raw promise-valued arguments, not in a later `.then(...)`.
+   - Macro arguments themselves must remain unresolved on that path. Only ordinary non-macro function-call consumption should resolve argument values.
    - Immediate target: the dynamic `compileFunCall(...)` lowering in `compiler-base.js`.
    - Keep the command-emitting call dispatch helper next to the owning boundary implementation. The current `caller()` fix uses a caller-specific helper in `compile-macro.js` to compile raw args once, emit direct caller-boundary dispatch in the current buffer, and keep a normal `callWrapAsync(...)` fallback when no caller block exists.
-   - The remaining known blocker here is script-mode direct `caller()` in call blocks: template `caller()` now uses the direct path, but script `return caller()` still compiles through deferred `resolveSingleArr(...).then(callWrapAsync(...))` and must be migrated to the same immediate-dispatch model.
+   - Direct `caller()` dispatch is now in place for both template and script call-block paths. The remaining work in this area is to keep other command-emitting dynamic call paths on the same immediate-dispatch model without regressing raw macro-argument semantics.
    - Treat other expression `.then(...)` sites such as arithmetic/unary operators, `is` tests, and aggregate resolution as value-only for now. They may still need cleanup later, but they are not the current boundary-ordering blocker unless they start dispatching command-emitting operations.
 
 3. Delete `_assignAsyncWrappersAndReleases` in `compile-sequential.js`.
@@ -322,6 +323,8 @@ Current status:
 7. Audit consumption sites to prefer resolve helpers over raw `await`.
    - When a value is being consumed as a Cascada value, use `resolveSingle(...)`, `resolveDuo(...)`, or `resolveAll(...)` rather than ad hoc `await`.
    - This preserves `RESOLVE_MARKER` behavior for lazy arrays/objects and keeps poison/value normalization centralized.
+   - Include container-level consumption cases such as promised or `RESOLVE_MARKER`-backed argument arrays/objects, not just plain scalar values.
+   - Keep macro invocation as the exception: macro arguments should stay raw, while ordinary function-call consumption can use the resolve helpers on argument values.
    - Reserve raw `await` for non-Cascada control values or helper-internal mechanics that are not consuming ordinary language values.
 
 7. Preserve and reuse existing analysis.

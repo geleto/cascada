@@ -1084,7 +1084,7 @@ class CompilerBase extends Obj {
       this.emit('runtime.callWrapAsync(');
       this.compile(node.name, frame);
       this.emit(`, "${funcName}", context, `);
-      this._compileAggregate(node.args, frame, '[', ']', true, false);
+      this._compileAggregate(node.args, frame, '[', ']', false, false);
       this.emit(`, ${errorContextJson}, ${this.buffer.currentBuffer})`);
     } else {
       if (isDirectMacroCall) {
