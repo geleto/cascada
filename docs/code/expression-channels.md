@@ -342,6 +342,6 @@ Current status:
      - sequence-channel operations inside those expressions
    - Boundary timing:
      - `caller()` inside expression output paths
-     - nested caller/call-block dispatch reached through `resolve...().then(callWrapAsync(...))`
+     - nested caller/call-block dispatch reached through imported-callable async boundaries
      - macro/caller composition cases that previously relied on `waitAllClosures()`
      - any case where a deferred expression could add commands after an enclosing buffer called `markFinishedAndPatchLinks()`

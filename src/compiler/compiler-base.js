@@ -43,6 +43,7 @@ class CompilerBase extends Obj {
     this.asyncMode = options.asyncMode || false;
     this.scriptMode = options.scriptMode || false;
     this.guardDepth = 0;
+    this.importedBindings = new Set();
 
     // These will be instantiated by the derived Compiler class
     // and are essential for expression compilation.
@@ -958,6 +959,9 @@ class CompilerBase extends Obj {
     const uses = [];
     const mutates = [];
     let specialChannelCall = null;
+    let importedCallable = null;
+    let directCallerCall = false;
+    let directMacroCall = null;
     const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
     if (sequenceLockLookup) {
       uses.push(sequenceLockLookup.key);
@@ -966,18 +970,50 @@ class CompilerBase extends Obj {
     }
 
     // caller() calls can emit command structure and must be dispatched in the
-    // current boundary instead of behind deferred .then(...) lowering.
-    if (!this.scriptMode && node.name) {
+    // current boundary instead of behind deferred .then(...) lowering in
+    // both template and script call-block bodies.
+    if (node.name) {
       const isCallerCall =
-        (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
-        this.sequential._extractStaticPathRoot(node.name) === 'caller';
+          (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
+          this.sequential._extractStaticPathRoot(node.name) === 'caller';
       if (isCallerCall) {
+        directCallerCall = true;
         const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
         if (textChannel) {
           uses.push(textChannel);
           mutates.push(textChannel);
         }
-        return { uses, mutates };
+        return { uses, mutates, directCallerCall };
+      }
+    }
+
+    if (this.asyncMode && node.name instanceof nodes.Symbol && analysisPass.findDeclaration) {
+      const macroDecl = analysisPass.findDeclaration(node._analysis, node.name.value);
+      if (macroDecl && macroDecl.isMacro) {
+        directMacroCall = {
+          binding: macroDecl.declarationOrigin ? macroDecl.declarationOrigin.compiledMacroFuncId : null
+        };
+      }
+    }
+
+    if (this.asyncMode && node?.name && analysisPass.findDeclaration) {
+      const importedRoot = this.sequential._extractStaticPathRoot(node.name);
+      const importedDecl = importedRoot ? analysisPass.findDeclaration(node._analysis, importedRoot) : null;
+      const isImportedCallable = !!(
+        (importedDecl && importedDecl.imported) ||
+        (importedRoot && this.importedBindings && this.importedBindings.has(importedRoot))
+      );
+      if (isImportedCallable) {
+        importedCallable = { rootName: importedRoot };
+        const visibleChannels = analysisPass.getIncludeVisibleVarChannels(node._analysis)
+          .map((entry) => entry.runtimeName);
+        const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
+        const allUses = new Set(visibleChannels);
+        if (textChannel) {
+          allUses.add(textChannel);
+        }
+        allUses.forEach((name) => uses.push(name));
+        importedCallable.linkedChannels = Array.from(allUses);
       }
     }
 
@@ -1019,7 +1055,7 @@ class CompilerBase extends Obj {
       specialChannelCall = callFacts;
     }
 
-    return { uses, mutates, specialChannelCall };
+    return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall };
   }
 
   compileFunCall(node, frame) {
@@ -1030,14 +1066,10 @@ class CompilerBase extends Obj {
     }
 
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
-    const directMacroDecl =
-      node.name instanceof nodes.Symbol
-        ? this.analysis.findDeclaration(node._analysis, node.name.value)
-        : null;
-    const directMacroBinding = directMacroDecl && directMacroDecl.isMacro && directMacroDecl.declarationOrigin
-      ? directMacroDecl.declarationOrigin.compiledMacroFuncId
-      : null;
-    const isDirectMacroCall = !!((directMacroDecl && directMacroDecl.isMacro) || directMacroBinding);
+    const directMacroCall = this.asyncMode ? node._analysis.directMacroCall : null;
+    const directMacroBinding = directMacroCall ? directMacroCall.binding : null;
+    const isDirectMacroCall = !!directMacroCall;
+    const importedCallableFacts = this.asyncMode ? node._analysis.importedCallable : null;
 
     if (this.asyncMode) {
       if (this._compileSpecialChannelFunCall(node, frame)) {
@@ -1085,27 +1117,22 @@ class CompilerBase extends Obj {
         this.emit(`, ${this.buffer.currentBuffer})`);
         return;
       }
-      // Dynamic async calls should dispatch in the current boundary with raw
-      // promise-valued callee/args, not from a later .then(...).
-      const errorContextJson = JSON.stringify(this._createErrorContext(node));
-      this.emit('runtime.callWrapAsync(');
-      this.compile(node.name, frame);
-      this.emit(`, "${funcName}", context, `);
-      this._compileAggregate(node.args, frame, '[', ']', false, false);
-      this.emit(`, ${errorContextJson}, ${this.buffer.currentBuffer})`);
-    } else {
-      if (isDirectMacroCall) {
-        this.emit('runtime.invokeMacro(');
-        if (directMacroBinding) {
-          this.emit(directMacroBinding);
-        } else {
-          this.compile(node.name, frame);
-        }
-        this.emit(', context, ');
-        this._compileAggregate(node.args, frame, '[', ']', false, false);
-        this.emit(`, ${this.buffer.currentBuffer})`);
+      if (importedCallableFacts) {
+        // Imported callables are structurally ambiguous: they may resolve to a
+        // macro boundary or an ordinary function. Give them a child buffer up
+        // front so the eventual dispatch happens inside a known current flow.
+        this.emit.asyncBlockValue(node, frame, (n, f) => {
+          const prevBuffer = this.buffer.currentBuffer;
+          this.buffer.currentBuffer = 'currentBuffer';
+          this._emitAsyncDynamicCall(n, f, 'currentBuffer');
+          this.buffer.currentBuffer = prevBuffer;
+        }, undefined, node, false, true);
         return;
       }
+      // Dynamic async calls should dispatch in the current boundary with raw
+      // promise-valued callee/args, not from a later .then(...).
+      this._emitAsyncDynamicCall(node, frame, this.buffer.currentBuffer);
+    } else {
       // In sync mode, compile as usual.
       this.emit('runtime.callWrap(');
       this.compile(node.name, frame);
@@ -1267,6 +1294,16 @@ class CompilerBase extends Obj {
 
   analyzeCaller(node) {
     return this.macro.analyzeCaller(node);
+  }
+
+  _emitAsyncDynamicCall(node, frame, currentBufferExpr) {
+    const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
+    const errorContextJson = JSON.stringify(this._createErrorContext(node));
+    this.emit('runtime.callWrapAsync(');
+    this.compile(node.name, frame);
+    this.emit(`, "${funcName}", context, `);
+    this._compileAggregate(node.args, frame, '[', ']', false, false);
+    this.emit(`, ${errorContextJson}, ${currentBufferExpr})`);
   }
 
   compileCaller(node, frame) {

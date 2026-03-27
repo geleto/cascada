@@ -14,9 +14,7 @@ class CompileMacro {
   isDirectCallerCall(node) {
     return !!(
       this.compiler.asyncMode &&
-      node?.typename === 'FunCall' &&
-      node.name?.typename === 'Symbol' &&
-      node.name.value === 'caller' &&
+      node._analysis.directCallerCall &&
       this.currentCallerBindingContext
     );
   }
@@ -242,15 +240,18 @@ class CompileMacro {
   _emitAsyncMacroReturn({ node, bufferId, errVar, allCallersBufferId, hasCallerSupport }) {
     const compiler = this.compiler;
     const errorCheck = `if (${errVar}) throw ${errVar};`;
-    const closuresReadyVar = compiler._tmpid();
+    const needsClosureWait = node.typename === 'Caller';
+    const closuresReadyVar = needsClosureWait ? compiler._tmpid() : null;
     const callerReadyVar = hasCallerSupport ? compiler._tmpid() : null;
     const callerSyncPrefix =
-      `await ${closuresReadyVar};` +
+      (needsClosureWait ? `await ${closuresReadyVar};` : '') +
       (hasCallerSupport ? `const ${callerReadyVar} = ${bufferId}.addSnapshot("${CALLER_SCHED_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` : '') +
       (hasCallerSupport ? `await ${callerReadyVar};` : '') +
       (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.markFinishedAndPatchLinks();}` : '');
 
-    compiler.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
+    if (needsClosureWait) {
+      compiler.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
+    }
 
     if (compiler.scriptMode) {
       const returnVar = compiler._tmpid();

@@ -39,8 +39,9 @@ Implemented and validated:
 
 Still transitional:
 - `AsyncState` and root-level `waitAllClosures()` uses still exist outside the migrated paths.
-- `_compileMacro` still relies on `astate.waitAllClosures()` to avoid finishing macro/caller buffers before nested composition linking has happened.
-- Direct `caller()` late-start dispatch is fixed in both template and script call-block paths, but `_compileMacro` still cannot drop `waitAllClosures()` until the remaining command-emitting deferred expression/call paths are structurally lowered.
+- `_compileMacro` no longer relies on `astate.waitAllClosures()` for regular `Macro` nodes.
+- `_compileMacro` still relies on `astate.waitAllClosures()` for `Caller` nodes, where nested caller-body sequencing/composition can still start too late.
+- Direct `caller()` late-start dispatch is fixed in both template and script call-block paths, and imported callable calls now lower through a statically-declared child boundary so later macro-vs-function dispatch still happens inside a known current flow.
 - Some consumption sites still use raw `await` where Cascada resolve helpers (`resolveSingle` / `resolveAll` / `resolveDuo`) should be preferred so `RESOLVE_MARKER` and poison semantics stay centralized.
 - That cleanup also applies to async argument containers themselves (for example a promised or marker-backed args array), not only to individual scalar values.
 - Macro arguments are the important exception: they should stay unresolved and promise-transparent, while ordinary non-macro call consumption can resolve argument values at the runtime call boundary.
@@ -722,13 +723,17 @@ Migrate from simplest to most complex to catch regressions early:
        - the remaining macro blocker is deferred structural boundary start timing inside macro bodies, not plain async value resolution
        - step 30 should target those boundary-start semantics before trying to remove `_compileMacro`'s `waitAllClosures()` again
 
-30. [PENDING] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
-   - `compileMacro` should only be tackled after steps 28 and 29 are complete.
-   - Latest experiment result:
+30. [IN PROGRESS] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+   - `compileMacro` was partially completed after steps 28 and 29:
+     - regular async `Macro` finalization no longer waits on `astate.waitAllClosures()`
      - direct deferred `caller()` output is fixed
-     - but deferred structural/control-flow boundary starts can still trigger caller invocation after macro finalization would begin if `waitAllClosures()` is removed
-     - and the remaining non-control-flow expression blocker is deferred macro/caller dispatch through `.then(... callWrapAsync(...))`
-   - Root finalization is still using the older closure-counting handoff and should be cleaned up after the macro-side blocker is resolved.
+     - imported callable calls now lower through an explicit async child boundary instead of relying on runtime buffer reservation
+   - Remaining work:
+     - `Caller` finalization still waits on `astate.waitAllClosures()`
+     - `compileRoot` still uses the older closure-counting handoff
+   - The next implementation slice should therefore:
+     - trace and structurally lower the remaining late-start paths inside `Caller` bodies
+     - then remove the final `compileRoot` closure wait
 
 31. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
@@ -736,7 +741,7 @@ Migrate from simplest to most complex to catch regressions early:
 The `compileFor` migration also exposed an important diagnostic rule:
 - if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required
 
-The `_compileMacro` experiment produced exactly that failure shape. In that case the late work is nested composition linking (`linkWithParentCompositionBuffer(...)`) from macro/caller text paths, so macro cleanup still needs a stronger structural completion signal before its local `waitAllClosures()` can go away.
+The original `_compileMacro` experiment produced exactly that failure shape. The remaining form of it is now narrower: late-start caller-body work inside `Caller` nodes still needs a stronger structural completion signal before the last local `waitAllClosures()` can go away.
 
 After each migration, run the full test suite before proceeding.
 

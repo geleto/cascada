@@ -207,7 +207,7 @@ class CompileBoundaries {
       targetBufferExpr = 'currentBuffer',
       normalizeTextArgs = true,
       waitedPositionNode = positionNode,
-      useParentBufferForEmit = false,
+      emitInCurrentBuffer = false,
       producerAssignsResult = false
     } = {}
   ) {
@@ -222,11 +222,10 @@ class CompileBoundaries {
     const emitBody = (innerFrame) => {
       const prevBuffer = bufferCompiler.currentBuffer;
       const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
+      const emitBufferExpr = emitInCurrentBuffer ? 'currentBuffer' : prevBuffer;
 
-      if (useParentBufferForEmit) {
-        bufferCompiler.currentBuffer = 'parentBuffer';
-        bufferCompiler.currentTextChannelVar = null;
-      }
+      bufferCompiler.currentBuffer = emitBufferExpr;
+      bufferCompiler.currentTextChannelVar = null;
 
       if (producerAssignsResult) {
         emitValue(innerFrame, valueId);
@@ -236,10 +235,8 @@ class CompileBoundaries {
         this.compiler.emit.line(';');
       }
 
-      if (useParentBufferForEmit) {
-        bufferCompiler.currentBuffer = prevBuffer;
-        bufferCompiler.currentTextChannelVar = prevTextChannelVar;
-      }
+      bufferCompiler.currentBuffer = prevBuffer;
+      bufferCompiler.currentTextChannelVar = prevTextChannelVar;
     };
     emitBody.resultId = valueId;
 

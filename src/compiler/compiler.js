@@ -248,7 +248,6 @@ class Compiler extends CompilerBase {
           }
         },
         {
-          useParentBufferForEmit: true
         }
       );
 
@@ -1141,8 +1140,12 @@ class Compiler extends CompilerBase {
 
   analyzeImport(node) {
     node.target._analysis = { declarationTarget: true };
+    this.importedBindings.add(node.target.value);
     return {
-      declares: [{ name: node.target.value, type: 'var', initializer: null }]
+      // Imported bindings are callable-ambiguous in async mode: a later call may
+      // target either a macro boundary or a plain function. Mark them here so
+      // compileFunCall can give imported callables their own structural boundary.
+      declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }]
     };
   }
 
@@ -1155,10 +1158,12 @@ class Compiler extends CompilerBase {
     node.names.children.forEach((nameNode) => {
       if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
         nameNode.value._analysis = { declarationTarget: true };
-        declares.push({ name: nameNode.value.value, type: 'var', initializer: null });
+        this.importedBindings.add(nameNode.value.value);
+        declares.push({ name: nameNode.value.value, type: 'var', initializer: null, imported: true });
       } else if (nameNode instanceof nodes.Symbol) {
         nameNode._analysis = { declarationTarget: true };
-        declares.push({ name: nameNode.value, type: 'var', initializer: null });
+        this.importedBindings.add(nameNode.value);
+        declares.push({ name: nameNode.value, type: 'var', initializer: null, imported: true });
       }
     });
     return { declares };
@@ -1302,11 +1307,13 @@ class Compiler extends CompilerBase {
             frame,
             child,
             (innerFrame) => {
-              const forceWrap = !this.macro.isDirectCallerCall(child);
-              this.compileExpression(child, innerFrame, forceWrap, child);
+              const prevWrapInAsyncBlock = child.wrapInAsyncBlock;
+              child.wrapInAsyncBlock = false;
+              this.compileExpression(child, innerFrame, false, child);
+              child.wrapInAsyncBlock = prevWrapInAsyncBlock;
             },
             {
-              useParentBufferForEmit: true
+              emitInCurrentBuffer: true
             }
           );
         } else {
