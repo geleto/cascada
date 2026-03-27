@@ -222,6 +222,29 @@
       expect(result).to.be('O-I-X');
     });
 
+    it('should support direct script caller() with async arguments', async () => {
+      const context = {
+        async fetchValue() {
+          await delay(5);
+          return 21;
+        }
+      };
+
+      const script = `
+        macro runner()
+          return caller(fetchValue())
+        endmacro
+
+        var result = call runner() (item)
+          return item * 2
+        endcall
+
+        return result`;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.be(42);
+    });
+
     it('should reject outer value mutation commands inside call blocks', async () => {
       const script = `
         var outer = 10

@@ -741,6 +741,23 @@
       });
 
       describe('Async Caller Error Cases', () => {
+        it('should fail cleanly when caller() is used without a call block', async () => {
+          const template = `
+            {% macro wrapper() %}
+            {{ caller() }}
+            {% endmacro %}
+
+            {{ wrapper() }}
+          `;
+
+          try {
+            await env.renderTemplateString(template, {});
+            expect().fail('Should have thrown');
+          } catch (error) {
+            expect(error.message).to.contain('Unable to call `caller`');
+          }
+        });
+
         it('should properly handle rejected promises in caller content', async () => {
           const template = `
             {% macro wrapper() %}

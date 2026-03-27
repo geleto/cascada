@@ -258,6 +258,32 @@
         expect(result).to.equal('macro-result');
       });
 
+      it('should keep marker-backed macro arguments raw', () => {
+        const innerPromise = Promise.resolve('macro-arg');
+        const markerArray = runtime.createArray([innerPromise]);
+        const macro = {
+          isMacro: true,
+          _invoke(executionContext, args) {
+            expect(executionContext).to.equal(mockContext);
+            expect(args).to.have.length(1);
+            expect(args[0]).to.equal(markerArray);
+            expect(Array.isArray(args[0])).to.be(true);
+            expect(args[0][0]).to.equal(innerPromise);
+            return 'macro-result';
+          }
+        };
+
+        const result = runtime.callWrapAsync(
+          macro,
+          'macro',
+          mockContext,
+          [markerArray],
+          mockErrorContext
+        );
+
+        expect(result).to.equal('macro-result');
+      });
+
       it('should keep raw macro arguments when async callee resolves to a macro', async () => {
         const argPromise = Promise.resolve('macro-arg');
         const macro = {
@@ -1014,7 +1040,6 @@
   });
 
 })();
-
 
 
 
