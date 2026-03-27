@@ -40,6 +40,8 @@ Implemented and validated:
 Still transitional:
 - `AsyncState` and root-level `waitAllClosures()` uses still exist outside the migrated paths.
 - `_compileMacro` still relies on `astate.waitAllClosures()` to avoid finishing macro/caller buffers before nested composition linking has happened.
+- The plain template `caller()` late-start path is fixed, but script call blocks still have a remaining direct `caller()` path compiled through deferred `resolve...().then(callWrapAsync(...))`, so `_compileMacro` cannot drop `waitAllClosures()` yet.
+- Some consumption sites still use raw `await` where Cascada resolve helpers (`resolveSingle` / `resolveAll` / `resolveDuo`) should be preferred so `RESOLVE_MARKER` and poison semantics stay centralized.
 - Some migration notes below remain useful as history, but the completed items should be read as implemented behavior unless explicitly marked future work.
 
 ---

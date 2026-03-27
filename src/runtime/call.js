@@ -33,7 +33,9 @@ function callWrap(obj, name, context, args, currentBuffer = null) {
  * Async call wrapper using sync-first hybrid pattern.
  */
 function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = null) {
-  if (obj && obj.isMacro) {
+  const argsIsPromise = args && typeof args.then === 'function' && !isPoison(args);
+
+  if (obj && obj.isMacro && !argsIsPromise) {
     // Macros are promise/poison-transparent Cascada boundaries. They receive
     // raw argument values and any thrown/rejected error must propagate as a
     // real fatal error rather than being normalized into FunCall poison here.
@@ -42,9 +44,9 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
 
   // Check if we need async path: obj or any arg is a promise
   const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
-  const hasArgPromises = args.some(arg => arg && typeof arg.then === 'function' && !isPoison(arg));
+  const hasArgPromises = !argsIsPromise && Array.isArray(args) && args.some(arg => arg && typeof arg.then === 'function' && !isPoison(arg));
 
-  if (objIsPromise || hasArgPromises) {
+  if (objIsPromise || argsIsPromise || hasArgPromises) {
     // Must use async path to await all promises before making decisions
     // _callWrapAsyncComplex is async and returns poison when errors occur
     // When awaited, poison values throw PoisonError due to thenable protocol (by design)
@@ -119,6 +121,28 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
     }
   } else if (isPoison(obj)) {
     errors.push(...obj.errors);
+  }
+
+  if (args && typeof args.then === 'function' && !isPoison(args)) {
+    try {
+      args = await args;
+      if (isPoison(args)) {
+        errors.push(...args.errors);
+      }
+    } catch (err) {
+      if (isPoisonError(err)) {
+        errors.push(...err.errors);
+      } else {
+        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        errors.push(contextualError);
+      }
+    }
+  } else if (isPoison(args)) {
+    errors.push(...args.errors);
+  }
+
+  if (!Array.isArray(args)) {
+    args = args == null ? [] : [args];
   }
 
   if (obj && obj.isMacro) {

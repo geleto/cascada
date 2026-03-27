@@ -297,6 +297,7 @@ Current status:
    - If the callee path can resolve to a macro/caller boundary, the structural dispatch must happen synchronously in the current boundary with raw promise-valued arguments, not in a later `.then(...)`.
    - Immediate target: the dynamic `compileFunCall(...)` lowering in `compiler-base.js`.
    - Keep the command-emitting call dispatch helper next to the owning boundary implementation. The current `caller()` fix uses a caller-specific helper in `compile-macro.js` to compile raw args once, emit direct caller-boundary dispatch in the current buffer, and keep a normal `callWrapAsync(...)` fallback when no caller block exists.
+   - The remaining known blocker here is script-mode direct `caller()` in call blocks: template `caller()` now uses the direct path, but script `return caller()` still compiles through deferred `resolveSingleArr(...).then(callWrapAsync(...))` and must be migrated to the same immediate-dispatch model.
    - Treat other expression `.then(...)` sites such as arithmetic/unary operators, `is` tests, and aggregate resolution as value-only for now. They may still need cleanup later, but they are not the current boundary-ordering blocker unless they start dispatching command-emitting operations.
 
 3. Delete `_assignAsyncWrappersAndReleases` in `compile-sequential.js`.
@@ -317,6 +318,11 @@ Current status:
    - Use the same child-buffer boundary approach for a command-emitting right operand.
    - Keep the existing simple value-only path when the right operand cannot emit commands.
    - ✅ Command-emitting async `and` / `or` paths now use a control-flow child buffer.
+
+7. Audit consumption sites to prefer resolve helpers over raw `await`.
+   - When a value is being consumed as a Cascada value, use `resolveSingle(...)`, `resolveDuo(...)`, or `resolveAll(...)` rather than ad hoc `await`.
+   - This preserves `RESOLVE_MARKER` behavior for lazy arrays/objects and keeps poison/value normalization centralized.
+   - Reserve raw `await` for non-Cascada control values or helper-internal mechanics that are not consuming ordinary language values.
 
 7. Preserve and reuse existing analysis.
    - Use `node._analysis.usedChannels` (filtered as usual) to determine which parent channels the child expression boundary must be linked into.

@@ -965,9 +965,8 @@ class CompilerBase extends Obj {
       return { uses, mutates };
     }
 
-    // caller() calls link a child composition buffer to the parent and output text.
-    // caller() is template-only: it links a composition buffer and mutates the text channel.
-    // Keep the async block open so linkWithParentCompositionBuffer fires before waitAllClosures.
+    // caller() calls can emit command structure and must be dispatched in the
+    // current boundary instead of behind deferred .then(...) lowering.
     if (!this.scriptMode && node.name) {
       const isCallerCall =
         (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
@@ -1079,15 +1078,14 @@ class CompilerBase extends Obj {
         this.emit(`, ${this.buffer.currentBuffer})`);
         return;
       }
-      // Function name is dynamic, so resolve both function and arguments.
-      const mergedNode = {
-        isAsync: node.name.isAsync || node.args.isAsync,
-        children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
-      };
-      this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
-        const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson}, ${this.buffer.currentBuffer});`);
-      });
+      // Dynamic async calls should dispatch in the current boundary with raw
+      // promise-valued callee/args, not from a later .then(...).
+      const errorContextJson = JSON.stringify(this._createErrorContext(node));
+      this.emit('runtime.callWrapAsync(');
+      this.compile(node.name, frame);
+      this.emit(`, "${funcName}", context, `);
+      this._compileAggregate(node.args, frame, '[', ']', true, false);
+      this.emit(`, ${errorContextJson}, ${this.buffer.currentBuffer})`);
     } else {
       if (isDirectMacroCall) {
         this.emit('runtime.invokeMacro(');

@@ -14,7 +14,6 @@ class CompileMacro {
   isDirectCallerCall(node) {
     return !!(
       this.compiler.asyncMode &&
-      !this.compiler.scriptMode &&
       node &&
       node.typename === 'FunCall' &&
       node.name &&
@@ -30,8 +29,8 @@ class CompileMacro {
     const argsId = compiler._tmpid();
     const errorContextJson = JSON.stringify(compiler._createErrorContext(node));
 
-    // Direct template caller() must register its invocation buffer and
-    // __caller__ waits in the current boundary, not from a later .then.
+    // Direct caller() must register its invocation buffer and __caller__
+    // waits in the current boundary, not from a later .then.
     compiler.emit('(() => {');
     compiler.emit(`let ${argsId} = `);
     compiler._compileAggregate(node.args, frame, '[', ']', false, false);

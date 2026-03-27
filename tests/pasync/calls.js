@@ -178,12 +178,13 @@
     it('should support multiple caller invocations across different control-flow paths', async () => {
       const script = `
         macro visit(includePrefix)
-          var out = []
+          data out
+          out = []
           if includePrefix
             out.push(caller("prefix"))
           endif
           out.push(caller("tail"))
-          return out
+          return out.snapshot()
         endmacro
 
         var result = call visit(true) (itemValue)
