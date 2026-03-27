@@ -957,6 +957,11 @@ Important implementation details that came out of the migration:
 
 That means the remaining issue is not generic async expression timing inside the macro body. The unresolved case is late structural work from macro/caller composition, especially `linkWithParentCompositionBuffer(...)`. `waitAllClosures` here should be treated as a temporary guard until macro/caller composition returns a structural completion signal that can replace it.
 
+The template-side direct `caller()` output path now goes through a caller-specific dispatch helper in `compile-macro.js` instead of an ad hoc branch embedded in `compileFunCall(...)`. The important pattern for future command-emitting call sites is still the same:
+- compile raw promise-valued args once
+- do direct structural dispatch in the current buffer for the boundary case
+- keep normal `callWrapAsync(...)` fallback for non-boundary callees
+
 **`compileGuard`:** Very complex — guard state snapshots, sequence repair, `CaptureGuardStateCommand`, `RestoreGuardStateCommand`. Migrate last after all simpler methods prove the pattern.
 
 **`compileRoot`:** Root orchestration with manual async chains and `waitAllClosures`. Migrate last.

@@ -1302,7 +1302,8 @@ class Compiler extends CompilerBase {
             frame,
             child,
             (innerFrame) => {
-              this.compileExpression(child, innerFrame, true, child);
+              const forceWrap = !this.macro.isDirectCallerCall(child);
+              this.compileExpression(child, innerFrame, forceWrap, child);
             },
             {
               useParentBufferForEmit: true

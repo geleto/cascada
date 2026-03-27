@@ -291,6 +291,7 @@ This is the same `node._analysis.usedChannels` (minus locally-declared channels)
    - Do not route command-emitting macro/caller dispatch through `resolve...().then(... callWrapAsync(...))`.
    - If the callee path can resolve to a macro/caller boundary, the structural dispatch must happen synchronously in the current boundary with raw promise-valued arguments, not in a later `.then(...)`.
    - Immediate target: the dynamic `compileFunCall(...)` lowering in `compiler-base.js`.
+   - Keep the command-emitting call dispatch helper next to the owning boundary implementation. The current `caller()` fix uses a caller-specific helper in `compile-macro.js` to compile raw args once, emit direct caller-boundary dispatch in the current buffer, and keep a normal `callWrapAsync(...)` fallback when no caller block exists.
    - Treat other expression `.then(...)` sites such as arithmetic/unary operators, `is` tests, and aggregate resolution as value-only for now. They may still need cleanup later, but they are not the current boundary-ordering blocker unless they start dispatching command-emitting operations.
 
 3. Delete `_assignAsyncWrappersAndReleases` in `compile-sequential.js`.

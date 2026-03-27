@@ -8,6 +8,48 @@ const CALLER_SCHED_CHANNEL_NAME = '__caller__';
 class CompileMacro {
   constructor(compiler) {
     this.compiler = compiler;
+    this.currentCallerBindingContext = null;
+  }
+
+  isDirectCallerCall(node) {
+    return !!(
+      this.compiler.asyncMode &&
+      !this.compiler.scriptMode &&
+      node &&
+      node.typename === 'FunCall' &&
+      node.name &&
+      node.name.typename === 'Symbol' &&
+      node.name.value === 'caller' &&
+      this.currentCallerBindingContext
+    );
+  }
+
+  _emitCallerCallDispatch({ bufferId, node, frame }) {
+    const compiler = this.compiler;
+    const activeContext = this.currentCallerBindingContext;
+    const argsId = compiler._tmpid();
+    const errorContextJson = JSON.stringify(compiler._createErrorContext(node));
+
+    // Direct template caller() must register its invocation buffer and
+    // __caller__ waits in the current boundary, not from a later .then.
+    compiler.emit('(() => {');
+    compiler.emit(`let ${argsId} = `);
+    compiler._compileAggregate(node.args, frame, '[', ']', false, false);
+    compiler.emit.line(';');
+    compiler.emit.line(`if (${activeContext.rawCallerVar} && ${activeContext.rawCallerVar}.isMacro) {`);
+
+    const invocationBufferId = compiler._tmpid();
+    const invocationFinishedId = compiler._tmpid();
+    const invocationResultId = compiler._tmpid();
+    compiler.emit.line(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${activeContext.allCallersBufferId}, frame, ${activeContext.rawCallerVar}.__callerUsedChannels || null);`);
+    compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
+    compiler.emit.line(`${bufferId}.add(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
+    compiler.emit.line(`let ${invocationResultId} = Promise.resolve(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.markFinishedAndPatchLinks());`);
+    compiler.emit.line(`${bufferId}.add(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationResultId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
+    compiler.emit.line(`return ${invocationResultId};`);
+    compiler.emit.line('}');
+    compiler.emit.line(`return runtime.callWrapAsync(${activeContext.rawCallerVar}, "caller", context, ${argsId}, ${errorContextJson}, ${bufferId});`);
+    compiler.emit('})()');
   }
 
   analyzeCaller(node) {
@@ -405,13 +447,14 @@ class CompileMacro {
         this._emitSyncMacroBindings({ managedFrame, args, kwargs });
       }
 
-      const emitMacroBody = () => {
-        compiler.emit.withScopedSyntax(() => {
-          compiler.compile(node.body, managedFrame);
-        });
-      };
-
-      emitMacroBody();
+      const prevCallerBindingContext = this.currentCallerBindingContext;
+      if (macroNeedsCallerSupport) {
+        this.currentCallerBindingContext = { rawCallerVar, allCallersBufferId };
+      }
+      compiler.emit.withScopedSyntax(() => {
+        compiler.compile(node.body, managedFrame);
+      });
+      this.currentCallerBindingContext = prevCallerBindingContext;
 
       compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
 

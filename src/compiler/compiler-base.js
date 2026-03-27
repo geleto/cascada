@@ -1002,6 +1002,15 @@ class CompilerBase extends Obj {
         return;
       }
 
+      if (this.macro && this.macro.isDirectCallerCall(node)) {
+        this.macro._emitCallerCallDispatch({
+          bufferId: this.buffer.currentBuffer,
+          node,
+          frame
+        });
+        return;
+      }
+
       const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
       const sequenceLockKey = sequenceLockLookup && sequenceLockLookup.key;
       if (sequenceLockKey) {
