@@ -50,6 +50,7 @@ class CompileMacro {
   }
 
   analyzeCaller(node) {
+    const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
     const declares = [
       { name: 'caller', type: 'var', initializer: null },
       { name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true }
@@ -64,7 +65,8 @@ class CompileMacro {
       createScope: true,
       scopeBoundary: false,
       parentReadOnly: true,
-      declares
+      declares,
+      compiledMacroFuncId
     };
   }
 
@@ -72,7 +74,7 @@ class CompileMacro {
   // caller buffer can be linked only on those lanes.
   _getCallerParentVisibleUsedChannels(node) {
     const compiler = this.compiler;
-    if (!node || !node._analysis) {
+    if (!compiler.asyncMode || !node) {
       return [];
     }
     const textChannelName = compiler.analysis && typeof compiler.analysis.getCurrentTextChannel === 'function'
@@ -108,6 +110,7 @@ class CompileMacro {
   analyzeMacro(node) {
     const declares = [];
     const declaresInParent = [];
+    const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
     declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
     declares.push({ name: 'caller', type: 'var', initializer: null });
     node.args.children.forEach((arg) => {
@@ -133,7 +136,8 @@ class CompileMacro {
       scopeBoundary: true,
       declares: declares.concat(declaresExtra),
       declaresInParent,
-      hasCallerSupport
+      hasCallerSupport,
+      compiledMacroFuncId
     };
   }
 
@@ -242,9 +246,6 @@ class CompileMacro {
     const callerReadyVar = hasCallerSupport ? compiler._tmpid() : null;
     const callerSyncPrefix =
       `await ${closuresReadyVar};` +
-      // Snapshot __caller__ only after deferred child closures have finished
-      // starting their caller() work, otherwise later loop/if-started caller
-      // invocations can still be missed.
       (hasCallerSupport ? `const ${callerReadyVar} = ${bufferId}.addSnapshot("${CALLER_SCHED_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` : '') +
       (hasCallerSupport ? `await ${callerReadyVar};` : '') +
       (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.markFinishedAndPatchLinks();}` : '');
@@ -379,7 +380,9 @@ class CompileMacro {
 
   _compileMacro(node, frame, keepFrame) {
     const compiler = this.compiler;
-    const funcId = 'macro_' + compiler._tmpid();
+    const funcId = compiler.asyncMode
+      ? node._analysis.compiledMacroFuncId
+      : `macro_${compiler._tmpid()}`;
     const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
 
     let currFrame;
@@ -393,7 +396,7 @@ class CompileMacro {
     const oldIsCompilingMacroBody = compiler.sequential.isCompilingMacroBody;
     compiler.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
-    const macroNeedsCallerSupport = compiler.asyncMode && !!(node._analysis && node._analysis.hasCallerSupport);
+    const macroNeedsCallerSupport = compiler.asyncMode && !!node._analysis.hasCallerSupport;
     const macroFunctionSignature = compiler.asyncMode
       ? `function (${realNames.join(', ')}, astate, macroParentBuffer) {`
       : `function (${realNames.join(', ')}) {`;

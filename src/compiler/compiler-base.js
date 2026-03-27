@@ -1034,7 +1034,10 @@ class CompilerBase extends Obj {
       node.name instanceof nodes.Symbol
         ? this.analysis.findDeclaration(node._analysis, node.name.value)
         : null;
-    const isDirectMacroCall = !!(directMacroDecl && directMacroDecl.isMacro);
+    const directMacroBinding = directMacroDecl && directMacroDecl.isMacro && directMacroDecl.declarationOrigin
+      ? directMacroDecl.declarationOrigin.compiledMacroFuncId
+      : null;
+    const isDirectMacroCall = !!((directMacroDecl && directMacroDecl.isMacro) || directMacroBinding);
 
     if (this.asyncMode) {
       if (this._compileSpecialChannelFunCall(node, frame)) {
@@ -1072,7 +1075,11 @@ class CompilerBase extends Obj {
       }
       if (isDirectMacroCall) {
         this.emit('runtime.invokeMacro(');
-        this.compile(node.name, frame);
+        if (directMacroBinding) {
+          this.emit(directMacroBinding);
+        } else {
+          this.compile(node.name, frame);
+        }
         this.emit(', context, ');
         this._compileAggregate(node.args, frame, '[', ']', false, false);
         this.emit(`, ${this.buffer.currentBuffer})`);
@@ -1089,7 +1096,11 @@ class CompilerBase extends Obj {
     } else {
       if (isDirectMacroCall) {
         this.emit('runtime.invokeMacro(');
-        this.compile(node.name, frame);
+        if (directMacroBinding) {
+          this.emit(directMacroBinding);
+        } else {
+          this.compile(node.name, frame);
+        }
         this.emit(', context, ');
         this._compileAggregate(node.args, frame, '[', ']', false, false);
         this.emit(`, ${this.buffer.currentBuffer})`);

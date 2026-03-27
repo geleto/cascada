@@ -476,15 +476,7 @@ class CompileAnalysis {
   }
 
   _cloneDeclaration(decl) {
-    return {
-      type: decl.type,
-      initializer: Object.prototype.hasOwnProperty.call(decl, 'initializer') ? decl.initializer : null,
-      internal: !!decl.internal,
-      isLoopMeta: !!decl.isLoopMeta,
-      runtimeName: decl.runtimeName || null,
-      explicit: decl.explicit !== false,
-      declarationOrigin: decl.declarationOrigin || null
-    };
+    return Object.assign({}, decl);
   }
 
   _validateMutations(analysis) {
