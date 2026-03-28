@@ -1,7 +1,7 @@
 'use strict';
 
 const { isPoison, isPoisonError, PoisonError, createPoison, handleError } = require('./errors');
-const { RESOLVE_MARKER, unwrapResolvedValue } = require('./resolve');
+const { RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue } = require('./resolve');
 const contextualizedOutputErrorCache = new WeakMap();
 let safeOutputApi = null;
 
@@ -1236,6 +1236,10 @@ function createCommandArgumentPoison(output, cmd, err) {
   return createPoison(contextualized);
 }
 
+function isHandledDeferredPromise(value) {
+  return value instanceof Promise;
+}
+
 // Command arguments may sit in buffers for a while before a consumer applies the
 // command. Mark any deferred native promises as handled up front so early
 // rejections do not surface as process-level warnings before Cascada consumes
@@ -1243,41 +1247,50 @@ function createCommandArgumentPoison(output, cmd, err) {
 // handler to promises already present in the argument structure.
 function markDeferredThenablesHandled(value, seen = null) {
   if (value === null || value === undefined) {
-    return false;
+    return;
+  }
+
+  if (isPoison(value)) {
+    return;
+  }
+
+  if (isResolvedValue(value)) {
+    return;
   }
 
   const nextSeen = seen || new WeakSet();
   if (typeof value === 'object' || typeof value === 'function') {
     if (nextSeen.has(value)) {
-      return false;
+      return;
     }
     nextSeen.add(value);
   }
 
-  if (value && typeof value.then === 'function') {
+  if (isHandledDeferredPromise(value)) {
     Promise.resolve(value).catch(() => {});
-    return true;
+    return;
   }
 
-  let foundDeferred = false;
-  if (value && value[RESOLVE_MARKER] && typeof value[RESOLVE_MARKER].then === 'function') {
+  if (value && isHandledDeferredPromise(value[RESOLVE_MARKER])) {
     Promise.resolve(value[RESOLVE_MARKER]).catch(() => {});
-    foundDeferred = true;
+    // Marker-backed arrays/objects already own recursive child-promise collection
+    // through their marker promise, so command staging only needs to handle that
+    // single deferred boundary here instead of recursing into the structure again.
+    return;
   }
 
   if (Array.isArray(value)) {
     for (const entry of value) {
-      foundDeferred = markDeferredThenablesHandled(entry, nextSeen) || foundDeferred;
+      markDeferredThenablesHandled(entry, nextSeen);
     }
-    return foundDeferred;
+    return;
   }
 
   if (typeof value === 'object') {
     for (const key of Object.keys(value)) {
-      foundDeferred = markDeferredThenablesHandled(value[key], nextSeen) || foundDeferred;
+      markDeferredThenablesHandled(value[key], nextSeen);
     }
   }
-  return foundDeferred;
 }
 
 function resolveSubpath(target, subpath) {

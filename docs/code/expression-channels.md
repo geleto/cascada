@@ -216,6 +216,11 @@ This also handles poison the same way as statement-level control-flow boundaries
    - The current runtime split is:
      - true consumer commands resolve only their top-level deferred arguments at apply time
      - buffered commands keep raw deferred values where their semantics require it
+   - Narrowing completed so far:
+     - command-argument staging now walks once instead of doing a separate detect pass
+     - it skips Cascada's own `RESOLVED_VALUE_MARKER` wrappers and `PoisonedValue` data
+     - it now targets native promises / marker promises specifically, instead of arbitrary thenables
+     - marker-backed arrays/objects now stop the staging walk; their own `RESOLVE_MARKER` promise is the deferred boundary that owns descendant async work
    - The producer audit so far shows that the highest-signal remaining native-promise producers are intentional:
      - block/super/include-style producer slots in `compile-buffer.js`
      - async import/from-import export lookup in `compile-inheritance.js`
