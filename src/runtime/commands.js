@@ -1243,38 +1243,41 @@ function createCommandArgumentPoison(output, cmd, err) {
 // handler to promises already present in the argument structure.
 function markDeferredThenablesHandled(value, seen = null) {
   if (value === null || value === undefined) {
-    return;
+    return false;
   }
 
   const nextSeen = seen || new WeakSet();
   if (typeof value === 'object' || typeof value === 'function') {
     if (nextSeen.has(value)) {
-      return;
+      return false;
     }
     nextSeen.add(value);
   }
 
   if (value && typeof value.then === 'function') {
     Promise.resolve(value).catch(() => {});
-    return;
+    return true;
   }
 
+  let foundDeferred = false;
   if (value && value[RESOLVE_MARKER] && typeof value[RESOLVE_MARKER].then === 'function') {
     Promise.resolve(value[RESOLVE_MARKER]).catch(() => {});
+    foundDeferred = true;
   }
 
   if (Array.isArray(value)) {
     for (const entry of value) {
-      markDeferredThenablesHandled(entry, nextSeen);
+      foundDeferred = markDeferredThenablesHandled(entry, nextSeen) || foundDeferred;
     }
-    return;
+    return foundDeferred;
   }
 
   if (typeof value === 'object') {
     for (const key of Object.keys(value)) {
-      markDeferredThenablesHandled(value[key], nextSeen);
+      foundDeferred = markDeferredThenablesHandled(value[key], nextSeen) || foundDeferred;
     }
   }
+  return foundDeferred;
 }
 
 function resolveSubpath(target, subpath) {
