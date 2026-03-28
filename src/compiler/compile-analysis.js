@@ -39,7 +39,6 @@ class CompileAnalysis {
     rootNode._analysis = Object.assign(rootNode._analysis || {}, {
       sequenceLocks
     });
-    this.compiler.sequential.annotateSequenceLockLookups(rootNode, new Set(sequenceLocks));
   }
 
   _walk(node, parentNode, parentField) {
@@ -56,7 +55,7 @@ class CompileAnalysis {
       return;
     }
 
-    const analysis = this._ensureAnalysis(node, parentNode);
+    const analysis = this._ensureAnalysis(node, parentNode, parentField);
     this._analyzeNode(node);
     this._registerDeclarations(analysis);
     this._validateUses(analysis);
@@ -70,9 +69,18 @@ class CompileAnalysis {
     this._finalizeNode(node);
   }
 
-  _ensureAnalysis(node, parentNode) {
+  _ensureAnalysis(node, parentNode, parentField) {
     const parentAnalysis = parentNode && parentNode._analysis ? parentNode._analysis : null;
     const existingAnalysis = node._analysis || {};
+    const inheritedSequenceFunCallLockKey = parentAnalysis
+      ? (
+        parentNode instanceof nodes.FunCall &&
+        parentField === 'name' &&
+        parentAnalysis.sequenceFunCallLockKey
+          ? parentAnalysis.sequenceFunCallLockKey
+          : parentAnalysis.inheritedSequenceFunCallLockKey || null
+      )
+      : null;
     const normalizeAnalysisList = (value, name) => {
       if (value === undefined) {
         return [];
@@ -89,6 +97,8 @@ class CompileAnalysis {
       parentReadOnly: false,
       declarationTarget: false,
       parent: parentAnalysis,
+      inheritedSequenceFunCallLockKey,
+      sequenceFunCallLockKey: existingAnalysis.sequenceFunCallLockKey || null,
       textOutput: null,
       sequenceLocks: existingAnalysis.sequenceLocks || null,
       sequenceLockLookup: existingAnalysis.sequenceLockLookup || null,

@@ -5,25 +5,19 @@ module.exports = class CompileSequential {
     this.compiler = compiler;
   }
 
-  // Annotate per-node sequence lookup metadata used by expression codegen.
-  // This only computes the final sequenceLockLookup facts that the compiler
-  // still consumes; it no longer drives any legacy async-wrapper assignment.
-  annotateSequenceLockLookups(node, sequenceLocks, funCallLockKey = null, parent = null) {
-    const analysis = node._analysis || (node._analysis = {});
-    analysis.sequenceLockLookup = null;
+  getSequenceLockLookup(node) {
+    const analysis = node && node._analysis;
+    if (!analysis) {
+      return null;
+    }
+    const sequenceLocks = this._getSequenceLockSet(analysis);
+    const funCallLockKey = analysis.inheritedSequenceFunCallLockKey || null;
+    const parent = analysis.parent ? analysis.parent.node : null;
     let nodeLockKey = null;
-    let nodeIsFunCallLocked = false;
 
-    // Identify PATH Waiters & Perform Sanity Checks for `node.sequential`
     if (node.sequential) {
-      // node.sequential is true if '!' is directly on this Symbol/LookupVal
-      const currentPathKey = this._extractStaticPathKey(node); // Key for this specific node
+      const currentPathKey = this._extractStaticPathKey(node);
       if (node.sequentialRepair && !funCallLockKey) {
-        // If this is a repair node (!!), we must set the lockKey so that compileSymbol/compileLookupVal
-        // emits the sequential lookup (sequentialContextLookupValue) which handles the repair logic.
-        // However, if we are part of a FunCall lock that covers this path, the FunCall will handle the repair propagation
-        // via node.sequentialRepair propagation and sequentialCallWrapValue logic,
-        // otherwise we have two colliding operations on the same lock
         nodeLockKey = currentPathKey;
       }
 
@@ -35,23 +29,11 @@ module.exports = class CompileSequential {
       } else if (funCallLockKey !== currentPathKey) {
         this.compiler.fail('Cannot use more than one sequence marker (!) in a single effective path segment.', node.lineno, node.colno, node);
       }
-      // No PATH operation is added here for this key because it's "covered" by the parent FunCall's LOCK.
     } else if ((node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {
-      // Still need to identify PATH waiters for nodes that are *not* `node.sequential` themselves
-      // but are on a path that *is* sequential by a FunCall elsewhere.
-
-      // 1) Prefer an exact static path lock for this node (most specific wins).
       const pathKey = this._extractStaticPathKey(node);
       if (pathKey && pathKey !== funCallLockKey && this._isSequenceLockDeclared(sequenceLocks, pathKey)) {
-        // this is a path that is static
-        // is declared as a sequence lock
-        // and is not the lock key being originated by an immediate FunCall parent (funCallLockKey)
-        // in the later case the key will be handled by the funCall, not the path to it
         nodeLockKey = pathKey;
       } else if (node instanceof nodes.LookupVal) {
-        // 2) If no exact lock, fall back to the base symbol's lock so any read
-        // under a sequenced object (db.*) respects !db.
-        // Only the outermost lookup in a chain should claim the base lock.
         const isOutermostLookup = !parent || !(parent instanceof nodes.LookupVal) || parent.target !== node;
         if (isOutermostLookup) {
           let root = node;
@@ -66,19 +48,15 @@ module.exports = class CompileSequential {
           }
         }
       } else if (node instanceof nodes.Symbol && parent instanceof nodes.LookupVal) {
-        // If the parent lookup already claimed the base lock, skip registering the symbol again.
         const parentLockKey = parent._analysis && parent._analysis.sequenceLockLookup && parent._analysis.sequenceLockLookup.key;
         if (parentLockKey && parentLockKey === '!' + node.value) {
-          // Skip PATH registration for this symbol.
-          return;
+          return null;
         }
       }
     } else if (node instanceof nodes.FunCall) {
-      // Identify FunCall LOCK
       const lockKey = this._getSequenceKey(node.name);
+      analysis.sequenceFunCallLockKey = lockKey || null;
       if (lockKey) {
-        funCallLockKey = lockKey;//this wil stop the node.name path from registering as a PATH waiter for the same key
-        nodeIsFunCallLocked = true;
         nodeLockKey = lockKey;
         if (this._hasSequentialRepair(node.name)) {
           node.sequentialRepair = true;
@@ -86,19 +64,7 @@ module.exports = class CompileSequential {
       }
     }
 
-    if (nodeLockKey) {
-      analysis.sequenceLockLookup = {
-        key: nodeLockKey,
-        repair: !!node.sequentialRepair
-      };
-    }
-
-    // Recursive traversal with propagated function-lock context.
-    const children = this.compiler._getImmediateChildren(node);
-    for (const child of children) {
-      const lockKey = (nodeIsFunCallLocked && child === node.name) ? nodeLockKey : funCallLockKey;
-      this.annotateSequenceLockLookups(child, sequenceLocks, lockKey, node);
-    }
+    return nodeLockKey ? { key: nodeLockKey, repair: !!node.sequentialRepair } : null;
   }
 
 
@@ -363,6 +329,14 @@ module.exports = class CompileSequential {
       return false;
     }
     return sequenceLocks.has(lockKey);
+  }
+
+  _getSequenceLockSet(analysis) {
+    let current = analysis;
+    while (current && current.parent) {
+      current = current.parent;
+    }
+    return new Set(current && Array.isArray(current.sequenceLocks) ? current.sequenceLocks : []);
   }
 
   /**

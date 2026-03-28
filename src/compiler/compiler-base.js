@@ -353,7 +353,8 @@ class CompilerBase extends Obj {
 
     const uses = [];
     const mutates = [];
-    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    const sequenceLockLookup = this.asyncMode ? this.sequential.getSequenceLockLookup(node) : null;
+    node._analysis.sequenceLockLookup = sequenceLockLookup;
     if (sequenceLockLookup) {
       uses.push(sequenceLockLookup.key);
       if (sequenceLockLookup.repair) {
@@ -847,7 +848,8 @@ class CompilerBase extends Obj {
     const uses = [];
     const mutates = [];
     let sequenceChannelLookup = null;
-    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    const sequenceLockLookup = this.asyncMode ? this.sequential.getSequenceLockLookup(node) : null;
+    node._analysis.sequenceLockLookup = sequenceLockLookup;
     if (sequenceLockLookup) {
       uses.push(sequenceLockLookup.key);
       if (sequenceLockLookup.repair) {
@@ -957,7 +959,8 @@ class CompilerBase extends Obj {
     let importedCallable = null;
     let directCallerCall = false;
     let directMacroCall = null;
-    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    const sequenceLockLookup = this.asyncMode ? this.sequential.getSequenceLockLookup(node) : null;
+    node._analysis.sequenceLockLookup = sequenceLockLookup;
     if (sequenceLockLookup) {
       uses.push(sequenceLockLookup.key);
       mutates.push(sequenceLockLookup.key);
