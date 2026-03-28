@@ -101,5 +101,50 @@
         expect(err.message).to.contain('boom');
       }
     });
+
+    it('should keep imported member calls on the imported-callable boundary', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
+
+      const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'imported-member-boundary.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("m"');
+      expect(source).to.contain('runtime.callWrapAsync(');
+    });
+
+    it('should not treat a macro parameter shadowing a from-import binding as imported callable', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro foo(name) %}Foo {{ name }}{% endmacro %}');
+
+      const tmpl = new AsyncTemplate(
+        '{% from "macros.njk" import foo %}{% macro use(foo) %}{{ foo("x") }}{% endmacro %}{{ use(helper) }}',
+        env,
+        'shadowed-from-import-call.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('addSnapshot("foo"');
+      expect(source).to.not.contain('currentBuffer.addSnapshot("foo"');
+    });
+
+    it('should not treat a macro parameter shadowing an imported namespace as imported callable', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
+
+      const tmpl = new AsyncTemplate(
+        '{% import "macros.njk" as m %}{% macro use(m) %}{{ m("x") }}{% endmacro %}{{ use(helper) }}',
+        env,
+        'shadowed-import-namespace-call.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('addSnapshot("m"');
+      expect(source).to.not.contain('currentBuffer.addSnapshot("m"');
+    });
+
   });
 }());
