@@ -957,7 +957,7 @@ class CompilerBase extends Obj {
       const importedDecl = importedRoot ? analysisPass.findDeclaration(node._analysis, importedRoot) : null;
       const isImportedCallable = !!(
         (importedDecl && importedDecl.imported) ||
-        (importedRoot && this.importedBindings && this.importedBindings.has(importedRoot))
+        (!importedDecl && importedRoot && this.importedBindings && this.importedBindings.has(importedRoot))
       );
       if (isImportedCallable) {
         importedCallable = true;

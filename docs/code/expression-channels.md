@@ -122,6 +122,10 @@ This also handles poison the same way as statement-level control-flow boundaries
    - The generic recursive `forceWrap` / `emit.asyncBlockValue(...)` path is gone.
    - The remaining non-control-flow expression boundary is imported-callable lowering.
    - Command-emitting expressions should not regain a generic late-start wrapper path.
+   - Imported-callable auditing result:
+     - keep the boundary for genuinely ambiguous imported callables
+     - do not let the compiler-wide imported-binding fallback override a real local declaration
+     - shadowed locals now stay on the normal call path even if the same name is imported elsewhere
 
 2. Remove remaining deferred macro/caller dispatch from non-control-flow expression paths.
    - Do not route command-emitting macro/caller dispatch through `.then(... callWrapAsync(...))`.
