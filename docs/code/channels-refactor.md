@@ -39,8 +39,8 @@ Implemented and validated:
 
 Still transitional:
 - `AsyncState` and root-level `waitAllClosures()` uses still exist outside the migrated paths.
-- `_compileMacro` no longer relies on `astate.waitAllClosures()` for regular `Macro` nodes.
-- `_compileMacro` still relies on `astate.waitAllClosures()` for `Caller` nodes, where nested caller-body sequencing/composition can still start too late.
+- `_compileMacro` no longer relies on `astate.waitAllClosures()` for either `Macro` or `Caller` nodes.
+- `Caller` bodies now use a local `__waited__` channel so command-only child boundaries (for example async `do` statements with sequential side effects) contribute a structural completion signal before caller finalization snapshots return/text state.
 - Direct `caller()` late-start dispatch is fixed in both template and script call-block paths, and imported callable calls now lower through a statically-declared child boundary so later macro-vs-function dispatch still happens inside a known current flow.
 - Some consumption sites still use raw `await` where Cascada resolve helpers (`resolveSingle` / `resolveAll` / `resolveDuo`) should be preferred so `RESOLVE_MARKER` and poison semantics stay centralized.
 - That cleanup also applies to async argument containers themselves (for example a promised or marker-backed args array), not only to individual scalar values.
@@ -559,7 +559,7 @@ Migrate from simplest to most complex to catch regressions early:
 - We should not keep ad hoc `astate.asyncBlock(...)` generation as a parallel long-term mechanism.
 1. ✅ **`compileOutput`** — partially migrated: pure value expressions now add `TextCommand` synchronously; remaining deferred output work is tracked separately and `__caller__` timing is owned only by caller invocation code (Tier 1)
 2. ✅ **`compileAsyncVarSet` step 3 / `compileChannelDeclaration`** — `asyncAddValueToBuffer` calls inlined; VarCommands now added synchronously via `currentBuffer.add(new VarCommand(...))` (Tier 1)
-3. ✅ **`compileDo`** — `asyncBlock` + `Promise.all` removed; expressions evaluated inline. `do` is now fire-and-forget for async side effects (consistent with "Implicitly Parallel" model). `emitOwnWaitedConcurrencyResolve` preserved for limited-loop `__waited__` timing (Tier 2, required `compileReturn` rewrite first)
+3. ✅ **`compileDo`** — the old `asyncBlock` + `Promise.all` wrapper is gone. Command-emitting async `do` expressions now lower through a dedicated structural child boundary linked into the enclosing text stream, so caller/sequence side effects complete in source order without a caller-local `__waited__` workaround. Value-only `do` expressions still compile inline. (Tier 2, required `compileReturn` rewrite first)
 4. ✅ **`compileReturn`** — `waitAllClosures` removed; return value added as `VarCommand` to return channel synchronously (completed in prior chat)
 5. ✅ **`compileIf`** — `asyncBufferNode` + two inner `asyncBlock` branch wrappers replaced by `compileControlFlowBoundary`; branches now compile synchronously inside the outer async fn with explicit `frame.push()`/`frame.pop()` (Tier 3). Adds `runtime.runControlFlowBoundary`, `compile-boundaries.compileControlFlowBoundary`, `compile-emit.getLinkedChannelsArg`.
 6. ✅ **`compileSwitch`** — same pattern as `compileIf`: `asyncBufferNode` + per-case `asyncBlock` wrappers replaced by `compileControlFlowBoundary` with case bodies compiled synchronously. `branchChannels` collection simplified: reads `c.body._analysis.usedChannels` directly (available before compilation, no need to collect inside async block callbacks) (Tier 3)
@@ -618,14 +618,16 @@ Migrate from simplest to most complex to catch regressions early:
      - async/custom extension text emission uses the same dedicated structural text-output helper
    - The old generic output wrapper is gone from these sites; the remaining behavior is now expressed as an explicit structural text-output boundary.
 
-21. [DEFERRED] **Do not touch generic expression-compilation async wrappers yet**.
-   - Expression compilation (including things nested inside it such as async ternary / inline-if / short-circuit expression handling) is not the current obstacle for removing `waitAllClosures()`.
-   - These paths do not rely on `waitAllClosures()` in the same way as the remaining structural/root work, and they will likely need a broader dedicated rewrite later when expression compilation is revisited as a whole.
-   - Current safe reduction kept:
-     - async filter nodes in `compiler-base.js` now compile directly to promise-valued expressions without their own internal `asyncBlockValue(...)` branch
-   - Current boundary:
-     - a direct ternary/short-circuit branch simplification was tried and reverted because bounded-loop metadata expressions still hit late-buffer timing regressions there
-   - For now, the refactor focus should stay on non-expression compiler-emitted async blocks and structural ownership paths outside expression compilation.
+21. [IN PROGRESS] **Finish removing legacy generic expression-compilation async wrappers**.
+   - The plan now lives in [expression-channels.md](c:\Projects\cascada\docs\code\expression-channels.md).
+   - Progress already made:
+     - async ternary / inline-if command-emitting branches use structural control-flow boundaries
+     - async `and` / `or` command-emitting right sides do the same
+     - command-emitting `do` roots no longer depend on `asyncBlockValue(...)` / caller-local wait hacks
+     - sequential-expression metadata now comes from analysis; compiler-side `processExpression(...)` and the old wrapper-assignment pass are gone
+   - Remaining work:
+     - remove `wrapInAsyncBlock` / `asyncBlockValue(...)` from the remaining generic recursive expression paths
+     - keep value-only async helpers only where they do not defer command emission past the owning structural boundary
 
 22. ✅ **Replace remaining `asyncBlockRender(...)` content-render wrappers**.
    - Implemented:
@@ -724,16 +726,15 @@ Migrate from simplest to most complex to catch regressions early:
        - step 30 should target those boundary-start semantics before trying to remove `_compileMacro`'s `waitAllClosures()` again
 
 30. [IN PROGRESS] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
-   - `compileMacro` was partially completed after steps 28 and 29:
+   - `compileMacro` is now complete:
      - regular async `Macro` finalization no longer waits on `astate.waitAllClosures()`
+     - `Caller` finalization also no longer waits on `astate.waitAllClosures()`
      - direct deferred `caller()` output is fixed
      - imported callable calls now lower through an explicit async child boundary instead of relying on runtime buffer reservation
+     - `Caller` bodies use a local `__waited__` channel so command-only child boundaries can finalize structurally without falling back to closure counting
    - Remaining work:
-     - `Caller` finalization still waits on `astate.waitAllClosures()`
      - `compileRoot` still uses the older closure-counting handoff
-   - The next implementation slice should therefore:
-     - trace and structurally lower the remaining late-start paths inside `Caller` bodies
-     - then remove the final `compileRoot` closure wait
+   - The next implementation slice should therefore remove the final `compileRoot` closure wait.
 
 31. [PENDING] **`compileGuard` major rework**.
    - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
@@ -741,7 +742,7 @@ Migrate from simplest to most complex to catch regressions early:
 The `compileFor` migration also exposed an important diagnostic rule:
 - if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required
 
-The original `_compileMacro` experiment produced exactly that failure shape. The remaining form of it is now narrower: late-start caller-body work inside `Caller` nodes still needs a stronger structural completion signal before the last local `waitAllClosures()` can go away.
+The original `_compileMacro` experiment produced exactly that failure shape. The final caller-side fix was to give `Caller` bodies their own local `__waited__` channel, so command-only child boundaries contribute a structural completion signal instead of depending on closure counting.
 
 After each migration, run the full test suite before proceeding.
 

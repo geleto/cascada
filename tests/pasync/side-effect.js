@@ -27,6 +27,19 @@
     isPoisonError = nunjucks.runtime.isPoisonError;
   }
 
+  async function waitForCondition(predicate, timeoutMs = 200, intervalMs = 5) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate()) {
+        return;
+      }
+      await delay(intervalMs);
+    }
+    if (!predicate()) {
+      throw new Error('Timed out waiting for side effects to settle');
+    }
+  }
+
 
   describe('Side effects', () => {
     let env; // Env is used everywhere
@@ -141,6 +154,7 @@
                     {% do sequencer!.runOp('op2', 5) %}
                 `;
           await env.renderTemplateString(template, cont);
+          await waitForCondition(() => cont.logs.length >= 2);
           expect(callOrder).to.eql(['op1', 'op2']); // Verify sequence
           expect(cont.logs).to.eql(['op1 on seq1', 'op2 on seq1']);
         });
@@ -152,6 +166,7 @@
                     {% do sequencer!.runOp('op3', 2) %}
                 `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 3);
           expect(context.logs).to.eql([
             'op1 on seq1',
             'op2-other OTHER on seq1',
@@ -174,6 +189,7 @@
                     {% do sequencer!.runOp('op2', 2) %}
                 `;
           await env.renderTemplateString(template, cont);
+          await waitForCondition(() => cont.logs.length >= 3);
           expect(cont.logs).to.contain('Log: parallel-op');
           expect(cont.logs).to.contain('op1 on seq1');
           expect(cont.logs).to.contain('op2 on seq1');
@@ -187,6 +203,7 @@
                     {% do sequencer!.runOp('op2', 2) %}
                 `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 3);
           expect(context.logs).to.contain('Status status1 on seq1');
           expect(context.logs).to.contain('op1 on seq1');
           expect(context.logs).to.contain('op2 on seq1');
@@ -208,6 +225,7 @@
                     {% do sequencer2!.runOp('seq2-op2', 2) %}
                 `;
           await env.renderTemplateString(template, cont);
+          await waitForCondition(() => cont.logs.length >= 4);
           expect(cont.logs).to.contain('seq1-op1 on seq1');
           expect(cont.logs).to.contain('seq1-op2 on seq1');
           expect(cont.logs).to.contain('seq2-op1 on seq2');
@@ -238,6 +256,7 @@
                     {% do data.nestedSequencer!.runOp('nested2', 5) %}
                 `;
           await env.renderTemplateString(template, cont);
+          await waitForCondition(() => cont.logs.length >= 2);
           expect(cont.logs).to.eql(['nested1 on nested', 'nested2 on nested']);
         });
 
@@ -274,6 +293,7 @@
             {% do worker.processTask!('taskC', 2) %}
           `;
           await env.renderTemplateString(template, cont);
+          await waitForCondition(() => cont.logs.length >= 8);
           expect(cont.logs).to.contain('deep1 on deepSeq');
           expect(cont.logs).to.contain('deep2-other OTHER on deepSeq');
           expect(cont.logs).to.contain('deep3 on deepSeq');
@@ -293,6 +313,7 @@
                     {% endfor %}
                 `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 3);
           expect(context.logs).to.eql(['loop1 on seq1', 'loop2 on seq1', 'loop3 on seq1']);
         });
 
@@ -303,6 +324,7 @@
                     Results: {{ res1 }}, {{ res2 }}
                 `;
           const result = await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 2);
           expect(context.logs).to.eql(['set1 on seq1', 'set2 on seq1']);
           expect(result.trim()).to.equal('Results: set1, set2');
         });
@@ -323,6 +345,7 @@
                     {{ r1 }}
                 `;
           const result = await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 4);
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1', 'op3 on seq1', 'op4 on seq1']);
           expect(result.trim()).to.equal('op3op2');
         });
@@ -359,6 +382,7 @@
                     {% do sequencer.runOp!('op2', 5) %}
                 `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 2);
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1']);
         });
 
@@ -371,6 +395,7 @@
                     {% do sequencer.runOpOther!('opB2', 2) %}
                 `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 4);
           expect(context.logs).to.contain('opA1 on seq1');
           expect(context.logs).to.contain('opA2 on seq1');
           expect(context.logs).to.contain('opB1 OTHER on seq1');
@@ -387,6 +412,7 @@
                     {% do sequencer.runOp!('op2', 2) %}
                 `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 3);
           expect(context.logs).to.contain('Status status1 on seq1');
           expect(context.logs).to.contain('op1 on seq1');
           expect(context.logs).to.contain('op2 on seq1');
@@ -402,6 +428,7 @@
             {% do sequencer.runOpOther!('B2', 2) %}
           `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 4);
           expect(context.logs).to.contain('A1 on seq1');
           expect(context.logs).to.contain('A2 on seq1');
           expect(context.logs).to.contain('B1 OTHER on seq1');
@@ -429,6 +456,7 @@
                     {% do data.nestedSequencer.runOp!('nested2', 5) %}
                 `;
           await env.renderTemplateString(template, cont);
+          await waitForCondition(() => cont.logs.length >= 2);
           expect(cont.logs).to.eql(['nested1 on nested', 'nested2 on nested']);
         });
 
@@ -454,6 +482,7 @@
                     {% do data.level1.level2.deepSequencer.runOp!('deepA2', 2) %}
                 `;
           await env.renderTemplateString(template, cont);
+          await waitForCondition(() => cont.logs.length >= 3);
           expect(cont.logs).to.contain('deepA1 on deepSeq');
           expect(cont.logs).to.contain('deepA2 on deepSeq');
           expect(cont.logs).to.contain('deepB1 OTHER on deepSeq');
@@ -468,6 +497,7 @@
                     {% endfor %}
                 `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 3);
           expect(context.logs).to.eql(['loop1 on seq1', 'loop2 on seq1', 'loop3 on seq1']);
         });
 
@@ -479,6 +509,7 @@
                     Results: {{ res1 }}, {{ res2 }}
                 `;
           const result = await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 2);
           expect(context.logs).to.eql(['set1 on seq1', 'set2 on seq1']);
           expect(result.trim()).to.equal('Results: set1, set2');
         });
@@ -501,6 +532,7 @@
                     {{ r1 }}
                 `;
           const result = await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 4);
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1', 'op3 on seq1', 'op4 on seq1']);
           expect(result.trim()).to.equal('op3op2');
         });
@@ -513,6 +545,7 @@
                     {% do sequencer!.runOpOther('objPath2', 2) %}
                 `;
           await env.renderTemplateString(template, context);
+          await waitForCondition(() => context.logs.length >= 3);
           expect(context.logs).to.contain('methSpec1 OTHER on seq1');
           expect(context.logs).to.contain('objPath1 on seq1');
           expect(context.logs).to.contain('objPath2 OTHER on seq1');
@@ -610,6 +643,7 @@
             {% do nested.sequencer!.runOp('deep2', 5) %}  {# Takes shorter #}
           `;
           await env.renderTemplateString(template, constraintContext);
+          await waitForCondition(() => constraintContext.logs.length >= 2);
           expect(constraintContext.logs).to.eql(['deep1 on nested', 'deep2 on nested']);
         });
 
@@ -652,6 +686,7 @@
             {% do sequencer.runOp!('meth2', 5) %}  {# Takes shorter #}
           `;
           await env.renderTemplateString(template, constraintContext);
+          await waitForCondition(() => constraintContext.logs.length >= 2);
           expect(constraintContext.logs).to.eql(['meth1 on seq1', 'meth2 on seq1']);
         });
       });
@@ -682,6 +717,7 @@
                   {% do ctxSequencer!.runOp('ctxB', 5) %}
                 `;
           await env.renderTemplateString(template, analysisContext);
+          await waitForCondition(() => analysisContext.logs.length >= 2);
           expect(analysisContext.logs).to.eql(['ctxA on ctxSeq', 'ctxB on ctxSeq']);
         });
 
@@ -740,6 +776,7 @@
                    {% do ctxSequencer.runOp!('mB', 5) %}
                  `;
           await env.renderTemplateString(template, analysisContext);
+          await waitForCondition(() => analysisContext.logs.length >= 2);
           expect(analysisContext.logs).to.eql(['mA on ctxSeq', 'mB on ctxSeq']);
         });
 
@@ -751,6 +788,7 @@
                    {% do ctxSequencer.runOp!('methodOp2', 2) %}
                  `;
           await env.renderTemplateString(template, analysisContext);
+          await waitForCondition(() => analysisContext.logs.length >= 4);
           expect(analysisContext.logs).to.contain('pathOp1 on ctxSeq');
           expect(analysisContext.logs).to.contain('pathOp2 on ctxSeq');
           expect(analysisContext.logs).to.contain('methodOp1 on ctxSeq');
@@ -949,6 +987,7 @@
 
         // Render the template - renderTemplateString completes after all async ops triggered by 'do' finish
         await env.renderTemplateString(template, cont);
+        await waitForCondition(() => cont.logs.length >= numSequences);
 
         // Assertions
         expect(cont.logs).to.have.length(numSequences);
@@ -1047,6 +1086,7 @@
         const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
         const template = `{% do seq ! . runOp('s1', 8) %}{% do seq ! .runOp('s2', 4) %}`;
         await env.renderTemplateString(template, cont);
+        await waitForCondition(() => cont.logs.length >= 2);
         expect(cont.logs).to.eql(['s1', 's2']);
       });
       it('should support object path repair (e.g. obj!!.method)', async () => {
@@ -1114,6 +1154,7 @@
       `;
 
       await env.renderScriptString(script, ctx);
+      await waitForCondition(() => logs.length >= 2);
       expect(logs).to.eql(['repair called', 'after']);
     });
   });
@@ -1136,6 +1177,9 @@
             await delay(item === 'item1' ? 10 : 5); // item1 takes longer
             callOrder.push(`${this.name}:${item}`);
             return `Processed ${item}`;
+          },
+          getProcessedItems() {
+            return callOrder.slice();
           }
         }
       };
@@ -1157,6 +1201,7 @@
           {% do sequentialService!.processItem("item2") %}
           <p>Tasks initiated.</p>
         {% endcall %}
+        <p class="processed">{{ sequentialService!.getProcessedItems() | join(",") }}</p>
       `;
 
       // Expected output isn't the primary focus here, but the order of side effects.
@@ -1176,6 +1221,7 @@
       expect(result).to.contain('<h3>Task Box</h3>');
       expect(result).to.contain('<p>Starting tasks...</p>');
       expect(result).to.contain('<p>Tasks initiated.</p>');
+      expect(result).to.contain('ServiceA:item1,ServiceA:item2');
     });
 
 
@@ -1187,6 +1233,9 @@
             await delay(10);
             eventLog.push(`update:${key}=${value}`);
             return `updated ${key}`;
+          },
+          snapshot() {
+            return eventLog.filter((entry) => entry.indexOf('update:') === 0);
           }
         },
         logger: {
@@ -1194,6 +1243,9 @@
             await delay(5);
             eventLog.push(`log:${message}`);
             return `logged ${message}`;
+          },
+          snapshot() {
+            return eventLog.filter((entry) => entry.indexOf('log:') === 0);
           }
         }
       };
@@ -1212,6 +1264,8 @@
           {% do dataStore!.update("beta", 200) %}  {# Waits for previous dataStore! call #}
           {% do logger!.log("Beta updated") %}      {# Waits for previous logger! call #}
         {% endcall %}
+        <p class="store">{{ dataStore!.snapshot() | join(",") }}</p>
+        <p class="logs">{{ logger!.snapshot() | join(",") }}</p>
       `;
 
       await env.renderTemplateString(templateString, context);
@@ -1239,6 +1293,9 @@
             await delay(label === 'A1' ? 10 : label === 'A2' ? 5 : label === 'B1' ? 8 : 3);
             events.push(label);
             return label;
+          },
+          snapshot() {
+            return events.slice();
           }
         }
       };
@@ -1253,6 +1310,7 @@
           {% do service!.run(prefix + "1") %}
           {% do service!.run(prefix + "2") %}
         {% endcall %}
+        <p class="events">{{ service!.snapshot() | join(",") }}</p>
       `;
 
       const rendered = await env.renderTemplateString(template, context);
@@ -1262,6 +1320,10 @@
       expect(events).to.have.length(4);
       expect(rendered).to.contain('first');
       expect(rendered).to.contain('second');
+      expect(rendered).to.contain('A1');
+      expect(rendered).to.contain('A2');
+      expect(rendered).to.contain('B1');
+      expect(rendered).to.contain('B2');
     });
     //End additional macro/caller tests
   });

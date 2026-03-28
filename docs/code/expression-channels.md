@@ -229,10 +229,10 @@ Even if `a` is synchronously falsy (resolves immediately), the `.then` fires as 
 The `wrapInAsyncBlock` flag is set on AST nodes by `compile-sequential.js`'s `_assignAsyncWrappersAndReleases`. When `compile()` sees the flag it wraps the node in `emit.asyncBlockValue(...)`, which generates an `astate.asyncBlock(async (astate, frame, currentBuffer) => { ... })` wrapper — the legacy mechanism that `channels-refactor.md` is explicitly removing.
 
 `_assignAsyncWrappersAndReleases` sets the flag on:
-- `InlineIf` branch bodies and `Or`/`And` right operands that have `sequenceOperations`
+- `InlineIf` branch bodies and `Or`/`And` right operands that participate in sequenced paths
 - `LookupVal` nodes whose target relies on a sequenced symbol
-- `FunCall` nodes that are sequence-locked (`isFunCallLocked`)
-- Other nodes with sequence operations but no contention
+- `FunCall` nodes whose callee path is sequence-locked
+- Other nodes participating in sequence-path coordination without contention
 
 **This mechanism no longer does what was intended and should be removed entirely.** For the non-control-flow cases (`LookupVal`, `FunCall`), commands are already emitted synchronously and the iterator handles ordering — the `astate.asyncBlock` wrapper was never needed in the new model. For the control-flow cases (`InlineIf` branches, `Or`/`And` right operand), the wrapper is checked in `compileInlineIf` and `_compileBinOpShortCircuit` to nest an `asyncBlockValue` inside the already-deferred `.then` callback — this does not fix the root ordering problem (the branch is still deferred relative to sibling operands in the outer expression) and simply adds an extra layer of the legacy mechanism on top of the broken pattern.
 
@@ -282,6 +282,8 @@ This is the same `node._analysis.usedChannels` (minus locally-declared channels)
 Current status:
 - async `compileInlineIf` now uses a control-flow child buffer when the expression mutates channels
 - async `_compileBinOpShortCircuit` (`and` / `or`) now does the same
+- root command-emitting `do` expressions now lower through a structural child buffer boundary instead of relying on caller-local wait hacks
+- sequence-expression metadata is now computed in analysis; compiler-side `processExpression(...)` no longer drives legacy wrapper assignment
 - pure value-only async cases still stay on the lighter `.then(...)` path for now
 
 ---
@@ -304,11 +306,19 @@ Current status:
 3. Delete `_assignAsyncWrappersAndReleases` in `compile-sequential.js`.
    - The current wrapper-assignment pass should no longer force async expression wrapping for `LookupVal`, `FunCall`, or similar command-emitting forms.
    - The control-flow expression rewrite should replace this mechanism rather than coexist with it.
+   - ✅ Legacy wrapper assignment is gone. The remaining useful sequence facts now come from analysis metadata instead of compiler-time `processExpression(...)` calls.
 
 4. Audit `_compileExpression(..., forceWrap)` call sites.
    - Remove forced expression wrapping where the enclosing statement/boundary already provides the required structure.
    - In particular, ensure boundary helpers such as structural text output / capture do not launch nested command-emitting expression work through `asyncBlockValue(...)` without a child buffer.
+   - Include root expression statements (`compileDo`, expression-valued statement positions, and similar sites) in this audit. These currently still rely on `asyncBlockValue(...)` / `wrapInAsyncBlock` semantics for some command-emitting async work, especially sequence side-effect calls.
    - Prioritize the `compileTextBoundary(...)` / `compileCaptureBoundary(...)` call chains, since those are the currently reproduced macro/caller boundary failures.
+
+4a. Rewrite root command-emitting expression statements to own their structure directly.
+   - `compileDo` should not depend on legacy expression wrappers or caller-local completion hacks.
+   - If a root async expression statement emits commands, its structural child-buffer ownership must come from the normal expression / statement lowering path, not from `astate.waitAllClosures()` or an ad hoc local `__waited__` replacement.
+   - Sequence side-effect calls (`path!.method(...)`, `path.method!(...)`) are the key regression probe here: removing `wrapInAsyncBlock` must still preserve their completion and ordering both in ordinary templates and inside caller bodies.
+   - ✅ `compileDo` now uses a real structural child boundary for command-emitting async statement roots. The boundary is linked into the enclosing text stream so source-order traversal cannot step past async side effects, and awaited statement results suppress only expected `PoisonError`-style completion failures.
 
 5. Rewrite `compileInlineIf`.
    - Replace the current `.then(...)` branch evaluation model with a child-buffer structural boundary when either branch may emit commands.
@@ -334,6 +344,8 @@ Current status:
 8. Remove obsolete legacy helpers once the new paths are in place.
    - Remove remaining `wrapInAsyncBlock` checks and dead `asyncBlockValue(...)` call sites that were only serving the old expression-ordering workaround.
    - Keep any still-needed value-only async helper only if it does not defer command emission past the owning boundary.
+   - The intended end state is that command-emitting expression roots no longer depend on either `wrapInAsyncBlock` or `asyncBlockValue(...)`; if one of them is still needed during the transition, treat it as temporary technical debt and keep it documented by call site.
+   - Current baseline: root command-emitting statement positions no longer need the legacy wrapper path. The remaining documented debt is in generic recursive expression compilation and any value-only helper that still exists outside structural boundaries.
 
 9. Verify with both ordering and boundary-timing regressions.
    - Control-flow expression ordering:
@@ -344,4 +356,5 @@ Current status:
      - `caller()` inside expression output paths
      - nested caller/call-block dispatch reached through imported-callable async boundaries
      - macro/caller composition cases that previously relied on `waitAllClosures()`
+     - command-emitting `do` / root expression statements with sequence side effects
      - any case where a deferred expression could add commands after an enclosing buffer called `markFinishedAndPatchLinks()`

@@ -39,23 +39,7 @@ class CompileAnalysis {
     rootNode._analysis = Object.assign(rootNode._analysis || {}, {
       sequenceLocks
     });
-
-    this.compiler.sequential._collectSequenceKeysAndOperations(rootNode, new Set(sequenceLocks));
-
-    const nodesList = [];
-    this._collectNodes(rootNode, nodesList);
-    for (let i = 0; i < nodesList.length; i++) {
-      const node = nodesList[i];
-      if (!node || !node.lockKey) {
-        continue;
-      }
-      node._analysis = Object.assign(node._analysis || {}, {
-        sequenceLockLookup: {
-          key: node.lockKey,
-          repair: !!node.sequentialRepair
-        }
-      });
-    }
+    this.compiler.sequential.annotateSequenceLockLookups(rootNode, new Set(sequenceLocks));
   }
 
   _walk(node, parentNode, parentField) {

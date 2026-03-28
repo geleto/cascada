@@ -56,7 +56,7 @@ class CompileMacro {
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
         arg._analysis = { declarationTarget: true };
-        declares.push({ name: arg.value, type: 'var', initializer: null });
+        declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       }
     });
     return {
@@ -114,10 +114,10 @@ class CompileMacro {
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
         arg._analysis = { declarationTarget: true };
-        declares.push({ name: arg.value, type: 'var', initializer: null });
+        declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       } else if (arg instanceof nodes.Dict) {
         arg.children.forEach((pair) => {
-          declares.push({ name: pair.key.value, type: 'var', initializer: null });
+          declares.push({ name: pair.key.value, type: 'var', initializer: null, macroParam: true });
         });
       }
     }, undefined, node);
@@ -240,18 +240,11 @@ class CompileMacro {
   _emitAsyncMacroReturn({ node, bufferId, errVar, allCallersBufferId, hasCallerSupport }) {
     const compiler = this.compiler;
     const errorCheck = `if (${errVar}) throw ${errVar};`;
-    const needsClosureWait = node.typename === 'Caller';
-    const closuresReadyVar = needsClosureWait ? compiler._tmpid() : null;
     const callerReadyVar = hasCallerSupport ? compiler._tmpid() : null;
     const callerSyncPrefix =
-      (needsClosureWait ? `await ${closuresReadyVar};` : '') +
       (hasCallerSupport ? `const ${callerReadyVar} = ${bufferId}.addSnapshot("${CALLER_SCHED_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` : '') +
       (hasCallerSupport ? `await ${callerReadyVar};` : '') +
       (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.markFinishedAndPatchLinks();}` : '');
-
-    if (needsClosureWait) {
-      compiler.emit.line(`const ${closuresReadyVar} = astate.waitAllClosures();`);
-    }
 
     if (compiler.scriptMode) {
       const returnVar = compiler._tmpid();

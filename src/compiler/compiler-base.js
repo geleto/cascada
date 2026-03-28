@@ -380,12 +380,7 @@ class CompilerBase extends Obj {
     const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
     if (declaredOutput) {
       if (node.sequential || node.sequentialRepair) {
-        this.fail(
-          'Sequence marker (!) is not allowed in non-context variable paths',
-          node.lineno,
-          node.colno,
-          node
-        );
+        this._failNonContextSequenceRoot(node, declaredOutput);
       }
       if (declaredOutput.type === 'var') {
         if (!this.scriptMode && this.inBlock) {
@@ -1093,7 +1088,7 @@ class CompilerBase extends Obj {
         const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
         const keyRootSyntheticVar = frame && frame.resolve && frame.resolve(keyRoot, false);
         if (keyRootOutput || keyRootSyntheticVar) {
-          this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
+          this._failNonContextSequenceRoot(node, keyRootOutput);
         }
       }
       if (sequenceLockKey) {
@@ -1177,8 +1172,15 @@ class CompilerBase extends Obj {
     const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
     const keyRootSyntheticVar = frame && frame.resolve && frame.resolve(keyRoot, false);
     if (keyRootOutput || keyRootSyntheticVar) {
-      this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
+      this._failNonContextSequenceRoot(node, keyRootOutput);
     }
+  }
+
+  _failNonContextSequenceRoot(node, declaration = null) {
+    if (declaration && declaration.macroParam) {
+      this.fail('Sequence marker (!) is not allowed inside macros', node.lineno, node.colno, node);
+    }
+    this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
   }
 
   _compileChannelObservationFunCall(node, frame, specialChannelCall) {
@@ -1241,7 +1243,6 @@ class CompilerBase extends Obj {
       // they still compile to a normal promise-valued expression.
       // Any outer structural wrapping should happen at the caller site,
       // not here.
-      this.sequential.processExpression(node, frame);
       const parts = [
         function () {
           this.emit(`env.getFilter("${node.name.value}")`);
@@ -1270,8 +1271,6 @@ class CompilerBase extends Obj {
       // they still compile to a normal promise-valued expression.
       // Any outer structural wrapping should happen at the caller site,
       // not here.
-      this.sequential.processExpression(node, frame);
-
       this.emit.line(`let ${symbol} = `);
       this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
         this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
@@ -1483,7 +1482,6 @@ class CompilerBase extends Obj {
         return;
       }
 
-      this.sequential.processExpression(node, frame);
       if (forceWrap || node.wrapInAsyncBlock) {
         node.wrapInAsyncBlock = false;//so that compile won't wrap it and ignore positionNode
         this.emit.asyncBlockValue(node, frame, (n, f) => {
