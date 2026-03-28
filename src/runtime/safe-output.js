@@ -3,6 +3,11 @@
 var lib = require('../lib');
 const errors = require('./errors');
 const { CommandBuffer } = require('./command-buffer');
+const {
+  RESOLVE_MARKER,
+  resolveAll,
+  resolveSingle
+} = require('./resolve');
 
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
@@ -118,7 +123,7 @@ function suppressValueAsync(val, autoescape, errorContext) {
   }
 
   // Simple literal value (not array, not promise) - return synchronously
-  if (!val || (typeof val.then !== 'function' && !Array.isArray(val))) {
+  if (!val || (typeof val.then !== 'function' && !val[RESOLVE_MARKER] && !Array.isArray(val))) {
     return suppressValue(val, autoescape);
   }
 
@@ -126,9 +131,10 @@ function suppressValueAsync(val, autoescape, errorContext) {
   if (Array.isArray(val)) {
     const hasPoison = val.some(errors.isPoison);
     const hasPromises = val.some(item => item && typeof item.then === 'function');
+    const hasMarkers = val.some(item => item && item[RESOLVE_MARKER]);
 
     // If array has no promises and no poison, handle synchronously
-    if (!hasPromises && !hasPoison) {
+    if (!hasPromises && !hasMarkers && !hasPoison) {
       return suppressValue(val.join(','), autoescape);
     }
 
@@ -142,10 +148,14 @@ function suppressValueAsync(val, autoescape, errorContext) {
 
 async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
   val = normalizeBufferValue(val);
-  // Handle promise values
-  if (val && typeof val.then === 'function') {
+  // Consume a single top-level Cascada value before text materialization.
+  if (!Array.isArray(val)) {
     try {
-      val = await val;
+      if (val && val[RESOLVE_MARKER]) {
+        val = await resolveSingle(val);
+      } else if (val && typeof val.then === 'function') {
+        val = await val;
+      }
     } catch (err) {
       if (errors.isPoisonError(err)) {
         throw err;
@@ -155,33 +165,19 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
       }
     }
 
-    // Check if resolved to poison
-    if (errors.isPoison(val)) {
-      throw new errors.PoisonError(val.errors);
-    }
   }
 
   // Handle arrays
   if (Array.isArray(val)) {
-    // Collect errors from all items (deterministic)
-    const collectedErrors = await errors.collectErrors(val);
-    if (collectedErrors.length > 0) {
-      throw new errors.PoisonError(collectedErrors);
-    }
-
-    const hasPromises = val.some(item => item && typeof item.then === 'function');
-
-    if (hasPromises) {
-      try {
-        val = await Promise.all(val);
-      } catch (err) {
-        if (errors.isPoisonError(err)) {
-          throw err;
-        } else {
-          const contextualError = errors.handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-          throw new errors.PoisonError([contextualError]);
-        }
+    try {
+      const resolvedArray = await resolveAll(val);
+      val = resolvedArray;
+    } catch (err) {
+      if (errors.isPoisonError(err)) {
+        throw err;
       }
+      const contextualError = errors.handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      throw new errors.PoisonError([contextualError]);
     }
 
     return suppressValue(val.join(','), autoescape);
@@ -213,7 +209,7 @@ function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
   }
 
   // Simple literal value - validate and return synchronously
-  if (!val || (typeof val.then !== 'function' && !Array.isArray(val))) {
+  if (!val || (typeof val.then !== 'function' && !val[RESOLVE_MARKER] && !Array.isArray(val))) {
     return ensureDefined(val, lineno, colno, context);
   }
 
@@ -234,10 +230,14 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
     return val;
   }
 
-  // Handle promises
-  if (val && typeof val.then === 'function') {
+  // Handle promises and marker-backed values
+  if (val && (typeof val.then === 'function' || val[RESOLVE_MARKER])) {
     try {
-      val = await val;
+      if (val[RESOLVE_MARKER]) {
+        val = await resolveSingle(val);
+      } else {
+        val = await val;
+      }
     } catch (err) {
       if (errors.isPoisonError(err)) {
         throw err;
@@ -247,9 +247,6 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
       }
     }
 
-    if (errors.isPoison(val)) {
-      throw new errors.PoisonError(val.errors);
-    }
   }
 
   return ensureDefined(val, lineno, colno, context);
@@ -282,8 +279,7 @@ function suppressValueScript(val, autoescape) {
 }
 
 function suppressValueScriptAsync(val, autoescape, errorContext) {
-  // Handle Promises
-  if (val && typeof val.then === 'function') {
+  if (val && (typeof val.then === 'function' || val[RESOLVE_MARKER] || Array.isArray(val))) {
     return _suppressValueScriptAsyncComplex(val, autoescape, errorContext);
   }
   return suppressValueScript(val, autoescape);
@@ -291,7 +287,13 @@ function suppressValueScriptAsync(val, autoescape, errorContext) {
 
 async function _suppressValueScriptAsyncComplex(val, autoescape, errorContext) {
   try {
-    val = await val;
+    if (!Array.isArray(val)) {
+      if (val && val[RESOLVE_MARKER]) {
+        val = await resolveSingle(val);
+      } else if (val && typeof val.then === 'function') {
+        val = await val;
+      }
+    }
   } catch (err) {
     if (errors.isPoisonError(err)) {
       throw err;
@@ -301,8 +303,9 @@ async function _suppressValueScriptAsyncComplex(val, autoescape, errorContext) {
     }
   }
 
-  if (errors.isPoison(val)) {
-    throw new errors.PoisonError(val.errors);
+  if (Array.isArray(val)) {
+    const resolvedArray = await resolveAll(val);
+    val = resolvedArray;
   }
 
   return suppressValueScript(val, autoescape);

@@ -118,7 +118,7 @@ This also handles poison the same way as statement-level control-flow boundaries
 
 ## Remaining Work
 
-1. Audit the remaining explicit expression boundaries.
+1. `Done` Audit the remaining explicit expression boundaries.
    - The generic recursive `forceWrap` / `emit.asyncBlockValue(...)` path is gone.
    - The remaining non-control-flow expression boundary is imported-callable lowering.
    - Command-emitting expressions should not regain a generic late-start wrapper path.
@@ -127,11 +127,13 @@ This also handles poison the same way as statement-level control-flow boundaries
      - do not let the compiler-wide imported-binding fallback override a real local declaration
      - shadowed locals now stay on the normal call path even if the same name is imported elsewhere
 
-2. Remove remaining deferred macro/caller dispatch from non-control-flow expression paths.
+2. `Done` Remove remaining deferred macro/caller dispatch from non-control-flow expression paths.
    - Do not route command-emitting macro/caller dispatch through `.then(... callWrapAsync(...))`.
    - Macro arguments must remain raw on that path.
+   - `callWrapAsync(...)` now resolves the callee/args inside the runtime wrapper instead of deferring command-emitting dispatch through a later `.then(...)`.
+   - direct `caller()` and direct macro dispatch already stay on their dedicated current-boundary paths.
 
-3. Keep the removal probe findings as design constraints.
+3. `Done` Keep the removal probe findings as design constraints.
    - `compileReturn(...)` is off `forceWrap`.
    - `_compileGetTemplateOrScript(...)` is off `forceWrap`.
    - `compileAsyncVarSet(...)` is off the old wrapped-expression path.
@@ -164,15 +166,18 @@ This also handles poison the same way as statement-level control-flow boundaries
        - fixed for the current paths by keeping staging only for the storage/timing commands that really need it, rather than resolving every command argument eagerly
    - These classes should remain the checklist for future expression-boundary work rather than a reason to reintroduce generic wrappers.
 
-4. Keep using existing analysis.
+4. `Done` Keep using existing analysis.
    - Use `node._analysis.usedChannels` to decide which parent channels a child expression boundary must link into.
    - Do not add ad hoc expression-only runtime linking rules if analysis already provides the needed facts.
 
-5. Audit consumption sites to prefer resolve helpers over raw `await`.
+5. `In Progress` Audit consumption sites to prefer resolve helpers over raw `await`.
    - Use `resolveSingle(...)`, `resolveDuo(...)`, and `resolveAll(...)` for ordinary Cascada value consumption.
    - Keep macro invocation as the exception: macro arguments stay raw.
+   - Much of the command/runtime path now follows this.
+   - `safe-output.js` now uses resolve helpers at the true text/value materialization boundaries, so marker-backed arrays/objects do not slip past those output consumers unresolved.
+   - Remaining work is the narrower runtime cleanup around deferred command values, intentional producer-side promises, and any non-output consumption sites that still use raw `await`.
 
-6. Remove obsolete legacy helpers once the new paths are in place.
+6. `Done` Remove obsolete legacy helpers once the new paths are in place.
    - Keep removing `asyncBlockValue(...)` call sites that only exist to support the old expression-ordering workaround.
    - If a value-only helper remains, it must not defer command emission past the owning boundary.
    - Completed cleanup so far:
@@ -182,13 +187,14 @@ This also handles poison the same way as statement-level control-flow boundaries
      4. removed the generic recursive `forceWrap` / `emit.asyncBlockValue(...)` path from expression compilation
    - Remaining work is now about explicit semantics, not generic wrapper removal.
 
-7. Keep returned-value materialization correct without wrapper regressions.
+7. `Done` Keep returned-value materialization correct without wrapper regressions.
    - Async `return` expressions currently rely on `asyncBlockValue(...)` so script/template finalization does not observe the returned value before its own dependencies finish.
    - The fix should be value-oriented: materialize the returned result itself, not unrelated top-level work.
    - In particular, sequence-guard commit / rollback must be visible before `return events` observes the final value.
    - The current evidence suggests `return` must observe the value after the owning boundary's structural completion, rather than capturing an early promise/snapshot and only resolving that later.
+   - `compileReturn(...)` is now off `forceWrap`, and the known return-value regressions are green.
 
-8. Keep aggregate materialization correct at true consumers.
+8. `Done` Keep aggregate materialization correct at true consumers.
    - Async array / object literals currently pass through `runtime.createArray(...)` / `runtime.createObject(...)` and carry `RESOLVE_MARKER`.
    - The raw removal probe showed that some root value positions still depend on the wrapper turning the expression into a promise that later consumption resolves through `resolveSingle(...)`.
    - The fix should make the true consumers responsible for resolving marker-backed values, rather than depending on an outer expression wrapper.
@@ -196,20 +202,26 @@ This also handles poison the same way as statement-level control-flow boundaries
      - direct output of arrays / objects with async elements
      - filters such as `join`, `sort`, `sum`
      - ordinary function arguments receiving arrays / objects with async elements
+   - These probes are green after preserving marker-backed values and resolving them at the real consumer boundaries.
 
-9. Keep value-dependent plain expression side effects structurally tied to the values that observe them.
+9. `Done` Keep value-dependent plain expression side effects structurally tied to the values that observe them.
    - Repro shape: `out.push(caller(item))` in a macro, followed by `return out`.
    - The returned value depends on those `push(...)` effects, so this is not fire-and-forget work.
    - The fix should not add a generic waiter channel. Instead, the expression/call path must make the returned value structurally depend on completion of the side effect that contributes to that value.
+   - The known call-block assignment regression is fixed.
 
-10. Reduce remaining command-argument staging only after the real producer paths are clean.
+10. `In Progress` Reduce remaining command-argument staging only after the real producer paths are clean.
    - The old generic `normalizeCommandArgsForDeferredHandling(...)` path is gone.
    - The current runtime split is:
      - true consumer commands resolve only their top-level deferred arguments at apply time
-     - storage/timing commands keep raw deferred values where their semantics require it
-   - Before deleting the last handled-promise staging, audit which storage/timing commands still receive raw promise/thenable args and why.
+     - buffered commands keep raw deferred values where their semantics require it
+   - The producer audit so far shows that the highest-signal remaining native-promise producers are intentional:
+     - block/super/include-style producer slots in `compile-buffer.js`
+     - async import/from-import export lookup in `compile-inheritance.js`
+     - include composition `finalSnapshot()` forwarding in `compile-inheritance.js`
+   - Before deleting the last handled-promise staging, audit any lower-level producer paths outside those intentional cases.
 
-11. Verify with both ordering and boundary-timing regressions.
+11. `Done` Verify with both ordering and boundary-timing regressions.
    - ternary / `and` / `or` with command-emitting operands
    - `caller()` inside expression output paths
    - nested caller / call-block dispatch through imported-callable async boundaries
@@ -217,3 +229,6 @@ This also handles poison the same way as statement-level control-flow boundaries
    - updated unused-async-var tests that now observe only returned/final values
    - async `return` observing sequence-guard commit / rollback completion
    - array / object literals with async elements flowing through direct output, filters, and function arguments
+   - Covered by focused regressions for imported-callable shadowing, async import/include boundaries,
+     caller/call-block dispatch, explicit return ordering, and async array/object materialization.
+   - The quick suite is currently green.

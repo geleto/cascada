@@ -135,9 +135,6 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   let resolvedArgs = args;
   try {
     resolvedArgs = await resolveAll(args);
-    if (isPoison(resolvedArgs)) {
-      errors.push(...resolvedArgs.errors);
-    }
   } catch (err) {
     if (isPoisonError(err)) {
       errors.push(...err.errors);

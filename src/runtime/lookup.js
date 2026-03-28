@@ -99,21 +99,6 @@ async function _memberLookupAsyncComplex(obj, val, errorContext) {
   try {
     const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
 
-    // Collect errors from BOTH resolved values (never miss any error principle)
-    const objPoison = isPoison(resolvedObj);
-    const valPoison = isPoison(resolvedVal);
-
-    if (objPoison && valPoison) {
-      // Both poisoned - merge errors
-      return createPoison([...resolvedObj.errors, ...resolvedVal.errors]);
-    } else if (objPoison) {
-      // Only obj poisoned - return it directly
-      return resolvedObj;
-    } else if (valPoison) {
-      // Only val poisoned - return it directly
-      return resolvedVal;
-    }
-
     const result = memberLookup(resolvedObj, resolvedVal);
 
     // Wrap promise results to preserve error context
@@ -194,21 +179,6 @@ async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
   // Resolve the values
   try {
     const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
-
-    // Collect errors from BOTH resolved values (never miss any error principle)
-    const objPoison = isPoison(resolvedObj);
-    const valPoison = isPoison(resolvedVal);
-
-    if (objPoison && valPoison) {
-      // Both poisoned - merge errors
-      return createPoison([...resolvedObj.errors, ...resolvedVal.errors]);
-    } else if (objPoison) {
-      // Only obj poisoned - return it directly
-      return resolvedObj;
-    } else if (valPoison) {
-      // Only val poisoned - return it directly
-      return resolvedVal;
-    }
 
     // The call to memberLookupScript can throw a native TypeError if resolvedObj is null/undefined.
     // This try/catch block will handle it and enrich the error with context.

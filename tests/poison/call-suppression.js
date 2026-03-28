@@ -787,6 +787,20 @@
 
         expect(result).to.equal('hello,world');
       });
+
+      it('should handle array with marker-backed async elements', async () => {
+        const arr = runtime.createArray(['hello', Promise.resolve('world')]);
+        const result = await runtime.suppressValueAsync(arr, false, mockErrorContext);
+
+        expect(result).to.equal('hello,world');
+      });
+
+      it('should handle promise that resolves to a marker-backed array', async () => {
+        const markerArray = runtime.createArray(['hello', Promise.resolve('world')]);
+        const result = await runtime.suppressValueAsync(Promise.resolve(markerArray), false, mockErrorContext);
+
+        expect(result).to.equal('hello,world');
+      });
     });
 
     describe('ensureDefinedAsync - Sync-First Hybrid', () => {
@@ -899,6 +913,18 @@
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.contain('Promise rejection');
+        }
+      });
+
+      it('should handle marker-backed arrays with async element failures', async () => {
+        const arr = runtime.createArray(['ok', Promise.reject(new Error('Marker rejection'))]);
+
+        try {
+          await runtime.ensureDefinedAsync(arr, 1, 1, mockContext, mockErrorContext);
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+          expect(thrown.errors[0].message).to.equal('Marker rejection');
         }
       });
     });
@@ -1040,6 +1066,5 @@
   });
 
 })();
-
 
 
