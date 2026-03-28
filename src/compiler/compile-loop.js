@@ -13,7 +13,7 @@ class CompileLoop {
       // @todo - use compileFor for the loop variable, etc...
       this.compiler.emit('while (');
       // While conditions are scheduler/control expressions, not waited-root work.
-      this.compiler.compileExpression(node.cond, frame, false, node.cond, true);
+      this.compiler.compileExpression(node.cond, frame, node.cond, true);
       this.compiler.emit(') {');
       this.compiler.compile(node.body, frame);
       this.compiler.emit('}');
@@ -71,7 +71,7 @@ class CompileLoop {
         this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${arr} = `);
           // The iterable source is loop scheduler input, not a root body result.
-          this.compiler.compileExpression(node.arr, innerFrame, false, node.arr, true);
+          this.compiler.compileExpression(node.arr, innerFrame, node.arr, true);
           this.compiler.emit.line(';');
         });
       }
@@ -84,7 +84,7 @@ class CompileLoop {
         this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${limitVar} = `);
           // This value configures scheduling only, so exclude it from root tracking.
-          this.compiler.compileExpression(node.concurrentLimit, innerFrame, false, node.concurrentLimit, true);
+          this.compiler.compileExpression(node.concurrentLimit, innerFrame, node.concurrentLimit, true);
           this.compiler.emit.line(';');
         });
       }
@@ -271,7 +271,7 @@ class CompileLoop {
             this.compiler.emit(`${whileCondId} = `);
             // While condition is control-flow gating and excluded from waited channel tracking.
             this.compiler.buffer.skipOwnWaitedChannel(() => {
-              this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame, false);
+              this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame);
             });
             this.compiler.emit.line(';');
             const whileErrorContext = this.compiler._createErrorContext(node, whileConditionNode);
@@ -287,7 +287,7 @@ class CompileLoop {
             this.compiler.emit(`const ${whileCondId} = `);
             // While condition is control-flow gating and excluded from waited channel tracking.
             this.compiler.buffer.skipOwnWaitedChannel(() => {
-              this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame, false);
+              this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame);
             });
             this.compiler.emit.line(';');
           }
@@ -461,7 +461,7 @@ class CompileLoop {
 
     this.compiler.emit('let ' + arr + ' = runtime.fromIterator(');
     // Legacy async-loop source is scheduling input, not waited-root work.
-    this.compiler.compileExpression(node.arr, frame, false, node.arr, true);
+    this.compiler.compileExpression(node.arr, frame, node.arr, true);
     this.compiler.emit.line(');');
 
     if (node.name instanceof nodes.Array) {

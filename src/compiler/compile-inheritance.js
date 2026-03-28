@@ -67,7 +67,7 @@ class CompileInheritance {
     return this.compiler.templateName === null ? 'undefined' : JSON.stringify(this.compiler.templateName);
   }
 
-  _compileGetTemplateOrScript(node, frame, eagerCompile, ignoreMissing, wrapInAsyncBlock) {
+  _compileGetTemplateOrScript(node, frame, eagerCompile, ignoreMissing) {
     const parentTemplateId = this.compiler._tmpid();
     const parentName = this._templateName();
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
@@ -83,14 +83,14 @@ class CompileInheritance {
       this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
       // Template/script lookup expressions feed composition boundaries, which
       // emit their own completion tracking separately from root-expression WRCs.
-      this.compiler.compileExpression(node.template, frame, wrapInAsyncBlock, positionNode, true);
+      this.compiler.compileExpression(node.template, frame, positionNode, true);
       this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this.compiler._makeCallback(parentTemplateId);
       this.emit(`env.get${this.compiler.scriptMode ? 'Script' : 'Template'}(`);
       // Template/script lookup expressions feed composition boundaries, which
       // emit their own completion tracking separately from root-expression WRCs.
-      this.compiler.compileExpression(node.template, frame, false, node.template, true);
+      this.compiler.compileExpression(node.template, frame, node.template, true);
       this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     }
 
@@ -99,7 +99,7 @@ class CompileInheritance {
 
   compileImport(node, frame) {
     const target = node.target.value;
-    const id = this._compileGetTemplateOrScript(node, frame, false, false, true);
+    const id = this._compileGetTemplateOrScript(node, frame, false, false);
 
     if (node.isAsync) {
       const exportedId = this.compiler._tmpid();
@@ -129,7 +129,7 @@ class CompileInheritance {
 
   compileFromImport(node, frame) {
     // Pass node.template for position in _compileGetTemplateOrScript
-    const importedId = this._compileGetTemplateOrScript(node, frame, false, false, true);
+    const importedId = this._compileGetTemplateOrScript(node, frame, false, false);
 
     if (node.isAsync) {
       const exportedId = this.compiler._tmpid();
@@ -325,7 +325,7 @@ class CompileInheritance {
       this.emit.line('context.prepareForAsyncBlocks();');
     }
 
-    const parentTemplateId = this._compileGetTemplateOrScript(node, frame, true, false, true);
+    const parentTemplateId = this._compileGetTemplateOrScript(node, frame, true, false);
 
     if (this.compiler.asyncMode) {
       if (node.asyncStoreIn) {
@@ -396,7 +396,7 @@ class CompileInheritance {
       this.emit(`let ${templateNameVar} = `);
       // Include target lookup is handled by include/import boundary tracking,
       // so it intentionally bypasses root waited-expression tracking.
-      this.compiler.compileExpression(node.template, f, false, node.template, true);
+      this.compiler.compileExpression(node.template, f, node.template, true);
       this.emit.line(';');
 
       // Keep producer synchronous: carry async template lookup/render in promise chain.
@@ -447,7 +447,7 @@ class CompileInheritance {
     this.emit.line('tasks.push(');
     this.emit.line('function(callback) {');
 
-    const id = this._compileGetTemplateOrScript(node, frame, false, node.ignoreMissing, false);
+    const id = this._compileGetTemplateOrScript(node, frame, false, node.ignoreMissing);
     this.emit.line(`callback(null,${id});});`);
 
     this.emit.line('});');

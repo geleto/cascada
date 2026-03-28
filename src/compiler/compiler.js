@@ -139,10 +139,10 @@ class Compiler extends CompilerBase {
           // so they intentionally bypass waited-root tracking.
           if (node.isAsync && !resolveArgs) {
             this.emit('runtime.normalizeFinalPromise(');
-            this._compileExpression(arg, callFrame, false);
+            this._compileExpression(arg, callFrame);
             this.emit(')');
           } else {
-            this._compileExpression(arg, callFrame, false);
+            this._compileExpression(arg, callFrame);
           }
 
           if (i !== args.children.length - 1 || contentArgs.length) {
@@ -348,7 +348,7 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
     } else if (node.value) { // e.g., set x = 123
       this.emit(ids.join(' = ') + ' = ');
-      this.compileExpression(node.value, frame, false, node.value);
+      this.compileExpression(node.value, frame, node.value);
       this.emit.line(';');
     } else { // e.g., set x = capture ...
       this.emit(ids.join(' = ') + ' = ');
@@ -441,7 +441,7 @@ class Compiler extends CompilerBase {
       const targetName = node.targets[0].value;
       const pathValueId = this._tmpid();
       this.emit(`let ${pathValueId} = `);
-      this.compileExpression(node.value, frame, false, node.value);
+      this.compileExpression(node.value, frame, node.value);
       this.emit.line(';');
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
@@ -455,7 +455,7 @@ class Compiler extends CompilerBase {
       hasAssignedValue = true;
     } else if (node.value && !isDeclarationOnly) {
       this.emit(ids.join(' = ') + ' = ');
-      this.compileExpression(node.value, frame, false, node.value);
+      this.compileExpression(node.value, frame, node.value);
       this.emit.line(';');
       hasAssignedValue = true;
     } else if (node.body) {
@@ -514,7 +514,7 @@ class Compiler extends CompilerBase {
         // Add try-catch wrapper for error handling
         this.emit('try {');
         this.emit('const switchResult = ');
-        this._compileAwaitedExpression(node.expr, blockFrame, false);
+        this._compileAwaitedExpression(node.expr, blockFrame);
         this.emit(';');
         this.emit('');
         // Note: awaited result cannot be a resolved PoisonedValue, so no check needed
@@ -524,14 +524,14 @@ class Compiler extends CompilerBase {
       } else {
         // Sync mode - no error handling needed
         this.emit('switch (');
-        this._compileAwaitedExpression(node.expr, blockFrame, false);
+        this._compileAwaitedExpression(node.expr, blockFrame);
         this.emit(') {');
       }
 
       // Compile cases — synchronously, no inner asyncBlock wrappers
       node.cases.forEach((c) => {
         this.emit('case ');
-        this._compileAwaitedExpression(c.cond, blockFrame, false);
+        this._compileAwaitedExpression(c.cond, blockFrame);
         this.emit(': ');
 
         if (c.body.children.length) {
@@ -919,7 +919,7 @@ class Compiler extends CompilerBase {
         // Async mode: Add try-catch wrapper for poison condition handling
         this.emit('try {');
         this.emit(`const ${condResultId} = `);
-        this._compileAwaitedExpression(node.cond, blockFrame, false);
+        this._compileAwaitedExpression(node.cond, blockFrame);
         this.emit(';');
         this.emit('');
 
@@ -978,7 +978,7 @@ class Compiler extends CompilerBase {
       } else {
         // Sync mode (unchanged)
         this.emit('if(');
-        this._compileAwaitedExpression(node.cond, blockFrame, false);
+        this._compileAwaitedExpression(node.cond, blockFrame);
         this.emit('){');
 
         this.emit.withScopedSyntax(() => {
@@ -1319,7 +1319,7 @@ class Compiler extends CompilerBase {
             frame,
             child,
             (innerFrame) => {
-              this.compileExpression(child, innerFrame, false, child);
+              this.compileExpression(child, innerFrame, child);
             },
             {
               emitInCurrentBuffer: true
@@ -1331,7 +1331,7 @@ class Compiler extends CompilerBase {
           const returnId = this._tmpid();
           this.emit.line(`let ${returnId};`);
           this.emit(`${returnId} = `);
-          this.compileExpression(child, frame, false, child);
+          this.compileExpression(child, frame, child);
           this.emit.line(';');
           const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
           this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
@@ -1356,7 +1356,7 @@ class Compiler extends CompilerBase {
         if (this.throwOnUndefined) {
           this.emit('runtime.ensureDefined(');
         }
-        this.compileExpression(child, frame, false, child);
+        this.compileExpression(child, frame, child);
         if (this.throwOnUndefined) {
           this.emit(`,${child.lineno},${child.colno}, context)`);
         }
@@ -1561,7 +1561,7 @@ class Compiler extends CompilerBase {
 
   compileDo(node, frame) {
     node.children.forEach(child => {
-      this.compileExpression(child, frame, false, child);
+      this.compileExpression(child, frame, child);
       this.emit.line(';');
     });
   }
@@ -1573,7 +1573,7 @@ class Compiler extends CompilerBase {
       const resultVar = this._tmpid();
       this.emit(`let ${resultVar} = `);
       if (hasValue) {
-        this.compileExpression(node.value, frame, true, node);
+        this.compileExpression(node.value, frame, node);
       } else {
         this.emit('undefined');
       }
@@ -1586,7 +1586,7 @@ class Compiler extends CompilerBase {
 
     this.emit('cb(null, ');
     if (hasValue) {
-      this.compileExpression(node.value, frame, false, node);
+      this.compileExpression(node.value, frame, node);
     } else {
       this.emit('undefined');
     }
@@ -1637,13 +1637,13 @@ class Compiler extends CompilerBase {
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
       if (this.asyncMode) {
         const initValueId = this._tmpid();
-      this.emit(`let ${initValueId} = `);
-        this.compileExpression(initNode, frame, false, initNode);
+        this.emit(`let ${initValueId} = `);
+        this.compileExpression(initNode, frame, initNode);
         this.emit.line(';');
         this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
       } else {
         this.emit(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [`);
-        this.compileExpression(initNode, frame, false, initNode);
+        this.compileExpression(initNode, frame, initNode);
         this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
         this.emit.line('');
       }

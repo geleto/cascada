@@ -61,17 +61,20 @@ Examples:
 
 These cases need child-buffer structural lowering, not deferred branch evaluation in a `.then(...)`.
 
-### Legacy Async Expression Wrapping
+### Imported-Callable Boundary Lowering
 
-The old `wrapInAsyncBlock` flag and `_assignAsyncWrappersAndReleases` pass are gone. What remains today is the generic `forceWrap` / `emit.asyncBlockValue(...)` path in recursive expression compilation.
+The old `wrapInAsyncBlock` flag, `_assignAsyncWrappersAndReleases` pass, and generic `forceWrap` / `emit.asyncBlockValue(...)` expression wrapper path are gone.
 
-That path is still legacy debt:
+What remains is an explicit structural boundary for ambiguous imported callables:
 
-- it can defer command emission past the owning boundary
-- it is no longer needed for the old sequence-wrapper purpose
-- it should be removed from the remaining call sites
+- imported namespace/member call sites can resolve to either a macro or a normal function
+- that ambiguity is handled structurally at compile time
+- this is no longer generic expression wrapping debt
 
-This is not just overhead. For command-emitting expressions such as `caller()`, `asyncBlockValue(...)` can let command emission happen after the enclosing buffer has already finished.
+This means the remaining audit target is semantic:
+
+- verify that imported-callable boundaries are only used where the callable really is ambiguous
+- keep ordinary expression compilation free of generic late-start wrappers
 
 ### Deferred Dynamic Macro/Caller Dispatch
 
@@ -108,30 +111,28 @@ This also handles poison the same way as statement-level control-flow boundaries
 - compiler-side `processExpression(...)` and `_assignAsyncWrappersAndReleases` are gone
 - dead `wrapInAsyncBlock` checks in recursive expression compilation / ternary / short-circuit lowering are gone
 - `compileDo` compiles expressions normally again; fire-and-forget `do` semantics are the baseline
-- async var assignments no longer use `forceWrap`; they now store the raw expression value, and marker-backed arrays survive command-argument normalization without losing `RESOLVE_MARKER`
+- async var assignments no longer use `forceWrap`; they now store the raw expression value, and marker-backed arrays survive command-argument handling without losing `RESOLVE_MARKER`
 - pure value-only async cases still stay on the lighter `.then(...)` path for now
 
 ---
 
 ## Remaining Work
 
-1. Remove legacy async expression wrapping from non-control-flow expression paths.
-   - The remaining target is the generic `forceWrap` / `emit.asyncBlockValue(...)` path in recursive expression compilation.
-   - Command-emitting expressions should not rely on that path.
-   - A direct removal probe showed that `forceWrap` is currently masking more than one underlying problem, so this must now be split into smaller fixes rather than deleted in one step.
+1. Audit the remaining explicit expression boundaries.
+   - The generic recursive `forceWrap` / `emit.asyncBlockValue(...)` path is gone.
+   - The remaining non-control-flow expression boundary is imported-callable lowering.
+   - Command-emitting expressions should not regain a generic late-start wrapper path.
 
 2. Remove remaining deferred macro/caller dispatch from non-control-flow expression paths.
    - Do not route command-emitting macro/caller dispatch through `.then(... callWrapAsync(...))`.
    - Macro arguments must remain raw on that path.
 
-3. Audit `_compileExpression(..., forceWrap)` call sites.
-   - Remove forced wrapping where the enclosing statement or boundary already provides the required structure.
-   - Current live call sites are concentrated in:
-     - `compileReturn(...)`
-     - `_compileGetTemplateOrScript(...)` for import / from-import / extends lookup
-   - `compileAsyncVarSet(...)` is no longer on the generic wrapped-expression path.
+3. Keep the removal probe findings as design constraints.
+   - `compileReturn(...)` is off `forceWrap`.
+   - `_compileGetTemplateOrScript(...)` is off `forceWrap`.
+   - `compileAsyncVarSet(...)` is off the old wrapped-expression path.
    - `compileDo` itself is no longer special; the direct removal probe did not point back to it.
-   - The raw removal probe produced three distinct regression classes:
+   - The old raw-removal probe produced distinct regression classes that still matter as constraints:
      - stale lifecycle expectation tests
        - template render no longer waits for unused async variable assignments
        - this is now treated as the correct Cascada behavior, because root/template completion should wait only for the final observed value, not unrelated top-level work
@@ -157,9 +158,7 @@ This also handles poison the same way as statement-level control-flow boundaries
      - raw command-argument promise staging regressions
        - removing `normalizeCommandArgsForDeferredHandling(...)` also reintroduced `PromiseRejectionHandledWarning`
        - fixed for the current paths by keeping staging only for the storage/timing commands that really need it, rather than resolving every command argument eagerly
-     - structural include / import lookup still un-audited
-       - this path still uses `forceWrap`, but the direct-removal probe was stopped before changing its behavior because the first two regression classes already proved the work needs decomposition
-   - These classes should now be fixed one by one rather than reintroducing a generic wrapped-expression helper.
+   - These classes should remain the checklist for future expression-boundary work rather than a reason to reintroduce generic wrappers.
 
 4. Keep using existing analysis.
    - Use `node._analysis.usedChannels` to decide which parent channels a child expression boundary must link into.
@@ -170,21 +169,22 @@ This also handles poison the same way as statement-level control-flow boundaries
    - Keep macro invocation as the exception: macro arguments stay raw.
 
 6. Remove obsolete legacy helpers once the new paths are in place.
-   - Remove remaining `asyncBlockValue(...)` call sites that only exist to support the old expression-ordering workaround.
+   - Keep removing `asyncBlockValue(...)` call sites that only exist to support the old expression-ordering workaround.
    - If a value-only helper remains, it must not defer command emission past the owning boundary.
-   - The current forced-wrapper call sites are no longer treated as one problem. The plan is:
-     1. remove `forceWrap` from async var assignments and update stale tests that assumed root/template completion waits for unrelated unused work
-     2. fix returned-value materialization for `compileReturn(...)` without adding generic root lifecycle tracking
-     3. replace aggregate materialization uses with explicit `RESOLVE_MARKER` consumption at true value boundaries
-     4. then re-check whether import/include lookup still needs any dedicated wrapping or can move to an explicit structural boundary
+   - Completed cleanup so far:
+     1. removed `forceWrap` from async var assignments and updated stale tests that assumed root/template completion waits for unrelated unused work
+     2. removed `forceWrap` from `compileReturn(...)`
+     3. removed `forceWrap` from `_compileGetTemplateOrScript(...)`
+     4. removed the generic recursive `forceWrap` / `emit.asyncBlockValue(...)` path from expression compilation
+   - Remaining work is now about explicit semantics, not generic wrapper removal.
 
-7. Fix returned-value materialization currently hidden by `forceWrap`.
+7. Keep returned-value materialization correct without wrapper regressions.
    - Async `return` expressions currently rely on `asyncBlockValue(...)` so script/template finalization does not observe the returned value before its own dependencies finish.
    - The fix should be value-oriented: materialize the returned result itself, not unrelated top-level work.
    - In particular, sequence-guard commit / rollback must be visible before `return events` observes the final value.
    - The current evidence suggests `return` must observe the value after the owning boundary's structural completion, rather than capturing an early promise/snapshot and only resolving that later.
 
-8. Fix the discovered aggregate materialization dependency currently hidden by `forceWrap`.
+8. Keep aggregate materialization correct at true consumers.
    - Async array / object literals currently pass through `runtime.createArray(...)` / `runtime.createObject(...)` and carry `RESOLVE_MARKER`.
    - The raw removal probe showed that some root value positions still depend on the wrapper turning the expression into a promise that later consumption resolves through `resolveSingle(...)`.
    - The fix should make the true consumers responsible for resolving marker-backed values, rather than depending on an outer expression wrapper.
@@ -193,17 +193,17 @@ This also handles poison the same way as statement-level control-flow boundaries
      - filters such as `join`, `sort`, `sum`
      - ordinary function arguments receiving arrays / objects with async elements
 
-9. Fix value-dependent plain expression side effects that are currently observed too early.
+9. Keep value-dependent plain expression side effects structurally tied to the values that observe them.
    - Repro shape: `out.push(caller(item))` in a macro, followed by `return out`.
    - The returned value depends on those `push(...)` effects, so this is not fire-and-forget work.
    - The fix should not add a generic waiter channel. Instead, the expression/call path must make the returned value structurally depend on completion of the side effect that contributes to that value.
 
-10. Remove command-argument staging only after the real producer paths are cleaned up.
-   - `normalizeCommandArgsForDeferredHandling(...)` is not semantically desirable long-term.
+10. Reduce remaining command-argument staging only after the real producer paths are clean.
+   - The old generic `normalizeCommandArgsForDeferredHandling(...)` path is gone.
    - The current runtime split is:
      - true consumer commands resolve only their top-level deferred arguments at apply time
-     - storage/timing commands stage deferred values without consuming them
-   - Before deleting the remaining staging, audit which storage/timing commands still receive raw promise/thenable args and why.
+     - storage/timing commands keep raw deferred values where their semantics require it
+   - Before deleting the last handled-promise staging, audit which storage/timing commands still receive raw promise/thenable args and why.
 
 11. Verify with both ordering and boundary-timing regressions.
    - ternary / `and` / `or` with command-emitting operands

@@ -342,7 +342,7 @@ class CompileMacro {
           name,
           () => {
             compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}") ? kwargs["${name}"] : `);
-            compiler._compileExpression(pair.value, managedFrame, false);
+            compiler._compileExpression(pair.value, managedFrame);
           },
           pair
         );
@@ -366,7 +366,7 @@ class CompileMacro {
         compiler.emit(`frame.set("${name}", `);
         compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
         compiler.emit(` ? kwargs["${name}"] : `);
-        compiler._compileExpression(pair.value, managedFrame, false);
+        compiler._compileExpression(pair.value, managedFrame);
         compiler.emit(');');
       });
     }

@@ -267,7 +267,7 @@ class CompilerBase extends Obj {
         this.emit(',');
       }
       if (expressionRoot && startChar !== '{') {
-        this._compileExpression(child, frame, false);
+        this._compileExpression(child, frame);
       } else {
         this.compile(child, frame);
       }
@@ -505,7 +505,7 @@ class CompilerBase extends Obj {
 
     this.compile(key, frame);
     this.emit(': ');
-    this._compileExpression(val, frame, false);
+    this._compileExpression(val, frame);
   }
 
   compileInlineIf(node, frame) {
@@ -960,7 +960,7 @@ class CompilerBase extends Obj {
         (importedRoot && this.importedBindings && this.importedBindings.has(importedRoot))
       );
       if (isImportedCallable) {
-        importedCallable = { rootName: importedRoot };
+        importedCallable = true;
         const visibleChannels = analysisPass.getIncludeVisibleVarChannels(node._analysis)
           .map((entry) => entry.runtimeName);
         const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
@@ -969,7 +969,6 @@ class CompilerBase extends Obj {
           allUses.add(textChannel);
         }
         allUses.forEach((name) => uses.push(name));
-        importedCallable.linkedChannels = Array.from(allUses);
       }
     }
 
@@ -1357,13 +1356,13 @@ class CompilerBase extends Obj {
     }
   }
 
-  _compileAwaitedExpression(node, frame, forceWrap) {
+  _compileAwaitedExpression(node, frame) {
     if (node.isAsync) {
       this.emit('(await ');
-      this._compileExpression(node, frame, forceWrap);
+      this._compileExpression(node, frame);
       this.emit(')');
     } else {
-      this._compileExpression(node, frame, false);
+      this._compileExpression(node, frame);
     }
   }
 
@@ -1371,13 +1370,13 @@ class CompilerBase extends Obj {
   // In __waited__ scope, root expressions add exactly one completion marker
   // unless the caller opts out for control/composition inputs.
   // `_compileExpression` stays recursive and never emits waited markers itself.
-  compileExpression(node, frame, forceWrap, positionNode, excludeFromWaitedRootTracking = false) {
+  compileExpression(node, frame, positionNode, excludeFromWaitedRootTracking = false) {
     const shouldEmitOwnWaitedResolve = this.asyncMode &&
       this.buffer.currentWaitedChannelName &&
       !excludeFromWaitedRootTracking;
 
     if (!shouldEmitOwnWaitedResolve) {
-      this._compileExpression(node, frame, forceWrap, positionNode);
+      this._compileExpression(node, frame, positionNode);
       return;
     }
 
@@ -1388,7 +1387,7 @@ class CompilerBase extends Obj {
 
     this.emit('(() => { ');
     this.emit(`let ${resultId} = `);
-    this._compileExpression(node, frame, forceWrap, positionNode);
+    this._compileExpression(node, frame, positionNode);
     this.emit('; ');
     this.emit(`${waitedOwnerBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${resultId}], pos: ${posLiteral} }), "${waitedChannelName}"); `);
     this.emit(`return ${resultId}; `);
@@ -1400,7 +1399,7 @@ class CompilerBase extends Obj {
   // @todo - `_compileExpression` should take care of its own async block wrapping.
   // @todo - !!!  make the CommandBuffer tree synchronously before any expression evaluation
   //         each node will know its current command buffer
-  _compileExpression(node, frame, forceWrap, positionNode) {
+  _compileExpression(node, frame, positionNode) {
     // I'm not really sure if this type check is worth it or not.
     this.assertType(
       node,
@@ -1443,13 +1442,7 @@ class CompilerBase extends Obj {
         return;
       }
 
-      if (forceWrap) {
-        this.emit.asyncBlockValue(node, frame, (n, f) => {
-          this.compile(n, f);
-        }, undefined, positionNode ?? node);
-      } else {
-        this.compile(node, frame);
-      }
+      this.compile(node, frame);
     } else {
       this.compile(node, frame);
     }
