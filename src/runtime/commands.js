@@ -1175,6 +1175,9 @@ function runWithResolvedArguments(value, cmd, output, applyFn) {
     }
 
     return Promise.resolve(value).then((resolvedValue) => {
+      if (resolvedValue && resolvedValue[RESOLVE_MARKER]) {
+        return Promise.resolve(resolvedValue[RESOLVE_MARKER]).then(() => applyFn(resolvedValue));
+      }
       return applyFn(resolvedValue);
     }).catch((err) => {
       return applyFn(createCommandArgumentPoison(output, cmd, err));
@@ -1206,7 +1209,17 @@ async function runWithResolvedArgumentsAsync (value, cmd, output, applyFn) {
     }
 
     try {
-      resolvedArray[i] = await fastValue;
+      const resolvedValue = await fastValue;
+      if (resolvedValue && resolvedValue[RESOLVE_MARKER]) {
+        try {
+          await resolvedValue[RESOLVE_MARKER];
+          resolvedArray[i] = resolvedValue;
+        } catch (err) {
+          resolvedArray[i] = createCommandArgumentPoison(output, cmd, err);
+        }
+      } else {
+        resolvedArray[i] = resolvedValue;
+      }
     } catch (err) {
       resolvedArray[i] = createCommandArgumentPoison(output, cmd, err);
     }
