@@ -81,37 +81,26 @@ class CompileAnalysis {
           : parentAnalysis.inheritedSequenceFunCallLockKey || null
       )
       : null;
-    const normalizeAnalysisList = (value, name) => {
-      if (value === undefined) {
-        return [];
-      }
-      if (!Array.isArray(value)) {
-        throw new Error(`Invalid _analysis.${name} for ${node.typename}: expected array or undefined`);
-      }
-      return value;
-    };
-    node._analysis = Object.assign({
+    node._analysis = {
       node,
       createScope: false,
       scopeBoundary: false,
       parentReadOnly: false,
       declarationTarget: false,
-      parent: parentAnalysis,
-      inheritedSequenceFunCallLockKey,
-      sequenceFunCallLockKey: existingAnalysis.sequenceFunCallLockKey || null,
       textOutput: null,
-      sequenceLocks: existingAnalysis.sequenceLocks || null,
-      sequenceLockLookup: existingAnalysis.sequenceLockLookup || null,
-      declares: normalizeAnalysisList(existingAnalysis.declares, 'declares'),
-      declaresInParent: normalizeAnalysisList(existingAnalysis.declaresInParent, 'declaresInParent'),
-      uses: normalizeAnalysisList(existingAnalysis.uses, 'uses'),
-      mutates: normalizeAnalysisList(existingAnalysis.mutates, 'mutates'),
-      declaredChannels: existingAnalysis.declaredChannels || null,
-      usedChannels: existingAnalysis.usedChannels || null,
-      mutatedChannels: existingAnalysis.mutatedChannels || null
-    }, existingAnalysis);
-    node._analysis.node = node;
-    node._analysis.parent = parentAnalysis;
+      sequenceLocks: null,
+      sequenceLockLookup: null,
+      declares: [],
+      declaresInParent: [],
+      uses: [],
+      mutates: [],
+      declaredChannels: null,
+      usedChannels: null,
+      mutatedChannels: null,
+      ...existingAnalysis,
+      parent: parentAnalysis,
+      inheritedSequenceFunCallLockKey
+    };
     return node._analysis;
   }
 
