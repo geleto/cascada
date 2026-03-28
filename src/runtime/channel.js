@@ -6,6 +6,7 @@ const {
   DataCommand,
   SinkCommand
 } = require('./commands');
+const { RESOLVE_MARKER } = require('./resolve');
 const DataChannelTarget = require('../script/data-channel');
 const { BufferIterator } = require('./buffer-iterator');
 const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
@@ -956,6 +957,19 @@ async function inspectTargetForErrors(target) {
         }
       }
       return;
+    }
+
+    if (value && value[RESOLVE_MARKER]) {
+      try {
+        await value[RESOLVE_MARKER];
+      } catch (err) {
+        if (isPoisonError(err)) {
+          addErrors(err.errors);
+        } else {
+          addError(err);
+        }
+        return;
+      }
     }
 
     if (!value || typeof value !== 'object') {

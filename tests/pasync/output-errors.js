@@ -25,7 +25,7 @@ const {
   createChannel,
   createSinkChannel
 } = require('../../src/runtime/channel');
-
+const { createArray } = require('../../src/runtime/resolve');
 describe('channel errors', function () {
   describe('channel commands step2 poison encoding', function () {
     it('TextCommand encodes poison into target instead of throwing', () => {
@@ -173,6 +173,19 @@ describe('channel errors', function () {
       expect(messages).to.contain('poison rejection');
     });
 
+    it('collects poison from marker-backed lazy structures', async () => {
+      const target = createArray([
+        'ok',
+        Promise.reject(new Error('marker rejection'))
+      ]);
+
+      const result = await inspectTargetForErrors(target);
+
+      expect(result.hasError).to.be(true);
+      expect(result.error).to.be.a(PoisonError);
+      expect(result.error.errors[0].message).to.contain('marker rejection');
+    });
+
     it('avoids recursion issues on cyclic plain objects', async () => {
       const target = {};
       target.self = target;
@@ -289,6 +302,26 @@ describe('channel errors', function () {
 
       const result = await env.renderScriptString(script, {});
       expect(result).to.eql({ k: 7 });
+    });
+
+    it('observes errors from a promise resolving to a lazy structure built in script', async () => {
+      const env = new AsyncEnvironment();
+      const script = `
+      data out
+      out.items = wrapValue([okValue(), badValue()])
+      return { has: out.isError(), err: out.getError().errors[0].message }
+    `;
+
+      const result = await env.renderScriptString(script, {
+        wrapValue: (val) => Promise.resolve(val),
+        okValue: async () => 'ok',
+        badValue: async () => {
+          throw new Error('wrapped marker rejection');
+        }
+      });
+
+      expect(result.has).to.be(true);
+      expect(result.err).to.contain('wrapped marker rejection');
     });
   });
 

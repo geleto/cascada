@@ -170,12 +170,13 @@ This also handles poison the same way as statement-level control-flow boundaries
    - Use `node._analysis.usedChannels` to decide which parent channels a child expression boundary must link into.
    - Do not add ad hoc expression-only runtime linking rules if analysis already provides the needed facts.
 
-5. `In Progress` Audit consumption sites to prefer resolve helpers over raw `await`.
+5. `Done` Audit consumption sites to prefer resolve helpers over raw `await`.
    - Use `resolveSingle(...)`, `resolveDuo(...)`, and `resolveAll(...)` for ordinary Cascada value consumption.
    - Keep macro invocation as the exception: macro arguments stay raw.
    - Much of the command/runtime path now follows this.
    - `safe-output.js` now uses resolve helpers at the true text/value materialization boundaries, so marker-backed arrays/objects do not slip past those output consumers unresolved.
-   - Remaining work is the narrower runtime cleanup around deferred command values, intentional producer-side promises, and any non-output consumption sites that still use raw `await`.
+   - `call.js`, `lookup.js`, `commands.js`, and channel error inspection now align with the same consumption rule: resolve helpers for marker-aware Cascada values, plain `await` only for ordinary JS promise flow.
+   - What remains is no longer a consumption-site audit; it is the separate staging/producer cleanup captured below.
 
 6. `Done` Remove obsolete legacy helpers once the new paths are in place.
    - Keep removing `asyncBlockValue(...)` call sites that only exist to support the old expression-ordering workaround.

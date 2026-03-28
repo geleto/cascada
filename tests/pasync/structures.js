@@ -39,6 +39,8 @@
         return `First: ${arr[0]}, Length: ${arr.length}`;
       });
 
+      env.addGlobal('wrapValue', (val) => Promise.resolve(val));
+
       env.addGlobal('isPromise', (val) => {
         return val && typeof val.then === 'function';
       });
@@ -249,6 +251,15 @@
         expect(result.trim()).to.equal('One,2,Three,,');
       });
 
+      it('should handle direct output of a promise resolving to a lazy array', async () => {
+        const context = {
+          async getItem1() { await delay(2); return 'One'; },
+          async getItem2() { await delay(1); return 2; }
+        };
+        const result = await env.renderTemplateString('{{ wrapValue([getItem1(), getItem2(), "Three"]) }}', context);
+        expect(result.trim()).to.equal('One,2,Three');
+      });
+
       // Direct output of {{ myDict }} usually results in '[object Object]'
       // Testing specific stringification requires filters like 'dump' or iteration.
     });
@@ -304,6 +315,18 @@
         expect(result.trim()).to.equal('First: One, Length: 3');
       });
 
+      it('should pass promise-resolved lazy array to function', async () => {
+        const context = {
+          async getItem1() { await delay(2); return 'One'; },
+          async getItem2() { await delay(1); return 2; },
+          inspectArray(arr) {
+            return `First: ${arr[0]}, Length: ${arr.length}`;
+          }
+        };
+        const result = await env.renderTemplateString('{{ inspectArray(wrapValue([getItem1(), getItem2(), 3])) }}', context);
+        expect(result.trim()).to.equal('First: One, Length: 3');
+      });
+
       it('should pass dictionary with async values to function (expecting deep resolution)', async () => {
         const context = {
           async getValA() { await delay(2); return 'A'; },
@@ -314,6 +337,18 @@
         };
         const template = '{% set myDict = {keyA: getValA(), keyB: getValB(), keyC: 3} %}{{ inspectDict(myDict) }}';
         const result = await env.renderTemplateString(template, context);
+        expect(result.trim()).to.equal('KeyA: A, KeyB: B');
+      });
+
+      it('should pass promise-resolved lazy object to function', async () => {
+        const context = {
+          async getValA() { await delay(2); return 'A'; },
+          async getValB() { await delay(1); return 'B'; },
+          inspectDict(dict) {
+            return `KeyA: ${dict.keyA}, KeyB: ${dict.keyB}`;
+          }
+        };
+        const result = await env.renderTemplateString('{{ inspectDict(wrapValue({keyA: getValA(), keyB: getValB(), keyC: 3})) }}', context);
         expect(result.trim()).to.equal('KeyA: A, KeyB: B');
       });
     });
