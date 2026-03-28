@@ -117,6 +117,7 @@ This also handles poison the same way as statement-level control-flow boundaries
 1. Remove legacy async expression wrapping from non-control-flow expression paths.
    - The remaining target is the generic `forceWrap` / `emit.asyncBlockValue(...)` path in recursive expression compilation.
    - Command-emitting expressions should not rely on that path.
+   - A direct removal probe showed that `forceWrap` is currently masking more than one underlying problem, so this must now be split into smaller fixes rather than deleted in one step.
 
 2. Remove remaining deferred macro/caller dispatch from non-control-flow expression paths.
    - Do not route command-emitting macro/caller dispatch through `.then(... callWrapAsync(...))`.
@@ -124,8 +125,24 @@ This also handles poison the same way as statement-level control-flow boundaries
 
 3. Audit `_compileExpression(..., forceWrap)` call sites.
    - Remove forced wrapping where the enclosing statement or boundary already provides the required structure.
-   - Prioritize structural text output / capture / include-import call chains.
-   - `compileDo` itself is no longer special; if removing `forceWrap` regresses it, that points to a deeper ownership bug elsewhere.
+   - Current live call sites are concentrated in:
+     - `compileReturn(...)`
+     - async `compileSet(...)` / `compileAsyncVarSet(...)` value assignment paths
+     - `_compileGetTemplateOrScript(...)` for import / from-import / extends lookup
+   - `compileDo` itself is no longer special; the direct removal probe did not point back to it.
+   - The raw removal probe produced three distinct regression classes:
+     - stale lifecycle expectation tests
+       - template render no longer waits for unused async variable assignments
+       - this is now treated as the correct Cascada behavior, because root/template completion should wait only for the final observed value, not unrelated top-level work
+       - those tests should be updated rather than reintroducing generic lifecycle tracking
+     - returned-value materialization regressions
+       - script return can observe sequence-guard state before commit / rollback completes
+       - this is a real bug because the returned value itself is being observed too early
+     - aggregate materialization regressions
+       - arrays / dictionaries with async elements leak raw promises into direct output, filters, and function arguments
+     - structural include / import lookup still un-audited
+       - this path still uses `forceWrap`, but the direct-removal probe was stopped before changing its behavior because the first two regression classes already proved the work needs decomposition
+   - These classes should now be fixed one by one rather than reintroducing a generic wrapped-expression helper.
 
 4. Keep using existing analysis.
    - Use `node._analysis.usedChannels` to decide which parent channels a child expression boundary must link into.
@@ -138,9 +155,31 @@ This also handles poison the same way as statement-level control-flow boundaries
 6. Remove obsolete legacy helpers once the new paths are in place.
    - Remove remaining `asyncBlockValue(...)` call sites that only exist to support the old expression-ordering workaround.
    - If a value-only helper remains, it must not defer command emission past the owning boundary.
+   - The current forced-wrapper call sites are no longer treated as one problem. The plan is:
+     1. remove `forceWrap` from async var assignments and update stale tests that assumed root/template completion waits for unrelated unused work
+     2. fix returned-value materialization for `compileReturn(...)` without adding generic root lifecycle tracking
+     3. replace aggregate materialization uses with explicit `RESOLVE_MARKER` consumption at true value boundaries
+     4. then re-check whether import/include lookup still needs any dedicated wrapping or can move to an explicit structural boundary
 
-7. Verify with both ordering and boundary-timing regressions.
+7. Fix returned-value materialization currently hidden by `forceWrap`.
+   - Async `return` expressions currently rely on `asyncBlockValue(...)` so script/template finalization does not observe the returned value before its own dependencies finish.
+   - The fix should be value-oriented: materialize the returned result itself, not unrelated top-level work.
+   - In particular, sequence-guard commit / rollback must be visible before `return events` observes the final value.
+
+8. Fix the discovered aggregate materialization dependency currently hidden by `forceWrap`.
+   - Async array / object literals currently pass through `runtime.createArray(...)` / `runtime.createObject(...)` and carry `RESOLVE_MARKER`.
+   - The raw removal probe showed that some root value positions still depend on the wrapper turning the expression into a promise that later consumption resolves through `resolveSingle(...)`.
+   - The fix should make the true consumers responsible for resolving marker-backed values, rather than depending on an outer expression wrapper.
+   - Regression probes:
+     - direct output of arrays / objects with async elements
+     - filters such as `join`, `sort`, `sum`
+     - ordinary function arguments receiving arrays / objects with async elements
+
+9. Verify with both ordering and boundary-timing regressions.
    - ternary / `and` / `or` with command-emitting operands
    - `caller()` inside expression output paths
    - nested caller / call-block dispatch through imported-callable async boundaries
    - any case where a deferred expression could add commands after an enclosing buffer finishes
+   - updated unused-async-var tests that now observe only returned/final values
+   - async `return` observing sequence-guard commit / rollback completion
+   - array / object literals with async elements flowing through direct output, filters, and function arguments
