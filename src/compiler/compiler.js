@@ -336,7 +336,7 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
     } else if (node.value) { // e.g., set x = 123
       this.emit(ids.join(' = ') + ' = ');
-      this.compileExpression(node.value, frame, true, node.value);
+      this.compileExpression(node.value, frame, false, node.value);
       this.emit.line(';');
     } else { // e.g., set x = capture ...
       this.emit(ids.join(' = ') + ' = ');
@@ -1307,10 +1307,7 @@ class Compiler extends CompilerBase {
             frame,
             child,
             (innerFrame) => {
-              const prevWrapInAsyncBlock = child.wrapInAsyncBlock;
-              child.wrapInAsyncBlock = false;
               this.compileExpression(child, innerFrame, false, child);
-              child.wrapInAsyncBlock = prevWrapInAsyncBlock;
             },
             {
               emitInCurrentBuffer: true
@@ -1628,13 +1625,13 @@ class Compiler extends CompilerBase {
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
       if (this.asyncMode) {
         const initValueId = this._tmpid();
-        this.emit(`let ${initValueId} = `);
-        this.compileExpression(initNode, frame, true, initNode);
+      this.emit(`let ${initValueId} = `);
+        this.compileExpression(initNode, frame, false, initNode);
         this.emit.line(';');
         this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
       } else {
         this.emit(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [`);
-        this.compileExpression(initNode, frame, true, initNode);
+        this.compileExpression(initNode, frame, false, initNode);
         this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
         this.emit.line('');
       }

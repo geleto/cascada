@@ -55,13 +55,7 @@ class CompilerBase extends Obj {
   compile(node, frame) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
-      if (node.wrapInAsyncBlock) {
-        this.emit.asyncBlockValue(node, frame, (n, f) => {
-          _compile.call(this, n, f);
-        }, undefined, node);
-      } else {
-        _compile.call(this, node, frame);
-      }
+      _compile.call(this, node, frame);
     } else {
       this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno, node);
     }
@@ -544,40 +538,16 @@ class CompilerBase extends Obj {
       this.emit(').then(async function(cond) {');
 
       this.emit('  if(cond) {');
-
-      // Compile True Branch
-      if (node.body.wrapInAsyncBlock) {
-        // Disable auto-wrapping by compile() since we do it manually
-        node.body.wrapInAsyncBlock = false;
-        this.emit(`return `);
-        this.emit.asyncBlockValue(node.body, frame, (n, f) => {
-          this.compile(n, f);
-        }, undefined, node.body);
-        node.body.wrapInAsyncBlock = true; // Restore
-        this.emit(`;`);
-      } else {
-        this.emit('    return ');
-        this.compile(node.body, frame);
-        this.emit(';');
-      }
+      this.emit('    return ');
+      this.compile(node.body, frame);
+      this.emit(';');
 
       this.emit('  } else {');
 
-      // Compile False Branch
       if (node.else_) {
-        if (node.else_.wrapInAsyncBlock) {
-          node.else_.wrapInAsyncBlock = false;
-          this.emit(`return `);
-          this.emit.asyncBlockValue(node.else_, frame, (n, f) => {
-            this.compile(n, f);
-          }, undefined, node.else_);
-          node.else_.wrapInAsyncBlock = true;
-          this.emit(`;`);
-        } else {
-          this.emit('    return ');
-          this.compile(node.else_, frame);
-          this.emit(';');
-        }
+        this.emit('    return ');
+        this.compile(node.else_, frame);
+        this.emit(';');
       } else {
         this.emit('    return "";');
       }
@@ -706,21 +676,9 @@ class CompilerBase extends Obj {
     this.emit('    return left;');
     this.emit('  }');
     this.emit('  else {');
-
-    // Compile right
-    if (node.right.wrapInAsyncBlock) {
-      node.right.wrapInAsyncBlock = false;
-      this.emit(`return `);
-      this.emit.asyncBlockValue(node.right, frame, (n, f) => {
-        this.compile(n, f);
-      }, undefined, node.right);
-      node.right.wrapInAsyncBlock = true;
-      this.emit(';');
-    } else {
-      this.emit('    return ');
-      this.compile(node.right, frame);
-      this.emit(';');
-    }
+    this.emit('    return ');
+    this.compile(node.right, frame);
+    this.emit(';');
 
     this.emit('  }'); // End else
     this.emit('})');
@@ -1485,8 +1443,7 @@ class CompilerBase extends Obj {
         return;
       }
 
-      if (forceWrap || node.wrapInAsyncBlock) {
-        node.wrapInAsyncBlock = false;//so that compile won't wrap it and ignore positionNode
+      if (forceWrap) {
         this.emit.asyncBlockValue(node, frame, (n, f) => {
           this.compile(n, f);
         }, undefined, positionNode ?? node);
