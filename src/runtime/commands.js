@@ -90,8 +90,7 @@ class ChannelCommand extends Command {
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  extractPoisonFromArgs() {
-    const args = this.arguments;
+  extractPoisonFromArgs(args = this.arguments) {
     if (isPoison(args) && Array.isArray(args.errors) && args.errors.length > 0) {
       return args.errors.slice();
     }
@@ -128,7 +127,6 @@ class TextCommand extends ChannelCommand {
       (
         Object.prototype.hasOwnProperty.call(specOrValue, 'channelName') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'arguments') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'subpath') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'pos')
@@ -137,7 +135,7 @@ class TextCommand extends ChannelCommand {
       super({
         channelName: specOrValue.channelName,
         command: specOrValue.command || null,
-        args: specOrValue.args || specOrValue.arguments || [],
+        args: specOrValue.args || [],
         subpath: null,
         pos: specOrValue.pos || null
       });
@@ -157,20 +155,19 @@ class TextCommand extends ChannelCommand {
   apply(channel) {
     super.apply(channel);
     return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      this.arguments = resolvedArgs;
       if (!channel || !Array.isArray(channel._target)) {
         if (!channel) {
           return;
         }
         channel._setTarget([]);
       }
-      const poisonErrors = this.extractPoisonFromArgs();
+      const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
+      const poisonErrors = this.extractPoisonFromArgs(args);
       if (poisonErrors.length > 0) {
         channel._target.push(this.toPoisonValue(poisonErrors));
         channel._markStateChanged();
         return;
       }
-      const args = Array.isArray(this.arguments) ? this.arguments : [];
       if (this.command === 'set') {
         if (args.length !== 1) {
           channel._setTarget(this.toPoisonValue([
@@ -209,7 +206,6 @@ class VarCommand extends ChannelCommand {
       (
         Object.prototype.hasOwnProperty.call(specOrValue, 'channelName') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'arguments') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'subpath') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'pos')
@@ -218,7 +214,7 @@ class VarCommand extends ChannelCommand {
       super({
         channelName: specOrValue.channelName,
         command: null,
-        args: specOrValue.args || specOrValue.arguments || [],
+        args: specOrValue.args || [],
         subpath: null,
         pos: specOrValue.pos || null
       });
@@ -236,24 +232,24 @@ class VarCommand extends ChannelCommand {
   apply(channel) {
     super.apply(channel);
     return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      this.arguments = resolvedArgs;
       if (!channel) return;
-      const poisonErrors = this.extractPoisonFromArgs();
+      const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
+      const poisonErrors = this.extractPoisonFromArgs(args);
       if (poisonErrors.length > 0) {
         channel._setTarget(this.toPoisonValue(poisonErrors));
         return;
       }
-      if (!Array.isArray(this.arguments) || this.arguments.length === 0) {
+      if (args.length === 0) {
         channel._setTarget(undefined);
         return;
       }
-      if (this.arguments.length > 1) {
+      if (args.length > 1) {
         channel._setTarget(this.toPoisonValue([
           contextualizeOutputError(channel, this.pos, new Error('var channel accepts exactly one argument'))
         ]));
         return;
       }
-      channel._setTarget(this.arguments[0]);
+      channel._setTarget(args[0]);
     });
   }
 }
@@ -311,29 +307,29 @@ class DataCommand extends ChannelCommand {
   apply(channel) {
     super.apply(channel);
     return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      this.arguments = resolvedArgs;
       if (!channel || !channel._base) return;
-      const rawPath = Array.isArray(this.arguments) && this.arguments.length > 0 ? this.arguments[0] : null;
+      const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
+      const rawPath = args.length > 0 ? args[0] : null;
       const dataPath = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
-      const poisonErrors = this.extractPoisonFromArgs();
+      const poisonErrors = this.extractPoisonFromArgs(args);
       if (this.command !== 'set') {
         const existing = readDataValueAtPath(channel._base.data, dataPath);
         if (isPoison(existing) || isPoisonError(existing)) {
           if (poisonErrors.length > 0) {
-            setDataPoisonAtPath(channel, this.arguments, this.toPoisonValue(poisonErrors));
+            setDataPoisonAtPath(channel, args, this.toPoisonValue(poisonErrors));
           }
           return;
         }
       }
       if (poisonErrors.length > 0) {
-        setDataPoisonAtPath(channel, this.arguments, this.toPoisonValue(poisonErrors));
+        setDataPoisonAtPath(channel, args, this.toPoisonValue(poisonErrors));
         return;
       }
       const method = this.command ? channel._base[this.command] : channel._base;
       if (typeof method !== 'function') {
         setDataPoisonAtPath(
           channel,
-          this.arguments,
+          args,
           this.toPoisonValue([
             contextualizeOutputError(channel, this.pos, new Error(`has no method '${this.command}'`))
           ])
@@ -341,12 +337,12 @@ class DataCommand extends ChannelCommand {
         return;
       }
       try {
-        method.apply(channel._base, this.arguments);
+        method.apply(channel._base, args);
         channel._setTarget(channel._base.data);
       } catch (err) {
         setDataPoisonAtPath(
           channel,
-          this.arguments,
+          args,
           this.toPoisonValue([
             contextualizeOutputError(channel, this.pos, err)
           ])
@@ -371,13 +367,13 @@ class SinkCommand extends ChannelCommand {
   apply(channel) {
     super.apply(channel);
     return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      this.arguments = resolvedArgs;
       if (!channel) return;
+      const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const isRootRepair = this.command === 'repair' && (!this.subpath || this.subpath.length === 0);
       if (!isRootRepair && isPoison(channel._getTarget())) {
         return;
       }
-      const poisonErrors = this.extractPoisonFromArgs();
+      const poisonErrors = this.extractPoisonFromArgs(args);
       if (poisonErrors.length > 0) {
         channel._setTarget(this.toPoisonValue(poisonErrors));
         return;
@@ -391,7 +387,7 @@ class SinkCommand extends ChannelCommand {
         if (typeof method !== 'function') {
           return;
         }
-        const repairResult = method.apply(target, this.arguments);
+        const repairResult = method.apply(target, args);
         if (repairResult && typeof repairResult.then === 'function') {
           return Promise.resolve(repairResult).catch((err) => {
             channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
@@ -408,7 +404,7 @@ class SinkCommand extends ChannelCommand {
       }
 
       try {
-        const result = method.apply(target, this.arguments);
+        const result = method.apply(target, args);
         if (result && typeof result.then === 'function') {
           return Promise.resolve(result).catch((err) => {
             channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
@@ -443,9 +439,9 @@ class SequenceCallCommand extends ChannelCommand {
   apply(channel) {
     super.apply(channel);
     return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      this.arguments = resolvedArgs;
       if (!channel) return undefined;
-      const poisonErrors = this.extractPoisonFromArgs();
+      const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
+      const poisonErrors = this.extractPoisonFromArgs(args);
       if (poisonErrors.length > 0) {
         const err = new PoisonError(poisonErrors);
         this.rejectResult(err);
@@ -463,7 +459,7 @@ class SequenceCallCommand extends ChannelCommand {
           this.resolveResult(undefined);
           return undefined;
         }
-        const result = method.apply(target, this.arguments);
+        const result = method.apply(target, args);
         if (result && typeof result.then === 'function') {
           return Promise.resolve(result).then(
             (value) => {
