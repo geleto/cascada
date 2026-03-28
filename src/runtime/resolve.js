@@ -42,11 +42,50 @@ const {
 } = require('./errors');
 
 const RESOLVE_MARKER = Symbol.for('cascada.resolve');
+const RESOLVED_VALUE_MARKER = Symbol.for('cascada.resolved_value');
 
-// Helper to resolve multiple values (Arguments, Array elements).
-// 1. Awaits all to collect potential errors (parallel wait via collectErrors).
-// 2. If any fail, returns Poison (containing all collected errors).
-// 3. If all succeed, unwraps values and ensures nested Lazy Objects are also resolved.
+function makeResolvedValue(value, mapper = null) {
+  return {
+    [RESOLVED_VALUE_MARKER]: true,
+    value,
+    then(onFulfilled) {
+      const resolvedValue = mapper ? mapper(value) : value;
+      return onFulfilled ? onFulfilled(resolvedValue) : resolvedValue;
+    }
+  };
+}
+
+function isResolvedValue(value) {
+  return !!(value && value[RESOLVED_VALUE_MARKER]);
+}
+
+function unwrapResolvedValue(value) {
+  return isResolvedValue(value) ? value.value : value;
+}
+
+// Normalize a value that is leaving Cascada and becoming an ordinary JS promise/value.
+// Only three cases are allowed here:
+// - RESOLVE_MARKER-backed lazy values: return a promise for the final resolved object/array
+// - RESOLVED_VALUE_MARKER wrappers: unwrap synchronously to the plain value
+// - PoisonedValue: convert to a normal rejecting promise
+// Keeping this narrow avoids turning it into a generic resolution helper.
+function normalizeFinalPromise(value) {
+  if (isResolvedValue(value)) {
+    return unwrapResolvedValue(value);
+  }
+  if (isPoison(value)) {
+    return Promise.reject(new PoisonError(value.errors));
+  }
+  if (value && value[RESOLVE_MARKER]) {
+    return Promise.resolve(value[RESOLVE_MARKER]).then(() => value);
+  }
+  return value;
+}
+
+// Consume an array of independent Cascada values.
+// - waits for every entry so no rejection/error is missed
+// - returns one PoisonedValue containing all collected errors
+// - otherwise returns the array with each entry resolved at its top-level value boundary
 async function resolveAll(args) {
   if (!Array.isArray(args)) {
     throw new TypeError('resolveAll expects an array of values');
@@ -83,8 +122,11 @@ async function resolveAll(args) {
   return resolvedArgs;
 }
 
+// Resolve one Cascada value far enough to expose its current concrete value:
+// unwrap resolved-value wrappers, await a real promise, and finalize a marker-backed
+// object/array in place if needed.
 async function resolveValueAndMarker(value) {
-  let resolved = value;
+  let resolved = unwrapResolvedValue(value);
 
   if (resolved && typeof resolved.then === 'function') {
     try {
@@ -111,6 +153,9 @@ async function resolveValueAndMarker(value) {
   return resolved;
 }
 
+// Resolve a plain object's properties by first marking it as a lazy Cascada object and
+// then waiting for that object's own marker. Used when object-property resolution itself
+// is the intended consumption boundary.
 async function resolveObjectProperties(obj) {
   const marked = createObject(obj);
   if (marked && marked[RESOLVE_MARKER]) {
@@ -126,6 +171,8 @@ async function resolveObjectProperties(obj) {
   return marked;
 }
 
+// Consume exactly two independent Cascada values with the same "never miss any error"
+// rule as resolveAll(), but keep the hot two-value path explicit.
 async function resolveDuo(...args) {
   if (args.length !== 2) {
     throw new TypeError(`resolveDuo expects exactly 2 arguments, got ${args.length}`);
@@ -143,11 +190,15 @@ async function resolveDuo(...args) {
   return [resolvedLeft, resolvedRight];
 }
 
+// Consume one top-level Cascada value.
+// - sync values return via a branded resolved-value wrapper for fast-path compatibility
+// - promises are awaited and converted to PoisonedValue on failure
+// - marker-backed objects/arrays are finalized in place and then returned
 async function resolveSingle(...args) {
   if (args.length !== 1) {
     throw new TypeError(`resolveSingle expects exactly 1 argument, got ${args.length}`);
   }
-  const value = args[0];
+  const value = unwrapResolvedValue(args[0]);
 
   // Synchronous shortcuts
   if (isPoison(value)) {
@@ -155,11 +206,7 @@ async function resolveSingle(...args) {
   }
 
   if (!value || (typeof value.then !== 'function' && !value[RESOLVE_MARKER])) {
-    return {
-      then(onFulfilled) {
-        return onFulfilled ? onFulfilled(value) : value;
-      }
-    };
+    return makeResolvedValue(value);
   }
 
   // Await promise, convert rejections to poison
@@ -196,17 +243,16 @@ async function resolveSingle(...args) {
   return resolvedValue;
 }
 
+// Like resolveSingle(), but preserve the historical one-element-array shape used by some
+// compiled call sites. This is compatibility glue, not a separate semantic boundary.
 function resolveSingleArr(value) {
+  value = unwrapResolvedValue(value);
   if (isPoison(value)) {
     return value;
   }
 
   if (!value || (typeof value.then !== 'function' && !value[RESOLVE_MARKER])) {
-    return {
-      then(onFulfilled) {
-        return onFulfilled ? onFulfilled([value]) : [value];
-      }
-    };
+    return makeResolvedValue(value, (resolvedValue) => [resolvedValue]);
   }
 
   return _resolveSingleArrAsync(value);
@@ -224,6 +270,8 @@ async function _resolveSingleArrAsync(value) {
   }
 }
 
+// Wrap a JS function so its trailing arguments are consumed as Cascada values before the
+// underlying function is called. Used for APIs that explicitly want resolved arguments.
 function resolveArguments(fn, skipArguments = 0) {
   return async function (...args) {
     const skippedArgs = args.slice(0, skipArguments);
@@ -379,9 +427,13 @@ module.exports = {
   resolveSingleArr,
   resolveObjectProperties,
   resolveArguments,
+  normalizeFinalPromise,
 
 
   createObject,
   createArray,
-  RESOLVE_MARKER
+  RESOLVE_MARKER,
+  RESOLVED_VALUE_MARKER,
+  isResolvedValue,
+  unwrapResolvedValue
 };

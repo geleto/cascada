@@ -120,34 +120,34 @@ describe('channel.finalSnapshot', function () {
 
   describe('Data Assembly (@put, @push, etc.)', function () {
     it('should handle a simple @data.set command', async function () {
-      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', arguments: [['user'], { name: 'Alice' }] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', args: [['user'], { name: 'Alice' }] })], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ user: { name: 'Alice' } });
     });
 
     it('should create nested objects with @data.set', async function () {
-      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', arguments: [['config', 'theme', 'color'], 'dark'] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', args: [['config', 'theme', 'color'], 'dark'] })], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ config: { theme: { color: 'dark' } } });
     });
 
     it('should handle a simple @data.push command', async function () {
-      const buffer = createBuffer([cmd({ channelName: 'data', command: 'push', arguments: [['users'], 'Alice'] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'push', args: [['users'], 'Alice'] })], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ users: ['Alice'] });
     });
 
     it('should create an array with @data.push if it does not exist', async function () {
-      const buffer = createBuffer([cmd({ channelName: 'data', command: 'push', arguments: [['config', 'admins'], 'root'] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'push', args: [['config', 'admins'], 'root'] })], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ config: { admins: ['root'] } });
     });
 
     it('should handle the "[]" path syntax for creating and populating array items', async function () {
       const buffer = createBuffer([
-        cmd({ channelName: 'data', command: 'push', arguments: [['users'], { id: 0 }] }),
-        cmd({ channelName: 'data', command: 'set', arguments: [['users', '[]', 'id'], 1] }),
-        cmd({ channelName: 'data', command: 'set', arguments: [['users', 0, 'name'], 'Alice'] })
+        cmd({ channelName: 'data', command: 'push', args: [['users'], { id: 0 }] }),
+        cmd({ channelName: 'data', command: 'set', args: [['users', '[]', 'id'], 1] }),
+        cmd({ channelName: 'data', command: 'set', args: [['users', 0, 'name'], 'Alice'] })
       ], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ users: [{ id: 1, name: 'Alice' }] });
@@ -155,8 +155,8 @@ describe('channel.finalSnapshot', function () {
 
     it('should handle the @data.merge command', async function () {
       const buffer = createBuffer([
-        cmd({ channelName: 'data', command: 'set', arguments: [['user'], { id: 1, name: 'Alice' }] }),
-        cmd({ channelName: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] }),
+        cmd({ channelName: 'data', command: 'set', args: [['user'], { id: 1, name: 'Alice' }] }),
+        cmd({ channelName: 'data', command: 'merge', args: [['user'], { name: 'Alicia', active: true }] }),
       ], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ user: { id: 1, name: 'Alicia', active: true } });
@@ -164,7 +164,7 @@ describe('channel.finalSnapshot', function () {
 
     it('should handle null path to work on the root of the data object', async function () {
       const buffer = createBuffer([
-        cmd({ channelName: 'data', command: 'set', arguments: [null, { id: 5, name: 'Bob' }] })
+        cmd({ channelName: 'data', command: 'set', args: [null, { id: 5, name: 'Bob' }] })
       ], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ id: 5, name: 'Bob' });
@@ -172,8 +172,8 @@ describe('channel.finalSnapshot', function () {
 
     it('should handle null path with merge to combine with existing root data', async function () {
       const buffer = createBuffer([
-        cmd({ channelName: 'data', command: 'set', arguments: [['id'], 10] }),
-        cmd({ channelName: 'data', command: 'merge', arguments: [null, { name: 'Charlie' }] })
+        cmd({ channelName: 'data', command: 'set', args: [['id'], 10] }),
+        cmd({ channelName: 'data', command: 'merge', args: [null, { name: 'Charlie' }] })
       ], context, 'data');
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ id: 10, name: 'Charlie' });
@@ -210,7 +210,7 @@ describe('channel.finalSnapshot', function () {
 
       const sink = new CounterSink();
       const commands = [
-        cmd({ channelName: 'counter', command: 'increment', subpath: [], arguments: [] })
+        cmd({ channelName: 'counter', command: 'increment', subpath: [], args: [] })
       ];
 
       flattenSink(commands, context, 'counter', sink);
@@ -223,7 +223,7 @@ describe('channel.finalSnapshot', function () {
         set(val) { this.value = val; },
         getReturnValue() { return { value: this.value }; }
       };
-      const commands = [cmd({ channelName: 'singleton', command: 'set', subpath: [], arguments: [456] })];
+      const commands = [cmd({ channelName: 'singleton', command: 'set', subpath: [], args: [456] })];
 
       flattenSink(commands, context, 'singleton', singletonSink);
       expect(singletonSink.getReturnValue()).to.eql({ value: 456 });
@@ -232,7 +232,7 @@ describe('channel.finalSnapshot', function () {
     it('should support callable sink targets (sink is a function)', function () {
       const callableSink = function(val) { this.lastValue = val; };
       callableSink.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
-      const commands = [cmd({ channelName: 'callable', command: null, subpath: [], arguments: ['test'] })];
+      const commands = [cmd({ channelName: 'callable', command: null, subpath: [], args: ['test'] })];
 
       flattenSink(commands, context, 'callable', callableSink);
       expect(callableSink.getReturnValue()).to.eql({ result: 'called', lastValue: 'test' });
@@ -323,7 +323,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('should throw an error for an unsupported channel command target', async function () {
-      const buffer = createBuffer([cmd({ channelName: 'nonexistent', command: 'method', subpath: [], arguments: [] })]);
+      const buffer = createBuffer([cmd({ channelName: 'nonexistent', command: 'method', subpath: [], args: [] })]);
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'text');
       }, (err) => {
@@ -332,7 +332,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('should throw an error for an unknown command method on data channel', async function () {
-      const buffer = createBuffer([cmd({ channelName: 'data', command: 'nonexistent', subpath: [], arguments: [null] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'nonexistent', subpath: [], args: [null] })], context, 'data');
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'data');
       }, (err) => {
@@ -341,7 +341,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('should throw an error for a non-string/non-number path segment', async function () {
-      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', arguments: [[{}], 'value'] })], context, 'data');
+      const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', args: [[{}], 'value'] })], context, 'data');
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'data');
       }, (err) => {
@@ -472,7 +472,7 @@ describe('channel.finalSnapshot', function () {
           channelName: 'text',
           command: null,
           subpath: [],
-          arguments: ['valid', poison],
+          args: ['valid', poison],
           pos: { lineno: 1, colno: 1 }
         })];
 
@@ -489,7 +489,7 @@ describe('channel.finalSnapshot', function () {
           channelName: 'nonexistent',
           command: 'method',
           subpath: [],
-          arguments: ['arg'],
+          args: ['arg'],
           pos: { lineno: 5, colno: 10 }
         })];
 
@@ -611,7 +611,7 @@ describe('channel.finalSnapshot', function () {
           channelName: 'data',
           command: 'nonexistentMethod',
           subpath: [],
-          arguments: [null],
+          args: [null],
           pos: { lineno: 1, colno: 1 }
         })];
 
@@ -629,7 +629,7 @@ describe('channel.finalSnapshot', function () {
           channelName: 'badHandler',
           command: 'method',
           subpath: ['nested', 'path'],
-          arguments: [],
+          args: [],
           pos: { lineno: 2, colno: 5 }
         })];
 

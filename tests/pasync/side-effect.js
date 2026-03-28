@@ -49,7 +49,7 @@
     });
 
     describe('Side effects - template render lifecycle', () => {
-      it('Template should wait resolution of unused variable', async () => {
+      it('Template should not wait resolution of unused variable', async () => {
         const cont = {
           logs: [],
           async log(item) {
@@ -60,6 +60,8 @@
         };
         const template = `{% set _dummy = log('hi') %}`;
         await env.renderTemplateString(template, cont);
+        expect(cont.logs).to.eql([]);
+        await waitForCondition(() => cont.logs.length === 1);
         expect(cont.logs).to.eql(['Logged hi']);
       });
 

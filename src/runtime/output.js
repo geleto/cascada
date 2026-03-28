@@ -9,8 +9,6 @@ const {
 const DataChannelTarget = require('../script/data-channel');
 const { BufferIterator } = require('./buffer-iterator');
 const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
-const { RESOLVE_MARKER } = require('./resolve');
-const ASYNC_POISON_BOX_KEY = Symbol.for('cascada.asyncArgPoisonBox');
 
 class Channel {
   constructor(frame, buffer, channelName, context, channelType = null, target = undefined, base = null) {
@@ -158,28 +156,16 @@ class Channel {
 
   _applyCommand(cmd) {
     if (!cmd) return;
-    const applyResolved = () => {
-      try {
-        this._beforeApplyCommand(cmd);
-        const result = cmd.apply(this);
-        if (result && typeof result.then === 'function') {
-          return Promise.resolve(result).catch((err) => {
-            this._recordError(err, cmd);
-          });
-        }
-      } catch (err) {
-        this._recordError(err, cmd);
-      }
-    };
-
     try {
-      const prep = resolveCommandArgumentsForApply(cmd, this);
-      if (prep && typeof prep.then === 'function') {
-        return Promise.resolve(prep).then(applyResolved).catch((err) => {
+      cmd.resolved = true;
+      this._beforeApplyCommand(cmd);
+      const result = cmd.apply(this);
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).catch((err) => {
           this._recordError(err, cmd);
         });
       }
-      return applyResolved();
+      return result;
     } catch (err) {
       this._recordError(err, cmd);
     }
@@ -646,13 +632,16 @@ class SinkChannel extends Channel {
 
   _applyCommand(cmd) {
     if (!cmd) return;
-    const applyResolved = () => {
-      // Observable commands handle sink resolution inside their own apply() with
-      // proper rejection handlers that settle the deferred promise. Calling
-      // _ensureSinkResolved() here first would swallow a rejected-sink error in
-      // _recordError without settling the command's promise, causing a hang.
+    try {
+      cmd.resolved = true;
       if (cmd.isObservable) {
-        return cmd.apply(this);
+        const result = cmd.apply(this);
+        if (result && typeof result.then === 'function') {
+          return Promise.resolve(result).catch((err) => {
+            this._recordError(err, cmd);
+          });
+        }
+        return result;
       }
       const sink = this._ensureSinkResolved();
       const apply = () => cmd.apply(this);
@@ -665,16 +654,6 @@ class SinkChannel extends Channel {
         });
       }
       return result;
-    };
-
-    try {
-      const prep = resolveCommandArgumentsForApply(cmd, this);
-      if (prep && typeof prep.then === 'function') {
-        return Promise.resolve(prep).then(applyResolved).catch((err) => {
-          this._recordError(err, cmd);
-        });
-      }
-      return applyResolved();
     } catch (err) {
       this._recordError(err, cmd);
     }
@@ -1018,106 +997,6 @@ async function inspectTargetForErrors(target) {
     hasError: deduped.length > 0,
     error: deduped.length > 0 ? new PoisonError(deduped) : null
   };
-}
-
-function resolveCommandArgumentsForApply(cmd, output) {
-  if (!cmd || cmd.resolved) {
-    return null;
-  }
-  if (!Object.prototype.hasOwnProperty.call(cmd, 'arguments')) {
-    cmd.resolved = true;
-    return null;
-  }
-
-  const result = resolveCommandArgsValue(cmd.arguments, cmd, output);
-  const finalize = (resolvedArgs) => {
-    cmd.arguments = resolvedArgs;
-    cmd.resolved = true;
-    return cmd.arguments;
-  };
-
-  if (result && typeof result.then === 'function') {
-    return Promise.resolve(result).then(finalize);
-  }
-  return finalize(result);
-}
-
-function resolveCommandArgsValue(value, cmd, output) {
-  if (Array.isArray(value)) {
-    let hasAsync = false;
-    const mapped = value.map((item) => {
-      const resolved = resolveCommandArg(item, cmd, output);
-      if (isPoison(resolved)) {
-        // PoisonedValue is thenable; box it to avoid Promise assimilation in Promise.all.
-        return wrapAsyncPoisonValue(resolved);
-      }
-      if (resolved && typeof resolved.then === 'function') {
-        hasAsync = true;
-      }
-      return resolved;
-    });
-    if (!hasAsync) {
-      return mapped.map(unwrapAsyncPoisonBox);
-    }
-    return Promise.all(mapped).then((resolvedItems) => resolvedItems.map(unwrapAsyncPoisonBox));
-  }
-  const resolvedValue = resolveCommandArg(value, cmd, output);
-  if (isPoison(resolvedValue)) {
-    return resolvedValue;
-  }
-  if (resolvedValue && typeof resolvedValue.then === 'function') {
-    return Promise.resolve(resolvedValue).then(unwrapAsyncPoisonBox);
-  }
-  return unwrapAsyncPoisonBox(resolvedValue);
-}
-
-function resolveCommandArg(value, cmd, output) {
-  if (isPoison(value)) {
-    return value;
-  }
-  if (isPoisonError(value)) {
-    return value;
-  }
-  if (value && typeof value.then === 'function') {
-    return Promise.resolve(value).then(
-      (resolved) => {
-        const next = resolveCommandArg(resolved, cmd, output);
-        if (next && typeof next.then === 'function') {
-          return Promise.resolve(next).then(
-            (resolvedNext) => (isPoison(resolvedNext) ? wrapAsyncPoisonValue(resolvedNext) : resolvedNext),
-            (err) => wrapAsyncPoisonValue(createPoison(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err])))
-          );
-        }
-        return isPoison(next) ? wrapAsyncPoisonValue(next) : next;
-      },
-      (err) => wrapAsyncPoisonValue(createPoison(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err])))
-    );
-  }
-  if (value && value[RESOLVE_MARKER]) {
-    return Promise.resolve(value[RESOLVE_MARKER]).then(
-      () => value,
-      (err) => wrapAsyncPoisonValue(createPoison(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err])))
-    );
-  }
-  return value;
-}
-
-/**
- * PoisonedValue, when returned by an async function is converted to a regular promise
- * Box it so we can convert it back to PoisonedValue when the promise is resolved
-*/
-function wrapAsyncPoisonValue(poisonedValue) {
-  return {
-    [ASYNC_POISON_BOX_KEY]: true,
-    value: poisonedValue
-  };
-}
-
-function unwrapAsyncPoisonBox(value) {
-  if (value && value[ASYNC_POISON_BOX_KEY] === true) {
-    return value.value;
-  }
-  return value;
 }
 
 function contextualizeCommandErrors(output, cmd, errors) {

@@ -1,6 +1,7 @@
 'use strict';
 
 const { isPoison, isPoisonError, PoisonError, createPoison, handleError } = require('./errors');
+const { RESOLVE_MARKER, unwrapResolvedValue } = require('./resolve');
 const contextualizedOutputErrorCache = new WeakMap();
 let safeOutputApi = null;
 
@@ -42,6 +43,11 @@ class Command {
         this.resolve = resolve;
         this.reject = reject;
       });
+      // Deferred command results are often consumed later by other internal runtime
+      // paths (for example as command arguments). Mark them handled immediately so
+      // an early rejection does not become a process-level warning before the real
+      // Cascada consumer observes it.
+      this.promise.catch(() => {});
     }
   }
 
@@ -74,11 +80,12 @@ class Command {
 
 // Base class for commands targeting a declared channel (text/var/data/sink). Carries channel name, method name, arguments, and source position.
 class ChannelCommand extends Command {
-  constructor({ channelName, command = null, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
+  constructor({ channelName, command = null, args = null, subpath = null, pos = null }) {
     super();
     this.channelName = channelName;
     this.command = command;
-    this.arguments = normalizeCommandArgsForDeferredHandling(args || legacyArgs || []);
+    this.arguments = args || [];
+    markDeferredThenablesHandled(this.arguments);
     this.subpath = subpath;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
@@ -112,24 +119,6 @@ class ChannelCommand extends Command {
   }
 }
 
-function normalizeCommandArgsForDeferredHandling(value) {
-  if (Array.isArray(value)) {
-    return value.map(normalizeCommandArgsForDeferredHandling);
-  }
-  if (isPoison(value) || isPoisonError(value)) {
-    return value;
-  }
-  if (value && typeof value.then === 'function') {
-    const wrapped = Promise.resolve(value).then(
-      (resolved) => resolved,
-      (err) => { throw err; }
-    );
-    wrapped.catch(() => {});
-    return wrapped;
-  }
-  return value;
-}
-
 // Appends one or more text values to a text channel's buffer array, or replaces it on `set`.
 class TextCommand extends ChannelCommand {
   constructor(specOrValue) {
@@ -158,7 +147,7 @@ class TextCommand extends ChannelCommand {
     super({
       channelName: 'text',
       command: null,
-      arguments: [specOrValue],
+      args: [specOrValue],
       subpath: null,
       pos: null
     });
@@ -167,52 +156,47 @@ class TextCommand extends ChannelCommand {
 
   apply(channel) {
     super.apply(channel);
-    if (!channel || !Array.isArray(channel._target)) {
-      if (!channel) {
+    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
+      this.arguments = resolvedArgs;
+      if (!channel || !Array.isArray(channel._target)) {
+        if (!channel) {
+          return;
+        }
+        channel._setTarget([]);
+      }
+      const poisonErrors = this.extractPoisonFromArgs();
+      if (poisonErrors.length > 0) {
+        channel._target.push(this.toPoisonValue(poisonErrors));
+        channel._markStateChanged();
         return;
       }
-      channel._setTarget([]);
-    }
-    const poisonErrors = this.extractPoisonFromArgs();
-    if (poisonErrors.length > 0) {
-      channel._target.push(this.toPoisonValue(poisonErrors));
-      channel._markStateChanged();
-      return;
-    }
-    const args = Array.isArray(this.arguments) ? this.arguments : [];
-    if (this.command === 'set') {
-      if (args.length !== 1) {
+      const args = Array.isArray(this.arguments) ? this.arguments : [];
+      if (this.command === 'set') {
+        if (args.length !== 1) {
+          channel._setTarget(this.toPoisonValue([
+            contextualizeOutputError(channel, this.pos, new Error('text.set() accepts exactly one argument'))
+          ]));
+          return;
+        }
+        channel._setTarget([]);
+      } else if (this.command !== null) {
         channel._setTarget(this.toPoisonValue([
-          contextualizeOutputError(channel, this.pos, new Error('text.set() accepts exactly one argument'))
+          contextualizeOutputError(channel, this.pos, new Error(`Unsupported text channel command '${this.command}'`))
         ]));
         return;
       }
-      channel._setTarget([]);
-    } else if (this.command !== null) {
-      channel._setTarget(this.toPoisonValue([
-        contextualizeOutputError(channel, this.pos, new Error(`Unsupported text channel command '${this.command}'`))
-      ]));
-      return;
-    }
-    if (!this.normalizeArgs) {
-      appendTextValues(channel, args, this.pos);
-      return;
-    }
-    const normalizedArgs = [];
-    let hasAsyncNormalization = false;
-    for (const arg of args) {
-      const normalized = normalizeTextCommandArg(arg, channel, this.pos);
-      if (normalized && typeof normalized.then === 'function') {
-        hasAsyncNormalization = true;
+      if (!this.normalizeArgs) {
+        appendTextValues(channel, args, this.pos);
+        return;
       }
-      normalizedArgs.push(normalized);
-    }
-    if (hasAsyncNormalization) {
-      return Promise.all(normalizedArgs).then((resolvedArgs) => {
-        appendTextValues(channel, resolvedArgs, this.pos);
-      });
-    }
-    appendTextValues(channel, normalizedArgs, this.pos);
+      const materializedArgs = materializeTextCommandArgs(args, channel, this.pos);
+      if (materializedArgs && typeof materializedArgs.then === 'function') {
+        return Promise.resolve(materializedArgs).then((finalArgs) => {
+          appendTextValues(channel, finalArgs, this.pos);
+        });
+      }
+      appendTextValues(channel, materializedArgs, this.pos);
+    });
   }
 }
 
@@ -243,7 +227,7 @@ class VarCommand extends ChannelCommand {
     super({
       channelName: 'var',
       command: null,
-      arguments: [specOrValue],
+      args: [specOrValue],
       subpath: null,
       pos: null
     });
@@ -251,33 +235,36 @@ class VarCommand extends ChannelCommand {
 
   apply(channel) {
     super.apply(channel);
-    if (!channel) return;
-    const poisonErrors = this.extractPoisonFromArgs();
-    if (poisonErrors.length > 0) {
-      channel._setTarget(this.toPoisonValue(poisonErrors));
-      return;
-    }
-    if (!Array.isArray(this.arguments) || this.arguments.length === 0) {
-      channel._setTarget(undefined);
-      return;
-    }
-    if (this.arguments.length > 1) {
-      channel._setTarget(this.toPoisonValue([
-        contextualizeOutputError(channel, this.pos, new Error('var channel accepts exactly one argument'))
-      ]));
-      return;
-    }
-    channel._setTarget(this.arguments[0]);
+    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
+      this.arguments = resolvedArgs;
+      if (!channel) return;
+      const poisonErrors = this.extractPoisonFromArgs();
+      if (poisonErrors.length > 0) {
+        channel._setTarget(this.toPoisonValue(poisonErrors));
+        return;
+      }
+      if (!Array.isArray(this.arguments) || this.arguments.length === 0) {
+        channel._setTarget(undefined);
+        return;
+      }
+      if (this.arguments.length > 1) {
+        channel._setTarget(this.toPoisonValue([
+          contextualizeOutputError(channel, this.pos, new Error('var channel accepts exactly one argument'))
+        ]));
+        return;
+      }
+      channel._setTarget(this.arguments[0]);
+    });
   }
 }
 
 // Timing-only sync point: awaits an iteration value for limited-concurrency loop synchronization. Does not propagate errors.
 class WaitResolveCommand extends ChannelCommand {
-  constructor({ channelName, args = null, arguments: legacyArgs = null, pos = null }) {
+  constructor({ channelName, args = null, pos = null }) {
     super({
       channelName,
       command: null,
-      args: args || legacyArgs || [],
+      args: args || [],
       subpath: null,
       pos
     });
@@ -290,12 +277,13 @@ class WaitResolveCommand extends ChannelCommand {
 
   async apply(channel) {
     super.apply(channel);
-    const value = Array.isArray(this.arguments) && this.arguments.length > 0
-      ? this.arguments[0]
-      : undefined;
     try {
-      const { resolveSingle } = require('./resolve');
-      const resolved = await resolveSingle(value);
+      const { resolveAll } = require('./resolve');
+      const values = Array.isArray(this.arguments) ? this.arguments : [];
+      const resolvedArgs = await resolveAll(values);
+      const resolved = Array.isArray(resolvedArgs) && resolvedArgs.length <= 1
+        ? resolvedArgs[0]
+        : resolvedArgs;
       if (channel) {
         channel._setTarget(resolved);
       }
@@ -310,11 +298,11 @@ class WaitResolveCommand extends ChannelCommand {
 
 // Invokes a named data method (e.g., set, push) on a data channel's DataChannelTarget. Corresponds to @data directives in scripts.
 class DataCommand extends ChannelCommand {
-  constructor({ channelName, command, args = null, arguments: legacyArgs = null, pos = null }) {
+  constructor({ channelName, command, args = null, pos = null }) {
     super({
       channelName,
       command: command || null,
-      args: args || legacyArgs || [],
+      args: args || [],
       subpath: null,
       pos
     });
@@ -322,66 +310,59 @@ class DataCommand extends ChannelCommand {
 
   apply(channel) {
     super.apply(channel);
-    if (!channel || !channel._base) return;
-    const rawPath = Array.isArray(this.arguments) && this.arguments.length > 0 ? this.arguments[0] : null;
-    const dataPath = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
-    const poisonErrors = this.extractPoisonFromArgs();
-    // Preserve existing poison on a data path for non-set operations, but still
-    // merge any new poison that arrived through arguments.
-    if (this.command !== 'set') {
-      const existing = readDataValueAtPath(channel._base.data, dataPath);
-      if (isPoison(existing) || isPoisonError(existing)) {
-        if (poisonErrors.length > 0) {
-          setDataPoisonAtPath(
-            channel,
-            this.arguments,
-            this.toPoisonValue(poisonErrors)
-          );
+    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
+      this.arguments = resolvedArgs;
+      if (!channel || !channel._base) return;
+      const rawPath = Array.isArray(this.arguments) && this.arguments.length > 0 ? this.arguments[0] : null;
+      const dataPath = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
+      const poisonErrors = this.extractPoisonFromArgs();
+      if (this.command !== 'set') {
+        const existing = readDataValueAtPath(channel._base.data, dataPath);
+        if (isPoison(existing) || isPoisonError(existing)) {
+          if (poisonErrors.length > 0) {
+            setDataPoisonAtPath(channel, this.arguments, this.toPoisonValue(poisonErrors));
+          }
+          return;
         }
+      }
+      if (poisonErrors.length > 0) {
+        setDataPoisonAtPath(channel, this.arguments, this.toPoisonValue(poisonErrors));
         return;
       }
-    }
-    if (poisonErrors.length > 0) {
-      setDataPoisonAtPath(
-        channel,
-        this.arguments,
-        this.toPoisonValue(poisonErrors)
-      );
-      return;
-    }
-    const method = this.command ? channel._base[this.command] : channel._base;
-    if (typeof method !== 'function') {
-      setDataPoisonAtPath(
-        channel,
-        this.arguments,
-        this.toPoisonValue([
-          contextualizeOutputError(channel, this.pos, new Error(`has no method '${this.command}'`))
-        ])
-      );
-      return;
-    }
-    try {
-      method.apply(channel._base, this.arguments);
-      channel._setTarget(channel._base.data);
-    } catch (err) {
-      setDataPoisonAtPath(
-        channel,
-        this.arguments,
-        this.toPoisonValue([
-          contextualizeOutputError(channel, this.pos, err)
-        ])
-      );
-    }
+      const method = this.command ? channel._base[this.command] : channel._base;
+      if (typeof method !== 'function') {
+        setDataPoisonAtPath(
+          channel,
+          this.arguments,
+          this.toPoisonValue([
+            contextualizeOutputError(channel, this.pos, new Error(`has no method '${this.command}'`))
+          ])
+        );
+        return;
+      }
+      try {
+        method.apply(channel._base, this.arguments);
+        channel._setTarget(channel._base.data);
+      } catch (err) {
+        setDataPoisonAtPath(
+          channel,
+          this.arguments,
+          this.toPoisonValue([
+            contextualizeOutputError(channel, this.pos, err)
+          ])
+        );
+      }
+    });
   }
 }
 
 // Calls a method on a sink channel object (or a sub-path within it). Errors poison the channel target.
 class SinkCommand extends ChannelCommand {
-  constructor({ channelName, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
+  constructor({ channelName, command, args = null, subpath = null, pos = null }) {
     super({
       channelName,
       command: command || null,
-      args: args || legacyArgs || [],
+      args: args || [],
       subpath: subpath || null,
       pos
     });
@@ -389,62 +370,65 @@ class SinkCommand extends ChannelCommand {
 
   apply(channel) {
     super.apply(channel);
-    if (!channel) return;
-    const isRootRepair = this.command === 'repair' && (!this.subpath || this.subpath.length === 0);
-    if (!isRootRepair && isPoison(channel._getTarget())) {
-      return;
-    }
-    const poisonErrors = this.extractPoisonFromArgs();
-    if (poisonErrors.length > 0) {
-      channel._setTarget(this.toPoisonValue(poisonErrors));
-      return;
-    }
-    const sink = channel._sink;
-    const target = resolveSubpath(sink, this.subpath);
-    const method = this.command ? (target && target[this.command]) : target;
-
-    if (isRootRepair) {
-      channel._setTarget(undefined);
-      if (typeof method !== 'function') {
+    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
+      this.arguments = resolvedArgs;
+      if (!channel) return;
+      const isRootRepair = this.command === 'repair' && (!this.subpath || this.subpath.length === 0);
+      if (!isRootRepair && isPoison(channel._getTarget())) {
         return;
       }
-      const repairResult = method.apply(target, this.arguments);
-      if (repairResult && typeof repairResult.then === 'function') {
-        return Promise.resolve(repairResult).catch((err) => {
-          channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
-        });
+      const poisonErrors = this.extractPoisonFromArgs();
+      if (poisonErrors.length > 0) {
+        channel._setTarget(this.toPoisonValue(poisonErrors));
+        return;
       }
-      return;
-    }
+      const sink = channel._sink;
+      const target = resolveSubpath(sink, this.subpath);
+      const method = this.command ? (target && target[this.command]) : target;
 
-    if (typeof method !== 'function') {
-      channel._setTarget(this.toPoisonValue([
-        contextualizeOutputError(channel, this.pos, new Error(`Sink method '${this.command}' not found`))
-      ]));
-      return;
-    }
-
-    try {
-      const result = method.apply(target, this.arguments);
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).catch((err) => {
-          channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
-        });
+      if (isRootRepair) {
+        channel._setTarget(undefined);
+        if (typeof method !== 'function') {
+          return;
+        }
+        const repairResult = method.apply(target, this.arguments);
+        if (repairResult && typeof repairResult.then === 'function') {
+          return Promise.resolve(repairResult).catch((err) => {
+            channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
+          });
+        }
+        return;
       }
-      return result;
-    } catch (err) {
-      channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
-    }
+
+      if (typeof method !== 'function') {
+        channel._setTarget(this.toPoisonValue([
+          contextualizeOutputError(channel, this.pos, new Error(`Sink method '${this.command}' not found`))
+        ]));
+        return;
+      }
+
+      try {
+        const result = method.apply(target, this.arguments);
+        if (result && typeof result.then === 'function') {
+          return Promise.resolve(result).catch((err) => {
+            channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
+          });
+        }
+        return result;
+      } catch (err) {
+        channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
+      }
+    });
   }
 }
 
 // Calls a method on a sequence sink in source order and resolves the deferred result promise with the return value. Mutating — waits for prior observables.
 class SequenceCallCommand extends ChannelCommand {
-  constructor({ channelName, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null, withDeferredResult = false }) {
+  constructor({ channelName, command, args = null, subpath = null, pos = null, withDeferredResult = false }) {
     super({
       channelName,
       command: command || null,
-      args: args || legacyArgs || [],
+      args: args || [],
       subpath: subpath || null,
       pos
     });
@@ -458,47 +442,50 @@ class SequenceCallCommand extends ChannelCommand {
 
   apply(channel) {
     super.apply(channel);
-    if (!channel) return undefined;
-    const poisonErrors = this.extractPoisonFromArgs();
-    if (poisonErrors.length > 0) {
-      const err = new PoisonError(poisonErrors);
-      this.rejectResult(err);
-      throw err;
-    }
+    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
+      this.arguments = resolvedArgs;
+      if (!channel) return undefined;
+      const poisonErrors = this.extractPoisonFromArgs();
+      if (poisonErrors.length > 0) {
+        const err = new PoisonError(poisonErrors);
+        this.rejectResult(err);
+        throw err;
+      }
 
-    const execute = (sink) => {
-      const target = resolveSubpath(sink, this.subpath);
-      if (target === null || target === undefined) {
-        this.resolveResult(undefined);
-        return undefined;
-      }
-      const method = this.command ? target[this.command] : target;
-      if (typeof method !== 'function') {
-        this.resolveResult(undefined);
-        return undefined;
-      }
-      const result = method.apply(target, this.arguments);
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(
-          (value) => {
-            this.resolveResult(value);
-            return value;
-          },
-          (err) => {
-            this.rejectResult(err);
-            throw err;
-          }
-        );
-      }
-      this.resolveResult(result);
-      return result;
-    };
+      const execute = (sink) => {
+        const target = resolveSubpath(sink, this.subpath);
+        if (target === null || target === undefined) {
+          this.resolveResult(undefined);
+          return undefined;
+        }
+        const method = this.command ? target[this.command] : target;
+        if (typeof method !== 'function') {
+          this.resolveResult(undefined);
+          return undefined;
+        }
+        const result = method.apply(target, this.arguments);
+        if (result && typeof result.then === 'function') {
+          return Promise.resolve(result).then(
+            (value) => {
+              this.resolveResult(value);
+              return value;
+            },
+            (err) => {
+              this.rejectResult(err);
+              throw err;
+            }
+          );
+        }
+        this.resolveResult(result);
+        return result;
+      };
 
-    const sink = channel._ensureSinkResolved ? channel._ensureSinkResolved() : channel._sink;
-    if (sink && typeof sink.then === 'function') {
-      return Promise.resolve(sink).then(execute);
-    }
-    return execute(sink);
+      const sink = channel._ensureSinkResolved ? channel._ensureSinkResolved() : channel._sink;
+      if (sink && typeof sink.then === 'function') {
+        return Promise.resolve(sink).then(execute);
+      }
+      return execute(sink);
+    });
   }
 }
 
@@ -1141,6 +1128,150 @@ function contextualizeOutputError(output, pos, err) {
   return wrapped;
 }
 
+// Resolve a command payload at apply time and invoke the supplied callback with
+// the resolved top-level argument values. Poison is preserved inside the resolved
+// payload so each command can apply its own semantics (for example, poisoning a
+// specific data path or rejecting an observable command result) rather than a
+// generic helper short-circuiting too early.
+function runWithResolvedArguments(value, cmd, output, applyFn) {
+  if (Array.isArray(value)) {
+    let hasAsync = false;
+
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] === undefined) {
+        continue;
+      }
+      const fastValue = unwrapResolvedValue(value[i]);
+      if (fastValue !== value[i]) {
+        value[i] = fastValue;
+      }
+      if (isPoison(fastValue)) {
+        continue;
+      }
+      if (!fastValue || (typeof fastValue.then !== 'function' && !fastValue[RESOLVE_MARKER])) {
+        continue;
+      }
+      hasAsync = true;
+      break;
+    }
+
+    if (!hasAsync) {
+      return applyFn(value);
+    }
+
+    // The array has at least one async entry, so resolve each top-level slot and
+    // preserve poison as data for the command to handle.
+    return runWithResolvedArgumentsAsync(value, cmd, output, applyFn);
+  } else {
+    //a single non-array argument
+    if (value === undefined) {
+      return applyFn(undefined);
+    }
+
+    value = unwrapResolvedValue(value);
+    if (isPoison(value) || !value || (typeof value.then !== 'function' && !value[RESOLVE_MARKER])) {
+      return applyFn(value);
+    }
+
+    // the value is either a promise or a RESOLVE_MARKER
+    if (value[RESOLVE_MARKER]) {
+      return Promise.resolve(value[RESOLVE_MARKER]).then(() => {
+        return applyFn(value);
+      }).catch((err) => {
+        return applyFn(createCommandArgumentPoison(output, cmd, err));
+      });
+    }
+
+    return Promise.resolve(value).then((resolvedValue) => {
+      return applyFn(resolvedValue);
+    }).catch((err) => {
+      return applyFn(createCommandArgumentPoison(output, cmd, err));
+    });
+  }
+}
+
+async function runWithResolvedArgumentsAsync (value, cmd, output, applyFn) {
+  const resolvedArray = new Array(value.length);
+  for (let i = 0; i < value.length; i++) {
+    const entry = value[i];
+    if (entry === undefined) {
+      resolvedArray[i] = undefined;
+      continue;
+    }
+    const fastValue = unwrapResolvedValue(entry);
+    if (isPoison(fastValue) || !fastValue || (typeof fastValue.then !== 'function' && !fastValue[RESOLVE_MARKER])) {
+      resolvedArray[i] = fastValue;
+      continue;
+    }
+    if (fastValue[RESOLVE_MARKER]) {
+      try {
+        await fastValue[RESOLVE_MARKER];
+        resolvedArray[i] = fastValue;
+      } catch (err) {
+        resolvedArray[i] = createCommandArgumentPoison(output, cmd, err);
+      }
+      continue;
+    }
+
+    try {
+      resolvedArray[i] = await fastValue;
+    } catch (err) {
+      resolvedArray[i] = createCommandArgumentPoison(output, cmd, err);
+    }
+  }
+  return applyFn(resolvedArray);
+}
+
+function createCommandArgumentPoison(output, cmd, err) {
+  const errors = isPoisonError(err) ? err.errors : [err];
+  const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
+  const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
+  const path = output && output._context && output._context.path ? output._context.path : null;
+  const contextualized = errors.map((item) => handleError(item, lineno, colno, null, path));
+  return createPoison(contextualized);
+}
+
+// Command arguments may sit in buffers for a while before a consumer applies the
+// command. Mark any deferred native promises as handled up front so early
+// rejections do not surface as process-level warnings before Cascada consumes
+// them. This does not resolve values early; it only attaches a no-op rejection
+// handler to promises already present in the argument structure.
+function markDeferredThenablesHandled(value, seen = null) {
+  if (value === null || value === undefined) {
+    return;
+  }
+
+  const nextSeen = seen || new WeakSet();
+  if (typeof value === 'object' || typeof value === 'function') {
+    if (nextSeen.has(value)) {
+      return;
+    }
+    nextSeen.add(value);
+  }
+
+  if (value && typeof value.then === 'function') {
+    Promise.resolve(value).catch(() => {});
+    return;
+  }
+
+  if (value && value[RESOLVE_MARKER] && typeof value[RESOLVE_MARKER].then === 'function') {
+    Promise.resolve(value[RESOLVE_MARKER]).catch(() => {});
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      markDeferredThenablesHandled(entry, nextSeen);
+    }
+    return;
+  }
+
+  if (typeof value === 'object') {
+    for (const key of Object.keys(value)) {
+      markDeferredThenablesHandled(value[key], nextSeen);
+    }
+  }
+}
+
 function resolveSubpath(target, subpath) {
   if (!Array.isArray(subpath) || subpath.length === 0) {
     return target;
@@ -1162,6 +1293,25 @@ function normalizeTextCommandArg(value, output, pos) {
     return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, output, pos));
   }
   return normalizeMaterializedTextArg(materialized, output, pos);
+}
+
+// Text commands have a second consumption boundary after top-level argument
+// resolution: text values may still need snapshot/finalSnapshot materialization
+// before autoescape/suppression turns them into concrete text.
+function materializeTextCommandArgs(values, output, pos) {
+  const normalizedArgs = [];
+  let hasAsyncMaterialization = false;
+  for (const value of values) {
+    const normalized = normalizeTextCommandArg(value, output, pos);
+    if (normalized && typeof normalized.then === 'function') {
+      hasAsyncMaterialization = true;
+    }
+    normalizedArgs.push(normalized);
+  }
+  if (!hasAsyncMaterialization) {
+    return normalizedArgs;
+  }
+  return Promise.all(normalizedArgs);
 }
 
 function normalizeMaterializedTextArg(value, output, pos) {

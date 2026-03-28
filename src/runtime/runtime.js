@@ -231,6 +231,7 @@ module.exports = {
   resolveSingleArr: resolve.resolveSingleArr,
   resolveObjectProperties: resolve.resolveObjectProperties,
   resolveArguments: resolve.resolveArguments,
+  normalizeFinalPromise: resolve.normalizeFinalPromise,
 
   createObject: resolve.createObject,
   createArray: resolve.createArray,

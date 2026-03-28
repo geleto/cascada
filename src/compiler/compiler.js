@@ -137,7 +137,13 @@ class Compiler extends CompilerBase {
           // object as the last argument, if they exist.
           // These are nested call arguments, not statement/root expressions,
           // so they intentionally bypass waited-root tracking.
-          this._compileExpression(arg, callFrame, false);
+          if (node.isAsync && !resolveArgs) {
+            this.emit('runtime.normalizeFinalPromise(');
+            this._compileExpression(arg, callFrame, false);
+            this.emit(')');
+          } else {
+            this._compileExpression(arg, callFrame, false);
+          }
 
           if (i !== args.children.length - 1 || contentArgs.length) {
             this.emit(',');
@@ -154,10 +160,12 @@ class Compiler extends CompilerBase {
           if (arg) {
             if (node.isAsync && !resolveArgs) {
               //when args are not resolved, the contentArgs are promises
+              this.emit('runtime.normalizeFinalPromise(');
               this.emit._compileRenderBoundary(node, callFrame, function (f) {
                 this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, f);
               }, null, arg); // Use content arg node for position
+              this.emit(')');
             }
             else {
               //when not resolve args, the contentArgs are callback functions
@@ -242,7 +250,11 @@ class Compiler extends CompilerBase {
         positionNode,
         () => {
           if (this.asyncMode) {
-            this.emit(`runtime.resolveSingle(${res})`);
+            if (resolveArgs) {
+              this.emit(`runtime.resolveSingle(${res})`);
+            } else {
+              this.emit(`runtime.normalizeFinalPromise(${res})`);
+            }
           } else {
             this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
           }
@@ -429,7 +441,7 @@ class Compiler extends CompilerBase {
       const targetName = node.targets[0].value;
       const pathValueId = this._tmpid();
       this.emit(`let ${pathValueId} = `);
-      this.compileExpression(node.value, frame, true, node.value);
+      this.compileExpression(node.value, frame, false, node.value);
       this.emit.line(';');
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
@@ -443,7 +455,7 @@ class Compiler extends CompilerBase {
       hasAssignedValue = true;
     } else if (node.value && !isDeclarationOnly) {
       this.emit(ids.join(' = ') + ' = ');
-      this.compileExpression(node.value, frame, true, node.value);
+      this.compileExpression(node.value, frame, false, node.value);
       this.emit.line(';');
       hasAssignedValue = true;
     } else if (node.body) {
@@ -1465,7 +1477,7 @@ class Compiler extends CompilerBase {
       if (this.scriptMode) {
         const returnVar = this._tmpid();
         this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
-        this.emit.line(`    cb(null, runtime.resolveSingle(${returnVar}));`);
+        this.emit.line(`    cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
       } else {
         this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
         this.emit.line(`    cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);
