@@ -1,9 +1,6 @@
 'use strict';
 
-// Symbol for poison detection
-const POISON_KEY = typeof Symbol !== 'undefined'
-  ? Symbol.for('cascada.poison')
-  : '__cascadaPoisonError';
+const { POISON_KEY, RESOLVE_MARKER } = require('./markers');
 
 
 /**
@@ -413,17 +410,12 @@ async function isError(value) {
     return true;//quick path
   }
 
-  if (value && typeof value.then === 'function') {
-    try {
-      await value;
-      //awaited value can not be PoisonedValue as it poisoned values are a thenable
-      return false;
-    } catch (err) {
-      return true;
-    }
+  if (!value || (typeof value.then !== 'function' && !value[RESOLVE_MARKER])) {
+    return false;
   }
 
-  return false;
+  const errors = await collectErrors([value]);
+  return errors.length > 0;
 }
 
 /**
@@ -440,13 +432,32 @@ async function collectErrors(values) {
     } else if (value && typeof value.then === 'function') {
       try {
         const resolved = await value;
-        // Check if resolved to a poison
         if (isPoison(resolved)) {
           errors.push(...resolved.errors);
+        } else if (resolved && resolved[RESOLVE_MARKER]) {
+          try {
+            await resolved[RESOLVE_MARKER];
+          } catch (err) {
+            if (isPoisonError(err)) {
+              errors.push(...err.errors);
+            } else {
+              errors.push(err);
+            }
+          }
         }
       } catch (err) {
         // If the error is a PoisonError (from unwrapping a poison),
         // extract its underlying errors
+        if (isPoisonError(err)) {
+          errors.push(...err.errors);
+        } else {
+          errors.push(err);
+        }
+      }
+    } else if (value && value[RESOLVE_MARKER]) {
+      try {
+        await value[RESOLVE_MARKER];
+      } catch (err) {
         if (isPoisonError(err)) {
           errors.push(...err.errors);
         } else {
@@ -515,18 +526,10 @@ function peekError(value) {
     return new PoisonError(value.errors);
   }
 
-  // Promise check
-  if (value && typeof value.then === 'function') {
-    return value.then((result) => {
-      if (isPoison(result)) {
-        return new PoisonError(result.errors);
-      }
-      return null;
-    }, (err) => {
-      if (isPoisonError(err)) {
-        return err;
-      }
-      return new PoisonError([err]);
+  // Async/lazy check
+  if (value && (typeof value.then === 'function' || value[RESOLVE_MARKER])) {
+    return collectErrors([value]).then((errors) => {
+      return errors.length > 0 ? new PoisonError(errors) : null;
     });
   }
 

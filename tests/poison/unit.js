@@ -303,6 +303,43 @@
 
         expect(errors).to.have.length(2);
       });
+
+      it('should collect errors from direct marker-backed values', async () => {
+        const lazy = runtime.createArray([
+          Promise.reject(new Error('Marker error 1'))
+        ]);
+
+        const errors = await collectErrors([lazy]);
+
+        expect(errors).to.have.length(1);
+        expect(errors[0].message).to.equal('Marker error 1');
+      });
+
+      it('should collect errors from promises that resolve to marker-backed values', async () => {
+        const lazy = Promise.resolve(runtime.createObject({
+          nested: Promise.reject(new Error('Marker error 2'))
+        }));
+
+        const errors = await collectErrors([lazy]);
+
+        expect(errors).to.have.length(1);
+        expect(errors[0].message).to.equal('Marker error 2');
+      });
+
+      it('should collect all errors from multiple marker-backed values', async () => {
+        const lazy1 = runtime.createArray([
+          Promise.reject(new Error('Marker error A'))
+        ]);
+        const lazy2 = runtime.createObject({
+          nested: Promise.reject(new Error('Marker error B'))
+        });
+
+        const errors = await collectErrors([lazy1, lazy2]);
+
+        expect(errors).to.have.length(2);
+        expect(errors[0].message).to.equal('Marker error A');
+        expect(errors[1].message).to.equal('Marker error B');
+      });
     });
   });
 

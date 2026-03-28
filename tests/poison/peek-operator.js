@@ -80,6 +80,34 @@
       expect(output.trim()).to.contain('Sub Error');
     });
 
+    it('should detect marker-backed lazy arrays with is error', async () => {
+      const template = `
+        {% set val = [ok(), bad()] %}
+        {{ val is error }}
+      `;
+      const output = await env.renderTemplateString(template, {
+        ok: async () => 'ok',
+        bad: async () => {
+          throw new Error('Lazy array failure');
+        }
+      });
+      expect(output.trim()).to.be('true');
+    });
+
+    it('should peek marker-backed lazy arrays', async () => {
+      const template = `
+        {% set val = [ok(), bad()] %}
+        {{ val#errors[0].message }}
+      `;
+      const output = await env.renderTemplateString(template, {
+        ok: async () => 'ok',
+        bad: async () => {
+          throw new Error('Lazy array peek failure');
+        }
+      });
+      expect(output.trim()).to.contain('Lazy array peek failure');
+    });
+
     it('should parse variable# correctly', async () => {
       const err = new Error('Traiing hash');
       const poison = runtime.createPoison(err, { lineno: 1, colno: 1 });
@@ -188,6 +216,25 @@
         return result`;
       const data = await env.renderScriptString(script, context);
       expect(data.peeked).to.contain('Sequence Error');
+    });
+
+    it('should detect marker-backed lazy objects in script is error', async () => {
+      const script = `
+        var result = {}
+        var val = { nested: bad() }
+        result.isErr = val is error
+        if result.isErr
+          result.msg = val#errors[0].message
+        endif
+        return result`;
+
+      const data = await env.renderScriptString(script, {
+        bad: async () => {
+          throw new Error('Lazy object script failure');
+        }
+      });
+      expect(data.isErr).to.be(true);
+      expect(data.msg).to.contain('Lazy object script failure');
     });
   });
 })();

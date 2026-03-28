@@ -14,6 +14,7 @@ const loop = require('./loop');
 const outputValue = require('./safe-output');
 const commands = require('./commands');
 const asyncBoundaries = require('./async-boundaries');
+const markers = require('./markers');
 
 function makeMacro(argNames, kwargNames, func, astate) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -152,8 +153,6 @@ function linkWithParentCompositionBuffer(parentBuffer, childBuffer, channelNames
   }
 }
 
-const RETURN_UNSET = Symbol.for('cascada.returnUnset');
-
 module.exports = {
   makeMacro,
   invokeMacro,
@@ -171,7 +170,7 @@ module.exports = {
   linkWithParentCompositionBuffer,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,
-  RETURN_UNSET,
+  RETURN_UNSET: markers.RETURN_UNSET,
   SafeString: outputValue.SafeString,
   copySafeness: outputValue.copySafeness,
   markSafe: outputValue.markSafe,
@@ -232,6 +231,8 @@ module.exports = {
   resolveObjectProperties: resolve.resolveObjectProperties,
   resolveArguments: resolve.resolveArguments,
   normalizeFinalPromise: resolve.normalizeFinalPromise,
+  RESOLVE_MARKER: markers.RESOLVE_MARKER,
+  RESOLVED_VALUE_MARKER: markers.RESOLVED_VALUE_MARKER,
 
   createObject: resolve.createObject,
   createArray: resolve.createArray,

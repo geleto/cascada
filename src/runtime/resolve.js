@@ -40,9 +40,7 @@ const {
   collectErrors,
   PoisonError
 } = require('./errors');
-
-const RESOLVE_MARKER = Symbol.for('cascada.resolve');
-const RESOLVED_VALUE_MARKER = Symbol.for('cascada.resolved_value');
+const { RESOLVE_MARKER, RESOLVED_VALUE_MARKER } = require('./markers');
 
 function makeResolvedValue(value, mapper = null) {
   return {
