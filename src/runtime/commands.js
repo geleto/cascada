@@ -80,8 +80,8 @@ class Command {
 
 // Base class for commands targeting a declared channel (text/var/data/sink). Carries channel name, method name, arguments, and source position.
 class ChannelCommand extends Command {
-  constructor({ channelName, command = null, args = null, subpath = null, pos = null }) {
-    super();
+  constructor({ channelName, command = null, args = null, subpath = null, pos = null, withDeferredResult = false }) {
+    super({ withDeferredResult });
     this.channelName = channelName;
     this.command = command;
     this.arguments = args || [];
@@ -426,14 +426,9 @@ class SequenceCallCommand extends ChannelCommand {
       command: command || null,
       args: args || [],
       subpath: subpath || null,
-      pos
+      pos,
+      withDeferredResult
     });
-    if (withDeferredResult) {
-      this.promise = new Promise((resolve, reject) => {
-        this.resolve = resolve;
-        this.reject = reject;
-      });
-    }
   }
 
   apply(channel) {
@@ -493,15 +488,10 @@ class SequenceGetCommand extends ChannelCommand {
       command: command || null,
       args: [],
       subpath: subpath || null,
-      pos
+      pos,
+      withDeferredResult
     });
     this.isObservable = true;
-    if (withDeferredResult) {
-      this.promise = new Promise((resolve, reject) => {
-        this.resolve = resolve;
-        this.reject = reject;
-      });
-    }
   }
 
   apply(channel) {
