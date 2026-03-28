@@ -85,7 +85,13 @@ class ChannelCommand extends Command {
     this.channelName = channelName;
     this.command = command;
     this.arguments = args || [];
-    markDeferredThenablesHandled(this.arguments);
+    // Channel commands are buffered and applied later by the iterator. Any raw
+    // promise/marker-backed value already present in the buffered argument
+    // graph can reject before apply-time resolution runs, so command argument
+    // staging remains broad here on purpose.
+    if (this.arguments.length > 0) {
+      markDeferredThenablesHandled(this.arguments);
+    }
     this.subpath = subpath;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
