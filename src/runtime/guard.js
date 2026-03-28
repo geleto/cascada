@@ -1,5 +1,5 @@
 
-const { getChannel } = require('./output');
+const { getChannel } = require('./channel');
 
 function init(cb = null) {
   const guardState = {

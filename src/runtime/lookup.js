@@ -13,7 +13,7 @@ const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 const {
   resolveDuo
 } = require('./resolve');
-const { getChannel } = require('./output');
+const { getChannel } = require('./channel');
 
 /**
  * Sync member lookup for templates.

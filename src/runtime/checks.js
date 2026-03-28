@@ -48,7 +48,7 @@ function checkFinishedBuffer(buffer, channelName = null) {
 }
 
 function ensureSequentialPathChannel(frame, pathKey) {
-  const { getChannel } = require('./output');
+  const { getChannel } = require('./channel');
   const channel = getChannel(frame, pathKey);
 
   if (!channel) {

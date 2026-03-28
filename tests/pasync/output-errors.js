@@ -24,7 +24,7 @@ const {
   inspectTargetForErrors,
   createChannel,
   createSinkChannel
-} = require('../../src/runtime/output');
+} = require('../../src/runtime/channel');
 
 describe('channel errors', function () {
   describe('channel commands step2 poison encoding', function () {
