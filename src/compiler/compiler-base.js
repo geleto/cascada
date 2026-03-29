@@ -1076,7 +1076,7 @@ class CompilerBase extends Obj {
         // Imported callables are structurally ambiguous: they may resolve to a
         // macro boundary or an ordinary function. Give them a child buffer up
         // front so the eventual dispatch happens inside a known current flow.
-        this.emit.asyncBlockValue(node, frame, (n, f) => {
+        this.emit.valueBoundary(node, frame, (n, f) => {
           const prevBuffer = this.buffer.currentBuffer;
           this.buffer.currentBuffer = 'currentBuffer';
           this._emitAsyncDynamicCall(n, f, 'currentBuffer');

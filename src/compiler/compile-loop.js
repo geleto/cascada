@@ -225,7 +225,7 @@ class CompileLoop {
       const parentBufferArg = this.compiler.buffer.currentBuffer;
       const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
       this.compiler.emit(
-        `return runtime.runControlFlowBoundary(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
+        `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
       );
       this.compiler.emit.asyncClosureDepth++;
     }

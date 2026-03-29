@@ -15,8 +15,9 @@ const outputValue = require('./safe-output');
 const commands = require('./commands');
 const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
+const { AsyncState } = require('./async-state');
 
-function makeMacro(argNames, kwargNames, func, astate) {
+function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
     var argCount = numArgs(macroArgs);
     var args;
@@ -48,13 +49,13 @@ function makeMacro(argNames, kwargNames, func, astate) {
       args.push(kwargs);
     } else {
       args = macroArgs;
-      if (astate && Object.keys(kwargs).length === 0) {
+      if (useAsyncMacroSignature && Object.keys(kwargs).length === 0) {
         args.push({});//kwargs
       }
     }
 
-    if (astate) {
-      args.push(astate.new());
+    if (useAsyncMacroSignature) {
+      args.push(new AsyncState());
       args.push(currentBuffer);
     }
     return func.apply(executionContext, args);
@@ -170,6 +171,7 @@ module.exports = {
   linkWithParentCompositionBuffer,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,
+  runValueBoundary: asyncBoundaries.runValueBoundary,
   RETURN_UNSET: markers.RETURN_UNSET,
   SafeString: outputValue.SafeString,
   copySafeness: outputValue.copySafeness,

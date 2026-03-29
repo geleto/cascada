@@ -17,7 +17,7 @@ class CompileBoundaries {
 
     // Reserve a structural child buffer synchronously before any async
     // condition/operand resolution so later sibling operands stay ordered.
-    this.compiler.emit(`runtime.runControlFlowBoundary(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`);
+    this.compiler.emit(`runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`);
     this.compiler.emit.asyncClosureDepth++;
     bufferCompiler.currentBuffer = 'currentBuffer';
 
@@ -37,7 +37,7 @@ class CompileBoundaries {
       const controlFlowPromiseId = this.compiler._tmpid();
 
       this.compiler.emit(
-        `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
+        `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
       );
       this.compiler.emit.asyncClosureDepth++;
 
@@ -93,7 +93,7 @@ class CompileBoundaries {
     }
 
     frame = frame.push(false, false);
-    emitCompiler.line(`runtime.runRenderBoundary(astate, frame, context, cb, async (frame, currentBuffer) =>{`);
+    emitCompiler.line(`runtime.runRenderBoundary(frame, context, cb, async (frame, currentBuffer) =>{`);
 
     const id = this.compiler._tmpid();
     emitCompiler.line(`let ${id} = currentBuffer;`);
@@ -168,7 +168,7 @@ class CompileBoundaries {
     const boundaryPrefix = boundaryPromiseId ? `const ${boundaryPromiseId} = ` : '';
 
     this.compiler.emit.line(
-      `${boundaryPrefix}runtime.runControlFlowBoundary(astate, ${parentBufferExpr}, ${linkedChannelsArg}, frame, context, cb, async ${callbackParams} => {`
+      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChannelsArg}, frame, context, cb, async ${callbackParams} => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -259,7 +259,7 @@ class CompileBoundaries {
     const outerParentBuffer = bufferCompiler.currentBuffer;
 
     this.compiler.emit(
-      `runtime.runControlFlowBoundary(astate, ${outerParentBuffer}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
+      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 

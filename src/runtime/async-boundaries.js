@@ -11,8 +11,7 @@ const buffer = require('./command-buffer');
  * The asyncFn receives (childFrame, childBuffer) and should compile
  * branch bodies synchronously inside - no inner astate.asyncBlock calls needed.
  */
-async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, context, cb, asyncFn, waitedChannelName = null) {
-  void astate;
+async function runControlFlowBoundary(parentBuffer, usedChannels, f, context, cb, asyncFn, waitedChannelName = null) {
   void context;
   void cb;
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
@@ -57,8 +56,7 @@ async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, con
  * into the parent tree. The asyncFn receives (childFrame, childBuffer)
  * and should synchronously emit the boundary body into that child buffer.
  */
-async function runRenderBoundary(astate, f, context, cb, asyncFn) {
-  void astate;
+async function runRenderBoundary(f, context, cb, asyncFn) {
   const childFrame = f.push(false);
   const childBuffer = buffer.createCommandBuffer(context || null, null, childFrame, null, null);
 
@@ -79,7 +77,46 @@ async function runRenderBoundary(astate, f, context, cb, asyncFn) {
   }
 }
 
+/**
+ * Run a value-returning async boundary that may need a child buffer before
+ * the eventual dispatched call decides whether it is command-emitting.
+ *
+ * Unlike runControlFlowBoundary(...), this helper preserves normal expression
+ * rejection semantics: RuntimeFatalError is reported via cb(...), but ordinary
+ * expression errors are rethrown to the awaiting caller.
+ */
+async function runValueBoundary(parentBuffer, usedChannels, f, context, cb, asyncFn, createOutputBuffer = false) {
+  void context;
+  const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
+  const childFrame = f.push(false);
+  let childBuffer = null;
+  if (createOutputBuffer) {
+    const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
+    childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer || null);
+  }
+
+  const activeBuffer = childBuffer || parentBuffer || null;
+
+  const cleanup = () => {
+    if (childBuffer) {
+      childBuffer.markFinishedAndPatchLinks();
+    }
+  };
+
+  try {
+    return await asyncFn(childFrame, activeBuffer, parentBuffer || null);
+  } catch (err) {
+    if (err instanceof errors.RuntimeFatalError) {
+      cb(err);
+    }
+    throw err;
+  } finally {
+    cleanup();
+  }
+}
+
 module.exports = {
   runControlFlowBoundary,
-  runRenderBoundary
+  runRenderBoundary,
+  runValueBoundary
 };

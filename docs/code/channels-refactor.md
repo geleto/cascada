@@ -13,6 +13,7 @@ Implemented and validated:
 - Runtime boundary helpers now live in `src/runtime/async-boundaries.js`:
   - `runControlFlowBoundary(...)`
   - `runRenderBoundary(...)`
+  - `runValueBoundary(...)`
 - Compiler boundary helpers now live in `src/compiler/compile-boundaries.js`:
   - `compileControlFlowBoundary(...)`
   - `compileRenderBoundary(...)`
@@ -39,6 +40,7 @@ Implemented and validated:
 
 Still transitional:
 - `AsyncState` still exists as compatibility plumbing, but closure counting and root-level `waitAllClosures()` are gone.
+- Boundary helpers no longer accept or thread `astate`; the remaining `astate` usage is now in generated entry/macro/template signatures and macro spawning only.
 - `_compileMacro` no longer relies on `astate.waitAllClosures()` for either `Macro` or `Caller` nodes.
 - `Caller` bodies now use a local `__waited__` channel so command-only child boundaries (for example async `do` statements with sequential side effects) contribute a structural completion signal before caller finalization snapshots return/text state.
 - Direct `caller()` late-start dispatch is fixed in both template and script call-block paths, and imported callable calls now lower through a statically-declared child boundary so later macro-vs-function dispatch still happens inside a known current flow.
@@ -769,13 +771,25 @@ Migrate from simplest to most complex to catch regressions early:
      - there are no remaining statement-side `asyncBufferNode(...)` call sites
      - remaining old async-block cleanup is now concentrated in the value-returning `asyncBlockValue(...)` path
 
-32. [PENDING] **Replace the last value-returning legacy async-block path (`asyncBlockValue(...)`)**.
-   - Remaining live use:
-     - imported-callable dispatch in `compiler-base.js`
-   - This is not the same as the statement/control-flow migrations:
-     - it must still return a value
-     - it must preserve poison/value semantics rather than report through `cb(...)`
-   - So this should be rewritten deliberately, not collapsed into `runControlFlowBoundary(...)` blindly.
+32. ✅ **Replace the last value-returning legacy async-block path (`asyncBlockValue(...)`)**.
+   - `compiler-base.js` imported-callable dispatch now lowers through `runValueBoundary(...)` instead of the older generic `asyncBlockValue(...)` helper.
+   - This remains distinct from the statement/control-flow migrations:
+     - it still returns a value
+     - it preserves normal expression rejection semantics
+     - it only reserves a child buffer when the deferred dispatch may become command-emitting
+   - Result:
+     - the old generic value-returning async-block helper path is gone
+
+33. [IN PROGRESS] **Trim remaining dead `astate` plumbing now that structural boundaries no longer use it**.
+   - Completed in this step:
+   - `runControlFlowBoundary(...)`, `runRenderBoundary(...)`, and `runValueBoundary(...)` no longer accept an `astate` argument
+   - compiler-generated calls to those helpers no longer pass `astate`
+   - `runtime.makeMacro(...)` no longer captures a live `astate` instance; async macros now use a simple async-signature flag and allocate a fresh compatibility `AsyncState` only when invoked
+   - Remaining `astate` threading is now concentrated in:
+     - generated entry-function signatures
+     - template/composition entrypoints that still mirror those signatures
+   - Next step:
+     - audit whether macro spawning still needs a dedicated `AsyncState` instance at all, or whether a simpler compatibility object can replace it before signatures are removed entirely.
 
 The `compileFor` migration also exposed an important diagnostic rule:
 - if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required

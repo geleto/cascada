@@ -489,7 +489,7 @@ class CompileMacro {
     compiler.emit.line('}).call(this, frame);');
     compiler.emit.line('});');
     if (node.isAsync) {
-      compiler.emit.line('}, astate);');
+      compiler.emit.line('}, true);');
     } else {
       compiler.emit.line('});');
     }

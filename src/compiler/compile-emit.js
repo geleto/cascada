@@ -1,3 +1,7 @@
+const {
+  trackCompileTimeFrameDepth,
+  validateCompileTimeFrameBalance
+} = require('./validation');
 const { DEFAULT_TEMPLATE_TEXT_CHANNEL } = require('./compile-buffer');
 
 module.exports = class CompileEmit {
@@ -187,7 +191,7 @@ module.exports = class CompileEmit {
     return { frame: nextFrame, bufferId };
   }
 
-  asyncBlockValue(
+  valueBoundary(
     node,
     frame,
     emitFunc,
@@ -200,10 +204,12 @@ module.exports = class CompileEmit {
     parentBufferArgOverride = null
   ) {
     if (node.isAsync) {
-
-      this.line(`astate.asyncBlock(async (frame, currentBuffer) => {`);
+      const linkedChannelsArg = this.getLinkedChannelsArg(node, frame);
+      const parentBufferArg = parentBufferArgOverride || this.compiler.buffer.currentBuffer || 'null';
+      this.line(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`);
       this.asyncClosureDepth++;
-      frame = frame.push(false, createScope);
+      const innerFrame = frame.push(false, createScope);
+      trackCompileTimeFrameDepth(innerFrame, frame);
 
       if (res === undefined) {
         res = this.compiler._tmpid();
@@ -212,7 +218,7 @@ module.exports = class CompileEmit {
       } else {
         this.line(`  try {`);
       }
-      emitFunc.call(this.compiler, node, frame);
+      emitFunc.call(this.compiler, node, innerFrame);
       this.line(';');
       // Await the produced value so unused rejecting promises are observed before
       // the async block cleanup finishes.
@@ -220,22 +226,12 @@ module.exports = class CompileEmit {
       this.line('} catch (e) {');//@todo - temp var
       this.line(`  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`);
       this.line('  throw err;');
-      // this.line(`  return runtime.createPoison(err);`);
       this.line('}');
-
-      this.line('}');
-      const asyncMetaArg = this.getAsyncBlockArgs(node, frame);
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
-      // Capture compilation may temporarily point compiler.currentBuffer at
-      // the async callback parameter ("currentBuffer") so body writes target
-      // the capture buffer. Parent linkage, however, must still use the
-      // outer composition buffer, so capture passes an explicit override.
-      // TODO(var-removal): remove override path when capture is removed.
-      const parentBufferArg = parentBufferArgOverride || this.compiler.buffer.currentBuffer || 'null';
-      this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, ${createOutputBufferArg}, cb, false)`);
+      this.line(`}, ${createOutputBufferArg})`);
 
       this.asyncClosureDepth--;
-      frame = frame.pop();
+      validateCompileTimeFrameBalance(innerFrame, this.compiler, positionNode);
 
     } else {
       emitFunc(node, frame);
@@ -270,8 +266,4 @@ module.exports = class CompileEmit {
     return linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
   }
 
-  getAsyncBlockArgs(node, frame) {
-    const channelArgs = this.getLinkedChannelsArg(node, frame);
-    return `({ usedChannels: ${channelArgs} })`;
-  }
 };

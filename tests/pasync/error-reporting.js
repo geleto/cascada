@@ -966,23 +966,22 @@
 
   describe('Manual RuntimeFatalError Simulation', function () {
     // NOTE: This test manually simulates logic internal to the compiler/runtime interaction
-    // involving AsyncState, Frame, and RuntimeFatalError. It verifies that critical
+    // involving the boundary helpers, Frame, and RuntimeFatalError. It verifies that critical
     // runtime errors (like sequential loop contract violations) are correctly propagated
     // via the callback mechanism even when promises might otherwise swallow or delay them.
 
-    const { AsyncState } = require('../../src/runtime/async-state');
     const runtime = require('../../src/runtime/runtime');
     const { AsyncFrame } = require('../../src/runtime/frame');
 
-    it('should propagate RuntimeFatalError to callback from simulateAsyncBlock', function (done) {
-      const astate = new AsyncState();
+    it('should propagate RuntimeFatalError to callback from runValueBoundary', function (done) {
       const frame = new AsyncFrame(null, false);
 
       // Simulate an async block that throws RuntimeFatalError
       const fatalMsg = 'Simulated Fatal Error';
 
       // Logic that simulates what happens inside the compiled async IIFE
-      const asyncBody = async (childState, childFrame) => {
+      const asyncBody = async (childFrame) => {
+        void childFrame;
         // ... some async work
         await new Promise(r => setTimeout(r, 10));
 
@@ -998,22 +997,22 @@
         expect(err.message).to.contain(fatalMsg);
       };
 
-      // Use astate.asyncBlock exactly as the compiler would emit it
-      astate.asyncBlock(
-        asyncBody,
-        runtime,
+      runtime.runValueBoundary(
+        null,
+        null,
         frame,
-        { writeCounts: null, usedOutputs: null },
-        null, // parentBuffer
-        false, // createOutputBuffer
-        cb
+        null,
+        cb,
+        asyncBody,
+        false
       ).then(() => {
-        done(new Error('asyncBlock should have rejected'));
+        done(new Error('runValueBoundary should have rejected'));
       }).catch(err => {
         try {
           // If the callback assertions failed, err will be the Assertion Error (if cb ran synchronously which isn't the case here, but just in case)
           // Actually, since cb catches nothing, if expect throws, it might bubble depending on caller.
-          // In async-state.js, cb(err) is plain call. If it throws, it's caught by the catch block there and re-rejected.
+          // In runValueBoundary(...), cb(err) is a plain call. If it throws, the boundary
+          // will reject with that assertion failure instead.
 
           if (err.name === 'AssertionError' || (expect.AssertionError && err instanceof expect.AssertionError)) {
             throw err;
