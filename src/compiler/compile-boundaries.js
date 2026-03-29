@@ -114,6 +114,12 @@ class CompileBoundaries {
   }
 
   compileRenderBoundary(emitCompiler, node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
+    const emitCallbackResult = (resultExpr) => {
+      if (callbackName) {
+        emitCompiler.line(`  ${callbackName}(null, ${resultExpr});`);
+      }
+    };
+
     if (!node.isAsync) {
       const { bufferId: id } = emitCompiler.managedBlock(frame, false, true, (blockFrame) => {
         innerBodyFunction.call(this.compiler, blockFrame);
@@ -121,26 +127,22 @@ class CompileBoundaries {
       if (this.compiler.asyncMode) {
         emitCompiler.line(`${id}.markFinishedAndPatchLinks();`);
       }
-      if (callbackName) {
-        emitCompiler.line(`${callbackName}(null, ${id});`);
-      }
+      emitCallbackResult(id);
       emitCompiler.line(`return ${id};`);
       return;
     }
 
     frame = frame.push(false, false);
     emitCompiler.line(`runtime.runRenderBoundary(frame, context, cb, async (frame, currentBuffer) =>{`);
-
-    const id = this.compiler._tmpid();
-    emitCompiler.line(`let ${id} = currentBuffer;`);
+    const resultId = this.compiler._tmpid();
 
     const textChannelName = this.compiler.buffer.currentTextChannelName;
-    emitCompiler.line(`let ${id}_textChannelVar = runtime.declareChannel(frame, ${id}, "${textChannelName}", "text", context, null);`);
+    emitCompiler.line(`let ${resultId}_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${textChannelName}", "text", context, null);`);
     const prevBuffer = this.compiler.buffer.currentBuffer;
     const prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
     const prevTextChannelName = this.compiler.buffer.currentTextChannelName;
-    this.compiler.buffer.currentBuffer = id;
-    this.compiler.buffer.currentTextChannelVar = `${id}_textChannelVar`;
+    this.compiler.buffer.currentBuffer = 'currentBuffer';
+    this.compiler.buffer.currentTextChannelVar = `${resultId}_textChannelVar`;
     this.compiler.buffer.currentTextChannelName = textChannelName;
 
     const originalAsyncClosureDepth = emitCompiler.asyncClosureDepth;
@@ -149,7 +151,7 @@ class CompileBoundaries {
     if (this.compiler.scriptMode) {
       frame._seesRootScope = false;
       frame._returnWaitCount = 1;
-      this.compiler.emitDeclareReturnChannel(frame, id);
+      this.compiler.emitDeclareReturnChannel(frame, 'currentBuffer');
       innerBodyFunction.call(this.compiler, frame);
     } else {
       innerBodyFunction.call(this.compiler, frame);
@@ -161,15 +163,13 @@ class CompileBoundaries {
     this.compiler.buffer.currentTextChannelName = prevTextChannelName;
 
     if (this.compiler.scriptMode) {
-      this.compiler.emitReturnChannelSnapshot(id, positionNode, id);
+      this.compiler.emitReturnChannelSnapshot('currentBuffer', positionNode, resultId);
     } else {
-      emitCompiler.line(`${id} = ${id}.addSnapshot("${textChannelName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
+      emitCompiler.line(`let ${resultId} = currentBuffer.addSnapshot("${textChannelName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
     }
 
-    if (callbackName) {
-      emitCompiler.line(`  ${callbackName}(null, ${id});`);
-    }
-    emitCompiler.line(`  return ${id};`);
+    emitCallbackResult(resultId);
+    emitCompiler.line(`  return ${resultId};`);
     emitCompiler.line('})');
   }
 

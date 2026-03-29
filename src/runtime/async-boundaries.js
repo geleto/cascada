@@ -60,10 +60,6 @@ async function runRenderBoundary(f, context, cb, asyncFn) {
   const childFrame = f.push(false);
   const childBuffer = buffer.createCommandBuffer(context || null, null, childFrame, null, null);
 
-  const cleanup = () => {
-    childBuffer.markFinishedAndPatchLinks();
-  };
-
   try {
     return await asyncFn(childFrame, childBuffer);
   } catch (err) {
@@ -73,7 +69,7 @@ async function runRenderBoundary(f, context, cb, asyncFn) {
     cb(reportedError);
     return null;
   } finally {
-    cleanup();
+    childBuffer.markFinishedAndPatchLinks();
   }
 }
 
