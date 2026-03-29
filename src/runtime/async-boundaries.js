@@ -3,6 +3,21 @@
 const errors = require('./errors');
 const buffer = require('./command-buffer');
 
+function _createChildBoundary(parentBuffer, usedChannels, f, isolatedContext = null) {
+  const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
+  const childFrame = f.push(false);
+  const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
+  const childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer || null);
+  return { childFrame, childBuffer };
+}
+
+function _reportBoundaryError(err, boundaryName, context, cb) {
+  const reportedError = err instanceof errors.RuntimeError
+    ? err
+    : errors.handleError(err, 0, 0, boundaryName, context && context.path ? context.path : null);
+  cb(reportedError);
+}
+
 /**
  * Run a control-flow boundary (if/switch body) as a single async child buffer.
  *
@@ -12,10 +27,7 @@ const buffer = require('./command-buffer');
 async function runControlFlowBoundary(parentBuffer, usedChannels, f, context, cb, asyncFn) {
   void context;
   void cb;
-  const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
-  const childFrame = f.push(false);
-  const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
-  const childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer);
+  const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
 
   const cleanup = () => {
     childBuffer.markFinishedAndPatchLinks();
@@ -24,10 +36,7 @@ async function runControlFlowBoundary(parentBuffer, usedChannels, f, context, cb
   try {
     return await asyncFn(childFrame, childBuffer);
   } catch (err) {
-    const reportedError = err instanceof errors.RuntimeError
-      ? err
-      : errors.handleError(err, 0, 0, 'ControlFlowAsyncBlock', context && context.path ? context.path : null);
-    cb(reportedError);
+    _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
   } finally {
     await cleanup();
@@ -42,18 +51,12 @@ async function runControlFlowBoundary(parentBuffer, usedChannels, f, context, cb
 async function runWaitedControlFlowBoundary(parentBuffer, usedChannels, f, context, cb, asyncFn, waitedChannelName) {
   void context;
   void cb;
-  const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
-  const childFrame = f.push(false);
-  const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
-  const childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer);
+  const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
 
   try {
     return await asyncFn(childFrame, childBuffer);
   } catch (err) {
-    const reportedError = err instanceof errors.RuntimeError
-      ? err
-      : errors.handleError(err, 0, 0, 'ControlFlowAsyncBlock', context && context.path ? context.path : null);
-    cb(reportedError);
+    _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
   } finally {
     childBuffer.markFinishedAndPatchLinks();
@@ -67,16 +70,12 @@ async function runWaitedControlFlowBoundary(parentBuffer, usedChannels, f, conte
  * and should synchronously emit the boundary body into that child buffer.
  */
 async function runRenderBoundary(f, context, cb, asyncFn) {
-  const childFrame = f.push(false);
-  const childBuffer = buffer.createCommandBuffer(context || null, null, childFrame, null, null);
+  const { childFrame, childBuffer } = _createChildBoundary(null, null, f, context || null);
 
   try {
     return await asyncFn(childFrame, childBuffer);
   } catch (err) {
-    const reportedError = err instanceof errors.RuntimeError
-      ? err
-      : errors.handleError(err, 0, 0, 'RenderAsyncBlock', context && context.path ? context.path : null);
-    cb(reportedError);
+    _reportBoundaryError(err, 'RenderAsyncBlock', context, cb);
     return null;
   } finally {
     childBuffer.markFinishedAndPatchLinks();
@@ -92,10 +91,7 @@ async function runRenderBoundary(f, context, cb, asyncFn) {
  * expression errors are rethrown to the awaiting caller.
  */
 async function runValueBoundary(parentBuffer, usedChannels, f, cb, asyncFn) {
-  const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
-  const childFrame = f.push(false);
-  const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
-  const childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer || null);
+  const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
 
   const cleanup = () => {
     childBuffer.markFinishedAndPatchLinks();
