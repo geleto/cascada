@@ -38,7 +38,7 @@ Implemented and validated:
   - a macro-local `__caller__` timing channel to track per-invocation buffer scheduling completion
 
 Still transitional:
-- `AsyncState` and root-level `waitAllClosures()` uses still exist outside the migrated paths.
+- `AsyncState` still exists as compatibility plumbing, but closure counting and root-level `waitAllClosures()` are gone.
 - `_compileMacro` no longer relies on `astate.waitAllClosures()` for either `Macro` or `Caller` nodes.
 - `Caller` bodies now use a local `__waited__` channel so command-only child boundaries (for example async `do` statements with sequential side effects) contribute a structural completion signal before caller finalization snapshots return/text state.
 - Direct `caller()` late-start dispatch is fixed in both template and script call-block paths, and imported callable calls now lower through a statically-declared child boundary so later macro-vs-function dispatch still happens inside a known current flow.
@@ -65,6 +65,8 @@ Each `compileXXX` method is then migrated independently:
 Stronger target wording:
 - all compiler-emitted async blocks should be migrated onto this structural child-buffer model
 - distinctive behavior should live in the callback body and explicit arguments, not in a growing family of special runtime helpers
+- switching to synchronous command emission is strongly preferred whenever possible
+- a boundary should be used only when async work cannot be deferred to normal command-argument resolution at apply time
 
 ### Phase 2 — Drop `astate.asyncBlock`
 
@@ -84,6 +86,16 @@ Once all `compileXXX` methods have been migrated and no call site emits `astate.
 A command argument that is a promise (an unresolved async value) is perfectly fine — `resolveCommandArgumentsForApply` handles awaiting it when the BufferIterator applies the command. There is no need to await the value before adding the command.
 
 If we are only waiting to obtain the final value for a command argument, that waiting should not happen before the command is emitted. Emit the command synchronously with the value, promise, or chained promise (`Promise.resolve(value).then(...)`) as its argument. Promise-value consumption belongs in command `apply(...)`, not in compiler-emitted pre-resolution wrappers.
+
+Important nuance:
+- this applies not only to raw promise-valued args
+- if old code does `await value; compute finalArg; add command(finalArg)`, the preferred rewrite is often `add command(Promise.resolve(value).then(v => computeFinalArg(v)))`
+- in other words, a chained promise argument is still preferable to introducing a structural boundary when the async work only exists to compute one eventual command argument
+
+Preference rule for the remaining migrations:
+- first ask whether the site can emit its commands immediately and leave unresolved values in command args
+- only use a structural boundary when async affects command structure, scope/tree ownership, or composition timing in a way command `apply(...)` cannot represent
+- do not preserve a boundary just because an older helper already exists there
 
 A child `CommandBuffer` is needed in two cases:
 
@@ -557,6 +569,8 @@ Migrate from simplest to most complex to catch regressions early:
   - runtime `runControlFlowBoundary(...)`
   - compiler `compileControlFlowBoundary(...)`
 - We should not keep ad hoc `astate.asyncBlock(...)` generation as a parallel long-term mechanism.
+- For each remaining `asyncBufferNode(...)` site, prefer rewriting it onto an explicit boundary helper or into straight-line code.
+- Only add a new helper in `compile-boundaries.js` if the call site has real semantics that `compileControlFlowBoundary(...)` does not cover cleanly.
 1. ✅ **`compileOutput`** — partially migrated: pure value expressions now add `TextCommand` synchronously; remaining deferred output work is tracked separately and `__caller__` timing is owned only by caller invocation code (Tier 1)
 2. ✅ **`compileAsyncVarSet` step 3 / `compileChannelDeclaration`** — `asyncAddValueToBuffer` calls inlined; VarCommands now added synchronously via `currentBuffer.add(new VarCommand(...))` (Tier 1)
 3. ✅ **`compileDo`** — the old `asyncBlock` + `Promise.all` wrapper is gone. Command-emitting async `do` expressions now lower through a dedicated structural child boundary linked into the enclosing text stream, so caller/sequence side effects complete in source order without a caller-local `__waited__` workaround. Value-only `do` expressions still compile inline. (Tier 2, required `compileReturn` rewrite first)
@@ -725,19 +739,47 @@ Migrate from simplest to most complex to catch regressions early:
        - the remaining macro blocker is deferred structural boundary start timing inside macro bodies, not plain async value resolution
        - step 30 should target those boundary-start semantics before trying to remove `_compileMacro`'s `waitAllClosures()` again
 
-30. [IN PROGRESS] **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
+30. ✅ **Remove remaining `waitAllClosures()` from `compileMacro` / `compileRoot`**.
    - `compileMacro` is now complete:
      - regular async `Macro` finalization no longer waits on `astate.waitAllClosures()`
      - `Caller` finalization also no longer waits on `astate.waitAllClosures()`
      - direct deferred `caller()` output is fixed
      - imported callable calls now lower through an explicit async child boundary instead of relying on runtime buffer reservation
      - `Caller` bodies use a local `__waited__` channel so command-only child boundaries can finalize structurally without falling back to closure counting
-   - Remaining work:
-     - `compileRoot` still uses the older closure-counting handoff
-   - The next implementation slice should therefore remove the final `compileRoot` closure wait.
+   - `compileRoot` is also now complete:
+     - the final root `waitAllClosures()` handoff is gone
+     - async `extends` parent selection now flows through `__parentTemplate` buffered state instead of plain JS root-visible state
+   - What remains after this step is not more closure counting removal; it is retiring the last legacy async-block-style helper call sites.
 
-31. [PENDING] **`compileGuard` major rework**.
-   - Guard semantics and cleanup need a larger dedicated redesign and should stay last.
+31. [IN PROGRESS] **Retire remaining `asyncBufferNode(...)` call sites one by one**.
+   - Current rule:
+     - synchronous command emission is strongly preferred
+     - do not preserve `asyncBufferNode(...)` as a long-term helper just because it still works
+     - evaluate each call site independently
+     - first try to rewrite the site so commands are emitted immediately and unresolved values remain command args
+     - use `compileControlFlowBoundary(...)` when the site is just a structural control-flow buffer
+     - compile inline when no child boundary is actually needed
+     - introduce a new helper in `compile-boundaries.js` only if the site has real semantics that the generic control-flow boundary does not express well
+   - Current remaining call sites:
+     - `compile-loop.js` loop `else` body
+     - `compile-loop.js` iteration body wrapper
+     - `compiler.js` `compileGuard(...)`
+   - Preferred migration order:
+     1. loop `else` body
+     2. `compileGuard(...)`
+     3. loop iteration body wrapper last
+   - Why this order:
+     - loop `else` looks closest to an ordinary scoped structural boundary
+     - guard may still need a dedicated helper, but should not stay on legacy plumbing by default
+     - loop body still owns iteration-local waited and completion semantics, so it should be migrated only after the simpler sites clarify what helper shape is actually needed
+
+32. [PENDING] **Replace the last value-returning legacy async-block path (`asyncBlockValue(...)`)**.
+   - Remaining live use:
+     - imported-callable dispatch in `compiler-base.js`
+   - This is not the same as the statement/control-flow migrations:
+     - it must still return a value
+     - it must preserve poison/value semantics rather than report through `cb(...)`
+   - So this should be rewritten deliberately, not collapsed into `runControlFlowBoundary(...)` blindly.
 
 The `compileFor` migration also exposed an important diagnostic rule:
 - if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required
