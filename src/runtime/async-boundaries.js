@@ -8,10 +8,11 @@ const buffer = require('./command-buffer');
  * This helper owns the child buffer lifecycle so waited loops can optionally
  * gate on a child-owned waited channel instead of only on async function return.
  *
- * The asyncFn receives (childAstate, childFrame, childBuffer) and should compile
+ * The asyncFn receives (childFrame, childBuffer) and should compile
  * branch bodies synchronously inside - no inner astate.asyncBlock calls needed.
  */
 async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, context, cb, asyncFn, waitedChannelName = null) {
+  void astate;
   void context;
   void cb;
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
@@ -22,7 +23,6 @@ async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, con
     childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer);
   }
 
-  const childState = astate.new();
   const activeBuffer = childBuffer || parentBuffer || null;
 
   const finalizeChildBuffer = () => {
@@ -40,7 +40,7 @@ async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, con
   };
 
   try {
-    return await asyncFn(childState, childFrame, activeBuffer, parentBuffer || null);
+    return await asyncFn(childFrame, activeBuffer, parentBuffer || null);
   } catch (err) {
     const reportedError = err instanceof errors.RuntimeError
       ? err
@@ -54,12 +54,12 @@ async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, con
 
 /**
  * Run an isolated render boundary as an async child buffer that is not linked
- * into the parent tree. The asyncFn receives (childAstate, childFrame, childBuffer)
+ * into the parent tree. The asyncFn receives (childFrame, childBuffer)
  * and should synchronously emit the boundary body into that child buffer.
  */
 async function runRenderBoundary(astate, f, context, cb, asyncFn) {
+  void astate;
   const childFrame = f.push(false);
-  const childState = astate.new();
   const childBuffer = buffer.createCommandBuffer(context || null, null, childFrame, null, null);
 
   const cleanup = () => {
@@ -67,7 +67,7 @@ async function runRenderBoundary(astate, f, context, cb, asyncFn) {
   };
 
   try {
-    return await asyncFn(childState, childFrame, childBuffer);
+    return await asyncFn(childFrame, childBuffer);
   } catch (err) {
     const reportedError = err instanceof errors.RuntimeError
       ? err

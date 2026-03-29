@@ -274,7 +274,7 @@ class CompileInheritance {
         },
         {
           linkedChannelsArg: JSON.stringify([this.compiler.buffer.currentTextChannelName]),
-          callbackParams: '(astate, frame, blockBuffer)',
+          callbackParams: '(frame, blockBuffer)',
           targetBufferExpr: 'blockBuffer',
           normalizeTextArgs: false,
           waitedPositionNode: null,
