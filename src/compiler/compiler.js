@@ -751,19 +751,19 @@ class Compiler extends CompilerBase {
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
         if (node.recoveryBody) {
-          this.emit.asyncBlock(node, blockFrame, true, (f) => {
-            if (node.errorVar) {
-              // Guard recovery error variable is already declared in analysis;
-              // async lowering only needs the runtime var-channel registration.
-              this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
-              this.buffer.asyncAddValueToBuffer(node, f, (resultVar) => {
-                this.emit(
-                  `${resultVar} = new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
-                );
-              }, node, node.errorVar);
-            }
-            this.compile(node.recoveryBody, f);
-          });
+          const recoveryFrame = blockFrame.push();
+          this.emit.line('frame = frame.push();');
+          if (node.errorVar) {
+            // Guard recovery error variable is already declared in analysis;
+            // recovery runs inside the existing guard boundary, so only the
+            // runtime var-channel registration and command emit are needed here.
+            this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
+            this.emit.line(
+              `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
+            );
+          }
+          this.compile(node.recoveryBody, recoveryFrame);
+          this.emit.line('frame = frame.pop();');
         }
 
         this.emit.line('} else {');
