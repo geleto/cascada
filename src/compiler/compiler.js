@@ -1484,7 +1484,7 @@ class Compiler extends CompilerBase {
     }
     if (this.asyncMode) {
       this.emit.line('if (!compositionMode) {');
-      this.emit.line('astate.waitAllClosures().then(async () => {');
+      this.emit.line('(async () => {');
 
       if (this.hasExtends) {
         this.emit.line(`  let finalParent = await runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
@@ -1505,7 +1505,7 @@ class Compiler extends CompilerBase {
         this.emit.line(`    cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);
       }
       this.emit.line('  }');
-      this.emit.line('}).catch(e => {');
+      this.emit.line('})().catch(e => {');
       this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`); // Store and update the handled error
       this.emit.line('  cb(err);'); // Pass the updated error to the callback
       this.emit.line('});');
