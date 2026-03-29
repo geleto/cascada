@@ -104,8 +104,8 @@ class CompileInheritance {
     if (node.isAsync) {
       const exportedId = this.compiler._tmpid();
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${node.withContext
-        ? `context.getVariables(), frame, astate, cb`
-        : `null, null, astate, cb`
+        ? `context.getVariables(), frame, cb`
+        : `null, null, cb`
       }));`);
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, exportedId, node);
       this._emitValueImportBinding(frame, target, exportedId, node);
@@ -135,8 +135,8 @@ class CompileInheritance {
       const exportedId = this.compiler._tmpid();
       const bindingIds = [];
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${node.withContext
-        ? `context.getVariables(), frame, astate, cb`
-        : `null, null, astate, cb`
+        ? `context.getVariables(), frame, cb`
+        : `null, null, cb`
       }));`);
 
       // Now extract each individual variable from the exported object
@@ -263,10 +263,10 @@ class CompileInheritance {
             this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
             this.emit.line(`${id} = parentPromise.then((parent) => {`);
             this.emit.line('  if (parent) return "";');
-            this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
+            this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
             this.emit.line('});');
           } else {
-            this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
+            this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
           }
           // Step 7: block invocation boundary completion in limited-loop waited output.
           this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
@@ -347,11 +347,11 @@ class CompileInheritance {
     var id = node.symbol.value;
 
     if (node.isAsync) {
-      //this.emit.line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
+      //this.emit.line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime);`);
 
       // Call getSuper directly - async blocks now return text snapshot promises
       // The callback (cb) is passed through for error propagation
-      this.emit.line(`let ${id} = context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer});`);
+      this.emit.line(`let ${id} = context.getSuper(env, "${name}", b_${name}, frame, runtime, cb, ${this.compiler.buffer.currentBuffer});`);
       this.emit.line(`${id} = runtime.markSafe(${id});`);
     }
     else {
@@ -402,7 +402,7 @@ class CompileInheritance {
       this._emitDeclaredValueAliasMap(node._analysis, aliasMapVar);
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
-      this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
+      this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeVarsVar}, frame, cb);`);
       // Compose child buffer with base->canonical aliases (e.g. loop -> loop#7)
       // so natural names used inside included templates target the right lane.
       this.emit.line(`composed._setBoundaryAliases(${aliasMapVar});`);
@@ -445,7 +445,7 @@ class CompileInheritance {
     const id2 = this.compiler._tmpid();
     this.emit.line('tasks.push(');
     this.emit.line('function(template, callback){');
-    this.emit.line('template.render(context.getVariables(), frame, ' + (node.isAsync ? 'astate,' : '') + this.compiler._makeCallback(id2));
+    this.emit.line('template.render(context.getVariables(), frame, ' + this.compiler._makeCallback(id2));
     this.emit.line('callback(null,' + id2 + ');});');
     this.emit.line('});');
 

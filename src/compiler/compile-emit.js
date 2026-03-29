@@ -65,9 +65,9 @@ module.exports = class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, frame, runtime, astate, cb, compositionMode = false) {`);
+        this.line(`function ${name}(env, context, frame, runtime, cb, compositionMode = false) {`);
       } else {
-        this.line(`function ${name}(env, context, frame, runtime, astate, cb, parentBuffer = null) {`);
+        this.line(`function ${name}(env, context, frame, runtime, cb, parentBuffer = null) {`);
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);
@@ -126,7 +126,7 @@ module.exports = class CompileEmit {
   // - there is only one active child (e.g. if/else) that has output
   //in all other cases, use AsyncBlockBufferNode
   //to make sure there are no race conditions for the buffer position
-  // Managed block for non-astate paths (scope/frame + optional scope-root buffer).
+  // Managed block for direct scope/frame handling (optionally with a scope-root buffer).
   // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer creation
   // site. The callback body is compiled between initialization and caller-managed finalization.
   managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined, analysisNode = null) {

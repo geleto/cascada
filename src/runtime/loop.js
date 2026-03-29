@@ -412,8 +412,7 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
   }
 
   // Wait until every iteration has been *started* (scheduled),
-  // mirroring iterateArrayLimited semantics. Completion of the
-  // underlying async blocks is still tracked externally via waitAllClosures.
+  // mirroring iterateArrayLimited semantics.
   await allIterationsScheduled;
 
   return didIterate;
@@ -483,7 +482,7 @@ function iterateArrayParallel(arr, loopBody, loopVars, errorContext) {
   const len = arr.length;
   let didIterate = len > 0;
 
-  // Each loopBody call registers its own astate async block; poison propagation handles failures.
+  // Each loopBody call may start its own async structural work; poison propagation handles failures.
   for (let i = 0; i < arr.length; i++) {
     let value = arr[i];
     const isLast = i === arr.length - 1;
@@ -566,10 +565,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
     worker();
   }
 
-  // Wait until every iteration has been started
-  // ensuring all async blocks are started.
-  // completion of the underlying async blocks is still tracked via waitAllClosures
-  // as it cares only if the block has been started, not if it has completed.
+  // Wait until every iteration has been started.
   await allIterationsScheduled;
 
   return didIterate;

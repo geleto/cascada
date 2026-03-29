@@ -29,7 +29,7 @@ async function _finalizeBoundary(childBuffer, waitedChannelName = null) {
  * Run a control-flow boundary (if/switch body) as a single async child buffer.
  *
  * The asyncFn receives (childFrame, childBuffer) and should compile
- * branch bodies synchronously inside - no inner astate.asyncBlock calls needed.
+ * branch bodies synchronously inside - no inner legacy async-block wrappers needed.
  */
 async function runControlFlowBoundary(parentBuffer, usedChannels, f, context, cb, asyncFn) {
   void context;

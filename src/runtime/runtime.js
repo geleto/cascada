@@ -15,7 +15,6 @@ const outputValue = require('./safe-output');
 const commands = require('./commands');
 const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
-const { AsyncState } = require('./async-state');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -55,7 +54,6 @@ function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
     }
 
     if (useAsyncMacroSignature) {
-      args.push(new AsyncState());
       args.push(currentBuffer);
     }
     return func.apply(executionContext, args);
@@ -213,7 +211,6 @@ module.exports = {
   SinkRepairCommand: commands.SinkRepairCommand,
   RestoreGuardStateCommand: commands.RestoreGuardStateCommand,
 
-  AsyncState: require('./async-state').AsyncState,
 
   // Poison value infrastructure
   PoisonedValue: errors.PoisonedValue,

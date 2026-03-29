@@ -33,7 +33,7 @@ const noopTmplSrc = {
 const noopTmplSrcAsync = {
   type: 'code',
   obj: {
-    root(env, context, frame, runtime, astate, cb, compositionMode = false) {
+    root(env, context, frame, runtime, cb, compositionMode = false) {
       try {
         if (!compositionMode) {
           cb(null, '');

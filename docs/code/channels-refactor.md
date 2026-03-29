@@ -39,9 +39,6 @@ Implemented and validated:
   - a macro-local `__caller__` timing channel to track per-invocation buffer scheduling completion
 
 Still transitional:
-- `AsyncState` still exists as compatibility plumbing, but closure counting and root-level `waitAllClosures()` are gone.
-- Boundary helpers no longer accept or thread `astate`; the remaining `astate` usage is now in generated entry/macro/template signatures and macro spawning only.
-- `_compileMacro` no longer relies on `astate.waitAllClosures()` for either `Macro` or `Caller` nodes.
 - `Caller` bodies now use a local `__waited__` channel so command-only child boundaries (for example async `do` statements with sequential side effects) contribute a structural completion signal before caller finalization snapshots return/text state.
 - Direct `caller()` late-start dispatch is fixed in both template and script call-block paths, and imported callable calls now lower through a statically-declared child boundary so later macro-vs-function dispatch still happens inside a known current flow.
 - Some consumption sites still use raw `await` where Cascada resolve helpers (`resolveSingle` / `resolveAll` / `resolveDuo`) should be preferred so `RESOLVE_MARKER` and poison semantics stay centralized.
@@ -55,7 +52,7 @@ Still transitional:
 
 ### Phase 1 — Introduce `runControlFlowBoundary`, migrate all compiler-emitted async blocks onto it
 
-The new `runControlFlowBoundary` helper is added to the runtime. The original Phase 1 plan was to implement it on top of `astate.asyncBlock`, but the current code has already moved past that transitional shape: `runControlFlowBoundary` now creates/links its child buffer itself while still using `AsyncState` for closure tracking and cleanup.
+The new `runControlFlowBoundary` helper is added to the runtime. The original Phase 1 plan was to implement it on top of `astate.asyncBlock`, but the current code has already moved past that transitional shape: `runControlFlowBoundary` now creates/links its child buffer itself.
 
 Each `compileXXX` method is then migrated independently:
 - Replace compiler-emitted `astate.asyncBlock(...)` wrappers with the `runControlFlowBoundary` model.
@@ -72,10 +69,10 @@ Stronger target wording:
 
 ### Phase 2 — Drop `astate.asyncBlock`
 
-Once all `compileXXX` methods have been migrated and no call site emits `astate.asyncBlock` or `waitAllClosures` directly, the remaining `AsyncState` dependency can be removed:
+This phase is now complete in source:
 - `AsyncState` and its closure-counting machinery are removed.
 - The `astate` parameter disappears from generated function signatures.
-- `runControlFlowBoundary` can become a simpler helper with no `AsyncState` dependency.
+- `runControlFlowBoundary` can remain a simple helper with no `AsyncState` dependency.
 
 ---
 
@@ -780,16 +777,14 @@ Migrate from simplest to most complex to catch regressions early:
    - Result:
      - the old generic value-returning async-block helper path is gone
 
-33. [IN PROGRESS] **Trim remaining dead `astate` plumbing now that structural boundaries no longer use it**.
+33. ✅ **Trim remaining dead `astate` plumbing now that structural boundaries no longer use it**.
    - Completed in this step:
    - `runControlFlowBoundary(...)`, `runRenderBoundary(...)`, and `runValueBoundary(...)` no longer accept an `astate` argument
    - compiler-generated calls to those helpers no longer pass `astate`
-   - `runtime.makeMacro(...)` no longer captures a live `astate` instance; async macros now use a simple async-signature flag and allocate a fresh compatibility `AsyncState` only when invoked
-   - Remaining `astate` threading is now concentrated in:
-     - generated entry-function signatures
-     - template/composition entrypoints that still mirror those signatures
-   - Next step:
-     - audit whether macro spawning still needs a dedicated `AsyncState` instance at all, or whether a simpler compatibility object can replace it before signatures are removed entirely.
+   - `runtime.makeMacro(...)` no longer captures or allocates `AsyncState`
+   - generated entry-function signatures no longer include `astate`
+   - template/composition entrypoints no longer mirror an `astate` argument
+   - `AsyncState` is removed from `src/runtime`
 
 The `compileFor` migration also exposed an important diagnostic rule:
 - if removing a `waitAllClosures` fallback causes "Cannot add command to finished CommandBuffer", that usually means some command is still being emitted too late, not that closure counting was fundamentally required

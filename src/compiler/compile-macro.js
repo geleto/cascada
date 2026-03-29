@@ -392,7 +392,7 @@ class CompileMacro {
 
     const macroNeedsCallerSupport = compiler.asyncMode && !!node._analysis.hasCallerSupport;
     const macroFunctionSignature = compiler.asyncMode
-      ? `function (${realNames.join(', ')}, astate, macroParentBuffer) {`
+      ? `function (${realNames.join(', ')}, macroParentBuffer) {`
       : `function (${realNames.join(', ')}) {`;
 
     compiler.emit.lines(

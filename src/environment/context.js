@@ -123,23 +123,18 @@ class Context extends Obj {
     }
   }
 
-  getSuper(env, name, block, frame, runtime, astate, cb, parentBuffer = null) {
+  getSuper(env, name, block, frame, runtime, cb, parentBuffer = null) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
-
-    if (typeof astate === 'function') {
-      cb = astate;
-      astate = null;
-    }
 
     if (idx === -1 || !blk) {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    if (astate) {
+    if (arguments.length > 6) {
       // Async mode - block returns output directly, cb is error-only
-      return blk(env, context, frame, runtime, astate, cb, parentBuffer);
+      return blk(env, context, frame, runtime, cb, parentBuffer);
     }
     else {
       // Sync mode - block uses callback for result

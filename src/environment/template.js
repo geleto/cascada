@@ -4,7 +4,6 @@ const lib = require('../lib');
 const compiler = require('../compiler/compiler');
 const globalRuntime = require('../runtime/runtime');
 const { Frame, AsyncFrame } = require('../runtime/frame');
-const { AsyncState } = globalRuntime;
 const { Obj } = require('../object');
 const { callbackAsap } = require('./utils');
 const { Context } = require('./context');
@@ -57,21 +56,18 @@ class Template extends Obj {
     }
   }
 
-  render(ctx, parentFrame, astate, cb) {
-    return this._render(ctx, parentFrame, astate, cb);
+  render(ctx, parentFrame, cb) {
+    return this._render(ctx, parentFrame, cb);
   }
 
   // @todo - return promise if isAsync and no callback is provided
-  _render(ctx, parentFrame, astate, cb, receivePartialOutput = false) {
+  _render(ctx, parentFrame, cb, receivePartialOutput = false) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
     } else if (typeof parentFrame === 'function') {
       cb = parentFrame;
       parentFrame = null;
-    } else if (typeof astate === 'function') {
-      cb = astate;
-      astate = null;
     }
 
     // If there is a parent frame, we are being called from internal
@@ -171,8 +167,7 @@ class Template extends Obj {
     };
 
     if (this.asyncMode) {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime,
-        astate || new AsyncState(), callback);
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }
@@ -181,7 +176,7 @@ class Template extends Obj {
   }
 
   // @todo - return a value instead of calling a callback
-  getExported(ctx, parentFrame, astate, cb) {
+  getExported(ctx, parentFrame, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
@@ -190,11 +185,6 @@ class Template extends Obj {
     if (typeof parentFrame === 'function') {
       cb = parentFrame;
       parentFrame = null;
-    }
-
-    if (typeof astate === 'function') {
-      cb = astate;
-      astate = null;
     }
 
     // Catch compile errors for async rendering
@@ -214,11 +204,9 @@ class Template extends Obj {
     frame.topLevel = true;
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    astate = astate || (this.asyncMode ? new AsyncState() : null);
-
     if (this.asyncMode) {
       // Run template in composition mode
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, cb, true);
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, cb, true);
 
       // Immediately export the variables (they may be promises)
       const exported = context.getExported();
@@ -234,7 +222,8 @@ class Template extends Obj {
         }
       }
 
-      // Return immediately - async work tracked by astate, errors via cb
+      // Return immediately - async work continues through the composition
+      // buffer and errors are still reported via cb.
       return boundExported;
     } else {
       // Sync mode is straightforward.
@@ -357,13 +346,13 @@ class AsyncTemplate extends Template {
     super.init(src, env, path, eagerCompile, true/*async*/, false/*script*/);
   }
 
-  render(ctx, parentFrame, astate, cb) {
+  render(ctx, parentFrame, cb) {
     if (cb) {
-      return super.render(ctx, parentFrame, astate, cb);
+      return super.render(ctx, parentFrame, cb);
     }
     // If no callback is provided, return a promise
     return new Promise((resolve, reject) => {
-      super.render(ctx, parentFrame, astate, (err, res) => {
+      super.render(ctx, parentFrame, (err, res) => {
         if (err) {
           err = this.env._prettifyError(this.path, this.env.opts.dev, err);
           reject(err);
@@ -376,20 +365,20 @@ class AsyncTemplate extends Template {
 
   /**
    * Renders the template for composition, returning the output array synchronously.
-   * While the output array may not be ready yet, it will be when the astate lifecycle is completed
+   * While the output array may not be ready yet, it will be when the
+   * composition buffer finishes.
    * It sets the compositionMode argument of rootRenderFunc to true
    */
-  _renderForComposition(ctx, parentFrame, astate, cb) {
+  _renderForComposition(ctx, parentFrame, cb) {
     this.compile();
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     const frame = parentFrame ? parentFrame.push(true) : new AsyncFrame();
     frame.topLevel = true;
 
-    // Call the root function in composition mode. It will synchronously return
-    // the output array, while any async operations it starts will use the
-    // provided `astate` to link into the parent's lifecycle.
-    return this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, cb, true);
+    // Call the root function in composition mode. It synchronously returns the
+    // composition buffer while any async work continues inside that structure.
+    return this.rootRenderFunc(this.env, context, frame, globalRuntime, cb, true);
   }
 }
 

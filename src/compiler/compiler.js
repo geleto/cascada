@@ -1497,7 +1497,7 @@ class Compiler extends CompilerBase {
 
       this.emit.line('  if(finalParent) {');
       this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
+      this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, cb, compositionMode);');
       this.emit.line('  } else {');
       if (this.scriptMode) {
         const returnVar = this._tmpid();
