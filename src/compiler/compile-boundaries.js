@@ -10,6 +10,26 @@ class CompileBoundaries {
     this.compiler = compiler;
   }
 
+  _withBoundaryBufferState(bufferCompiler, {
+    bufferExpr,
+    textChannelVar = null,
+    textChannelName = bufferCompiler.currentTextChannelName
+  }, emitBody) {
+    const prevBuffer = bufferCompiler.currentBuffer;
+    const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
+    const prevTextChannelName = bufferCompiler.currentTextChannelName;
+
+    bufferCompiler.currentBuffer = bufferExpr;
+    bufferCompiler.currentTextChannelVar = textChannelVar;
+    bufferCompiler.currentTextChannelName = textChannelName;
+
+    emitBody();
+
+    bufferCompiler.currentBuffer = prevBuffer;
+    bufferCompiler.currentTextChannelVar = prevTextChannelVar;
+    bufferCompiler.currentTextChannelName = prevTextChannelName;
+  }
+
   compileExpressionControlFlowBoundary(bufferCompiler, node, frame, emitBody) {
     const parentBufferArg = bufferCompiler.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
@@ -255,19 +275,15 @@ class CompileBoundaries {
 
     const valueId = this.compiler._tmpid();
     const emitBody = (innerFrame) => {
-      const prevBuffer = bufferCompiler.currentBuffer;
-      const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
-      const emitBufferExpr = emitInCurrentBuffer ? 'currentBuffer' : prevBuffer;
-
-      bufferCompiler.currentBuffer = emitBufferExpr;
-      bufferCompiler.currentTextChannelVar = null;
-
-      this.compiler.emit(`let ${valueId} = `);
-      emitValue(innerFrame, valueId);
-      this.compiler.emit.line(';');
-
-      bufferCompiler.currentBuffer = prevBuffer;
-      bufferCompiler.currentTextChannelVar = prevTextChannelVar;
+      const emitBufferExpr = emitInCurrentBuffer ? 'currentBuffer' : bufferCompiler.currentBuffer;
+      this._withBoundaryBufferState(bufferCompiler, {
+        bufferExpr: emitBufferExpr,
+        textChannelVar: null
+      }, () => {
+        this.compiler.emit(`let ${valueId} = `);
+        emitValue(innerFrame, valueId);
+        this.compiler.emit.line(';');
+      });
     };
     emitBody.resultId = valueId;
 
@@ -288,16 +304,12 @@ class CompileBoundaries {
     const positionNode = node;
     const valueId = this.compiler._tmpid();
     const emitBody = (innerFrame) => {
-      const prevBuffer = bufferCompiler.currentBuffer;
-      const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
-
-      bufferCompiler.currentBuffer = prevBuffer;
-      bufferCompiler.currentTextChannelVar = null;
-
-      emitValue(innerFrame, valueId);
-
-      bufferCompiler.currentBuffer = prevBuffer;
-      bufferCompiler.currentTextChannelVar = prevTextChannelVar;
+      this._withBoundaryBufferState(bufferCompiler, {
+        bufferExpr: bufferCompiler.currentBuffer,
+        textChannelVar: null
+      }, () => {
+        emitValue(innerFrame, valueId);
+      });
     };
     emitBody.resultId = valueId;
 
@@ -325,25 +337,19 @@ class CompileBoundaries {
     this.compiler.emit.asyncClosureDepth++;
 
     const innerFrame = frame.push(false, true);
-    const prevBuffer = bufferCompiler.currentBuffer;
-    const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
-    const prevTextChannelName = bufferCompiler.currentTextChannelName;
+    this._withBoundaryBufferState(bufferCompiler, {
+      bufferExpr: 'currentBuffer',
+      textChannelVar: 'output_textChannelVar',
+      textChannelName: captureTextOutputName
+    }, () => {
+      // Capture owns a separate text tree. The child buffer exists for that
+      // boundary, not because capture text values need pre-resolution.
+      this.compiler.emit.line('let output = currentBuffer;');
+      this.compiler.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
 
-    bufferCompiler.currentBuffer = 'currentBuffer';
-    bufferCompiler.currentTextChannelVar = 'output_textChannelVar';
-    bufferCompiler.currentTextChannelName = captureTextOutputName;
-
-    // Capture owns a separate text tree. The child buffer exists for that
-    // boundary, not because capture text values need pre-resolution.
-    this.compiler.emit.line('let output = currentBuffer;');
-    this.compiler.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
-
-    innerBodyFunction.call(this.compiler, innerFrame);
-    this.compiler.emit.line(`return currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
-
-    bufferCompiler.currentBuffer = prevBuffer;
-    bufferCompiler.currentTextChannelVar = prevTextChannelVar;
-    bufferCompiler.currentTextChannelName = prevTextChannelName;
+      innerBodyFunction.call(this.compiler, innerFrame);
+      this.compiler.emit.line(`return currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
+    });
 
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit('})');
