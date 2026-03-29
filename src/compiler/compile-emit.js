@@ -191,8 +191,19 @@ module.exports = class CompileEmit {
     return { frame: nextFrame, bufferId };
   }
 
-  _compileRenderBoundary(node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
-    return this.compiler.boundaries.compileRenderBoundary(this, node, frame, innerBodyFunction, callbackName, positionNode);
+  _compileRenderBoundary(node, frame, innerBodyFunction, positionNode = node) {
+    return this.compiler.boundaries.compileRenderBoundary(this, node, frame, innerBodyFunction, positionNode);
+  }
+
+  _compileCallbackRenderBoundary(node, frame, innerBodyFunction, callbackName, positionNode = node) {
+    return this.compiler.boundaries.compileCallbackRenderBoundary(
+      this,
+      node,
+      frame,
+      innerBodyFunction,
+      callbackName,
+      positionNode
+    );
   }
 
   // @todo - optimize this:

@@ -166,7 +166,7 @@ class Compiler extends CompilerBase {
               this.emit._compileRenderBoundary(node, callFrame, function (f) {
                 this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, f);
-              }, null, arg); // Use content arg node for position
+              }, arg); // Use content arg node for position
               this.emit(')');
             }
             else {
@@ -175,7 +175,7 @@ class Compiler extends CompilerBase {
               this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 
               this.emit.withScopedSyntax(() => {
-                this.emit._compileRenderBoundary(node, callFrame, function (f) {
+                this.emit._compileCallbackRenderBoundary(node, callFrame, function (f) {
                   this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
                   this.compile(arg, f);
                 }, 'cb', arg); // Use content arg node for position

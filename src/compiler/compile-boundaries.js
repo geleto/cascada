@@ -113,7 +113,7 @@ class CompileBoundaries {
     return { frame, result };
   }
 
-  compileRenderBoundary(emitCompiler, node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
+  _compileRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {
     const emitCallbackResult = (resultExpr) => {
       if (callbackName) {
         emitCompiler.line(`  ${callbackName}(null, ${resultExpr});`);
@@ -171,6 +171,14 @@ class CompileBoundaries {
     emitCallbackResult(resultId);
     emitCompiler.line(`  return ${resultId};`);
     emitCompiler.line('})');
+  }
+
+  compileRenderBoundary(emitCompiler, node, frame, innerBodyFunction, positionNode = node) {
+    return this._compileRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, null, positionNode);
+  }
+
+  compileCallbackRenderBoundary(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {
+    return this._compileRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode);
   }
 
   _emitBoundaryTextCommand(
