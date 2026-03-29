@@ -761,15 +761,14 @@ Migrate from simplest to most complex to catch regressions early:
      - compile inline when no child boundary is actually needed
      - introduce a new helper in `compile-boundaries.js` only if the site has real semantics that the generic control-flow boundary does not express well
    - Current remaining call sites:
-     - `compile-loop.js` loop `else` body
      - `compile-loop.js` iteration body wrapper
      - `compiler.js` `compileGuard(...)`
+   - Completed in this step:
+     - `compile-loop.js` loop `else` body now compiles directly into the current loop buffer with ordinary scope push/pop; it no longer creates a child boundary through `asyncBufferNode(...)`
    - Preferred migration order:
-     1. loop `else` body
-     2. `compileGuard(...)`
-     3. loop iteration body wrapper last
+     1. `compileGuard(...)`
+     2. loop iteration body wrapper last
    - Why this order:
-     - loop `else` looks closest to an ordinary scoped structural boundary
      - guard may still need a dedicated helper, but should not stay on legacy plumbing by default
      - loop body still owns iteration-local waited and completion semantics, so it should be migrated only after the simpler sites clarify what helper shape is actually needed
 

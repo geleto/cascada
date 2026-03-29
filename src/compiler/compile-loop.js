@@ -360,18 +360,18 @@ class CompileLoop {
       this.compiler.emit('function() {');
     }
 
-    // Use node.else_ as position for the else block buffer
-    const elseResult = this.compiler.buffer.asyncBufferNode(
-      node,
-      frame,
-      elseCreatesScope,
-      node.else_,
-      (elseFrame) => {
-        this.compiler.compile(node.else_, elseFrame);
-        return elseFrame;
-      }
-    );
-    const elseFrame = elseResult.result;
+    let elseFrame = frame;
+    if (elseCreatesScope) {
+      elseFrame = frame.push();
+      this.compiler.emit.line('frame = frame.push();');
+    }
+
+    this.compiler.compile(node.else_, elseFrame);
+
+    if (elseCreatesScope) {
+      this.compiler.emit.line('frame = frame.pop();');
+      elseFrame = elseFrame.pop();
+    }
 
     // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
