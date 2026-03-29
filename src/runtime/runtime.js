@@ -170,6 +170,7 @@ module.exports = {
   withPath,
   linkWithParentCompositionBuffer,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
+  runWaitedControlFlowBoundary: asyncBoundaries.runWaitedControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,
   runValueBoundary: asyncBoundaries.runValueBoundary,
   RETURN_UNSET: markers.RETURN_UNSET,

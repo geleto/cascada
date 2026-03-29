@@ -71,9 +71,12 @@ class CompileBoundaries {
       const trackAsSingleWaitedUnit = this.compiler.asyncMode && !!bufferCompiler.currentWaitedChannelName;
       const controlFlowWaitedChannelName = trackAsSingleWaitedUnit ? `__waited__${this.compiler._tmpid()}` : null;
       const controlFlowPromiseId = this.compiler._tmpid();
+      const boundaryRunner = controlFlowWaitedChannelName
+        ? 'runtime.runWaitedControlFlowBoundary'
+        : 'runtime.runControlFlowBoundary';
 
       this.compiler.emit(
-        `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
+        `let ${controlFlowPromiseId} = ${boundaryRunner}(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
       );
       this.compiler.emit.asyncClosureDepth++;
 
@@ -90,10 +93,15 @@ class CompileBoundaries {
         this.compiler.emit.line(`runtime.declareChannel(frame, currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
       }
 
-      const callbackValue = emitFunc ? emitFunc(newFrame, 'currentBuffer', prevBuffer) : undefined;
+      if (emitFunc) {
+        emitFunc(newFrame, 'currentBuffer');
+      }
       this.compiler.emit.asyncClosureDepth--;
-      const waitedChannelArg = controlFlowWaitedChannelName ? `"${controlFlowWaitedChannelName}"` : 'null';
-      this.compiler.emit.line(`}, ${waitedChannelArg});`);
+      if (controlFlowWaitedChannelName) {
+        this.compiler.emit.line(`}, "${controlFlowWaitedChannelName}");`);
+      } else {
+        this.compiler.emit.line('});');
+      }
       bufferCompiler.currentBuffer = prevBuffer;
       bufferCompiler.currentWaitedChannelName = prevWaitedChannelName;
       bufferCompiler.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
@@ -101,16 +109,13 @@ class CompileBoundaries {
         bufferCompiler.emitOwnWaitedConcurrencyResolve(frame, controlFlowPromiseId, node);
       }
       validateCompileTimeFrameBalance(newFrame, this.compiler, node);
-
-      const result = callbackValue && typeof callbackValue === 'object' &&
-        Object.prototype.hasOwnProperty.call(callbackValue, 'result')
-        ? callbackValue.result
-        : callbackValue;
-      return { frame: newFrame.pop(), result };
+      return { frame: newFrame.pop() };
     }
 
-    const result = typeof emitFunc === 'function' ? emitFunc(frame, bufferCompiler.currentBuffer, bufferCompiler.currentBuffer) : undefined;
-    return { frame, result };
+    if (typeof emitFunc === 'function') {
+      emitFunc(frame, bufferCompiler.currentBuffer);
+    }
+    return { frame };
   }
 
   _compileRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {
@@ -246,7 +251,7 @@ class CompileBoundaries {
     {
       parentBufferExpr = bufferCompiler.currentBuffer,
       linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame),
-      callbackParams = '(frame, currentBuffer, parentBuffer)',
+      callbackParams = '(frame, currentBuffer)',
       targetChannelName = bufferCompiler.currentTextChannelName,
       targetBufferExpr = 'currentBuffer',
       normalizeTextArgs = true,
