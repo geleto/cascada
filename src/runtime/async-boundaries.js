@@ -89,19 +89,13 @@ async function runRenderBoundary(f, context, cb, asyncFn) {
  * the eventual dispatched call decides whether it is command-emitting.
  *
  * Unlike runControlFlowBoundary(...), this helper preserves normal expression
- * rejection semantics: RuntimeFatalError is reported via cb(...), but ordinary
- * expression errors are rethrown to the awaiting caller.
+ * rejection semantics: errors are rethrown to the awaiting caller.
  */
-async function runValueBoundary(parentBuffer, usedChannels, f, cb, asyncFn) {
+async function runValueBoundary(parentBuffer, usedChannels, f, asyncFn) {
   const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
 
   try {
     return await asyncFn(childFrame, childBuffer);
-  } catch (err) {
-    if (err instanceof errors.RuntimeFatalError) {
-      cb(err);
-    }
-    throw err;
   } finally {
     await _finalizeBoundary(childBuffer);
   }

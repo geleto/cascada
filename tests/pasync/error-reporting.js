@@ -968,12 +968,12 @@
     // NOTE: This test manually simulates logic internal to the compiler/runtime interaction
     // involving the boundary helpers, Frame, and RuntimeFatalError. It verifies that critical
     // runtime errors (like sequential loop contract violations) are correctly propagated
-    // via the callback mechanism even when promises might otherwise swallow or delay them.
+    // through the returned promise in value-boundary paths.
 
     const runtime = require('../../src/runtime/runtime');
     const { AsyncFrame } = require('../../src/runtime/frame');
 
-    it('should propagate RuntimeFatalError to callback from runValueBoundary', function (done) {
+    it('should reject with RuntimeFatalError from runValueBoundary', function (done) {
       const frame = new AsyncFrame(null, false);
 
       // Simulate an async block that throws RuntimeFatalError
@@ -990,44 +990,18 @@
         throw new runtime.RuntimeFatalError(fatalMsg, 1, 1, 'test execution', 'test.njk');
       };
 
-      let callbackCalled = false;
-      const cb = (err) => {
-        callbackCalled = true;
-        expect(err).to.be.a(runtime.RuntimeFatalError);
-        expect(err.message).to.contain(fatalMsg);
-      };
-
       runtime.runValueBoundary(
         null,
         null,
         frame,
-        cb,
         asyncBody
       ).then(() => {
         done(new Error('runValueBoundary should have rejected'));
       }).catch(err => {
         try {
-          // If the callback assertions failed, err will be the Assertion Error (if cb ran synchronously which isn't the case here, but just in case)
-          // Actually, since cb catches nothing, if expect throws, it might bubble depending on caller.
-          // In runValueBoundary(...), cb(err) is a plain call. If it throws, the boundary
-          // will reject with that assertion failure instead.
-
-          if (err.name === 'AssertionError' || (expect.AssertionError && err instanceof expect.AssertionError)) {
-            throw err;
-          }
-
-          if (!callbackCalled) {
-            throw new Error('Callback was not called before promise rejection');
-          }
-
-          // If we got here, callback was called. Verify the rejection is indeed the FatalError (or an assertion error wrapped)
-          if (err instanceof runtime.RuntimeFatalError) {
-            // Success path
-            done();
-          } else {
-            // Some other error
-            done(err);
-          }
+          expect(err).to.be.a(runtime.RuntimeFatalError);
+          expect(err.message).to.contain(fatalMsg);
+          done();
         } catch (e) {
           done(e);
         }

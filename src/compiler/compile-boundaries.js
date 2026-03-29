@@ -60,7 +60,7 @@ class CompileBoundaries {
     const resultId = this.compiler._tmpid();
 
     this.compiler.emit.line(
-      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, cb, async (frame, currentBuffer) => {`
+      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, async (frame, currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
