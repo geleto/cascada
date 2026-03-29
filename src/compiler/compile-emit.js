@@ -199,7 +199,7 @@ module.exports = class CompileEmit {
 
   asyncBlockBegin(node, frame, createScope, positionNode = node) {
     if (node.isAsync) {
-      this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) => {`);
+      this.line(`astate.asyncBlock(async (frame, currentBuffer) => {`);
       this.asyncClosureDepth++;
     }
     if (createScope && !node.isAsync) {
@@ -250,7 +250,7 @@ module.exports = class CompileEmit {
   ) {
     if (node.isAsync) {
 
-      this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) => {`);
+      this.line(`astate.asyncBlock(async (frame, currentBuffer) => {`);
       this.asyncClosureDepth++;
       frame = frame.push(false, createScope);
 
@@ -263,8 +263,8 @@ module.exports = class CompileEmit {
       }
       emitFunc.call(this.compiler, node, frame);
       this.line(';');
-      //await ${res} to avoid unused vars throwing unhandled exceptions
-      //and to make sure _leaveAsyncBlock is called after the promise resolves
+      // Await the produced value so unused rejecting promises are observed before
+      // the async block cleanup finishes.
       this.line(`return await ${res};`);
       this.line('} catch (e) {');//@todo - temp var
       this.line(`  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`);

@@ -42,7 +42,8 @@ class AsyncState {
       }
     };
 
-    const result = func(childState, childFrame, activeBuffer, parentBuffer || null);
+    void childState;
+    const result = func(childFrame, activeBuffer, parentBuffer || null);
 
     if (!result || typeof result.then !== 'function') {
       const cleanupResult = cleanup();
