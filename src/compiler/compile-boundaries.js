@@ -30,6 +30,12 @@ class CompileBoundaries {
     bufferCompiler.currentTextChannelName = prevTextChannelName;
   }
 
+  _emitTextChannelSnapshot(bufferExpr, channelName, positionNode, resultId) {
+    this.compiler.emit.line(
+      `let ${resultId} = ${bufferExpr}.addSnapshot("${channelName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`
+    );
+  }
+
   compileExpressionControlFlowBoundary(bufferCompiler, node, frame, emitBody) {
     const parentBufferArg = bufferCompiler.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
@@ -163,34 +169,31 @@ class CompileBoundaries {
 
     const textChannelName = this.compiler.buffer.currentTextChannelName;
     emitCompiler.line(`let ${resultId}_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${textChannelName}", "text", context, null);`);
-    const prevBuffer = this.compiler.buffer.currentBuffer;
-    const prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
-    const prevTextChannelName = this.compiler.buffer.currentTextChannelName;
-    this.compiler.buffer.currentBuffer = 'currentBuffer';
-    this.compiler.buffer.currentTextChannelVar = `${resultId}_textChannelVar`;
-    this.compiler.buffer.currentTextChannelName = textChannelName;
 
     const originalAsyncClosureDepth = emitCompiler.asyncClosureDepth;
     emitCompiler.asyncClosureDepth = 0;
 
-    if (this.compiler.scriptMode) {
-      frame._seesRootScope = false;
-      frame._returnWaitCount = 1;
-      this.compiler.emitDeclareReturnChannel(frame, 'currentBuffer');
-      innerBodyFunction.call(this.compiler, frame);
-    } else {
-      innerBodyFunction.call(this.compiler, frame);
-    }
+    this._withBoundaryBufferState(this.compiler.buffer, {
+      bufferExpr: 'currentBuffer',
+      textChannelVar: `${resultId}_textChannelVar`,
+      textChannelName
+    }, () => {
+      if (this.compiler.scriptMode) {
+        frame._seesRootScope = false;
+        frame._returnWaitCount = 1;
+        this.compiler.emitDeclareReturnChannel(frame, 'currentBuffer');
+        innerBodyFunction.call(this.compiler, frame);
+      } else {
+        innerBodyFunction.call(this.compiler, frame);
+      }
+    });
 
     emitCompiler.asyncClosureDepth = originalAsyncClosureDepth;
-    this.compiler.buffer.currentBuffer = prevBuffer;
-    this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
-    this.compiler.buffer.currentTextChannelName = prevTextChannelName;
 
     if (this.compiler.scriptMode) {
       this.compiler.emitReturnChannelSnapshot('currentBuffer', positionNode, resultId);
     } else {
-      emitCompiler.line(`let ${resultId} = currentBuffer.addSnapshot("${textChannelName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
+      this._emitTextChannelSnapshot('currentBuffer', textChannelName, positionNode, resultId);
     }
 
     emitCallbackResult(resultId);
@@ -348,7 +351,8 @@ class CompileBoundaries {
       this.compiler.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
 
       innerBodyFunction.call(this.compiler, innerFrame);
-      this.compiler.emit.line(`return currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
+      this._emitTextChannelSnapshot('currentBuffer', captureTextOutputName, positionNode, 'captureResult');
+      this.compiler.emit.line('return captureResult;');
     });
 
     this.compiler.emit.asyncClosureDepth--;

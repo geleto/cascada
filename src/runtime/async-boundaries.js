@@ -18,6 +18,13 @@ function _reportBoundaryError(err, boundaryName, context, cb) {
   cb(reportedError);
 }
 
+async function _finalizeBoundary(childBuffer, waitedChannelName = null) {
+  childBuffer.markFinishedAndPatchLinks();
+  if (waitedChannelName) {
+    await childBuffer.getChannel(waitedChannelName).finalSnapshot();
+  }
+}
+
 /**
  * Run a control-flow boundary (if/switch body) as a single async child buffer.
  *
@@ -29,17 +36,13 @@ async function runControlFlowBoundary(parentBuffer, usedChannels, f, context, cb
   void cb;
   const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
 
-  const cleanup = () => {
-    childBuffer.markFinishedAndPatchLinks();
-  };
-
   try {
     return await asyncFn(childFrame, childBuffer);
   } catch (err) {
     _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
   } finally {
-    await cleanup();
+    await _finalizeBoundary(childBuffer);
   }
 }
 
@@ -59,8 +62,7 @@ async function runWaitedControlFlowBoundary(parentBuffer, usedChannels, f, conte
     _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
   } finally {
-    childBuffer.markFinishedAndPatchLinks();
-    await childBuffer.getChannel(waitedChannelName).finalSnapshot();
+    await _finalizeBoundary(childBuffer, waitedChannelName);
   }
 }
 
@@ -78,7 +80,7 @@ async function runRenderBoundary(f, context, cb, asyncFn) {
     _reportBoundaryError(err, 'RenderAsyncBlock', context, cb);
     return null;
   } finally {
-    childBuffer.markFinishedAndPatchLinks();
+    await _finalizeBoundary(childBuffer);
   }
 }
 
@@ -93,10 +95,6 @@ async function runRenderBoundary(f, context, cb, asyncFn) {
 async function runValueBoundary(parentBuffer, usedChannels, f, cb, asyncFn) {
   const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
 
-  const cleanup = () => {
-    childBuffer.markFinishedAndPatchLinks();
-  };
-
   try {
     return await asyncFn(childFrame, childBuffer);
   } catch (err) {
@@ -105,7 +103,7 @@ async function runValueBoundary(parentBuffer, usedChannels, f, cb, asyncFn) {
     }
     throw err;
   } finally {
-    cleanup();
+    await _finalizeBoundary(childBuffer);
   }
 }
 
