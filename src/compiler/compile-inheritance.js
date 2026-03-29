@@ -261,20 +261,7 @@ class CompileInheritance {
           //    - hasStaticExtends with hasDynamicExtends: Dynamic can override static
           const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
           if (needsParentCheck) {
-            if (this.compiler.hasDynamicExtends) {
-              // Dynamic parent selection reads __parentTemplate via value/context path.
-              // Do not fall back to frame lookup here.
-              this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
-              if (this.compiler.hasStaticExtends) {
-                // Check both: dynamic can override static
-                this.emit.line('  if (!parent) parent = parentTemplate;');
-              }
-              this.emit.line('  return parent;');
-              this.emit.line('});');
-            } else {
-              // Only static extends (but in a context where dynamic might exist)
-              this.emit.line('const parentPromise = Promise.resolve(parentTemplate);');
-            }
+            this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
             this.emit.line(`${id} = parentPromise.then((parent) => {`);
             this.emit.line('  if (parent) return "";');
             this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
@@ -329,14 +316,26 @@ class CompileInheritance {
 
     if (this.compiler.asyncMode) {
       if (node.asyncStoreIn) {
-        this.emit.line(`let ${node.asyncStoreIn} = ${parentTemplateId};`);
+        const resolvedParentTemplateId = `${node.asyncStoreIn}_resolvedParentTemplate`;
+        // Transformed dynamic extends publishes the parent later through
+        // `set __parentTemplate = tempVar`. Delay that promise until async
+        // block registration is complete, so root cannot observe the parent
+        // before `context.addBlock(...)` / `finishAsyncBlocks()` have settled.
+        this.emit.line(`let ${node.asyncStoreIn} = Promise.resolve(${parentTemplateId}).then((${resolvedParentTemplateId}) => {`);
+        this.emit.line('  if (context.asyncBlocksPromise) {');
+        this.emit.line(`    return context.asyncBlocksPromise.then(() => ${resolvedParentTemplateId});`);
+        this.emit.line('  }');
+        this.emit.line(`  return ${resolvedParentTemplateId};`);
+        this.emit.line('});');
       }
       const extendsResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
         const templateVar = this.compiler._tmpid();
-        this.emit.line(`let ${templateVar} = await runtime.resolveSingle(${parentTemplateId});`);
-        this.emit.line(`parentTemplate = ${templateVar};`);
-        this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
-        this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
+        if (!node.asyncStoreIn) {
+          this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${parentTemplateId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
+        }
+        this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
+        this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
+        this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
         this.emit.line('}');
         this.emit.line('await context.finishAsyncBlocks();');
         return blockFrame;

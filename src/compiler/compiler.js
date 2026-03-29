@@ -1197,6 +1197,16 @@ class Compiler extends CompilerBase {
     this.inheritance.compileSuper(node, frame);
   }
 
+  analyzeExtends(node) {
+    if (!this.asyncMode) {
+      return {};
+    }
+    return {
+      uses: ['__parentTemplate'],
+      mutates: ['__parentTemplate']
+    };
+  }
+
   compileExtends(node, frame) {
     this.inheritance.compileExtends(node, frame);
   }
@@ -1400,6 +1410,19 @@ class Compiler extends CompilerBase {
     } else {
       declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
     }
+    if (this.asyncMode && !this.scriptMode) {
+      const hasExtendsNode = node.children.some((child) => child instanceof nodes.Extends);
+      const hasParentTemplateDeclaration = node.children.some((child) =>
+        child instanceof nodes.Set &&
+        child.varType === 'declaration' &&
+        child.targets &&
+        child.targets[0] &&
+        child.targets[0].value === '__parentTemplate'
+      );
+      if (hasExtendsNode && !hasParentTemplateDeclaration) {
+        declares.push({ name: '__parentTemplate', type: 'var', initializer: null, internal: true });
+      }
+    }
     const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
       : [];
@@ -1428,6 +1451,7 @@ class Compiler extends CompilerBase {
       child.targets[0] &&
       child.targets[0].value === '__parentTemplate'
     );
+    this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
 
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
     frame._seesRootScope = true;
@@ -1448,8 +1472,12 @@ class Compiler extends CompilerBase {
     for (const name of sequenceLocks) {
       this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
-    // Always declare parentTemplate (needed even for dynamic-only extends)
-    this.emit.line('let parentTemplate = null;');
+    if (this.asyncMode && this.hasStaticExtends && !this.hasDynamicExtends) {
+      this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
+    }
+    if (!this.asyncMode) {
+      this.emit.line('let parentTemplate = null;');
+    }
     this._compileChildren(node, frame);
     if (this.asyncMode) {
       this.emit.line('context.resolveExports(frame, runtime);');
@@ -1458,16 +1486,10 @@ class Compiler extends CompilerBase {
       this.emit.line('if (!compositionMode) {');
       this.emit.line('astate.waitAllClosures().then(async () => {');
 
-      if (this.hasDynamicExtends) {
-        // Dynamic extends: resolve from var channel or context only.
-        // Do not fall back to frame lookup.
+      if (this.hasExtends) {
         this.emit.line(`  let finalParent = await runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
-        if (this.hasStaticExtends) {
-          this.emit.line('  if (!finalParent) finalParent = parentTemplate;');
-        }
       } else {
-        // Static extends only: use JS variable
-        this.emit.line('  let finalParent = parentTemplate;');
+        this.emit.line('  let finalParent = null;');
       }
 
       this.emit.line('  if(finalParent) {');

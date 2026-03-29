@@ -211,7 +211,7 @@ This also handles poison the same way as statement-level control-flow boundaries
    - The fix should not add a generic waiter channel. Instead, the expression/call path must make the returned value structurally depend on completion of the side effect that contributes to that value.
    - The known call-block assignment regression is fixed.
 
-10. `In Progress` Reduce remaining command-argument staging only after the real producer paths are clean.
+10. `Done` Reduce remaining command-argument staging only after the real producer paths are clean.
    - The old generic `normalizeCommandArgsForDeferredHandling(...)` path is gone.
    - The current runtime split is:
      - true consumer commands resolve only their top-level deferred arguments at apply time
@@ -221,11 +221,14 @@ This also handles poison the same way as statement-level control-flow boundaries
      - it skips Cascada's own `RESOLVED_VALUE_MARKER` wrappers and `PoisonedValue` data
      - it now targets native promises / marker promises specifically, instead of arbitrary thenables
      - marker-backed arrays/objects now stop the staging walk; their own `RESOLVE_MARKER` promise is the deferred boundary that owns descendant async work
-   - The producer audit so far shows that the highest-signal remaining native-promise producers are intentional:
+   - The producer audit shows that the remaining native-promise producers are intentional:
      - block/super/include-style producer slots in `compile-buffer.js`
      - async import/from-import export lookup in `compile-inheritance.js`
      - include composition `finalSnapshot()` forwarding in `compile-inheritance.js`
-   - Before deleting the last handled-promise staging, audit any lower-level producer paths outside those intentional cases.
+   - A final producer pass did not find another worthwhile source-side reduction:
+     - ordinary var/text command writes in `compiler.js` carry raw Cascada values, not forced native promises
+     - include/import composition promises are the real structural/timing units for those features
+     - the remaining staging is now narrow enough that deleting it would mainly trade correctness for host-runtime noise protection
 
 11. `Done` Verify with both ordering and boundary-timing regressions.
    - ternary / `and` / `or` with command-emitting operands
