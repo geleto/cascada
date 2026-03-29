@@ -247,11 +247,10 @@ class CompileInheritance {
     // blocks twice
 
     if (this.compiler.asyncMode) {
-      this.compiler.boundaries.compileTextBoundary(
+      this.compiler.boundaries.compileBlockTextBoundary(
         this.compiler.buffer,
         node,
         frame,
-        node,
         (f, id) => {
           this.emit.line(`let ${id};`);
           // The dynamic check runs when:
@@ -271,14 +270,6 @@ class CompileInheritance {
           }
           // Step 7: block invocation boundary completion in limited-loop waited output.
           this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
-        },
-        {
-          linkedChannelsArg: JSON.stringify([this.compiler.buffer.currentTextChannelName]),
-          callbackParams: '(frame, blockBuffer)',
-          targetBufferExpr: 'blockBuffer',
-          normalizeTextArgs: false,
-          waitedPositionNode: null,
-          producerAssignsResult: true
         }
       );
     }

@@ -242,24 +242,10 @@ class CompileBoundaries {
     return innerFrame.pop();
   }
 
-  compileTextBoundary(
-    bufferCompiler,
-    node,
-    frame,
-    positionNode = node,
-    emitValue,
-    {
-      parentBufferExpr = bufferCompiler.currentBuffer,
-      linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame),
-      callbackParams = '(frame, currentBuffer)',
-      targetChannelName = bufferCompiler.currentTextChannelName,
-      targetBufferExpr = 'currentBuffer',
-      normalizeTextArgs = true,
-      waitedPositionNode = positionNode,
-      emitInCurrentBuffer = false,
-      producerAssignsResult = false
-    } = {}
-  ) {
+  compileTextBoundary(bufferCompiler, node, frame, positionNode = node, emitValue, {
+    emitInCurrentBuffer = false,
+    waitedPositionNode = positionNode
+  } = {}) {
     if (!this.compiler.asyncMode) {
       this.compiler.emit(`${bufferCompiler.currentBuffer} += `);
       emitValue(frame, null);
@@ -276,13 +262,9 @@ class CompileBoundaries {
       bufferCompiler.currentBuffer = emitBufferExpr;
       bufferCompiler.currentTextChannelVar = null;
 
-      if (producerAssignsResult) {
-        emitValue(innerFrame, valueId);
-      } else {
-        this.compiler.emit(`let ${valueId} = `);
-        emitValue(innerFrame, valueId);
-        this.compiler.emit.line(';');
-      }
+      this.compiler.emit(`let ${valueId} = `);
+      emitValue(innerFrame, valueId);
+      this.compiler.emit.line(';');
 
       bufferCompiler.currentBuffer = prevBuffer;
       bufferCompiler.currentTextChannelVar = prevTextChannelVar;
@@ -290,14 +272,44 @@ class CompileBoundaries {
     emitBody.resultId = valueId;
 
     return this._compileAsyncTextBoundary(bufferCompiler, frame, {
-      parentBufferExpr,
-      linkedChannelsArg,
-      callbackParams,
-      targetChannelName,
-      targetBufferExpr,
+      parentBufferExpr: bufferCompiler.currentBuffer,
+      linkedChannelsArg: this.compiler.emit.getLinkedChannelsArg(node, frame),
+      callbackParams: '(frame, currentBuffer)',
+      targetChannelName: bufferCompiler.currentTextChannelName,
+      targetBufferExpr: 'currentBuffer',
       positionNode,
-      normalizeTextArgs,
+      normalizeTextArgs: true,
       waitedPositionNode,
+      emitBody
+    });
+  }
+
+  compileBlockTextBoundary(bufferCompiler, node, frame, emitValue) {
+    const positionNode = node;
+    const valueId = this.compiler._tmpid();
+    const emitBody = (innerFrame) => {
+      const prevBuffer = bufferCompiler.currentBuffer;
+      const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
+
+      bufferCompiler.currentBuffer = prevBuffer;
+      bufferCompiler.currentTextChannelVar = null;
+
+      emitValue(innerFrame, valueId);
+
+      bufferCompiler.currentBuffer = prevBuffer;
+      bufferCompiler.currentTextChannelVar = prevTextChannelVar;
+    };
+    emitBody.resultId = valueId;
+
+    return this._compileAsyncTextBoundary(bufferCompiler, frame, {
+      parentBufferExpr: bufferCompiler.currentBuffer,
+      linkedChannelsArg: JSON.stringify([bufferCompiler.currentTextChannelName]),
+      callbackParams: '(frame, blockBuffer)',
+      targetChannelName: bufferCompiler.currentTextChannelName,
+      targetBufferExpr: 'blockBuffer',
+      positionNode,
+      normalizeTextArgs: false,
+      waitedPositionNode: null,
       emitBody
     });
   }
