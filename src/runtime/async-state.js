@@ -2,43 +2,14 @@
 
 class AsyncState {
   constructor(parent = null) {
-    this.activeClosures = 0;
-    this.waitClosuresCount = 0;
     this.parent = parent;
-    this.completionPromise = null;
-    this.completionResolver = null;
   }
 
   _enterAsyncBlock() {
-    const newState = new AsyncState(this);
-    newState._incrementClosures();
-
-    // Create a new completion promise for this specific closure chain
-    /*this.waitAllClosures().then(() => {
-      // async frame cleanup hook placeholder.
-    });*/
-
-    return newState;
+    return new AsyncState(this);
   }
 
   _leaveAsyncBlock() {
-    this.activeClosures--;
-
-    if (this.activeClosures === this.waitClosuresCount) {
-      if (this.completionResolver) {
-        this.completionResolver();
-        // Reset both promise and resolver
-        this.completionPromise = null;
-        this.completionResolver = null;
-      }
-    } else if (this.activeClosures < 0) {
-      throw new Error('Negative activeClosures count detected');
-    }
-
-    if (this.parent) {
-      return this.parent._leaveAsyncBlock();
-    }
-
     return this.parent;
   }
 
@@ -95,34 +66,6 @@ class AsyncState {
       })
       .finally(cleanup);
   }
-
-  _incrementClosures() {
-    this.activeClosures++;
-    if (this.parent) {
-      this.parent._incrementClosures();
-    }
-  }
-
-  // can use only one closureCount value at a time
-  async waitAllClosures(closureCount = 0) {
-    this.waitClosuresCount = closureCount;
-    if (this.activeClosures === closureCount) {
-      return Promise.resolve();
-    }
-
-    // Reuse existing promise if it exists
-    if (this.completionPromise) {
-      return this.completionPromise;
-    }
-
-    // Create new promise and store it
-    this.completionPromise = new Promise(resolvePromise => {
-      this.completionResolver = resolvePromise;
-    });
-
-    return this.completionPromise;
-  }
-
   new() {
     return new AsyncState();
   }

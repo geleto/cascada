@@ -738,12 +738,7 @@ class Compiler extends CompilerBase {
           );
         }
 
-        // 4. Inject Logic BEFORE closing the block
-        // We need to wait for all inner async operations to complete so the buffer is fully populated
-        // We wait for 1 because the current block itself is an active closure
-        //this.emit.line('await astate.waitAllClosures(1);');
-
-        // 5. Check Buffer/Variables for Poison
+        // 4. Check Buffer/Variables for Poison
         const guardErrorsVar = this._tmpid();
         this.emit.line(
           `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardChannels)}, ${channelGuardStateVar || 'null'});`
