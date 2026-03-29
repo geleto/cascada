@@ -191,53 +191,6 @@ module.exports = class CompileEmit {
     return { frame: nextFrame, bufferId };
   }
 
-  valueBoundary(
-    node,
-    frame,
-    emitFunc,
-    res,
-    positionNode = node,
-    createScope = false,
-    createOutputBuffer = false,
-    // Capture-only override. Other asyncBlockValue call sites should rely on
-    // compiler.currentBuffer. Remove this override once capture is removed.
-    parentBufferArgOverride = null
-  ) {
-    if (node.isAsync) {
-      const linkedChannelsArg = this.getLinkedChannelsArg(node, frame);
-      const parentBufferArg = parentBufferArgOverride || this.compiler.buffer.currentBuffer || 'null';
-      this.line(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`);
-      this.asyncClosureDepth++;
-      const innerFrame = frame.push(false, createScope);
-      trackCompileTimeFrameDepth(innerFrame, frame);
-
-      if (res === undefined) {
-        res = this.compiler._tmpid();
-        this.line(`  let ${res}; try {`);
-        this.line(`  ${res} = `);
-      } else {
-        this.line(`  try {`);
-      }
-      emitFunc.call(this.compiler, node, innerFrame);
-      this.line(';');
-      // Await the produced value so unused rejecting promises are observed before
-      // the async block cleanup finishes.
-      this.line(`return await ${res};`);
-      this.line('} catch (e) {');//@todo - temp var
-      this.line(`  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`);
-      this.line('  throw err;');
-      this.line('}');
-      const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
-      this.line(`}, ${createOutputBufferArg})`);
-
-      this.asyncClosureDepth--;
-      validateCompileTimeFrameBalance(innerFrame, this.compiler, positionNode);
-
-    } else {
-      emitFunc(node, frame);
-    }
-  }
-
   _compileRenderBoundary(node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
     return this.compiler.boundaries.compileRenderBoundary(this, node, frame, innerBodyFunction, callbackName, positionNode);
   }

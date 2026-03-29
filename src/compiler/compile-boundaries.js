@@ -28,6 +28,42 @@ class CompileBoundaries {
     this.compiler.emit('})');
   }
 
+  compileValueBoundary(bufferCompiler, node, frame, emitValue, positionNode = node) {
+    const parentBufferArg = bufferCompiler.currentBuffer || 'null';
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+    const resultId = this.compiler._tmpid();
+
+    this.compiler.emit.line(
+      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, cb, async (frame, currentBuffer) => {`
+    );
+    this.compiler.emit.asyncClosureDepth++;
+
+    const innerFrame = frame.push(false, false);
+    trackCompileTimeFrameDepth(innerFrame, frame);
+    const prevBuffer = bufferCompiler.currentBuffer;
+    const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
+    bufferCompiler.currentBuffer = 'currentBuffer';
+    bufferCompiler.currentTextChannelVar = null;
+
+    this.compiler.emit.line('try {');
+    this.compiler.emit(`  let ${resultId} = `);
+    emitValue.call(this.compiler, node, innerFrame);
+    this.compiler.emit.line(';');
+    this.compiler.emit.line(`  return await ${resultId};`);
+    this.compiler.emit.line('} catch (e) {');
+    this.compiler.emit.line(
+      `  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`
+    );
+    this.compiler.emit.line('  throw err;');
+    this.compiler.emit.line('}');
+    this.compiler.emit.line('})');
+
+    bufferCompiler.currentBuffer = prevBuffer;
+    bufferCompiler.currentTextChannelVar = prevTextChannelVar;
+    this.compiler.emit.asyncClosureDepth--;
+    validateCompileTimeFrameBalance(innerFrame, this.compiler, positionNode);
+  }
+
   compileControlFlowBoundary(bufferCompiler, node, frame, emitFunc = null) {
     if (node.isAsync) {
       const parentBufferArg = bufferCompiler.currentBuffer;

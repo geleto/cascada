@@ -85,26 +85,18 @@ async function runRenderBoundary(f, context, cb, asyncFn) {
  * rejection semantics: RuntimeFatalError is reported via cb(...), but ordinary
  * expression errors are rethrown to the awaiting caller.
  */
-async function runValueBoundary(parentBuffer, usedChannels, f, context, cb, asyncFn, createOutputBuffer = false) {
-  void context;
+async function runValueBoundary(parentBuffer, usedChannels, f, cb, asyncFn) {
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
   const childFrame = f.push(false);
-  let childBuffer = null;
-  if (createOutputBuffer) {
-    const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
-    childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer || null);
-  }
-
-  const activeBuffer = childBuffer || parentBuffer || null;
+  const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : null;
+  const childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer || null);
 
   const cleanup = () => {
-    if (childBuffer) {
-      childBuffer.markFinishedAndPatchLinks();
-    }
+    childBuffer.markFinishedAndPatchLinks();
   };
 
   try {
-    return await asyncFn(childFrame, activeBuffer, parentBuffer || null);
+    return await asyncFn(childFrame, childBuffer);
   } catch (err) {
     if (err instanceof errors.RuntimeFatalError) {
       cb(err);

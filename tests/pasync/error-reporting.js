@@ -1001,10 +1001,8 @@
         null,
         null,
         frame,
-        null,
         cb,
-        asyncBody,
-        false
+        asyncBody
       ).then(() => {
         done(new Error('runValueBoundary should have rejected'));
       }).catch(err => {
