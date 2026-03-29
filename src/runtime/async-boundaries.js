@@ -5,9 +5,8 @@ const buffer = require('./command-buffer');
 
 /**
  * Run a control-flow boundary (if/switch body) as a single async child buffer.
- * Phase 1 still uses AsyncState closure tracking, but this helper owns the
- * child buffer lifecycle so waited loops can optionally gate on a child-owned
- * waited channel instead of only on async function return.
+ * This helper owns the child buffer lifecycle so waited loops can optionally
+ * gate on a child-owned waited channel instead of only on async function return.
  *
  * The asyncFn receives (childAstate, childFrame, childBuffer) and should compile
  * branch bodies synchronously inside - no inner astate.asyncBlock calls needed.
@@ -23,7 +22,7 @@ async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, con
     childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer);
   }
 
-  const childState = astate._enterAsyncBlock();
+  const childState = astate.new();
   const activeBuffer = childBuffer || parentBuffer || null;
 
   const finalizeChildBuffer = () => {
@@ -37,7 +36,6 @@ async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, con
     if (childBuffer) {
       childBuffer.markFinishedAndPatchLinks();
     }
-    childState._leaveAsyncBlock();
     return finalizeChildBuffer();
   };
 
@@ -61,12 +59,11 @@ async function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, con
  */
 async function runRenderBoundary(astate, f, context, cb, asyncFn) {
   const childFrame = f.push(false);
-  const childState = astate._enterAsyncBlock();
+  const childState = astate.new();
   const childBuffer = buffer.createCommandBuffer(context || null, null, childFrame, null, null);
 
   const cleanup = () => {
     childBuffer.markFinishedAndPatchLinks();
-    childState._leaveAsyncBlock();
   };
 
   try {

@@ -1,16 +1,12 @@
 'use strict';
 
 class AsyncState {
-  constructor(parent = null) {
-    this.parent = parent;
-  }
-
   _enterAsyncBlock() {
-    return new AsyncState(this);
+    return new AsyncState();
   }
 
   _leaveAsyncBlock() {
-    return this.parent;
+    return null;
   }
 
   asyncBlock(
@@ -34,7 +30,7 @@ class AsyncState {
       newBuffer = runtime.createCommandBuffer(bufferContext, null, childFrame, usedChannels, parentBuffer);
     }
 
-    const childState = this._enterAsyncBlock();
+    const childState = this.new();
 
     const activeBuffer = newBuffer || parentBuffer || null;
     const cleanup = () => {
@@ -44,7 +40,6 @@ class AsyncState {
       if (newBuffer) {
         newBuffer.markFinishedAndPatchLinks();
       }
-      childState._leaveAsyncBlock();
     };
 
     const result = func(childState, childFrame, activeBuffer, parentBuffer || null);
