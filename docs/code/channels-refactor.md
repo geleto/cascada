@@ -751,7 +751,7 @@ Migrate from simplest to most complex to catch regressions early:
      - async `extends` parent selection now flows through `__parentTemplate` buffered state instead of plain JS root-visible state
    - What remains after this step is not more closure counting removal; it is retiring the last legacy async-block-style helper call sites.
 
-31. [IN PROGRESS] **Retire remaining `asyncBufferNode(...)` call sites one by one**.
+31. ✅ **Retire remaining `asyncBufferNode(...)` call sites one by one**.
    - Current rule:
      - synchronous command emission is strongly preferred
      - do not preserve `asyncBufferNode(...)` as a long-term helper just because it still works
@@ -760,15 +760,14 @@ Migrate from simplest to most complex to catch regressions early:
      - use `compileControlFlowBoundary(...)` when the site is just a structural control-flow buffer
      - compile inline when no child boundary is actually needed
      - introduce a new helper in `compile-boundaries.js` only if the site has real semantics that the generic control-flow boundary does not express well
-   - Current remaining call sites:
-     - `compile-loop.js` iteration body wrapper
    - Completed in this step:
      - `compile-loop.js` loop `else` body now compiles directly into the current loop buffer with ordinary scope push/pop; it no longer creates a child boundary through `asyncBufferNode(...)`
      - `compiler.js` `compileGuard(...)` now lowers through `compileControlFlowBoundary(...)` with an explicit inner scoped frame, instead of using `asyncBufferNode(...)`
-   - Preferred migration order:
-     1. loop iteration body wrapper last
-   - Why this order:
-     - loop body still owns iteration-local waited and completion semantics, so it should be migrated only after the simpler sites clarify what helper shape is actually needed
+     - `compile-loop.js` iteration body wrapper now lowers directly through `runControlFlowBoundary(...)` for async loops and plain scoped emission for sync loops
+     - `compile-buffer.js` no longer has any live `asyncBufferNode(...)` call sites, so the helper itself has been removed
+   - Result:
+     - there are no remaining statement-side `asyncBufferNode(...)` call sites
+     - remaining old async-block cleanup is now concentrated in the value-returning `asyncBlockValue(...)` path
 
 32. [PENDING] **Replace the last value-returning legacy async-block path (`asyncBlockValue(...)`)**.
    - Remaining live use:

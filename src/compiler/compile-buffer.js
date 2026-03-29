@@ -7,9 +7,7 @@
 
 const nodes = require('../nodes');
 const {
-  validateChannelObservationCall,
-  trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
+  validateChannelObservationCall
 } = require('./validation');
 const CHANNEL_COMMAND_CLASS = {
   data: 'DataCommand',
@@ -409,49 +407,6 @@ class CompileBuffer {
     return this.compiler.boundaries.compileControlFlowBoundary(this, node, frame, emitFunc);
   }
 
-  asyncBufferNode(node, frame, createScope = false, positionNode = node, emitFunc = null) {
-    if (node.isAsync) {
-      const parentBufferArg = this.currentBuffer;
-      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
-      this.compiler.emit(
-        `runtime.runControlFlowBoundary(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
-      );
-      this.compiler.emit.asyncClosureDepth++;
-      let nextFrame = frame.push(false, createScope);
-      trackCompileTimeFrameDepth(nextFrame, frame);
-      const nestedBufferId = this.compiler._tmpid();
-      this.compiler.emit.line(`let ${nestedBufferId} = currentBuffer;`);
-      const prevBuffer = this.currentBuffer;
-      const prevTextChannelVar = this.currentTextChannelVar;
-      this.currentBuffer = nestedBufferId;
-      this.currentTextChannelVar = null;
-
-      const callbackValue = emitFunc ? emitFunc(nextFrame, nestedBufferId, prevBuffer) : undefined;
-      this.compiler.emit.asyncClosureDepth--;
-      this.compiler.emit.line('});');
-      validateCompileTimeFrameBalance(nextFrame, this.compiler, positionNode);
-      nextFrame = nextFrame.pop();
-      this.currentBuffer = prevBuffer;
-      this.currentTextChannelVar = prevTextChannelVar;
-
-      const result = callbackValue && typeof callbackValue === 'object' &&
-        Object.prototype.hasOwnProperty.call(callbackValue, 'result')
-        ? callbackValue.result
-        : callbackValue;
-      return { frame: nextFrame, result };
-    }
-
-    if (createScope) {
-      let nextFrame = frame.push();
-      this.compiler.emit.line('frame = frame.push();');
-      const result = typeof emitFunc === 'function' ? emitFunc(nextFrame, this.currentBuffer, this.currentBuffer) : undefined;
-      this.compiler.emit.line('frame = frame.pop();');
-      return { frame: nextFrame.pop(), result };
-    }
-
-    const result = typeof emitFunc === 'function' ? emitFunc(frame, this.currentBuffer, this.currentBuffer) : undefined;
-    return { frame, result };
-  }
 }
 
 module.exports = CompileBuffer;
