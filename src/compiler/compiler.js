@@ -1,7 +1,9 @@
 const {
   RESERVED_DECLARATION_NAMES,
   validateGuardVariablesDeclared,
-  validateChannelDeclarationNode
+  validateChannelDeclarationNode,
+  trackCompileTimeFrameDepth,
+  validateCompileTimeFrameBalance
 } = require('./validation');
 
 const parser = require('../parser');
@@ -627,9 +629,11 @@ class Compiler extends CompilerBase {
     // Guard blocks are always async boundaries
     node.isAsync = true;
 
-    const guardResult = this.buffer.asyncBufferNode(node, frame, true, node, (blockFrame) => {
+    const guardResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+      const guardFrame = blockFrame.push(false, true);
+      trackCompileTimeFrameDepth(guardFrame, blockFrame);
       // Guard blocks should keep channel writes scoped to the guard buffer.
-      blockFrame.channelScope = true;
+      guardFrame.channelScope = true;
       const previousGuardDepth = this.guardDepth;
       this.guardDepth = previousGuardDepth + 1;
 
@@ -648,7 +652,7 @@ class Compiler extends CompilerBase {
         this.emit.line('');
 
         // 3. Compile Body
-        this.compile(node.body, blockFrame);
+        this.compile(node.body, guardFrame);
 
         // Resolve and Validate Sequence Targets
         // Sequence lock mutations are tracked via used channel names.
@@ -746,7 +750,7 @@ class Compiler extends CompilerBase {
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
         if (node.recoveryBody) {
-          const recoveryFrame = blockFrame.push();
+          const recoveryFrame = guardFrame.push();
           this.emit.line('frame = frame.push();');
           if (node.errorVar) {
             // Guard recovery error variable is already declared in analysis;
@@ -759,6 +763,7 @@ class Compiler extends CompilerBase {
           }
           this.compile(node.recoveryBody, recoveryFrame);
           this.emit.line('frame = frame.pop();');
+          recoveryFrame.pop();
         }
 
         this.emit.line('} else {');
@@ -766,6 +771,9 @@ class Compiler extends CompilerBase {
       } finally {
         this.guardDepth = previousGuardDepth;
       }
+
+      validateCompileTimeFrameBalance(guardFrame, this, node);
+      return guardFrame.pop();
     });
 
     frame = guardResult.frame;
