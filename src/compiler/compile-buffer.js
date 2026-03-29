@@ -7,7 +7,9 @@
 
 const nodes = require('../nodes');
 const {
-  validateChannelObservationCall
+  validateChannelObservationCall,
+  trackCompileTimeFrameDepth,
+  validateCompileTimeFrameBalance
 } = require('./validation');
 const CHANNEL_COMMAND_CLASS = {
   data: 'DataCommand',
@@ -410,7 +412,13 @@ class CompileBuffer {
   asyncBufferNode(node, frame, createScope = false, positionNode = node, emitFunc = null) {
     if (node.isAsync) {
       const parentBufferArg = this.currentBuffer;
-      let nextFrame = this.compiler.emit.asyncBlockBegin(node, frame, createScope, positionNode);
+      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+      this.compiler.emit(
+        `runtime.runControlFlowBoundary(astate, ${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
+      );
+      this.compiler.emit.asyncClosureDepth++;
+      let nextFrame = frame.push(false, createScope);
+      trackCompileTimeFrameDepth(nextFrame, frame);
       const nestedBufferId = this.compiler._tmpid();
       this.compiler.emit.line(`let ${nestedBufferId} = currentBuffer;`);
       const prevBuffer = this.currentBuffer;
@@ -419,14 +427,10 @@ class CompileBuffer {
       this.currentTextChannelVar = null;
 
       const callbackValue = emitFunc ? emitFunc(nextFrame, nestedBufferId, prevBuffer) : undefined;
-      nextFrame = this.compiler.emit.asyncBlockEnd(
-        node,
-        nextFrame,
-        createScope,
-        positionNode,
-        parentBufferArg,
-        true
-      );
+      this.compiler.emit.asyncClosureDepth--;
+      this.compiler.emit.line('});');
+      validateCompileTimeFrameBalance(nextFrame, this.compiler, positionNode);
+      nextFrame = nextFrame.pop();
       this.currentBuffer = prevBuffer;
       this.currentTextChannelVar = prevTextChannelVar;
 

@@ -1,7 +1,3 @@
-const {
-  trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
-} = require('./validation');
 const { DEFAULT_TEMPLATE_TEXT_CHANNEL } = require('./compile-buffer');
 
 module.exports = class CompileEmit {
@@ -189,51 +185,6 @@ module.exports = class CompileEmit {
       return { frame: frame.pop(), bufferId };
     }
     return { frame: nextFrame, bufferId };
-  }
-
-  asyncBlock(node, frame, createScope, emitFunc, positionNode = node) {
-    const aframe = this.asyncBlockBegin(node, frame, createScope, positionNode);
-    emitFunc(aframe);
-    this.asyncBlockEnd(node, aframe, createScope, positionNode, null, false, false);
-  }
-
-  asyncBlockBegin(node, frame, createScope, positionNode = node) {
-    if (node.isAsync) {
-      this.line(`astate.asyncBlock(async (frame, currentBuffer) => {`);
-      this.asyncClosureDepth++;
-    }
-    if (createScope && !node.isAsync) {
-      this.line('frame = frame.push();');
-    }
-    if (createScope || node.isAsync) {
-      //unscoped frames are only used in async blocks
-      const newFrame = frame.push(false, createScope);
-      trackCompileTimeFrameDepth(newFrame, frame);
-      return newFrame;
-    }
-    return frame;
-  }
-
-  asyncBlockEnd(node, frame, createScope, positionNode = node, parentBufferArg, createOutputBuffer) {
-    if (node.isAsync) {
-      this.asyncClosureDepth--;
-      this.line('}');
-      const asyncMetaArg = this.getAsyncBlockArgs(node, frame);
-      const resolvedParentBufferArg = parentBufferArg || this.compiler.buffer.currentBuffer || 'null';
-      const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
-      this.line(`, runtime, frame, ${asyncMetaArg}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb)`);
-      this.line(';');
-    }
-    if (createScope && !node.isAsync) {
-      this.line('frame = frame.pop();');
-    }
-
-    // Validate frame balance before popping
-    if (createScope || node.isAsync) {
-      validateCompileTimeFrameBalance(frame, this.compiler, positionNode);
-      return frame.pop();
-    }
-    return frame;
   }
 
   asyncBlockValue(
