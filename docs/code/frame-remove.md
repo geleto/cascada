@@ -72,6 +72,9 @@ Completed so far:
   - imported bindings and async macro bindings now also bypass `frame._channels`
     - inherited block composition now prelinks deferred-export visibility into the parent root buffer as lookup-only channel visibility
     - visible channel lookup can resolve those child-owned bindings without closing parent lanes early
+  - async include/import composition no longer needs `parentFrame` for `with context` lexical reads
+    - async `include`, `import`, and `from import` now pass explicit context snapshots of visible declared vars
+    - async composition visibility for those paths is now context/channel-driven instead of frame-driven
   - sequential runtime no longer uses frame to discover lock channels
     - sequential lock channels are now declared buffer-only
     - `ensureSequentialPathChannel(...)` validates through `currentBuffer.getChannel(...)`

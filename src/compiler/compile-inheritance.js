@@ -105,10 +105,14 @@ class CompileInheritance {
 
     if (this.compiler.asyncMode) {
       const exportedId = this.compiler._tmpid();
-      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${node.withContext
-        ? `context.getVariables(), frame, cb`
-        : `null, null, cb`
-      }));`);
+      if (node.withContext) {
+        const importVarsVar = this.compiler._tmpid();
+        this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
+        this._emitDeclaredValueSnapshots(node._analysis, frame, importVarsVar, node);
+        this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, null, cb));`);
+      } else {
+        this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(null, null, cb));`);
+      }
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, exportedId, node);
       this._emitValueImportBinding(frame, target, exportedId, node);
       return;
@@ -136,10 +140,14 @@ class CompileInheritance {
     if (this.compiler.asyncMode) {
       const exportedId = this.compiler._tmpid();
       const bindingIds = [];
-      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${node.withContext
-        ? `context.getVariables(), frame, cb`
-        : `null, null, cb`
-      }));`);
+      if (node.withContext) {
+        const importVarsVar = this.compiler._tmpid();
+        this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
+        this._emitDeclaredValueSnapshots(node._analysis, frame, importVarsVar, node);
+        this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, null, cb));`);
+      } else {
+        this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(null, null, cb));`);
+      }
 
       // Now extract each individual variable from the exported object
       node.names.children.forEach((nameNode) => {
@@ -404,7 +412,7 @@ class CompileInheritance {
       this._emitDeclaredValueAliasMap(node._analysis, aliasMapVar);
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
-      this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeVarsVar}, frame, cb);`);
+      this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeVarsVar}, null, cb);`);
       // Compose child buffer with base->canonical aliases (e.g. loop -> loop#7)
       // so natural names used inside included templates target the right lane.
       this.emit.line(`composed._setBoundaryAliases(${aliasMapVar});`);
