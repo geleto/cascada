@@ -287,10 +287,6 @@ function contextOrVarLookupScript(context, frame, name, currentBuffer) {
  * Returns poison for missing names via context.lookupScriptModeAsync.
  */
 function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, errorContext = null) {
-  let {value: val, frame: f} = frame.lookupAndLocate(name);
-  if (f) {
-    return val;
-  }
   const channelRead = varChannelLookupScript(frame, name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;

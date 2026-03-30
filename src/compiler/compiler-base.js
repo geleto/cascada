@@ -397,20 +397,6 @@ class CompilerBase extends Obj {
         node
       );
     }
-    let v = frame.lookup(name);
-    // @todo - omit this for function calls?
-    // (parent instanceof nodes.FunCall && parent.name === node)
-
-    /*
-    // optimization: if the variable is already in the frame, use it directly
-    // @todo - bring it back for sync mode, check the bug list, it was somewhat broken in nunjucks
-    if (v) {
-      //we are using a local variable, this is currently used only for:
-      //the async filter, super(), set var
-      this.emit(v);
-      return;
-    }*/
-
     // Not in template scope, check context/frame with potential sequence lock
     if (this.asyncMode) {
       const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
@@ -432,6 +418,7 @@ class CompilerBase extends Obj {
       }
     }
     else {//not async mode
+      const v = frame.lookup(name);
       if (v) {
         //we are using a local variable, this is currently used only for:
         //the async filter, super(), set var
@@ -464,7 +451,7 @@ class CompilerBase extends Obj {
         this.emit(`return runtime.contextOrVarLookup(context, frame, "${name}", ${this.buffer.currentBuffer});`);
         this.emit('})()');
       } else {
-        this.emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
+        this.emit(`runtime.contextOrVarLookup(context, frame, "${name}", ${this.buffer.currentBuffer})`);
       }
     }
   }
