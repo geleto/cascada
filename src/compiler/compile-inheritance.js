@@ -48,7 +48,9 @@ class CompileInheritance {
     this.emit.line(
       `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
     );
-    this.emit.line(`if(frame.topLevel) { context.addExport("${name}"); }`);
+    if (this.compiler.analysis.isRootScopeOwner(node._analysis)) {
+      this.emit.line(`context.addExport("${name}");`);
+    }
   }
 
   /**

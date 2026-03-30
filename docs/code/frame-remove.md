@@ -23,6 +23,20 @@ Completed so far:
   - `createCommandBuffer(...)` no longer takes a frame argument
   - dead `finalizeUnobservedSinks(...)` plumbing was removed
   - a direct `declareChannel(...) -> buffer-only` ownership flip was attempted and reverted because linked-child visibility and local shadowing are not represented precisely enough by the current buffer registry alone
+  - compile-time replacement of async `if(frame.topLevel)` export checks was attempted and reverted
+    - `frame.topLevel` is not currently equivalent to simple compile-time `!frame.parent`
+    - macro / caller / deferred-export codegen still depends on the runtime top-level marker in ways that need a deeper audit first
+  - a narrower analysis-driven exportability replacement now works for ordinary async var/import bindings
+    - root-scope async `var` / `import` / `from import` exports now use analysis scope ownership instead of runtime `frame.topLevel`
+    - macro exportability is still special because macro nodes declare the same name both locally and in the parent scope
+
+Important correction:
+
+- scope ownership and buffer ownership are **not** the same thing
+  - command buffers exist only where async/control-flow structure needs them
+  - lexical scopes exist on every AST node that creates a child/root scope
+  - therefore “binding is visible from / declared in the root command buffer” does **not** imply “binding belongs to the root lexical scope”
+  - exportability, shadowing, and parent-owned declarations must stay analysis-driven
 
 Current next target:
 
@@ -30,6 +44,9 @@ Current next target:
   - keep shrinking frame-based channel readers
   - then retry moving `declareChannel(...)` away from `frame._channels`
   - do not flip channel ownership yet until linked-child visibility and local shadowing rules are represented by buffer-side structures instead of frame fallback
+  - continue reducing runtime frame flags:
+    - async `frame.topLevel` is now partly replaced by analysis data
+    - the remaining hard case is macro/caller exportability, which needs a dedicated parent-owned declaration helper instead of generic declaration lookup
 
 Focused verification currently used during this migration:
 
@@ -137,6 +154,17 @@ Another prerequisite:
 - frame removal should not silently delete validation
 - only genuinely runtime-only checks should remain at runtime
 
+Additional rule:
+
+- do not infer lexical-root ownership from:
+  - root command-buffer ownership
+  - lack of parent buffer
+  - lack of parent frame
+- infer it only from:
+  - analysis scope owners
+  - declaration ownership
+  - explicit parent-owned declaration metadata
+
 ---
 
 ## Current Async Responsibilities of `frame`
@@ -207,6 +235,15 @@ Replacement direction:
 - channel namespace owned by command buffers
 - lookup by canonical runtime name
 - parent visibility via buffer ancestry or explicit boundary alias/prelink rules
+
+Important limitation:
+
+- channel registry ownership can move to buffers
+- lexical scope ownership cannot
+- if two scope-distinct bindings share one command buffer, correctness still depends on:
+  - analysis-time renaming
+  - declaration ownership
+  - boundary visibility rules
 
 ### 3. Loop state
 
@@ -296,6 +333,13 @@ Replacement direction:
   - command buffer / scope-root metadata
   - compile-time scope analysis
 
+Current refined understanding:
+
+- async exportability is not “belongs to root buffer”
+- it is “belongs to root lexical scope” or “is declared parent-owned into the root lexical scope”
+- ordinary async `var` / `import` bindings can already use analysis scope ownership
+- macro/caller exportability still needs explicit parent-owned declaration handling
+
 This is easy to miss because these uses are not ordinary variable lookup, but
 they still block full runtime-frame removal.
 
@@ -315,6 +359,79 @@ Replacement direction:
 - remaining work is to remove any leftover frame-flavored callsites/tests and keep the signature narrow
 
 This is not a major design dependency. It is a cleanup step.
+
+---
+
+## Scope vs Buffer Invariant
+
+This migration must preserve the following invariant:
+
+- buffer visibility answers “can this runtime read reach that channel lane?”
+- scope ownership answers “which lexical binding does this name refer to?”
+
+They are related, but not interchangeable.
+
+Examples:
+
+- two distinct lexical variables can end up in the same command buffer
+  - renaming avoids collisions
+  - buffer ownership alone cannot recover that distinction
+- a parent-owned declaration may belong to a different lexical scope owner than the node currently compiling
+- include/import visibility can use buffer/channel linking at runtime, but the set of names that should be exposed is still decided by analysis
+
+Any future frame-removal change must classify itself first:
+
+- scope question
+  - use analysis
+- runtime channel-visibility question
+  - use buffer/channel ancestry
+- mixed question
+  - preserve both models explicitly; do not collapse one into the other
+
+---
+
+## Audit Checklist For Frame Removal Changes
+
+Before removing any async frame usage, audit whether the behavior depends on exact lexical scope rather than buffer structure.
+
+Cases that already require exact scope reasoning today:
+
+- declaration ownership
+  - `declares`
+  - `declaresInParent`
+  - `parentOwned`
+- shadowing and runtime-name mangling
+  - [compile-rename.js](/c:/Projects/cascada/src/compiler/compile-rename.js)
+- scope-owner lookup
+  - `getScopeOwner(...)`
+  - `findDeclarationOwner(...)`
+  - `getIncludeVisibleVarChannels(...)`
+- read-only parent visibility
+  - `parentReadOnly`
+  - `_passesReadOnlyBoundary(...)`
+- macro/caller exportability
+  - macro nodes declare the same name both locally and in the parent scope
+- runtime local lookups that still depend on lexical frame storage
+  - `frame.lookup(...)`
+  - `lookupAndLocate(...)`
+
+Cases that are more naturally buffer/channel questions:
+
+- channel final visibility/read reachability
+- linked child-buffer lane visibility
+- final snapshot vs ordered snapshot choice
+- composition buffer linking
+
+Required discipline for future changes:
+
+- if a change removes a frame check, document whether it was:
+  - replaced by analysis
+  - replaced by buffer/channel runtime state
+  - or proven dead
+- if the change affects exportability or shadowing, add or update focused tests for:
+  - nested scopes in the same buffer
+  - parent-owned declarations
+  - import/include/macro/caller composition
 
 ### 8. Sink finalization and other frame-walking helpers
 
@@ -491,6 +608,10 @@ Done when:
 - we explicitly state that this plan applies to async mode only
 - sync mode may continue using frame-based lookup/storage
 - all future changes in this plan are evaluated only against async compilation/runtime
+- all future changes in this plan explicitly classify:
+  - scope/declaration ownership concerns
+  - buffer/channel visibility concerns
+  - and any mixed cases that need both models preserved
 
 ### Phase 1 — Remove `node.isAsync` as a Compile Routing Axis
 

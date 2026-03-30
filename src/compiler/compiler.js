@@ -399,6 +399,7 @@ class Compiler extends CompilerBase {
     }
     const ids = [];
     const isDeclarationOnly = !!node.declarationOnly;
+    const exportFromRootScope = this.analysis.isRootScopeOwner(node._analysis);
 
     // 1. First pass: validate + declarations + temp ids (mirrors compileSet structure).
     node.targets.forEach((target) => {
@@ -476,13 +477,9 @@ class Compiler extends CompilerBase {
       }
 
       if (name.charAt(0) !== '_' && hasAssignedValue) {
-        this.emit.line('if(frame.topLevel) {');
-        if (this.asyncMode) {
-          this.emit.line(`  context.addExport("${name}");`);
-        } else {
-          this.emit.line(`  context.addExport("${name}", ${valueId});`);
+        if (exportFromRootScope) {
+          this.emit.line(`context.addExport("${name}");`);
         }
-        this.emit.line('}');
       }
 
       if (!this.scriptMode && hasAssignedValue && !this.asyncMode) {

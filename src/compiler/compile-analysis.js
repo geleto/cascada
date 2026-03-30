@@ -181,6 +181,22 @@ class CompileAnalysis {
     return current || analysis;
   }
 
+  getRootScopeOwner(analysis) {
+    let current = analysis;
+    while (current && current.parent) {
+      current = current.parent;
+    }
+    return this.getScopeOwner(current || analysis);
+  }
+
+  isRootScopeOwner(analysis) {
+    return this.getScopeOwner(analysis) === this.getRootScopeOwner(analysis);
+  }
+
+  isDeclarationRootOwned(analysis, name) {
+    return this.findDeclarationOwner(analysis, name) === this.getRootScopeOwner(analysis);
+  }
+
   _passesReadOnlyBoundary(currentScopeOwner, declarationOwner) {
     let current = currentScopeOwner;
     while (current && current !== declarationOwner) {
