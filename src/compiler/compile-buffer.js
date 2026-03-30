@@ -45,7 +45,7 @@ class CompileBuffer {
       const linkedChannelsArg = Array.isArray(linkedChannels) && linkedChannels.length > 0
         ? JSON.stringify(linkedChannels)
         : 'null';
-      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, frame, ${linkedChannelsArg}, ${parentArg});`);
+      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, ${linkedChannelsArg}, ${parentArg});`);
       if (!this.compiler.scriptMode) {
         this.compiler.emit.line(`let ${textId} = runtime.declareChannel(frame, ${bufferId}, "${this.currentTextChannelName}", "text", context, null);`);
       }

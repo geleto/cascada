@@ -43,14 +43,14 @@ describe('channel.finalSnapshot', function () {
   let context;
   const createBuffer = (input, ctx, channelName) => {
     const targetName = channelName || 'text';
-    const cb = new CommandBuffer(ctx || null, null, { parent: null });
+    const cb = new CommandBuffer(ctx || null, null);
     const addItem = (buffer, item) => {
       if (item instanceof CommandBuffer) {
         buffer.add(item, targetName);
         return;
       }
       if (Array.isArray(item)) {
-        const nested = new CommandBuffer(ctx || null, null, { parent: null });
+        const nested = new CommandBuffer(ctx || null, null);
         item.forEach((child) => addItem(nested, child));
         nested.markFinishedAndPatchLinks();
         buffer.add(nested, targetName);
@@ -82,7 +82,7 @@ describe('channel.finalSnapshot', function () {
     makeChannel(buffer, ctx, channelName).finalSnapshot()
   );
   const flattenSink = (commands, ctx, channelName, sink) => {
-    const buffer = new CommandBuffer(ctx, null, { parent: null });
+    const buffer = new CommandBuffer(ctx, null);
     const sinkChannel = createSinkChannel(buffer, channelName, ctx || null, sink);
 
     buffer._channelTypes = Object.create(null);
@@ -239,7 +239,7 @@ describe('channel.finalSnapshot', function () {
 
   describe('Error Handling & Edge Cases', function () {
     it('should resolve snapshot at command position before later writes', async function () {
-      const buffer = new CommandBuffer(context, null, { parent: null });
+      const buffer = new CommandBuffer(context, null);
       const textOut = createChannel(buffer, 'text', context, 'text');
 
       textOut('A');
@@ -263,7 +263,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('finalSnapshot should wait for owning channel completion', async function () {
-      const buffer = new CommandBuffer(context, null, { parent: null });
+      const buffer = new CommandBuffer(context, null);
       const out = createChannel(buffer, 'text', context, 'text');
       out('late');
 
@@ -279,7 +279,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('tracks finished state per channel', async function () {
-      const buffer = new CommandBuffer(context, null, { parent: null });
+      const buffer = new CommandBuffer(context, null);
       const text = createChannel(buffer, 'text', context, 'text');
       const data = createChannel(buffer, 'data', context, 'data');
 
@@ -345,7 +345,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('should reject CommandBuffer values inside TextCommand arguments', async function () {
-      const nested = new CommandBuffer(context, null, { parent: null });
+      const nested = new CommandBuffer(context, null);
       nested.add(new TextCommand({ channelName: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
       const buffer = createBuffer([
         new TextCommand({ channelName: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })

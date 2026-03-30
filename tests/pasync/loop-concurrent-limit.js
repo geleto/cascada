@@ -2617,7 +2617,7 @@
   describe('CommandBuffer boundary alias canonicalization', function () {
     it('maps base channel names to canonical aliases in add()', function () {
       const ctx = { path: 'alias-add.njk' };
-      const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
+      const buffer = new CommandBuffer(ctx, null);
       createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
@@ -2633,8 +2633,7 @@
 
     it('resolves addSnapshot() through boundary aliases', async function () {
       const ctx = { path: 'alias-snapshot.njk' };
-      const frame = { parent: null };
-      const buffer = new CommandBuffer(ctx, null, frame, false);
+      const buffer = new CommandBuffer(ctx, null);
       createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
@@ -2647,9 +2646,8 @@
 
     it('inherits boundary aliases for child buffers linked through addBuffer', function () {
       const ctx = { path: 'alias-child.njk' };
-      const frame = { parent: null };
-      const parent = new CommandBuffer(ctx, null, frame, false);
-      const child = new CommandBuffer(ctx, null, frame, false);
+      const parent = new CommandBuffer(ctx, null);
+      const child = new CommandBuffer(ctx, null);
       parent._setBoundaryAliases({ loop: 'loop#4', someVar: 'someVar#9' });
 
       parent.addBuffer(child, 'loop');
@@ -2667,9 +2665,8 @@
 
     it('reuses parent alias map reference when child has no own aliases', function () {
       const ctx = { path: 'alias-reuse.njk' };
-      const frame = { parent: null };
-      const parent = new CommandBuffer(ctx, null, frame, false);
-      const child = new CommandBuffer(ctx, null, frame, false);
+      const parent = new CommandBuffer(ctx, null);
+      const child = new CommandBuffer(ctx, null);
       parent._setBoundaryAliases({ loop: 'loop#4' });
 
       parent.addBuffer(child, 'loop');
@@ -2679,9 +2676,8 @@
 
     it('merges parent aliases when child already has own aliases', function () {
       const ctx = { path: 'alias-merge.njk' };
-      const frame = { parent: null };
-      const parent = new CommandBuffer(ctx, null, frame, false);
-      const child = new CommandBuffer(ctx, null, frame, false);
+      const parent = new CommandBuffer(ctx, null);
+      const child = new CommandBuffer(ctx, null);
       parent._setBoundaryAliases({ loop: 'loop#4', shared: 'shared#1' });
       child._setBoundaryAliases({ own: 'own#7', shared: 'shared#9' });
 
@@ -2695,7 +2691,7 @@
 
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
-      const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
+      const buffer = new CommandBuffer(ctx, null);
       createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 

@@ -1,5 +1,40 @@
 # Async Frame Removal Plan
 
+## Current Status
+
+This plan is actively in progress.
+
+Completed so far:
+
+- Phase 1 is effectively done:
+  - `node.isAsync` has been removed as an async compile-routing mechanism
+  - the old async-determination pass was deleted
+- Phase 2 is partly done:
+  - modern async symbol reads were reduced away from frame-shaped fallback in several places
+  - async channel lookup now prefers buffer-owned lookup paths in the modern runtime
+- Phase 9 is partly done:
+  - `CommandBuffer` no longer stores or validates frame ownership
+  - channel instances no longer thread/store frame internally
+  - direct channel constructors now use one consistent frame-free signature
+  - channel factory helpers now also use frame-free signatures
+  - `createCommandBuffer(...)` no longer takes a frame argument
+  - dead `finalizeUnobservedSinks(...)` plumbing was removed
+
+Current next target:
+
+- continue Phase 5 / Phase 9 cleanup around channel ownership:
+  - move `declareChannel(...)` away from `frame._channels`
+  - remove remaining direct frame-threading in channel declaration/lookup
+
+Focused verification currently used during this migration:
+
+- `tests/pasync/output-errors.js`
+- `tests/pasync/snapshots.js`
+- `tests/explicit-outputs.js`
+- `tests/pasync/loop-concurrent-limit.js`
+- `tests/poison/call-suppression.js`
+- `tests/poison/lookup.js`
+
 ## Goal
 
 Remove runtime `frame` dependence from **async mode only**.
@@ -62,8 +97,11 @@ These are important because they shrink the real scope of the migration.
 - modern async loop variable bindings already use channel commands instead of frame writes
 - modern async loop metadata already uses channels, not frame vars
 - `Channel` instances no longer store frame internally
-- `CommandBuffer` currently validates `frame` in the constructor, but does not store it
+- `CommandBuffer` no longer stores or validates `frame`
 - compile-time frame depth validation is already separate from runtime behavior
+- direct channel constructors and channel factory helpers now use frame-free signatures
+- `createCommandBuffer(...)` now uses a frame-free signature
+- dead `finalizeUnobservedSinks(...)` plumbing has already been removed
 
 This means a lot of the remaining work is cleanup and migration of ownership/lookup, not invention of entirely new machinery.
 
@@ -152,6 +190,12 @@ So the migration target is probably not "invent a new owner" but:
 1. register async channels in `buffer._channels`
 2. make async lookup read from buffer ancestry instead of frame ancestry
 3. remove the dead frame threading from channel construction and declaration
+
+Progress:
+
+- channel construction is already frame-free
+- channel factory helpers are already frame-free
+- the remaining live frame dependence here is channel declaration/registration and frame-based fallback lookup
 
 Replacement direction:
 
@@ -254,8 +298,7 @@ they still block full runtime-frame removal.
 
 Current shape:
 
-- `CommandBuffer` currently validates that a frame is passed
-- but it does **not** store the frame
+- `CommandBuffer` no longer validates or stores frame
 
 Examples:
 
@@ -263,7 +306,8 @@ Examples:
 
 Replacement direction:
 
-- remove the dead validation once ownership/lookup migration is complete
+- already simplified
+- remaining work is to remove any leftover frame-flavored callsites/tests and keep the signature narrow
 
 This is not a major design dependency. It is a cleanup step.
 
@@ -271,7 +315,7 @@ This is not a major design dependency. It is a cleanup step.
 
 Current shape:
 
-- helper code such as `finalizeUnobservedSinks(...)` still takes frame and walks channels through it
+- the old sink-finalization helper has already been removed
 
 Examples:
 
@@ -279,8 +323,7 @@ Examples:
 
 Replacement direction:
 
-- migrate these helpers alongside `declareChannel(...)` / `getChannel(...)`
-- do not forget them when moving channel ownership to buffers
+- keep checking for any other frame-walking helper that survived outside `declareChannel(...)` / `getChannel(...)`
 
 ### 9. Runtime while iterator helper
 
@@ -465,6 +508,15 @@ Why first:
 - frame removal is much easier if async mode has one consistent lowering model
 - it also shrinks the number of runtime `frame.push()` / `frame.pop()` sites dramatically
 
+Status:
+
+- Done
+
+Implemented:
+
+- compiler async routing now uses `asyncMode` only
+- the old async-determination pass was removed
+
 Done when:
 
 - async-mode compilation no longer relies on `node.isAsync` to choose fundamentally different structural paths
@@ -493,6 +545,15 @@ Work:
 Output:
 
 - a table of remaining async frame-dependent reads/writes, split between modern and legacy paths
+
+Status:
+
+- In progress
+
+Implemented so far:
+
+- modern async symbol reads were reduced away from speculative frame lookup in compiler/runtime paths
+- async var-channel lookup now prefers buffer-owned channel lookup before frame fallback
 
 Done when:
 
@@ -583,6 +644,20 @@ Why this is more tractable than it first looked:
 
 - `buffer._channels` already exists
 - the main work is migrating ownership and visibility rules, not inventing a new storage model
+
+Status:
+
+- In progress
+
+Implemented so far:
+
+- buffer-owned channel lookup helper exists and is already preferred in modern async lookup paths
+- channel construction/factory plumbing is already frame-free
+
+Remaining core work:
+
+- move `declareChannel(...)` registration off `frame._channels`
+- remove the remaining frame fallback from channel lookup once declaration ownership is migrated
 
 Done when:
 
@@ -682,6 +757,23 @@ Work:
 - remove dead frame parameters from channel constructors and helpers
 - remove async-only runtime frame validation that is no longer reachable
 - delete `AsyncFrame`
+
+Status:
+
+- In progress
+
+Implemented so far:
+
+- `CommandBuffer` no longer validates or stores frame
+- `createCommandBuffer(...)` no longer takes frame
+- channel constructors no longer take/store frame
+- channel factory helpers no longer take frame
+- dead sink-finalization plumbing was removed
+
+Remaining likely work in this phase:
+
+- remove dead frame args from `declareChannel(...)`
+- continue trimming test/helper callsites that still reflect older frame-shaped APIs
 
 Done when:
 

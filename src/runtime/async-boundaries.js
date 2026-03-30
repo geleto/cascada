@@ -7,7 +7,8 @@ function _createChildBoundary(parentBuffer, usedChannels, f, isolatedContext = n
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
   const childFrame = f.push(false);
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
-  const childBuffer = buffer.createCommandBuffer(bufferContext, null, childFrame, linkedChannels, parentBuffer || null);
+  void childFrame;
+  const childBuffer = buffer.createCommandBuffer(bufferContext, null, linkedChannels, parentBuffer || null);
   return { childFrame, childBuffer };
 }
 

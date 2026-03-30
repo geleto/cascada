@@ -33,7 +33,7 @@
 
   function setupSequentialRuntimeForTests(root) {
     const context = { path: 'test', env: {} };
-    const currentBuffer = runtime.createCommandBuffer(context, null, root);
+    const currentBuffer = runtime.createCommandBuffer(context, null);
     runtime.declareChannel(root, currentBuffer, '!lockKey', 'sequential_path', context, null);
     return currentBuffer;
   }
@@ -1066,5 +1066,4 @@
   });
 
 })();
-
 

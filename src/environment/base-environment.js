@@ -39,7 +39,7 @@ const noopTmplSrcAsync = {
           cb(null, '');
           return;
         }
-        const output = runtime.createCommandBuffer(context, null, frame);
+        const output = runtime.createCommandBuffer(context, null);
         runtime.declareChannel(frame, output, '__text__', 'text', context, null);
         output.markFinishedAndPatchLinks();
         return output;
