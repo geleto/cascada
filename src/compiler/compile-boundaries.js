@@ -124,7 +124,7 @@ class CompileBoundaries {
       bufferCompiler.currentWaitedChannelName = prevWaitedChannelName;
       bufferCompiler.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
       if (controlFlowPromiseId) {
-        bufferCompiler.emitOwnWaitedConcurrencyResolve(frame, controlFlowPromiseId, node);
+        bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
       }
       return { frame: newFrame };
     }
@@ -247,7 +247,7 @@ class CompileBoundaries {
     this.compiler.emit.line('});');
 
     if (boundaryPromiseId) {
-      bufferCompiler.emitOwnWaitedConcurrencyResolve(frame, boundaryPromiseId, waitedPositionNode);
+      bufferCompiler.emitOwnWaitedConcurrencyResolve(boundaryPromiseId, waitedPositionNode);
     }
 
     return innerFrame;

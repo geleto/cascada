@@ -179,7 +179,7 @@ class CompileLoop {
       });
       this.compiler.emit(`], ${asyncOptionsCode});`);
       if (shouldTrackNestedLoopCompletion) {
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(innerFrame, iteratePromiseId, node);
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(iteratePromiseId, node);
       }
       if (this.compiler.asyncMode) {
         this.compiler.emit.line(`await ${iteratePromiseId};`);

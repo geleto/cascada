@@ -226,7 +226,7 @@ class CompileBuffer {
     this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
   }
 
-  emitAddCommand(frame, channelName, valueExpr, positionNode = null, emitTextCommand = false) {
+  emitAddCommand(channelName, valueExpr, positionNode = null, emitTextCommand = false) {
     if (emitTextCommand) {
       this.compiler.emit.line(
         `${this.currentBuffer}.addText(${valueExpr}, ${this._emitPositionLiteral(positionNode)}, "${channelName}")`
@@ -236,7 +236,7 @@ class CompileBuffer {
     this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${channelName}");`);
   }
 
-  emitOwnWaitedConcurrencyResolve(frame, valueExpr, positionNode = null) {
+  emitOwnWaitedConcurrencyResolve(valueExpr, positionNode = null) {
     // Waited-loop bookkeeping: in __waited__ scope, root work contributes one
     // timing-only WaitResolveCommand to the owning iteration buffer's channel.
     const waitedChannelName = this.currentWaitedChannelName;
@@ -250,19 +250,19 @@ class CompileBuffer {
     );
   }
 
-  emitAddSequenceGet(frame, channelName, commandName, subpath, positionNode) {
+  emitAddSequenceGet(channelName, commandName, subpath, positionNode) {
     this.compiler.emit(
       `${this.currentBuffer}.addSequenceGet("${channelName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddSequenceCall(frame, channelName, commandName, subpath, argsExpr, positionNode) {
+  emitAddSequenceCall(channelName, commandName, subpath, argsExpr, positionNode) {
     this.compiler.emit(
       `${this.currentBuffer}.addSequenceCall("${channelName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${argsExpr}, ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddSnapshot(frame, channelName, positionNode, asExpression = false) {
+  emitAddSnapshot(channelName, positionNode, asExpression = false) {
     const snapshotExpr = `${this.currentBuffer}.addSnapshot("${channelName}", ${this._emitPositionLiteral(positionNode)})`;
     if (asExpression) {
       return snapshotExpr;
@@ -271,19 +271,19 @@ class CompileBuffer {
   }
 
   // Emit an ordered raw snapshot command (no nested poison inspection).
-  emitAddRawSnapshot(frame, channelName, positionNode) {
+  emitAddRawSnapshot(channelName, positionNode) {
     this.compiler.emit(
       `${this.currentBuffer}.addRawSnapshot("${channelName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddIsError(frame, channelName, positionNode) {
+  emitAddIsError(channelName, positionNode) {
     this.compiler.emit(
       `${this.currentBuffer}.addIsError("${channelName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddGetError(frame, channelName, positionNode) {
+  emitAddGetError(channelName, positionNode) {
     this.compiler.emit(
       `${this.currentBuffer}.addGetError("${channelName}", ${this._emitPositionLiteral(positionNode)})`
     );
@@ -327,14 +327,14 @@ class CompileBuffer {
         this.compiler.emit(`let ${valueId} = `);
         renderFunction.call(this.compiler, frame);
         this.compiler.emit.line(';');
-        this.emitAddCommand(frame, channelName, valueId, positionNode, true);
+        this.emitAddCommand(channelName, valueId, positionNode, true);
         return;
       } else {
         const valueId = this.compiler._tmpid();
         this.compiler.emit(`let ${valueId} = `);
         renderFunction.call(this.compiler, frame);
         this.compiler.emit.line(';');
-        this.emitAddCommand(frame, channelName, valueId);
+        this.emitAddCommand(channelName, valueId);
         return;
       }
     } else {
@@ -370,7 +370,7 @@ class CompileBuffer {
     const valueExpr = emitTextCommand
       ? this._emitTemplateTextCommandExpression(returnId, positionNode)
       : returnId;
-    this.emitAddCommand(frame, channelName, valueExpr, positionNode, emitTextCommand);
+    this.emitAddCommand(channelName, valueExpr, positionNode, emitTextCommand);
   }
 
   /**

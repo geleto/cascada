@@ -21,7 +21,7 @@ class CompileInheritance {
     const colno = positionNode && positionNode.colno != null ? positionNode.colno : 0;
     const visibleChannels = this.compiler.analysis.getIncludeVisibleVarChannels(analysis);
     visibleChannels.forEach((entry) => {
-      const snapshotExpr = this.compiler.buffer.emitAddSnapshot(frame, entry.runtimeName, { lineno, colno }, true);
+      const snapshotExpr = this.compiler.buffer.emitAddSnapshot(entry.runtimeName, { lineno, colno }, true);
       this.emit.line(`${targetVarsVar}[${JSON.stringify(entry.baseName)}] = ${snapshotExpr};`);
     });
   }
@@ -113,7 +113,7 @@ class CompileInheritance {
       } else {
         this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(null, null, cb));`);
       }
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, exportedId, node);
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
       this._emitValueImportBinding(frame, target, exportedId, node);
       return;
     } else {
@@ -185,9 +185,9 @@ class CompileInheritance {
       if (bindingIds.length > 0) {
         const boundaryCompletion = this.compiler._tmpid();
         this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, boundaryCompletion, node);
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(boundaryCompletion, node);
       } else {
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, exportedId, node);
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
       }
     } else {
       // Sync mode remains unchanged
@@ -279,7 +279,7 @@ class CompileInheritance {
             this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
           }
           // Step 7: block invocation boundary completion in limited-loop waited output.
-          this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
+          this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
         }
       );
     }
@@ -434,7 +434,7 @@ class CompileInheritance {
       // Include boundary completion in limited-loop waited output.
       // Wait on the composed include snapshot promise (timing unit), not on the
       // command object created for parent enqueue.
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, includeTextPromise, node);
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(includeTextPromise, node);
       return f;
     });
     frame = includeResult.frame;

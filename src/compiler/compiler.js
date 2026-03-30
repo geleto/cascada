@@ -425,7 +425,6 @@ class Compiler extends CompilerBase {
 
       id = this._tmpid();
       this.emit.line(`let ${id};`);
-      frame.set(name, id);
       ids.push(id);
     });
 
@@ -442,7 +441,7 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
-      this.buffer.emitAddRawSnapshot(frame, targetName, node);
+      this.buffer.emitAddRawSnapshot(targetName, node);
       this.emit(', ');
       this._compileAggregate(node.path, frame, '[', ']', false, false);
       this.emit(', ');

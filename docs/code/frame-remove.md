@@ -92,6 +92,10 @@ Completed so far:
     - async boundary helpers no longer create/pass child frames to callbacks
     - the hidden async loop dependency on `runtime.iterate(..., frame, ...)` was removed
       - `iterate(...)` now uses buffer/channel state only in async mode
+  - async compiler-frame dependence was reduced a bit further too
+    - `compileAsyncVarSet(...)` no longer writes assigned async vars into the compiler frame
+    - async sequence-root validation now uses analysis declaration ownership directly instead of compiler-frame synthetic lookup
+    - dead buffer-helper `frame` parameters were removed from snapshot / sequence / waited-command emission helpers
   - async macros no longer close over outer runtime frame ancestry
     - they no longer capture caller frame chains through the old `(function(frame) { ... }).call(this, frame)` shape
     - async macro wrappers no longer create a replacement local runtime `Frame()` either
@@ -144,6 +148,10 @@ Current next target:
     - inherited async frame threading is mostly gone
     - done: dead local async `Frame` creation in generated async entries, async macros, and async boundaries was removed
     - the remaining work is now to find truly live async runtime frame reads/writes, not local scaffolding
+  - continue shrinking compiler-frame dependence in async codegen:
+    - done: async sequence-root validation no longer consults compiler-frame synthetic lookup
+    - done: async var assignment no longer writes temp ids into the compiler frame
+    - done: dead `frame` args were removed from buffer emission helpers used by async codegen
   - continue isolating remaining sync-only frame state:
     - done: `frame.topLevel` was renamed to explicit sync-only `frame.syncTopLevel`
     - done: loop frame metadata writes now go through explicit sync-only `setSyncLoopBindings(...)`

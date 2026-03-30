@@ -387,7 +387,7 @@ class CompilerBase extends Obj {
         }
         // Var channels are read as point-in-stream snapshots when used as symbols.
         // This makes `x` equivalent to `x.snapshot()` in expressions.
-        this.buffer.emitAddSnapshot(frame, name, node);
+        this.buffer.emitAddSnapshot(name, node);
         return;
       }
       this.fail(
@@ -402,7 +402,7 @@ class CompilerBase extends Obj {
       const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
       const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
       if (nodeStaticPathKey) {
-        this._assertSequenceRootIsContextPath(frame, nodeStaticPathKey, node);
+        this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
         // This node accesses a declared sequence lock path.
         // Register the static path key as variable write so the next lock would wait for it
         // Multiple static path keys can be in the same block
@@ -570,7 +570,7 @@ class CompilerBase extends Obj {
     if (testName === 'error' && this.asyncMode) {
       const channelName = this._getObservedChannelName(node.left, frame);
       if (channelName) {
-        this.buffer.emitAddIsError(frame, channelName, node.left);
+        this.buffer.emitAddIsError(channelName, node.left);
         return;
       }
       // Special case for 'is error' in async mode. We do not want to await the
@@ -700,7 +700,7 @@ class CompilerBase extends Obj {
     if (this.asyncMode) {
       const channelName = this._getObservedChannelName(node.target, frame);
       if (channelName) {
-        this.buffer.emitAddGetError(frame, channelName, node.target);
+        this.buffer.emitAddGetError(channelName, node.target);
         return;
       }
     }
@@ -832,7 +832,6 @@ class CompilerBase extends Obj {
         node._analysis && node._analysis.sequenceChannelLookup;
       if (this.scriptMode && sequenceChannelLookup) {
         this.buffer.emitAddSequenceGet(
-          frame,
           sequenceChannelLookup.channelName,
           sequenceChannelLookup.propertyName,
           sequenceChannelLookup.subpath,
@@ -847,7 +846,7 @@ class CompilerBase extends Obj {
       const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
       const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
       if (nodeStaticPathKey) {
-        this._assertSequenceRootIsContextPath(frame, nodeStaticPathKey, node);
+        this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
         // This is a sequential lookup.
         // Register the static path key as a variable write so the next lock waits for it.
         // Multiple static path keys can be in the same block.
@@ -1030,8 +1029,7 @@ class CompilerBase extends Obj {
         let index = sequenceLockKey.indexOf('!', 1);
         const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
         const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
-        const keyRootSyntheticVar = frame && frame.resolve && frame.resolve(keyRoot, false);
-        if (keyRootOutput || keyRootSyntheticVar) {
+        if (keyRootOutput) {
           this._failNonContextSequenceRoot(node, keyRootOutput);
         }
       }
@@ -1101,7 +1099,7 @@ class CompilerBase extends Obj {
     return this._compileSequenceChannelFunCall(node, frame, specialChannelCall);
   }
 
-  _assertSequenceRootIsContextPath(frame, lockKey, node) {
+  _assertSequenceRootIsContextPath(lockKey, node) {
     if (!lockKey || lockKey.charAt(0) !== '!') {
       return;
     }
@@ -1111,8 +1109,7 @@ class CompilerBase extends Obj {
       return;
     }
     const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
-    const keyRootSyntheticVar = frame && frame.resolve && frame.resolve(keyRoot, false);
-    if (keyRootOutput || keyRootSyntheticVar) {
+    if (keyRootOutput) {
       this._failNonContextSequenceRoot(node, keyRootOutput);
     }
   }
@@ -1134,15 +1131,15 @@ class CompilerBase extends Obj {
       channelType: specialChannelCall.channelType
     });
     if (specialChannelCall.methodName === 'snapshot') {
-      this.buffer.emitAddSnapshot(frame, specialChannelCall.channelName, node);
+      this.buffer.emitAddSnapshot(specialChannelCall.channelName, node);
       return true;
     }
     if (specialChannelCall.methodName === 'isError') {
-      this.buffer.emitAddIsError(frame, specialChannelCall.channelName, node);
+      this.buffer.emitAddIsError(specialChannelCall.channelName, node);
       return true;
     }
     if (specialChannelCall.methodName === 'getError') {
-      this.buffer.emitAddGetError(frame, specialChannelCall.channelName, node);
+      this.buffer.emitAddGetError(specialChannelCall.channelName, node);
       return true;
     }
     return false;
@@ -1155,7 +1152,6 @@ class CompilerBase extends Obj {
     this._compileAggregate(node.args, frame, '[', ']', false, false, function (resolvedArgs) {
       this.emit('return ');
       this.buffer.emitAddSequenceCall(
-        frame,
         specialChannelCall.channelName,
         specialChannelCall.methodName,
         specialChannelCall.subpath,
