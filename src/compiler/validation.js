@@ -3,32 +3,6 @@
 const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', '__return__']);
 
 /**
- * Track the depth of a frame at compile-time for balance validation.
- * @param {Frame} newFrame - The new frame being pushed
- * @param {Frame} parentFrame - The parent frame
- */
-function trackCompileTimeFrameDepth(newFrame, parentFrame) {
-  newFrame._compilerDepth = (parentFrame._compilerDepth || 0) + 1;
-}
-
-/**
- * Validate that the current frame is balanced with its parent before popping.
- * @param {Frame} frame - The current frame to be popped
- * @param {Compiler} compiler - The compiler instance (for error reporting)
- * @param {Node} positionNode - The AST node for error positioning
- */
-function validateCompileTimeFrameBalance(frame, compiler, positionNode) {
-  if (!frame.parent) {
-    compiler.fail('Compiler error: Frame pop without parent - unbalanced push/pop detected', positionNode.lineno, positionNode.colno, positionNode);
-  }
-
-  const expectedDepth = (frame._compilerDepth || 0) - 1;
-  if (frame.parent._compilerDepth !== undefined && frame.parent._compilerDepth !== expectedDepth) {
-    compiler.fail(`Compiler error: Frame depth mismatch - expected ${expectedDepth}, got ${frame.parent._compilerDepth}`, positionNode.lineno, positionNode.colno, positionNode);
-  }
-}
-
-/**
  * Validate that guard variables are declared in the scope.
  * This remains a compile-time syntax/semantic check even though
  * async var rollback machinery has been removed.
@@ -131,8 +105,6 @@ function validateChannelObservationCall(compiler, { node, command, channelName, 
 
 module.exports = {
   RESERVED_DECLARATION_NAMES,
-  trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance,
   validateGuardVariablesDeclared,
   validateChannelDeclarationNode,
   validateSinkSnapshotInGuard,

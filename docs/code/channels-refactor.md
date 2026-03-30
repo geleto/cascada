@@ -497,7 +497,7 @@ Used by `compileControlFlowBoundary` so `runControlFlowBoundary(astate, buf, <ch
 Compiler-side analog of `asyncBufferNode` for control-flow nodes. For async nodes:
 1. Emits `runtime.runControlFlowBoundary(astate, ${parentBuf}, ${linkedChannels}, frame, context, cb, async (astate, frame, currentBuffer) => {`
 2. Sets compile-time `this.currentBuffer = 'currentBuffer'` so all emits inside `emitFunc` write to the right buffer variable
-3. Creates compile-time `blockFrame = frame.push(false, false)` with `trackCompileTimeFrameDepth`
+3. Creates compile-time `blockFrame = frame.push(false, false)`
 4. Calls `emitFunc(blockFrame, 'currentBuffer', prevBuffer)`
 5. In `finally`: decrements `asyncClosureDepth`, emits `}, false);`, validates frame balance, restores `currentBuffer`
 

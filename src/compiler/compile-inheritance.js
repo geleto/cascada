@@ -366,7 +366,7 @@ class CompileInheritance {
     }
     else {
       const cb = this.compiler._makeCallback(id);
-      this.emit.line(`context.getSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
+      this.emit.line(`context.getSyncSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
       this.emit.line(`${id} = runtime.markSafe(${id});`);
     }
 

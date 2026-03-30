@@ -1,7 +1,3 @@
-const {
-  trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
-} = require('./validation');
 const { DEFAULT_TEMPLATE_TEXT_CHANNEL } = require('./compile-buffer');
 
 module.exports = class CompileEmit {
@@ -132,9 +128,7 @@ module.exports = class CompileEmit {
   managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined, analysisNode = null) {
     let nextFrame = frame;
     if (createScope) {
-      if (!this.compiler.asyncMode) {
-        this.line('frame = frame.push();');
-      }
+      this.line('frame = frame.push();');
       nextFrame = frame.push();
     }
 
@@ -187,9 +181,7 @@ module.exports = class CompileEmit {
       this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     }
     if (createScope) {
-      if (!this.compiler.asyncMode) {
-        this.line('frame = frame.pop();');
-      }
+      this.line('frame = frame.pop();');
       return { frame: frame.pop(), bufferId };
     }
     return { frame: nextFrame, bufferId };

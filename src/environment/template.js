@@ -56,8 +56,8 @@ class Template extends Obj {
     }
   }
 
-  render(ctx, parentFrame, cb) {
-    return this._render(ctx, parentFrame, cb);
+  render(ctx, parentSyncFrame, cb) {
+    return this._renderSync(ctx, parentSyncFrame, cb);
   }
 
   _renderAsync(ctx, cb) {
@@ -104,17 +104,16 @@ class Template extends Obj {
     return syncResult;
   }
 
-  // @todo - return promise if isAsync and no callback is provided
-  _render(ctx, parentFrame, cb) {
+  _renderSync(ctx, parentSyncFrame, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
-    } else if (typeof parentFrame === 'function') {
-      cb = parentFrame;
-      parentFrame = null;
+    } else if (typeof parentSyncFrame === 'function') {
+      cb = parentSyncFrame;
+      parentSyncFrame = null;
     }
 
-    const forceAsync = !parentFrame;
+    const forceAsync = !parentSyncFrame;
 
     // Catch compile errors for sync rendering
     try {
@@ -129,7 +128,7 @@ class Template extends Obj {
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    const frame = parentFrame ? parentFrame.push(true) : new Frame();
+    const frame = parentSyncFrame ? parentSyncFrame.push(true) : new Frame();
     frame.syncTopLevel = true;
 
     let didError = false;
@@ -168,18 +167,22 @@ class Template extends Obj {
   }
 
   // @todo - return a value instead of calling a callback
-  getExported(ctx, parentFrame, cb) {
+  getExported(ctx, parentSyncFrame, cb) {
+    return this._getExportedSync(ctx, parentSyncFrame, cb);
+  }
+
+  _getExportedSync(ctx, parentSyncFrame, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
     }
 
-    if (typeof parentFrame === 'function') {
-      cb = parentFrame;
-      parentFrame = null;
+    if (typeof parentSyncFrame === 'function') {
+      cb = parentSyncFrame;
+      parentSyncFrame = null;
     }
 
-    // Catch compile errors for async rendering
+    // Catch compile errors for sync exported-value retrieval
     try {
       this.compile();
     } catch (e) {
@@ -190,7 +193,7 @@ class Template extends Obj {
       }
     }
 
-    const frame = parentFrame ? parentFrame.push() : new Frame();
+    const frame = parentSyncFrame ? parentSyncFrame.push() : new Frame();
     frame.syncTopLevel = true;
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
