@@ -803,27 +803,11 @@ function createSequenceChannel(buffer, channelName, context, sink) {
   return _createSequenceChannel(buffer, channelName, context, sink);
 }
 
-function getChannel(frame, channelName) {
-  let current = frame;
-  while (current) {
-    if (current._channels && Object.prototype.hasOwnProperty.call(current._channels, channelName)) {
-      return current._channels[channelName];
-    }
-    // Channels follow the same scoping rules as variables: lexical parent chain only.
-    current = current.parent;
-  }
-  return undefined;
-}
-
 function getChannelFromBuffer(buffer, channelName) {
   if (!buffer) {
     throw new Error(`currentBuffer is required to resolve channel "${channelName}"`);
   }
   return buffer.findChannel(channelName);
-}
-
-function findVisibleChannel(currentBuffer, channelName) {
-  return getChannelFromBuffer(currentBuffer, channelName);
 }
 
 function declareBufferChannel(buffer, channelName, channelType, context, initializer = null) {
@@ -874,9 +858,7 @@ module.exports = {
   createSinkChannel,
   SequenceChannel,
   createSequenceChannel,
-  getChannel,
   getChannelFromBuffer,
-  findVisibleChannel,
   declareBufferChannel,
   declareChannel
 };
