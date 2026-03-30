@@ -382,7 +382,7 @@ class CompilerBase extends Obj {
           // Block functions can read var channels declared in the child root buffer
           // while executing under a parent block buffer. Use runtime var lookup
           // there so cross-tree reads resolve against the producer buffer.
-          this.emit(`runtime.varChannelLookup(frame, "${name}", ${this.buffer.currentBuffer})`);
+          this.emit(`runtime.varChannelLookup("${name}", ${this.buffer.currentBuffer})`);
           return;
         }
         // Var channels are read as point-in-stream snapshots when used as symbols.
@@ -428,7 +428,7 @@ class CompilerBase extends Obj {
     }
     if (this.scriptMode) {
       this.emit('runtime.contextOrVarLookupScriptAsync(' +
-        'context, frame, "' + name + '", ' +
+        'context, "' + name + '", ' +
         `${this.buffer.currentBuffer}, ` +
         `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
         ')');

@@ -226,7 +226,7 @@ function contextOrVarLookup(_context, frame, name, currentBuffer) {
   if (frameValue !== undefined) {
     return frameValue;
   }
-  const channelRead = varChannelLookup(frame, name, currentBuffer);
+  const channelRead = varChannelLookup(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
   }
@@ -245,7 +245,7 @@ function contextOrVarLookup(_context, frame, name, currentBuffer) {
  * Ordinary symbol reads are not terminal consumers and must not use
  * finalSnapshot(); only explicit finalization sites may do that.
  */
-function varChannelLookup(frame, name, currentBuffer) {
+function varChannelLookup(name, currentBuffer) {
   const channel = findVisibleChannel(currentBuffer, name);
   if (!channel) {
     return undefined;
@@ -274,7 +274,7 @@ function contextOrVarLookupScript(context, frame, name, currentBuffer) {
   if (f) {
     return val;
   }
-  const channelRead = varChannelLookupScript(frame, name, currentBuffer);
+  const channelRead = varChannelLookupScript(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
   }
@@ -285,8 +285,8 @@ function contextOrVarLookupScript(context, frame, name, currentBuffer) {
  * Async context/frame/channel lookup for scripts.
  * Returns poison for missing names via context.lookupScriptModeAsync.
  */
-function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, errorContext = null) {
-  const channelRead = varChannelLookupScript(frame, name, currentBuffer);
+function contextOrVarLookupScriptAsync(context, name, currentBuffer, errorContext = null) {
+  const channelRead = varChannelLookupScript(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
   }
@@ -296,7 +296,7 @@ function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, erro
 // Script-mode channel lookup variant:
 // ordinary reads stay as ordered snapshot commands, using the producer buffer
 // for cross-tree reads instead of finalSnapshot().
-function varChannelLookupScript(frame, name, currentBuffer) {
+function varChannelLookupScript(name, currentBuffer) {
   const channel = findVisibleChannel(currentBuffer, name);
   if (!channel) {
     return undefined;
