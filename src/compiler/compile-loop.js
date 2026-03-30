@@ -395,13 +395,17 @@ class CompileLoop {
     let elseFrame = frame;
     if (elseCreatesScope) {
       elseFrame = frame.push();
-      this.compiler.emit.line('frame = frame.push();');
+      if (!this.compiler.asyncMode) {
+        this.compiler.emit.line('frame = frame.push();');
+      }
     }
 
     this.compiler.compile(node.else_, elseFrame);
 
     if (elseCreatesScope) {
-      this.compiler.emit.line('frame = frame.pop();');
+      if (!this.compiler.asyncMode) {
+        this.compiler.emit.line('frame = frame.pop();');
+      }
       elseFrame = elseFrame.pop();
     }
 

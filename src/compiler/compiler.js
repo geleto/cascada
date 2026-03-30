@@ -531,12 +531,8 @@ class Compiler extends CompilerBase {
           let caseFrame = blockFrame;
           if (caseCreatesScope) {
             caseFrame = blockFrame.push();
-            this.emit.line('frame = frame.push();');
           }
           this.compile(c.body, caseFrame);
-          if (caseCreatesScope) {
-            this.emit.line('frame = frame.pop();');
-          }
           this.emit.line('break;');
         }
       });
@@ -548,12 +544,8 @@ class Compiler extends CompilerBase {
         let defaultFrame = blockFrame;
         if (caseCreatesScope) {
           defaultFrame = blockFrame.push();
-          this.emit.line('frame = frame.push();');
         }
         this.compile(node.default, defaultFrame);
-        if (caseCreatesScope) {
-          this.emit.line('frame = frame.pop();');
-        }
       }
 
       this.emit('}'); // Close switch
@@ -739,7 +731,6 @@ class Compiler extends CompilerBase {
 
         if (node.recoveryBody) {
           const recoveryFrame = guardFrame.push();
-          this.emit.line('frame = frame.push();');
           if (node.errorVar) {
             // Guard recovery error variable is already declared in analysis;
             // recovery runs inside the existing guard boundary, so only the
@@ -750,7 +741,6 @@ class Compiler extends CompilerBase {
             );
           }
           this.compile(node.recoveryBody, recoveryFrame);
-          this.emit.line('frame = frame.pop();');
           recoveryFrame.pop();
         }
 
@@ -921,12 +911,8 @@ class Compiler extends CompilerBase {
           let trueFrame = blockFrame;
           if (branchCreatesScope) {
             trueFrame = blockFrame.push();
-            this.emit.line('frame = frame.push();');
           }
           this.compile(node.body, trueFrame);
-          if (branchCreatesScope) {
-            this.emit.line('frame = frame.pop();');
-          }
         }
 
         this.emit('} else {');
@@ -936,12 +922,8 @@ class Compiler extends CompilerBase {
           let falseFrame = blockFrame;
           if (branchCreatesScope) {
             falseFrame = blockFrame.push();
-            this.emit.line('frame = frame.push();');
           }
           this.compile(node.else_, falseFrame);
-          if (branchCreatesScope) {
-            this.emit.line('frame = frame.pop();');
-          }
         }
         this.emit('}');
 
@@ -1483,7 +1465,7 @@ class Compiler extends CompilerBase {
 
       this.emit.line('  if(finalParent) {');
       this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), new runtime.Frame(), runtime, cb, compositionMode);');
+      this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), runtime, cb, compositionMode);');
       this.emit.line('  } else {');
       if (this.scriptMode) {
         const returnVar = this._tmpid();
@@ -1543,7 +1525,9 @@ class Compiler extends CompilerBase {
       if (this.asyncMode) {
         this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
       }
-      this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
+      if (!this.asyncMode) {
+        this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
+      }
       this.compile(block.body, tmpFrame);
       if (this.asyncMode) {
         // Block functions in async mode return final text snapshots directly.

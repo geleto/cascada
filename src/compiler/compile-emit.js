@@ -65,9 +65,9 @@ module.exports = class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, frame, runtime, cb, compositionMode = false) {`);
+        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false) {`);
       } else {
-        this.line(`function ${name}(env, context, frame, runtime, cb, parentBuffer = null) {`);
+        this.line(`function ${name}(env, context, runtime, cb, parentBuffer = null) {`);
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);
@@ -82,6 +82,9 @@ module.exports = class CompileEmit {
       this.compiler.buffer.currentTextChannelVar,
       linkedChannels
     );
+    if (this.compiler.asyncMode) {
+      this.line('var frame = new runtime.Frame();');
+    }
     this.line('try {');
   }
 
@@ -132,7 +135,9 @@ module.exports = class CompileEmit {
   managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined, analysisNode = null) {
     let nextFrame = frame;
     if (createScope) {
-      this.line('frame = frame.push();');
+      if (!this.compiler.asyncMode) {
+        this.line('frame = frame.push();');
+      }
       nextFrame = frame.push();
     }
 
@@ -185,7 +190,9 @@ module.exports = class CompileEmit {
       this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     }
     if (createScope) {
-      this.line('frame = frame.pop();');
+      if (!this.compiler.asyncMode) {
+        this.line('frame = frame.pop();');
+      }
       return { frame: frame.pop(), bufferId };
     }
     return { frame: nextFrame, bufferId };

@@ -273,10 +273,10 @@ class CompileInheritance {
             this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
             this.emit.line(`${id} = parentPromise.then((parent) => {`);
             this.emit.line('  if (parent) return "";');
-            this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, new runtime.Frame(), runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
+            this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
             this.emit.line('});');
           } else {
-            this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, new runtime.Frame(), runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
+            this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
           }
           // Step 7: block invocation boundary completion in limited-loop waited output.
           this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
@@ -361,7 +361,7 @@ class CompileInheritance {
 
       // Call getSuper directly - async blocks now return text snapshot promises
       // The callback (cb) is passed through for error propagation
-      this.emit.line(`let ${id} = context.getSuper(env, "${name}", b_${name}, new runtime.Frame(), runtime, cb, ${this.compiler.buffer.currentBuffer});`);
+      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer});`);
       this.emit.line(`${id} = runtime.markSafe(${id});`);
     }
     else {

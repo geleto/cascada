@@ -89,14 +89,9 @@ class Template extends Obj {
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    let frame;
-    if (parentFrame && !this.asyncMode) {
-      frame = parentFrame.push(true);
-    }
-    else {
-      frame = new Frame();
-    }
+    let frame = null;
     if (!this.asyncMode) {
+      frame = parentFrame ? parentFrame.push(true) : new Frame();
       frame.syncTopLevel = true;
     }
     let syncResult = null;
@@ -169,7 +164,7 @@ class Template extends Obj {
     };
 
     if (this.asyncMode) {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
+      this.rootRenderFunc(this.env, context, globalRuntime, callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }
@@ -200,9 +195,9 @@ class Template extends Obj {
       }
     }
 
-    const frame = this.asyncMode
-      ? new Frame()
-      : (parentFrame ? parentFrame.push() : new Frame());
+    const frame = !this.asyncMode
+      ? (parentFrame ? parentFrame.push() : new Frame())
+      : null;
     if (!this.asyncMode) {
       frame.syncTopLevel = true;
     }
@@ -210,7 +205,7 @@ class Template extends Obj {
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     if (this.asyncMode) {
       // Run template in composition mode
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, cb, true);
+      this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
 
       // Immediately export the variables (they may be promises)
       const exported = context.getExported();
@@ -377,16 +372,18 @@ class AsyncTemplate extends Template {
     this.compile();
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    const frame = this.asyncMode
-      ? new Frame()
-      : (parentFrame ? parentFrame.push(true) : new Frame());
+    const frame = !this.asyncMode
+      ? (parentFrame ? parentFrame.push(true) : new Frame())
+      : null;
     if (!this.asyncMode) {
       frame.syncTopLevel = true;
     }
 
     // Call the root function in composition mode. It synchronously returns the
     // composition buffer while any async work continues inside that structure.
-    return this.rootRenderFunc(this.env, context, frame, globalRuntime, cb, true);
+    return this.asyncMode
+      ? this.rootRenderFunc(this.env, context, globalRuntime, cb, true)
+      : this.rootRenderFunc(this.env, context, frame, globalRuntime, cb, true);
   }
 }
 

@@ -401,15 +401,26 @@ class CompileMacro {
     );
 
     compiler.emit.line(`return runtime.withPath(this, "${compiler.templateName}", function() {`);
-    compiler.emit.line('return (function(frame) {');
-    compiler.emit.line('let callerFrame = frame;');
-    compiler.emit.lines(
-      'frame = ' + (keepFrame ? 'frame.push(true);' : 'frame.new();'),
-      'kwargs = kwargs || {};',
-      'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
-      '  kwargs.caller = undefined;',
-      '}'
-    );
+    if (compiler.asyncMode) {
+      compiler.emit.line('return (function() {');
+      compiler.emit.lines(
+        'var frame = new runtime.Frame();',
+        'kwargs = kwargs || {};',
+        'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
+        '  kwargs.caller = undefined;',
+        '}'
+      );
+    } else {
+      compiler.emit.line('return (function(frame) {');
+      compiler.emit.line('let callerFrame = frame;');
+      compiler.emit.lines(
+        'frame = ' + (keepFrame ? 'frame.push(true);' : 'frame.new();'),
+        'kwargs = kwargs || {};',
+        'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
+        '  kwargs.caller = undefined;',
+        '}'
+      );
+    }
 
     let err = compiler._tmpid();
     if (compiler.asyncMode) {
@@ -448,7 +459,9 @@ class CompileMacro {
       });
       this.currentCallerBindingContext = prevCallerBindingContext;
 
-      compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
+      if (!compiler.asyncMode) {
+        compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
+      }
 
       if (compiler.asyncMode) {
         returnStatement = this._emitAsyncMacroReturn({
@@ -484,7 +497,7 @@ class CompileMacro {
     }
 
     compiler.emit.line(`return ${returnStatement};`);
-    compiler.emit.line('}).call(this, frame);');
+    compiler.emit.line(compiler.asyncMode ? '}).call(this);' : '}).call(this, frame);');
     compiler.emit.line('});');
     if (compiler.asyncMode) {
       compiler.emit.line('}, true);');
