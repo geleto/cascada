@@ -369,6 +369,48 @@ class CompileMacro {
     }
   }
 
+  _emitCompiledAsyncMacroBody({ node, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId, errVar, hasCallerSupport }) {
+    const compiler = this.compiler;
+    this._emitAsyncMacroBindings({
+      node,
+      managedFrame,
+      bufferId,
+      args,
+      kwargs,
+      rawCallerVar,
+      allCallersBufferId
+    });
+
+    const prevCallerBindingContext = this.currentCallerBindingContext;
+    if (hasCallerSupport) {
+      this.currentCallerBindingContext = { rawCallerVar, allCallersBufferId };
+    }
+    compiler.emit.withScopedSyntax(() => {
+      compiler.compile(node.body, managedFrame);
+    });
+    this.currentCallerBindingContext = prevCallerBindingContext;
+
+    return this._emitAsyncMacroReturn({
+      node,
+      bufferId,
+      errVar,
+      allCallersBufferId,
+      hasCallerSupport
+    });
+  }
+
+  _emitCompiledSyncMacroBody({ node, managedFrame, bufferId, args, kwargs, keepFrame }) {
+    const compiler = this.compiler;
+    this._emitSyncMacroBindings({ managedFrame, args, kwargs });
+    compiler.emit.withScopedSyntax(() => {
+      compiler.compile(node.body, managedFrame);
+    });
+    compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
+    return compiler.scriptMode
+      ? bufferId
+      : `new runtime.SafeString(${bufferId})`;
+  }
+
   _compileMacro(node, frame, keepFrame) {
     const compiler = this.compiler;
     const funcId = compiler.asyncMode
@@ -433,49 +475,6 @@ class CompileMacro {
     const rawCallerVar = macroNeedsCallerSupport ? compiler._tmpid() : null;
     const allCallersBufferId = macroNeedsCallerSupport ? compiler._tmpid() : null;
 
-    const emitAsyncMacroBody = (managedFrame, bufferId) => {
-      if (compiler.asyncMode) {
-        this._emitAsyncMacroBindings({
-          node,
-          managedFrame,
-          bufferId,
-          args,
-          kwargs,
-          rawCallerVar,
-          allCallersBufferId
-        });
-      } else {
-        this._emitSyncMacroBindings({ managedFrame, args, kwargs });
-      }
-
-      const prevCallerBindingContext = this.currentCallerBindingContext;
-      if (macroNeedsCallerSupport) {
-        this.currentCallerBindingContext = { rawCallerVar, allCallersBufferId };
-      }
-      compiler.emit.withScopedSyntax(() => {
-        compiler.compile(node.body, managedFrame);
-      });
-      this.currentCallerBindingContext = prevCallerBindingContext;
-
-      if (!compiler.asyncMode) {
-        compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
-      }
-
-      if (compiler.asyncMode) {
-        returnStatement = this._emitAsyncMacroReturn({
-          node,
-          bufferId,
-          errVar: err,
-          allCallersBufferId,
-          hasCallerSupport: macroNeedsCallerSupport
-        });
-      } else {
-        returnStatement = compiler.scriptMode
-          ? bufferId
-          : `new runtime.SafeString(${bufferId})`;
-      }
-    };
-
     if (compiler.asyncMode && node.typename === 'Caller') {
       const prevBuffer = compiler.buffer.currentBuffer;
       const prevTextChannelVar = compiler.buffer.currentTextChannelVar;
@@ -485,12 +484,41 @@ class CompileMacro {
       }
       compiler.buffer.currentBuffer = 'macroParentBuffer';
       compiler.buffer.currentTextChannelVar = callerTextChannelVar;
-      emitAsyncMacroBody(currFrame, 'macroParentBuffer');
+      returnStatement = this._emitCompiledAsyncMacroBody({
+        node,
+        managedFrame: currFrame,
+        bufferId: 'macroParentBuffer',
+        args,
+        kwargs,
+        rawCallerVar,
+        allCallersBufferId,
+        errVar: err,
+        hasCallerSupport: macroNeedsCallerSupport
+      });
       compiler.buffer.currentBuffer = prevBuffer;
       compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     } else {
       compiler.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
-        emitAsyncMacroBody(managedFrame, bufferId);
+        returnStatement = compiler.asyncMode
+          ? this._emitCompiledAsyncMacroBody({
+            node,
+            managedFrame,
+            bufferId,
+            args,
+            kwargs,
+            rawCallerVar,
+            allCallersBufferId,
+            errVar: err,
+            hasCallerSupport: macroNeedsCallerSupport
+          })
+          : this._emitCompiledSyncMacroBody({
+            node,
+            managedFrame,
+            bufferId,
+            args,
+            kwargs,
+            keepFrame
+          });
       }, keepFrame ? compiler.buffer.currentBuffer : null, node.body);
     }
 
@@ -514,7 +542,7 @@ class CompileMacro {
     var name = node.name.value;
     if (compiler.asyncMode) {
       compiler.emit.line(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-      compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
+      compiler.buffer.asyncAddValueToBuffer(frame, (resultVar) => {
         compiler.emit(
           `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
         );

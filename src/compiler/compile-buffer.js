@@ -309,7 +309,7 @@ class CompileBuffer {
     const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
     const channelName = this.compiler.sequential._extractStaticPathRoot(pathNode);
 
-    this.asyncAddValueToBuffer(node, frame, (resultVar, f) => {
+    this.asyncAddValueToBuffer(frame, (resultVar, f) => {
       this.compiler.emit(`${resultVar} = `);
       this._compileCommandConstruction(node, f);
     }, node, channelName);
@@ -349,8 +349,7 @@ class CompileBuffer {
    * Use when value construction does not require addAsyncArgsCommand producer semantics.
    * The value is added directly to the current buffer (no extra async block).
    */
-  asyncAddValueToBuffer(node, frame, renderFunction, positionNode = node, channelName, emitTextCommand = false) {
-    void node;
+  asyncAddValueToBuffer(frame, renderFunction, positionNode, channelName, emitTextCommand = false) {
     const returnId = this.compiler._tmpid();
     this.compiler.emit.line(`let ${returnId};`);
     renderFunction.call(this.compiler, returnId, frame);

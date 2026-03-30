@@ -202,6 +202,12 @@ Current next target:
       - legacy callback loop lowering
       - sync-only render boundary helper paths
       - `CompileBuffer.addToBuffer(...)` no longer duplicates async text/non-text branches
+    - done: macro body emission no longer uses one nested sync/async helper
+      - `CompileMacro` now has explicit compiled async vs sync body emission paths
+    - done: `compileSymbol(...)` no longer carries a nested sync fallback branch inside the async lookup path
+    - done: a few remaining dead helper params/voids were removed
+      - `CompileBuffer.asyncAddValueToBuffer(...)`
+      - bogus `void` markers in runtime async-boundary helpers
   - continue deleting dead async frame scaffolding:
     - done: compile-time async codegen no longer uses `AsyncFrame`
     - done: the compiler-context escape hatch on `AsyncFrame.set(...)` was removed

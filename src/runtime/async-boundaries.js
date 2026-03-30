@@ -31,8 +31,6 @@ async function _finalizeBoundary(childBuffer, waitedChannelName = null) {
  * branch bodies synchronously inside - no inner legacy async-block wrappers needed.
  */
 async function runControlFlowBoundary(parentBuffer, usedChannels, context, cb, asyncFn) {
-  void context;
-  void cb;
   const { childBuffer } = _createChildBoundary(parentBuffer, usedChannels);
 
   try {
@@ -51,8 +49,6 @@ async function runControlFlowBoundary(parentBuffer, usedChannels, context, cb, a
  * the generic control-flow helper.
  */
 async function runWaitedControlFlowBoundary(parentBuffer, usedChannels, context, cb, asyncFn, waitedChannelName) {
-  void context;
-  void cb;
   const { childBuffer } = _createChildBoundary(parentBuffer, usedChannels);
 
   try {

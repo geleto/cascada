@@ -446,10 +446,12 @@ class CompilerBase extends Obj {
         this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
         this.emit(`return runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer});`);
         this.emit('})()');
-      } else if (!this.asyncMode) {
-        this.emit(`runtime.contextOrSyncFrameVarLookup(context, frame, "${name}")`);
       } else {
-        this.emit(`runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer})`);
+        this.emit(
+          this.asyncMode
+            ? `runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer})`
+            : `runtime.contextOrSyncFrameVarLookup(context, frame, "${name}")`
+        );
       }
     }
   }
