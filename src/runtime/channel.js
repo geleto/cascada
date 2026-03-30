@@ -809,6 +809,13 @@ function getChannel(frame, channelName) {
   return undefined;
 }
 
+function getChannelFromBuffer(buffer, channelName) {
+  if (!buffer || !(buffer._channels instanceof Map)) {
+    return undefined;
+  }
+  return buffer._channels.get(channelName);
+}
+
 function declareChannel(frame, buffer, channelName, channelType, context, initializer = null) {
   frame._channels = frame._channels || Object.create(null);
 
@@ -865,6 +872,7 @@ module.exports = {
   SequenceChannel,
   createSequenceChannel,
   getChannel,
+  getChannelFromBuffer,
   declareChannel,
   finalizeUnobservedSinks
 };

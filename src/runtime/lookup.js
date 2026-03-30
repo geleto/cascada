@@ -13,7 +13,7 @@ const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 const {
   resolveDuo
 } = require('./resolve');
-const { getChannel } = require('./channel');
+const { getChannel, getChannelFromBuffer } = require('./channel');
 
 /**
  * Sync member lookup for templates.
@@ -216,11 +216,16 @@ function contextOrFrameLookup(context, frame, name) {
 
 /**
  * Var-channel lookup for template symbol aliases.
- * Does NOT read frame variables.
- * - If var channel exists in active buffer hierarchy, return ordered snapshot.
- * - Otherwise, fall back to context lookup (globals/context vars).
+ * Template async lookup still needs local frame values during the migration:
+ * - compiler-private / local lexical values may still be frame-backed
+ * - declared async vars should resolve through channel snapshots
+ * - globals/context stay last
  */
 function contextOrVarLookup(_context, frame, name, currentBuffer) {
+  const frameValue = frame.lookup(name);
+  if (frameValue !== undefined) {
+    return frameValue;
+  }
   const channelRead = varChannelLookup(frame, name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
@@ -238,9 +243,9 @@ function contextOrVarLookup(_context, frame, name, currentBuffer) {
  * - Otherwise, use finalSnapshot() directly (cross-tree / completed-owner read).
  */
 function varChannelLookup(frame, name, currentBuffer) {
-  let channel = getChannel(frame, name);
-  if (!channel && currentBuffer && currentBuffer._channels instanceof Map) {
-    channel = currentBuffer._channels.get(name);
+  let channel = getChannelFromBuffer(currentBuffer, name);
+  if (!channel) {
+    channel = getChannel(frame, name);
   }
   if (!channel) {
     return undefined;
@@ -298,9 +303,9 @@ function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, erro
 // for cross-tree reads, prefer producer-buffer snapshots while producer is live
 // to avoid waiting on full finalization of the channel stream.
 function varChannelLookupScript(frame, name, currentBuffer) {
-  let channel = getChannel(frame, name);
-  if (!channel && currentBuffer && currentBuffer._channels instanceof Map) {
-    channel = currentBuffer._channels.get(name);
+  let channel = getChannelFromBuffer(currentBuffer, name);
+  if (!channel) {
+    channel = getChannel(frame, name);
   }
   if (!channel) {
     return undefined;
