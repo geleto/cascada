@@ -29,7 +29,7 @@ const { createArray } = require('../../src/runtime/resolve');
 describe('channel errors', function () {
   describe('channel commands step2 poison encoding', function () {
     it('TextCommand encodes poison into target instead of throwing', () => {
-      const output = new TextChannel(null, null, 'text', null, 'text');
+      const output = new TextChannel(null, 'text', null, 'text');
       const poison = createPoison([new Error('text poison')]);
       const cmd = new TextCommand({ channelName: 'text', args: ['ok', poison], pos: { lineno: 1, colno: 1 } });
 
@@ -41,7 +41,7 @@ describe('channel errors', function () {
     });
 
     it('VarCommand poisons target on invalid arity', () => {
-      const output = new VarChannel(null, null, 'value', null, 'value');
+      const output = new VarChannel(null, 'value', null, 'value');
       const cmd = new VarCommand({ channelName: 'value', args: [1, 2], pos: { lineno: 1, colno: 1 } });
 
       cmd.apply(output);
@@ -51,7 +51,7 @@ describe('channel errors', function () {
     });
 
     it('DataCommand writes poison to addressed path and allows later repair overwrite', async () => {
-      const output = new DataChannel(null, null, 'data', null, 'data');
+      const output = new DataChannel(null, 'data', null, 'data');
       const poison = createPoison([new Error('data poison')]);
       const bad = new DataCommand({
         channelName: 'data',
@@ -77,7 +77,7 @@ describe('channel errors', function () {
     });
 
     it('DataCommand encodes missing-method failure into addressed path', () => {
-      const output = new DataChannel(null, null, 'data', null, 'data');
+      const output = new DataChannel(null, 'data', null, 'data');
       const cmd = new DataCommand({
         channelName: 'data',
         command: 'doesNotExist',
@@ -107,7 +107,7 @@ describe('channel errors', function () {
         }
       };
 
-      const output = new SinkChannel(null, null, 'logger', null, sink);
+      const output = new SinkChannel(null, 'logger', null, sink);
 
       await new SinkCommand({ channelName: 'logger', command: 'write', args: ['ok'] }).apply(output);
       await new SinkCommand({ channelName: 'logger', command: 'write', args: ['boom'] }).apply(output);
@@ -130,7 +130,7 @@ describe('channel errors', function () {
           throw new Error('should not run');
         }
       };
-      const output = new SinkChannel(null, null, 'seq', null, sink);
+      const output = new SinkChannel(null, 'seq', null, sink);
       const poison = createPoison([new Error('arg poison')]);
       const cmd = new SequenceCallCommand({
         channelName: 'seq',

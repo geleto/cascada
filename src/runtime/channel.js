@@ -12,8 +12,7 @@ const { BufferIterator } = require('./buffer-iterator');
 const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
 
 class Channel {
-  constructor(frame, buffer, channelName, context, channelType = null, target = undefined, base = null) {
-    //this._frame = frame;
+  constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
     this._channelName = channelName;
     this._channelType = channelType || channelName;
     this._context = context;
@@ -239,7 +238,6 @@ class Channel {
 const CHANNEL_API_PROPS = new Set([
   '_channelName',
   '_channelType',
-  //'_frame',
   '_context',
   '_target',
   '_base',
@@ -335,8 +333,8 @@ function createChannelFacade(output, options) {
 }
 
 class TextChannel extends Channel {
-  constructor(frame, buffer, channelName, context, channelType) {
-    super(frame, buffer, channelName, context, channelType, [], null);
+  constructor(buffer, channelName, context, channelType) {
+    super(buffer, channelName, context, channelType, [], null);
   }
 
   invoke(...args) {
@@ -369,10 +367,10 @@ class TextChannel extends Channel {
 }
 
 class VarChannel extends Channel {
-  constructor(frame, buffer, channelName, context, channelType, initialValue = null) {
+  constructor(buffer, channelName, context, channelType, initialValue = null) {
     // Keep declaration-only var channels aligned with `none` semantics unless
     // a caller provides an explicit initializer.
-    super(frame, buffer, channelName, context, channelType, initialValue, null);
+    super(buffer, channelName, context, channelType, initialValue, null);
   }
 
   invoke(value) {
@@ -386,8 +384,8 @@ class VarChannel extends Channel {
 }
 
 class SequentialPathChannel extends Channel {
-  constructor(frame, buffer, channelName, context, channelType) {
-    super(frame, buffer, channelName, context, channelType, true, null);
+  constructor(buffer, channelName, context, channelType) {
+    super(buffer, channelName, context, channelType, true, null);
     this._sequentialPathPoisonErrors = null;
     this._sequentialPathLastResult = undefined;
   }
@@ -451,11 +449,10 @@ class SequentialPathChannel extends Channel {
 }
 
 class DataChannel extends Channel {
-  constructor(frame, buffer, channelName, context, channelType) {
+  constructor(buffer, channelName, context, channelType) {
     const env = context && context.env ? context.env : null;
     const base = new DataChannelTarget(context && context.getVariables ? context.getVariables() : {}, env);
     super(
-      frame,
       buffer,
       channelName,
       context,
@@ -526,31 +523,31 @@ class DataChannel extends Channel {
   }
 }
 
-function createChannel(frame, buffer, channelName, context, channelType = null, initializer = null) {
+function _createChannel(buffer, channelName, context, channelType = null, initializer = null) {
   const type = channelType || channelName;
   if (type === 'text') {
     // Text channel is callable; args are appended to the text buffer.
-    return createChannelFacade(new TextChannel(frame, buffer, channelName, context, type), {
+    return createChannelFacade(new TextChannel(buffer, channelName, context, type), {
       callable: true,
       dynamicCommands: false
     });
   }
   if (type === 'var') {
     // Var channel is callable; args replace the current value.
-    return createChannelFacade(new VarChannel(frame, buffer, channelName, context, type, initializer), {
+    return createChannelFacade(new VarChannel(buffer, channelName, context, type, initializer), {
       callable: true,
       dynamicCommands: false
     });
   }
   if (type === 'sequential_path') {
-    return createChannelFacade(new SequentialPathChannel(frame, buffer, channelName, context, type), {
+    return createChannelFacade(new SequentialPathChannel(buffer, channelName, context, type), {
       callable: false,
       dynamicCommands: false
     });
   }
   if (type === 'data') {
     // Data channel supports arbitrary commands (set, push, merge, etc.).
-    return createChannelFacade(new DataChannel(frame, buffer, channelName, context, type), {
+    return createChannelFacade(new DataChannel(buffer, channelName, context, type), {
       callable: false,
       dynamicCommands: true
     });
@@ -559,8 +556,8 @@ function createChannel(frame, buffer, channelName, context, channelType = null, 
 }
 
 class SinkChannel extends Channel {
-  constructor(frame, buffer, channelName, context, sink) {
-    super(frame, buffer, channelName, context, 'sink', undefined, null);
+  constructor(buffer, channelName, context, sink) {
+    super(buffer, channelName, context, 'sink', undefined, null);
     this._sink = sink;
     this._sinkReady = false;
     this._sinkReadyPromise = null;
@@ -730,13 +727,13 @@ class SinkChannel extends Channel {
   }
 }
 
-function createSinkChannel(frame, buffer, channelName, context, sink) {
-  return new SinkChannel(frame, buffer, channelName, context, sink);
+function _createSinkChannel(buffer, channelName, context, sink) {
+  return new SinkChannel(buffer, channelName, context, sink);
 }
 
 class SequenceChannel extends SinkChannel {
-  constructor(frame, buffer, channelName, context, sink) {
-    super(frame, buffer, channelName, context, sink);
+  constructor(buffer, channelName, context, sink) {
+    super(buffer, channelName, context, sink);
     this._channelType = 'sequence';
   }
 
@@ -793,8 +790,23 @@ class SequenceChannel extends SinkChannel {
   }
 }
 
+function _createSequenceChannel(buffer, channelName, context, sink) {
+  return new SequenceChannel(buffer, channelName, context, sink);
+}
+
+function createChannel(frame, buffer, channelName, context, channelType = null, initializer = null) {
+  void frame;
+  return _createChannel(buffer, channelName, context, channelType, initializer);
+}
+
+function createSinkChannel(frame, buffer, channelName, context, sink) {
+  void frame;
+  return _createSinkChannel(buffer, channelName, context, sink);
+}
+
 function createSequenceChannel(frame, buffer, channelName, context, sink) {
-  return new SequenceChannel(frame, buffer, channelName, context, sink);
+  void frame;
+  return _createSequenceChannel(buffer, channelName, context, sink);
 }
 
 function getChannel(frame, channelName) {
@@ -830,10 +842,10 @@ function declareChannel(frame, buffer, channelName, channelType, context, initia
   targetBuffer._channelTypes[channelName] = channelType;
 
   const channel = (channelType === 'sink')
-    ? createSinkChannel(frame, targetBuffer, channelName, context, initializer)
+    ? _createSinkChannel(targetBuffer, channelName, context, initializer)
     : (channelType === 'sequence')
-      ? createSequenceChannel(frame, targetBuffer, channelName, context, initializer)
-      : createChannel(frame, targetBuffer, channelName, context, channelType, initializer);
+      ? _createSequenceChannel(targetBuffer, channelName, context, initializer)
+      : _createChannel(targetBuffer, channelName, context, channelType, initializer);
 
   channel._buffer = targetBuffer;
   frame._channels[channelName] = channel;
