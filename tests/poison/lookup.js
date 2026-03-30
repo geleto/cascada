@@ -32,7 +32,7 @@
   function setupSequentialRuntimeForTests(root) {
     const context = { path: 'test', env: {} };
     const currentBuffer = runtime.createCommandBuffer(context, null);
-    runtime.declareChannel(root, currentBuffer, '!lockKey', 'sequential_path', context, null);
+    runtime.declareBufferChannel(currentBuffer, '!lockKey', 'sequential_path', context, null);
     return currentBuffer;
   }
 
@@ -158,7 +158,6 @@
 
         try {
           await runtime.sequentialMemberLookupAsyncValue(
-            frame,
             { prop: 'value' },
             'prop',
             '!lockKey', null,
@@ -176,7 +175,6 @@
 
         try {
           await runtime.sequentialMemberLookupAsyncValue(
-            frame,
             poison,
             'prop',
             '!lockKey', null,
@@ -196,7 +194,6 @@
 
         try {
           await runtime.sequentialMemberLookupAsyncValue(
-            frame,
             promise,
             'prop',
             '!lockKey', null,
@@ -215,7 +212,6 @@
 
         try {
           await runtime.sequentialMemberLookupAsyncValue(
-            frame,
             promise,
             'prop',
             '!lockKey', null,
@@ -232,7 +228,6 @@
       it('should successfully lookup and release lock', async () => {
         const obj = { name: 'test' };
         const result = await runtime.sequentialMemberLookupAsyncValue(
-          frame,
           obj,
           'name',
           '!lockKey', null,

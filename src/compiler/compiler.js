@@ -1459,7 +1459,7 @@ class Compiler extends CompilerBase {
       ? node._analysis.sequenceLocks
       : [];
     for (const name of sequenceLocks) {
-      this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
+      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
     if (this.asyncMode && this.hasStaticExtends && !this.hasDynamicExtends) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
@@ -1634,7 +1634,11 @@ class Compiler extends CompilerBase {
     });
     const name = nameNode.value;
 
-    this.emit(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
+    if (this.asyncMode && channelType !== 'var') {
+      this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
+    } else {
+      this.emit(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
+    }
     if (channelType === 'sink' || channelType === 'sequence') {
       this.compile(node.initializer, frame);
     } else {

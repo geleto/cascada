@@ -50,8 +50,10 @@ Completed so far:
     - `__return__`
     - waited-control-flow channels
     - macro caller-scheduling channels
+    - sequential-path lock channels
     - `__parentTemplate`
     - root-owned async `var` declarations
+    - explicit async `data` / `text` / `sink` / `sequence` channel declarations
   - async text-channel declarations now also bypass `frame._channels`
     - the underlying blocker was fixed by preserving owned channels per buffer and resolving visible channels by buffer ancestry instead of the shared map alone
     - guard / capture / revert semantics stay green with buffer-only async text registration
@@ -65,6 +67,10 @@ Completed so far:
   - imported bindings and async macro bindings now also bypass `frame._channels`
     - inherited block composition now prelinks deferred-export visibility into the parent root buffer as lookup-only channel visibility
     - visible channel lookup can resolve those child-owned bindings without closing parent lanes early
+  - sequential runtime no longer uses frame to discover lock channels
+    - sequential lock channels are now declared buffer-only
+    - `ensureSequentialPathChannel(...)` validates through `currentBuffer.getChannel(...)`
+    - sequential runtime helpers no longer thread a frame parameter just to discover lock channels
 
 Important correction:
 
@@ -88,8 +94,10 @@ Current next target:
     - `data`
     - `sink`
     - `sequence`
-    - `sequential_path`
     - loop / guard locals that still rely on exact lexical visibility rather than composition visibility
+    - `caller` / macro args / kwargs
+    - loop vars / loop metadata bindings
+    - guard recovery error vars
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`

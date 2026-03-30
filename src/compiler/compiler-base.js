@@ -410,9 +410,9 @@ class CompilerBase extends Obj {
         // emit a terminal marker so follow-up accesses can skip redundant lock plumbing.
 
         if (this.scriptMode) {
-          this.emit(`runtime.sequentialContextLookupScriptValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+          this.emit(`runtime.sequentialContextLookupScriptValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         } else {
-          this.emit(`runtime.sequentialContextLookupValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+          this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         }
         return;
       }
@@ -855,9 +855,9 @@ class CompilerBase extends Obj {
         // Create the error context and pass it to the runtime function.
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
         if (this.scriptMode) {
-          this.emit('runtime.sequentialMemberLookupScriptAsyncValue(frame, (');
+          this.emit('runtime.sequentialMemberLookupScriptAsyncValue((');
         } else {
-          this.emit('runtime.sequentialMemberLookupAsyncValue(frame, (');
+          this.emit('runtime.sequentialMemberLookupAsyncValue((');
         }
         this.compile(node.target, frame); // Compile the object being accessed.
         this.emit('),');
@@ -1041,7 +1041,7 @@ class CompilerBase extends Obj {
         this.compile(node.name, frame);
         this.emit(`, "${funcName}", context, `);
         this._compileAggregate(node.args, frame, '[', ']', false, false);
-        this.emit(`, frame, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+        this.emit(`, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         return;
       }
       if (isDirectMacroCall) {

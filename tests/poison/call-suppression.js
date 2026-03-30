@@ -34,7 +34,7 @@
   function setupSequentialRuntimeForTests(root) {
     const context = { path: 'test', env: {} };
     const currentBuffer = runtime.createCommandBuffer(context, null);
-    runtime.declareChannel(root, currentBuffer, '!lockKey', 'sequential_path', context, null);
+    runtime.declareBufferChannel(currentBuffer, '!lockKey', 'sequential_path', context, null);
     return currentBuffer;
   }
 
@@ -486,7 +486,6 @@
             'identity',
             mockContext,
             [1],
-            frame,
             '!lockKey',
             mockErrorContext,
             false,
@@ -509,7 +508,6 @@
             'double',
             mockContext,
             [poison],
-            frame,
             '!lockKey', mockErrorContext,
             false,
             currentBuffer
@@ -532,7 +530,6 @@
             'throwingFunc',
             mockContext,
             [],
-            frame,
             '!lockKey', mockErrorContext,
             false,
             currentBuffer
@@ -553,7 +550,6 @@
             'poisonedFunc',
             mockContext,
             [],
-            frame,
             '!lockKey', mockErrorContext,
             false,
             currentBuffer
@@ -578,7 +574,6 @@
             'double',
             mockContext,
             [5],
-            frame,
             '!lockKey', mockErrorContext,
             false,
             currentBuffer
@@ -600,7 +595,6 @@
             'asyncFunc',
             mockContext,
             [],
-            frame,
             '!lockKey', mockErrorContext,
             false,
             currentBuffer
@@ -621,7 +615,6 @@
             'double',
             mockContext,
             [rejectingPromise],
-            frame,
             '!lockKey', mockErrorContext,
             false,
             currentBuffer
@@ -639,7 +632,6 @@
           'add',
           mockContext,
           [5, 3],
-          frame,
           '!lockKey', mockErrorContext,
           false,
           currentBuffer
@@ -661,7 +653,6 @@
           'asyncFunc',
           mockContext,
           [],
-          frame,
           '!lockKey', mockErrorContext,
           false,
           currentBuffer
