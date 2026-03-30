@@ -803,13 +803,6 @@ function createSequenceChannel(buffer, channelName, context, sink) {
   return _createSequenceChannel(buffer, channelName, context, sink);
 }
 
-function getChannelFromBuffer(buffer, channelName) {
-  if (!buffer) {
-    throw new Error(`currentBuffer is required to resolve channel "${channelName}"`);
-  }
-  return buffer.findChannel(channelName);
-}
-
 function declareBufferChannel(buffer, channelName, channelType, context, initializer = null) {
   const targetBuffer = buffer;
   if (!targetBuffer) {
@@ -858,7 +851,6 @@ module.exports = {
   createSinkChannel,
   SequenceChannel,
   createSequenceChannel,
-  getChannelFromBuffer,
   declareBufferChannel,
   declareChannel
 };

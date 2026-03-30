@@ -37,7 +37,7 @@
   }
 
   async function expectLockTrue(lock, root, currentBuffer, lockKey = '!lockKey') {
-    const output = runtime.getChannelFromBuffer(currentBuffer, lockKey);
+    const output = currentBuffer.findChannel(lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
   }
@@ -154,7 +154,7 @@
         root = new AsyncFrame();
         frame = root.push(false);
         currentBuffer = setupSequentialRuntimeForTests(root);
-        runtime.getChannelFromBuffer(currentBuffer, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
+        currentBuffer.findChannel('!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialMemberLookupAsyncValue(

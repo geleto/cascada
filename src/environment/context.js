@@ -192,7 +192,7 @@ class Context extends Obj {
     }
   }
 
-  resolveExports(frame, runtime, currentBuffer) {
+  resolveExports(currentBuffer) {
     const names = Object.keys(this.exportResolveFunctions);
     for (const name of names) {
       const resolve = this.exportResolveFunctions[name];
@@ -201,8 +201,8 @@ class Context extends Obj {
       }
       const exportChannel = this.exportChannels[name];
       const channel = exportChannel
-        ? runtime.getChannelFromBuffer(exportChannel.buffer, exportChannel.channelName)
-        : runtime.getChannelFromBuffer(currentBuffer, name);
+        ? exportChannel.buffer.findChannel(exportChannel.channelName)
+        : currentBuffer.findChannel(name);
       resolve(channel.finalSnapshot());
     }
   }

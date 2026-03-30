@@ -726,7 +726,7 @@ class Compiler extends CompilerBase {
           channelGuardStateVar = this._tmpid();
           this.emit.insertLine(
             channelGuardInitLinePos,
-            `const ${channelGuardStateVar} = runtime.guard.initChannelSnapshots(frame, ${JSON.stringify(guardChannels)}, ${this.buffer.currentBuffer}, cb);`
+            `const ${channelGuardStateVar} = runtime.guard.initChannelSnapshots(${JSON.stringify(guardChannels)}, ${this.buffer.currentBuffer}, cb);`
           );
         }
 
@@ -1469,7 +1469,7 @@ class Compiler extends CompilerBase {
     }
     this._compileChildren(node, frame);
     if (this.asyncMode) {
-      this.emit.line('context.resolveExports(frame, runtime, output);');
+      this.emit.line('context.resolveExports(output);');
     }
     if (this.asyncMode) {
       this.emit.line('if (!compositionMode) {');

@@ -190,7 +190,6 @@ module.exports = {
   createSinkChannel: output.createSinkChannel,
   SequenceChannel: output.SequenceChannel,
   createSequenceChannel: output.createSequenceChannel,
-  getChannelFromBuffer: output.getChannelFromBuffer,
   declareBufferChannel: output.declareBufferChannel,
   declareChannel: output.declareChannel,
   ChannelCommand: commands.ChannelCommand,

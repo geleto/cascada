@@ -13,8 +13,6 @@ const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 const {
   resolveDuo
 } = require('./resolve');
-const { getChannelFromBuffer } = require('./channel');
-
 /**
  * Sync member lookup for templates.
  * Returns undefined if obj is undefined or null.
@@ -246,7 +244,7 @@ function contextOrVarLookup(_context, frame, name, currentBuffer) {
  * finalSnapshot(); only explicit finalization sites may do that.
  */
 function varChannelLookup(name, currentBuffer) {
-  const channel = getChannelFromBuffer(currentBuffer, name);
+  const channel = currentBuffer.findChannel(name);
   if (!channel) {
     return undefined;
   }
@@ -297,7 +295,7 @@ function contextOrVarLookupScriptAsync(context, name, currentBuffer, errorContex
 // ordinary reads stay as ordered snapshot commands, using the producer buffer
 // for cross-tree reads instead of finalSnapshot().
 function varChannelLookupScript(name, currentBuffer) {
-  const channel = getChannelFromBuffer(currentBuffer, name);
+  const channel = currentBuffer.findChannel(name);
   if (!channel) {
     return undefined;
   }

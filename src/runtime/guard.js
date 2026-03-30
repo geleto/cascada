@@ -1,5 +1,3 @@
-const { getChannelFromBuffer } = require('./channel');
-
 function init(cb = null) {
   const guardState = {
     sequenceErrors: [],
@@ -10,7 +8,7 @@ function init(cb = null) {
   return guardState;
 }
 
-function initChannelSnapshots(frame, channelNames = null, buffer = null, cb = null) {
+function initChannelSnapshots(channelNames = null, buffer = null, cb = null) {
   const state = {
     snapshots: Object.create(null),
     sequenceTransactions: [],
@@ -23,7 +21,7 @@ function initChannelSnapshots(frame, channelNames = null, buffer = null, cb = nu
   const targets = channelNames ?? [];
 
   for (const channelName of targets) {
-    const channel = getChannelFromBuffer(buffer, channelName);
+    const channel = buffer.findChannel(channelName);
     if (!channel) {
       continue;
     }

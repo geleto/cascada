@@ -12,10 +12,9 @@ Completed so far:
 - Phase 2 is partly done:
   - modern async symbol reads were reduced away from frame-shaped fallback in several places
   - async channel lookup now prefers buffer-owned lookup paths in the modern runtime
-  - a shared `findVisibleChannel(...)` helper now centralizes the buffer-first read path used by async lookup, guard setup, sequential checks, and export resolution
   - visible buffer lookup no longer relies only on the shared `buffer._channels` map
     - buffers now retain the owned channel object per name
-    - visible channel reads walk buffer ancestry by owned channel first, then fall back only where needed
+    - visible channel reads now go directly through `currentBuffer.findChannel(...)` / owned-buffer ancestry
   - inheritance now reads `__parentTemplate` through direct var-channel lookup instead of the generic frame-or-channel symbol fallback
   - a direct root-buffer export-resolution shortcut was attempted and reverted; conditional inheritance/export parity still needs visible-channel semantics broader than `currentBuffer.getChannel(...)`
 - Phase 9 is partly done:
@@ -76,9 +75,14 @@ Completed so far:
     - `ensureSequentialPathChannel(...)` validates through `currentBuffer.getChannel(...)`
     - sequential runtime helpers no longer thread a frame parameter just to discover lock channels
   - visible-channel lookup is now buffer-only
-    - `findVisibleChannel(...)` no longer falls back to `getChannel(frame, ...)`
+    - `findVisibleChannel(...)` was removed
+    - async lookup/guard/export reads now call `currentBuffer.findChannel(...)` directly
     - async compiler output no longer emits `runtime.declareChannel(frame, ...)`
     - remaining `declareChannel(...)` usage is now sync/runtime-compatibility only
+  - dead async helper signatures were trimmed further:
+    - `Context.resolveExports(...)` no longer accepts `frame` or `runtime`
+    - `guard.initChannelSnapshots(...)` no longer accepts `frame`
+    - `getChannelFromBuffer(...)` was removed in favor of direct `buffer.findChannel(...)`
 
 Important correction:
 
@@ -99,7 +103,7 @@ Current next target:
   - then remove the remaining frame fallback from `findVisibleChannel(...)`
     - done: buffer-only visibility is now sufficient for async lookup
   - focus next on deleting dead async frame-era helpers and signatures
-    - remove or narrow `findVisibleChannel(...)` where callers can just use `currentBuffer.findChannel(...)`
+    - done: `findVisibleChannel(...)` was removed and callers now use `currentBuffer.findChannel(...)` directly
     - audit whether `declareChannel(...)` is now sync-only compatibility and can be isolated or trimmed
     - continue shrinking async runtime/frame lookup helpers that still carry `frame` in their signature only for migration reasons
   - continue reducing runtime frame flags:
