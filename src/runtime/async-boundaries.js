@@ -5,9 +5,8 @@ const buffer = require('./command-buffer');
 
 function _createChildBoundary(parentBuffer, usedChannels, f, isolatedContext = null) {
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
-  const childFrame = f.push(false);
+  const childFrame = f.new();
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
-  void childFrame;
   const childBuffer = buffer.createCommandBuffer(bufferContext, null, linkedChannels, parentBuffer || null);
   return { childFrame, childBuffer };
 }

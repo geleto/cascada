@@ -90,7 +90,7 @@ class Template extends Obj {
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     let frame;
-    if (parentFrame) {
+    if (parentFrame && !this.asyncMode) {
       frame = parentFrame.push(true);
     }
     else {
@@ -200,9 +200,9 @@ class Template extends Obj {
       }
     }
 
-    const frame = parentFrame
-      ? parentFrame.push()
-      : new Frame();
+    const frame = this.asyncMode
+      ? new Frame()
+      : (parentFrame ? parentFrame.push() : new Frame());
     if (!this.asyncMode) {
       frame.syncTopLevel = true;
     }
@@ -377,7 +377,9 @@ class AsyncTemplate extends Template {
     this.compile();
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    const frame = parentFrame ? parentFrame.push(true) : new Frame();
+    const frame = this.asyncMode
+      ? new Frame()
+      : (parentFrame ? parentFrame.push(true) : new Frame());
     if (!this.asyncMode) {
       frame.syncTopLevel = true;
     }

@@ -75,6 +75,13 @@ Completed so far:
   - async include/import composition no longer needs `parentFrame` for `with context` lexical reads
     - async `include`, `import`, and `from import` now pass explicit context snapshots of visible declared vars
     - async composition visibility for those paths is now context/channel-driven instead of frame-driven
+  - async composition/render entry no longer inherits runtime frame ancestry
+    - async `_render(...)`, `getExported(...)`, and `_renderForComposition(...)` all start from fresh `Frame`s
+    - async control-flow/render/value boundaries also now create fresh child frames instead of `push()`ing runtime frame ancestry
+  - async inheritance execution no longer inherits caller runtime frame ancestry
+    - async parent-template handoff now calls parent `rootRenderFunc(...)` with a fresh `Frame`
+    - async block execution and `super()` now also start from fresh `Frame`s
+    - this keeps async inheritance visibility context/channel-driven instead of frame-chain-driven
   - sequential runtime no longer uses frame to discover lock channels
     - sequential lock channels are now declared buffer-only
     - `ensureSequentialPathChannel(...)` validates through `currentBuffer.getChannel(...)`
@@ -116,6 +123,10 @@ Current next target:
     - done: modern async template symbol fallback no longer passes through `frame.lookup(...)`
     - done: dead legacy sync channel-declaration compatibility was removed
   - continue shrinking the remaining sync/runtime compatibility lookup helpers that still rely on frame-only vars
+  - continue shrinking the remaining async runtime `frame` threading that is now mostly signature-only:
+    - async root/block function signatures still accept `frame`
+    - async inheritance/block execution now starts from fresh frames, but the parameter is still threaded through those entry points
+    - async macro/runtime entry signatures still carry `frame` even where the body no longer depends on caller ancestry
   - continue isolating remaining sync-only frame state:
     - done: `frame.topLevel` was renamed to explicit sync-only `frame.syncTopLevel`
     - done: loop frame metadata writes now go through explicit sync-only `setSyncLoopBindings(...)`
