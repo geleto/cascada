@@ -33,7 +33,7 @@ The modern async compiler/runtime already relies on:
 - command buffers for structural ordering
 - channels for observable state
 - static analysis for declarations, scope boundaries, and visible names
-- runtime name mangling to avoid collisions
+- analysis-time runtime-name mangling to avoid collisions
 
 That means the remaining async `frame` usage is valuable only if it still provides something that analysis + channels + buffer ancestry cannot provide more directly.
 
@@ -43,14 +43,14 @@ The likely end state is:
 - user-visible mutable async lexical state is channel-backed
 - compiler-private or read-only async locals may still be plain JS locals
 - all async symbol resolution is done through compile-time-resolved runtime names
-- shadowing is handled by unique runtime names
+- shadowing is already handled by unique runtime names assigned during analysis before compilation
 - parent visibility is represented by buffer/channel ancestry or explicit prelinking/aliasing
 
 Important clarification:
 
 - this plan is about removing the **runtime** async frame
 - it does **not** require deleting the compiler's scope-tracking frame immediately
-- compile-time frame/scope helpers may remain much longer, or permanently, if they still make codegen simpler
+- but the end state should also stop depending on compiler-frame objects at codegen time and use analysis data directly
 
 ---
 
@@ -87,6 +87,12 @@ So one explicit plan step is:
 - within that async compiler, prefer sync-first runtime helpers instead of dual compile paths
 
 That is a prerequisite for clean frame removal.
+
+Another prerequisite:
+
+- every frame-related runtime check that is really a lexical/scope/declaration rule must already exist in analysis (or be moved there first)
+- frame removal should not silently delete validation
+- only genuinely runtime-only checks should remain at runtime
 
 ---
 
@@ -307,6 +313,82 @@ This is an architectural smell and should be an explicit cleanup target.
 
 ---
 
+## Composition and JS Local Visibility
+
+One important consequence of async frame removal is:
+
+- plain JS locals are **not** visible through command-buffer linking
+- only channel state participates in normal buffer/channel ancestry
+
+This matters for internal or compiler-managed locals such as:
+
+- `loop`
+- other future read-only async locals
+
+If async mode keeps some locals as JS variables instead of channels, then
+composition boundaries cannot see them implicitly.
+
+### Include
+
+The preferred direction is:
+
+- `include "template" with var1, var2, ...`
+
+Meaning:
+
+- included templates get explicit read-only access only to the listed values
+- there is no implicit ambient access to parent JS locals
+
+This is a good fit for frame removal because it avoids depending on hidden
+runtime lexical state crossing the include boundary.
+
+### Extends / Blocks / Super
+
+The same principle should apply to inheritance composition:
+
+- `extends "base" with user, theme`
+
+Meaning:
+
+- the inheritance/block composition context receives explicit read-only values
+- overridden blocks and `super()` may read those values
+- those values are **not** shared mutable parent locals
+
+Recommended semantics:
+
+- read-only access: yes
+- implicit parent-local writes: no
+- shared mutable state should go through channels/outputs, not inherited locals
+
+This is likely the cleanest way to make JS locals compatible with inheritance
+without recreating a hidden ambient-scope system.
+
+### Import / From Import
+
+These need a separate audit.
+
+`with context` is the main problematic case because it implies broad lexical
+visibility. If JS locals no longer ride through frame-based lookup, then
+imports should probably move toward:
+
+- no implicit local visibility
+- or explicit projected values, similar to `with ...`
+
+This should be evaluated before async frame removal reaches composition APIs.
+
+### Design Constraint
+
+If composition boundaries remain implicitly able to read ambient parent locals,
+then JS locals become much harder to support in async mode.
+
+So the composition-side simplification that best supports frame removal is:
+
+- make cross-boundary local visibility explicit
+- keep it read-only
+- use channels for shared mutable state
+
+---
+
 ## Key Invariants Required Before Removal
 
 These are the must-have truths before async frame removal is safe.
@@ -410,6 +492,18 @@ Removing the runtime async frame does **not** require removing the compiler fram
 
 If we conflate those two goals, the migration will become much larger than necessary.
 
+### 7. Losing validation by accident
+
+The current codebase may still have runtime checks that are only surviving as legacy frame-based guard rails.
+
+Before removing them, we must classify each check as one of:
+
+- lexical/scope/declaration invariant -> should live in analysis / compile-time validation
+- real runtime invariant -> should remain runtime validation
+- dead compatibility check -> can be removed
+
+If we skip that classification, frame removal may accidentally weaken correctness even when behavior seems to keep working.
+
 ---
 
 ## Recommended Migration Order
@@ -477,6 +571,34 @@ Output:
 Done when:
 
 - every remaining async frame read/write is known and classified
+
+### Phase 2.5 — Audit Frame-Related Runtime Checks
+
+Goal:
+
+- ensure no important validation is lost when frame-backed runtime behavior is removed
+
+Work:
+
+- inventory runtime checks that currently depend on frame or frame-shaped state
+- classify each one as:
+  - analysis/compile-time validation that already exists
+  - analysis/compile-time validation that must be added
+  - real runtime invariant that must stay runtime
+  - dead compatibility check
+
+Important likely categories:
+
+- declaration / shadowing / visibility rules
+- push/pop balance checks
+- top-level/export eligibility checks
+- sequence-path root validation
+- channel ownership / declaration checks
+
+Done when:
+
+- every frame-related runtime check has a destination
+- there is no frame-removal step that implicitly deletes validation
 
 ### Phase 3 — Make Async Variable Reads Fully Canonical
 
@@ -637,20 +759,21 @@ Done when:
 
 - async mode has no runtime frame model
 
-### Phase 10 — Decide Whether Compiler Frame Stays
+### Phase 10 — Remove Compiler Frame Dependence from Async Codegen
 
 Goal:
 
-- explicitly choose whether compile-time frame/scoping stays as an internal compiler tool
+- async code generation no longer depends on compiler frame objects
 
-Why this is separate:
+Why this is later:
 
 - runtime-frame removal does not require compiler-frame removal
-- keeping compile-time scope helpers may be the simplest outcome
+- but the eventual target is analysis-driven async codegen, not permanent compiler-frame dependence
 
 Done when:
 
-- the codebase no longer conflates compile-time scope tracking with runtime frame state
+- async codegen uses analysis data directly for scope/visibility/runtime names
+- compiler-frame objects are no longer required for async-mode code generation
 
 ---
 
