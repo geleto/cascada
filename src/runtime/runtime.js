@@ -191,7 +191,7 @@ module.exports = {
   SequenceChannel: output.SequenceChannel,
   createSequenceChannel: output.createSequenceChannel,
   declareBufferChannel: output.declareBufferChannel,
-  declareFrameChannel: output.declareFrameChannel,
+  declareSyncOutput: output.declareSyncOutput,
   ChannelCommand: commands.ChannelCommand,
   TextCommand: commands.TextCommand,
   VarCommand: commands.VarCommand,
@@ -249,7 +249,7 @@ module.exports = {
   memberLookupScript: lookup.memberLookupScript,
   memberLookupScriptAsync: lookup.memberLookupScriptAsync,
   channelLookup: lookup.channelLookup,
-  contextOrSyncFrameLookup: lookup.contextOrSyncFrameLookup,
+  contextOrSyncVarLookup: lookup.contextOrSyncVarLookup,
   contextOrChannelLookup: lookup.contextOrChannelLookup,
   contextOrChannelLookupScriptAsync: lookup.contextOrChannelLookupScriptAsync,
 
@@ -269,7 +269,7 @@ module.exports = {
   iterateAsyncSequential: loop.iterateAsyncSequential,
   iterateAsyncParallel: loop.iterateAsyncParallel,
   whileConditionIterator: loop.whileConditionIterator,
-  setLoopBindings: loop.setLoopBindings,
+  setSyncLoopBindings: loop.setSyncLoopBindings,
   createLoopBindings: loop.createLoopBindings,
   setLoopValueBindings: loop.setLoopValueBindings,
 

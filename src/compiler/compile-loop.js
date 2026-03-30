@@ -434,7 +434,7 @@ class CompileLoop {
       }
       return;
     }
-    this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+    this.compiler.emit.line(`runtime.setSyncLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
   }
 
   _emitLoopVarIterationBinding(node, varName, valueExpr, frame, useLoopValues) {

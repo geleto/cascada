@@ -13,7 +13,7 @@ function installCompat() {
   var nodes = this.nodes;
   var lexer = this.lexer;
 
-  var orig_contextOrSyncFrameLookup = runtime.contextOrSyncFrameLookup;
+  var orig_contextOrSyncVarLookup = runtime.contextOrSyncVarLookup;
   var orig_memberLookup = runtime.memberLookup;
   var orig_Compiler_assertType;
   var orig_Parser_parseAggregate;
@@ -25,7 +25,7 @@ function installCompat() {
   }
 
   function uninstall() {
-    runtime.contextOrSyncFrameLookup = orig_contextOrSyncFrameLookup;
+    runtime.contextOrSyncVarLookup = orig_contextOrSyncVarLookup;
     runtime.memberLookup = orig_memberLookup;
     if (Compiler) {
       Compiler.prototype.assertType = orig_Compiler_assertType;
@@ -35,8 +35,8 @@ function installCompat() {
     }
   }
 
-  runtime.contextOrSyncFrameLookup = function contextOrSyncFrameLookup(context, frame, key) {
-    var val = orig_contextOrSyncFrameLookup.apply(this, arguments);
+  runtime.contextOrSyncVarLookup = function contextOrSyncVarLookup(context, frame, key) {
+    var val = orig_contextOrSyncVarLookup.apply(this, arguments);
     if (val !== undefined) {
       return val;
     }
