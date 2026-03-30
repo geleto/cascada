@@ -1449,6 +1449,9 @@ class Compiler extends CompilerBase {
 
     this.emit.beginEntryFunction(node, 'root', frame);
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    if (this.asyncMode) {
+      this.emit.line(`context.linkDeferredExportsToBuffer(${this.buffer.currentBuffer});`);
+    }
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(frame, this.buffer.currentBuffer);
     }

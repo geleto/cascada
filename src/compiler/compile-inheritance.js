@@ -44,7 +44,7 @@ class CompileInheritance {
   }
 
   _emitValueImportBinding(frame, name, sourceVar, node) {
-    this.emit.line(`runtime.declareChannel(frame, ${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+    this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(
       `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
     );

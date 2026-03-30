@@ -502,7 +502,7 @@ class CompileMacro {
 
     var name = node.name.value;
     if (compiler.asyncMode) {
-      compiler.emit.line(`runtime.declareChannel(frame, ${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+      compiler.emit.line(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
       compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
         compiler.emit(
           `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`

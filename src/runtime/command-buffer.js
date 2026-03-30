@@ -38,6 +38,10 @@ class CommandBuffer {
     // Channels declared/owned by this specific buffer. We keep this separate
     // because `_channels` is shared across the whole hierarchy.
     this._ownedChannels = Object.create(null);
+    // Lookup-only visibility links for composition/export cases. These expose
+    // channels to reads without making the lane structurally own a child buffer.
+    //@todo - when we start using usedChannels this will be redundant
+    this._visibleChannels = Object.create(null);
     // Create arrays namespace (channels created lazily on first write/snapshot).
     this.arrays = Object.create(null);
     // Shared registry of Channel objects for this buffer hierarchy.
@@ -416,12 +420,40 @@ class CommandBuffer {
       if (current._ownedChannels && current._ownedChannels[resolvedChannelName]) {
         return current._ownedChannels[resolvedChannelName];
       }
+      if (current._visibleChannels && current._visibleChannels[resolvedChannelName]) {
+        return current._visibleChannels[resolvedChannelName];
+      }
+      const linkedChannel = current._findLinkedChildOwnedChannel(resolvedChannelName);
+      if (linkedChannel) {
+        return linkedChannel;
+      }
       current = current.parent;
     }
     if (!this._channels) {
       return undefined;
     }
     return this._channels.get(resolvedChannelName);
+  }
+
+  _findLinkedChildOwnedChannel(channelName) {
+    const lane = this.arrays && this.arrays[channelName];
+    if (!Array.isArray(lane)) {
+      return undefined;
+    }
+    for (let i = lane.length - 1; i >= 0; i--) {
+      const entry = lane[i];
+      if (!isCommandBuffer(entry)) {
+        continue;
+      }
+      if (entry._ownedChannels && entry._ownedChannels[channelName]) {
+        return entry._ownedChannels[channelName];
+      }
+      const nested = entry._findLinkedChildOwnedChannel(channelName);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
   }
 
   _setBoundaryAliases(map) {
@@ -508,6 +540,17 @@ class CommandBuffer {
     const resolvedChannelName = this._resolveChannelName(channelName);
     this._linkedChannels[resolvedChannelName] = true;
     this._finishKnownChannelIfRequested(resolvedChannelName);
+  }
+
+  linkVisibleChannel(channelName, sourceBuffer) {
+    if (!channelName || !sourceBuffer || typeof sourceBuffer.findChannel !== 'function') {
+      return;
+    }
+    const resolvedChannelName = this._resolveChannelName(channelName);
+    const channel = sourceBuffer.findChannel(resolvedChannelName);
+    if (channel) {
+      this._visibleChannels[resolvedChannelName] = channel;
+    }
   }
 
   _finishKnownChannelIfRequested(channelName) {
