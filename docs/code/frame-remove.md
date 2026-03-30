@@ -204,6 +204,10 @@ Current next target:
       - `CompileBuffer.addToBuffer(...)` no longer duplicates async text/non-text branches
     - done: macro body emission no longer uses one nested sync/async helper
       - `CompileMacro` now has explicit compiled async vs sync body emission paths
+    - done: macro compilation no longer uses one nested sync/async helper
+      - `CompileMacro` now has explicit `_compileAsyncMacro(...)` vs `_compileSyncMacro(...)` paths
+    - done: import/inheritance compilation no longer uses one nested sync/async helper
+      - `CompileInheritance` now has explicit async vs sync `import` / `from import` compile paths
     - done: `compileSymbol(...)` no longer carries a nested sync fallback branch inside the async lookup path
     - done: a few remaining dead helper params/voids were removed
       - `CompileBuffer.asyncAddValueToBuffer(...)`
@@ -213,6 +217,8 @@ Current next target:
     - done: the compiler-context escape hatch on `AsyncFrame.set(...)` was removed
   - continue isolating legacy callback-async compatibility paths from modern async mode:
     - done: internal loop compiler helpers were renamed to explicit legacy-callback names
+    - done: `compileAsyncEach(...)` / `compileAsyncAll(...)` now dispatch at the top level
+      - the legacy callback loop helper is now honestly sync-only
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`

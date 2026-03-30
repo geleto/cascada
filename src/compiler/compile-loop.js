@@ -444,7 +444,7 @@ class CompileLoop {
     );
   }
 
-  _compileLegacyCallbackLoopBindings(node, arr, i, len) {
+  _compileSyncLegacyCallbackLoopBindings(node, arr, i, len) {
     const bindings = [
       { name: 'index', val: `${i} + 1` },
       { name: 'index0', val: i },
@@ -460,11 +460,7 @@ class CompileLoop {
     });
   }
 
-  _compileLegacyCallbackLoop(node, frame, parallel) {
-    if (this.compiler.asyncMode) {
-      this._compileFor(node, frame, { sequentialLoopBody: !parallel });
-      return;
-    }
+  _compileSyncLegacyCallbackLoop(node, frame, parallel) {
     // This shares some code with the For tag, but not enough to
     // worry about. This iterates across an object asynchronously,
     // but not in parallel. (Legacy callback-based async loops)
@@ -510,7 +506,7 @@ class CompileLoop {
       frame.set(id, id);
     }
 
-    this._compileLegacyCallbackLoopBindings(node, arr, i, len);
+    this._compileSyncLegacyCallbackLoopBindings(node, arr, i, len);
 
     this.compiler.emit.withScopedSyntax(() => {
       if (parallel) {
@@ -546,11 +542,19 @@ class CompileLoop {
   }
 
   compileAsyncEach(node, frame) {
-    this._compileLegacyCallbackLoop(node, frame, false);
+    if (this.compiler.asyncMode) {
+      this._compileFor(node, frame, { sequentialLoopBody: true });
+      return;
+    }
+    this._compileSyncLegacyCallbackLoop(node, frame, false);
   }
 
   compileAsyncAll(node, frame) {
-    this._compileLegacyCallbackLoop(node, frame, true);
+    if (this.compiler.asyncMode) {
+      this._compileFor(node, frame, { sequentialLoopBody: false });
+      return;
+    }
+    this._compileSyncLegacyCallbackLoop(node, frame, true);
   }
 }
 

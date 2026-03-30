@@ -99,30 +99,30 @@ class CompileInheritance {
     return parentTemplateId;
   }
 
-  compileImport(node, frame) {
+  _compileAsyncImport(node, frame) {
     const target = node.target.value;
     const id = this._compileGetTemplateOrScript(node, frame, false, false);
-
-    if (this.compiler.asyncMode) {
-      const exportedId = this.compiler._tmpid();
-      if (node.withContext) {
-        const importVarsVar = this.compiler._tmpid();
-        this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
-        this._emitDeclaredValueSnapshots(node._analysis, importVarsVar, node);
-        this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, cb));`);
-      } else {
-        this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(null, cb));`);
-      }
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
-      this._emitValueImportBinding(target, exportedId, node);
-      return;
+    const exportedId = this.compiler._tmpid();
+    if (node.withContext) {
+      const importVarsVar = this.compiler._tmpid();
+      this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
+      this._emitDeclaredValueSnapshots(node._analysis, importVarsVar, node);
+      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, cb));`);
     } else {
-      this.emit.addScopeLevel();
-      this.emit.line(id + '.getExported(' +
-        (node.withContext ? 'context.getVariables(), frame, ' : '') +
-        this.compiler._makeCallback(id));
-      this.emit.addScopeLevel();
+      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(null, cb));`);
     }
+    this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
+    this._emitValueImportBinding(target, exportedId, node);
+  }
+
+  _compileSyncImport(node, frame) {
+    const target = node.target.value;
+    const id = this._compileGetTemplateOrScript(node, frame, false, false);
+    this.emit.addScopeLevel();
+    this.emit.line(id + '.getExported(' +
+      (node.withContext ? 'context.getVariables(), frame, ' : '') +
+      this.compiler._makeCallback(id));
+    this.emit.addScopeLevel();
 
     frame.set(target, id);
 
@@ -133,103 +133,112 @@ class CompileInheritance {
     }
   }
 
-  compileFromImport(node, frame) {
-    // Pass node.template for position in _compileGetTemplateOrScript
+  _compileAsyncFromImport(node, frame) {
     const importedId = this._compileGetTemplateOrScript(node, frame, false, false);
-
-    if (this.compiler.asyncMode) {
-      const exportedId = this.compiler._tmpid();
-      const bindingIds = [];
-      if (node.withContext) {
-        const importVarsVar = this.compiler._tmpid();
-        this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
-        this._emitDeclaredValueSnapshots(node._analysis, importVarsVar, node);
-        this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, cb));`);
-      } else {
-        this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(null, cb));`);
-      }
-
-      // Now extract each individual variable from the exported object
-      node.names.children.forEach((nameNode) => {
-        let name;
-        let alias;
-        let id = this.compiler._tmpid();
-
-        if (nameNode instanceof nodes.Pair) {
-          name = nameNode.key.value;
-          alias = nameNode.value.value;
-        } else {
-          name = nameNode.value;
-          alias = name;
-        }
-
-        // Generate context within the compiler scope
-        const errorContext = this.compiler._generateErrorContext(node, nameNode);
-        const failMsg = `cannot import '${name}'`.replace(/"/g, '\\"');
-
-        // Create individual promise for this variable - await ${importedId} which now holds the exported object
-        this.emit.line(`let ${id} = (async () => { try {`);
-        this.emit.line(`  let exported = await ${exportedId};`);
-        this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
-        this.emit.line(`    return exported["${name}"];`);
-        this.emit.line(`  } else {`);
-        this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err;`);
-        this.emit.line(`  }`);
-        this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
-        bindingIds.push(id);
-
-        this._emitValueImportBinding(alias, id, node);
-      });
-
-      // from-import boundary completion as a single completion unit.
-      if (bindingIds.length > 0) {
-        const boundaryCompletion = this.compiler._tmpid();
-        this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(boundaryCompletion, node);
-      } else {
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
-      }
+    const exportedId = this.compiler._tmpid();
+    const bindingIds = [];
+    if (node.withContext) {
+      const importVarsVar = this.compiler._tmpid();
+      this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
+      this._emitDeclaredValueSnapshots(node._analysis, importVarsVar, node);
+      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, cb));`);
     } else {
-      // Sync mode remains unchanged
-      this.emit.addScopeLevel(); // after _compileGetTemplateOrScript
-      this.emit.line(importedId + '.getExported(' +
-        (node.withContext ? 'context.getVariables(), frame, ' : '') +
-        this.compiler._makeCallback(importedId));
-      this.emit.addScopeLevel();
-
-      node.names.children.forEach((nameNode) => {
-        let name;
-        let alias;
-        let id = this.compiler._tmpid();
-        this.emit.line(`let ${id};`);
-
-        if (nameNode instanceof nodes.Pair) {
-          name = nameNode.key.value;
-          alias = nameNode.value.value;
-        } else {
-          name = nameNode.value;
-          alias = name;
-        }
-
-        // Generate context within the compiler scope
-        const errorContext = this.compiler._generateErrorContext(node, nameNode);
-        const failMsg = `cannot import '${name}'`.replace(/"/g, '\\"');
-
-        this.emit.line(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
-        this.emit.line(`${id} = ${importedId}.${name};`);
-        this.emit.line('} else {');
-        this.emit.line(`var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); cb(err); return;`);
-        this.emit.line('}');
-
-        frame.set(alias, id);
-
-        if (frame.parent) {
-          this.emit.line(`frame.set("${alias}", ${id});`);
-        } else {
-          this.emit.line(`context.setVariable("${alias}", ${id});`);
-        }
-      });
+      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(null, cb));`);
     }
+
+    node.names.children.forEach((nameNode) => {
+      let name;
+      let alias;
+      let id = this.compiler._tmpid();
+
+      if (nameNode instanceof nodes.Pair) {
+        name = nameNode.key.value;
+        alias = nameNode.value.value;
+      } else {
+        name = nameNode.value;
+        alias = name;
+      }
+
+      const errorContext = this.compiler._generateErrorContext(node, nameNode);
+      const failMsg = `cannot import '${name}'`.replace(/"/g, '\\"');
+
+      this.emit.line(`let ${id} = (async () => { try {`);
+      this.emit.line(`  let exported = await ${exportedId};`);
+      this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
+      this.emit.line(`    return exported["${name}"];`);
+      this.emit.line(`  } else {`);
+      this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err;`);
+      this.emit.line(`  }`);
+      this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
+      bindingIds.push(id);
+
+      this._emitValueImportBinding(alias, id, node);
+    });
+
+    if (bindingIds.length > 0) {
+      const boundaryCompletion = this.compiler._tmpid();
+      this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(boundaryCompletion, node);
+    } else {
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
+    }
+  }
+
+  _compileSyncFromImport(node, frame) {
+    const importedId = this._compileGetTemplateOrScript(node, frame, false, false);
+    this.emit.addScopeLevel();
+    this.emit.line(importedId + '.getExported(' +
+      (node.withContext ? 'context.getVariables(), frame, ' : '') +
+      this.compiler._makeCallback(importedId));
+    this.emit.addScopeLevel();
+
+    node.names.children.forEach((nameNode) => {
+      let name;
+      let alias;
+      let id = this.compiler._tmpid();
+      this.emit.line(`let ${id};`);
+
+      if (nameNode instanceof nodes.Pair) {
+        name = nameNode.key.value;
+        alias = nameNode.value.value;
+      } else {
+        name = nameNode.value;
+        alias = name;
+      }
+
+      const errorContext = this.compiler._generateErrorContext(node, nameNode);
+      const failMsg = `cannot import '${name}'`.replace(/"/g, '\\"');
+
+      this.emit.line(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
+      this.emit.line(`${id} = ${importedId}.${name};`);
+      this.emit.line('} else {');
+      this.emit.line(`var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); cb(err); return;`);
+      this.emit.line('}');
+
+      frame.set(alias, id);
+
+      if (frame.parent) {
+        this.emit.line(`frame.set("${alias}", ${id});`);
+      } else {
+        this.emit.line(`context.setVariable("${alias}", ${id});`);
+      }
+    });
+  }
+
+  compileImport(node, frame) {
+    if (this.compiler.asyncMode) {
+      this._compileAsyncImport(node, frame);
+      return;
+    }
+    this._compileSyncImport(node, frame);
+  }
+
+  compileFromImport(node, frame) {
+    if (this.compiler.asyncMode) {
+      this._compileAsyncFromImport(node, frame);
+      return;
+    }
+    this._compileSyncFromImport(node, frame);
   }
 
   compileBlock(node, frame) {

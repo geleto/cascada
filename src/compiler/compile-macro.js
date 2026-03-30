@@ -97,7 +97,9 @@ class CompileMacro {
   compileCaller(node, frame) {
     const compiler = this.compiler;
     compiler.emit('(function (){');
-    const funcId = this._compileMacro(node, frame, true);
+    const funcId = compiler.asyncMode
+      ? this._compileAsyncMacro(node, frame)
+      : this._compileSyncMacro(node, frame, true);
     if (compiler.asyncMode) {
       const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
       compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
@@ -411,71 +413,45 @@ class CompileMacro {
       : `new runtime.SafeString(${bufferId})`;
   }
 
-  _compileMacro(node, frame, keepFrame) {
+  _compileAsyncMacro(node, frame) {
     const compiler = this.compiler;
-    const funcId = compiler.asyncMode
-      ? node._analysis.compiledMacroFuncId
-      : `macro_${compiler._tmpid()}`;
+    const funcId = node._analysis.compiledMacroFuncId;
     const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
-
-    let currFrame;
-    if (compiler.asyncMode) {
-      currFrame = frame;
-    } else if (keepFrame) {
-      currFrame = frame.push(true);
-    } else {
-      currFrame = frame.new();
-    }
+    const currFrame = frame;
     const oldIsCompilingMacroBody = compiler.sequential.isCompilingMacroBody;
     compiler.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
-    const macroNeedsCallerSupport = compiler.asyncMode && !!node._analysis.hasCallerSupport;
-    const macroFunctionSignature = compiler.asyncMode
-      ? `function (${realNames.join(', ')}, macroParentBuffer) {`
-      : `function (${realNames.join(', ')}) {`;
+    const macroNeedsCallerSupport = !!node._analysis.hasCallerSupport;
 
     compiler.emit.lines(
       `let ${funcId} = runtime.makeMacro(`,
       `[${argNames.join(', ')}], `,
       `[${kwargNames.join(', ')}], `,
-      macroFunctionSignature
+      `function (${realNames.join(', ')}, macroParentBuffer) {`
     );
 
     compiler.emit.line(`return runtime.withPath(this, "${compiler.templateName}", function() {`);
-    if (compiler.asyncMode) {
-      compiler.emit.line('return (function() {');
-      compiler.emit.lines(
-        'kwargs = kwargs || {};',
-        'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
-        '  kwargs.caller = undefined;',
-        '}'
-      );
-    } else {
-      compiler.emit.line('return (function(frame) {');
-      compiler.emit.line('let callerFrame = frame;');
-      compiler.emit.lines(
-        'frame = ' + (keepFrame ? 'frame.push(true);' : 'frame.new();'),
-        'kwargs = kwargs || {};',
-        'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
-        '  kwargs.caller = undefined;',
-        '}'
-      );
-    }
+    compiler.emit.line('return (function() {');
+    compiler.emit.lines(
+      'kwargs = kwargs || {};',
+      'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
+      '  kwargs.caller = undefined;',
+      '}'
+    );
 
-    let err = compiler._tmpid();
-    if (compiler.asyncMode) {
-      compiler.emit.lines(
-        `let ${err} = null;`,
-        'function cb(err) {',
-        `if(err) {${err} = err;}`,
-        '}');
-    }
+    const err = compiler._tmpid();
+    compiler.emit.lines(
+      `let ${err} = null;`,
+      'function cb(err) {',
+      `if(err) {${err} = err;}`,
+      '}'
+    );
 
     let returnStatement;
     const rawCallerVar = macroNeedsCallerSupport ? compiler._tmpid() : null;
     const allCallersBufferId = macroNeedsCallerSupport ? compiler._tmpid() : null;
 
-    if (compiler.asyncMode && node.typename === 'Caller') {
+    if (node.typename === 'Caller') {
       const prevBuffer = compiler.buffer.currentBuffer;
       const prevTextChannelVar = compiler.buffer.currentTextChannelVar;
       const callerTextChannelVar = !compiler.scriptMode ? compiler._tmpid() : null;
@@ -499,37 +475,71 @@ class CompileMacro {
       compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     } else {
       compiler.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
-        returnStatement = compiler.asyncMode
-          ? this._emitCompiledAsyncMacroBody({
-            node,
-            managedFrame,
-            bufferId,
-            args,
-            kwargs,
-            rawCallerVar,
-            allCallersBufferId,
-            errVar: err,
-            hasCallerSupport: macroNeedsCallerSupport
-          })
-          : this._emitCompiledSyncMacroBody({
-            node,
-            managedFrame,
-            bufferId,
-            args,
-            kwargs,
-            keepFrame
-          });
-      }, keepFrame ? compiler.buffer.currentBuffer : null, node.body);
+        returnStatement = this._emitCompiledAsyncMacroBody({
+          node,
+          managedFrame,
+          bufferId,
+          args,
+          kwargs,
+          rawCallerVar,
+          allCallersBufferId,
+          errVar: err,
+          hasCallerSupport: macroNeedsCallerSupport
+        });
+      }, null, node.body);
     }
 
     compiler.emit.line(`return ${returnStatement};`);
-    compiler.emit.line(compiler.asyncMode ? '}).call(this);' : '}).call(this, frame);');
+    compiler.emit.line('}).call(this);');
     compiler.emit.line('});');
-    if (compiler.asyncMode) {
-      compiler.emit.line('}, true);');
-    } else {
-      compiler.emit.line('});');
-    }
+    compiler.emit.line('}, true);');
+
+    compiler.sequential.isCompilingMacroBody = oldIsCompilingMacroBody;
+    return funcId;
+  }
+
+  _compileSyncMacro(node, frame, keepFrame) {
+    const compiler = this.compiler;
+    const funcId = `macro_${compiler._tmpid()}`;
+    const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
+    const currFrame = keepFrame ? frame.push(true) : frame.new();
+    const oldIsCompilingMacroBody = compiler.sequential.isCompilingMacroBody;
+    compiler.sequential.isCompilingMacroBody = node.typename !== 'Caller';
+
+    compiler.emit.lines(
+      `let ${funcId} = runtime.makeMacro(`,
+      `[${argNames.join(', ')}], `,
+      `[${kwargNames.join(', ')}], `,
+      `function (${realNames.join(', ')}) {`
+    );
+
+    compiler.emit.line(`return runtime.withPath(this, "${compiler.templateName}", function() {`);
+    compiler.emit.line('return (function(frame) {');
+    compiler.emit.line('let callerFrame = frame;');
+    compiler.emit.lines(
+      'frame = ' + (keepFrame ? 'frame.push(true);' : 'frame.new();'),
+      'kwargs = kwargs || {};',
+      'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
+      '  kwargs.caller = undefined;',
+      '}'
+    );
+
+    let returnStatement;
+    compiler.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
+      returnStatement = this._emitCompiledSyncMacroBody({
+        node,
+        managedFrame,
+        bufferId,
+        args,
+        kwargs,
+        keepFrame
+      });
+    }, keepFrame ? compiler.buffer.currentBuffer : null, node.body);
+
+    compiler.emit.line(`return ${returnStatement};`);
+    compiler.emit.line('}).call(this, frame);');
+    compiler.emit.line('});');
+    compiler.emit.line('});');
 
     compiler.sequential.isCompilingMacroBody = oldIsCompilingMacroBody;
     return funcId;
@@ -537,7 +547,9 @@ class CompileMacro {
 
   compileMacro(node, frame) {
     const compiler = this.compiler;
-    var funcId = this._compileMacro(node, frame, false);
+    var funcId = compiler.asyncMode
+      ? this._compileAsyncMacro(node, frame)
+      : this._compileSyncMacro(node, frame, false);
 
     var name = node.name.value;
     if (compiler.asyncMode) {
