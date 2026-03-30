@@ -159,12 +159,13 @@ Replacement direction:
 - lookup by canonical runtime name
 - parent visibility via buffer ancestry or explicit boundary alias/prelink rules
 
-### 3. Loop metadata
+### 3. Loop state
 
 Current shape:
 
+- the **modern async loop path already uses channels** for loop variables
 - the **modern async loop path already uses channels** for metadata
-- the remaining `frame.set('loop.*', ...)` path is the legacy path
+- the remaining frame-based loop path is the legacy path
 
 Examples:
 
@@ -173,8 +174,9 @@ Examples:
 
 Correction to earlier draft:
 
-- JS locals are not the obvious destination for the modern path because `loop.length` / `loop.last` can be promise-valued and the existing channel model already handles those semantics
+- loop variables are also already channel-backed in the modern async path
 - the real migration work here is:
+  - keep or simplify the modern channel-based loop-variable path
   - remove the legacy frame-based path
   - keep or simplify the modern channel-based path
 
@@ -310,82 +312,6 @@ Replacement direction:
 - remove this once async runtime frame writes are gone
 
 This is an architectural smell and should be an explicit cleanup target.
-
----
-
-## Composition and JS Local Visibility
-
-One important consequence of async frame removal is:
-
-- plain JS locals are **not** visible through command-buffer linking
-- only channel state participates in normal buffer/channel ancestry
-
-This matters for internal or compiler-managed locals such as:
-
-- `loop`
-- other future read-only async locals
-
-If async mode keeps some locals as JS variables instead of channels, then
-composition boundaries cannot see them implicitly.
-
-### Include
-
-The preferred direction is:
-
-- `include "template" with var1, var2, ...`
-
-Meaning:
-
-- included templates get explicit read-only access only to the listed values
-- there is no implicit ambient access to parent JS locals
-
-This is a good fit for frame removal because it avoids depending on hidden
-runtime lexical state crossing the include boundary.
-
-### Extends / Blocks / Super
-
-The same principle should apply to inheritance composition:
-
-- `extends "base" with user, theme`
-
-Meaning:
-
-- the inheritance/block composition context receives explicit read-only values
-- overridden blocks and `super()` may read those values
-- those values are **not** shared mutable parent locals
-
-Recommended semantics:
-
-- read-only access: yes
-- implicit parent-local writes: no
-- shared mutable state should go through channels/outputs, not inherited locals
-
-This is likely the cleanest way to make JS locals compatible with inheritance
-without recreating a hidden ambient-scope system.
-
-### Import / From Import
-
-These need a separate audit.
-
-`with context` is the main problematic case because it implies broad lexical
-visibility. If JS locals no longer ride through frame-based lookup, then
-imports should probably move toward:
-
-- no implicit local visibility
-- or explicit projected values, similar to `with ...`
-
-This should be evaluated before async frame removal reaches composition APIs.
-
-### Design Constraint
-
-If composition boundaries remain implicitly able to read ambient parent locals,
-then JS locals become much harder to support in async mode.
-
-So the composition-side simplification that best supports frame removal is:
-
-- make cross-boundary local visibility explicit
-- keep it read-only
-- use channels for shared mutable state
 
 ---
 
@@ -625,17 +551,19 @@ Done when:
 
 Goal:
 
-- async mode no longer has a frame-based loop metadata path
+- async mode no longer has a frame-based loop variable/metadata path
 
 Work:
 
+- keep the modern channel-based loop variable path
 - keep the modern channel-based loop metadata path
 - remove the legacy `frame.set('loop.*', ...)` path that only survives in the old routing model
+- remove any remaining legacy frame-based loop variable path that only survives in the old routing model
 - re-evaluate only after Phase 1 whether any loop metadata should later become JS locals
 
 Done when:
 
-- async loop metadata has no remaining frame-based runtime path
+- async loops have no remaining frame-based runtime path for loop vars or loop metadata
 
 ### Phase 5 — Move Async Channel Ownership from `frame._channels` to `buffer._channels`
 
@@ -843,7 +771,7 @@ These are the best first implementation tasks after adopting this plan.
    - `getChannel(...)`
    - sink finalization helpers
 
-4. Remove the legacy async loop metadata frame path.
+4. Remove the legacy async loop frame path.
 
 Do not begin by rewriting `channel.js` globally without first splitting async and sync behavior clearly.
 
@@ -857,7 +785,7 @@ This plan succeeds when all of the following are true in async mode:
 - no async generated function takes `frame`
 - no modern async runtime lexical lookup depends on frame ancestry
 - no async lexical writes use `frame.set(...)`
-- loop metadata has no remaining frame-based async runtime path
+- async loops have no remaining frame-based runtime path
 - channels are resolved through buffer/channel ownership structures, not frame storage
 - async runtime no longer depends on frame-owned top-level/scope-root flags
 - `node.isAsync` is no longer used as the async/non-async routing mechanism
