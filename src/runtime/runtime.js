@@ -191,7 +191,7 @@ module.exports = {
   SequenceChannel: output.SequenceChannel,
   createSequenceChannel: output.createSequenceChannel,
   declareBufferChannel: output.declareBufferChannel,
-  declareChannel: output.declareChannel,
+  declareFrameChannel: output.declareFrameChannel,
   ChannelCommand: commands.ChannelCommand,
   TextCommand: commands.TextCommand,
   VarCommand: commands.VarCommand,

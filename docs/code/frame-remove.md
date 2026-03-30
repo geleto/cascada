@@ -79,8 +79,8 @@ Completed so far:
   - visible-channel lookup is now buffer-only
     - `findVisibleChannel(...)` was removed
     - async lookup/guard/export reads now call `currentBuffer.findChannel(...)` directly
-    - async compiler output no longer emits `runtime.declareChannel(frame, ...)`
-    - remaining `declareChannel(...)` usage is now sync/runtime-compatibility only
+    - async compiler output no longer emits frame-backed channel declaration helpers
+    - the remaining frame-backed declaration helper is now explicitly sync-only: `declareFrameChannel(...)`
   - dead async helper signatures were trimmed further:
     - `Context.resolveExports(...)` no longer accepts `frame` or `runtime`
     - `guard.initChannelSnapshots(...)` no longer accepts `frame`
@@ -108,7 +108,7 @@ Current next target:
   - focus next on deleting dead async frame-era helpers and signatures
     - done: `findVisibleChannel(...)` was removed and callers now use `currentBuffer.findChannel(...)` directly
     - done: modern async template symbol fallback no longer passes through `frame.lookup(...)`
-    - audit whether `declareChannel(...)` is now sync-only compatibility and can be isolated or trimmed
+    - done: the remaining frame-backed channel declaration helper was isolated as sync-only `declareFrameChannel(...)`
     - continue shrinking the remaining sync/runtime compatibility lookup helpers that still rely on frame-only lookup
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`

@@ -832,7 +832,7 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
-function declareChannel(frame, buffer, channelName, channelType, context, initializer = null) {
+function declareFrameChannel(frame, buffer, channelName, channelType, context, initializer = null) {
   const channel = declareBufferChannel(buffer, channelName, channelType, context, initializer);
   frame._channels = frame._channels || Object.create(null);
   frame._channels[channelName] = channel;
@@ -852,7 +852,7 @@ module.exports = {
   SequenceChannel,
   createSequenceChannel,
   declareBufferChannel,
-  declareChannel
+  declareFrameChannel
 };
 
 function cloneSnapshotValue(value) {
