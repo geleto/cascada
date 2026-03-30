@@ -971,10 +971,10 @@
     // through the returned promise in value-boundary paths.
 
     const runtime = require('../../src/runtime/runtime');
-    const { AsyncFrame } = require('../../src/runtime/frame');
+    const { Frame } = require('../../src/runtime/frame');
 
     it('should reject with RuntimeFatalError from runValueBoundary', function (done) {
-      const frame = new AsyncFrame(null, false);
+      const frame = new Frame(null, false);
 
       // Simulate an async block that throws RuntimeFatalError
       const fatalMsg = 'Simulated Fatal Error';

@@ -1634,11 +1634,7 @@ class Compiler extends CompilerBase {
     });
     const name = nameNode.value;
 
-    if (this.asyncMode) {
-      this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
-    } else {
-      this.emit(`runtime.declareSyncOutput(frame, ${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
-    }
+    this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
     if (channelType === 'sink' || channelType === 'sequence') {
       this.compile(node.initializer, frame);
     } else {

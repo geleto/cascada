@@ -118,30 +118,7 @@ function markChannelBufferScope(buffer) {
   }
 }
 
-class AsyncFrame extends Frame {
-  constructor(parent, isolateWrites) {
-    super(parent, isolateWrites);
-  }
-
-  new() {
-    return new AsyncFrame();
-  }
-
-  push(isolateWrites) {
-    const newFrame = new AsyncFrame(this, isolateWrites);
-    newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
-
-    return newFrame;
-  }
-
-  set(name, val, resolveUp) {
-    throw new Error(`AsyncFrame.set is disabled at runtime (attempted: "${name}")`);
-  }
-
-}
-
 module.exports = {
   Frame,
-  AsyncFrame,
   markChannelBufferScope
 };

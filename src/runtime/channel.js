@@ -832,13 +832,6 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
-function declareSyncOutput(frame, buffer, channelName, channelType, context, initializer = null) {
-  const channel = declareBufferChannel(buffer, channelName, channelType, context, initializer);
-  frame._channels = frame._channels || Object.create(null);
-  frame._channels[channelName] = channel;
-  return channel;
-}
-
 module.exports = {
   Channel,
   DataChannel,
@@ -851,8 +844,7 @@ module.exports = {
   createSinkChannel,
   SequenceChannel,
   createSequenceChannel,
-  declareBufferChannel,
-  declareSyncOutput
+  declareBufferChannel
 };
 
 function cloneSnapshotValue(value) {

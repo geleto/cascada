@@ -178,7 +178,6 @@ module.exports = {
 
   // Frame classes
   Frame: frame.Frame,
-  AsyncFrame: frame.AsyncFrame,
   markChannelBufferScope: frame.markChannelBufferScope,
   Channel: output.Channel,
   DataChannel: output.DataChannel,
@@ -191,7 +190,6 @@ module.exports = {
   SequenceChannel: output.SequenceChannel,
   createSequenceChannel: output.createSequenceChannel,
   declareBufferChannel: output.declareBufferChannel,
-  declareSyncOutput: output.declareSyncOutput,
   ChannelCommand: commands.ChannelCommand,
   TextCommand: commands.TextCommand,
   VarCommand: commands.VarCommand,

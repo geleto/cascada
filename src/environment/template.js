@@ -3,7 +3,7 @@
 const lib = require('../lib');
 const compiler = require('../compiler/compiler');
 const globalRuntime = require('../runtime/runtime');
-const { Frame, AsyncFrame } = require('../runtime/frame');
+const { Frame } = require('../runtime/frame');
 const { Obj } = require('../object');
 const { callbackAsap } = require('./utils');
 const { Context } = require('./context');
@@ -94,7 +94,7 @@ class Template extends Obj {
       frame = parentFrame.push(true);
     }
     else {
-      frame = this.asyncMode ? new AsyncFrame : new Frame();
+      frame = new Frame();
     }
     if (!this.asyncMode) {
       frame.syncTopLevel = true;
@@ -202,7 +202,7 @@ class Template extends Obj {
 
     const frame = parentFrame
       ? parentFrame.push()
-      : (this.asyncMode ? new AsyncFrame() : new Frame());
+      : new Frame();
     if (!this.asyncMode) {
       frame.syncTopLevel = true;
     }
@@ -377,7 +377,7 @@ class AsyncTemplate extends Template {
     this.compile();
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    const frame = parentFrame ? parentFrame.push(true) : new AsyncFrame();
+    const frame = parentFrame ? parentFrame.push(true) : new Frame();
     if (!this.asyncMode) {
       frame.syncTopLevel = true;
     }

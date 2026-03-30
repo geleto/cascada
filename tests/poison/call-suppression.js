@@ -8,7 +8,7 @@
   let isPoisonError;
   //let PoisonError;
   let collectErrors;
-  let AsyncFrame;
+  let Frame;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -18,7 +18,7 @@
     isPoisonError = runtime.isPoisonError;
     //PoisonError = runtime.PoisonError;
     collectErrors = runtime.collectErrors;
-    AsyncFrame = runtime.AsyncFrame;
+    Frame = runtime.Frame;
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;
@@ -26,7 +26,7 @@
     isPoisonError = nunjucks.runtime.isPoisonError;
     //PoisonError = nunjucks.runtime.PoisonError;
     collectErrors = nunjucks.runtime.collectErrors;
-    AsyncFrame = nunjucks.runtime.AsyncFrame;
+    Frame = nunjucks.runtime.Frame;
   }
 
   const mockErrorContext = { lineno: 1, colno: 1, errorContextString: 'test', path: 'test' };
@@ -467,11 +467,11 @@
     });
 
     describe('sequentialCallWrap - Pure Async Function', () => {
-      let frame, root, mockContext, currentBuffer;
+      let root, mockContext, currentBuffer;
 
       beforeEach(() => {
-        root = new AsyncFrame();
-        frame = root.push(false);
+        root = new Frame();
+        root.push(false);
         currentBuffer = setupSequentialRuntimeForTests(root);
         mockContext = {
           env: { globals: {} },
@@ -563,8 +563,7 @@
 
       it('should throw PoisonError for poisoned lock', async () => {
         const lockPoison = createPoison(new Error('Lock poisoned'));
-        root = new AsyncFrame();
-        frame = root.push(false);
+        root = new Frame();
         currentBuffer = setupSequentialRuntimeForTests(root);
         currentBuffer.findChannel('!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 

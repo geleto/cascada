@@ -80,7 +80,7 @@ Completed so far:
     - `findVisibleChannel(...)` was removed
     - async lookup/guard/export reads now call `currentBuffer.findChannel(...)` directly
     - async compiler output no longer emits frame-backed channel declaration helpers
-    - the remaining legacy sync script-output declaration helper is now explicit: `declareSyncOutput(...)`
+    - dead legacy sync channel-declaration compatibility was removed
   - dead async helper signatures were trimmed further:
     - `Context.resolveExports(...)` no longer accepts `frame` or `runtime`
     - `guard.initChannelSnapshots(...)` no longer accepts `frame`
@@ -106,18 +106,12 @@ Important correction:
 
 Current next target:
 
-- continue Phase 5 / Phase 9 cleanup around channel ownership:
-  - keep shrinking frame-based channel readers
-  - retry the broader `declareChannel(...)` ownership move now that:
-    - visible channel lookup is buffer-ancestry-based
-    - async text channels are already buffer-owned
-    - deferred exports now remember their owning buffer/channel directly
-  - then remove the remaining frame fallback from `findVisibleChannel(...)`
-    - done: buffer-only visibility is now sufficient for async lookup
+  - continue Phase 5 / Phase 9 cleanup around channel ownership:
+  - keep shrinking the remaining sync-only frame readers/writers
   - focus next on deleting dead async frame-era helpers and signatures
     - done: `findVisibleChannel(...)` was removed and callers now use `currentBuffer.findChannel(...)` directly
     - done: modern async template symbol fallback no longer passes through `frame.lookup(...)`
-    - done: the remaining legacy sync script-output declaration helper was isolated as `declareSyncOutput(...)`
+    - done: dead legacy sync channel-declaration compatibility was removed
   - continue shrinking the remaining sync/runtime compatibility lookup helpers that still rely on frame-only vars
   - continue isolating remaining sync-only frame state:
     - done: `frame.topLevel` was renamed to explicit sync-only `frame.syncTopLevel`
