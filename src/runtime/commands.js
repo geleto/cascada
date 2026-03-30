@@ -712,11 +712,7 @@ class TargetPoisonCommand extends Command {
       output._markStateChanged();
       return;
     }
-    if (typeof output._applyPoisonErrors === 'function') {
-      output._applyPoisonErrors(contextualizedErrors);
-      return;
-    }
-    output._setTarget(createPoison(contextualizedErrors));
+    output._applyPoisonErrors(contextualizedErrors);
   }
 }
 
@@ -736,8 +732,8 @@ class SnapshotCommand extends Command {
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output || typeof output._resolveSnapshotCommandResult !== 'function') {
-      this.rejectResult(contextualize(new Error('SnapshotCommand requires a channel with _resolveSnapshotCommandResult()')));
+    if (!output) {
+      this.rejectResult(contextualize(new Error('SnapshotCommand requires a channel')));
       return;
     }
 
@@ -776,8 +772,8 @@ class RawSnapshotCommand extends Command {
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output || typeof output._getTarget !== 'function') {
-      this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a channel with _getTarget()')));
+    if (!output) {
+      this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a channel')));
       return;
     }
 
@@ -805,8 +801,8 @@ class IsErrorCommand extends Command {
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output || typeof output._isErrorNow !== 'function') {
-      this.rejectResult(contextualize(new Error('IsErrorCommand requires a channel with _isErrorNow()')));
+    if (!output) {
+      this.rejectResult(contextualize(new Error('IsErrorCommand requires a channel')));
       return;
     }
 
@@ -841,8 +837,8 @@ class GetErrorCommand extends Command {
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output || typeof output._getErrorNow !== 'function') {
-      this.rejectResult(contextualize(new Error('GetErrorCommand requires a channel with _getErrorNow()')));
+    if (!output) {
+      this.rejectResult(contextualize(new Error('GetErrorCommand requires a channel')));
       return;
     }
 
@@ -877,8 +873,8 @@ class CaptureGuardStateCommand extends Command {
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output || typeof output._captureGuardState !== 'function') {
-      this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a channel with _captureGuardState()')));
+    if (!output) {
+      this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a channel')));
       return;
     }
 
@@ -911,8 +907,8 @@ class SinkRepairCommand extends Command {
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output || typeof output._repairNow !== 'function') {
-      this.rejectResult(contextualize(new Error('SinkRepairCommand requires a sink channel with _repairNow()')));
+    if (!output) {
+      this.rejectResult(contextualize(new Error('SinkRepairCommand requires a sink channel')));
       return;
     }
 
@@ -949,8 +945,8 @@ class TextCheckpointCommand extends Command {
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output || typeof output._captureTextCheckpoint !== 'function') {
-      this.rejectResult(contextualize(new Error('TextCheckpointCommand requires a text channel with _captureTextCheckpoint()')));
+    if (!output) {
+      this.rejectResult(contextualize(new Error('TextCheckpointCommand requires a text channel')));
       return;
     }
 
@@ -1032,7 +1028,7 @@ module.exports = {
 };
 
 function setDataPoisonAtPath(output, args, poisonValue) {
-  if (!output || !output._base || typeof output._base.set !== 'function') {
+  if (!output || !output._base) {
     return;
   }
   const rawPath = Array.isArray(args) && args.length > 0 ? args[0] : null;

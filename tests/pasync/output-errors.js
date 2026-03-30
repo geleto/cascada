@@ -25,6 +25,7 @@ const {
   createChannel,
   createSinkChannel
 } = require('../../src/runtime/channel');
+const { createCommandBuffer } = require('../../src/runtime/command-buffer');
 const { createArray } = require('../../src/runtime/resolve');
 describe('channel errors', function () {
   describe('channel commands step2 poison encoding', function () {
@@ -216,8 +217,8 @@ describe('channel errors', function () {
 
   describe('output observation commands step3', function () {
     it('does not expose observation methods on output facades', async () => {
-      const fakeBuffer = { _registerOutput() { } };
-      const out = createChannel(fakeBuffer, 'out', null, 'data');
+      const buffer = createCommandBuffer(null);
+      const out = createChannel(buffer, 'out', null, 'data');
 
       expect(out.snapshot).to.be(undefined);
       expect(out.isError).to.be(undefined);
@@ -226,16 +227,14 @@ describe('channel errors', function () {
 
     it('routes sink facade repair through command buffer API', async () => {
       const calls = [];
-      const fakeBuffer = {
-        addSinkRepair(name) {
-          calls.push(['repair', name]);
-          return Promise.resolve(undefined);
-        },
-        _registerOutput() { }
+      const buffer = createCommandBuffer(null);
+      buffer.addSinkRepair = (name) => {
+        calls.push(['repair', name]);
+        return Promise.resolve(undefined);
       };
       const sink = { repair() { } };
 
-      const out = createSinkChannel(fakeBuffer, 'logger', null, sink);
+      const out = createSinkChannel(buffer, 'logger', null, sink);
       await out.repair();
 
       expect(calls).to.eql([['repair', 'logger']]);

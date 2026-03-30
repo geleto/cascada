@@ -32,11 +32,8 @@ class Channel {
       this._resolveCompletion = resolve;
     });
 
-    if (this._buffer && this._buffer._registerChannel) {
+    if (this._buffer) {
       this._buffer._registerChannel(this._channelName, this);
-    } else if (this._buffer && this._buffer._channels instanceof Map) {
-      this._buffer._channels.set(this._channelName, this);
-      this._iterator.bindToCurrentBuffer();
     }
   }
 
@@ -510,7 +507,7 @@ class DataChannel extends Channel {
     const poison = createPoison(mergedRootErrors);
     const rawPath = cmd && Array.isArray(cmd.arguments) && cmd.arguments.length > 0 ? cmd.arguments[0] : null;
     const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
-    if (this._base && typeof this._base.set === 'function') {
+    if (this._base) {
       try {
         this._base.set(path, poison);
         this._setTarget(this._base.data);
@@ -601,7 +598,7 @@ class SinkChannel extends Channel {
 
   repair(pos = null) {
     const commandPos = normalizeCommandPos(pos);
-    if (this._buffer && typeof this._buffer.addSinkRepair === 'function') {
+    if (this._buffer) {
       return this._buffer.addSinkRepair(this._channelName, commandPos);
     }
     return Promise.resolve(this._repairNow());

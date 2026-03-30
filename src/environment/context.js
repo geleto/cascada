@@ -166,7 +166,7 @@ class Context extends Obj {
     const names = Object.keys(this.exportResolveFunctions);
     for (const name of names) {
       const resolve = this.exportResolveFunctions[name];
-      if (typeof resolve !== 'function') {
+      if (!resolve) {
         continue;
       }
       const channel = runtime.findVisibleChannel(currentBuffer, frame, name);
