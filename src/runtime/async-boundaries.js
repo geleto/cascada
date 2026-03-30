@@ -3,12 +3,11 @@
 const errors = require('./errors');
 const buffer = require('./command-buffer');
 
-function _createChildBoundary(parentBuffer, usedChannels, f, isolatedContext = null) {
+function _createChildBoundary(parentBuffer, usedChannels, isolatedContext = null) {
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
-  const childFrame = f.new();
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
   const childBuffer = buffer.createCommandBuffer(bufferContext, null, linkedChannels, parentBuffer || null);
-  return { childFrame, childBuffer };
+  return { childBuffer };
 }
 
 function _reportBoundaryError(err, boundaryName, context, cb) {
@@ -28,16 +27,16 @@ async function _finalizeBoundary(childBuffer, waitedChannelName = null) {
 /**
  * Run a control-flow boundary (if/switch body) as a single async child buffer.
  *
- * The asyncFn receives (childFrame, childBuffer) and should compile
+ * The asyncFn receives (childBuffer) and should compile
  * branch bodies synchronously inside - no inner legacy async-block wrappers needed.
  */
-async function runControlFlowBoundary(parentBuffer, usedChannels, f, context, cb, asyncFn) {
+async function runControlFlowBoundary(parentBuffer, usedChannels, context, cb, asyncFn) {
   void context;
   void cb;
-  const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
+  const { childBuffer } = _createChildBoundary(parentBuffer, usedChannels);
 
   try {
-    return await asyncFn(childFrame, childBuffer);
+    return await asyncFn(childBuffer);
   } catch (err) {
     _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
@@ -51,13 +50,13 @@ async function runControlFlowBoundary(parentBuffer, usedChannels, f, context, cb
  * waited channel. This is loop-specific structural behavior and stays out of
  * the generic control-flow helper.
  */
-async function runWaitedControlFlowBoundary(parentBuffer, usedChannels, f, context, cb, asyncFn, waitedChannelName) {
+async function runWaitedControlFlowBoundary(parentBuffer, usedChannels, context, cb, asyncFn, waitedChannelName) {
   void context;
   void cb;
-  const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
+  const { childBuffer } = _createChildBoundary(parentBuffer, usedChannels);
 
   try {
-    return await asyncFn(childFrame, childBuffer);
+    return await asyncFn(childBuffer);
   } catch (err) {
     _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
@@ -68,14 +67,14 @@ async function runWaitedControlFlowBoundary(parentBuffer, usedChannels, f, conte
 
 /**
  * Run an isolated render boundary as an async child buffer that is not linked
- * into the parent tree. The asyncFn receives (childFrame, childBuffer)
+ * into the parent tree. The asyncFn receives (childBuffer)
  * and should synchronously emit the boundary body into that child buffer.
  */
-async function runRenderBoundary(f, context, cb, asyncFn) {
-  const { childFrame, childBuffer } = _createChildBoundary(null, null, f, context || null);
+async function runRenderBoundary(context, cb, asyncFn) {
+  const { childBuffer } = _createChildBoundary(null, null, context || null);
 
   try {
-    return await asyncFn(childFrame, childBuffer);
+    return await asyncFn(childBuffer);
   } catch (err) {
     _reportBoundaryError(err, 'RenderAsyncBlock', context, cb);
     return null;
@@ -91,11 +90,11 @@ async function runRenderBoundary(f, context, cb, asyncFn) {
  * Unlike runControlFlowBoundary(...), this helper preserves normal expression
  * rejection semantics: errors are rethrown to the awaiting caller.
  */
-async function runValueBoundary(parentBuffer, usedChannels, f, asyncFn) {
-  const { childFrame, childBuffer } = _createChildBoundary(parentBuffer, usedChannels, f);
+async function runValueBoundary(parentBuffer, usedChannels, asyncFn) {
+  const { childBuffer } = _createChildBoundary(parentBuffer, usedChannels);
 
   try {
-    return await asyncFn(childFrame, childBuffer);
+    return await asyncFn(childBuffer);
   } finally {
     await _finalizeBoundary(childBuffer);
   }

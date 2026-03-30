@@ -82,9 +82,6 @@ module.exports = class CompileEmit {
       this.compiler.buffer.currentTextChannelVar,
       linkedChannels
     );
-    if (this.compiler.asyncMode) {
-      this.line('var frame = new runtime.Frame();');
-    }
     this.line('try {');
   }
 

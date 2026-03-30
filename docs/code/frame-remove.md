@@ -76,19 +76,25 @@ Completed so far:
     - async `include`, `import`, and `from import` now pass explicit context snapshots of visible declared vars
     - async composition visibility for those paths is now context/channel-driven instead of frame-driven
   - async composition/render entry no longer inherits runtime frame ancestry
-    - async `_render(...)`, `getExported(...)`, and `_renderForComposition(...)` all start from fresh `Frame`s
-    - async control-flow/render/value boundaries also now create fresh child frames instead of `push()`ing runtime frame ancestry
+    - async `_render(...)`, `getExported(...)`, and `_renderForComposition(...)` no longer pass or create runtime frames
+    - async control-flow/render/value boundaries also no longer thread runtime frame ancestry
   - async inheritance execution no longer inherits caller runtime frame ancestry
-    - async parent-template handoff now calls parent `rootRenderFunc(...)` with a fresh `Frame`
-    - async block execution and `super()` now also start from fresh `Frame`s
+    - async parent-template handoff no longer threads a runtime frame into parent `rootRenderFunc(...)`
+    - async block execution and `super()` no longer thread caller runtime frame ancestry
     - this keeps async inheritance visibility context/channel-driven instead of frame-chain-driven
   - async entry/runtime signatures are partly slimmed down
     - async generated `root` / block entry functions no longer accept a caller-provided `frame`
     - async template entry call sites and the async no-op template now use the slimmer runtime signature
     - async `super()` now uses `Context.getAsyncSuper(...)` instead of the sync-shaped `getSuper(...)`
+  - dead local async runtime `Frame` creation was reduced further
+    - modern async entry functions no longer create a local `new runtime.Frame()` just for shape
+    - async macro wrappers no longer create a local runtime `Frame()`
+    - async boundary helpers no longer create/pass child frames to callbacks
+    - the hidden async loop dependency on `runtime.iterate(..., frame, ...)` was removed
+      - `iterate(...)` now uses buffer/channel state only in async mode
   - async macros no longer close over outer runtime frame ancestry
-    - async macro bodies now start from a fresh `Frame`
     - they no longer capture caller frame chains through the old `(function(frame) { ... }).call(this, frame)` shape
+    - async macro wrappers no longer create a replacement local runtime `Frame()` either
   - modern async control-flow no longer maintains a runtime frame stack just for lexical scope
     - removed leftover async `frame.push()/pop()` emission from modern `if`, `switch`, `guard` recovery, and managed-block scaffolding
     - async block entry no longer immediately `push(true)` on top of the fresh entry frame
@@ -136,11 +142,8 @@ Current next target:
   - continue shrinking the remaining sync/runtime compatibility lookup helpers that still rely on frame-only vars
   - continue shrinking the remaining async runtime `frame` threading that is now mostly signature-only:
     - inherited async frame threading is mostly gone
-    - the remaining work is to remove truly dead local async frame creation, not parent-frame ancestry
-    - likely next targets are the local async `Frame` variables still created inside:
-      - generated async entry functions
-      - async macros
-      - any helper boundary that still carries a local runtime frame only for legacy shape
+    - done: dead local async `Frame` creation in generated async entries, async macros, and async boundaries was removed
+    - the remaining work is now to find truly live async runtime frame reads/writes, not local scaffolding
   - continue isolating remaining sync-only frame state:
     - done: `frame.topLevel` was renamed to explicit sync-only `frame.syncTopLevel`
     - done: loop frame metadata writes now go through explicit sync-only `setSyncLoopBindings(...)`

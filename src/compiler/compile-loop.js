@@ -167,9 +167,9 @@ class CompileLoop {
       const shouldTrackNestedLoopCompletion = loopOwnsWaitedCompletion && !!parentWaitedChannelName;
       const iteratePromiseId = this.compiler.asyncMode ? this.compiler._tmpid() : null;
       if (this.compiler.asyncMode) {
-        this.compiler.emit(`let ${iteratePromiseId} = runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${this.compiler.buffer.currentBuffer}, [`);
+        this.compiler.emit(`let ${iteratePromiseId} = runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, ${this.compiler.buffer.currentBuffer}, [`);
       } else {
-        this.compiler.emit(`runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, null, [`);
+        this.compiler.emit(`runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, null, [`);
       }
       loopVars.forEach((varName, index) => {
         if (index > 0) {
@@ -225,7 +225,7 @@ class CompileLoop {
       const parentBufferArg = this.compiler.buffer.currentBuffer;
       const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
       this.compiler.emit(
-        `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
+        `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
       );
       this.compiler.emit.asyncClosureDepth++;
     }

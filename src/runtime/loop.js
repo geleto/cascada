@@ -620,11 +620,11 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
     } else {
       // Parallel (unbounded) object iteration – same semantics as before
       for (let i = 0; i < len; i++) {
-          const key = keys[i];
-          let value = arr[key];
-          const isLast = i === len - 1;
+        const key = keys[i];
+        let value = arr[key];
+        const isLast = i === len - 1;
 
-          loopBody(key, value, i, len, isLast);
+        loopBody(key, value, i, len, isLast);
         // Non-sequential bodies may be async; each body registers its own async block.
         // We deliberately do *not* await loopBody here – same as existing parallel behaviour.
       }
@@ -637,13 +637,12 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
 /**
  * Poison body/else channel effects when loop input fails before/during iteration.
  *
- * @param {AsyncFrame} frame - The loop frame
  * @param {Object} buffer - The CommandBuffer instance
  * @param {Object} asyncOptions - Options containing write counts and channels
  * @param {Array} errors - Array of error objects to propagate
  * @param {boolean} didIterate - Whether any iterations occurred
  */
-function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
+function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   //replace the errors with the handleError'd errors
   errors = errors.map(error => handleError(error, asyncOptions.errorContext.lineno, asyncOptions.errorContext.colno, asyncOptions.errorContext.errorContextString, asyncOptions.errorContext.path));
 
@@ -666,13 +665,13 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
   }
 }
 
-async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = [], asyncOptions = null) {
+async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOptions = null) {
   // Handle poison detection if in async mode
   if (asyncOptions) {
     // Check for synchronous poison first
     if (isPoison(arr)) {
       // Array expression evaluated to poison - poison both body and else
-      poisonLoopEffects(loopFrame, buffer, asyncOptions, arr.errors, false);
+      poisonLoopEffects(buffer, asyncOptions, arr.errors, false);
       return; // Early return, else doesn't run
     }
 
@@ -683,7 +682,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       } catch (err) {
         // Promise rejected - poison both body and else
         const errors = isPoisonError(err) ? err.errors : [err];
-        poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
+        poisonLoopEffects(buffer, asyncOptions, errors, false);
         return;
       }
     }
@@ -715,7 +714,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       // 1. If it's a PoisonedValue → whole loop is poisoned
       if (isPoison(maxConcurrency)) {
         const errors = maxConcurrency.errors || [maxConcurrency];
-        poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
+        poisonLoopEffects(buffer, asyncOptions, errors, false);
         return;
       }
 
@@ -727,13 +726,13 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
           // which is caught by the outer catch. Check for poison after await.
           if (isPoison(maxConcurrency)) {
             const errors = maxConcurrency.errors || [maxConcurrency];
-            poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
+            poisonLoopEffects(buffer, asyncOptions, errors, false);
             return;
           }
         } catch (err) {
           // Promise rejected - poison both body and else
           const errors = isPoisonError(err) ? err.errors : [err];
-          poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
+          poisonLoopEffects(buffer, asyncOptions, errors, false);
           return;
         }
       }
@@ -746,7 +745,6 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         const numericLimit = Number(maxConcurrency);
         if (typeof maxConcurrency !== 'number' || !Number.isFinite(numericLimit) || numericLimit <= 0) {
           poisonLoopEffects(
-            loopFrame,
             buffer,
             asyncOptions,
             [new Error('concurrentLimit must be a positive number or 0 / null / undefined')],
@@ -812,7 +810,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     const errors = isPoisonError(err) ? err.errors : [err];
     didIterate = errors[errors.length - 1]?.didIterate || false;
     // if we had at least one iteration, we won't poison the else side-effects
-    poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
+    poisonLoopEffects(buffer, asyncOptions, errors, didIterate);
     return;
   }
 
@@ -826,43 +824,6 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     }
   }
 
-}
-
-/**
- * Create an async iterator for while loop conditions that handles poison and errors gracefully.
- * Yields Error/PoisonError objects instead of PoisonedValue to keep generator alive.
- *
- * @param {AsyncFrame} frame - The loop frame
- * @param {Function} conditionEvaluator - Async function that evaluates the condition
- * @returns {AsyncGenerator} Async generator that yields iteration counts or errors
- */
-async function* whileConditionIterator(frame, conditionEvaluator) {
-  // Push a frame to trap any writes from the condition expression
-  frame = frame.push();
-  frame.sequentialLoopBody = true;
-
-  let iterationCount = 0;
-
-  try {
-    while (true) {
-      // Evaluate the condition. If it returns poison or rejects, await will throw.
-      // and the error will be caught by the iterateAsyncSequential
-      const conditionResult = await conditionEvaluator(frame);
-
-      // Normal condition evaluation - check if we should continue
-      if (!conditionResult) {
-        break;
-      }
-
-      // Yield the iteration count for this iteration
-      yield iterationCount;
-      iterationCount++;
-    }
-  }
-  finally {
-    // Ensure the temporary frame is always popped.
-    frame.pop();
-  }
 }
 
 async function* whileIterator() {
@@ -889,7 +850,6 @@ module.exports = {
   iterateAsyncParallel,
   poisonLoopEffects,
   iterate,
-  whileConditionIterator,
   whileIterator
 };
 

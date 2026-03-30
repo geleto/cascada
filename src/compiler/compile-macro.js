@@ -404,7 +404,6 @@ class CompileMacro {
     if (compiler.asyncMode) {
       compiler.emit.line('return (function() {');
       compiler.emit.lines(
-        'var frame = new runtime.Frame();',
         'kwargs = kwargs || {};',
         'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
         '  kwargs.caller = undefined;',
