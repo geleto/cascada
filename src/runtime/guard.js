@@ -23,7 +23,7 @@ function initChannelSnapshots(frame, channelNames = null, buffer = null, cb = nu
   const targets = channelNames ?? [];
 
   for (const channelName of targets) {
-    const channel = findVisibleChannel(buffer, frame, channelName);
+    const channel = findVisibleChannel(buffer, channelName);
     if (!channel) {
       continue;
     }

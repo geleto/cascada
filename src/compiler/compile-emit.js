@@ -208,8 +208,7 @@ module.exports = class CompileEmit {
 
   // @todo - optimize this:
   // similar for writes we can do some optimizations
-  getLinkedChannelsArg(node, frame) {
-    void frame;
+  getLinkedChannelsArg(node) {
     const usedChannels = Array.from(node._analysis.usedChannels || []);
     const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
     const linkedChannels = usedChannels.filter((name) => {

@@ -54,6 +54,10 @@ Completed so far:
     - `__parentTemplate`
     - root-owned async `var` declarations
     - explicit async `data` / `text` / `sink` / `sequence` channel declarations
+    - explicit async `var` channel declarations
+    - guard recovery error vars
+    - async loop vars / loop metadata bindings
+    - async macro `caller` / arg / kwarg bindings
   - async text-channel declarations now also bypass `frame._channels`
     - the underlying blocker was fixed by preserving owned channels per buffer and resolving visible channels by buffer ancestry instead of the shared map alone
     - guard / capture / revert semantics stay green with buffer-only async text registration
@@ -71,6 +75,10 @@ Completed so far:
     - sequential lock channels are now declared buffer-only
     - `ensureSequentialPathChannel(...)` validates through `currentBuffer.getChannel(...)`
     - sequential runtime helpers no longer thread a frame parameter just to discover lock channels
+  - visible-channel lookup is now buffer-only
+    - `findVisibleChannel(...)` no longer falls back to `getChannel(frame, ...)`
+    - async compiler output no longer emits `runtime.declareChannel(frame, ...)`
+    - remaining `declareChannel(...)` usage is now sync/runtime-compatibility only
 
 Important correction:
 
@@ -89,15 +97,11 @@ Current next target:
     - async text channels are already buffer-owned
     - deferred exports now remember their owning buffer/channel directly
   - then remove the remaining frame fallback from `findVisibleChannel(...)`
-    - or delete `findVisibleChannel(...)` entirely where callers can use `currentBuffer.findChannel(...)` / `getChannelFromBuffer(...)` directly
-  - focus next on non-text declarations that still mirror into `frame._channels`
-    - `data`
-    - `sink`
-    - `sequence`
-    - loop / guard locals that still rely on exact lexical visibility rather than composition visibility
-    - `caller` / macro args / kwargs
-    - loop vars / loop metadata bindings
-    - guard recovery error vars
+    - done: buffer-only visibility is now sufficient for async lookup
+  - focus next on deleting dead async frame-era helpers and signatures
+    - remove or narrow `findVisibleChannel(...)` where callers can just use `currentBuffer.findChannel(...)`
+    - audit whether `declareChannel(...)` is now sync-only compatibility and can be isolated or trimmed
+    - continue shrinking async runtime/frame lookup helpers that still carry `frame` in their signature only for migration reasons
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`

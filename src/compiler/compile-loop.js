@@ -223,7 +223,7 @@ class CompileLoop {
 
     if (this.compiler.asyncMode) {
       const parentBufferArg = this.compiler.buffer.currentBuffer;
-      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
       this.compiler.emit(
         `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, frame, context, cb, async (frame, currentBuffer) => {`
       );
@@ -413,15 +413,14 @@ class CompileLoop {
   _emitLoopValueDeclarations(node, loopVars) {
     const buffer = this.compiler.buffer.currentBuffer;
     loopVars.forEach((name) => {
-      this.compiler.emit.line(`runtime.declareChannel(frame, ${buffer}, "${name}", "var", context, null);`);
+      this.compiler.emit.line(`runtime.declareBufferChannel(${buffer}, "${name}", "var", context, null);`);
     });
     if (node.loopRuntimeName) {
-      this.compiler.emit.line(`runtime.declareChannel(frame, ${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
+      this.compiler.emit.line(`runtime.declareBufferChannel(${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
     }
   }
 
-  _emitLoopValueAssignment(node, channelName, valueExpr, frame) {
-    void frame;
+  _emitLoopValueAssignment(node, channelName, valueExpr) {
     this.compiler.emit.line(
       `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${channelName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${channelName}');`
     );
@@ -431,7 +430,7 @@ class CompileLoop {
     if (useLoopValues) {
       this._emitLoopValueDeclarations(node, loopVars);
       if (node.loopRuntimeName) {
-        this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame);
+        this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast);
       }
       return;
     }
@@ -440,15 +439,14 @@ class CompileLoop {
 
   _emitLoopVarIterationBinding(node, varName, valueExpr, frame, useLoopValues) {
     if (useLoopValues) {
-      this._emitLoopValueAssignment(node, varName, valueExpr, frame);
+      this._emitLoopValueAssignment(node, varName, valueExpr);
       return;
     }
 
     this.compiler.emit.line(`frame.set("${varName}", ${valueExpr});`);
   }
 
-  _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame) {
-    void frame;
+  _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast) {
     this.compiler.emit.line(
       `${this.compiler.buffer.currentBuffer}.add(runtime.setLoopValueBindings('${node.loopRuntimeName}', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}}), '${node.loopRuntimeName}');`
     );

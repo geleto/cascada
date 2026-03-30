@@ -292,13 +292,13 @@ class CompileMacro {
       });
     }
 
-    compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "caller", "var", context, null);`);
+    compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "caller", "var", context, null);`);
     args.forEach((arg) => {
-      compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${arg.value}", "var", context, null);`);
+      compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "${arg.value}", "var", context, null);`);
     });
     if (kwargs) {
       kwargs.children.forEach((pair) => {
-        compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${pair.key.value}", "var", context, null);`);
+        compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "${pair.key.value}", "var", context, null);`);
       });
     }
 

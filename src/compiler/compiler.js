@@ -744,7 +744,7 @@ class Compiler extends CompilerBase {
             // Guard recovery error variable is already declared in analysis;
             // recovery runs inside the existing guard boundary, so only the
             // runtime var-channel registration and command emit are needed here.
-            this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
+            this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
             this.emit.line(
               `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
             );
@@ -1634,7 +1634,7 @@ class Compiler extends CompilerBase {
     });
     const name = nameNode.value;
 
-    if (this.asyncMode && channelType !== 'var') {
+    if (this.asyncMode) {
       this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
     } else {
       this.emit(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);

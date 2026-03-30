@@ -246,7 +246,7 @@ function contextOrVarLookup(_context, frame, name, currentBuffer) {
  * finalSnapshot(); only explicit finalization sites may do that.
  */
 function varChannelLookup(frame, name, currentBuffer) {
-  const channel = findVisibleChannel(currentBuffer, frame, name);
+  const channel = findVisibleChannel(currentBuffer, name);
   if (!channel) {
     return undefined;
   }
@@ -297,7 +297,7 @@ function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, erro
 // ordinary reads stay as ordered snapshot commands, using the producer buffer
 // for cross-tree reads instead of finalSnapshot().
 function varChannelLookupScript(frame, name, currentBuffer) {
-  const channel = findVisibleChannel(currentBuffer, frame, name);
+  const channel = findVisibleChannel(currentBuffer, name);
   if (!channel) {
     return undefined;
   }

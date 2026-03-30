@@ -822,8 +822,8 @@ function getChannelFromBuffer(buffer, channelName) {
   return buffer.findChannel(channelName);
 }
 
-function findVisibleChannel(currentBuffer, frame, channelName) {
-  return getChannelFromBuffer(currentBuffer, channelName) || getChannel(frame, channelName);
+function findVisibleChannel(currentBuffer, channelName) {
+  return getChannelFromBuffer(currentBuffer, channelName);
 }
 
 function declareBufferChannel(buffer, channelName, channelType, context, initializer = null) {

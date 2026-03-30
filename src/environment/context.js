@@ -202,7 +202,7 @@ class Context extends Obj {
       const exportChannel = this.exportChannels[name];
       const channel = exportChannel
         ? runtime.getChannelFromBuffer(exportChannel.buffer, exportChannel.channelName)
-        : runtime.findVisibleChannel(currentBuffer, frame, name);
+        : runtime.findVisibleChannel(currentBuffer, name);
       resolve(channel.finalSnapshot());
     }
   }

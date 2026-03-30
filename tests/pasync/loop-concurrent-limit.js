@@ -2405,7 +2405,7 @@
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x }}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(source).to.contain('__waited__');
-      expect(source).to.contain('runtime.declareChannel(frame,');
+      expect(source).to.contain('runtime.declareBufferChannel(');
     });
 
     it('emits canonical loop runtime aliases with loop#<id>', function () {

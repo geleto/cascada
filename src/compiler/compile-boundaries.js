@@ -33,7 +33,7 @@ class CompileBoundaries {
 
   compileExpressionControlFlowBoundary(bufferCompiler, node, frame, emitBody) {
     const parentBufferArg = bufferCompiler.currentBuffer;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
     const prevBuffer = bufferCompiler.currentBuffer;
 
     // Reserve a structural child buffer synchronously before any async
@@ -51,7 +51,7 @@ class CompileBoundaries {
 
   compileValueBoundary(bufferCompiler, node, frame, emitValue, positionNode = node) {
     const parentBufferArg = bufferCompiler.currentBuffer || 'null';
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
     const resultId = this.compiler._tmpid();
 
     this.compiler.emit.line(
@@ -86,7 +86,7 @@ class CompileBoundaries {
   compileControlFlowBoundary(bufferCompiler, node, frame, emitFunc = null) {
     if (this.compiler.asyncMode) {
       const parentBufferArg = bufferCompiler.currentBuffer;
-      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
       const trackAsSingleWaitedUnit = this.compiler.asyncMode && !!bufferCompiler.currentWaitedChannelName;
       const controlFlowWaitedChannelName = trackAsSingleWaitedUnit ? `__waited__${this.compiler._tmpid()}` : null;
       const controlFlowPromiseId = this.compiler._tmpid();
@@ -280,7 +280,7 @@ class CompileBoundaries {
 
     return this._compileAsyncTextBoundary(bufferCompiler, frame, {
       parentBufferExpr: bufferCompiler.currentBuffer,
-      linkedChannelsArg: this.compiler.emit.getLinkedChannelsArg(node, frame),
+      linkedChannelsArg: this.compiler.emit.getLinkedChannelsArg(node),
       callbackParams: '(frame, currentBuffer)',
       targetChannelName: bufferCompiler.currentTextChannelName,
       targetBufferExpr: 'currentBuffer',
@@ -319,7 +319,7 @@ class CompileBoundaries {
 
   compileCaptureBoundary(bufferCompiler, node, frame, innerBodyFunction, positionNode = node) {
     const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
     const outerParentBuffer = bufferCompiler.currentBuffer;
 
     this.compiler.emit(
