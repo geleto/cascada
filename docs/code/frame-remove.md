@@ -11,6 +11,8 @@ Completed so far:
   - the old async-determination pass was deleted
 - Phase 2 is partly done:
   - modern async symbol reads were reduced away from frame-shaped fallback in several places
+  - modern async template symbol fallback no longer consults `frame.lookup(...)`
+    - async template symbols now resolve through channel snapshot lookup first, then context
   - async channel lookup now prefers buffer-owned lookup paths in the modern runtime
   - visible buffer lookup no longer relies only on the shared `buffer._channels` map
     - buffers now retain the owned channel object per name
@@ -83,6 +85,7 @@ Completed so far:
     - `Context.resolveExports(...)` no longer accepts `frame` or `runtime`
     - `guard.initChannelSnapshots(...)` no longer accepts `frame`
     - `getChannelFromBuffer(...)` was removed in favor of direct `buffer.findChannel(...)`
+    - dead `contextOrVarLookupScript(...)` and `AsyncFrame.lookupAndLocate(...)` were removed
 
 Important correction:
 
@@ -104,8 +107,9 @@ Current next target:
     - done: buffer-only visibility is now sufficient for async lookup
   - focus next on deleting dead async frame-era helpers and signatures
     - done: `findVisibleChannel(...)` was removed and callers now use `currentBuffer.findChannel(...)` directly
+    - done: modern async template symbol fallback no longer passes through `frame.lookup(...)`
     - audit whether `declareChannel(...)` is now sync-only compatibility and can be isolated or trimmed
-    - continue shrinking async runtime/frame lookup helpers that still carry `frame` in their signature only for migration reasons
+    - continue shrinking the remaining sync/runtime compatibility lookup helpers that still rely on frame-only lookup
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`

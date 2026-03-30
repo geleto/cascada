@@ -219,11 +219,7 @@ function contextOrFrameLookup(context, frame, name) {
  * - declared async vars should resolve through channel snapshots
  * - globals/context stay last
  */
-function contextOrVarLookup(_context, frame, name, currentBuffer) {
-  const frameValue = frame.lookup(name);
-  if (frameValue !== undefined) {
-    return frameValue;
-  }
+function contextOrVarLookup(_context, name, currentBuffer) {
   const channelRead = varChannelLookup(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
@@ -258,25 +254,6 @@ function varChannelLookup(name, currentBuffer) {
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
   return channel._buffer.addSnapshot(channel._channelName, { lineno: 0, colno: 0 });
-}
-
-/**
- * Context/frame/channel lookup for scripts.
- * Order:
- * 1) declared frame variable
- * 2) declared channel snapshot in current buffer
- * 3) script-mode context lookup (throws if missing)
- */
-function contextOrVarLookupScript(context, frame, name, currentBuffer) {
-  let {value: val, frame: f} = frame.lookupAndLocate(name);
-  if (f) {
-    return val;
-  }
-  const channelRead = varChannelLookupScript(name, currentBuffer);
-  if (channelRead !== undefined) {
-    return channelRead;
-  }
-  return context.lookupScriptMode(name);
 }
 
 /**
@@ -344,6 +321,5 @@ module.exports = {
   contextOrFrameLookup,
   varChannelLookup,
   contextOrVarLookup,
-  contextOrVarLookupScript,
   contextOrVarLookupScriptAsync,
 };

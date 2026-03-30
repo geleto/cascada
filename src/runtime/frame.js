@@ -140,18 +140,6 @@ class AsyncFrame extends Frame {
     return new AsyncFrame();
   }
 
-  lookupAndLocate(name) {
-    if (name in this.variables) {
-      return { value: this.variables[name], frame: this };
-    }
-
-    if (this.parent) {
-      return this.parent.lookupAndLocate(name);
-    }
-
-    return { value: undefined, frame: null };
-  }
-
   push(isolateWrites) {
     const newFrame = new AsyncFrame(this, isolateWrites);
     newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
