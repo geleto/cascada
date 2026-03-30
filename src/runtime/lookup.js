@@ -240,7 +240,10 @@ function contextOrVarLookup(_context, frame, name, currentBuffer) {
  * Ordering rule:
  * - If the channel owner buffer is in the current buffer ancestry, snapshot from
  *   current buffer lane (ordered read).
- * - Otherwise, use finalSnapshot() directly (cross-tree / completed-owner read).
+ * - Otherwise, snapshot from the producer buffer lane.
+ *
+ * Ordinary symbol reads are not terminal consumers and must not use
+ * finalSnapshot(); only explicit finalization sites may do that.
  */
 function varChannelLookup(frame, name, currentBuffer) {
   const channel = findVisibleChannel(currentBuffer, frame, name);
@@ -248,12 +251,6 @@ function varChannelLookup(frame, name, currentBuffer) {
     return undefined;
   }
   if (isBufferInAncestry(currentBuffer, channel._buffer)) {
-    // This boundary check is intentionally buffer-wide rather than channel-wide.
-    // When the immediate parent buffer is fully complete, ordered lane snapshots
-    // are no longer needed from this descendant read point.
-    if (currentBuffer.parent && currentBuffer.parent.finished) {
-      return channel.finalSnapshot();
-    }
     // Optional dynamic mode: lazily link current read buffer into the channel lane.
     // This is intentionally flag-guarded so structural prelinking remains the default model,
     // but dynamic compositions can opt in without changing compiler wiring.
@@ -262,7 +259,7 @@ function varChannelLookup(frame, name, currentBuffer) {
     }
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
-  return channel.finalSnapshot();
+  return channel._buffer.addSnapshot(channel._channelName, { lineno: 0, colno: 0 });
 }
 
 /**
@@ -297,28 +294,20 @@ function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, erro
 }
 
 // Script-mode channel lookup variant:
-// for cross-tree reads, prefer producer-buffer snapshots while producer is live
-// to avoid waiting on full finalization of the channel stream.
+// ordinary reads stay as ordered snapshot commands, using the producer buffer
+// for cross-tree reads instead of finalSnapshot().
 function varChannelLookupScript(frame, name, currentBuffer) {
   const channel = findVisibleChannel(currentBuffer, frame, name);
   if (!channel) {
     return undefined;
   }
   if (isBufferInAncestry(currentBuffer, channel._buffer)) {
-    // Intentionally aggregate: this is a read-boundary transition, not a claim
-    // about whether the specific channel lane is finished on the parent.
-    if (currentBuffer.parent && currentBuffer.parent.finished) {
-      return channel.finalSnapshot();
-    }
     if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
       ensureReadChannelLink(currentBuffer, channel, name);
     }
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
-  if (channel._buffer && !channel._buffer.isFinished(name)) {
-    return channel._buffer.addSnapshot(name, { lineno: 0, colno: 0 });
-  }
-  return channel.finalSnapshot();
+  return channel._buffer.addSnapshot(channel._channelName, { lineno: 0, colno: 0 });
 }
 
 // Dynamically links the current read buffer into the target channel lane once.
