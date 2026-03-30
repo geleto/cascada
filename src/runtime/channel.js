@@ -853,12 +853,6 @@ function declareChannel(frame, buffer, channelName, channelType, context, initia
   return channel;
 }
 
-function finalizeUnobservedSinks(frame, context) {
-  // No-op: sink commands execute on the fly as iterator progresses.
-  // Unobserved sink errors remain non-fatal and are surfaced only by snapshot().
-  return undefined;
-}
-
 module.exports = {
   Channel,
   DataChannel,
@@ -873,8 +867,7 @@ module.exports = {
   createSequenceChannel,
   getChannel,
   getChannelFromBuffer,
-  declareChannel,
-  finalizeUnobservedSinks
+  declareChannel
 };
 
 function cloneSnapshotValue(value) {

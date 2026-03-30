@@ -21,10 +21,7 @@ const { checkFinishedBuffer } = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
 
 class CommandBuffer {
-  constructor(context, parent = null, frame = null) {
-    if (!frame || typeof frame !== 'object') {
-      throw new Error('CommandBuffer requires an owning frame');
-    }
+  constructor(context, parent = null) {
     this._context = context;
     this.parent = parent;
     this.finished = false;
@@ -526,7 +523,8 @@ function ensureChannelIterator(channel) {
 }
 
 function createCommandBuffer(context, parent = null, frame = null, linkedChannels = null, linkedParent = null) {
-  const buffer = new CommandBuffer(context, parent, frame);
+  void frame;
+  const buffer = new CommandBuffer(context, parent);
   const linkTarget = linkedParent || parent;
   if (linkTarget && Array.isArray(linkedChannels)) {
     for (let i = 0; i < linkedChannels.length; i++) {

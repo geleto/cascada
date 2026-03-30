@@ -237,7 +237,6 @@ module.exports = {
   createObject: resolve.createObject,
   createArray: resolve.createArray,
 
-  finalizeUnobservedSinks: output.finalizeUnobservedSinks,
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
 
