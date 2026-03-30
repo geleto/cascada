@@ -859,8 +859,8 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
 }
 
 function declareChannel(frame, buffer, channelName, channelType, context, initializer = null) {
-  frame._channels = frame._channels || Object.create(null);
   const channel = declareBufferChannel(buffer, channelName, channelType, context, initializer);
+  frame._channels = frame._channels || Object.create(null);
   frame._channels[channelName] = channel;
   return channel;
 }

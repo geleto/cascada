@@ -197,7 +197,7 @@ class CompileLoop {
   }
 
   _compileLoopBody(node, frame, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, useLoopValues = false, loopVarNames = null) {
-    const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
+    const bodyCreatesScope = !!(node.body && node.body._analysis && node.body._analysis.createScope);
     if (this.compiler.asyncMode) {
       this.compiler.emit('(async function(');
     } else {
@@ -234,8 +234,10 @@ class CompileLoop {
     let prevBuffer = null;
     let prevTextChannelVar = null;
     if (this.compiler.asyncMode) {
-      bodyFrame = frame.push(false, bodyCreatesScope);
-      trackCompileTimeFrameDepth(bodyFrame, frame);
+      if (bodyCreatesScope) {
+        bodyFrame = frame.push(false);
+        trackCompileTimeFrameDepth(bodyFrame, frame);
+      }
       prevBuffer = this.compiler.buffer.currentBuffer;
       prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
       this.compiler.buffer.currentBuffer = 'currentBuffer';
@@ -366,8 +368,10 @@ class CompileLoop {
       this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('});');
-      validateCompileTimeFrameBalance(bodyFrame, this.compiler, node.body);
-      bodyFrame = bodyFrame.pop();
+      if (bodyCreatesScope) {
+        validateCompileTimeFrameBalance(bodyFrame, this.compiler, node.body);
+        bodyFrame = bodyFrame.pop();
+      }
     } else if (bodyCreatesScope) {
       this.compiler.emit.line('frame = frame.pop();');
       bodyFrame = bodyFrame.pop();
@@ -380,7 +384,7 @@ class CompileLoop {
   }
 
   _compileLoopElse(node, frame) {
-    const elseCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
+    const elseCreatesScope = !!(node.else_ && node.else_._analysis && node.else_._analysis.createScope);
 
     if (this.compiler.asyncMode) {
       this.compiler.emit('(async function() {');

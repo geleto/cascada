@@ -81,7 +81,7 @@ class Frame {
     return p && p.resolve(name);
   }
 
-  push(isolateWrites, _createScope) {
+  push(isolateWrites) {
     const newFrame = new Frame(this, isolateWrites);
     newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
 
@@ -120,9 +120,8 @@ function markChannelBufferScope(buffer) {
 }
 
 class AsyncFrame extends Frame {
-  constructor(parent, isolateWrites, createScope = true) {
+  constructor(parent, isolateWrites) {
     super(parent, isolateWrites);
-    this.createScope = createScope;
   }
 
   static inCompilerContext = false;
@@ -153,8 +152,8 @@ class AsyncFrame extends Frame {
     return { value: undefined, frame: null };
   }
 
-  push(isolateWrites, createScope = true) {
-    const newFrame = new AsyncFrame(this, isolateWrites, createScope);
+  push(isolateWrites) {
+    const newFrame = new AsyncFrame(this, isolateWrites);
     newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
 
     return newFrame;

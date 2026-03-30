@@ -1,10 +1,5 @@
 'use strict';
 
-const {
-  trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
-} = require('./validation');
-
 class CompileBoundaries {
   constructor(compiler) {
     this.compiler = compiler;
@@ -64,8 +59,7 @@ class CompileBoundaries {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const innerFrame = frame.push(false, false);
-    trackCompileTimeFrameDepth(innerFrame, frame);
+    const innerFrame = frame;
     const prevBuffer = bufferCompiler.currentBuffer;
     const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
     bufferCompiler.currentBuffer = 'currentBuffer';
@@ -87,7 +81,6 @@ class CompileBoundaries {
     bufferCompiler.currentBuffer = prevBuffer;
     bufferCompiler.currentTextChannelVar = prevTextChannelVar;
     this.compiler.emit.asyncClosureDepth--;
-    validateCompileTimeFrameBalance(innerFrame, this.compiler, positionNode);
   }
 
   compileControlFlowBoundary(bufferCompiler, node, frame, emitFunc = null) {
@@ -106,8 +99,7 @@ class CompileBoundaries {
       );
       this.compiler.emit.asyncClosureDepth++;
 
-      const newFrame = frame.push(false, false);
-      trackCompileTimeFrameDepth(newFrame, frame);
+      const newFrame = frame;
 
       const prevBuffer = bufferCompiler.currentBuffer;
       const prevWaitedChannelName = bufferCompiler.currentWaitedChannelName;
@@ -134,8 +126,7 @@ class CompileBoundaries {
       if (controlFlowPromiseId) {
         bufferCompiler.emitOwnWaitedConcurrencyResolve(frame, controlFlowPromiseId, node);
       }
-      validateCompileTimeFrameBalance(newFrame, this.compiler, node);
-      return { frame: newFrame.pop() };
+      return { frame: newFrame };
     }
 
     if (typeof emitFunc === 'function') {
@@ -163,7 +154,6 @@ class CompileBoundaries {
       return;
     }
 
-    frame = frame.push(false, false);
     emitCompiler.line(`runtime.runRenderBoundary(frame, context, cb, async (frame, currentBuffer) =>{`);
     const resultId = this.compiler._tmpid();
 
@@ -242,7 +232,7 @@ class CompileBoundaries {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const innerFrame = frame.push(false, false);
+    const innerFrame = frame;
     emitBody(innerFrame);
     this._emitBoundaryTextCommand(
       bufferCompiler,
@@ -260,7 +250,7 @@ class CompileBoundaries {
       bufferCompiler.emitOwnWaitedConcurrencyResolve(frame, boundaryPromiseId, waitedPositionNode);
     }
 
-    return innerFrame.pop();
+    return innerFrame;
   }
 
   compileTextBoundary(bufferCompiler, node, frame, positionNode = node, emitValue, {
@@ -356,7 +346,7 @@ class CompileBoundaries {
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit('})');
 
-    return { frame: innerFrame.pop() };
+    return { frame: innerFrame };
   }
 }
 

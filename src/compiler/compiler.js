@@ -425,12 +425,7 @@ class Compiler extends CompilerBase {
 
       id = this._tmpid();
       this.emit.line(`let ${id};`);
-      let declarationFrame = frame;
-      while (declarationFrame && declarationFrame.createScope === false) {
-        declarationFrame = declarationFrame.parent;
-      }
-      declarationFrame = declarationFrame || frame;
-      declarationFrame.set(name, id);
+      frame.set(name, id);
       ids.push(id);
     });
 
@@ -506,7 +501,7 @@ class Compiler extends CompilerBase {
   compileSwitch(node, frame) {
     const switchResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
       let catchPoisonPos;
-      const caseCreatesScope = this.scriptMode || this.asyncMode;
+      const caseCreatesScope = this.asyncMode;
 
       if (this.asyncMode) {
         // Add try-catch wrapper for error handling
@@ -906,7 +901,7 @@ class Compiler extends CompilerBase {
       async = false;//old type of async
     }
 
-    const branchCreatesScope = this.scriptMode || this.asyncMode;
+    const branchCreatesScope = this.asyncMode;
     const ifResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
       let catchPoisonPos;
 
@@ -1464,7 +1459,7 @@ class Compiler extends CompilerBase {
       this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
     if (this.asyncMode && this.hasStaticExtends && !this.hasDynamicExtends) {
-      this.emit.line(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
+      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
     }
     if (!this.asyncMode) {
       this.emit.line('let parentTemplate = null;');

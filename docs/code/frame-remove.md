@@ -39,13 +39,21 @@ Completed so far:
     - `_returnWaitCount` was dead and is gone
   - `markChannelBufferScope(...)` is no longer a frame method
     - it now lives on runtime as a direct buffer/channel-root helper
+  - runtime `createScope` is gone
+    - `_compileCreateScope` was also removed instead of being kept as a new frame-side replacement
+    - async no-scope boundaries now reuse the current compile-time frame
+    - lexical scope creation stays analysis-owned through `node._analysis.createScope`
   - some internal async channels now bypass `frame._channels` entirely:
     - `__return__`
     - waited-control-flow channels
     - macro caller-scheduling channels
+    - `__parentTemplate`
   - text-channel declarations were tested as buffer-only and reverted
     - guard/capture/revert still depends on text being frame-visible today
     - that is now an explicit blocker, not an accidental regression
+  - a broader "mirror only text + sequential-path channels into `frame._channels`" reduction was also attempted and reverted
+    - ordinary var/data/sink/sequence channel visibility is still not represented precisely enough by the current buffer registry alone
+    - guard/recover and deferred export cases still depend on stronger visible-channel semantics
 
 Important correction:
 
@@ -68,7 +76,9 @@ Current next target:
     - async render entry also no longer depends on `frame.topLevel`
     - `_seesRootScope` and `_returnWaitCount` are already gone
     - `markChannelBufferScope(...)` is already off frame
-    - the remaining work is `createScope` and channel-ownership lookup/declaration state
+    - runtime/compile-time transitional `createScope` frame markers are gone
+    - async no-scope boundaries now follow analysis `createScope` directly
+    - the remaining work is channel-ownership lookup/declaration state
 
 Focused verification currently used during this migration:
 
@@ -89,6 +99,12 @@ Current broad verification baseline:
 
 Remove runtime `frame` dependence from **async mode only**.
 
+The main way to achieve that is:
+
+- replace async `frame` usage with `node._analysis`-driven codegen decisions
+
+This should be treated as the primary migration strategy, not just one technique among others.
+
 This does **not** mean "remove lexical scoping." It means:
 
 - async lexical scoping is resolved statically at compile time
@@ -107,11 +123,81 @@ Sync mode can keep the existing frame-based model for now.
 - Do not collapse async and sync compiler pipelines prematurely.
 - Do not try to delete `frame` first and "figure out the rest later."
 
+## Revert Discipline
+
+When a frame-removal change fails, do **not** leave the result as an undocumented failed experiment.
+
+Every reverted change must do one of these two things:
+
+1. find and fix the underlying issue in the same line of work, or
+2. be explicitly postponed in this plan with:
+   - the exact blocker
+   - why postponing is reasonable
+   - what concrete prerequisite should unblock it later
+
+This is especially important for async frame removal because "safe mechanical cleanup" can easily hide real architectural dependencies.
+
+The preferred direction after a failed experiment is:
+
+- first ask whether the missing information belongs in `node._analysis`
+- only keep runtime/frame dependence if the information is truly runtime-only
+
+---
+
+## Analysis-First Replacement Rule
+
+When removing async `frame` support, prefer moving facts into analysis instead of recreating them dynamically at runtime.
+
+This is not only a preference. It is the main mechanism by which async `frame` removal becomes possible.
+
+Practical rule:
+
+- if async code still needs `frame` for a decision, first ask whether that decision should already exist in `node._analysis`
+- the burden of proof is on keeping runtime/frame dependence, not on analysis replacement
+
+In particular, the following kinds of information should become analysis-owned wherever possible:
+
+- declaration ownership
+- root-scope ownership
+- parent-owned declaration ownership
+- read-only boundary crossing
+- include-visible channel projection
+- runtime channel names after renaming/shadowing resolution
+- whether a scope boundary is lexical-only or must also become a buffer/channel boundary
+
+Good existing examples:
+
+- `declares` / `declaresInParent`
+- `parentOwned`
+- `createScope`
+- `scopeBoundary`
+- `parentReadOnly`
+- `getIncludeVisibleVarChannels(...)`
+- `isRootScopeOwner(...)`
+- `isDeclarationRootOwned(...)`
+- `isParentOwnedDeclarationRootOwned(...)`
+
+This means future frame-removal steps should first ask:
+
+- is this really a runtime visibility problem?
+- or are we missing analysis metadata that should have made the decision explicit before codegen?
+
+Success for this plan should look like:
+
+- modern async codegen reads analysis metadata
+- emits canonical runtime names / explicit channel operations / explicit local bindings
+- and no longer asks `frame` to rediscover lexical facts during execution
+
 ---
 
 ## Core Thesis
 
 In async mode, `frame` is now mostly legacy glue.
+
+The clearest path to removing it is:
+
+- move every non-runtime fact that `frame` still carries into `node._analysis`
+- then generate direct async code from that analysis instead of consulting `frame` at runtime
 
 The modern async compiler/runtime already relies on:
 
@@ -121,6 +207,10 @@ The modern async compiler/runtime already relies on:
 - analysis-time runtime-name mangling to avoid collisions
 
 That means the remaining async `frame` usage is valuable only if it still provides something that analysis + channels + buffer ancestry cannot provide more directly.
+
+Stated more strongly:
+
+- if an async `frame` usage is not describing a truly runtime-only fact, it should be considered a candidate for replacement with `node._analysis`
 
 The likely end state is:
 
@@ -227,6 +317,13 @@ Replacement direction:
 - no runtime string-name lexical lookup in modern async mode
 - no async `frame.set(...)` except during migration
 
+Concrete analysis-first follow-up:
+
+- replace remaining modern async `frame.lookup(...)` / `frame.lookupAndLocate(...)` decisions with:
+  - declaration lookup from analysis
+  - canonical runtime names from rename/analysis
+  - direct channel or JS-local codegen chosen at compile time
+
 ### 2. Channel ownership and lookup
 
 Current shape:
@@ -250,6 +347,17 @@ So the migration target is probably not "invent a new owner" but:
 
 1. register async channels in `buffer._channels`
 2. make async lookup read from buffer ancestry instead of frame ancestry
+3. keep only the cases that still need analysis-owned visibility projection or explicit aliasing
+
+Important caution:
+
+- `buffer` ancestry can answer "which channel lane is visible here?"
+- it does **not** answer:
+  - which lexical declaration owns the name
+  - whether a parent-owned declaration should export
+  - whether shadowing/renaming should hide another same-base-name channel
+
+Those must remain analysis-owned decisions.
 3. remove the dead frame threading from channel construction and declaration
 
 Progress:
