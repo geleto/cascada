@@ -794,18 +794,15 @@ function _createSequenceChannel(buffer, channelName, context, sink) {
   return new SequenceChannel(buffer, channelName, context, sink);
 }
 
-function createChannel(frame, buffer, channelName, context, channelType = null, initializer = null) {
-  void frame;
+function createChannel(buffer, channelName, context, channelType = null, initializer = null) {
   return _createChannel(buffer, channelName, context, channelType, initializer);
 }
 
-function createSinkChannel(frame, buffer, channelName, context, sink) {
-  void frame;
+function createSinkChannel(buffer, channelName, context, sink) {
   return _createSinkChannel(buffer, channelName, context, sink);
 }
 
-function createSequenceChannel(frame, buffer, channelName, context, sink) {
-  void frame;
+function createSequenceChannel(buffer, channelName, context, sink) {
   return _createSequenceChannel(buffer, channelName, context, sink);
 }
 

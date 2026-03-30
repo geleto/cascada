@@ -217,8 +217,7 @@ describe('channel errors', function () {
   describe('output observation commands step3', function () {
     it('does not expose observation methods on output facades', async () => {
       const fakeBuffer = { _registerOutput() { } };
-      const frame = { parent: null };
-      const out = createChannel(frame, fakeBuffer, 'out', null, 'data');
+      const out = createChannel(fakeBuffer, 'out', null, 'data');
 
       expect(out.snapshot).to.be(undefined);
       expect(out.isError).to.be(undefined);
@@ -234,10 +233,9 @@ describe('channel errors', function () {
         },
         _registerOutput() { }
       };
-      const frame = { parent: null };
       const sink = { repair() { } };
 
-      const out = createSinkChannel(frame, fakeBuffer, 'logger', null, sink);
+      const out = createSinkChannel(fakeBuffer, 'logger', null, sink);
       await out.repair();
 
       expect(calls).to.eql([['repair', 'logger']]);

@@ -2618,7 +2618,7 @@
     it('maps base channel names to canonical aliases in add()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
-      createChannel({ parent: null }, buffer, 'loop#4', ctx, 'text');
+      createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({
@@ -2635,7 +2635,7 @@
       const ctx = { path: 'alias-snapshot.njk' };
       const frame = { parent: null };
       const buffer = new CommandBuffer(ctx, null, frame, false);
-      createChannel(frame, buffer, 'loop#4', ctx, 'text');
+      createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
       buffer.addText('A', { lineno: 1, colno: 1 }, 'loop');
@@ -2696,7 +2696,7 @@
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
       const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
-      createChannel({ parent: null }, buffer, 'loop#4', ctx, 'text');
+      createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setBoundaryAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({

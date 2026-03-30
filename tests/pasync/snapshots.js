@@ -76,16 +76,14 @@ describe('channel.finalSnapshot', function () {
   };
   const makeChannel = (buffer, ctx, channelName) => {
     const name = channelName || 'text';
-    const frame = { parent: null };
-    return createChannel(frame, buffer, name, ctx || null, name);
+    return createChannel(buffer, name, ctx || null, name);
   };
   const flatten = (buffer, ctx, channelName) => (
     makeChannel(buffer, ctx, channelName).finalSnapshot()
   );
   const flattenSink = (commands, ctx, channelName, sink) => {
     const buffer = new CommandBuffer(ctx, null, { parent: null });
-    const frame = { parent: null };
-    const sinkChannel = createSinkChannel(frame, buffer, channelName, ctx || null, sink);
+    const sinkChannel = createSinkChannel(buffer, channelName, ctx || null, sink);
 
     buffer._channelTypes = Object.create(null);
     buffer._channelTypes[channelName] = 'sink';
@@ -242,8 +240,7 @@ describe('channel.finalSnapshot', function () {
   describe('Error Handling & Edge Cases', function () {
     it('should resolve snapshot at command position before later writes', async function () {
       const buffer = new CommandBuffer(context, null, { parent: null });
-      const frame = { parent: null };
-      const textOut = createChannel(frame, buffer, 'text', context, 'text');
+      const textOut = createChannel(buffer, 'text', context, 'text');
 
       textOut('A');
       const snap = buffer.addSnapshot('text', { lineno: 0, colno: 0 });
@@ -267,8 +264,7 @@ describe('channel.finalSnapshot', function () {
 
     it('finalSnapshot should wait for owning channel completion', async function () {
       const buffer = new CommandBuffer(context, null, { parent: null });
-      const frame = { parent: null };
-      const out = createChannel(frame, buffer, 'text', context, 'text');
+      const out = createChannel(buffer, 'text', context, 'text');
       out('late');
 
       const early = await Promise.race([
@@ -284,9 +280,8 @@ describe('channel.finalSnapshot', function () {
 
     it('tracks finished state per channel', async function () {
       const buffer = new CommandBuffer(context, null, { parent: null });
-      const frame = { parent: null };
-      const text = createChannel(frame, buffer, 'text', context, 'text');
-      const data = createChannel(frame, buffer, 'data', context, 'data');
+      const text = createChannel(buffer, 'text', context, 'text');
+      const data = createChannel(buffer, 'data', context, 'data');
 
       text('later');
       data.set(['ready'], 1);
