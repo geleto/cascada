@@ -825,9 +825,7 @@ function getChannelFromBuffer(buffer, channelName) {
   return buffer._channels.get(channelName);
 }
 
-function declareChannel(frame, buffer, channelName, channelType, context, initializer = null) {
-  frame._channels = frame._channels || Object.create(null);
-
+function declareBufferChannel(buffer, channelName, channelType, context, initializer = null) {
   const targetBuffer = buffer;
   if (!targetBuffer) {
     // No implicit CommandBuffer creation here by design.
@@ -845,20 +843,21 @@ function declareChannel(frame, buffer, channelName, channelType, context, initia
       : _createChannel(targetBuffer, channelName, context, channelType, initializer);
 
   channel._buffer = targetBuffer;
-  frame._channels[channelName] = channel;
 
-  //if (buffer._registerChannel) {
-  targetBuffer._registerChannel(channelName, channel);//@todo - this happens always?
-  /*} else if (buffer._channels instanceof Map) {
-    buffer._channels.set(channelName, channel);
-    channel._iterator.bindToCurrentBuffer();
-  }*/
+  targetBuffer._registerChannel(channelName, channel);
 
   if (channelType === 'sink' || channelType === 'sequence') {
     targetBuffer._channelRegistry = targetBuffer._channelRegistry || Object.create(null);
     targetBuffer._channelRegistry[channelName] = channel;
   }
 
+  return channel;
+}
+
+function declareChannel(frame, buffer, channelName, channelType, context, initializer = null) {
+  frame._channels = frame._channels || Object.create(null);
+  const channel = declareBufferChannel(buffer, channelName, channelType, context, initializer);
+  frame._channels[channelName] = channel;
   return channel;
 }
 
@@ -876,6 +875,7 @@ module.exports = {
   createSequenceChannel,
   getChannel,
   getChannelFromBuffer,
+  declareBufferChannel,
   declareChannel
 };
 

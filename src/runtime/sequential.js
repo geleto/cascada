@@ -8,7 +8,7 @@ const { callWrapAsync } = require('./call');
 const { ensureSequentialPathChannel } = require('./checks');
 
 function withSequentialPathChannel(frame, currentBuffer, pathKey, errorContext, repair, isWrite, operation) {
-  ensureSequentialPathChannel(frame, pathKey);
+  ensureSequentialPathChannel(frame, currentBuffer, pathKey);
   if (!currentBuffer || typeof currentBuffer.addSequentialPathWrite !== 'function' || typeof currentBuffer.addSequentialPathRead !== 'function') {
     throw new Error(
       `Sequential path '${pathKey}' requires a valid currentBuffer for ordered read/write execution`

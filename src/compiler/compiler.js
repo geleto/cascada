@@ -1476,7 +1476,7 @@ class Compiler extends CompilerBase {
     }
     this._compileChildren(node, frame);
     if (this.asyncMode) {
-      this.emit.line('context.resolveExports(frame, runtime);');
+      this.emit.line('context.resolveExports(frame, runtime, output);');
     }
     if (this.asyncMode) {
       this.emit.line('if (!compositionMode) {');

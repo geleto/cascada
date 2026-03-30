@@ -190,6 +190,8 @@ module.exports = {
   SequenceChannel: output.SequenceChannel,
   createSequenceChannel: output.createSequenceChannel,
   getChannel: output.getChannel,
+  getChannelFromBuffer: output.getChannelFromBuffer,
+  declareBufferChannel: output.declareBufferChannel,
   declareChannel: output.declareChannel,
   ChannelCommand: commands.ChannelCommand,
   TextCommand: commands.TextCommand,
