@@ -162,16 +162,14 @@ class Context extends Obj {
     }
   }
 
-  resolveExports(frame, runtime, currentBuffer = null) {
+  resolveExports(frame, runtime, currentBuffer) {
     const names = Object.keys(this.exportResolveFunctions);
     for (const name of names) {
       const resolve = this.exportResolveFunctions[name];
       if (typeof resolve !== 'function') {
         continue;
       }
-      const channel = (currentBuffer && typeof runtime.findVisibleChannel === 'function')
-        ? runtime.findVisibleChannel(currentBuffer, frame, name)
-        : runtime.getChannel(frame, name);
+      const channel = runtime.findVisibleChannel(currentBuffer, frame, name);
       resolve(channel.finalSnapshot());
     }
   }

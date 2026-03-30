@@ -9,7 +9,7 @@ const { ensureSequentialPathChannel } = require('./checks');
 
 function withSequentialPathChannel(frame, currentBuffer, pathKey, errorContext, repair, isWrite, operation) {
   ensureSequentialPathChannel(frame, currentBuffer, pathKey);
-  if (!currentBuffer || typeof currentBuffer.addSequentialPathWrite !== 'function' || typeof currentBuffer.addSequentialPathRead !== 'function') {
+  if (!currentBuffer) {
     throw new Error(
       `Sequential path '${pathKey}' requires a valid currentBuffer for ordered read/write execution`
     );
@@ -20,31 +20,31 @@ function withSequentialPathChannel(frame, currentBuffer, pathKey, errorContext, 
     : currentBuffer.addSequentialPathRead(pathKey, operation, pos, repair);
 }
 
-function sequentialCallWrapValue(func, funcName, context, args, frame, pathKey, errorContext, repair = false, currentBuffer = null) {
+function sequentialCallWrapValue(func, funcName, context, args, frame, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChannel(frame, currentBuffer, pathKey, errorContext, repair, true, () =>
     callWrapAsync(func, funcName, context, args, errorContext)
   );
 }
 
-function sequentialContextLookupValue(context, frame, name, pathKey, repair = false, currentBuffer = null) {
+function sequentialContextLookupValue(context, frame, name, pathKey, repair = false, currentBuffer) {
   return withSequentialPathChannel(frame, currentBuffer, pathKey, null, repair, false, () =>
     contextLookupOnly(context, name, pathKey)
   );
 }
 
-function sequentialContextLookupScriptValue(context, frame, name, pathKey, repair = false, currentBuffer = null) {
+function sequentialContextLookupScriptValue(context, frame, name, pathKey, repair = false, currentBuffer) {
   return withSequentialPathChannel(frame, currentBuffer, pathKey, null, repair, false, () =>
     contextLookupOnly(context, name, pathKey)
   );
 }
 
-function sequentialMemberLookupAsyncValue(frame, target, key, pathKey, errorContext, repair = false, currentBuffer = null) {
+function sequentialMemberLookupAsyncValue(frame, target, key, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChannel(frame, currentBuffer, pathKey, errorContext, repair, false, () =>
     memberLookupAsync(target, key, errorContext)
   );
 }
 
-function sequentialMemberLookupScriptAsyncValue(frame, target, key, pathKey, errorContext, repair = false, currentBuffer = null) {
+function sequentialMemberLookupScriptAsyncValue(frame, target, key, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChannel(frame, currentBuffer, pathKey, errorContext, repair, false, () =>
     memberLookupScriptAsync(target, key, errorContext)
   );

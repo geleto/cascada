@@ -13,6 +13,8 @@ Completed so far:
   - modern async symbol reads were reduced away from frame-shaped fallback in several places
   - async channel lookup now prefers buffer-owned lookup paths in the modern runtime
   - a shared `findVisibleChannel(...)` helper now centralizes the buffer-first read path used by async lookup, guard setup, sequential checks, and export resolution
+  - inheritance now reads `__parentTemplate` through direct var-channel lookup instead of the generic frame-or-channel symbol fallback
+  - a direct root-buffer export-resolution shortcut was attempted and reverted; conditional inheritance/export parity still needs visible-channel semantics broader than `currentBuffer.getChannel(...)`
 - Phase 9 is partly done:
   - `CommandBuffer` no longer stores or validates frame ownership
   - channel instances no longer thread/store frame internally

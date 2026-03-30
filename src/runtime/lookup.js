@@ -251,7 +251,7 @@ function varChannelLookup(frame, name, currentBuffer) {
     // This boundary check is intentionally buffer-wide rather than channel-wide.
     // When the immediate parent buffer is fully complete, ordered lane snapshots
     // are no longer needed from this descendant read point.
-    if (currentBuffer && currentBuffer.parent && currentBuffer.parent.finished) {
+    if (currentBuffer.parent && currentBuffer.parent.finished) {
       return channel.finalSnapshot();
     }
     // Optional dynamic mode: lazily link current read buffer into the channel lane.
@@ -307,7 +307,7 @@ function varChannelLookupScript(frame, name, currentBuffer) {
   if (isBufferInAncestry(currentBuffer, channel._buffer)) {
     // Intentionally aggregate: this is a read-boundary transition, not a claim
     // about whether the specific channel lane is finished on the parent.
-    if (currentBuffer && currentBuffer.parent && currentBuffer.parent.finished) {
+    if (currentBuffer.parent && currentBuffer.parent.finished) {
       return channel.finalSnapshot();
     }
     if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
@@ -324,13 +324,10 @@ function varChannelLookupScript(frame, name, currentBuffer) {
 // Dynamically links the current read buffer into the target channel lane once.
 // This is used only when LOOKUP_DYNAMIC_CHANNEL_LINKING is enabled.
 function ensureReadChannelLink(currentBuffer, channel, channelName) {
-  if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
+  if (channel._buffer === currentBuffer) {
     return;
   }
   const parent = currentBuffer.parent;
-  if (!parent || typeof parent.addBuffer !== 'function') {
-    return;
-  }
   currentBuffer._readChannelLinks = currentBuffer._readChannelLinks || Object.create(null);
   if (currentBuffer._readChannelLinks[channelName]) {
     return;

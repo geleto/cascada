@@ -1483,7 +1483,7 @@ class Compiler extends CompilerBase {
       this.emit.line('(async () => {');
 
       if (this.hasExtends) {
-        this.emit.line(`  let finalParent = await runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
+        this.emit.line(`  let finalParent = await runtime.varChannelLookup(frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
       } else {
         this.emit.line('  let finalParent = null;');
       }

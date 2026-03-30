@@ -260,7 +260,7 @@ class CompileInheritance {
           //    - hasStaticExtends with hasDynamicExtends: Dynamic can override static
           const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
           if (needsParentCheck) {
-            this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
+            this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.varChannelLookup(frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
             this.emit.line(`${id} = parentPromise.then((parent) => {`);
             this.emit.line('  if (parent) return "";');
             this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
