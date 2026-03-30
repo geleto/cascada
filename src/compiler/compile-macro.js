@@ -228,7 +228,7 @@ class CompileMacro {
     // __caller__ records when each invocation child buffer has finished
     // receiving commands, so the macro can close the shared caller boundary
     // only after all started caller() invocations have been scheduled.
-    compiler.emit.line(`runtime.declareChannel(frame, ${bufferId}, "${CALLER_SCHED_CHANNEL_NAME}", "var", context, null);`);
+    compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "${CALLER_SCHED_CHANNEL_NAME}", "var", context, null);`);
     // Caller-capable macros still allow plain invocations with no caller block.
     compiler.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
     // The all-callers buffer is parent-linked because caller() may emit
@@ -385,8 +385,6 @@ class CompileMacro {
     } else {
       currFrame = frame.new();
     }
-    currFrame._seesRootScope = false;
-
     const oldIsCompilingMacroBody = compiler.sequential.isCompilingMacroBody;
     compiler.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
@@ -510,14 +508,12 @@ class CompileMacro {
           `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
         );
       }, node, name);
-      if (name.charAt(0) !== '_' && !frame.parent) {
-        compiler.emit.line('if(frame.topLevel) {');
+      if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {
         if (compiler.scriptMode) {
-          compiler.emit.line(`  context.addExport("${name}", ${funcId});`);
+          compiler.emit.line(`context.addExport("${name}", ${funcId});`);
         } else {
-          compiler.emit.line(`  context.addExport("${name}");`);
+          compiler.emit.line(`context.addExport("${name}");`);
         }
-        compiler.emit.line('}');
       }
       return;
     }

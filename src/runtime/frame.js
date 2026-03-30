@@ -83,10 +83,6 @@ class Frame {
 
   push(isolateWrites, _createScope) {
     const newFrame = new Frame(this, isolateWrites);
-    if (this._seesRootScope) {
-      newFrame._seesRootScope = true;
-    }
-
     newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
 
     return newFrame;
@@ -101,24 +97,25 @@ class Frame {
     return new Frame();
   }
 
-  markChannelBufferScope(buffer) {
-    if (buffer && buffer.arrays) {
-      const channelArrays = Object.keys(buffer.arrays);
-      channelArrays.forEach((name) => {
-        const target = buffer.arrays[name];
-        if (target && typeof target === 'object') {
-          target._channelScopeRoot = true;
-        }
-      });
-      return;
-    }
+}
 
-    if (buffer && Array.isArray(buffer.output)) {
-      buffer = buffer.output;
-    }
-    if (buffer && typeof buffer === 'object') {
-      buffer._channelScopeRoot = true;
-    }
+function markChannelBufferScope(buffer) {
+  if (buffer && buffer.arrays) {
+    const channelArrays = Object.keys(buffer.arrays);
+    channelArrays.forEach((name) => {
+      const target = buffer.arrays[name];
+      if (target && typeof target === 'object') {
+        target._channelScopeRoot = true;
+      }
+    });
+    return;
+  }
+
+  if (buffer && Array.isArray(buffer.output)) {
+    buffer = buffer.output;
+  }
+  if (buffer && typeof buffer === 'object') {
+    buffer._channelScopeRoot = true;
   }
 }
 
@@ -158,10 +155,6 @@ class AsyncFrame extends Frame {
 
   push(isolateWrites, createScope = true) {
     const newFrame = new AsyncFrame(this, isolateWrites, createScope);
-    if (this._seesRootScope) {
-      newFrame._seesRootScope = true;
-    }
-
     newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
 
     return newFrame;
@@ -179,5 +172,6 @@ class AsyncFrame extends Frame {
 
 module.exports = {
   Frame,
-  AsyncFrame
+  AsyncFrame,
+  markChannelBufferScope
 };

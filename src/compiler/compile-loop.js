@@ -249,7 +249,7 @@ class CompileLoop {
       ? (node.body && node.body._analysis && node.body._analysis.waitedOutputName)
       : null;
     if (limitedWaitedChannelName) {
-      this.compiler.emit.line(`runtime.declareChannel(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedChannelName}", "var", context, null);`);
+      this.compiler.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${limitedWaitedChannelName}", "var", context, null);`);
     }
 
     const compileIterationBody = () => {

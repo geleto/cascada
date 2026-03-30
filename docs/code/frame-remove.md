@@ -28,7 +28,24 @@ Completed so far:
     - macro / caller / deferred-export codegen still depends on the runtime top-level marker in ways that need a deeper audit first
   - a narrower analysis-driven exportability replacement now works for ordinary async var/import bindings
     - root-scope async `var` / `import` / `from import` exports now use analysis scope ownership instead of runtime `frame.topLevel`
-    - macro exportability is still special because macro nodes declare the same name both locally and in the parent scope
+  - async macro exportability now also uses analysis data instead of runtime `frame.topLevel`
+    - macro exports are decided through explicit parent-owned declaration ownership
+    - this avoids confusing the macro's local declaration with the parent-owned exported binding
+  - async render entry no longer sets `frame.topLevel`
+    - there are no remaining async reads of that runtime flag
+    - the remaining `frame.topLevel` usage is sync-only compiler/runtime code
+  - dead async frame flags were removed:
+    - `_seesRootScope` no longer exists in the async runtime path
+    - `_returnWaitCount` was dead and is gone
+  - `markChannelBufferScope(...)` is no longer a frame method
+    - it now lives on runtime as a direct buffer/channel-root helper
+  - some internal async channels now bypass `frame._channels` entirely:
+    - `__return__`
+    - waited-control-flow channels
+    - macro caller-scheduling channels
+  - text-channel declarations were tested as buffer-only and reverted
+    - guard/capture/revert still depends on text being frame-visible today
+    - that is now an explicit blocker, not an accidental regression
 
 Important correction:
 
@@ -42,11 +59,16 @@ Current next target:
 
 - continue Phase 5 / Phase 9 cleanup around channel ownership:
   - keep shrinking frame-based channel readers
-  - then retry moving `declareChannel(...)` away from `frame._channels`
-  - do not flip channel ownership yet until linked-child visibility and local shadowing rules are represented by buffer-side structures instead of frame fallback
+  - then work the explicit blocker steps:
+    - Phase 5.1: redesign text-channel guard/capture/revert visibility
+    - Phase 5.2: retry buffer-only text-channel registration
+  - only after those, retry the broader `declareChannel(...)` ownership move
   - continue reducing runtime frame flags:
-    - async `frame.topLevel` is now partly replaced by analysis data
-    - the remaining hard case is macro/caller exportability, which needs a dedicated parent-owned declaration helper instead of generic declaration lookup
+    - async export codegen no longer depends on `frame.topLevel`
+    - async render entry also no longer depends on `frame.topLevel`
+    - `_seesRootScope` and `_returnWaitCount` are already gone
+    - `markChannelBufferScope(...)` is already off frame
+    - the remaining work is `createScope` and channel-ownership lookup/declaration state
 
 Focused verification currently used during this migration:
 
@@ -56,6 +78,12 @@ Focused verification currently used during this migration:
 - `tests/pasync/loop-concurrent-limit.js`
 - `tests/poison/call-suppression.js`
 - `tests/poison/lookup.js`
+- `tests/poison/guard.js`
+
+Current broad verification baseline:
+
+- `npm run test:quick`
+  - currently green at `2459 passing`, `21 pending`
 
 ## Goal
 
@@ -314,14 +342,10 @@ Replacement direction:
 Current shape:
 
 - async code still uses frame-owned state such as:
-  - `frame.topLevel`
-  - `_seesRootScope`
-  - `markChannelBufferScope(...)`
   - `createScope`
 
 Examples:
 
-- `src/environment/template.js`
 - `src/runtime/frame.js`
 - `src/compiler/compiler.js`
 - `src/compiler/compile-boundaries.js`
@@ -339,6 +363,13 @@ Current refined understanding:
 - it is “belongs to root lexical scope” or “is declared parent-owned into the root lexical scope”
 - ordinary async `var` / `import` bindings can already use analysis scope ownership
 - macro/caller exportability still needs explicit parent-owned declaration handling
+- async `frame.topLevel` is already gone from async export codegen and async render entry
+- `_seesRootScope` / `_returnWaitCount` were dead and are gone
+- `markChannelBufferScope(...)` already moved off frame to a runtime buffer helper
+- internal waited / return / caller-scheduling channels can already be buffer-owned
+- text channels are the counterexample:
+  - they still participate in guard/capture/revert visibility
+  - removing frame registration there currently breaks guard semantics
 
 This is easy to miss because these uses are not ordinary variable lookup, but
 they still block full runtime-frame removal.
@@ -779,15 +810,69 @@ Implemented so far:
 
 - buffer-owned channel lookup helper exists and is already preferred in modern async lookup paths
 - channel construction/factory plumbing is already frame-free
+- some internal async channels are already buffer-owned:
+  - `__return__`
+  - waited-control-flow channels
+  - macro caller-scheduling channels
 
 Remaining core work:
 
 - move `declareChannel(...)` registration off `frame._channels`
 - remove the remaining frame fallback from channel lookup once declaration ownership is migrated
+- blocked by explicit sub-steps:
+  - Phase 5.1: text-channel declarations still need frame visibility for guard/capture/revert
+  - Phase 5.2: redesign that visibility model, then retry buffer-only text-channel registration
 
 Done when:
 
 - async `declareChannel(...)`, `getChannel(...)`, and related helpers no longer depend on frame ancestry
+
+### Phase 5.1 - Redesign Text-Channel Guard/Capture Visibility
+
+Goal:
+
+- text channels stop depending on frame registration for guard/capture/revert semantics
+
+Why this exists:
+
+- a direct text-channel `declareBufferChannel(...)` switch was attempted
+- it broke guard/recover/revert behavior
+- internal non-text channels did not have the same problem
+
+Work:
+
+- audit how guard/capture/revert currently discovers text channels
+- decide what buffer-side metadata or visibility walk replaces frame visibility
+- update guard/capture helpers to use that model
+- keep text semantics green in:
+  - `tests/poison/guard.js`
+  - `tests/pasync/snapshots.js`
+  - `tests/explicit-outputs.js`
+
+Done when:
+
+- text-channel guard/capture/revert no longer requires frame-visible text registration
+
+### Phase 5.2 - Retry Buffer-Only Text Channel Registration
+
+Goal:
+
+- text-channel declarations become buffer-owned like the already-migrated internal channels
+
+Work:
+
+- switch async text-channel declaration sites back to `declareBufferChannel(...)`
+- verify:
+  - root text
+  - render boundaries
+  - capture boundaries
+  - macro caller text buffers
+  - noop composition template text channel
+- run focused guard coverage first, then `npm run test:quick`
+
+Done when:
+
+- async text-channel declarations no longer write into `frame._channels`
 
 ### Phase 5.5 — Move Async Top-Level / Scope-Root State Off Frame
 
@@ -795,11 +880,27 @@ Goal:
 
 - async runtime no longer relies on frame for top-level/export/scope-root flags
 
+Status:
+
+- In progress
+
+Implemented so far:
+
+- async export codegen no longer uses `frame.topLevel`
+- async render entry no longer sets `frame.topLevel`
+- `_seesRootScope` and `_returnWaitCount` were removed
+- `markChannelBufferScope(...)` now lives on runtime as a direct buffer/channel helper
+
+Remaining work:
+
+- remove or relocate async `createScope` runtime state
+- verify no remaining async behavior still depends on frame-only scope-root flags
+
 Work:
 
-- replace `frame.topLevel` checks with explicit render/composition state where needed
-- move `_seesRootScope` / `_returnWaitCount` style state to the structure that actually owns it
-- move `markChannelBufferScope(...)` semantics onto buffer/channel-root ownership directly
+- finish removing `createScope` from runtime async frame/state
+- keep runtime scope-root metadata on the object that actually owns it
+- keep channel-scope root marking as a direct buffer/channel helper, not a frame concern
 
 This can happen earlier than the hardest channel-migration work because it is mostly orthogonal.
 

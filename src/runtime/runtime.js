@@ -179,6 +179,7 @@ module.exports = {
   // Frame classes
   Frame: frame.Frame,
   AsyncFrame: frame.AsyncFrame,
+  markChannelBufferScope: frame.markChannelBufferScope,
   Channel: output.Channel,
   DataChannel: output.DataChannel,
   TextChannel: output.TextChannel,

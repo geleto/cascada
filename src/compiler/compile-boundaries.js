@@ -116,7 +116,7 @@ class CompileBoundaries {
       if (trackAsSingleWaitedUnit) {
         bufferCompiler.currentWaitedChannelName = controlFlowWaitedChannelName;
         bufferCompiler.currentWaitedOwnerBuffer = 'currentBuffer';
-        this.compiler.emit.line(`runtime.declareChannel(frame, currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
+        this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
       }
 
       if (emitFunc) {
@@ -179,8 +179,6 @@ class CompileBoundaries {
       textChannelName
     }, () => {
       if (this.compiler.scriptMode) {
-        frame._seesRootScope = false;
-        frame._returnWaitCount = 1;
         this.compiler.emitDeclareReturnChannel(frame, 'currentBuffer');
         innerBodyFunction.call(this.compiler, frame);
       } else {

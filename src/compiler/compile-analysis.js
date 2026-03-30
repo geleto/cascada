@@ -197,6 +197,18 @@ class CompileAnalysis {
     return this.findDeclarationOwner(analysis, name) === this.getRootScopeOwner(analysis);
   }
 
+  isParentOwnedDeclarationRootOwned(analysis, name) {
+    const parentDeclares = Array.isArray(analysis && analysis.declaresInParent)
+      ? analysis.declaresInParent
+      : [];
+    const hasParentOwnedDecl = parentDeclares.some((decl) => decl && decl.parentOwned && decl.name === name);
+    if (!hasParentOwnedDecl) {
+      return false;
+    }
+    const parentOwner = analysis && analysis.parent ? this.getScopeOwner(analysis.parent) : null;
+    return !!parentOwner && parentOwner === this.getRootScopeOwner(analysis);
+  }
+
   _passesReadOnlyBoundary(currentScopeOwner, declarationOwner) {
     let current = currentScopeOwner;
     while (current && current !== declarationOwner) {

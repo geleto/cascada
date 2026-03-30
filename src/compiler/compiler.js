@@ -53,7 +53,7 @@ class Compiler extends CompilerBase {
 
   emitDeclareReturnChannel(frame, bufferExpr) {
     this.emit.line(
-      `runtime.declareChannel(frame, ${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
+      `runtime.declareBufferChannel(${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
     );
   }
 
@@ -163,7 +163,7 @@ class Compiler extends CompilerBase {
               //when args are not resolved, the contentArgs are promises
               this.emit('runtime.normalizeFinalPromise(');
               this.emit._compileRenderBoundary(node, callFrame, function (f) {
-                this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
+                this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, f);
               }, arg); // Use content arg node for position
               this.emit(')');
@@ -175,7 +175,7 @@ class Compiler extends CompilerBase {
 
               this.emit.withScopedSyntax(() => {
                 this.emit._compileCallbackRenderBoundary(node, callFrame, function (f) {
-                  this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
+                  this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
                   this.compile(arg, f);
                 }, 'cb', arg); // Use content arg node for position
                 this.emit.line(';');
@@ -632,7 +632,7 @@ class Compiler extends CompilerBase {
 
       try {
         // 2. Link for explicit reversion (optional, if we want to support manual revert)
-        this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
+        this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
         let guardRepairLinePos = null;
         const channelGuardInitLinePos = this.codebuf.length;
         let channelGuardStateVar = null;
@@ -1450,12 +1450,10 @@ class Compiler extends CompilerBase {
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
 
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
-    frame._seesRootScope = true;
-
     // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
 
     this.emit.beginEntryFunction(node, 'root', frame);
-    this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(frame, this.buffer.currentBuffer);
     }

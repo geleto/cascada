@@ -96,7 +96,9 @@ class Template extends Obj {
     else {
       frame = this.asyncMode ? new AsyncFrame : new Frame();
     }
-    frame.topLevel = true;
+    if (!this.asyncMode) {
+      frame.topLevel = true;
+    }
     let syncResult = null;
     let callbackCalled = false;
 
@@ -201,7 +203,9 @@ class Template extends Obj {
     const frame = parentFrame
       ? parentFrame.push()
       : (this.asyncMode ? new AsyncFrame() : new Frame());
-    frame.topLevel = true;
+    if (!this.asyncMode) {
+      frame.topLevel = true;
+    }
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     if (this.asyncMode) {
@@ -374,7 +378,9 @@ class AsyncTemplate extends Template {
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     const frame = parentFrame ? parentFrame.push(true) : new AsyncFrame();
-    frame.topLevel = true;
+    if (!this.asyncMode) {
+      frame.topLevel = true;
+    }
 
     // Call the root function in composition mode. It synchronously returns the
     // composition buffer while any async work continues inside that structure.
