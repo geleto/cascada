@@ -568,7 +568,7 @@ class CompilerBase extends Obj {
     // Ensure failMsg is properly escaped for embedding in the generated string
 
     if (testName === 'error' && this.asyncMode) {
-      const channelName = this._getObservedChannelName(node.left, frame);
+      const channelName = this._getObservedChannelName(node.left);
       if (channelName) {
         this.buffer.emitAddIsError(channelName, node.left);
         return;
@@ -698,7 +698,7 @@ class CompilerBase extends Obj {
 
   compilePeekError(node, frame) {
     if (this.asyncMode) {
-      const channelName = this._getObservedChannelName(node.target, frame);
+      const channelName = this._getObservedChannelName(node.target);
       if (channelName) {
         this.buffer.emitAddGetError(channelName, node.target);
         return;
@@ -709,7 +709,7 @@ class CompilerBase extends Obj {
     this.emit(')');
   }
 
-  _getObservedChannelName(targetNode, frame) {
+  _getObservedChannelName(targetNode) {
     if (!this.scriptMode || !targetNode) {
       return null;
     }
@@ -1093,7 +1093,7 @@ class CompilerBase extends Obj {
       // implicit var read first, then regular member/method access.
       return false;
     }
-    if (this._compileChannelObservationFunCall(node, frame, specialChannelCall)) {
+    if (this._compileChannelObservationFunCall(node, specialChannelCall)) {
       return true;
     }
     return this._compileSequenceChannelFunCall(node, frame, specialChannelCall);
@@ -1121,7 +1121,7 @@ class CompilerBase extends Obj {
     this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
   }
 
-  _compileChannelObservationFunCall(node, frame, specialChannelCall) {
+  _compileChannelObservationFunCall(node, specialChannelCall) {
     if (specialChannelCall.subpath.length !== 0) {
       return false;
     }

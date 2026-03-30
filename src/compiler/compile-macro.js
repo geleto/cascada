@@ -267,7 +267,7 @@ class CompileMacro {
     }
   }
 
-  _emitMacroBindingInit(frame, bufferId, name, emitValueExpression, positionNode = null) {
+  _emitMacroBindingInit(bufferId, name, emitValueExpression, positionNode = null) {
     const compiler = this.compiler;
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
@@ -303,7 +303,6 @@ class CompileMacro {
     }
 
     this._emitMacroBindingInit(
-      managedFrame,
       bufferId,
       'caller',
       () => {
@@ -323,7 +322,6 @@ class CompileMacro {
 
     args.forEach((arg) => {
       this._emitMacroBindingInit(
-        managedFrame,
         bufferId,
         arg.value,
         () => {
@@ -337,7 +335,6 @@ class CompileMacro {
       kwargs.children.forEach((pair) => {
         const name = pair.key.value;
         this._emitMacroBindingInit(
-          managedFrame,
           bufferId,
           name,
           () => {

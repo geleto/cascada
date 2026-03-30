@@ -117,6 +117,10 @@ Completed so far:
     - `guard.initChannelSnapshots(...)` no longer accepts `frame`
     - `getChannelFromBuffer(...)` was removed in favor of direct `buffer.findChannel(...)`
     - dead `contextOrChannelLookupScript(...)` and `AsyncFrame.lookupAndLocate(...)` were removed
+    - dead async expression-helper `frame` args were removed from channel observation helpers
+      - `_getObservedChannelName(...)`
+      - `_compileChannelObservationFunCall(...)`
+    - async runtime lookup comments no longer describe modern template symbol lookup as frame-backed
   - dead frame-era node async hooks were removed:
     - `Node.checkIsAsync(...)`
     - `Symbol.checkIsAsync(...)`

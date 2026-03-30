@@ -213,11 +213,7 @@ function contextOrSyncVarLookup(context, frame, name) {
 }
 
 /**
- * Var-channel lookup for template symbol aliases.
- * Template async lookup still needs local frame values during the migration:
- * - compiler-private / local lexical values may still be frame-backed
- * - declared async vars should resolve through channel snapshots
- * - globals/context stay last
+ * Async template symbol lookup through declared channels first, then context.
  */
 function contextOrChannelLookup(_context, name, currentBuffer) {
   const channelRead = channelLookup(name, currentBuffer);

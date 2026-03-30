@@ -16,7 +16,7 @@ class CompileInheritance {
 	  this.emit = this.compiler.emit;
   }
 
-  _emitDeclaredValueSnapshots(analysis, frame, targetVarsVar, positionNode) {
+  _emitDeclaredValueSnapshots(analysis, targetVarsVar, positionNode) {
     const lineno = positionNode && positionNode.lineno != null ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno != null ? positionNode.colno : 0;
     const visibleChannels = this.compiler.analysis.getIncludeVisibleVarChannels(analysis);
@@ -43,7 +43,7 @@ class CompileInheritance {
     }
   }
 
-  _emitValueImportBinding(frame, name, sourceVar, node) {
+  _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(
       `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
@@ -108,13 +108,13 @@ class CompileInheritance {
       if (node.withContext) {
         const importVarsVar = this.compiler._tmpid();
         this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
-        this._emitDeclaredValueSnapshots(node._analysis, frame, importVarsVar, node);
+        this._emitDeclaredValueSnapshots(node._analysis, importVarsVar, node);
         this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, null, cb));`);
       } else {
         this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(null, null, cb));`);
       }
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
-      this._emitValueImportBinding(frame, target, exportedId, node);
+      this._emitValueImportBinding(target, exportedId, node);
       return;
     } else {
       this.emit.addScopeLevel();
@@ -143,7 +143,7 @@ class CompileInheritance {
       if (node.withContext) {
         const importVarsVar = this.compiler._tmpid();
         this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
-        this._emitDeclaredValueSnapshots(node._analysis, frame, importVarsVar, node);
+        this._emitDeclaredValueSnapshots(node._analysis, importVarsVar, node);
         this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, null, cb));`);
       } else {
         this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(null, null, cb));`);
@@ -178,7 +178,7 @@ class CompileInheritance {
         this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
         bindingIds.push(id);
 
-        this._emitValueImportBinding(frame, alias, id, node);
+        this._emitValueImportBinding(alias, id, node);
       });
 
       // from-import boundary completion as a single completion unit.
@@ -407,7 +407,7 @@ class CompileInheritance {
       // var channels as snapshot promises from the active command buffer.
       // This keeps ordering semantics and leaves include logic declaration-driven.
       this.emit.line(`let ${includeVarsVar} = Object.assign({}, context.getVariables());`);
-      this._emitDeclaredValueSnapshots(node._analysis, f, includeVarsVar, node);
+      this._emitDeclaredValueSnapshots(node._analysis, includeVarsVar, node);
       this.emit.line(`let ${aliasMapVar} = {};`);
       this._emitDeclaredValueAliasMap(node._analysis, aliasMapVar);
 
