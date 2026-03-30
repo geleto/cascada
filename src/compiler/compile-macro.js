@@ -414,7 +414,7 @@ class CompileMacro {
     );
 
     let err = compiler._tmpid();
-    if (node.isAsync) {
+    if (compiler.asyncMode) {
       compiler.emit.lines(
         `let ${err} = null;`,
         'function cb(err) {',
@@ -427,7 +427,7 @@ class CompileMacro {
     const allCallersBufferId = macroNeedsCallerSupport ? compiler._tmpid() : null;
 
     const emitAsyncMacroBody = (managedFrame, bufferId) => {
-      if (node.isAsync) {
+      if (compiler.asyncMode) {
         this._emitAsyncMacroBindings({
           node,
           managedFrame,
@@ -452,7 +452,7 @@ class CompileMacro {
 
       compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
 
-      if (node.isAsync) {
+      if (compiler.asyncMode) {
         returnStatement = this._emitAsyncMacroReturn({
           node,
           bufferId,
@@ -467,7 +467,7 @@ class CompileMacro {
       }
     };
 
-    if (node.isAsync && node.typename === 'Caller') {
+    if (compiler.asyncMode && node.typename === 'Caller') {
       const prevBuffer = compiler.buffer.currentBuffer;
       const prevTextChannelVar = compiler.buffer.currentTextChannelVar;
       const callerTextChannelVar = !compiler.scriptMode ? compiler._tmpid() : null;
@@ -488,7 +488,7 @@ class CompileMacro {
     compiler.emit.line(`return ${returnStatement};`);
     compiler.emit.line('}).call(this, frame);');
     compiler.emit.line('});');
-    if (node.isAsync) {
+    if (compiler.asyncMode) {
       compiler.emit.line('}, true);');
     } else {
       compiler.emit.line('});');

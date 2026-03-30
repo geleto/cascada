@@ -27,9 +27,6 @@ class CompileBuffer {
     this.currentWaitedChannelName = null;
     this.currentWaitedOwnerBuffer = null;
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
-    // @otodo - evaluate these buffers, we shall be able to store
-    // the values in the frame, the only probblem is when node.isAsync
-    // is false in asyncMode, then new frame is not created?
   }
 
   // === BUFFER STACK MANAGEMENT ===
@@ -198,7 +195,6 @@ class CompileBuffer {
       this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
     }
     let argList = node.call.args;
-    const asyncArgs = argList.isAsync;
     if (channelType === 'data') {
       // For data channels, we create a new "virtual" AST for the arguments,
       // where the first argument is a path like "user.posts[0].title" that
@@ -215,14 +211,12 @@ class CompileBuffer {
       // expected by the runtime data handlers.
       const pathNodeList = this.compiler._flattenPathToNodeList(pathArg);
       const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
-      dataPathNode.isAsync = pathNodeList.isAsync;
       dataPathNode.mustResolve = true;
 
       // Our array node at the front.
       const newArgs = [dataPathNode, ...originalArgs.slice(1)];
 
       argList = new nodes.NodeList(node.call.args.lineno, node.call.args.colno, newArgs);
-      argList.isAsync = asyncArgs;
     }
 
     this.compiler.emit('args: ');

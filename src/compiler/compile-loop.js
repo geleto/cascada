@@ -12,7 +12,7 @@ class CompileLoop {
   }
 
   compileWhile(node, frame) {
-    if (!node.isAsync) {
+    if (!this.compiler.asyncMode) {
       // Synchronous case: remains the same, no changes needed.
       // @todo - use compileFor for the loop variable, etc...
       this.compiler.emit('while (');
@@ -52,13 +52,13 @@ class CompileLoop {
     const whileConditionNode = options.whileConditionNode || null;
     const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
     const sourcePositionNode = options.sourcePositionNode || node.arr;
-    const useLoopValues = node.isAsync;
+    const useLoopValues = this.compiler.asyncMode;
     const parentWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
     const forResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
       // _compileControlFlowBoundary's non-async path is a simple pass-through without scope.
       // Emit runtime frame.push/pop manually to scope loop variable bindings for sync loops.
       let innerFrame = blockFrame;
-      if (!node.isAsync) {
+      if (!this.compiler.asyncMode) {
         innerFrame = blockFrame.push(false, true);
         this.compiler.emit.line('frame = frame.push();');
       }
@@ -96,7 +96,7 @@ class CompileLoop {
       // Determine loop variable names
       const loopVars = [];
       const registerLoopVarBinding = (name) => {
-        if (node.isAsync && useLoopValues) {
+        if (this.compiler.asyncMode && useLoopValues) {
           return;
         }
         innerFrame.set(name, name);
@@ -134,7 +134,7 @@ class CompileLoop {
         useLoopValues,
         loopVarNames
       );
-      const bodyChannels = node.isAsync ? new Set(node.body._analysis.usedChannels || []) : null;
+      const bodyChannels = this.compiler.asyncMode ? new Set(node.body._analysis.usedChannels || []) : null;
 
       // Compile else block and collect metadata
       let elseFuncId = 'null';
@@ -145,12 +145,12 @@ class CompileLoop {
         this.compiler.emit(`let ${elseFuncId} = `);
 
         this._compileLoopElse(node, innerFrame);
-        elseChannels = node.isAsync ? new Set(node.else_._analysis.usedChannels || []) : null;
+        elseChannels = this.compiler.asyncMode ? new Set(node.else_._analysis.usedChannels || []) : null;
       }
 
       // Build asyncOptions code string if in async mode
       let asyncOptionsCode = 'null';
-      if (node.isAsync) {
+      if (this.compiler.asyncMode) {
         asyncOptionsCode = `{
           sequential: ${sequentialLoopBody},
           bodyChannels: ${JSON.stringify(bodyChannels ? Array.from(bodyChannels) : [])},
@@ -163,10 +163,10 @@ class CompileLoop {
       // Call the runtime iterate loop function
       // For sync loops: not awaited (fire-and-forget Promise). iterate() executes synchronously
       // internally (no awaits hit) and executes else block before returning.
-      const loopOwnsWaitedCompletion = node.isAsync && (sequentialLoopBody || hasConcurrentLimit);
+      const loopOwnsWaitedCompletion = this.compiler.asyncMode && (sequentialLoopBody || hasConcurrentLimit);
       const shouldTrackNestedLoopCompletion = loopOwnsWaitedCompletion && !!parentWaitedChannelName;
-      const iteratePromiseId = node.isAsync ? this.compiler._tmpid() : null;
-      if (node.isAsync) {
+      const iteratePromiseId = this.compiler.asyncMode ? this.compiler._tmpid() : null;
+      if (this.compiler.asyncMode) {
         this.compiler.emit(`let ${iteratePromiseId} = runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${this.compiler.buffer.currentBuffer}, [`);
       } else {
         this.compiler.emit(`runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, null, [`);
@@ -181,13 +181,13 @@ class CompileLoop {
       if (shouldTrackNestedLoopCompletion) {
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(innerFrame, iteratePromiseId, node);
       }
-      if (node.isAsync) {
+      if (this.compiler.asyncMode) {
         this.compiler.emit.line(`await ${iteratePromiseId};`);
       } else {
         this.compiler.emit.line('');
       }
 
-      if (!node.isAsync) {
+      if (!this.compiler.asyncMode) {
         this.compiler.emit.line('frame = frame.pop();');
         innerFrame.pop();
       }
@@ -198,7 +198,7 @@ class CompileLoop {
 
   _compileLoopBody(node, frame, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, useLoopValues = false, loopVarNames = null) {
     const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       this.compiler.emit('(async function(');
     } else {
       this.compiler.emit('function(');
@@ -221,7 +221,7 @@ class CompileLoop {
     // child buffer's __waited__ completion.
     const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
 
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       const parentBufferArg = this.compiler.buffer.currentBuffer;
       const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
       this.compiler.emit(
@@ -233,7 +233,7 @@ class CompileLoop {
     let bodyFrame = frame;
     let prevBuffer = null;
     let prevTextChannelVar = null;
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       bodyFrame = frame.push(false, bodyCreatesScope);
       trackCompileTimeFrameDepth(bodyFrame, frame);
       prevBuffer = this.compiler.buffer.currentBuffer;
@@ -287,7 +287,7 @@ class CompileLoop {
       if (whileConditionNode) {
         whileCondId = this.compiler._tmpid();
 
-        if (node.isAsync) {
+        if (this.compiler.asyncMode) {
           this.compiler.emit(`let ${whileCondId};`);
           this.compiler.emit('try {');
           this.compiler.emit(`${whileCondId} = `);
@@ -326,7 +326,7 @@ class CompileLoop {
 
       if (whileConditionNode) {
         if (catchPoisonPos !== null) {
-          const bodyChannels = node.isAsync ? new Set(node.body._analysis.usedChannels || []) : null;
+          const bodyChannels = this.compiler.asyncMode ? new Set(node.body._analysis.usedChannels || []) : null;
           if (bodyChannels && bodyChannels.size > 0) {
             for (const channelName of bodyChannels) {
               this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
@@ -361,7 +361,7 @@ class CompileLoop {
       this.compiler.buffer.withOwnWaitedChannel(limitedWaitedChannelName, compileIterationBody);
     }
 
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       this.compiler.buffer.currentBuffer = prevBuffer;
       this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
       this.compiler.emit.asyncClosureDepth--;
@@ -374,7 +374,7 @@ class CompileLoop {
     }
 
     // Close the loop body function
-    this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
+    this.compiler.emit.line(this.compiler.asyncMode ? '}).bind(context);' : '};');
 
     return bodyFrame;
   }
@@ -382,7 +382,7 @@ class CompileLoop {
   _compileLoopElse(node, frame) {
     const elseCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
 
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       this.compiler.emit('(async function() {');
     } else {
       this.compiler.emit('function() {');
@@ -402,7 +402,7 @@ class CompileLoop {
     }
 
     // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
-    this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
+    this.compiler.emit.line(this.compiler.asyncMode ? '}).bind(context);' : '};');
     return elseFrame;
   }
 
@@ -467,7 +467,7 @@ class CompileLoop {
   }
 
   _compileAsyncLoop(node, frame, parallel) {
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       this._compileFor(node, frame, { sequentialLoopBody: !parallel });
       return;
     }

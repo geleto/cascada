@@ -12,7 +12,6 @@ const nodes = require('../nodes');
 const { Frame, AsyncFrame } = require('../runtime/runtime');
 const CompileSequential = require('./compile-sequential');
 const CompileEmit = require('./compile-emit');
-const CompileAsync = require('./compile-async');
 const CompileInheritance = require('./compile-inheritance');
 const CompileLoop = require('./compile-loop');
 const CompileBuffer = require('./compile-buffer');
@@ -37,7 +36,7 @@ class Compiler extends CompilerBase {
     // Instantiate and link helper modules
     this.sequential = new CompileSequential(this);
     this.emit = new CompileEmit(this);
-    this.async = new CompileAsync(this);
+    this.async = null;
     this.inheritance = new CompileInheritance(this);
     this.loop = new CompileLoop(this);
     this.buffer = new CompileBuffer(this);
@@ -120,7 +119,7 @@ class Compiler extends CompilerBase {
     var contentArgs = node.contentArgs;
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
     var noExtensionCallback = !async;//assign the return value directly, no callback
-    var resolveArgs = node.resolveArgs && node.isAsync;
+    var resolveArgs = node.resolveArgs && this.asyncMode;
     const positionNode = args || node; // Prefer args position if available
 
     const emitCallArgs = (callFrame) => {
@@ -139,7 +138,7 @@ class Compiler extends CompilerBase {
           // object as the last argument, if they exist.
           // These are nested call arguments, not statement/root expressions,
           // so they intentionally bypass waited-root tracking.
-          if (node.isAsync && !resolveArgs) {
+          if (this.asyncMode && !resolveArgs) {
             this.emit('runtime.normalizeFinalPromise(');
             this._compileExpression(arg, callFrame);
             this.emit(')');
@@ -160,7 +159,7 @@ class Compiler extends CompilerBase {
           }
 
           if (arg) {
-            if (node.isAsync && !resolveArgs) {
+            if (this.asyncMode && !resolveArgs) {
               //when args are not resolved, the contentArgs are promises
               this.emit('runtime.normalizeFinalPromise(');
               this.emit._compileRenderBoundary(node, callFrame, function (f) {
@@ -230,7 +229,7 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
       const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
       this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
-    } else if (noExtensionCallback || node.isAsync) {
+    } else if (noExtensionCallback || this.asyncMode) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
       this.buffer.addToBuffer(node, frame, () => {
@@ -626,9 +625,6 @@ class Compiler extends CompilerBase {
     const guardStateVar = needsGuardState ? this._tmpid() : null;
     validateGuardVariablesDeclared(variableValidationTargets, this, node);
 
-    // Guard blocks are always async boundaries
-    node.isAsync = true;
-
     const guardResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
       const guardFrame = blockFrame.push(false, true);
       trackCompileTimeFrameDepth(guardFrame, blockFrame);
@@ -909,7 +905,7 @@ class Compiler extends CompilerBase {
 
   //todo! - get rid of the callback
   compileIf(node, frame, async) {
-    if (this.asyncMode && node.isAsync) {
+    if (this.asyncMode) {
       async = false;//old type of async
     }
 
@@ -1031,7 +1027,7 @@ class Compiler extends CompilerBase {
   }
 
   compileIfAsync(node, frame) {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.compileIf(node, frame);
     } else {
       this.emit('(function(cb) {');
@@ -1255,7 +1251,7 @@ class Compiler extends CompilerBase {
       this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
     }
 
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.boundaries.compileCaptureBoundary(
         this.buffer,
         node,
@@ -1459,10 +1455,7 @@ class Compiler extends CompilerBase {
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
     frame._seesRootScope = true;
 
-    if (this.asyncMode) {
-      this.async.propagateIsAsync(node);
-      // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
-    }
+    // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
 
     this.emit.beginEntryFunction(node, 'root', frame);
     this.emit.line(`frame.markChannelBufferScope(${this.buffer.currentBuffer});`);

@@ -250,7 +250,7 @@ function resolveSingleArr(value) {
   }
 
   if (!value || (typeof value.then !== 'function' && !value[RESOLVE_MARKER])) {
-    return makeResolvedValue(value, (resolvedValue) => [resolvedValue]);
+    return makeResolvedValue([value]);
   }
 
   return _resolveSingleArrAsync(value);

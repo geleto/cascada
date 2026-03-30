@@ -158,7 +158,7 @@ class CompilerBase extends Obj {
   }
 
   _compileAggregate(node, frame, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen) {
-    let doResolve = resolveItems && this.asyncMode && node.isAsync && node.children.some(child => child.isAsync);
+    let doResolve = resolveItems && this.asyncMode;
     if (doResolve) {
       switch (startChar) {
         case '[':
@@ -275,7 +275,7 @@ class CompilerBase extends Obj {
   }
 
   _binFuncEmitter(node, frame, funcName, separator = ',') {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.emit('(');
       this.emit('runtime.resolveDuo(');
       this.compile(node.left, frame);
@@ -294,7 +294,7 @@ class CompilerBase extends Obj {
   }
 
   _binOpEmitter(node, frame, str) {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.emit('runtime.resolveDuo(');
       this.compile(node.left, frame);
       this.emit(',');
@@ -310,7 +310,7 @@ class CompilerBase extends Obj {
   }
 
   _unaryOpEmitter(node, frame, operator) {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.emit('runtime.resolveSingle(');
       this.compile(node.target, frame);
       // Position node should be the target
@@ -509,7 +509,7 @@ class CompilerBase extends Obj {
   }
 
   compileInlineIf(node, frame) {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
       if (hasCommandEffects) {
         this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, frame, function(boundaryFrame) {
@@ -597,9 +597,8 @@ class CompilerBase extends Obj {
       return;
     }
 
-    if (node.isAsync) {
+    if (this.asyncMode) {
       const mergedNode = {
-        isAsync: node.left.isAsync || node.right.isAsync,
         // Use node.right for position if args exist, else node.left
         positionNode: (node.right.args && node.right.args.children.length > 0) ? node.right : node.left,
         children: (node.right.args && node.right.args.children.length > 0) ? [node.left, ...node.right.args.children] : [node.left]
@@ -776,7 +775,7 @@ class CompilerBase extends Obj {
   }
 
   compileCompare(node, frame) {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       //use resolveDuo for expr and the first op, optionally await the rest
       this.emit('runtime.resolveDuo(');
       this.compile(node.expr, frame);
@@ -843,7 +842,7 @@ class CompilerBase extends Obj {
   }
 
   compileLookupVal(node, frame) {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       const sequenceChannelLookup =
         node._analysis && node._analysis.sequenceChannelLookup;
       if (this.scriptMode && sequenceChannelLookup) {
@@ -1195,7 +1194,7 @@ class CompilerBase extends Obj {
   compileFilter(node, frame) {
     this.assertType(node.name, nodes.Symbol);
 
-    if (node.isAsync) {
+    if (this.asyncMode) {
       // Although filters are compiled differently to expressions -
       // they still compile to a normal promise-valued expression.
       // Any outer structural wrapping should happen at the caller site,
@@ -1223,7 +1222,7 @@ class CompilerBase extends Obj {
 
     this.assertType(node.name, nodes.Symbol);
 
-    if (node.isAsync) {
+    if (this.asyncMode) {
       // Although filters are compiled differently to expressions,
       // they still compile to a normal promise-valued expression.
       // Any outer structural wrapping should happen at the caller site,
@@ -1287,7 +1286,7 @@ class CompilerBase extends Obj {
    */
   compileDataPath(node, frame) {
     // Flatten the path into a NodeList and use _compileAggregate
-    // _compileAggregate will automatically handle sync vs async based on node.isAsync
+    // _compileAggregate automatically handles the compiler's sync vs async mode.
     const pathNodes = this._flattenPathToNodeList(node.pathNode);
     this._compileAggregate(pathNodes, frame, '[', ']', true, true);
   }
@@ -1312,9 +1311,7 @@ class CompilerBase extends Obj {
       for (const item of pathNode.children) {
         segments.push(item);
       }
-      const nodeList = new nodes.NodeList(pathNode.lineno, pathNode.colno, segments);
-      nodeList.isAsync = segments.some(seg => seg.isAsync);
-      return nodeList;
+      return new nodes.NodeList(pathNode.lineno, pathNode.colno, segments);
     }
 
     const flatten = (node) => {
@@ -1336,15 +1333,13 @@ class CompilerBase extends Obj {
     };
     flatten(pathNode);
 
-    const nodeList = new nodes.NodeList(pathNode.lineno, pathNode.colno, segments);
-    nodeList.isAsync = segments.some(seg => seg.isAsync);
-    return nodeList;
+    return new nodes.NodeList(pathNode.lineno, pathNode.colno, segments);
   }
 
   // --- Expression Dispatchers ---
 
   compileAwaited(node, frame) {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.emit('(await ');
       this.compile(node, frame);
       this.emit(')');
@@ -1354,7 +1349,7 @@ class CompilerBase extends Obj {
   }
 
   _compileAwaitedExpression(node, frame) {
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.emit('(await ');
       this._compileExpression(node, frame);
       this.emit(')');
@@ -1431,18 +1426,12 @@ class CompilerBase extends Obj {
       nodes.NodeList
     );
 
-    if (node.isAsync) {
-
-      if (node instanceof nodes.Symbol && node.isCompilerInternal) {
-        // Don't wrap compiler-internal symbols - they're plain JS variables
-        this.compile(node, frame);
-        return;
-      }
-
+    if (node instanceof nodes.Symbol && node.isCompilerInternal) {
+      // Don't wrap compiler-internal symbols - they're plain JS variables
       this.compile(node, frame);
-    } else {
-      this.compile(node, frame);
+      return;
     }
+    this.compile(node, frame);
   }
 }
 

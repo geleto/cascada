@@ -76,7 +76,7 @@ class CompileInheritance {
     // The relevant position is the template expression node
     const positionNode = node.template || node; // node.template exists for Import, Extends, Include, FromImport
 
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       const getTemplateFunc = this.compiler._tmpid();
       //the AsyncEnviuronment.getTemplate returns a Promise
       this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
@@ -101,7 +101,7 @@ class CompileInheritance {
     const target = node.target.value;
     const id = this._compileGetTemplateOrScript(node, frame, false, false);
 
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       const exportedId = this.compiler._tmpid();
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${node.withContext
         ? `context.getVariables(), frame, cb`
@@ -131,7 +131,7 @@ class CompileInheritance {
     // Pass node.template for position in _compileGetTemplateOrScript
     const importedId = this._compileGetTemplateOrScript(node, frame, false, false);
 
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       const exportedId = this.compiler._tmpid();
       const bindingIds = [];
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${node.withContext
@@ -346,7 +346,7 @@ class CompileInheritance {
     var name = node.blockName.value;
     var id = node.symbol.value;
 
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       //this.emit.line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime);`);
 
       // Call getSuper directly - async blocks now return text snapshot promises
@@ -360,13 +360,13 @@ class CompileInheritance {
       this.emit.line(`${id} = runtime.markSafe(${id});`);
     }
 
-    if (!node.isAsync) {
+    if (!this.compiler.asyncMode) {
       this.emit.addScopeLevel();
     }
   }
 
   compileInclude(node, frame) {
-    if (!node.isAsync) {
+    if (!this.compiler.asyncMode) {
       this.compileIncludeSync(node, frame);
       return;
     }

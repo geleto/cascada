@@ -91,7 +91,7 @@ class CompileBoundaries {
   }
 
   compileControlFlowBoundary(bufferCompiler, node, frame, emitFunc = null) {
-    if (node.isAsync) {
+    if (this.compiler.asyncMode) {
       const parentBufferArg = bufferCompiler.currentBuffer;
       const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node, frame);
       const trackAsSingleWaitedUnit = this.compiler.asyncMode && !!bufferCompiler.currentWaitedChannelName;
@@ -151,7 +151,7 @@ class CompileBoundaries {
       }
     };
 
-    if (!node.isAsync) {
+    if (!this.compiler.asyncMode) {
       const { bufferId: id } = emitCompiler.managedBlock(frame, false, true, (blockFrame) => {
         innerBodyFunction.call(this.compiler, blockFrame);
       }, undefined, node);
