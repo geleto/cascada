@@ -3,7 +3,6 @@
 const {
   checkFrameBalance
 } = require('./checks');
-const { THROW_ON_ASYNC_FRAME_ASSIGN } = require('../feature-flags');
 
 
 // Frames keep track of scoping both at compile-time and run-time so
@@ -14,7 +13,7 @@ class Frame {
   constructor(parent, isolateWrites) {
     this.variables = Object.create(null);
     this.parent = parent;
-    this.topLevel = false;
+    this.syncTopLevel = false;
     // if this is true, writes (set) should never propagate upwards past
     // this frame to its parent (though reads may).
     this.isolateWrites = isolateWrites;
@@ -124,18 +123,6 @@ class AsyncFrame extends Frame {
     super(parent, isolateWrites);
   }
 
-  static inCompilerContext = false;
-
-  static withCompilerContext(fn) {
-    const prev = AsyncFrame.inCompilerContext;
-    AsyncFrame.inCompilerContext = true;
-    try {
-      return fn();
-    } finally {
-      AsyncFrame.inCompilerContext = prev;
-    }
-  }
-
   new() {
     return new AsyncFrame();
   }
@@ -148,11 +135,7 @@ class AsyncFrame extends Frame {
   }
 
   set(name, val, resolveUp) {
-    if (THROW_ON_ASYNC_FRAME_ASSIGN && !AsyncFrame.inCompilerContext) {
-      throw new Error(`AsyncFrame.set is disabled at runtime (attempted: "${name}")`);
-    }
-
-    return super.set(name, val, resolveUp);
+    throw new Error(`AsyncFrame.set is disabled at runtime (attempted: "${name}")`);
   }
 
 }

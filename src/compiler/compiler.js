@@ -9,7 +9,7 @@ const {
 const parser = require('../parser');
 const transformer = require('../transformer');
 const nodes = require('../nodes');
-const { Frame, AsyncFrame } = require('../runtime/runtime');
+const { Frame } = require('../runtime/runtime');
 const CompileSequential = require('./compile-sequential');
 const CompileEmit = require('./compile-emit');
 const CompileInheritance = require('./compile-inheritance');
@@ -366,14 +366,14 @@ class Compiler extends CompilerBase {
 
       // This block is specific to template mode's behavior.
       if (!this.asyncMode) {
-        this.emit.line('if(frame.topLevel) {');
+        this.emit.line('if(frame.syncTopLevel) {');
         this.emit.line(`  context.setVariable("${name}", ${id});`);
         this.emit.line('}');
       }
 
       // This export logic is common to both modes.
       if (name.charAt(0) !== '_') {
-        this.emit.line('if(frame.topLevel) {');
+        this.emit.line('if(frame.syncTopLevel) {');
         this.emit.line(`  context.addExport("${name}", ${id});`);
         this.emit.line('}');
       }
@@ -478,7 +478,7 @@ class Compiler extends CompilerBase {
       }
 
       if (hasAssignedValue && !this.asyncMode) {
-        this.emit.line('if(frame.topLevel) {');
+        this.emit.line('if(frame.syncTopLevel) {');
         this.emit.line(`  context.setVariable("${name}", ${valueId});`);
         this.emit.line('}');
       }
@@ -1444,7 +1444,7 @@ class Compiler extends CompilerBase {
     );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
 
-    frame = this.asyncMode ? new AsyncFrame() : new Frame();
+    frame = new Frame();
     // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
 
     this.emit.beginEntryFunction(node, 'root', frame);
@@ -1476,7 +1476,7 @@ class Compiler extends CompilerBase {
       this.emit.line('(async () => {');
 
       if (this.hasExtends) {
-        this.emit.line(`  let finalParent = await runtime.varChannelLookup("__parentTemplate", ${this.buffer.currentBuffer});`);
+        this.emit.line(`  let finalParent = await runtime.channelLookup("__parentTemplate", ${this.buffer.currentBuffer});`);
       } else {
         this.emit.line('  let finalParent = null;');
       }
@@ -1704,39 +1704,37 @@ class Compiler extends CompilerBase {
 
 module.exports = {
   compile: function compile(src, asyncFilters, extensions, name, opts = {}) {
-    return AsyncFrame.withCompilerContext(() => {
-      // Shared id pool for this compilation unit. Renaming and compiler codegen
-      // both allocate from here so loop aliases and compiler tmp ids stay unique.
-      const idPool = {
-        value: 0,
-        next() {
-          this.value += 1;
-          return this.value;
-        }
-      };
-      const compileOptions = Object.assign({}, opts, { idPool });
-      const c = new Compiler(name, compileOptions);
-
-      // Run the extension preprocessors against the source.
-      const preprocessors = (extensions || []).map(ext => ext.preprocess).filter(f => !!f);
-
-      const processedSrc = preprocessors.reduce((s, processor) => processor(s), src);
-
-      const ast = transformer.transform(
-        parser.parse(processedSrc, extensions, opts),
-        asyncFilters,
-        name,
-        compileOptions
-      );
-      if (c.asyncMode) {
-        c.analysisState = c.analysis.run(ast);
-        c.rename.run(ast);
-      } else {
-        c.analysisState = null;
+    // Shared id pool for this compilation unit. Renaming and compiler codegen
+    // both allocate from here so loop aliases and compiler tmp ids stay unique.
+    const idPool = {
+      value: 0,
+      next() {
+        this.value += 1;
+        return this.value;
       }
-      c.compile(ast);
-      return c.getCode();
-    });
+    };
+    const compileOptions = Object.assign({}, opts, { idPool });
+    const c = new Compiler(name, compileOptions);
+
+    // Run the extension preprocessors against the source.
+    const preprocessors = (extensions || []).map(ext => ext.preprocess).filter(f => !!f);
+
+    const processedSrc = preprocessors.reduce((s, processor) => processor(s), src);
+
+    const ast = transformer.transform(
+      parser.parse(processedSrc, extensions, opts),
+      asyncFilters,
+      name,
+      compileOptions
+    );
+    if (c.asyncMode) {
+      c.analysisState = c.analysis.run(ast);
+      c.rename.run(ast);
+    } else {
+      c.analysisState = null;
+    }
+    c.compile(ast);
+    return c.getCode();
   },
 
   Compiler: Compiler

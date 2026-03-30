@@ -51,9 +51,6 @@ class Node extends Obj {
     });
   }
 
-  checkIsAsync(frame) {
-    return !!this.isAsync;
-  }
 }
 
 // Abstract nodes
@@ -91,9 +88,6 @@ class Symbol extends Value {
   get typename() { return 'Symbol'; }
   get fields() { return ['value', 'sequential', 'isCompilerInternal']; }
 
-  checkIsAsync(frame) {
-    return !!frame.lookup(this.value); // if the name is a frame variable - it can be async
-  }
 }
 
 class Group extends NodeList {

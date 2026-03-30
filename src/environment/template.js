@@ -97,7 +97,7 @@ class Template extends Obj {
       frame = this.asyncMode ? new AsyncFrame : new Frame();
     }
     if (!this.asyncMode) {
-      frame.topLevel = true;
+      frame.syncTopLevel = true;
     }
     let syncResult = null;
     let callbackCalled = false;
@@ -204,7 +204,7 @@ class Template extends Obj {
       ? parentFrame.push()
       : (this.asyncMode ? new AsyncFrame() : new Frame());
     if (!this.asyncMode) {
-      frame.topLevel = true;
+      frame.syncTopLevel = true;
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
@@ -379,7 +379,7 @@ class AsyncTemplate extends Template {
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     const frame = parentFrame ? parentFrame.push(true) : new AsyncFrame();
     if (!this.asyncMode) {
-      frame.topLevel = true;
+      frame.syncTopLevel = true;
     }
 
     // Call the root function in composition mode. It synchronously returns the

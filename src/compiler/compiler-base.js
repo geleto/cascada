@@ -382,7 +382,7 @@ class CompilerBase extends Obj {
           // Block functions can read var channels declared in the child root buffer
           // while executing under a parent block buffer. Use runtime var lookup
           // there so cross-tree reads resolve against the producer buffer.
-          this.emit(`runtime.varChannelLookup("${name}", ${this.buffer.currentBuffer})`);
+          this.emit(`runtime.channelLookup("${name}", ${this.buffer.currentBuffer})`);
           return;
         }
         // Var channels are read as point-in-stream snapshots when used as symbols.
@@ -427,7 +427,7 @@ class CompilerBase extends Obj {
       }
     }
     if (this.scriptMode) {
-      this.emit('runtime.contextOrVarLookupScriptAsync(' +
+      this.emit('runtime.contextOrChannelLookupScriptAsync(' +
         'context, "' + name + '", ' +
         `${this.buffer.currentBuffer}, ` +
         `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
@@ -444,12 +444,12 @@ class CompilerBase extends Obj {
         this.emit('(() => {');
         this.emit(`const ${contextRef} = context.lookup("${name}");`);
         this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
-        this.emit(`return runtime.contextOrVarLookup(context, "${name}", ${this.buffer.currentBuffer});`);
+        this.emit(`return runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer});`);
         this.emit('})()');
       } else if (!this.asyncMode) {
-        this.emit(`runtime.contextOrFrameLookup(context, frame, "${name}")`);
+        this.emit(`runtime.contextOrSyncFrameLookup(context, frame, "${name}")`);
       } else {
-        this.emit(`runtime.contextOrVarLookup(context, "${name}", ${this.buffer.currentBuffer})`);
+        this.emit(`runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer})`);
       }
     }
   }

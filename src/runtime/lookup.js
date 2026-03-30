@@ -202,10 +202,10 @@ async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
 }
 
 /**
- * Context or frame lookup for templates.
+ * Sync template lookup through frame, then context.
  * Returns undefined if variable not found.
  */
-function contextOrFrameLookup(context, frame, name) {
+function contextOrSyncFrameLookup(context, frame, name) {
   var val = frame.lookup(name);
   return (val !== undefined) ?
     val :
@@ -219,8 +219,8 @@ function contextOrFrameLookup(context, frame, name) {
  * - declared async vars should resolve through channel snapshots
  * - globals/context stay last
  */
-function contextOrVarLookup(_context, name, currentBuffer) {
-  const channelRead = varChannelLookup(name, currentBuffer);
+function contextOrChannelLookup(_context, name, currentBuffer) {
+  const channelRead = channelLookup(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
   }
@@ -239,7 +239,7 @@ function contextOrVarLookup(_context, name, currentBuffer) {
  * Ordinary symbol reads are not terminal consumers and must not use
  * finalSnapshot(); only explicit finalization sites may do that.
  */
-function varChannelLookup(name, currentBuffer) {
+function channelLookup(name, currentBuffer) {
   const channel = currentBuffer.findChannel(name);
   if (!channel) {
     return undefined;
@@ -260,8 +260,8 @@ function varChannelLookup(name, currentBuffer) {
  * Async context/frame/channel lookup for scripts.
  * Returns poison for missing names via context.lookupScriptModeAsync.
  */
-function contextOrVarLookupScriptAsync(context, name, currentBuffer, errorContext = null) {
-  const channelRead = varChannelLookupScript(name, currentBuffer);
+function contextOrChannelLookupScriptAsync(context, name, currentBuffer, errorContext = null) {
+  const channelRead = channelLookupScript(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
   }
@@ -271,7 +271,7 @@ function contextOrVarLookupScriptAsync(context, name, currentBuffer, errorContex
 // Script-mode channel lookup variant:
 // ordinary reads stay as ordered snapshot commands, using the producer buffer
 // for cross-tree reads instead of finalSnapshot().
-function varChannelLookupScript(name, currentBuffer) {
+function channelLookupScript(name, currentBuffer) {
   const channel = currentBuffer.findChannel(name);
   if (!channel) {
     return undefined;
@@ -318,8 +318,8 @@ module.exports = {
   memberLookupScript,
   memberLookupAsync,
   memberLookupScriptAsync,
-  contextOrFrameLookup,
-  varChannelLookup,
-  contextOrVarLookup,
-  contextOrVarLookupScriptAsync,
+  contextOrSyncFrameLookup,
+  channelLookup,
+  contextOrChannelLookup,
+  contextOrChannelLookupScriptAsync,
 };

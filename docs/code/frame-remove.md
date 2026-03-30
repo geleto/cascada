@@ -37,7 +37,7 @@ Completed so far:
     - this avoids confusing the macro's local declaration with the parent-owned exported binding
   - async render entry no longer sets `frame.topLevel`
     - there are no remaining async reads of that runtime flag
-    - the remaining `frame.topLevel` usage is sync-only compiler/runtime code
+    - the remaining top-level frame marker is now explicitly sync-only: `frame.syncTopLevel`
   - dead async frame flags were removed:
     - `_seesRootScope` no longer exists in the async runtime path
     - `_returnWaitCount` was dead and is gone
@@ -85,7 +85,16 @@ Completed so far:
     - `Context.resolveExports(...)` no longer accepts `frame` or `runtime`
     - `guard.initChannelSnapshots(...)` no longer accepts `frame`
     - `getChannelFromBuffer(...)` was removed in favor of direct `buffer.findChannel(...)`
-    - dead `contextOrVarLookupScript(...)` and `AsyncFrame.lookupAndLocate(...)` were removed
+    - dead `contextOrChannelLookupScript(...)` and `AsyncFrame.lookupAndLocate(...)` were removed
+  - dead frame-era node async hooks were removed:
+    - `Node.checkIsAsync(...)`
+    - `Symbol.checkIsAsync(...)`
+  - compile-time async codegen no longer constructs `AsyncFrame`
+    - async root compilation now uses plain `Frame` for compiler-only scope tracking
+    - `AsyncFrame.withCompilerContext(...)` and `AsyncFrame.inCompilerContext` were removed
+  - `AsyncFrame.set(...)` is now an unconditional runtime guard
+    - the one-value `THROW_ON_ASYNC_FRAME_ASSIGN` feature flag was removed
+    - any remaining runtime async frame write now fails loudly by default
 
 Important correction:
 
@@ -109,7 +118,12 @@ Current next target:
     - done: `findVisibleChannel(...)` was removed and callers now use `currentBuffer.findChannel(...)` directly
     - done: modern async template symbol fallback no longer passes through `frame.lookup(...)`
     - done: the remaining frame-backed channel declaration helper was isolated as sync-only `declareFrameChannel(...)`
-    - continue shrinking the remaining sync/runtime compatibility lookup helpers that still rely on frame-only lookup
+  - continue shrinking the remaining sync/runtime compatibility lookup helpers that still rely on frame-only lookup
+  - continue isolating remaining sync-only frame state:
+    - done: `frame.topLevel` was renamed to explicit sync-only `frame.syncTopLevel`
+  - continue deleting dead async frame scaffolding:
+    - done: compile-time async codegen no longer uses `AsyncFrame`
+    - done: the compiler-context escape hatch on `AsyncFrame.set(...)` was removed
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`
