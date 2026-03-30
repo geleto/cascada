@@ -452,7 +452,7 @@ class CompileLoop {
     );
   }
 
-  _compileAsyncLoopBindings(node, arr, i, len) {
+  _compileLegacyCallbackLoopBindings(node, arr, i, len) {
     const bindings = [
       { name: 'index', val: `${i} + 1` },
       { name: 'index0', val: i },
@@ -468,7 +468,7 @@ class CompileLoop {
     });
   }
 
-  _compileAsyncLoop(node, frame, parallel) {
+  _compileLegacyCallbackLoop(node, frame, parallel) {
     if (this.compiler.asyncMode) {
       this._compileFor(node, frame, { sequentialLoopBody: !parallel });
       return;
@@ -518,7 +518,7 @@ class CompileLoop {
       frame.set(id, id);
     }
 
-    this._compileAsyncLoopBindings(node, arr, i, len);
+    this._compileLegacyCallbackLoopBindings(node, arr, i, len);
 
     this.compiler.emit.withScopedSyntax(() => {
       if (parallel) {
@@ -564,11 +564,11 @@ class CompileLoop {
   }
 
   compileAsyncEach(node, frame) {
-    this._compileAsyncLoop(node, frame, false);
+    this._compileLegacyCallbackLoop(node, frame, false);
   }
 
   compileAsyncAll(node, frame) {
-    this._compileAsyncLoop(node, frame, true);
+    this._compileLegacyCallbackLoop(node, frame, true);
   }
 }
 

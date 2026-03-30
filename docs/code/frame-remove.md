@@ -125,6 +125,8 @@ Current next target:
   - continue deleting dead async frame scaffolding:
     - done: compile-time async codegen no longer uses `AsyncFrame`
     - done: the compiler-context escape hatch on `AsyncFrame.set(...)` was removed
+  - continue isolating legacy callback-async compatibility paths from modern async mode:
+    - done: internal loop compiler helpers were renamed to explicit legacy-callback names
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`
