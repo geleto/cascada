@@ -78,6 +78,21 @@ Completed so far:
   - async composition/render entry no longer inherits runtime frame ancestry
     - async `_render(...)`, `getExported(...)`, and `_renderForComposition(...)` no longer pass or create runtime frames
     - async control-flow/render/value boundaries also no longer thread runtime frame ancestry
+    - async import/include composition call sites no longer pass dummy `null` parent-frame slots into `getExported(...)` / `_renderForComposition(...)`
+    - dead `Template._render(..., receivePartialOutput)` scaffolding was removed
+    - async template entry now treats callback scheduling as async by mode, not by parent-frame inheritance
+    - async-facing wrapper APIs were slimmed to match the runtime model:
+      - `AsyncEnvironment.renderTemplate(...)`
+      - `AsyncEnvironment.renderScript(...)`
+      - `AsyncTemplate.render(...)`
+      - `AsyncTemplate.getExported(...)`
+      - `AsyncTemplate._renderForComposition(...)`
+      - `AsyncScript.render(...)`
+    - `AsyncTemplate.getExported(...)` now uses a real async-only implementation instead of routing through the shared sync-capable base helper
+    - async render entry now also has a real async-only base helper:
+      - `Template._renderAsync(...)`
+      - `AsyncTemplate.render(...)` and `AsyncScript.render(...)` no longer route through the shared sync-capable `_render(...)`
+    - the shared `Template.getExported(...)` path is now sync-only again
   - async inheritance execution no longer inherits caller runtime frame ancestry
     - async parent-template handoff no longer threads a runtime frame into parent `rootRenderFunc(...)`
     - async block execution and `super()` no longer thread caller runtime frame ancestry

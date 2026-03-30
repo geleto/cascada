@@ -32,13 +32,13 @@ class AsyncScript extends Template {
     super.init(src, env, path, eagerCompile, true/*async*/, true/*script*/);
   }
 
-  render(ctx, parentFrame, cb) {
+  render(ctx, cb) {
     if (cb) {
-      return super.render(ctx, parentFrame, cb);
+      return super._renderAsync(ctx, cb);
     }
     // If no callback is provided, return a promise
     return new Promise((resolve, reject) => {
-      super.render(ctx, parentFrame, (err, res) => {
+      super._renderAsync(ctx, (err, res) => {
         if (err) {
           reject(err);
         } else {

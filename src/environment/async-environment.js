@@ -42,12 +42,12 @@ class AsyncEnvironment extends BaseEnvironment {
     return this;
   }
 
-  async renderTemplate(templateName, ctx, parentFrame) {
-    return this._asyncRenderTemplate(templateName, ctx, true, parentFrame);
+  async renderTemplate(templateName, ctx) {
+    return this._asyncRenderTemplate(templateName, ctx, true);
   }
 
-  async renderScript(templateName, ctx, parentFrame) {
-    return this._asyncRenderScript(templateName, ctx, true, parentFrame);
+  async renderScript(templateName, ctx) {
+    return this._asyncRenderScript(templateName, ctx, true);
   }
 
   async renderTemplateString(src, ctx, opts) {

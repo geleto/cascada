@@ -60,8 +60,56 @@ class Template extends Obj {
     return this._render(ctx, parentFrame, cb);
   }
 
+  _renderAsync(ctx, cb) {
+    if (typeof ctx === 'function') {
+      cb = ctx;
+      ctx = {};
+    }
+
+    try {
+      this.compile();
+    } catch (e) {
+      const err = lib._prettifyError(this.path, this.env.opts.dev, e);
+      if (cb) {
+        return callbackAsap(cb, err);
+      }
+      throw err;
+    }
+
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
+    let syncResult = null;
+    let callbackCalled = false;
+
+    const callback = (err, res) => {
+      if (callbackCalled) {
+        return;
+      }
+      callbackCalled = true;
+
+      if (err) {
+        err = lib._prettifyError(this.path, this.env.opts.dev, err);
+      }
+
+      if (cb) {
+        callbackAsap(cb, err, res);
+      } else {
+        if (err) {
+          throw err;
+        }
+        syncResult = res;
+      }
+    };
+
+    this.rootRenderFunc(this.env, context, globalRuntime, callback);
+    return syncResult;
+  }
+
   // @todo - return promise if isAsync and no callback is provided
-  _render(ctx, parentFrame, cb, receivePartialOutput = false) {
+  _render(ctx, parentFrame, cb) {
+    if (this.asyncMode) {
+      return this._renderAsync(ctx, cb);
+    }
+
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
@@ -70,11 +118,9 @@ class Template extends Obj {
       parentFrame = null;
     }
 
-    // If there is a parent frame, we are being called from internal
-    // code of another template, and the internal system
-    // depends on the sync/async nature of the parent template
-    // to be inherited, so force an async callback
-    const forceAsync = !parentFrame;
+    // Async templates always callback asynchronously. Sync internal renders can
+    // still inline callback delivery when reusing a parent frame.
+    const forceAsync = this.asyncMode || !parentFrame;
 
     // Catch compile errors for async rendering
     try {
@@ -94,9 +140,6 @@ class Template extends Obj {
       frame = parentFrame ? parentFrame.push(true) : new Frame();
       frame.syncTopLevel = true;
     }
-    let syncResult = null;
-    let callbackCalled = false;
-
     if (!AsyncEnvironment) {
       const envModule = require('./environment');
       AsyncEnvironment = envModule.AsyncEnvironment;
@@ -105,6 +148,7 @@ class Template extends Obj {
 
     let didError = false;
 
+    let syncResult = null;
     const callback = (err, res) => {
       if (!isAsync) {
         // TODO: this is actually a bug in the compiled template (because waterfall
@@ -163,11 +207,7 @@ class Template extends Obj {
       };
     };
 
-    if (this.asyncMode) {
-      this.rootRenderFunc(this.env, context, globalRuntime, callback);
-    } else {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
-    }
+    this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
 
     return syncResult;
   }
@@ -195,57 +235,30 @@ class Template extends Obj {
       }
     }
 
-    const frame = !this.asyncMode
-      ? (parentFrame ? parentFrame.push() : new Frame())
-      : null;
-    if (!this.asyncMode) {
-      frame.syncTopLevel = true;
-    }
+    const frame = parentFrame ? parentFrame.push() : new Frame();
+    frame.syncTopLevel = true;
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    if (this.asyncMode) {
-      // Run template in composition mode
-      this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+    // Sync mode is straightforward.
+    this.rootRenderFunc(this.env, context, frame, globalRuntime, (err) => {
+      if (err) {
+        cb(err, null);
+      } else {
+        const exported = context.getExported();
+        const boundExported = {};
+        const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
 
-      // Immediately export the variables (they may be promises)
-      const exported = context.getExported();
-      const boundExported = {};
-      const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
-
-      for (const name in exported) {
-        const item = exported[name];
-        if (typeof item === 'function' && item.isMacro) {
-          boundExported[name] = item.bind(macroContext);
-        } else {
-          boundExported[name] = item;
-        }
-      }
-
-      // Return immediately - async work continues through the composition
-      // buffer and errors are still reported via cb.
-      return boundExported;
-    } else {
-      // Sync mode is straightforward.
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, (err) => {
-        if (err) {
-          cb(err, null);
-        } else {
-          const exported = context.getExported();
-          const boundExported = {};
-          const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
-
-          for (const name in exported) {
-            const item = exported[name];
-            if (typeof item === 'function' && item.isMacro) {
-              boundExported[name] = item.bind(macroContext);
-            } else {
-              boundExported[name] = item;
-            }
+        for (const name in exported) {
+          const item = exported[name];
+          if (typeof item === 'function' && item.isMacro) {
+            boundExported[name] = item.bind(macroContext);
+          } else {
+            boundExported[name] = item;
           }
-          cb(null, boundExported);
         }
-      });
-    }
+        cb(null, boundExported);
+      }
+    });
 
     return undefined;
   }
@@ -345,13 +358,13 @@ class AsyncTemplate extends Template {
     super.init(src, env, path, eagerCompile, true/*async*/, false/*script*/);
   }
 
-  render(ctx, parentFrame, cb) {
+  render(ctx, cb) {
     if (cb) {
-      return super.render(ctx, parentFrame, cb);
+      return super._renderAsync(ctx, cb);
     }
     // If no callback is provided, return a promise
     return new Promise((resolve, reject) => {
-      super.render(ctx, parentFrame, (err, res) => {
+      super._renderAsync(ctx, (err, res) => {
         if (err) {
           err = this.env._prettifyError(this.path, this.env.opts.dev, err);
           reject(err);
@@ -362,28 +375,43 @@ class AsyncTemplate extends Template {
     });
   }
 
+  getExported(ctx, cb) {
+    if (typeof ctx === 'function') {
+      cb = ctx;
+      ctx = {};
+    }
+
+    this.compile();
+
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
+    this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+
+    const exported = context.getExported();
+    const boundExported = {};
+    const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
+
+    for (const name in exported) {
+      const item = exported[name];
+      if (typeof item === 'function' && item.isMacro) {
+        boundExported[name] = item.bind(macroContext);
+      } else {
+        boundExported[name] = item;
+      }
+    }
+
+    return boundExported;
+  }
+
   /**
    * Renders the template for composition, returning the output array synchronously.
    * While the output array may not be ready yet, it will be when the
    * composition buffer finishes.
    * It sets the compositionMode argument of rootRenderFunc to true
    */
-  _renderForComposition(ctx, parentFrame, cb) {
+  _renderForComposition(ctx, cb) {
     this.compile();
-
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    const frame = !this.asyncMode
-      ? (parentFrame ? parentFrame.push(true) : new Frame())
-      : null;
-    if (!this.asyncMode) {
-      frame.syncTopLevel = true;
-    }
-
-    // Call the root function in composition mode. It synchronously returns the
-    // composition buffer while any async work continues inside that structure.
-    return this.asyncMode
-      ? this.rootRenderFunc(this.env, context, globalRuntime, cb, true)
-      : this.rootRenderFunc(this.env, context, frame, globalRuntime, cb, true);
+    return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
   }
 }
 
