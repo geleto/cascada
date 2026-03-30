@@ -314,11 +314,11 @@ class BaseEnvironment extends EmitterObj {
       else {
         if (!info) {
           newCompiled = asyncMode ?
-            new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile, asyncMode, scriptMode) :
+            new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
             new Template(noopTmplSrc, this, '', eagerCompile, asyncMode, scriptMode);
         } else {
           newCompiled = asyncMode ?
-            new AsyncTemplate(info.src, this, info.path, eagerCompile, asyncMode, scriptMode) :
+            new AsyncTemplate(info.src, this, info.path, eagerCompile) :
             new Template(info.src, this, info.path, eagerCompile, asyncMode, scriptMode);
           if (!info.noCache) {
             const compiledCache = this._compiledCaches.get(info.loader) || new Map();

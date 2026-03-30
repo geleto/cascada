@@ -106,10 +106,6 @@ class Template extends Obj {
 
   // @todo - return promise if isAsync and no callback is provided
   _render(ctx, parentFrame, cb) {
-    if (this.asyncMode) {
-      return this._renderAsync(ctx, cb);
-    }
-
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
@@ -118,11 +114,9 @@ class Template extends Obj {
       parentFrame = null;
     }
 
-    // Async templates always callback asynchronously. Sync internal renders can
-    // still inline callback delivery when reusing a parent frame.
-    const forceAsync = this.asyncMode || !parentFrame;
+    const forceAsync = !parentFrame;
 
-    // Catch compile errors for async rendering
+    // Catch compile errors for sync rendering
     try {
       this.compile();
     } catch (e) {
@@ -135,39 +129,18 @@ class Template extends Obj {
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    let frame = null;
-    if (!this.asyncMode) {
-      frame = parentFrame ? parentFrame.push(true) : new Frame();
-      frame.syncTopLevel = true;
-    }
-    if (!AsyncEnvironment) {
-      const envModule = require('./environment');
-      AsyncEnvironment = envModule.AsyncEnvironment;
-    }
-    const isAsync = this.env instanceof AsyncEnvironment;
+    const frame = parentFrame ? parentFrame.push(true) : new Frame();
+    frame.syncTopLevel = true;
 
     let didError = false;
-
     let syncResult = null;
     const callback = (err, res) => {
-      if (!isAsync) {
-        // TODO: this is actually a bug in the compiled template (because waterfall
-        // tasks are both not passing errors up the chain of callbacks AND are not
-        // causing a return from the top-most render function). But fixing that
-        // will require a more substantial change to the compiler.
-        if (didError && cb && typeof res !== 'undefined') {
-          // the old non-async nunjucks behaviour
-          // prevent multiple calls to cb
-          return;
-        }
-      } else {
-        if (callbackCalled) {
-          //already had success or error
-          //ignore all errors after sucess (happens with unused vars throwing an error after template is rendered)
-          //see the 'Side effects - template render lifecycle' tests
-          return;
-        }
-        callbackCalled = true;//only allow one callback
+      // TODO: this is actually a bug in the compiled template (because waterfall
+      // tasks are both not passing errors up the chain of callbacks AND are not
+      // causing a return from the top-most render function). But fixing that
+      // will require a more substantial change to the compiler.
+      if (didError && cb && typeof res !== 'undefined') {
+        return;
       }
 
       if (err) {
@@ -186,25 +159,7 @@ class Template extends Obj {
           throw err;
         }
         syncResult = res;
-
-        if (err) {
-          err = lib._prettifyError(this.path, this.env.opts.dev, err);
-          didError = true;
-        }
-
-        if (cb) {
-          if (forceAsync) {
-            callbackAsap(cb, err, res);
-          } else {
-            cb(err, res);
-          }
-        } else {
-          if (err) {
-            throw err;
-          }
-          syncResult = res;
-        }
-      };
+      }
     };
 
     this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);

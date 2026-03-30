@@ -327,7 +327,7 @@ class CompileBoundaries {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const innerFrame = frame.push(false, true);
+    const innerFrame = frame;
     this._withBoundaryBufferState(bufferCompiler, {
       bufferExpr: 'currentBuffer',
       textChannelVar: 'output_textChannelVar',

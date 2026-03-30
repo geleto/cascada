@@ -93,6 +93,8 @@ Completed so far:
       - `Template._renderAsync(...)`
       - `AsyncTemplate.render(...)` and `AsyncScript.render(...)` no longer route through the shared sync-capable `_render(...)`
     - the shared `Template.getExported(...)` path is now sync-only again
+    - the shared `Template._render(...)` path is now sync-only again
+    - `BaseEnvironment` no longer passes dead async-mode constructor args into `AsyncTemplate(...)`
   - async inheritance execution no longer inherits caller runtime frame ancestry
     - async parent-template handoff no longer threads a runtime frame into parent `rootRenderFunc(...)`
     - async block execution and `super()` no longer thread caller runtime frame ancestry
@@ -111,6 +113,10 @@ Completed so far:
     - `compileAsyncVarSet(...)` no longer writes assigned async vars into the compiler frame
     - async sequence-root validation now uses analysis declaration ownership directly instead of compiler-frame synthetic lookup
     - dead buffer-helper `frame` parameters were removed from snapshot / sequence / waited-command emission helpers
+    - modern async loop / capture / control-flow compilation no longer creates compile-time child frames just for scope shape
+      - async loop bodies / else blocks now compile directly against the current compiler frame
+      - async `capture`, `if`, `switch`, and `guard` no longer push compile-time child frames
+      - async macro bodies and async block entry compilation no longer manufacture fresh compiler frames just for shape
   - async macros no longer close over outer runtime frame ancestry
     - they no longer capture caller frame chains through the old `(function(frame) { ... }).call(this, frame)` shape
     - async macro wrappers no longer create a replacement local runtime `Frame()` either
@@ -171,9 +177,13 @@ Current next target:
     - done: async sequence-root validation no longer consults compiler-frame synthetic lookup
     - done: async var assignment no longer writes temp ids into the compiler frame
     - done: dead `frame` args were removed from buffer emission helpers used by async codegen
+    - done: modern async loop / capture / control-flow compilation no longer pushes compile-time child frames just for lexical scope shape
+    - the remaining compiler-frame push/new sites are now concentrated in sync / legacy callback paths and the generic `managedBlock(...)` helper surface
   - continue isolating remaining sync-only frame state:
     - done: `frame.topLevel` was renamed to explicit sync-only `frame.syncTopLevel`
-    - done: loop frame metadata writes now go through explicit sync-only `setSyncLoopBindings(...)`
+    - done: loop frame metadata writes now go through explicit sync-only `setSyncFrameLoopBindings(...)`
+    - done: sync frame-backed template lookup now goes through explicit `contextOrSyncFrameVarLookup(...)`
+    - done: the dead `whileConditionIterator(...)` runtime export was removed
   - continue deleting dead async frame scaffolding:
     - done: compile-time async codegen no longer uses `AsyncFrame`
     - done: the compiler-context escape hatch on `AsyncFrame.set(...)` was removed
@@ -698,7 +708,8 @@ Replacement direction:
 
 Current shape:
 
-- `whileConditionIterator(...)` still does runtime `frame.push()` / `frame.pop()` directly
+- `whileConditionIterator(...)` is gone
+- async `while` now uses `whileIterator()` plus compiled loop-body termination logic
 
 Examples:
 
@@ -706,8 +717,8 @@ Examples:
 
 Replacement direction:
 
-- treat this as part of runtime async frame-stack removal
-- not just generated-code cleanup
+- keep it removed
+- do not reintroduce runtime frame stack handling into async while helpers
 
 ### 10. `AsyncFrame.inCompilerContext`
 
@@ -1192,7 +1203,6 @@ Work:
   - macros
   - blocks
   - captures
-  - `whileConditionIterator(...)`
 - remove `AsyncFrame.inCompilerContext`
 
 Important note:

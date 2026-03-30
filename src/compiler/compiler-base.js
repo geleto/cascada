@@ -447,7 +447,7 @@ class CompilerBase extends Obj {
         this.emit(`return runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer});`);
         this.emit('})()');
       } else if (!this.asyncMode) {
-        this.emit(`runtime.contextOrSyncVarLookup(context, frame, "${name}")`);
+        this.emit(`runtime.contextOrSyncFrameVarLookup(context, frame, "${name}")`);
       } else {
         this.emit(`runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer})`);
       }

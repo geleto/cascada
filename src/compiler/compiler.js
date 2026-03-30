@@ -1,9 +1,7 @@
 const {
   RESERVED_DECLARATION_NAMES,
   validateGuardVariablesDeclared,
-  validateChannelDeclarationNode,
-  trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
+  validateChannelDeclarationNode
 } = require('./validation');
 
 const parser = require('../parser');
@@ -500,7 +498,6 @@ class Compiler extends CompilerBase {
   compileSwitch(node, frame) {
     const switchResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
       let catchPoisonPos;
-      const caseCreatesScope = this.asyncMode;
 
       if (this.asyncMode) {
         // Add try-catch wrapper for error handling
@@ -527,11 +524,7 @@ class Compiler extends CompilerBase {
         this.emit(': ');
 
         if (c.body.children.length) {
-          let caseFrame = blockFrame;
-          if (caseCreatesScope) {
-            caseFrame = blockFrame.push();
-          }
-          this.compile(c.body, caseFrame);
+          this.compile(c.body, blockFrame);
           this.emit.line('break;');
         }
       });
@@ -539,12 +532,7 @@ class Compiler extends CompilerBase {
       // Compile default case, if present — synchronously
       if (node.default) {
         this.emit('default: ');
-
-        let defaultFrame = blockFrame;
-        if (caseCreatesScope) {
-          defaultFrame = blockFrame.push();
-        }
-        this.compile(node.default, defaultFrame);
+        this.compile(node.default, blockFrame);
       }
 
       this.emit('}'); // Close switch
@@ -609,10 +597,6 @@ class Compiler extends CompilerBase {
     validateGuardVariablesDeclared(variableValidationTargets, this, node);
 
     const guardResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
-      const guardFrame = blockFrame.push(false, true);
-      trackCompileTimeFrameDepth(guardFrame, blockFrame);
-      // Guard blocks should keep channel writes scoped to the guard buffer.
-      guardFrame.channelScope = true;
       const previousGuardDepth = this.guardDepth;
       this.guardDepth = previousGuardDepth + 1;
 
@@ -631,7 +615,7 @@ class Compiler extends CompilerBase {
         this.emit.line('');
 
         // 3. Compile Body
-        this.compile(node.body, guardFrame);
+        this.compile(node.body, blockFrame);
 
         // Resolve and Validate Sequence Targets
         // Sequence lock mutations are tracked via used channel names.
@@ -729,7 +713,6 @@ class Compiler extends CompilerBase {
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
         if (node.recoveryBody) {
-          const recoveryFrame = guardFrame.push();
           if (node.errorVar) {
             // Guard recovery error variable is already declared in analysis;
             // recovery runs inside the existing guard boundary, so only the
@@ -739,8 +722,7 @@ class Compiler extends CompilerBase {
               `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
             );
           }
-          this.compile(node.recoveryBody, recoveryFrame);
-          recoveryFrame.pop();
+          this.compile(node.recoveryBody, blockFrame);
         }
 
         this.emit.line('} else {');
@@ -749,8 +731,7 @@ class Compiler extends CompilerBase {
         this.guardDepth = previousGuardDepth;
       }
 
-      validateCompileTimeFrameBalance(guardFrame, this, node);
-      return guardFrame.pop();
+      return blockFrame;
     });
 
     frame = guardResult.frame;
@@ -890,7 +871,6 @@ class Compiler extends CompilerBase {
       async = false;//old type of async
     }
 
-    const branchCreatesScope = this.asyncMode;
     const ifResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
       let catchPoisonPos;
 
@@ -906,23 +886,13 @@ class Compiler extends CompilerBase {
         this.emit(`if (${condResultId}) {`);
 
         // True branch — synchronous inside the runControlFlowBoundary async fn
-        {
-          let trueFrame = blockFrame;
-          if (branchCreatesScope) {
-            trueFrame = blockFrame.push();
-          }
-          this.compile(node.body, trueFrame);
-        }
+        this.compile(node.body, blockFrame);
 
         this.emit('} else {');
 
         // False branch — synchronous
         if (node.else_) {
-          let falseFrame = blockFrame;
-          if (branchCreatesScope) {
-            falseFrame = blockFrame.push();
-          }
-          this.compile(node.else_, falseFrame);
+          this.compile(node.else_, blockFrame);
         }
         this.emit('}');
 
@@ -955,14 +925,7 @@ class Compiler extends CompilerBase {
 
         this.emit.withScopedSyntax(() => {
           let trueFrame = blockFrame;
-          if (branchCreatesScope) {
-            trueFrame = blockFrame.push();
-            this.emit.line('frame = frame.push();');
-          }
           this.compile(node.body, trueFrame);
-          if (branchCreatesScope) {
-            this.emit.line('frame = frame.pop();');
-          }
           if (async) {
             this.emit('cb()');
           }
@@ -973,14 +936,7 @@ class Compiler extends CompilerBase {
         if (node.else_) {
           this.emit.withScopedSyntax(() => {
             let falseFrame = blockFrame;
-            if (branchCreatesScope) {
-              falseFrame = blockFrame.push();
-              this.emit.line('frame = frame.push();');
-            }
             this.compile(node.else_, falseFrame);
-            if (branchCreatesScope) {
-              this.emit.line('frame = frame.pop();');
-            }
             if (async) {
               this.emit('cb()');
             }
@@ -1515,7 +1471,7 @@ class Compiler extends CompilerBase {
       }
       blockNames.push(name);
 
-      let tmpFrame = frame.new();//new Frame();
+      let tmpFrame = this.asyncMode ? frame : frame.new();
       const blockLinkedChannels = this.asyncMode
         ? Array.from(block.body._analysis.usedChannels || []).filter((hname) => hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL)
         : null;

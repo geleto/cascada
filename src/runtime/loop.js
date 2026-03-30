@@ -101,7 +101,7 @@ function fromIterator(arr) {
   }
 }
 
-function setSyncLoopBindings(frame, index, len, last) {
+function setSyncFrameLoopBindings(frame, index, len, last) {
   const loopMeta = createLoopBindings(index, len, last);
   frame.set('loop.index', loopMeta.index);
   frame.set('loop.index0', loopMeta.index0);
@@ -843,7 +843,7 @@ module.exports = {
   asyncEach,
   asyncAll,
   fromIterator,
-  setSyncLoopBindings,
+  setSyncFrameLoopBindings,
   createLoopBindings,
   setLoopValueBindings,
   iterateAsyncSequential,

@@ -377,7 +377,9 @@ class CompileMacro {
     const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
 
     let currFrame;
-    if (keepFrame) {
+    if (compiler.asyncMode) {
+      currFrame = frame;
+    } else if (keepFrame) {
       currFrame = frame.push(true);
     } else {
       currFrame = frame.new();

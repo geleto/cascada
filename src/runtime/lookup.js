@@ -205,7 +205,7 @@ async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
  * Sync template lookup through frame, then context.
  * Returns undefined if variable not found.
  */
-function contextOrSyncVarLookup(context, frame, name) {
+function contextOrSyncFrameVarLookup(context, frame, name) {
   var val = frame.lookup(name);
   return (val !== undefined) ?
     val :
@@ -314,7 +314,7 @@ module.exports = {
   memberLookupScript,
   memberLookupAsync,
   memberLookupScriptAsync,
-  contextOrSyncVarLookup,
+  contextOrSyncFrameVarLookup,
   channelLookup,
   contextOrChannelLookup,
   contextOrChannelLookupScriptAsync,

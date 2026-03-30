@@ -1,10 +1,6 @@
 'use strict';
 
 const nodes = require('../nodes');
-const {
-  trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
-} = require('./validation');
 
 class CompileLoop {
   constructor(compiler) {
@@ -234,10 +230,6 @@ class CompileLoop {
     let prevBuffer = null;
     let prevTextChannelVar = null;
     if (this.compiler.asyncMode) {
-      if (bodyCreatesScope) {
-        bodyFrame = frame.push(false);
-        trackCompileTimeFrameDepth(bodyFrame, frame);
-      }
       prevBuffer = this.compiler.buffer.currentBuffer;
       prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
       this.compiler.buffer.currentBuffer = 'currentBuffer';
@@ -368,10 +360,6 @@ class CompileLoop {
       this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('});');
-      if (bodyCreatesScope) {
-        validateCompileTimeFrameBalance(bodyFrame, this.compiler, node.body);
-        bodyFrame = bodyFrame.pop();
-      }
     } else if (bodyCreatesScope) {
       this.compiler.emit.line('frame = frame.pop();');
       bodyFrame = bodyFrame.pop();
@@ -394,8 +382,8 @@ class CompileLoop {
 
     let elseFrame = frame;
     if (elseCreatesScope) {
-      elseFrame = frame.push();
       if (!this.compiler.asyncMode) {
+        elseFrame = frame.push();
         this.compiler.emit.line('frame = frame.push();');
       }
     }
@@ -405,8 +393,8 @@ class CompileLoop {
     if (elseCreatesScope) {
       if (!this.compiler.asyncMode) {
         this.compiler.emit.line('frame = frame.pop();');
+        elseFrame = elseFrame.pop();
       }
-      elseFrame = elseFrame.pop();
     }
 
     // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
@@ -438,7 +426,7 @@ class CompileLoop {
       }
       return;
     }
-    this.compiler.emit.line(`runtime.setSyncLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+    this.compiler.emit.line(`runtime.setSyncFrameLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
   }
 
   _emitLoopVarIterationBinding(node, varName, valueExpr, frame, useLoopValues) {
