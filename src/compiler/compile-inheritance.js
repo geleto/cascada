@@ -294,14 +294,7 @@ class CompileInheritance {
       }
       this.emit.line('(env, context, frame, runtime, ' + this.compiler._makeCallback(id));
 
-      if (this.compiler.asyncMode) {
-        //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
-        this.compiler.buffer.addToBuffer(node, frame, function () {
-          this.emit(id);
-        }, node, this.compiler.buffer.currentTextChannelName, true);
-      } else {
-        this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
-      }
+      this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
       this.emit.addScopeLevel();
     }
   }

@@ -227,7 +227,7 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
       const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
       this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
-    } else if (noExtensionCallback || this.asyncMode) {
+    } else if (noExtensionCallback) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
       this.buffer.addToBuffer(node, frame, () => {
@@ -248,15 +248,7 @@ class Compiler extends CompilerBase {
         frame,
         positionNode,
         () => {
-          if (this.asyncMode) {
-            if (resolveArgs) {
-              this.emit(`runtime.resolveSingle(${res})`);
-            } else {
-              this.emit(`runtime.normalizeFinalPromise(${res})`);
-            }
-          } else {
-            this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
-          }
+          this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
         },
         {
         }
@@ -362,17 +354,14 @@ class Compiler extends CompilerBase {
       const name = target.value;
       this.emit.line(`frame.set("${name}", ${id}, ${!this.scriptMode});`);
 
-      // This block is specific to template mode's behavior.
-      if (!this.asyncMode) {
-        this.emit.line('if(frame.syncTopLevel) {');
-        this.emit.line(`  context.setVariable("${name}", ${id});`);
-        this.emit.line('}');
-      }
+      this.emit.line('if(frame.syncTopLevel) {');
+      this.emit.line(`  context.setVariable("${name}", ${id});`);
+      this.emit.line('}');
 
       // This export logic is common to both modes.
       if (name.charAt(0) !== '_') {
         this.emit.line('if(frame.syncTopLevel) {');
-        this.emit.line(`  context.addExport("${name}", ${id});`);
+        this.emit.line(`  context.addResolvedExport("${name}", ${id});`);
         this.emit.line('}');
       }
     });
@@ -474,11 +463,6 @@ class Compiler extends CompilerBase {
         }
       }
 
-      if (hasAssignedValue && !this.asyncMode) {
-        this.emit.line('if(frame.syncTopLevel) {');
-        this.emit.line(`  context.setVariable("${name}", ${valueId});`);
-        this.emit.line('}');
-      }
     });
   }
 

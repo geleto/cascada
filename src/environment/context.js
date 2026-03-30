@@ -148,24 +148,12 @@ class Context extends Obj {
     blk(env, context, frame, runtime, cb);
   }
 
-  addExport(name, initialValue) {
+  addResolvedExport(name, value) {
     if (this.exportResolveFunctions[name] !== undefined) {
       return;
     }
-
-    // Deferred exports are intended for async var-channel paths.
-    // Legacy/sync call sites pass an initial value and publish immediately.
-    if (arguments.length > 1) {
-      this.ctx[name] = initialValue;
-      this.exportResolveFunctions[name] = null;
-    } else {
-      let resolve;
-      const promise = new Promise((res) => {
-        resolve = res;
-      });
-      this.exportResolveFunctions[name] = resolve;
-      this.ctx[name] = promise;
-    }
+    this.ctx[name] = value;
+    this.exportResolveFunctions[name] = null;
   }
 
   addDeferredExport(name, channelName, buffer) {

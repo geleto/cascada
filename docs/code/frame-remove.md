@@ -194,6 +194,12 @@ Current next target:
     - done: sync frame-backed template lookup now goes through explicit `contextOrSyncFrameVarLookup(...)`
     - done: the dead `whileConditionIterator(...)` runtime export was removed
     - done: sync `super()` lookup now goes through explicit `Context.getSyncSuper(...)`
+    - done: direct sync exports now go through explicit `Context.addResolvedExport(...)`
+      - deferred async exports stay on `Context.addDeferredExport(...)`
+    - done: several dead mixed-mode checks were removed from sync-only compiler paths
+      - sync `compileSet(...)`
+      - sync `compileInclude` / block rendering paths
+      - legacy callback loop lowering
   - continue deleting dead async frame scaffolding:
     - done: compile-time async codegen no longer uses `AsyncFrame`
     - done: the compiler-context escape hatch on `AsyncFrame.set(...)` was removed

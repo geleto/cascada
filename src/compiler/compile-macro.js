@@ -521,7 +521,7 @@ class CompileMacro {
       }, node, name);
       if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {
         if (compiler.scriptMode) {
-          compiler.emit.line(`context.addExport("${name}", ${funcId});`);
+          compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
         } else {
           compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
         }
@@ -536,7 +536,7 @@ class CompileMacro {
     } else {
       const isPublicMacro = node.name.value.charAt(0) !== '_';
       if (isPublicMacro) {
-        compiler.emit.line(`context.addExport("${name}", ${funcId});`);
+        compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
       }
       compiler.emit.line(`context.setVariable("${name}", ${funcId});`);
     }

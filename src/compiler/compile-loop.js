@@ -518,9 +518,6 @@ class CompileLoop {
           this.compiler.compile(node.body, managedFrame);
 
           this.compiler.emit.line('next(' + i + ',' + buf + ');');
-          if (this.compiler.asyncMode) {
-            this.compiler.emit.line(`${buf}.markFinishedAndPatchLinks();`);
-          }
         }, undefined, node.body);
       } else {
         this.compiler.compile(node.body, frame);
@@ -534,14 +531,7 @@ class CompileLoop {
     this.compiler.emit.addScopeLevel();
 
     if (parallel) {
-      if (this.compiler.asyncMode) {
-        //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
-        this.compiler.buffer.addToBuffer(node, frame, function () {
-          this.emit(textResult);
-        }, node, this.compiler.buffer.currentTextChannelName, true);
-      } else {
-        this.compiler.emit.line(`${this.compiler.buffer.currentBuffer} += ${textResult};`);
-      }
+      this.compiler.emit.line(`${this.compiler.buffer.currentBuffer} += ${textResult};`);
     }
 
     // Compile else block
