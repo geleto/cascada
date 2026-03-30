@@ -146,9 +146,6 @@ class CompileBoundaries {
       const { bufferId: id } = emitCompiler.managedBlock(frame, false, true, (blockFrame) => {
         innerBodyFunction.call(this.compiler, blockFrame);
       }, undefined, node);
-      if (this.compiler.asyncMode) {
-        emitCompiler.line(`${id}.markFinishedAndPatchLinks();`);
-      }
       emitCallbackResult(id);
       emitCompiler.line(`return ${id};`);
       return;

@@ -200,6 +200,8 @@ Current next target:
       - sync `compileSet(...)`
       - sync `compileInclude` / block rendering paths
       - legacy callback loop lowering
+      - sync-only render boundary helper paths
+      - `CompileBuffer.addToBuffer(...)` no longer duplicates async text/non-text branches
   - continue deleting dead async frame scaffolding:
     - done: compile-time async codegen no longer uses `AsyncFrame`
     - done: the compiler-context escape hatch on `AsyncFrame.set(...)` was removed

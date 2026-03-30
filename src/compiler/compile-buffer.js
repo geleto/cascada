@@ -322,28 +322,16 @@ class CompileBuffer {
    */
   addToBuffer(node, frame, renderFunction, positionNode = node, channelName, emitTextCommand = false) {
     if (this.compiler.asyncMode) {
-      if (emitTextCommand) {
-        const valueId = this.compiler._tmpid();
-        this.compiler.emit(`let ${valueId} = `);
-        renderFunction.call(this.compiler, frame);
-        this.compiler.emit.line(';');
-        this.emitAddCommand(channelName, valueId, positionNode, true);
-        return;
-      } else {
-        const valueId = this.compiler._tmpid();
-        this.compiler.emit(`let ${valueId} = `);
-        renderFunction.call(this.compiler, frame);
-        this.compiler.emit.line(';');
-        this.emitAddCommand(channelName, valueId);
-        return;
-      }
-    } else {
-      this.compiler.emit(`${this.currentBuffer} += `);
+      const valueId = this.compiler._tmpid();
+      this.compiler.emit(`let ${valueId} = `);
       renderFunction.call(this.compiler, frame);
-    }
-    if (!this.compiler.asyncMode) {
       this.compiler.emit.line(';');
+      this.emitAddCommand(channelName, valueId, positionNode, emitTextCommand);
+      return;
     }
+    this.compiler.emit(`${this.currentBuffer} += `);
+    renderFunction.call(this.compiler, frame);
+    this.compiler.emit.line(';');
   }
 
   /**
