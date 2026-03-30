@@ -427,15 +427,11 @@ class CompilerBase extends Obj {
       }
     }
     if (this.scriptMode) {
-      if (this.asyncMode) {
-        this.emit('runtime.contextOrVarLookupScriptAsync(' +
-          'context, frame, "' + name + '", ' +
-          `${this.buffer.currentBuffer}, ` +
-          `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
-          ')');
-      } else {
-        this.emit('runtime.contextOrVarLookupScript(' + `context, frame, "${name}", ${this.buffer.currentBuffer})`);
-      }
+      this.emit('runtime.contextOrVarLookupScriptAsync(' +
+        'context, frame, "' + name + '", ' +
+        `${this.buffer.currentBuffer}, ` +
+        `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
+        ')');
     } else {
       const useContextOnlyInheritanceLookup =
         this.asyncMode &&
@@ -450,6 +446,8 @@ class CompilerBase extends Obj {
         this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
         this.emit(`return runtime.contextOrVarLookup(context, frame, "${name}", ${this.buffer.currentBuffer});`);
         this.emit('})()');
+      } else if (!this.asyncMode) {
+        this.emit(`runtime.contextOrFrameLookup(context, frame, "${name}")`);
       } else {
         this.emit(`runtime.contextOrVarLookup(context, frame, "${name}", ${this.buffer.currentBuffer})`);
       }
@@ -712,7 +710,7 @@ class CompilerBase extends Obj {
   }
 
   _getObservedChannelName(targetNode, frame) {
-    if (!this.scriptMode || !this.asyncMode || !targetNode) {
+    if (!this.scriptMode || !targetNode) {
       return null;
     }
     // Sequence-marked targets (path! / path!!) are handled by sequential-path

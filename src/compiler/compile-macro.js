@@ -470,7 +470,7 @@ class CompileMacro {
       const prevTextChannelVar = compiler.buffer.currentTextChannelVar;
       const callerTextChannelVar = !compiler.scriptMode ? compiler._tmpid() : null;
       if (!compiler.scriptMode) {
-        compiler.emit.line(`let ${callerTextChannelVar} = runtime.declareChannel(frame, macroParentBuffer, "${compiler.buffer.currentTextChannelName}", "text", context, null);`);
+        compiler.emit.line(`let ${callerTextChannelVar} = runtime.declareBufferChannel(macroParentBuffer, "${compiler.buffer.currentTextChannelName}", "text", context, null);`);
       }
       compiler.buffer.currentBuffer = 'macroParentBuffer';
       compiler.buffer.currentTextChannelVar = callerTextChannelVar;

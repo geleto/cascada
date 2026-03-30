@@ -40,7 +40,7 @@ const noopTmplSrcAsync = {
           return;
         }
         const output = runtime.createCommandBuffer(context, null);
-        runtime.declareChannel(frame, output, '__text__', 'text', context, null);
+        runtime.declareBufferChannel(output, '__text__', 'text', context, null);
         output.markFinishedAndPatchLinks();
         return output;
       } catch (e) {

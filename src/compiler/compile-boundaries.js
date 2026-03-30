@@ -158,7 +158,7 @@ class CompileBoundaries {
     const resultId = this.compiler._tmpid();
 
     const textChannelName = this.compiler.buffer.currentTextChannelName;
-    emitCompiler.line(`let ${resultId}_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${textChannelName}", "text", context, null);`);
+    emitCompiler.line(`let ${resultId}_textChannelVar = runtime.declareBufferChannel(currentBuffer, "${textChannelName}", "text", context, null);`);
 
     const originalAsyncClosureDepth = emitCompiler.asyncClosureDepth;
     emitCompiler.asyncClosureDepth = 0;
@@ -336,7 +336,7 @@ class CompileBoundaries {
       // Capture owns a separate text tree. The child buffer exists for that
       // boundary, not because capture text values need pre-resolution.
       this.compiler.emit.line('let output = currentBuffer;');
-      this.compiler.emit.line(`let output_textChannelVar = runtime.declareChannel(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
+      this.compiler.emit.line(`let output_textChannelVar = runtime.declareBufferChannel(currentBuffer, "${captureTextOutputName}", "text", context, null);`);
 
       innerBodyFunction.call(this.compiler, innerFrame);
       this._emitTextChannelSnapshot('currentBuffer', captureTextOutputName, positionNode, 'captureResult');

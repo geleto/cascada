@@ -365,7 +365,7 @@ class Compiler extends CompilerBase {
       this.emit.line(`frame.set("${name}", ${id}, ${!this.scriptMode});`);
 
       // This block is specific to template mode's behavior.
-      if (!this.scriptMode && !this.asyncMode) {
+      if (!this.asyncMode) {
         this.emit.line('if(frame.topLevel) {');
         this.emit.line(`  context.setVariable("${name}", ${id});`);
         this.emit.line('}');
@@ -477,7 +477,7 @@ class Compiler extends CompilerBase {
         }
       }
 
-      if (!this.scriptMode && hasAssignedValue && !this.asyncMode) {
+      if (hasAssignedValue && !this.asyncMode) {
         this.emit.line('if(frame.topLevel) {');
         this.emit.line(`  context.setVariable("${name}", ${valueId});`);
         this.emit.line('}');

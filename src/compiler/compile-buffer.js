@@ -47,7 +47,7 @@ class CompileBuffer {
         : 'null';
       this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, ${linkedChannelsArg}, ${parentArg});`);
       if (!this.compiler.scriptMode) {
-        this.compiler.emit.line(`let ${textId} = runtime.declareChannel(frame, ${bufferId}, "${this.currentTextChannelName}", "text", context, null);`);
+        this.compiler.emit.line(`let ${textId} = runtime.declareBufferChannel(${bufferId}, "${this.currentTextChannelName}", "text", context, null);`);
       }
     } else {
       this.compiler.emit.line(`let ${bufferId} = "";`);

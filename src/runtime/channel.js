@@ -816,10 +816,10 @@ function getChannel(frame, channelName) {
 }
 
 function getChannelFromBuffer(buffer, channelName) {
-  if (!buffer || !(buffer._channels instanceof Map)) {
-    return undefined;
+  if (!buffer) {
+    throw new Error(`currentBuffer is required to resolve channel "${channelName}"`);
   }
-  return buffer._channels.get(channelName);
+  return buffer.findChannel(channelName);
 }
 
 function findVisibleChannel(currentBuffer, frame, channelName) {

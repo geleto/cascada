@@ -56,11 +56,11 @@ class CommandBuffer {
 
   _registerChannel(channelName, channel) {
     const resolvedChannelName = this._resolveChannelName(channelName);
-    if (!(this._channels instanceof Map)) {
+    if (!this._channels) {
       this._channels = new Map();
     }
     this._channels.set(resolvedChannelName, channel);
-    this._ownedChannels[resolvedChannelName] = true;
+    this._ownedChannels[resolvedChannelName] = channel;
     this._finishKnownChannelIfRequested(resolvedChannelName);
 
     const iterator = ensureChannelIterator(channel);
@@ -401,15 +401,27 @@ class CommandBuffer {
   }
 
   getChannel(channelName = 'text') {
-    const resolvedChannelName = this._resolveChannelName(channelName);
-    if (!(this._channels instanceof Map)) {
-      throw new Error('CommandBuffer channels are unavailable');
-    }
-    const output = this._channels.get(resolvedChannelName);
+    const output = this.findChannel(channelName);
     if (!output) {
+      const resolvedChannelName = this._resolveChannelName(channelName);
       throw new Error(`CommandBuffer channel '${resolvedChannelName}' is unavailable`);
     }
     return output;
+  }
+
+  findChannel(channelName = 'text') {
+    const resolvedChannelName = this._resolveChannelName(channelName);
+    let current = this;
+    while (current) {
+      if (current._ownedChannels && current._ownedChannels[resolvedChannelName]) {
+        return current._ownedChannels[resolvedChannelName];
+      }
+      current = current.parent;
+    }
+    if (!this._channels) {
+      return undefined;
+    }
+    return this._channels.get(resolvedChannelName);
   }
 
   _setBoundaryAliases(map) {

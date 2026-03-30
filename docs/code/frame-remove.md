@@ -13,6 +13,9 @@ Completed so far:
   - modern async symbol reads were reduced away from frame-shaped fallback in several places
   - async channel lookup now prefers buffer-owned lookup paths in the modern runtime
   - a shared `findVisibleChannel(...)` helper now centralizes the buffer-first read path used by async lookup, guard setup, sequential checks, and export resolution
+  - visible buffer lookup no longer relies only on the shared `buffer._channels` map
+    - buffers now retain the owned channel object per name
+    - visible channel reads walk buffer ancestry by owned channel first, then fall back only where needed
   - inheritance now reads `__parentTemplate` through direct var-channel lookup instead of the generic frame-or-channel symbol fallback
   - a direct root-buffer export-resolution shortcut was attempted and reverted; conditional inheritance/export parity still needs visible-channel semantics broader than `currentBuffer.getChannel(...)`
 - Phase 9 is partly done:
@@ -48,9 +51,9 @@ Completed so far:
     - waited-control-flow channels
     - macro caller-scheduling channels
     - `__parentTemplate`
-  - text-channel declarations were tested as buffer-only and reverted
-    - guard/capture/revert still depends on text being frame-visible today
-    - that is now an explicit blocker, not an accidental regression
+  - async text-channel declarations now also bypass `frame._channels`
+    - the underlying blocker was fixed by preserving owned channels per buffer and resolving visible channels by buffer ancestry instead of the shared map alone
+    - guard / capture / revert semantics stay green with buffer-only async text registration
   - a broader "mirror only text + sequential-path channels into `frame._channels`" reduction was also attempted and reverted
     - ordinary var/data/sink/sequence channel visibility is still not represented precisely enough by the current buffer registry alone
     - guard/recover and deferred export cases still depend on stronger visible-channel semantics
@@ -67,10 +70,17 @@ Current next target:
 
 - continue Phase 5 / Phase 9 cleanup around channel ownership:
   - keep shrinking frame-based channel readers
-  - then work the explicit blocker steps:
-    - Phase 5.1: redesign text-channel guard/capture/revert visibility
-    - Phase 5.2: retry buffer-only text-channel registration
-  - only after those, retry the broader `declareChannel(...)` ownership move
+  - retry the broader `declareChannel(...)` ownership move now that:
+    - visible channel lookup is buffer-ancestry-based
+    - async text channels are already buffer-owned
+  - then remove the remaining frame fallback from `findVisibleChannel(...)`
+    - or delete `findVisibleChannel(...)` entirely where callers can use `currentBuffer.findChannel(...)` / `getChannelFromBuffer(...)` directly
+  - focus next on non-text declarations that still mirror into `frame._channels`
+    - `var`
+    - `data`
+    - `sink`
+    - `sequence`
+    - `sequential_path`
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`
@@ -917,19 +927,27 @@ Status:
 Implemented so far:
 
 - buffer-owned channel lookup helper exists and is already preferred in modern async lookup paths
+- visible buffer lookup now preserves owned channel objects per buffer and walks buffer ancestry
 - channel construction/factory plumbing is already frame-free
 - some internal async channels are already buffer-owned:
   - `__return__`
   - waited-control-flow channels
   - macro caller-scheduling channels
+- async text channels are now also buffer-owned
+  - root text buffers
+  - render/capture text buffers
+  - async macro caller text buffers
+  - noop composition text buffers
 
 Remaining core work:
 
 - move `declareChannel(...)` registration off `frame._channels`
 - remove the remaining frame fallback from channel lookup once declaration ownership is migrated
-- blocked by explicit sub-steps:
-  - Phase 5.1: text-channel declarations still need frame visibility for guard/capture/revert
-  - Phase 5.2: redesign that visibility model, then retry buffer-only text-channel registration
+- then collapse `findVisibleChannel(...)` to a buffer-only helper or remove it in favor of direct `currentBuffer.findChannel(...)` / `getChannelFromBuffer(...)`
+- the remaining blockers are now:
+  - non-text lexical visibility and shadowing cases
+  - deferred export / guard / recover cases that still rely on stronger visibility than a naive shared registry
+  - export-resolution parity, which still needs a buffer-side visibility model strong enough to replace the current frame fallback cleanly
 
 Done when:
 
@@ -937,50 +955,70 @@ Done when:
 
 ### Phase 5.1 - Redesign Text-Channel Guard/Capture Visibility
 
-Goal:
+Status:
 
-- text channels stop depending on frame registration for guard/capture/revert semantics
+- Done
 
-Why this exists:
+Implemented:
 
-- a direct text-channel `declareBufferChannel(...)` switch was attempted
-- it broke guard/recover/revert behavior
-- internal non-text channels did not have the same problem
+- buffers now preserve owned channel objects per name instead of only a shared-map entry
+- visible channel lookup walks buffer ancestry by owned channel
+- async text channels now register with `declareBufferChannel(...)`
+- guard / capture / revert semantics stay green
 
-Work:
+Verification used:
 
-- audit how guard/capture/revert currently discovers text channels
-- decide what buffer-side metadata or visibility walk replaces frame visibility
-- update guard/capture helpers to use that model
-- keep text semantics green in:
-  - `tests/poison/guard.js`
-  - `tests/pasync/snapshots.js`
-  - `tests/explicit-outputs.js`
-
-Done when:
-
-- text-channel guard/capture/revert no longer requires frame-visible text registration
+- `tests/poison/guard.js`
+- `tests/pasync/snapshots.js`
+- `tests/explicit-outputs.js`
+- `tests/pasync/composition.js`
+- `tests/pasync/macros.js`
 
 ### Phase 5.2 - Retry Buffer-Only Text Channel Registration
 
-Goal:
+Status:
 
-- text-channel declarations become buffer-owned like the already-migrated internal channels
+- Done
 
-Work:
+Implemented:
 
-- switch async text-channel declaration sites back to `declareBufferChannel(...)`
-- verify:
-  - root text
+- async text-channel declaration sites now use `declareBufferChannel(...)`
+  - managed root text buffer
   - render boundaries
   - capture boundaries
-  - macro caller text buffers
+  - async macro caller text buffer
   - noop composition template text channel
-- run focused guard coverage first, then `npm run test:quick`
+
+Verification used:
+
+- focused guard/snapshot/composition coverage
+- `npm run test:quick`
+
+### Phase 5.3 - Remove Frame Fallback From Visible Channel Lookup
+
+Goal:
+
+- async visible-channel reads become buffer-only
+- `findVisibleChannel(...)` either becomes a thin buffer helper or disappears in favor of direct `currentBuffer.findChannel(...)`
+
+Status:
+
+- Blocked
+
+What we learned:
+
+- ordinary async symbol reads are no longer the main blocker
+- a direct `findVisibleChannel(...) -> getChannelFromBuffer(currentBuffer, ...)` simplification was attempted and reverted
+- the current failures are in deferred export / composition parity paths, where export resolution still finds channels that are not yet recoverable from buffer visibility alone
+
+Prerequisite:
+
+- redesign export/deferred-export visibility so those reads can resolve through buffer state alone
 
 Done when:
 
-- async text-channel declarations no longer write into `frame._channels`
+- `findVisibleChannel(...)` no longer falls back to `getChannel(frame, ...)`
+- or all remaining callers have been rewritten to use `currentBuffer.findChannel(...)` / `getChannelFromBuffer(...)` directly
 
 ### Phase 5.5 — Move Async Top-Level / Scope-Root State Off Frame
 
