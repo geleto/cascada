@@ -48,8 +48,8 @@ function checkFinishedBuffer(buffer, channelName = null) {
 }
 
 function ensureSequentialPathChannel(frame, currentBuffer, pathKey) {
-  const { getChannel, getChannelFromBuffer } = require('./channel');
-  const channel = (currentBuffer ? getChannelFromBuffer(currentBuffer, pathKey) : null) || getChannel(frame, pathKey);
+  const { findVisibleChannel } = require('./channel');
+  const channel = findVisibleChannel(currentBuffer, frame, pathKey);
 
   if (!channel) {
     throw new Error(`Sequential path '${pathKey}' was not predeclared as a channel (expected compile-time declaration)`);

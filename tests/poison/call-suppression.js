@@ -38,20 +38,20 @@
     return currentBuffer;
   }
 
-  async function expectLockPoison(lock, root, lockKey = '!lockKey') {
-    const output = runtime.getChannel(root, lockKey);
+  async function expectLockPoison(lock, root, currentBuffer, lockKey = '!lockKey') {
+    const output = runtime.getChannelFromBuffer(currentBuffer, lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(Array.isArray(errs) && errs.length > 0).to.be(true);
   }
 
-  async function expectLockTrue(lock, root, lockKey = '!lockKey') {
-    const output = runtime.getChannel(root, lockKey);
+  async function expectLockTrue(lock, root, currentBuffer, lockKey = '!lockKey') {
+    const output = runtime.getChannelFromBuffer(currentBuffer, lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
   }
 
-  async function expectLockValue(lock, value, root, lockKey = '!lockKey') {
-    const output = runtime.getChannel(root, lockKey);
+  async function expectLockValue(lock, value, root, currentBuffer, lockKey = '!lockKey') {
+    const output = runtime.getChannelFromBuffer(currentBuffer, lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
     expect(output._getCurrentResult()).to.equal(value);
@@ -521,7 +521,7 @@
           expect(thrown.errors[0].message).to.contain('Poisoned arg');
 
           // Lock should be poisoned
-          await expectLockPoison(null, root);
+          await expectLockPoison(null, root, currentBuffer);
         }
       });
 
@@ -540,7 +540,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          await expectLockPoison(null, root);
+          await expectLockPoison(null, root, currentBuffer);
         }
       });
 
@@ -561,7 +561,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          await expectLockPoison(null, root);
+          await expectLockPoison(null, root, currentBuffer);
         }
       });
 
@@ -570,7 +570,7 @@
         root = new AsyncFrame();
         frame = root.push(false);
         currentBuffer = setupSequentialRuntimeForTests(root);
-        runtime.getChannel(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
+        runtime.getChannelFromBuffer(currentBuffer, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialCallWrapValue(
@@ -608,7 +608,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          await expectLockPoison(null, root);
+          await expectLockPoison(null, root, currentBuffer);
         }
       });
 
@@ -629,7 +629,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          await expectLockPoison(null, root);
+          await expectLockPoison(null, root, currentBuffer);
         }
       });
 
@@ -648,7 +648,7 @@
         expect(result).to.equal(8);
 
         // Lock should be released (set to true)
-        await expectLockTrue(null, root);
+        await expectLockTrue(null, root, currentBuffer);
       });
 
       it('should handle async function that resolves', async () => {
@@ -669,7 +669,7 @@
 
         expect(result).to.equal(42);
 
-        await expectLockValue(null, 42, root);
+        await expectLockValue(null, 42, root, currentBuffer);
       });
     });
 

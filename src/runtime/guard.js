@@ -1,5 +1,4 @@
-
-const { getChannel } = require('./channel');
+const { findVisibleChannel } = require('./channel');
 
 function init(cb = null) {
   const guardState = {
@@ -24,7 +23,7 @@ function initChannelSnapshots(frame, channelNames = null, buffer = null, cb = nu
   const targets = channelNames ?? [];
 
   for (const channelName of targets) {
-    const channel = getChannel(frame, channelName);
+    const channel = findVisibleChannel(buffer, frame, channelName);
     if (!channel) {
       continue;
     }

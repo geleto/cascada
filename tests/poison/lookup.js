@@ -36,8 +36,8 @@
     return currentBuffer;
   }
 
-  async function expectLockTrue(lock, root) {
-    const output = runtime.getChannel(root, '!lockKey');
+  async function expectLockTrue(lock, root, currentBuffer, lockKey = '!lockKey') {
+    const output = runtime.getChannelFromBuffer(currentBuffer, lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
   }
@@ -154,7 +154,7 @@
         root = new AsyncFrame();
         frame = root.push(false);
         currentBuffer = setupSequentialRuntimeForTests(root);
-        runtime.getChannel(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
+        runtime.getChannelFromBuffer(currentBuffer, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialMemberLookupAsyncValue(
@@ -186,7 +186,7 @@
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-          await expectLockTrue(null, root);
+          await expectLockTrue(null, root, currentBuffer);
         }
       });
 
@@ -206,7 +206,7 @@
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-          await expectLockTrue(null, root);
+          await expectLockTrue(null, root, currentBuffer);
         }
       });
 
@@ -225,7 +225,7 @@
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-          await expectLockTrue(null, root);
+          await expectLockTrue(null, root, currentBuffer);
         }
       });
 
@@ -241,7 +241,7 @@
         );
 
         expect(result).to.equal('test');
-        await expectLockTrue(null, root);
+        await expectLockTrue(null, root, currentBuffer);
       });
     });
 
@@ -281,5 +281,3 @@
     });
   });
 })();
-
-

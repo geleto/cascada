@@ -13,7 +13,7 @@ const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 const {
   resolveDuo
 } = require('./resolve');
-const { getChannel, getChannelFromBuffer } = require('./channel');
+const { findVisibleChannel } = require('./channel');
 
 /**
  * Sync member lookup for templates.
@@ -243,10 +243,7 @@ function contextOrVarLookup(_context, frame, name, currentBuffer) {
  * - Otherwise, use finalSnapshot() directly (cross-tree / completed-owner read).
  */
 function varChannelLookup(frame, name, currentBuffer) {
-  let channel = getChannelFromBuffer(currentBuffer, name);
-  if (!channel) {
-    channel = getChannel(frame, name);
-  }
+  const channel = findVisibleChannel(currentBuffer, frame, name);
   if (!channel) {
     return undefined;
   }
@@ -303,10 +300,7 @@ function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, erro
 // for cross-tree reads, prefer producer-buffer snapshots while producer is live
 // to avoid waiting on full finalization of the channel stream.
 function varChannelLookupScript(frame, name, currentBuffer) {
-  let channel = getChannelFromBuffer(currentBuffer, name);
-  if (!channel) {
-    channel = getChannel(frame, name);
-  }
+  const channel = findVisibleChannel(currentBuffer, frame, name);
   if (!channel) {
     return undefined;
   }

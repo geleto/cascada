@@ -825,6 +825,10 @@ function getChannelFromBuffer(buffer, channelName) {
   return buffer._channels.get(channelName);
 }
 
+function findVisibleChannel(currentBuffer, frame, channelName) {
+  return getChannelFromBuffer(currentBuffer, channelName) || getChannel(frame, channelName);
+}
+
 function declareBufferChannel(buffer, channelName, channelType, context, initializer = null) {
   const targetBuffer = buffer;
   if (!targetBuffer) {
@@ -875,6 +879,7 @@ module.exports = {
   createSequenceChannel,
   getChannel,
   getChannelFromBuffer,
+  findVisibleChannel,
   declareBufferChannel,
   declareChannel
 };

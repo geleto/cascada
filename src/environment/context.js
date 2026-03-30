@@ -169,8 +169,8 @@ class Context extends Obj {
       if (typeof resolve !== 'function') {
         continue;
       }
-      const channel = (currentBuffer && typeof runtime.getChannelFromBuffer === 'function')
-        ? (runtime.getChannelFromBuffer(currentBuffer, name) || runtime.getChannel(frame, name))
+      const channel = (currentBuffer && typeof runtime.findVisibleChannel === 'function')
+        ? runtime.findVisibleChannel(currentBuffer, frame, name)
         : runtime.getChannel(frame, name);
       resolve(channel.finalSnapshot());
     }

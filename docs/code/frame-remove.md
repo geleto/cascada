@@ -12,6 +12,7 @@ Completed so far:
 - Phase 2 is partly done:
   - modern async symbol reads were reduced away from frame-shaped fallback in several places
   - async channel lookup now prefers buffer-owned lookup paths in the modern runtime
+  - a shared `findVisibleChannel(...)` helper now centralizes the buffer-first read path used by async lookup, guard setup, sequential checks, and export resolution
 - Phase 9 is partly done:
   - `CommandBuffer` no longer stores or validates frame ownership
   - channel instances no longer thread/store frame internally
@@ -19,12 +20,14 @@ Completed so far:
   - channel factory helpers now also use frame-free signatures
   - `createCommandBuffer(...)` no longer takes a frame argument
   - dead `finalizeUnobservedSinks(...)` plumbing was removed
+  - a direct `declareChannel(...) -> buffer-only` ownership flip was attempted and reverted because linked-child visibility and local shadowing are not represented precisely enough by the current buffer registry alone
 
 Current next target:
 
 - continue Phase 5 / Phase 9 cleanup around channel ownership:
-  - move `declareChannel(...)` away from `frame._channels`
-  - remove remaining direct frame-threading in channel declaration/lookup
+  - keep shrinking frame-based channel readers
+  - then retry moving `declareChannel(...)` away from `frame._channels`
+  - do not flip channel ownership yet until linked-child visibility and local shadowing rules are represented by buffer-side structures instead of frame fallback
 
 Focused verification currently used during this migration:
 
