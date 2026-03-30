@@ -22,6 +22,7 @@ class Context extends Obj {
 
     this.blocks = {};
     this.exportResolveFunctions = Object.create(null);
+    this.exportChannels = Object.create(null);
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -162,6 +163,20 @@ class Context extends Obj {
     }
   }
 
+  addDeferredExport(name, channelName, buffer) {
+    if (this.exportResolveFunctions[name] !== undefined) {
+      return;
+    }
+
+    let resolve;
+    const promise = new Promise((res) => {
+      resolve = res;
+    });
+    this.exportResolveFunctions[name] = resolve;
+    this.exportChannels[name] = { channelName, buffer };
+    this.ctx[name] = promise;
+  }
+
   resolveExports(frame, runtime, currentBuffer) {
     const names = Object.keys(this.exportResolveFunctions);
     for (const name of names) {
@@ -169,7 +184,10 @@ class Context extends Obj {
       if (!resolve) {
         continue;
       }
-      const channel = runtime.findVisibleChannel(currentBuffer, frame, name);
+      const exportChannel = this.exportChannels[name];
+      const channel = exportChannel
+        ? runtime.getChannelFromBuffer(exportChannel.buffer, exportChannel.channelName)
+        : runtime.findVisibleChannel(currentBuffer, frame, name);
       resolve(channel.finalSnapshot());
     }
   }
@@ -192,6 +210,7 @@ class Context extends Obj {
     newContext.ctx = this.ctx;           // Share the variable store.
     newContext.blocks = this.blocks;       // Share the block definitions for extends/super.
     newContext.exportResolveFunctions = this.exportResolveFunctions;
+    newContext.exportChannels = this.exportChannels;
 
     // Share async state properties by REFERENCE.
     newContext.asyncBlocksPromise = this.asyncBlocksPromise;

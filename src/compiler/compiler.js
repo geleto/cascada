@@ -410,7 +410,7 @@ class Compiler extends CompilerBase {
       const isOwnDeclaration = !!(visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis);
 
       if (isOwnDeclaration) {
-        this.emit(`runtime.declareChannel(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
+        this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
       } else {
         if (!(visibleDeclaration && visibleDeclaration.type === 'var')) {
           this.fail(
@@ -473,7 +473,7 @@ class Compiler extends CompilerBase {
 
       if (name.charAt(0) !== '_' && hasAssignedValue) {
         if (exportFromRootScope) {
-          this.emit.line(`context.addExport("${name}");`);
+          this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.buffer.currentBuffer});`);
         }
       }
 

@@ -51,12 +51,20 @@ Completed so far:
     - waited-control-flow channels
     - macro caller-scheduling channels
     - `__parentTemplate`
+    - root-owned async `var` declarations
   - async text-channel declarations now also bypass `frame._channels`
     - the underlying blocker was fixed by preserving owned channels per buffer and resolving visible channels by buffer ancestry instead of the shared map alone
     - guard / capture / revert semantics stay green with buffer-only async text registration
   - a broader "mirror only text + sequential-path channels into `frame._channels`" reduction was also attempted and reverted
     - ordinary var/data/sink/sequence channel visibility is still not represented precisely enough by the current buffer registry alone
     - guard/recover and deferred export cases still depend on stronger visible-channel semantics
+  - deferred export resolution is no longer purely lookup-based
+    - async deferred exports now record their owning buffer + channel name directly
+    - `forkForPath(...)` shares that deferred-export channel metadata across inheritance context forks
+    - this keeps root export resolution off frame for root-owned async var channels
+  - imported bindings and macro bindings used through inherited blocks were tested as buffer-only and reverted
+    - block composition under `extends` still relies on frame visibility for those bindings
+    - this is now an explicit composition blocker rather than an accidental regression
 
 Important correction:
 
@@ -73,10 +81,12 @@ Current next target:
   - retry the broader `declareChannel(...)` ownership move now that:
     - visible channel lookup is buffer-ancestry-based
     - async text channels are already buffer-owned
+    - deferred exports now remember their owning buffer/channel directly
   - then remove the remaining frame fallback from `findVisibleChannel(...)`
     - or delete `findVisibleChannel(...)` entirely where callers can use `currentBuffer.findChannel(...)` / `getChannelFromBuffer(...)` directly
   - focus next on non-text declarations that still mirror into `frame._channels`
-    - `var`
+    - imported bindings used by inheritance/block composition
+    - macro bindings used by inheritance/block composition
     - `data`
     - `sink`
     - `sequence`
@@ -938,6 +948,9 @@ Implemented so far:
   - render/capture text buffers
   - async macro caller text buffers
   - noop composition text buffers
+- root-owned async `var` declarations are now also buffer-owned
+- deferred export resolution now records the owning buffer/channel explicitly instead of rediscovering exports through frame visibility
+- context forks for `extends` now share deferred-export channel metadata
 
 Remaining core work:
 
@@ -945,9 +958,10 @@ Remaining core work:
 - remove the remaining frame fallback from channel lookup once declaration ownership is migrated
 - then collapse `findVisibleChannel(...)` to a buffer-only helper or remove it in favor of direct `currentBuffer.findChannel(...)` / `getChannelFromBuffer(...)`
 - the remaining blockers are now:
-  - non-text lexical visibility and shadowing cases
+  - block composition under `extends`, especially imported bindings / macro bindings read from child blocks rendered in the parent template
+  - other non-text lexical visibility and shadowing cases
   - deferred export / guard / recover cases that still rely on stronger visibility than a naive shared registry
-  - export-resolution parity, which still needs a buffer-side visibility model strong enough to replace the current frame fallback cleanly
+  - export-resolution parity beyond the now-fixed root-owned async var case
 
 Done when:
 
@@ -1010,10 +1024,13 @@ What we learned:
 - ordinary async symbol reads are no longer the main blocker
 - a direct `findVisibleChannel(...) -> getChannelFromBuffer(currentBuffer, ...)` simplification was attempted and reverted
 - the current failures are in deferred export / composition parity paths, where export resolution still finds channels that are not yet recoverable from buffer visibility alone
+- root-owned async var exports were fixed by recording their owning buffer/channel directly
+- imported bindings / macro bindings used through inherited blocks are a separate composition problem and still need explicit buffer-side linkage before frame fallback can go away
 
 Prerequisite:
 
-- redesign export/deferred-export visibility so those reads can resolve through buffer state alone
+- finish redesigning export/deferred-export visibility so those reads can resolve through buffer state alone
+- redesign inherited-block composition visibility for imported bindings / macro bindings so block buffers can see child-owned channels without frame ancestry
 
 Done when:
 

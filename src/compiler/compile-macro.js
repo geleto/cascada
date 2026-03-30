@@ -512,7 +512,7 @@ class CompileMacro {
         if (compiler.scriptMode) {
           compiler.emit.line(`context.addExport("${name}", ${funcId});`);
         } else {
-          compiler.emit.line(`context.addExport("${name}");`);
+          compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
         }
       }
       return;
