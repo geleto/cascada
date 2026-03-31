@@ -8,23 +8,22 @@ class CompileLoop {
   }
 
   compileWhile(node, frame) {
-    if (!this.compiler.asyncMode) {
-      // Synchronous case: remains the same, no changes needed.
-      // @todo - use compileFor for the loop variable, etc...
-      this.compiler.emit('while (');
-      // While conditions are scheduler/control expressions, not waited-root work.
-      this.compiler.compileExpression(node.cond, frame, node.cond, true);
-      this.compiler.emit(') {');
-      this.compiler.compile(node.body, frame);
-      this.compiler.emit('}');
+    if (this.compiler.asyncMode) {
+      this._compileAsyncWhile(node, frame);
       return;
     }
+    this._compileSyncWhile(node, frame);
+  }
 
-    // Asynchronous case:
-    // We use an infinite iterator and inject the condition check inside the loop body
-    // so it shares the same async block and isolates writes correctly.
+  _compileSyncWhile(node, frame) {
+    this.compiler.emit('while (');
+    this.compiler.compileExpression(node.cond, frame, node.cond, true);
+    this.compiler.emit(') {');
+    this.compiler.compile(node.body, frame);
+    this.compiler.emit('}');
+  }
 
-    // Use runtime helper to create the infinite iterator
+  _compileAsyncWhile(node, frame) {
     const iteratorCompiler = (arrNode, loopFrame, arrVarName) => {
       this.compiler.emit.line(`let ${arrVarName} = runtime.whileIterator();`);
     };
@@ -39,7 +38,19 @@ class CompileLoop {
   }
 
   compileFor(node, frame) {
-    this._compileFor(node, frame);
+    if (this.compiler.asyncMode) {
+      this._compileAsyncFor(node, frame);
+      return;
+    }
+    this._compileSyncFor(node, frame);
+  }
+
+  _compileAsyncFor(node, frame, options = {}) {
+    this._compileFor(node, frame, options);
+  }
+
+  _compileSyncFor(node, frame, options = {}) {
+    this._compileFor(node, frame, options);
   }
 
   _compileFor(node, frame, options = {}) {

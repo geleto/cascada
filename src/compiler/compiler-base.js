@@ -364,7 +364,6 @@ class CompilerBase extends Obj {
   }
 
   compileSymbol(node, frame) {
-
     let name = node.value;
     if (node.isCompilerInternal) {
       // Compiler-generated temp symbols (e.g. lifted super/filter temps)
@@ -397,34 +396,24 @@ class CompilerBase extends Obj {
         node
       );
     }
-    // Not in template scope, check context/frame with potential sequence lock
     if (this.asyncMode) {
-      const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
-      const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
-      if (nodeStaticPathKey) {
-        this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-        // This node accesses a declared sequence lock path.
-        // Register the static path key as variable write so the next lock would wait for it
-        // Multiple static path keys can be in the same block
-        // @todo - optimization: if there are no further funCalls with lock on the path,
-        // emit a terminal marker so follow-up accesses can skip redundant lock plumbing.
-
-        if (this.scriptMode) {
-          this.emit(`runtime.sequentialContextLookupScriptValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-        } else {
-          this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-        }
-        return;
-      }
+      this._compileAsyncSymbolLookup(node, name);
+      return;
     }
-    else {//not async mode
-      const v = frame.lookup(name);
-      if (v) {
-        //we are using a local variable, this is currently used only for:
-        //the async filter, super(), set var
-        this.emit(v);
-        return;
+    this._compileSyncSymbolLookup(node, frame, name);
+  }
+
+  _compileAsyncSymbolLookup(node, name) {
+    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
+    if (nodeStaticPathKey) {
+      this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
+      if (this.scriptMode) {
+        this.emit(`runtime.sequentialContextLookupScriptValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+      } else {
+        this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
       }
+      return;
     }
     if (this.scriptMode) {
       this.emit('runtime.contextOrChannelLookupScriptAsync(' +
@@ -454,6 +443,23 @@ class CompilerBase extends Obj {
         );
       }
     }
+  }
+
+  _compileSyncSymbolLookup(node, frame, name) {
+    const v = frame.lookup(name);
+    if (v) {
+      this.emit(v);
+      return;
+    }
+    this.emit(
+      this.scriptMode
+        ? 'runtime.contextOrChannelLookupScriptAsync(' +
+          'context, "' + name + '", ' +
+          `${this.buffer.currentBuffer}, ` +
+          `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
+          ')'
+        : `runtime.contextOrSyncFrameVarLookup(context, frame, "${name}")`
+    );
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests

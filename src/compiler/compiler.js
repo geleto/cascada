@@ -309,7 +309,10 @@ class Compiler extends CompilerBase {
     if (this.asyncMode) {
       return this.compileAsyncVarSet(node, frame);
     }
+    return this.compileSyncSet(node, frame);
+  }
 
+  compileSyncSet(node, frame) {
     const ids = [];
 
     // 1. First pass: Validate, declare, and prepare temporary JS variables for all targets.

@@ -206,8 +206,14 @@ Current next target:
       - `CompileMacro` now has explicit compiled async vs sync body emission paths
     - done: macro compilation no longer uses one nested sync/async helper
       - `CompileMacro` now has explicit `_compileAsyncMacro(...)` vs `_compileSyncMacro(...)` paths
+    - done: macro caller/declaration entry points no longer use one nested sync/async helper
+      - `CompileMacro` now has explicit async vs sync caller/declaration helpers
     - done: import/inheritance compilation no longer uses one nested sync/async helper
       - `CompileInheritance` now has explicit async vs sync `import` / `from import` compile paths
+    - done: `compileSet(...)` no longer uses one nested sync/async helper
+      - sync assignment lowering now lives in explicit `compileSyncSet(...)`
+    - done: `compileSymbol(...)` no longer hides sync frame lookup inside the shared path
+      - async symbol lookup and sync frame lookup now live in explicit helper methods
     - done: `compileSymbol(...)` no longer carries a nested sync fallback branch inside the async lookup path
     - done: a few remaining dead helper params/voids were removed
       - `CompileBuffer.asyncAddValueToBuffer(...)`
@@ -219,6 +225,8 @@ Current next target:
     - done: internal loop compiler helpers were renamed to explicit legacy-callback names
     - done: `compileAsyncEach(...)` / `compileAsyncAll(...)` now dispatch at the top level
       - the legacy callback loop helper is now honestly sync-only
+    - done: loop entry points no longer use one nested sync/async helper
+      - `CompileLoop` now has explicit async vs sync `for` / `while` entry helpers
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`

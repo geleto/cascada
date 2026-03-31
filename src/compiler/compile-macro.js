@@ -98,13 +98,20 @@ class CompileMacro {
     const compiler = this.compiler;
     compiler.emit('(function (){');
     const funcId = compiler.asyncMode
-      ? this._compileAsyncMacro(node, frame)
-      : this._compileSyncMacro(node, frame, true);
-    if (compiler.asyncMode) {
-      const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
-      compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
-    }
+      ? this._compileAsyncCaller(node, frame)
+      : this._compileSyncCaller(node, frame);
     compiler.emit(`return ${funcId};})()`);
+  }
+
+  _compileAsyncCaller(node, frame) {
+    const funcId = this._compileAsyncMacro(node, frame);
+    const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
+    this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
+    return funcId;
+  }
+
+  _compileSyncCaller(node, frame) {
+    return this._compileSyncMacro(node, frame, true);
   }
 
   analyzeMacro(node) {
@@ -547,28 +554,36 @@ class CompileMacro {
 
   compileMacro(node, frame) {
     const compiler = this.compiler;
-    var funcId = compiler.asyncMode
-      ? this._compileAsyncMacro(node, frame)
-      : this._compileSyncMacro(node, frame, false);
-
-    var name = node.name.value;
     if (compiler.asyncMode) {
-      compiler.emit.line(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-      compiler.buffer.asyncAddValueToBuffer(frame, (resultVar) => {
-        compiler.emit(
-          `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
-        );
-      }, node, name);
-      if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {
-        if (compiler.scriptMode) {
-          compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
-        } else {
-          compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
-        }
-      }
+      this._compileAsyncMacroDeclaration(node, frame);
       return;
     }
+    this._compileSyncMacroDeclaration(node, frame);
+  }
 
+  _compileAsyncMacroDeclaration(node, frame) {
+    const compiler = this.compiler;
+    const funcId = this._compileAsyncMacro(node, frame);
+    const name = node.name.value;
+    compiler.emit.line(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+    compiler.buffer.asyncAddValueToBuffer(frame, (resultVar) => {
+      compiler.emit(
+        `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+      );
+    }, node, name);
+    if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {
+      if (compiler.scriptMode) {
+        compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
+      } else {
+        compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
+      }
+    }
+  }
+
+  _compileSyncMacroDeclaration(node, frame) {
+    const compiler = this.compiler;
+    const funcId = this._compileSyncMacro(node, frame, false);
+    const name = node.name.value;
     frame.set(name, funcId);
 
     if (frame.parent) {
