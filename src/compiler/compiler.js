@@ -478,7 +478,8 @@ class Compiler extends CompilerBase {
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
-    const switchResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+    const switchResult = this.buffer._compileControlFlowBoundary(node, frame, (callbackFrame) => {
+      const blockFrame = this.asyncMode ? frame : callbackFrame;
       let catchPoisonPos;
 
       if (this.asyncMode) {
@@ -578,7 +579,8 @@ class Compiler extends CompilerBase {
     const guardStateVar = needsGuardState ? this._tmpid() : null;
     validateGuardVariablesDeclared(variableValidationTargets, this, node);
 
-    const guardResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+    const guardResult = this.buffer._compileControlFlowBoundary(node, frame, () => {
+      const blockFrame = frame;
       const previousGuardDepth = this.guardDepth;
       this.guardDepth = previousGuardDepth + 1;
 
@@ -712,8 +714,6 @@ class Compiler extends CompilerBase {
       } finally {
         this.guardDepth = previousGuardDepth;
       }
-
-      return blockFrame;
     });
 
     frame = guardResult.frame;
@@ -853,7 +853,8 @@ class Compiler extends CompilerBase {
       async = false;//old type of async
     }
 
-    const ifResult = this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+    const ifResult = this.buffer._compileControlFlowBoundary(node, frame, (callbackFrame) => {
+      const blockFrame = this.asyncMode ? frame : callbackFrame;
       let catchPoisonPos;
 
       if (this.asyncMode) {

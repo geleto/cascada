@@ -204,6 +204,9 @@ Completed so far:
       - `emitDeclareReturnChannel(...)` no longer accepts a dead `frame` arg
       - async render/capture/block boundary callbacks no longer receive a no-op `frame` argument when the boundary does not transform frame state
       - async-only `compileCaptureBoundary(...)` and `compileBlockTextBoundary(...)` no longer take/pass through dead `frame` arguments
+      - async control-flow boundaries no longer relay callback-provided compile frames
+        - async `if` / `switch` / `guard` now compile against their outer compiler frame directly
+        - async loop / include / extends control-flow boundaries no longer receive fake child compile-frame callback args
     - async symbol lookup is now split by real runtime mode:
       - async template symbols use explicit async-template lookup helpers
       - async script symbols use explicit async-script lookup helpers

@@ -45,8 +45,8 @@ class CompileLoop {
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const parentWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
 
-    const forResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
-      const innerFrame = blockFrame;
+    const forResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, () => {
+      const innerFrame = frame;
       const arr = this.compiler._tmpid();
 
       if (iteratorCompiler) {

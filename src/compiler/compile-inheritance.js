@@ -319,7 +319,7 @@ class CompileInheritance {
         this.emit.line(`  return ${resolvedParentTemplateId};`);
         this.emit.line('});');
       }
-      const extendsResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+      const extendsResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, () => {
         const templateVar = this.compiler._tmpid();
         if (!node.asyncStoreIn) {
           this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${parentTemplateId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
@@ -329,7 +329,6 @@ class CompileInheritance {
         this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
         this.emit.line('}');
         this.emit.line('await context.finishAsyncBlocks();');
-        return blockFrame;
       });
       frame = extendsResult.frame;
     } else {
@@ -370,7 +369,7 @@ class CompileInheritance {
       this.compileIncludeSync(node, frame);
       return;
     }
-    const includeResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (f) => {
+    const includeResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, () => {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
@@ -386,7 +385,7 @@ class CompileInheritance {
       this.emit(`let ${templateNameVar} = `);
       // Include target lookup is handled by include/import boundary tracking,
       // so it intentionally bypasses root waited-expression tracking.
-      this.compiler.compileExpression(node.template, f, node.template, true);
+      this.compiler.compileExpression(node.template, frame, node.template, true);
       this.emit.line(';');
 
       // Keep producer synchronous: carry async template lookup/render in promise chain.
@@ -426,7 +425,6 @@ class CompileInheritance {
       // Wait on the composed include snapshot promise (timing unit), not on the
       // command object created for parent enqueue.
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(includeTextPromise, node);
-      return f;
     });
     frame = includeResult.frame;
   }

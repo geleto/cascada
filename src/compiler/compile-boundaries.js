@@ -86,7 +86,7 @@ class CompileBoundaries {
     if (this.compiler.asyncMode) {
       const parentBufferArg = bufferCompiler.currentBuffer;
       const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-      const trackAsSingleWaitedUnit = this.compiler.asyncMode && !!bufferCompiler.currentWaitedChannelName;
+      const trackAsSingleWaitedUnit = !!bufferCompiler.currentWaitedChannelName;
       const controlFlowWaitedChannelName = trackAsSingleWaitedUnit ? `__waited__${this.compiler._tmpid()}` : null;
       const controlFlowPromiseId = this.compiler._tmpid();
       const boundaryRunner = controlFlowWaitedChannelName
@@ -97,8 +97,6 @@ class CompileBoundaries {
         `let ${controlFlowPromiseId} = ${boundaryRunner}(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
       );
       this.compiler.emit.asyncClosureDepth++;
-
-      const newFrame = frame;
 
       const prevBuffer = bufferCompiler.currentBuffer;
       const prevWaitedChannelName = bufferCompiler.currentWaitedChannelName;
@@ -111,7 +109,7 @@ class CompileBoundaries {
       }
 
       if (emitFunc) {
-        emitFunc(newFrame, 'currentBuffer');
+        emitFunc();
       }
       this.compiler.emit.asyncClosureDepth--;
       if (controlFlowWaitedChannelName) {
@@ -122,10 +120,8 @@ class CompileBoundaries {
       bufferCompiler.currentBuffer = prevBuffer;
       bufferCompiler.currentWaitedChannelName = prevWaitedChannelName;
       bufferCompiler.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
-      if (controlFlowPromiseId) {
-        bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
-      }
-      return { frame: newFrame };
+      bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
+      return { frame };
     }
 
     if (typeof emitFunc === 'function') {
