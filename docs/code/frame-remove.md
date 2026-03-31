@@ -36,6 +36,67 @@ Completed so far:
     - async root body vs sync-template root body use explicit helpers
     - async block entries vs sync-template block entries use explicit helpers
     - `compileRoot(...)` no longer hides that remaining sync-template frame behavior inside one large mixed function
+  - the compiler class layout is now split by mode instead of one mixed `Compiler`/`CompilerBase` pair:
+    - `CompilerCommon`
+    - `CompilerBaseAsync`
+    - `CompilerBaseSync`
+    - `CompilerAsync`
+    - `CompilerSync`
+    - `compiler.js` is now the facade that chooses `CompilerAsync` vs `CompilerSync`
+    - the temporary `compiler-shared.js` class factory has been removed again
+    - the remaining shared statement/helper surface now lives on `CompilerCommon`
+    - `jinja-compat` patches both compiler modes instead of assuming a single compiler prototype
+  - a real chunk of mode-specific compiler methods has now moved out of the shared classes:
+    - async statement entry points now live on `CompilerAsync`
+      - async `set`
+      - async `if`
+      - async `switch`
+      - async `guard`
+      - async `capture`
+      - async `output`
+      - async `do`
+      - async `return`
+    - sync statement entry points now live on `CompilerSync`
+      - sync `set`
+      - sync `if`
+      - sync `switch`
+      - sync legacy callback `if`
+      - sync `capture`
+      - sync `output`
+      - sync `do`
+      - sync `return`
+      - sync root/block entry compilation
+    - major expression dispatch points now live on the mode-specific base classes:
+      - symbol lookup
+      - inline if
+      - `is`
+      - `and` / `or`
+      - peek-error
+      - compare
+      - lookup-value
+      - function-call dispatch
+      - filter / filterAsync dispatch
+      - awaited dispatch
+  - more central mode-specific compile paths now also live in the mode classes:
+    - `CompilerAsync` now owns async root/block generation
+      - async root completion
+      - async block entry emission
+      - async root `__parentTemplate` / return-channel setup
+    - `CompilerAsync` and `CompilerSync` now each own extension-call analysis and codegen directly
+    - script-only compiler paths now also live on `CompilerAsync`
+      - `call_assign`
+      - channel declaration compilation
+      - channel command compilation
+      - sync compiler now fails explicitly if those paths are reached
+  - `CompilerCommon` no longer contains live async/sync compile branching:
+    - mode-specific expression implementations now live in:
+      - `CompilerBaseAsync`
+      - `CompilerBaseSync`
+    - mode-specific statement/root/script/output/guard logic now lives in:
+      - `CompilerAsync`
+      - `CompilerSync`
+    - extension-call handling, guard helpers, output/capture analysis, root/channel analysis, and channel-command analysis have all moved out of `CompilerCommon`
+    - the remaining `CompilerCommon` surface is shared infrastructure only
   - the `CompileFrame` abstraction was removed again:
     - thin sync frame wrappers were inlined at their real call sites
     - sync frame reads/writes/publish logic now lives directly in:

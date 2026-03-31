@@ -9,16 +9,24 @@ function installCompat() {
   var lib = this.lib;
   // Handle slim case where these 'modules' are excluded from the built source
   var Compiler = this.compiler.Compiler;
+  var CompilerSync = this.compiler.CompilerSync;
+  var CompilerAsync = this.compiler.CompilerAsync;
+  var CompilerCommon = this.compiler.CompilerCommon;
+  var compilerClasses = Array.from(new Set(
+    [Compiler, CompilerSync, CompilerAsync, CompilerCommon].filter(Boolean)
+  ));
   var Parser = this.parser.Parser;
   var nodes = this.nodes;
   var lexer = this.lexer;
 
   var orig_Frame_lookupOrContext = runtime.Frame.prototype.lookupOrContext;
   var orig_memberLookup = runtime.memberLookup;
-  var orig_Compiler_assertType;
+  var orig_Compiler_assertTypes = new Map();
   var orig_Parser_parseAggregate;
-  if (Compiler) {
-    orig_Compiler_assertType = Compiler.prototype.assertType;
+  if (compilerClasses.length) {
+    compilerClasses.forEach((CompilerClass) => {
+      orig_Compiler_assertTypes.set(CompilerClass, CompilerClass.prototype.assertType);
+    });
   }
   if (Parser) {
     orig_Parser_parseAggregate = Parser.prototype.parseAggregate;
@@ -27,9 +35,10 @@ function installCompat() {
   function uninstall() {
     runtime.Frame.prototype.lookupOrContext = orig_Frame_lookupOrContext;
     runtime.memberLookup = orig_memberLookup;
-    if (Compiler) {
-      Compiler.prototype.assertType = orig_Compiler_assertType;
-    }
+    orig_Compiler_assertTypes.forEach((assertType, CompilerClass) => {
+      CompilerClass.prototype.assertType = assertType;
+      delete CompilerClass.prototype.compileSlice;
+    });
     if (Parser) {
       Parser.prototype.parseAggregate = orig_Parser_parseAggregate;
     }
@@ -60,7 +69,7 @@ function installCompat() {
     };
   }
 
-  if (process.env.BUILD_TYPE !== 'SLIM' && nodes && Compiler && Parser) { // i.e., not slim mode
+  if (process.env.BUILD_TYPE !== 'SLIM' && nodes && compilerClasses.length && Parser) { // i.e., not slim mode
     class Slice extends nodes.Node {
       get typename() { return 'Slice'; }
       get fields() { return ['start', 'stop', 'step']; }
@@ -73,21 +82,24 @@ function installCompat() {
       }
     }
 
-    Compiler.prototype.assertType = function assertType(node) {
-      if (node instanceof Slice) {
-        return;
-      }
-      orig_Compiler_assertType.apply(this, arguments);
-    };
-    Compiler.prototype.compileSlice = function compileSlice(node, frame) {
-      this.emit('(');
-      this._compileExpression(node.start, frame);
-      this.emit('),(');
-      this._compileExpression(node.stop, frame);
-      this.emit('),(');
-      this._compileExpression(node.step, frame);
-      this.emit(')');
-    };
+    compilerClasses.forEach((CompilerClass) => {
+      const origAssertType = orig_Compiler_assertTypes.get(CompilerClass);
+      CompilerClass.prototype.assertType = function assertType(node) {
+        if (node instanceof Slice) {
+          return;
+        }
+        origAssertType.apply(this, arguments);
+      };
+      CompilerClass.prototype.compileSlice = function compileSlice(node, frame) {
+        this.emit('(');
+        this._compileExpression(node.start, frame);
+        this.emit('),(');
+        this._compileExpression(node.stop, frame);
+        this.emit('),(');
+        this._compileExpression(node.step, frame);
+        this.emit(')');
+      };
+    });
 
     Parser.prototype.parseAggregate = function parseAggregate() {
       var origState = getTokensState(this.tokens);
