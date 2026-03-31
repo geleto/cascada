@@ -219,7 +219,8 @@ class Template extends Obj {
 
   _createTopLevelSyncTemplateFrame(parentSyncFrame, isolateWrites) {
     const frame = parentSyncFrame ? parentSyncFrame.push(isolateWrites) : new Frame();
-    return globalRuntime.markSyncTemplateFrameTopLevel(frame);
+    frame.topLevel = true;
+    return frame;
   }
 
   _createAsyncContext(ctx) {

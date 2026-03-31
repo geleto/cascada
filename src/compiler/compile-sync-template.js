@@ -30,7 +30,7 @@ class CompileSyncTemplate {
   }
 
   getFrameContextLookupExpr(name) {
-    return `runtime.contextOrSyncTemplateFrameLookup(context, frame, "${name}")`;
+    return `runtime.contextOrFrameLookup(context, frame, "${name}")`;
   }
 
   getDirectFrameLookupExpr(name) {
@@ -45,7 +45,7 @@ class CompileSyncTemplate {
   }
 
   getTopLevelCheckExpr() {
-    return 'runtime.isSyncTemplateFrameTopLevel(frame)';
+    return 'frame.topLevel';
   }
 }
 

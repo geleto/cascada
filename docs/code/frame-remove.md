@@ -23,11 +23,9 @@ Completed so far:
     - `AsyncEnvironment` now also uses explicit async-template vs async-script loader helpers
   - remaining helper naming was tightened to match that split:
     - async script context lookup now uses `Context.lookupScript(...)`
-    - sync frame-backed template lookup now uses `contextOrSyncTemplateFrameLookup(...)`
-    - sync template loop metadata writes now use `setSyncTemplateFrameLoopBindings(...)`
-    - the remaining sync top-level frame marker now goes through runtime helpers:
-      - `markSyncTemplateFrameTopLevel(...)`
-      - `isSyncTemplateFrameTopLevel(...)`
+    - frame-backed template lookup now uses `contextOrFrameLookup(...)`
+    - template loop metadata writes now use `setFrameLoopBindings(...)`
+    - the remaining top-level frame marker is now just `frame.topLevel`
   - the environment/template class split now matches the real supported modes more closely:
     - base `Template` is sync-template-oriented again
     - async compile options are owned by `AsyncTemplate` / `AsyncScript`
@@ -72,9 +70,7 @@ Completed so far:
     - this avoids confusing the macro's local declaration with the parent-owned exported binding
   - async render entry no longer sets `frame.topLevel`
     - there are no remaining async reads of that runtime flag
-    - the remaining top-level frame marker is now explicitly sync-template-only runtime state
-      - `markSyncTemplateFrameTopLevel(...)`
-      - `isSyncTemplateFrameTopLevel(...)`
+    - the remaining top-level frame marker is now explicitly sync-template-only runtime state: `frame.topLevel`
   - dead async frame flags were removed:
     - `_seesRootScope` no longer exists in the async runtime path
     - `_returnWaitCount` was dead and is gone
@@ -241,15 +237,13 @@ Current next target:
     - done: compile-time frame-balance helpers are gone
     - the remaining compiler-frame push/new sites are now concentrated in sync / legacy callback paths
   - continue isolating remaining sync-only frame state:
-    - done: the remaining sync-template top-level frame marker now goes through explicit runtime helpers
-      - `markSyncTemplateFrameTopLevel(...)`
-      - `isSyncTemplateFrameTopLevel(...)`
-    - done: loop frame metadata writes now go through explicit sync-template `setSyncTemplateFrameLoopBindings(...)`
-    - done: sync frame-backed template lookup now goes through explicit `contextOrSyncTemplateFrameLookup(...)`
+    - done: the remaining top-level frame marker is now explicitly sync-only `frame.topLevel`
+    - done: loop frame metadata writes now go through `setFrameLoopBindings(...)`
+    - done: frame-backed template lookup now goes through `contextOrFrameLookup(...)`
     - done: the remaining live runtime sync-template frame semantics are now centralized in `src/runtime/sync-template-frame.js`
       - top-level frame marker
-      - sync frame-backed template lookup
-      - sync loop metadata frame writes
+      - frame-backed template lookup
+      - loop metadata frame writes
     - done: the dead `whileConditionIterator(...)` runtime export was removed
     - done: sync `super()` lookup now goes through explicit `Context.getSyncSuper(...)`
     - done: direct sync exports now go through explicit `Context.addResolvedExport(...)`

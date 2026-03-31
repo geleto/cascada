@@ -13,6 +13,7 @@ class Frame {
   constructor(parent, isolateWrites) {
     this.variables = Object.create(null);
     this.parent = parent;
+    this.topLevel = false;
     // if this is true, writes (set) should never propagate upwards past
     // this frame to its parent (though reads may).
     this.isolateWrites = isolateWrites;

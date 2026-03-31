@@ -246,7 +246,7 @@ module.exports = {
   memberLookupAsync: lookup.memberLookupAsync,
   memberLookupScript: lookup.memberLookupScript,
   channelLookup: lookup.channelLookup,
-  contextOrSyncTemplateFrameLookup: syncTemplateFrame.contextOrSyncTemplateFrameLookup,
+  contextOrFrameLookup: syncTemplateFrame.contextOrFrameLookup,
   contextOrChannelLookup: lookup.contextOrChannelLookup,
   contextOrScriptChannelLookup: lookup.contextOrScriptChannelLookup,
 
@@ -265,11 +265,9 @@ module.exports = {
   fromIterator: loop.fromIterator,
   iterateAsyncSequential: loop.iterateAsyncSequential,
   iterateAsyncParallel: loop.iterateAsyncParallel,
-  setSyncTemplateFrameLoopBindings: syncTemplateFrame.setSyncTemplateFrameLoopBindings,
+  setFrameLoopBindings: syncTemplateFrame.setFrameLoopBindings,
   createLoopBindings: loop.createLoopBindings,
   setLoopValueBindings: loop.setLoopValueBindings,
-  markSyncTemplateFrameTopLevel: syncTemplateFrame.markSyncTemplateFrameTopLevel,
-  isSyncTemplateFrameTopLevel: syncTemplateFrame.isSyncTemplateFrameTopLevel,
 
   sequentialContextLookupValue: sequential.sequentialContextLookupValue,
   sequentialContextLookupScriptValue: sequential.sequentialContextLookupScriptValue,
