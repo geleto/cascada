@@ -1286,7 +1286,7 @@
           return null;
         };
 
-        let env = new Environment([new TestScriptLoader()]);
+        let env = new AsyncEnvironment([new TestScriptLoader()]);
         let result = precompileScriptString('let x = {{ value }};', {
           name: 'script-test.njk',
           env: env
@@ -1297,7 +1297,7 @@
       });
     });
 
-    describe('Template/Script constructors with custom environments', function() {
+    describe('Template/AsyncScript constructors with custom environments', function() {
       it('should work with Template constructor using function loader', function() {
 
         function templateLoader(name) {
@@ -1314,7 +1314,7 @@
         expect(result).to.be('Template from function loader: Hello World');
       });
 
-      it('should work with Script constructor using class loader', async function() {
+      it('should work with AsyncScript loading using class loader', async function() {
         class ScriptClassLoader {
           load(name) {
             if (name === 'script-constructor-test.njk') {

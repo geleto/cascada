@@ -113,16 +113,16 @@ This is the **preferred strategy** for errors that we explicitly check for in ou
 
 This strategy is used sparingly for operations where the error is thrown by the **native JavaScript engine**, especially on performance-critical "hot paths."
 
-*   **Problem:** `memberLookupScript('foo', null)` is valid. `memberLookupScript(null, 'foo')` is not. The `null['foo']` operation will cause the JS engine to throw a `TypeError`. We cannot inject our `errorContext` into the native `[]` accessor.
-*   **Rationale:** We could wrap the operation in a `try/catch` *inside* `memberLookupScript`, but this can de-optimize a very high-frequency operation, penalizing every successful property lookup.
+*   **Problem:** `memberLookupScriptRaw('foo', null)` is valid. `memberLookupScriptRaw(null, 'foo')` is not. The `null['foo']` operation will cause the JS engine to throw a `TypeError`. We cannot inject our `errorContext` into the native `[]` accessor.
+*   **Rationale:** We could wrap the operation in a `try/catch` *inside* `memberLookupScriptRaw`, but this can de-optimize a very high-frequency operation, penalizing every successful property lookup.
 *   **Solution:** We keep the runtime function lean and fast, letting it throw the native error. The **compiler** then wraps the call site in a `try/catch` block, where the context is known.
 
-*   **Example: `memberLookupScript`**
+*   **Example: `memberLookupScriptRaw`**
 
     **1. The Lean Runtime Function:**
     ```javascript
     // runtime.js - No try/catch for maximum performance
-    function memberLookupScript(obj, val) {
+    function memberLookupScriptRaw(obj, val) {
       return obj[val]; // May throw native TypeError
     }
     ```
@@ -131,7 +131,7 @@ This strategy is used sparingly for operations where the error is thrown by the 
     ```javascript
     // compiled_template.js
     try {
-      t_1 = runtime.memberLookupScript(t_2, "property");
+      t_1 = runtime.memberLookupScriptRaw(t_2, "property");
     } catch (e) {
       // The catch block has the context from the LookupVal node
       var err = runtime.handleError(e, 10, 5, "LookupVal", "my_template.njk");

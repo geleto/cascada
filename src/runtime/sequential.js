@@ -2,7 +2,7 @@
 
 const {
   memberLookupAsync,
-  memberLookupScriptAsync
+  memberLookupScript
 } = require('./lookup');
 const { callWrapAsync } = require('./call');
 const { ensureSequentialPathChannel } = require('./checks');
@@ -44,9 +44,9 @@ function sequentialMemberLookupAsyncValue(target, key, pathKey, errorContext, re
   );
 }
 
-function sequentialMemberLookupScriptAsyncValue(target, key, pathKey, errorContext, repair = false, currentBuffer) {
+function sequentialMemberLookupScriptValue(target, key, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair, false, () =>
-    memberLookupScriptAsync(target, key, errorContext)
+    memberLookupScript(target, key, errorContext)
   );
 }
 
@@ -55,7 +55,7 @@ module.exports = {
   sequentialContextLookupValue,
   sequentialContextLookupScriptValue,
   sequentialMemberLookupAsyncValue,
-  sequentialMemberLookupScriptAsyncValue
+  sequentialMemberLookupScriptValue
 };
 
 function contextLookupOnly(context, name, pathKey) {

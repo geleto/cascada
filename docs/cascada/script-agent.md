@@ -1685,15 +1685,11 @@ await env.renderScriptFile('nonexistent.cas', {});  // Throws error
 // DIFFERENTIAL: Compile once, render multiple times for performance
 
 // ✅ Valid: Compile and reuse
-const compiled = await env.compileScript('main.cas');
+const { compileScript } = require('cascada-engine');
+const compiled = compileScript(scriptSource, env, 'main.cas');
 const result1 = await compiled.render({ input: 'data1' });
 const result2 = await compiled.render({ input: 'data2' });
 const result3 = await compiled.render({ input: 'data3' });
-
-// ✅ Valid: Compile string
-const compiled = await env.compileScriptString(`
-  @data.output = context.input | upper
-`);
 
 // Performance: Compilation is expensive; rendering is fast
 ```

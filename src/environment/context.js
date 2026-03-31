@@ -41,7 +41,7 @@ class Context extends Obj {
   }
 
   //if the variable is not found, throws an error
-  lookupScriptMode(name) {
+  lookupScriptModeRaw(name) {
     // This is one of the most called functions, so optimize for
     // the typical case where the name isn't in the globals
     if (name in this.env.globals && !(name in this.ctx)) {
@@ -56,7 +56,7 @@ class Context extends Obj {
   }
 
   //if the variable is not found, returns a poison value
-  lookupScriptModeAsync(name, errorContext = null) {
+  lookupScriptMode(name, errorContext = null) {
     // This is one of the most called functions, so optimize for
     // the typical case where the name isn't in the globals
     if (name in this.env.globals && !(name in this.ctx)) {

@@ -6,6 +6,17 @@ This plan is actively in progress.
 
 Completed so far:
 
+- Sync script support has been removed from the public/runtime surface:
+  - the `Script` class is gone
+  - sync `Environment` no longer exposes `getScript(...)` or `renderScriptString(...)`
+  - top-level sync script helpers were removed from JS and `.d.ts`
+    - `compileScript(...)`
+    - `renderScriptString(...)`
+    - `precompileScript(...)`
+    - `precompileScriptString(...)`
+  - script compilation/loading is now async-only at the environment level
+    - `scriptMode` no longer has a sync-script branch in `BaseEnvironment`
+
 - Phase 1 is effectively done:
   - `node.isAsync` has been removed as an async compile-routing mechanism
   - the old async-determination pass was deleted
@@ -921,7 +932,7 @@ The order matters. Do not start by deleting `frame` APIs.
 Done when:
 
 - we explicitly state that this plan applies to async mode only
-- sync mode may continue using frame-based lookup/storage
+- sync template mode may continue using frame-based lookup/storage
 - all future changes in this plan are evaluated only against async compilation/runtime
 - all future changes in this plan explicitly classify:
   - scope/declaration ownership concerns
@@ -1348,7 +1359,7 @@ Done when:
 
 The most plausible intermediate shape is:
 
-- **sync mode**
+- **sync template mode**
   - keep `Frame`
   - keep current lexical lookup model
 
@@ -1360,6 +1371,7 @@ The most plausible intermediate shape is:
   - no runtime variable frame
 
 This split is acceptable. There is no need to force a unified sync/async runtime during the migration.
+Scripts are already async-only.
 
 ---
 

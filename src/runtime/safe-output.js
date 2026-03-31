@@ -252,7 +252,7 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
   return ensureDefined(val, lineno, colno, context);
 }
 
-function suppressValueScript(val, autoescape) {
+function suppressValueScriptRaw(val, autoescape) {
   if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof CommandBuffer)) {
     const hasCustomToString = val.toString && val.toString !== Object.prototype.toString;
     const isPromise = typeof val.then === 'function';
@@ -278,14 +278,14 @@ function suppressValueScript(val, autoescape) {
   return suppressValue(val, autoescape);
 }
 
-function suppressValueScriptAsync(val, autoescape, errorContext) {
+function suppressValueScript(val, autoescape, errorContext) {
   if (val && (typeof val.then === 'function' || val[RESOLVE_MARKER] || Array.isArray(val))) {
-    return _suppressValueScriptAsyncComplex(val, autoescape, errorContext);
+    return _suppressValueScriptComplex(val, autoescape, errorContext);
   }
-  return suppressValueScript(val, autoescape);
+  return suppressValueScriptRaw(val, autoescape);
 }
 
-async function _suppressValueScriptAsyncComplex(val, autoescape, errorContext) {
+async function _suppressValueScriptComplex(val, autoescape, errorContext) {
   try {
     if (!Array.isArray(val)) {
       if (val && val[RESOLVE_MARKER]) {
@@ -308,15 +308,15 @@ async function _suppressValueScriptAsyncComplex(val, autoescape, errorContext) {
     val = resolvedArray;
   }
 
-  return suppressValueScript(val, autoescape);
+  return suppressValueScriptRaw(val, autoescape);
 }
 
 module.exports = {
   suppressValue,
   suppressValueAsync,
   _suppressValueAsyncComplex,
+  suppressValueScriptRaw,
   suppressValueScript,
-  suppressValueScriptAsync,
   SafeString,
   copySafeness,
   markSafe,

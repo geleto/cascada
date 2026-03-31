@@ -1,5 +1,5 @@
 import lib from './lib.js';
-import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} from './environment/environment.js';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate, AsyncScript} from './environment/environment.js';
 import Loader from './loader/loader.js';
 import * as loaders from './loader/loaders.js';
 import * as precompileModule from './precompile.js';
@@ -61,7 +61,6 @@ export {
   AsyncEnvironment,
   Template,
   AsyncTemplate,
-  Script,
   AsyncScript,
   Loader,
   compiler,
@@ -90,14 +89,12 @@ export const precompileString = precompileModule ? precompileModule.precompileSt
 
 export const precompileTemplate = precompileModule ? precompileModule.precompileTemplate : undefined;
 export const precompileTemplateString = precompileModule ? precompileModule.precompileTemplateString : undefined;
-export const precompileScript = precompileModule ? precompileModule.precompileScript : undefined;
-export const precompileScriptString = precompileModule ? precompileModule.precompileScriptString : undefined;
 
 //@todo - does this realy return a promise?
 export const precompileTemplateAsync = precompileModule ? precompileModule.precompileTemplateAsync : undefined;
 export const precompileTemplateStringAsync = precompileModule ? precompileModule.precompileTemplateStringAsync : undefined;
-export const precompileScriptAsync = precompileModule ? precompileModule.precompileScriptAsync : undefined;
-export const precompileScriptStringAsync = precompileModule ? precompileModule.precompileScriptStringAsync : undefined;
+export const precompileScript = precompileModule ? precompileModule.precompileScript : undefined;
+export const precompileScriptString = precompileModule ? precompileModule.precompileScriptString : undefined;
 
 
 export function reset() {
@@ -136,13 +133,6 @@ export function compileTemplateAsync(src, env, path, eagerCompile) {
 }
 
 export function compileScript(src, env, path, eagerCompile) {
-  if (!e) {
-    configure();
-  }
-  return new Script(src, env, path, eagerCompile);
-}
-
-export function compileScriptAsync(src, env, path, eagerCompile) {
   if (!asyncE) {
     configureAsync();
   }
@@ -200,14 +190,7 @@ export function renderTemplateStringAsync(src, ctx) {
   return asyncE.renderTemplateString(src, ctx);
 }
 
-export function renderScriptString(src, ctx, cb) {
-  if (!e) {
-    configure();
-  }
-  return e.renderScriptString(src, ctx, cb);
-}
-
-export function renderScriptStringAsync(src, ctx) {
+export function renderScriptString(src, ctx) {
   if (!asyncE) {
     configureAsync();
   }
@@ -222,7 +205,6 @@ export default {
   AsyncEnvironment,
   Template,
   AsyncTemplate,
-  Script,
   AsyncScript,
   Loader,
   FileSystemLoader: loaders.FileSystemLoader,
@@ -243,7 +225,6 @@ export default {
   compileTemplate,
   compileTemplateAsync,
   compileScript,
-  compileScriptAsync,
   render,
   renderAsync,
   renderString,
@@ -252,7 +233,6 @@ export default {
   renderTemplateString,
   renderTemplateStringAsync,
   renderScriptString,
-  renderScriptStringAsync,
   precompile,
   precompileString,
   precompileTemplate,
@@ -261,8 +241,6 @@ export default {
   precompileTemplateStringAsync,
   precompileScript,
   precompileScriptString,
-  precompileScriptAsync,
-  precompileScriptStringAsync,
   loadString: loaderUtils.loadString,
   clearStringCache: loaderUtils.clearStringCache,
   raceLoaders: loaderUtils.raceLoaders

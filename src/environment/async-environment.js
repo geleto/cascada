@@ -131,7 +131,7 @@ class AsyncEnvironment extends BaseEnvironment {
   getScript(name, eagerCompile, parentName, ignoreMissing) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        this._getCompiledAsync(resolvedName, eagerCompile, parentName, ignoreMissing, true, true);
+        return this._getCompiledAsync(resolvedName, eagerCompile, parentName, ignoreMissing, true, true);
       });
     }
     return this._getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, true, true);

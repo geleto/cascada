@@ -416,7 +416,7 @@ class CompilerBase extends Obj {
       return;
     }
     if (this.scriptMode) {
-      this.emit('runtime.contextOrChannelLookupScriptAsync(' +
+      this.emit('runtime.contextOrChannelLookupScript(' +
         'context, "' + name + '", ' +
         `${this.buffer.currentBuffer}, ` +
         `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
@@ -449,7 +449,7 @@ class CompilerBase extends Obj {
     }
     this.emit(
       this.scriptMode
-        ? 'runtime.contextOrChannelLookupScriptAsync(' +
+        ? 'runtime.contextOrChannelLookupScript(' +
           'context, "' + name + '", ' +
           `${this.buffer.currentBuffer}, ` +
           `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
@@ -858,7 +858,7 @@ class CompilerBase extends Obj {
         // Create the error context and pass it to the runtime function.
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
         if (this.scriptMode) {
-          this.emit('runtime.sequentialMemberLookupScriptAsyncValue((');
+          this.emit('runtime.sequentialMemberLookupScriptValue((');
         } else {
           this.emit('runtime.sequentialMemberLookupAsyncValue((');
         }
@@ -873,7 +873,7 @@ class CompilerBase extends Obj {
       // Pass the error context directly to the runtime function.
       const errorContextJson = JSON.stringify(this._createErrorContext(node));
       if (this.scriptMode) {
-        this.emit(`runtime.memberLookupScriptAsync((`);
+        this.emit(`runtime.memberLookupScript((`);
       } else {
         this.emit(`runtime.memberLookupAsync((`);
       }

@@ -5,20 +5,6 @@ const scriptTranspiler = require('../script/script-transpiler');
 const { Template } = require('./template');
 
 /**
- * Script class - represents a compiled Cascada script
- */
-class Script extends Template {
-  init(src, env, path, eagerCompile) {
-    // Convert script to template if it's a string
-    if (lib.isString(src)) {
-      src = scriptTranspiler.scriptToTemplate(src);
-    }
-
-    super.init(src, env, path, eagerCompile, false/*async*/, true/*script*/);
-  }
-}
-
-/**
  * AsyncScript class - represents a compiled async Cascada script
  */
 class AsyncScript extends Template {
@@ -50,6 +36,5 @@ class AsyncScript extends Template {
 }
 
 module.exports = {
-  Script,
   AsyncScript
 };

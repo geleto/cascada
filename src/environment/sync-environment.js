@@ -1,7 +1,6 @@
 'use strict';
 
 const lib = require('../lib');
-const scriptTranspiler = require('../script/script-transpiler');
 const { BaseEnvironment } = require('./base-environment');
 const { callbackAsap } = require('./utils');
 const { Template } = require('./template');
@@ -9,11 +8,6 @@ const { Template } = require('./template');
 class Environment extends BaseEnvironment {
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
     return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, false, cb);
-  }
-
-  getScript(name, eagerCompile, parentName, ignoreMissing, cb) {
-    // Scripts use the same template loading mechanism, conversion happens at Script class level
-    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, true, cb);
   }
 
   /** @deprecated Use renderTemplate instead */
@@ -59,29 +53,6 @@ class Environment extends BaseEnvironment {
     opts = opts || {};
 
     const tmpl = new Template(src, this, opts.path);
-    return tmpl.render(ctx, cb);
-  }
-
-  renderScriptString(scriptStr, ctx, opts, cb) {
-    if (lib.isFunction(ctx)) {
-      cb = ctx;
-      ctx = {};
-    }
-    opts = opts || {};
-
-    // Convert script to template
-    let template;
-    try {
-      template = scriptTranspiler.scriptToTemplate(scriptStr);
-    } catch (error) {
-      if (cb) {
-        callbackAsap(cb, error);
-        return undefined;
-      }
-      throw error;
-    }
-
-    const tmpl = new Template(template, this, opts.path);
     return tmpl.render(ctx, cb);
   }
 }

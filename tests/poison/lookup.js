@@ -117,24 +117,24 @@
       });
     });
 
-    describe('memberLookupScriptAsync - Sync-First Hybrid', () => {
+    describe('memberLookupScript - Sync-First Hybrid', () => {
       it('should return poison for poisoned inputs', () => {
         const poison = createPoison(new Error('Test'));
-        const result = runtime.memberLookupScriptAsync(poison, 'prop');
+        const result = runtime.memberLookupScript(poison, 'prop');
 
         expect(isPoison(result)).to.be(true);
       });
 
       it('should return value synchronously for literals', () => {
         const obj = { value: 42 };
-        const result = runtime.memberLookupScriptAsync(obj, 'value');
+        const result = runtime.memberLookupScript(obj, 'value');
 
         expect(result).to.equal(42);
       });
 
       it('should handle async inputs', async () => {
         const obj = Promise.resolve({ count: 10 });
-        const result = await runtime.memberLookupScriptAsync(obj, 'count');
+        const result = await runtime.memberLookupScript(obj, 'count');
 
         expect(result).to.equal(10);
       });

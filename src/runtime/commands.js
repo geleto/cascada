@@ -1332,14 +1332,14 @@ function materializeTextCommandArgs(values, output, pos) {
 }
 
 function normalizeMaterializedTextArg(value, output, pos) {
-  const { suppressValue, suppressValueScript } = getSafeOutputApi();
+  const { suppressValue, suppressValueScriptRaw } = getSafeOutputApi();
   const throwOnUndefined = isThrowOnUndefinedEnabled(output);
   if (throwOnUndefined && (value === null || value === undefined)) {
     throw contextualizeOutputError(output, pos, new Error('attempted to output null or undefined value'));
   }
   const autoescape = isAutoescapeEnabled(output);
   if (isScriptOutputMode(output)) {
-    return suppressValueScript(value, autoescape);
+    return suppressValueScriptRaw(value, autoescape);
   }
   return suppressValue(value, autoescape);
 }

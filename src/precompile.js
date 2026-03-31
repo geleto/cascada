@@ -34,14 +34,6 @@ function precompileTemplateString(str, opts) {
   return precompileString(str, opts);
 }
 
-function precompileScriptString(str, opts) {
-  opts = opts || {};
-  opts.isAsync = false;
-  opts.isScript = true;
-
-  return precompileString(str, opts);
-}
-
 function precompileTemplateStringAsync(str, opts) {
   opts = opts || {};
   opts.isAsync = true;
@@ -49,7 +41,7 @@ function precompileTemplateStringAsync(str, opts) {
   return precompileString(str, opts);
 }
 
-function precompileScriptStringAsync(str, opts) {
+function precompileScriptString(str, opts) {
   opts = opts || {};
   opts.isAsync = true;
   opts.isScript = true;
@@ -78,7 +70,7 @@ function precompile(input, opts) {
 
   if (opts.isString) {
     if (opts.isScript) {
-      return opts.isAsync ? precompileScriptStringAsync(input, opts) : precompileScriptString(input, opts);
+      return precompileScriptString(input, opts);
     } else {
       return opts.isAsync ? precompileTemplateStringAsync(input, opts) : precompileTemplateString(input, opts);
     }
@@ -170,15 +162,11 @@ function precompileTemplate(str, opts) {
   return precompile(str, opts, false/*async*/, false/*script*/);
 }
 
-function precompileScript(str, opts) {
-  return precompile(str, opts, false/*async*/, true/*script*/);
-}
-
 function precompileTemplateAsync(str, opts) {
   return precompile(str, opts, false/*async*/, false/*script*/);
 }
 
-function precompileScriptAsync(str, opts) {
+function precompileScript(str, opts) {
   return precompile(str, opts, false/*async*/, true/*script*/);
 }
 
@@ -194,9 +182,7 @@ module.exports = {
   precompileTemplateString,
   precompileTemplateStringAsync,
 
-  // Script variants (use same underlying functions since script conversion happens at Script class level)
+  // Script variants
   precompileScript,
-  precompileScriptAsync,
   precompileScriptString,
-  precompileScriptStringAsync,
 };

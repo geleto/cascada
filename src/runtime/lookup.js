@@ -34,7 +34,7 @@ function memberLookup(obj, val) {
  * Sync member lookup for scripts.
  * Throws error if obj is null/undefined.
  */
-function memberLookupScript(obj, val) {
+function memberLookupScriptRaw(obj, val) {
   if (obj === undefined || obj === null) {
     //unlike in template mode, in script mode we throw an exception
     throw new Error(`Cannot read property ${val} of ${obj}`);
@@ -120,7 +120,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext) {
  * Async member lookup for scripts.
  * Uses sync-first hybrid pattern.
  */
-function memberLookupScriptAsync(obj, val, errorContext) {
+function memberLookupScript(obj, val, errorContext) {
 
   // Check if ANY input requires async processing
   const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
@@ -128,7 +128,7 @@ function memberLookupScriptAsync(obj, val, errorContext) {
 
   if (objIsPromise || valIsPromise) {
     // Must delegate to async helper to await all promises
-    return _memberLookupScriptAsyncComplex(obj, val, errorContext);
+    return _memberLookupScriptComplex(obj, val, errorContext);
   }
 
   // Sync path - collect ALL errors from both sources (never miss any error principle)
@@ -148,7 +148,7 @@ function memberLookupScriptAsync(obj, val, errorContext) {
 
   // No errors - proceed with lookup
   // Let native error throw; it will be caught by the top-level sync try/catch.
-  //return memberLookupScript(obj, val);
+  //return memberLookupScriptRaw(obj, val);
 
   // The same implementation as memberLookupScript, but returns a poison value instead of throwing an exception
   if (obj === undefined || obj === null) {
@@ -167,7 +167,7 @@ function memberLookupScriptAsync(obj, val, errorContext) {
   return value;
 }
 
-async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
+async function _memberLookupScriptComplex(obj, val, errorContext) {
   // Collect errors from both inputs
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
@@ -180,7 +180,7 @@ async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
 
     // The call to memberLookupScript can throw a native TypeError if resolvedObj is null/undefined.
     // This try/catch block will handle it and enrich the error with context.
-    const result = memberLookupScript(resolvedObj, resolvedVal);
+    const result = memberLookupScriptRaw(resolvedObj, resolvedVal);
 
     // Wrap promise results to preserve error context
     // This handles: 1) properties that are promises, 2) getters that return promises
@@ -254,14 +254,14 @@ function channelLookup(name, currentBuffer) {
 
 /**
  * Async context/frame/channel lookup for scripts.
- * Returns poison for missing names via context.lookupScriptModeAsync.
+ * Returns poison for missing names via context.lookupScriptMode.
  */
-function contextOrChannelLookupScriptAsync(context, name, currentBuffer, errorContext = null) {
+function contextOrChannelLookupScript(context, name, currentBuffer, errorContext = null) {
   const channelRead = channelLookupScript(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
   }
-  return context.lookupScriptModeAsync(name, errorContext);
+  return context.lookupScriptMode(name, errorContext);
 }
 
 // Script-mode channel lookup variant:
@@ -311,11 +311,11 @@ function isBufferInAncestry(buffer, ancestor) {
 
 module.exports = {
   memberLookup,
-  memberLookupScript,
+  memberLookupScriptRaw,
   memberLookupAsync,
-  memberLookupScriptAsync,
+  memberLookupScript,
   contextOrSyncFrameVarLookup,
   channelLookup,
   contextOrChannelLookup,
-  contextOrChannelLookupScriptAsync,
+  contextOrChannelLookupScript,
 };

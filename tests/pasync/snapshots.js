@@ -842,7 +842,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     describe('script @text output', function () {
-      // Script output uses suppressValueScriptAsync (not suppressValueAsync)
+      // Script output uses suppressValueScript (not suppressValueAsync)
       // and resolves through command snapshots in processArrayItem - a separate
       // path from template {{ }} which goes through flattenText.
       beforeEach(() => {

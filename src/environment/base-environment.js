@@ -11,7 +11,7 @@ const { handleError } = require('../runtime/errors');
 const expressApp = require('../express-app');
 const { clearStringCache, callLoaders } = require('../loader/loader-utils');
 const { Template, AsyncTemplate } = require('./template');
-const { Script, AsyncScript } = require('./script');
+const { AsyncScript } = require('./script');
 
 /**
  * A no-op template, for use with {% include ignore missing %}
@@ -247,8 +247,8 @@ class BaseEnvironment extends EmitterObj {
       eagerCompile = false;
     }
 
-    // Check if name is a Template or Script instance
-    if (name instanceof Template || name instanceof Script || name instanceof AsyncScript) {
+    // Check if name is a compiled template/script instance
+    if (name instanceof Template || name instanceof AsyncScript) {
       tmpl = name;
     } else if (typeof name !== 'string') {
       throw new Error('template names must be a string: ' + name);
@@ -296,14 +296,13 @@ class BaseEnvironment extends EmitterObj {
       }
       let newCompiled;
       if (scriptMode) {
+        if (!asyncMode) {
+          throw new Error('Sync script support has been removed; use AsyncScript / AsyncEnvironment instead');
+        }
         if (!info) {
-          newCompiled = asyncMode ?
-            new AsyncScript(noopTmplSrcAsync, this, '', eagerCompile) :
-            new Script(noopTmplSrc, this, '', eagerCompile);
+          newCompiled = new AsyncScript(noopTmplSrcAsync, this, '', eagerCompile);
         } else {
-          newCompiled = asyncMode ?
-            new AsyncScript(info.src, this, info.path, eagerCompile) :
-            new Script(info.src, this, info.path, eagerCompile);
+          newCompiled = new AsyncScript(info.src, this, info.path, eagerCompile);
           if (!info.noCache) {
             const compiledCache = this._compiledCaches.get(info.loader) || new Map();
             compiledCache.set(name, newCompiled);

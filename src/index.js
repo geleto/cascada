@@ -1,7 +1,7 @@
 'use strict';
 
 const lib = require('./lib');
-const {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} = require('./environment/environment');
+const {Environment, AsyncEnvironment, Template, AsyncTemplate, AsyncScript} = require('./environment/environment');
 const Loader = require('./loader/loader');
 const loaders = require('./loader/loaders');
 const precompile = require('./precompile');
@@ -62,7 +62,6 @@ module.exports = {
   AsyncEnvironment,
   Template,
   AsyncTemplate,
-  Script,
   AsyncScript,
   Loader,
   FileSystemLoader: loaders.FileSystemLoader,
@@ -108,12 +107,6 @@ module.exports = {
     return new AsyncTemplate(src, env, path, eagerCompile);
   },
   compileScript(src, env, path, eagerCompile) {
-    if (!e) {
-      configure();
-    }
-    return new Script(src, env, path, eagerCompile);
-  },
-  compileScriptAsync(src, env, path, eagerCompile) {
     if (!asyncE) {
       configureAsync();
     }
@@ -145,13 +138,7 @@ module.exports = {
     }
     return e.renderTemplateString(src, ctx, cb);
   },
-  renderScriptString(src, ctx, cb) {
-    if (!e) {
-      configure();
-    }
-    return e.renderScriptString(src, ctx, cb);
-  },
-  renderScriptStringAsync(src, ctx) {
+  renderScriptString(src, ctx) {
     if (!asyncE) {
       configureAsync();
     }
@@ -177,13 +164,10 @@ module.exports = {
   precompileTemplate: (precompile) ? precompile.precompileTemplate : undefined,
   precompileTemplateString: (precompile) ? precompile.precompileTemplateString : undefined,
 
-  precompileScript: (precompile) ? precompile.precompileScript : undefined,
-  precompileScriptString: (precompile) ? precompile.precompileScriptString : undefined,
-
   precompileTemplateAsync: (precompile) ? precompile.precompileTemplateAsync : undefined,
   precompileTemplateStringAsync: (precompile) ? precompile.precompileTemplateStringAsync : undefined,
-  precompileScriptAsync: (precompile) ? precompile.precompileScriptAsync : undefined,
-  precompileScriptStringAsync: (precompile) ? precompile.precompileScriptStringAsync : undefined,
+  precompileScript: (precompile) ? precompile.precompileScript : undefined,
+  precompileScriptString: (precompile) ? precompile.precompileScriptString : undefined,
   loadString: loaderUtils.loadString,
   clearStringCache: loaderUtils.clearStringCache,
   raceLoaders: loaderUtils.raceLoaders,

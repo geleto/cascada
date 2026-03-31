@@ -307,10 +307,10 @@
     });
 
     // ============================================================================
-    // TEST GROUP 3: Property Access - Script Mode (_memberLookupScriptAsyncComplex)
+    // TEST GROUP 3: Property Access - Script Mode (_memberLookupScriptComplex)
     // ============================================================================
 
-    describe('Issue #3: Property access in scripts (_memberLookupScriptAsyncComplex)', () => {
+    describe('Issue #3: Property access in scripts (_memberLookupScriptComplex)', () => {
 
       it('should preserve context when property is rejecting promise in script', async () => {
         const context = {
@@ -524,10 +524,10 @@
     });
 
     // ============================================================================
-    // TEST GROUP 5: Sequential Property Access - Script (sequentialMemberLookupScriptAsync)
+    // TEST GROUP 5: Sequential Property Access - Script (sequentialMemberLookupScriptValue)
     // ============================================================================
 
-    describe('Issue #5: Sequential property access in scripts (sequentialMemberLookupScriptAsync)', () => {
+    describe('Issue #5: Sequential property access in scripts (sequentialMemberLookupScriptValue)', () => {
 
       it('should preserve context for sequential property in script', async () => {
         const context = {

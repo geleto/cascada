@@ -161,7 +161,6 @@ module.exports = {
   suppressValueAsync: outputValue.suppressValueAsync,
   suppressValueScript: outputValue.suppressValueScript,
   materializeTemplateTextValue: outputValue.materializeTemplateTextValue,
-  suppressValueScriptAsync: outputValue.suppressValueScriptAsync,
   ensureDefined: outputValue.ensureDefined,
   ensureDefinedAsync: outputValue.ensureDefinedAsync,
   promisify,
@@ -245,11 +244,10 @@ module.exports = {
   memberLookup: lookup.memberLookup,
   memberLookupAsync: lookup.memberLookupAsync,
   memberLookupScript: lookup.memberLookupScript,
-  memberLookupScriptAsync: lookup.memberLookupScriptAsync,
   channelLookup: lookup.channelLookup,
   contextOrSyncFrameVarLookup: lookup.contextOrSyncFrameVarLookup,
   contextOrChannelLookup: lookup.contextOrChannelLookup,
-  contextOrChannelLookupScriptAsync: lookup.contextOrChannelLookupScriptAsync,
+  contextOrChannelLookupScript: lookup.contextOrChannelLookupScript,
 
   isArray: lib.isArray,
   keys: lib.keys,
@@ -272,7 +270,7 @@ module.exports = {
 
   sequentialContextLookupValue: sequential.sequentialContextLookupValue,
   sequentialContextLookupScriptValue: sequential.sequentialContextLookupScriptValue,
-  sequentialMemberLookupScriptAsyncValue: sequential.sequentialMemberLookupScriptAsyncValue,
+  sequentialMemberLookupScriptValue: sequential.sequentialMemberLookupScriptValue,
   sequentialMemberLookupAsyncValue: sequential.sequentialMemberLookupAsyncValue,
   setPath: require('./set-path').setPath,
   whileIterator: loop.whileIterator
