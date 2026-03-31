@@ -105,13 +105,10 @@ class Template extends Obj {
   }
 
   _renderSync(ctx, parentSyncFrame, cb) {
-    if (typeof ctx === 'function') {
-      cb = ctx;
-      ctx = {};
-    } else if (typeof parentSyncFrame === 'function') {
-      cb = parentSyncFrame;
-      parentSyncFrame = null;
-    }
+    const normalized = this._normalizeSyncRenderArgs(ctx, parentSyncFrame, cb);
+    ctx = normalized.ctx;
+    parentSyncFrame = normalized.parentSyncFrame;
+    cb = normalized.cb;
 
     const forceAsync = !parentSyncFrame;
 
@@ -128,8 +125,7 @@ class Template extends Obj {
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    const frame = parentSyncFrame ? parentSyncFrame.push(true) : new Frame();
-    frame.syncTopLevel = true;
+    const frame = this._createTopLevelSyncFrame(parentSyncFrame, true);
 
     let didError = false;
     let syncResult = null;
@@ -172,15 +168,10 @@ class Template extends Obj {
   }
 
   _getExportedSync(ctx, parentSyncFrame, cb) {
-    if (typeof ctx === 'function') {
-      cb = ctx;
-      ctx = {};
-    }
-
-    if (typeof parentSyncFrame === 'function') {
-      cb = parentSyncFrame;
-      parentSyncFrame = null;
-    }
+    const normalized = this._normalizeSyncRenderArgs(ctx, parentSyncFrame, cb);
+    ctx = normalized.ctx;
+    parentSyncFrame = normalized.parentSyncFrame;
+    cb = normalized.cb;
 
     // Catch compile errors for sync exported-value retrieval
     try {
@@ -193,8 +184,7 @@ class Template extends Obj {
       }
     }
 
-    const frame = parentSyncFrame ? parentSyncFrame.push() : new Frame();
-    frame.syncTopLevel = true;
+    const frame = this._createTopLevelSyncFrame(parentSyncFrame, false);
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     // Sync mode is straightforward.
@@ -202,23 +192,48 @@ class Template extends Obj {
       if (err) {
         cb(err, null);
       } else {
-        const exported = context.getExported();
-        const boundExported = {};
-        const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
-
-        for (const name in exported) {
-          const item = exported[name];
-          if (typeof item === 'function' && item.isMacro) {
-            boundExported[name] = item.bind(macroContext);
-          } else {
-            boundExported[name] = item;
-          }
-        }
-        cb(null, boundExported);
+        cb(null, this._bindSyncExportedValues(context.getExported()));
       }
     });
 
     return undefined;
+  }
+
+  _normalizeSyncRenderArgs(ctx, parentSyncFrame, cb) {
+    if (typeof ctx === 'function') {
+      return {
+        ctx: {},
+        parentSyncFrame: null,
+        cb: ctx
+      };
+    }
+    if (typeof parentSyncFrame === 'function') {
+      return {
+        ctx,
+        parentSyncFrame: null,
+        cb: parentSyncFrame
+      };
+    }
+    return { ctx, parentSyncFrame, cb };
+  }
+
+  _createTopLevelSyncFrame(parentSyncFrame, isolateWrites) {
+    const frame = parentSyncFrame ? parentSyncFrame.push(isolateWrites) : new Frame();
+    frame.syncTopLevel = true;
+    return frame;
+  }
+
+  _bindSyncExportedValues(exported) {
+    const boundExported = {};
+    const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
+
+    for (const name in exported) {
+      const item = exported[name];
+      boundExported[name] = (typeof item === 'function' && item.isMacro)
+        ? item.bind(macroContext)
+        : item;
+    }
+    return boundExported;
   }
 
   compile() {

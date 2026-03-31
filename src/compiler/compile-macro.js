@@ -359,22 +359,34 @@ class CompileMacro {
   _emitSyncMacroBindings({ managedFrame, args, kwargs }) {
     const compiler = this.compiler;
 
-    compiler.emit.line('frame.set("caller", kwargs.caller);');
-    managedFrame.set('caller', 'kwargs.caller');
+    this._emitSyncMacroBinding('caller', () => {
+      compiler.emit('kwargs.caller');
+    }, managedFrame, 'kwargs.caller');
     args.forEach((arg) => {
-      compiler.emit.line(`frame.set("${arg.value}", l_${arg.value});`);
-      managedFrame.set(arg.value, `l_${arg.value}`);
+      this._emitSyncMacroBinding(arg.value, () => {
+        compiler.emit(`l_${arg.value}`);
+      }, managedFrame, `l_${arg.value}`);
     });
 
     if (kwargs) {
       kwargs.children.forEach((pair) => {
         const name = pair.key.value;
-        compiler.emit(`frame.set("${name}", `);
-        compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
-        compiler.emit(` ? kwargs["${name}"] : `);
-        compiler._compileExpression(pair.value, managedFrame);
-        compiler.emit(');');
+        this._emitSyncMacroBinding(name, () => {
+          compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
+          compiler.emit(` ? kwargs["${name}"] : `);
+          compiler._compileExpression(pair.value, managedFrame);
+        }, managedFrame);
       });
+    }
+  }
+
+  _emitSyncMacroBinding(name, emitValueExpr, managedFrame, managedValueExpr = null) {
+    const compiler = this.compiler;
+    compiler.emit(`frame.set("${name}", `);
+    emitValueExpr();
+    compiler.emit.line(');');
+    if (managedFrame && managedValueExpr !== null) {
+      managedFrame.set(name, managedValueExpr);
     }
   }
 
@@ -581,20 +593,22 @@ class CompileMacro {
   }
 
   _compileSyncMacroDeclaration(node, frame) {
-    const compiler = this.compiler;
     const funcId = this._compileSyncMacro(node, frame, false);
     const name = node.name.value;
-    frame.set(name, funcId);
+    this._emitSyncMacroDeclarationBinding(name, funcId, frame);
+  }
 
+  _emitSyncMacroDeclarationBinding(name, funcId, frame) {
+    const compiler = this.compiler;
+    frame.set(name, funcId);
     if (frame.parent) {
       compiler.emit.line(`frame.set("${name}", ${funcId});`);
-    } else {
-      const isPublicMacro = node.name.value.charAt(0) !== '_';
-      if (isPublicMacro) {
-        compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
-      }
-      compiler.emit.line(`context.setVariable("${name}", ${funcId});`);
+      return;
     }
+    if (name.charAt(0) !== '_') {
+      compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
+    }
+    compiler.emit.line(`context.setVariable("${name}", ${funcId});`);
   }
 }
 

@@ -53,6 +53,16 @@ class CompileInheritance {
     }
   }
 
+  _emitSyncImportedBinding(name, id, frame) {
+    frame.set(name, id);
+
+    if (frame.parent) {
+      this.emit.line(`frame.set("${name}", ${id});`);
+    } else {
+      this.emit.line(`context.setVariable("${name}", ${id});`);
+    }
+  }
+
   /**
    * Collect canonical runtime channel names that should be prelinked for include composition.
    *
@@ -123,14 +133,7 @@ class CompileInheritance {
       (node.withContext ? 'context.getVariables(), frame, ' : '') +
       this.compiler._makeCallback(id));
     this.emit.addScopeLevel();
-
-    frame.set(target, id);
-
-    if (frame.parent) {
-      this.emit.line(`frame.set("${target}", ${id});`);
-    } else {
-      this.emit.line(`context.setVariable("${target}", ${id});`);
-    }
+    this._emitSyncImportedBinding(target, id, frame);
   }
 
   _compileAsyncFromImport(node, frame) {
@@ -215,13 +218,7 @@ class CompileInheritance {
       this.emit.line(`var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); cb(err); return;`);
       this.emit.line('}');
 
-      frame.set(alias, id);
-
-      if (frame.parent) {
-        this.emit.line(`frame.set("${alias}", ${id});`);
-      } else {
-        this.emit.line(`context.setVariable("${alias}", ${id});`);
-      }
+      this._emitSyncImportedBinding(alias, id, frame);
     });
   }
 

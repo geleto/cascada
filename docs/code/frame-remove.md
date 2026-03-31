@@ -208,8 +208,14 @@ Current next target:
       - `CompileMacro` now has explicit `_compileAsyncMacro(...)` vs `_compileSyncMacro(...)` paths
     - done: macro caller/declaration entry points no longer use one nested sync/async helper
       - `CompileMacro` now has explicit async vs sync caller/declaration helpers
+    - done: sync macro frame writes now go through dedicated helper logic
+      - sync macro binding emission no longer open-codes every `frame.set(...)`
     - done: import/inheritance compilation no longer uses one nested sync/async helper
       - `CompileInheritance` now has explicit async vs sync `import` / `from import` compile paths
+    - done: sync import bindings now go through dedicated helper logic
+      - sync import / from-import no longer repeat the same frame/context publish path
+    - done: sync assignment publishing now goes through dedicated helper logic
+      - `compileSyncSet(...)` no longer open-codes frame/context/export publish steps
     - done: `compileSet(...)` no longer uses one nested sync/async helper
       - sync assignment lowering now lives in explicit `compileSyncSet(...)`
     - done: `compileSymbol(...)` no longer hides sync frame lookup inside the shared path
@@ -227,6 +233,15 @@ Current next target:
       - the legacy callback loop helper is now honestly sync-only
     - done: loop entry points no longer use one nested sync/async helper
       - `CompileLoop` now has explicit async vs sync `for` / `while` entry helpers
+    - done: loop binding / else emission is less mode-generic
+      - sync vs async loop binding writes and loop-else emission now use explicit helper paths
+    - done: legacy sync callback-loop param binding now goes through a dedicated helper
+      - sync legacy loop parameter frame writes are no longer repeated inline
+    - done: the main `for` / loop-body lowering no longer hides sync frame work inside one mixed helper
+      - `CompileLoop` now has explicit async vs sync core lowering for:
+        - `for` scheduling
+        - loop-body function emission
+      - the remaining live loop-frame pushes/writes now sit on the sync side explicitly
   - continue reducing runtime frame flags:
     - async export codegen no longer depends on `frame.topLevel`
     - async render entry also no longer depends on `frame.topLevel`
@@ -235,6 +250,10 @@ Current next target:
     - runtime/compile-time transitional `createScope` frame markers are gone
     - async no-scope boundaries now follow analysis `createScope` directly
     - the remaining work is channel-ownership lookup/declaration state
+  - continue shrinking sync template/runtime frame setup:
+    - done: sync template render/export entry now shares helper logic for:
+      - sync arg normalization
+      - top-level sync frame creation
 
 Focused verification currently used during this migration:
 

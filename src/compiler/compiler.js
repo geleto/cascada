@@ -355,19 +355,20 @@ class Compiler extends CompilerBase {
     node.targets.forEach((target, i) => {
       const id = ids[i];
       const name = target.value;
-      this.emit.line(`frame.set("${name}", ${id}, ${!this.scriptMode});`);
-
-      this.emit.line('if(frame.syncTopLevel) {');
-      this.emit.line(`  context.setVariable("${name}", ${id});`);
-      this.emit.line('}');
-
-      // This export logic is common to both modes.
-      if (name.charAt(0) !== '_') {
-        this.emit.line('if(frame.syncTopLevel) {');
-        this.emit.line(`  context.addResolvedExport("${name}", ${id});`);
-        this.emit.line('}');
-      }
+      this._emitSyncSetPublish(name, id);
     });
+  }
+
+  _emitSyncSetPublish(name, id) {
+    this.emit.line(`frame.set("${name}", ${id}, ${!this.scriptMode});`);
+    this.emit.line('if(frame.syncTopLevel) {');
+    this.emit.line(`  context.setVariable("${name}", ${id});`);
+    this.emit.line('}');
+    if (name.charAt(0) !== '_') {
+      this.emit.line('if(frame.syncTopLevel) {');
+      this.emit.line(`  context.addResolvedExport("${name}", ${id});`);
+      this.emit.line('}');
+    }
   }
 
   analyzeCallAssign(node, analysisPass) {
