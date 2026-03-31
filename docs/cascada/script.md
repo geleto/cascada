@@ -2509,7 +2509,7 @@ Loaders are objects that tell the environment how to find and load your scripts 
 #### Compilation and Caching
 
 *   `asyncEnvironment.getScript(scriptName)`
-    Retrieves a compiled `AsyncScript` object, loading and caching it if not already cached.
+    Retrieves a compiled `Script` object, loading and caching it if not already cached.
 
 *   `asyncEnvironment.getTemplate(templateName)`
     Retrieves a compiled `AsyncTemplate` object.
@@ -2553,11 +2553,11 @@ Loaders are objects that tell the environment how to find and load your scripts 
 *   `asyncEnvironment.addCommandHandler(name, handlerInstance)`
     Registers a **singleton** instance of a custom command handler.
 
-### Compiled Objects: `AsyncScript`
+### Compiled Objects: `Script`
 
 When you compile an asset, you get a reusable object that can be rendered efficiently multiple times.
 
-#### `AsyncScript`
+#### `Script`
 
 Represents a compiled Cascada Script.
 

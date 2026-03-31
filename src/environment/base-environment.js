@@ -11,7 +11,7 @@ const { handleError } = require('../runtime/errors');
 const expressApp = require('../express-app');
 const { clearStringCache, callLoaders } = require('../loader/loader-utils');
 const { Template, AsyncTemplate } = require('./template');
-const { AsyncScript } = require('./script');
+const { Script } = require('./script');
 
 /**
  * A no-op template, for use with {% include ignore missing %}
@@ -256,7 +256,7 @@ class BaseEnvironment extends EmitterObj {
     }
 
     // Check if name is a compiled template/script instance
-    if (name instanceof Template || name instanceof AsyncScript) {
+    if (name instanceof Template || name instanceof Script) {
       tmpl = name;
     } else if (typeof name !== 'string') {
       throw new Error('template names must be a string: ' + name);
@@ -291,10 +291,10 @@ class BaseEnvironment extends EmitterObj {
 
     const createCompiledScript = (info) => {
       if (!info) {
-        return new AsyncScript(noopTmplSrcAsync, this, '', eagerCompile);
+        return new Script(noopTmplSrcAsync, this, '', eagerCompile);
       }
 
-      const compiled = new AsyncScript(info.src, this, info.path, eagerCompile);
+      const compiled = new Script(info.src, this, info.path, eagerCompile);
       if (!info.noCache) {
         const compiledCache = this._compiledCaches.get(info.loader) || new Map();
         compiledCache.set(name, compiled);

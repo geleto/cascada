@@ -1369,7 +1369,7 @@ class Compiler extends CompilerBase {
     }
   }
 
-  _emitAsyncScriptRootLeafResult(node) {
+  _emitScriptRootLeafResult(node) {
     const returnVar = this._tmpid();
     this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
     this.emit.line(`    cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
@@ -1392,7 +1392,7 @@ class Compiler extends CompilerBase {
     this.emit.line('  } else {');
 
     if (this.scriptMode) {
-      this._emitAsyncScriptRootLeafResult(node);
+      this._emitScriptRootLeafResult(node);
     } else {
       this._emitAsyncTemplateRootLeafResult();
     }

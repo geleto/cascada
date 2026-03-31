@@ -28,7 +28,7 @@ Completed so far:
     - the remaining top-level frame marker is now just `frame.topLevel`
   - the environment/template class split now matches the real supported modes more closely:
     - base `Template` is sync-template-oriented again
-    - async compile options are owned by `AsyncTemplate` / `AsyncScript`
+    - async compile options are owned by `AsyncTemplate` / `Script`
     - shared async render/export helpers now use explicit subclass context hooks instead of generic `scriptMode` branching
   - compiler root/block entry generation is now split more honestly by mode:
     - async root body vs sync-template root body use explicit helpers
@@ -120,11 +120,11 @@ Completed so far:
       - `AsyncTemplate.render(...)`
       - `AsyncTemplate.getExported(...)`
       - `AsyncTemplate._renderForComposition(...)`
-      - `AsyncScript.render(...)`
+      - `Script.render(...)`
     - `AsyncTemplate.getExported(...)` now uses a real async-only implementation instead of routing through the shared sync-capable base helper
     - async render entry now also has a real async-only base helper:
       - `Template._renderAsync(...)`
-      - `AsyncTemplate.render(...)` and `AsyncScript.render(...)` no longer route through the shared sync-capable `_render(...)`
+    - `AsyncTemplate.render(...)` and `Script.render(...)` no longer route through the shared sync-capable `_render(...)`
     - the shared `Template.getExported(...)` path is now sync-only again
       - sync internals are now explicit as `Template._getExportedSyncTemplate(...)`
     - the shared `Template._render(...)` path is now sync-only again

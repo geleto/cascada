@@ -5,7 +5,7 @@ const { BaseEnvironment } = require('./base-environment');
 const { Environment } = require('./sync-environment');
 const { AsyncEnvironment } = require('./async-environment');
 const { Template, AsyncTemplate } = require('./template');
-const { AsyncScript } = require('./script');
+const { Script } = require('./script');
 const { Context } = require('./context');
 
 // Re-export all the classes
@@ -15,6 +15,6 @@ module.exports = {
   AsyncEnvironment,
   Template,
   AsyncTemplate,
-  AsyncScript,
+  Script,
   Context
 };

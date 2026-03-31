@@ -4,7 +4,7 @@
   let expect;
   let AsyncEnvironment;
   let AsyncTemplate;
-  let AsyncScript;
+  let Script;
   let StringLoader;
   let delay;
   let createPoison;
@@ -20,7 +20,7 @@
     const envModule = require('../../src/environment/environment');
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
-    AsyncScript = envModule.AsyncScript;
+    Script = envModule.Script;
     StringLoader = require('../util').StringLoader;
     delay = require('../util').delay;
     const runtime = require('../../src/runtime/runtime');
@@ -35,7 +35,7 @@
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     AsyncTemplate = nunjucks.AsyncTemplate;
-    AsyncScript = nunjucks.AsyncScript;
+    Script = nunjucks.Script;
     StringLoader = window.util.StringLoader;
     delay = window.util.delay;
     createPoison = nunjucks.createPoison;
@@ -2479,14 +2479,14 @@
 
     it('emits WaitResolveCommand for limited-loop script var roots', function () {
       const env = new AsyncEnvironment();
-      const script = new AsyncScript('for x in xs of 2\n  var y = foo(x)\nendfor\nreturn data.snapshot()', env);
+      const script = new Script('for x in xs of 2\n  var y = foo(x)\nendfor\nreturn data.snapshot()', env);
       const source = script._compileSource();
       expect(countWaitResolveCommands(source)).to.be(1);
     });
 
     it('emits WaitResolveCommand for limited-loop return roots', function () {
       const env = new AsyncEnvironment();
-      const script = new AsyncScript('for x in xs of 2\n  return foo(x)\nendfor\nreturn data.snapshot()', env);
+      const script = new Script('for x in xs of 2\n  return foo(x)\nendfor\nreturn data.snapshot()', env);
       const source = script._compileSource();
       expect(countWaitResolveCommands(source)).to.be(1);
     });

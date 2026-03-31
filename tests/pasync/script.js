@@ -2,17 +2,17 @@
 
 let expect;
 let AsyncEnvironment;
-let AsyncScript;
+let Script;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
-  AsyncScript = environment.AsyncScript;
+  Script = environment.Script;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
-  AsyncScript = nunjucks.AsyncScript;
+  Script = nunjucks.Script;
 }
 
 describe('Cascada Script: Variables', function () {
@@ -277,7 +277,7 @@ describe('Cascada Script: Variables', function () {
         endif
         return result`;
 
-      const compiled = new AsyncScript(script, env, 'dup-branch-script.casc')._compileSource();
+      const compiled = new Script(script, env, 'dup-branch-script.casc')._compileSource();
       expect(/scopedValue#\d+/.test(compiled)).to.be(true);
     });
 
@@ -377,7 +377,7 @@ describe('Cascada Script: Variables', function () {
         endswitch
         return result`;
 
-      const compiled = new AsyncScript(script, env, 'dup-switch-script.casc')._compileSource();
+      const compiled = new Script(script, env, 'dup-switch-script.casc')._compileSource();
       expect(/branchScoped#\d+/.test(compiled)).to.be(true);
     });
 

@@ -398,7 +398,7 @@ class CompilerBase extends Obj {
     }
     if (this.asyncMode) {
       if (this.scriptMode) {
-        this._compileAsyncScriptSymbolLookup(node, name);
+        this._compileScriptSymbolLookup(node, name);
       } else {
         this._compileAsyncTemplateSymbolLookup(node, name);
       }
@@ -407,7 +407,7 @@ class CompilerBase extends Obj {
     this._compileSyncSymbolLookup(node, frame, name);
   }
 
-  _compileAsyncScriptSymbolLookup(node, name) {
+  _compileScriptSymbolLookup(node, name) {
     const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
     const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
     if (nodeStaticPathKey) {

@@ -46,7 +46,7 @@ export function precompileString(src: string, opts?: PrecompileOptions): string;
 
 export function compileTemplate(src: string, env?: Environment, path?: string, eagerCompile?: boolean): Template;
 export function compileTemplateAsync(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean): AsyncTemplate;
-export function compileScript(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean): AsyncScript;
+export function compileScript(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean): Script;
 export function precompileTemplate(path: string, opts?: PrecompileOptions): string;
 export function precompileTemplateString(src: string, opts?: PrecompileOptions): string;
 
@@ -80,7 +80,7 @@ export class Template {
   render(context: object, callback?: TemplateCallback<string>): void;
 }
 
-export class AsyncScript {
+export class Script {
   constructor(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
   render(context?: object): Promise<Record<string, any> | string | null>;
 }
@@ -189,7 +189,7 @@ export class AsyncEnvironment {
   renderScriptString(src: string, context?: object, opts?: RenderOptions): Promise<Record<string, any> | string | null>;
 
   getTemplate(name: string, eagerCompile?: boolean): Promise<AsyncTemplate>;
-  getScript(name: string, eagerCompile?: boolean): Promise<AsyncScript>;
+  getScript(name: string, eagerCompile?: boolean): Promise<Script>;
 
   addFilter(name: string, func: (...args: any[]) => any, async?: boolean): AsyncEnvironment;
   getFilter(name: string): (...args: any[]) => any;

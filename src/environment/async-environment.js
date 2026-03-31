@@ -1,7 +1,7 @@
 'use strict';
 const { BaseEnvironment } = require('./base-environment');
 const { AsyncTemplate } = require('./template');
-const { AsyncScript } = require('./script');
+const { Script } = require('./script');
 
 class AsyncEnvironment extends BaseEnvironment {
   init(loaders, opts) {
@@ -47,7 +47,7 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 
   async renderScript(templateName, ctx) {
-    return this._asyncRenderScript(templateName, ctx, true);
+    return this._renderScriptInternal(templateName, ctx, true);
   }
 
   async renderTemplateString(src, ctx, opts) {
@@ -55,7 +55,7 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 
   async renderScriptString(scriptStr, ctx, opts) {
-    return this._asyncRenderScript(scriptStr, ctx, false, opts || {});
+    return this._renderScriptInternal(scriptStr, ctx, false, opts || {});
   }
 
   //@todo - rewrite once template.render with no callback returns a promise
@@ -88,7 +88,7 @@ class AsyncEnvironment extends BaseEnvironment {
     return result;
   }
 
-  async _asyncRenderScript(script, ctx, namedScript, opts) {
+  async _renderScriptInternal(script, ctx, namedScript, opts) {
     ctx = ctx || {};
     const result = await new Promise((resolve, reject) => {
       let callback = (err, res) => {
@@ -109,7 +109,7 @@ class AsyncEnvironment extends BaseEnvironment {
         });
       } else {
         // render script string
-        const tmpl = new AsyncScript(script, this, opts.path);
+        const tmpl = new Script(script, this, opts.path);
         tmpl.render(ctx, callback);
       }
     });
@@ -131,10 +131,10 @@ class AsyncEnvironment extends BaseEnvironment {
   getScript(name, eagerCompile, parentName, ignoreMissing) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        return this._getCompiledScriptAsync(resolvedName, eagerCompile, parentName, ignoreMissing);
+        return this._getCompiledScriptPromise(resolvedName, eagerCompile, parentName, ignoreMissing);
       });
     }
-    return this._getCompiledScriptAsync(name, eagerCompile, parentName, ignoreMissing);
+    return this._getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing);
   }
 
   _getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
@@ -149,7 +149,7 @@ class AsyncEnvironment extends BaseEnvironment {
     });
   }
 
-  _getCompiledScriptAsync(name, eagerCompile, parentName, ignoreMissing) {
+  _getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing) {
     return new Promise((resolve, reject) => {
       this._getCompiledScript(name, eagerCompile, parentName, ignoreMissing, (err, tmpl) => {
         if (err) {

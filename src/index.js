@@ -1,7 +1,7 @@
 'use strict';
 
 const lib = require('./lib');
-const {Environment, AsyncEnvironment, Template, AsyncTemplate, AsyncScript} = require('./environment/environment');
+const {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} = require('./environment/environment');
 const Loader = require('./loader/loader');
 const loaders = require('./loader/loaders');
 const precompile = require('./precompile');
@@ -62,7 +62,7 @@ module.exports = {
   AsyncEnvironment,
   Template,
   AsyncTemplate,
-  AsyncScript,
+  Script,
   Loader,
   FileSystemLoader: loaders.FileSystemLoader,
   NodeResolveLoader: loaders.NodeResolveLoader,
@@ -110,7 +110,7 @@ module.exports = {
     if (!asyncE) {
       configureAsync();
     }
-    return new AsyncScript(src, env, path, eagerCompile);
+    return new Script(src, env, path, eagerCompile);
   },
   /** @deprecated Use renderTemplate instead */
   render(name, ctx, cb) {

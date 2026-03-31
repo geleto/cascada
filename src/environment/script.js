@@ -6,9 +6,9 @@ const { Template } = require('./template');
 const { Context } = require('./context');
 
 /**
- * AsyncScript class - represents a compiled async Cascada script
+ * Script class - represents a compiled Cascada script.
  */
-class AsyncScript extends Template {
+class Script extends Template {
   init(src, env, path, eagerCompile) {
     // Convert script to template if it's a string
     if (lib.isString(src)) {
@@ -57,5 +57,5 @@ class AsyncScript extends Template {
 }
 
 module.exports = {
-  AsyncScript
+  Script
 };

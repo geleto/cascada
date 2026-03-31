@@ -1,5 +1,5 @@
 import lib from './lib.js';
-import {Environment, AsyncEnvironment, Template, AsyncTemplate, AsyncScript} from './environment/environment.js';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
 import Loader from './loader/loader.js';
 import * as loaders from './loader/loaders.js';
 import * as precompileModule from './precompile.js';
@@ -61,7 +61,7 @@ export {
   AsyncEnvironment,
   Template,
   AsyncTemplate,
-  AsyncScript,
+  Script,
   Loader,
   compiler,
   parser,
@@ -136,7 +136,7 @@ export function compileScript(src, env, path, eagerCompile) {
   if (!asyncE) {
     configureAsync();
   }
-  return new AsyncScript(src, env, path, eagerCompile);
+  return new Script(src, env, path, eagerCompile);
 }
 
 /** @deprecated Use renderTemplate instead */
@@ -205,7 +205,7 @@ export default {
   AsyncEnvironment,
   Template,
   AsyncTemplate,
-  AsyncScript,
+  Script,
   Loader,
   FileSystemLoader: loaders.FileSystemLoader,
   NodeResolveLoader: loaders.NodeResolveLoader,

@@ -1681,7 +1681,7 @@ await env.renderScriptFile('nonexistent.cas', {});  // Throws error
 #### [API-004] Compilation for reuse
 ```javascript
 // RULE: compileScript(path, env, opts) compiles to reusable object
-// RETURNS: AsyncScript with .render(context) method
+// RETURNS: Script with .render(context) method
 // DIFFERENTIAL: Compile once, render multiple times for performance
 
 // ✅ Valid: Compile and reuse
