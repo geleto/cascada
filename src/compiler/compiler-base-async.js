@@ -1,8 +1,8 @@
 'use strict';
 
 const nodes = require('../nodes');
-const CompileAnalysis = require('./compile-analysis');
-const CompileRename = require('./compile-rename');
+const CompileAnalysis = require('./analysis');
+const CompileRename = require('./rename');
 const { validateSinkSnapshotInGuard } = require('./validation');
 const CompilerCommon = require('./compiler-common');
 

@@ -89,7 +89,7 @@ There are two emission paths.
 
 1. Statement-style output command path (`command`):
 
-- Emitted through `compile-buffer`.
+- Emitted through `buffer`.
 - Uses `SequenceCallCommand` for calls, `SequenceGetCommand` for reads.
 - Enqueue-only behavior.
 
@@ -103,7 +103,7 @@ There are two emission paths.
 
 Relevant files:
 
-- `src/compiler/compile-buffer.js`
+- `src/compiler/buffer.js`
 - `src/compiler/compiler-base.js`
 
 ## Ordering Semantics

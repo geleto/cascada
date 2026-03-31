@@ -14,12 +14,12 @@ Implemented and validated:
   - `runControlFlowBoundary(...)`
   - `runRenderBoundary(...)`
   - `runValueBoundary(...)`
-- Compiler boundary helpers now live in `src/compiler/compile-boundaries.js`:
+- Compiler boundary helpers now live in `src/compiler/boundaries.js`:
   - `compileControlFlowBoundary(...)`
   - `compileRenderBoundary(...)`
   - `compileTextBoundary(...)`
   - `compileCaptureBoundary(...)`
-- `runtime.js`, `compile-buffer.js`, and `compile-emit.js` now delegate to those focused boundary modules instead of owning the full implementations directly.
+- `runtime.js`, `buffer.js`, and `emit.js` now delegate to those focused boundary modules instead of owning the full implementations directly.
 - `compileInclude`, `compileExtends`, `compileImport`, and `compileFromImport` now use the channels-refactor model: control-flow async stays inside `runControlFlowBoundary`, while command emission is synchronous.
 - Root/value work such as template output, `set`, `do`, `return`, script `var`, and var-channel initializers is emitted synchronously as commands whose arguments may be promises.
 - Sequential and bounded loops no longer use `waitAllClosures(1)` as an iteration-completion fallback.
@@ -28,7 +28,7 @@ Implemented and validated:
 - The old "closure anchor" `WaitResolveCommand` model in loop tests has been removed.
 - `runControlFlowBoundary` now owns child-buffer creation/linking directly; it no longer delegates to `astate.asyncBlock`.
 - The `caller()` structural-attachment model from [caller.md](C:\Projects\cascada\docs\code\caller.md) is implemented.
-- Macro/caller analysis and compilation now live in `compile-macro.js`, which owns:
+- Macro/caller analysis and compilation now live in `macro.js`, which owns:
   - `analyzeMacro` / `compileMacro` / `_compileMacro`
   - `analyzeCaller` / `compileCaller`
   - caller scheduling helpers and caller-channel filtering
@@ -412,11 +412,11 @@ Practical lesson from the loop migration:
 |---|---|---|
 | `astate.asyncBlock(...)` calls in generated code | **Phase 1** — removed from call sites as each `compileXXX` is migrated; replaced by `runControlFlowBoundary` |
 | `astate.waitAllClosures(...)` | **Phase 1** — removed from sequential loop compilation during migration |
-| `asyncBlockBegin` / `asyncBlockEnd` in `compile-emit.js` | **Phase 1** — call sites removed; the functions may remain until Phase 2 |
-| `asyncBlockValue` in `compile-emit.js` | **Phase 1** — value assignment emits no async block; result may be a promise, that is fine |
-| `asyncBlockRender` in `compile-emit.js` | **Phase 1** — replaced by `compileRenderBoundary` / `runRenderBoundary` where template execution needs an isolated render boundary |
-| `asyncAddToBuffer` / `asyncAddToBufferScoped` in `compile-buffer.js` | **Phase 1** — commands added synchronously; these helpers are no longer emitted |
-| `asyncBlock` in `compile-emit.js` (the simple wrapper) | **Phase 1** — call sites removed during migration |
+| `asyncBlockBegin` / `asyncBlockEnd` in `emit.js` | **Phase 1** — call sites removed; the functions may remain until Phase 2 |
+| `asyncBlockValue` in `emit.js` | **Phase 1** — value assignment emits no async block; result may be a promise, that is fine |
+| `asyncBlockRender` in `emit.js` | **Phase 1** — replaced by `compileRenderBoundary` / `runRenderBoundary` where template execution needs an isolated render boundary |
+| `asyncAddToBuffer` / `asyncAddToBufferScoped` in `buffer.js` | **Phase 1** — commands added synchronously; these helpers are no longer emitted |
+| `asyncBlock` in `emit.js` (the simple wrapper) | **Phase 1** — call sites removed during migration |
 | `getAsyncBlockArgs` `asyncMeta` wrapper object | **Phase 1** — `usedChannels` array passed directly to `runControlFlowBoundary` via `getLinkedChannelsArg` (extracted); `getAsyncBlockArgs` retained for remaining `asyncBlock` call sites |
 | `AsyncState` class (`async-state.js`) | **Phase 2** — removed once no call site uses `astate.asyncBlock` directly |
 | `runControlFlowBoundary` internal `astate.asyncBlock` dependency | **Phase 2** — reimplemented as a simple fire-and-forget wrapper |
@@ -486,13 +486,13 @@ Nothing else changes in the runtime during Phase 1.
 
 ### New compiler-side helpers added in Phase 1
 
-#### `compile-emit.getLinkedChannelsArg(node, frame)`
+#### `emit.getLinkedChannelsArg(node, frame)`
 
 Extracted from `getAsyncBlockArgs`. Returns the JSON array string for the channels to link — `'["__text__","data"]'` or `'null'`. Filters `node._analysis.usedChannels` the same way as `getAsyncBlockArgs` (excludes locally-declared channels and `__return__`; includes `currentWaitedChannelName` when inside a limited-loop). `getAsyncBlockArgs` now delegates to this.
 
 Used by `compileControlFlowBoundary` so `runControlFlowBoundary(astate, buf, <channelsArg>, ...)` gets the right array without wrapping it in `{ usedChannels: ... }`.
 
-#### `compile-boundaries.compileControlFlowBoundary(node, frame, emitFunc)`
+#### `boundaries.compileControlFlowBoundary(node, frame, emitFunc)`
 
 Compiler-side analog of `asyncBufferNode` for control-flow nodes. For async nodes:
 1. Emits `runtime.runControlFlowBoundary(astate, ${parentBuf}, ${linkedChannels}, frame, context, cb, async (astate, frame, currentBuffer) => {`
@@ -569,12 +569,12 @@ Migrate from simplest to most complex to catch regressions early:
   - compiler `compileControlFlowBoundary(...)`
 - We should not keep ad hoc `astate.asyncBlock(...)` generation as a parallel long-term mechanism.
 - For each remaining `asyncBufferNode(...)` site, prefer rewriting it onto an explicit boundary helper or into straight-line code.
-- Only add a new helper in `compile-boundaries.js` if the call site has real semantics that `compileControlFlowBoundary(...)` does not cover cleanly.
+- Only add a new helper in `boundaries.js` if the call site has real semantics that `compileControlFlowBoundary(...)` does not cover cleanly.
 1. ✅ **`compileOutput`** — partially migrated: pure value expressions now add `TextCommand` synchronously; remaining deferred output work is tracked separately and `__caller__` timing is owned only by caller invocation code (Tier 1)
 2. ✅ **`compileAsyncVarSet` step 3 / `compileChannelDeclaration`** — `asyncAddValueToBuffer` calls inlined; VarCommands now added synchronously via `currentBuffer.add(new VarCommand(...))` (Tier 1)
 3. ✅ **`compileDo`** — the old `asyncBlock` + `Promise.all` wrapper is gone. Command-emitting async `do` expressions now lower through a dedicated structural child boundary linked into the enclosing text stream, so caller/sequence side effects complete in source order without a caller-local `__waited__` workaround. Value-only `do` expressions still compile inline. (Tier 2, required `compileReturn` rewrite first)
 4. ✅ **`compileReturn`** — `waitAllClosures` removed; return value added as `VarCommand` to return channel synchronously (completed in prior chat)
-5. ✅ **`compileIf`** — `asyncBufferNode` + two inner `asyncBlock` branch wrappers replaced by `compileControlFlowBoundary`; branches now compile synchronously inside the outer async fn with explicit `frame.push()`/`frame.pop()` (Tier 3). Adds `runtime.runControlFlowBoundary`, `compile-boundaries.compileControlFlowBoundary`, `compile-emit.getLinkedChannelsArg`.
+5. ✅ **`compileIf`** — `asyncBufferNode` + two inner `asyncBlock` branch wrappers replaced by `compileControlFlowBoundary`; branches now compile synchronously inside the outer async fn with explicit `frame.push()`/`frame.pop()` (Tier 3). Adds `runtime.runControlFlowBoundary`, `boundaries.compileControlFlowBoundary`, `emit.getLinkedChannelsArg`.
 6. ✅ **`compileSwitch`** — same pattern as `compileIf`: `asyncBufferNode` + per-case `asyncBlock` wrappers replaced by `compileControlFlowBoundary` with case bodies compiled synchronously. `branchChannels` collection simplified: reads `c.body._analysis.usedChannels` directly (available before compilation, no need to collect inside async block callbacks) (Tier 3)
 7. ✅ **`compileFor` (parallel)** — outer `asyncBufferNode` replaced by `compileControlFlowBoundary`; non-async scope handling emitted manually (Tier 4)
 8. ✅ **`compileFor` (sequential / `each`)** — completed. `waitAllClosures(1)` was removed from sequential loop-body completion, but the final implementation required more than simply deleting the line:
@@ -615,13 +615,13 @@ Migrate from simplest to most complex to catch regressions early:
      - include and block composition already prelink their child buffers before body/composition work begins
      - the remaining blockers are root/block/inheritance handoff timing and the broader removal of `asyncAddToBufferScoped` from output/control-flow-adjacent sites, not another hidden caller-like late child-buffer creation path
 18. ✅ **Migrate macro/caller boundaries onto the structural composition model**.
-   - The caller structural-attachment model is implemented and macro/caller analysis and compilation live in `compile-macro.js`.
+   - The caller structural-attachment model is implemented and macro/caller analysis and compilation live in `macro.js`.
    - Transitional caller-specific compiler state was removed: `_compileMacro` no longer carries the old caller-support context/shadowing scaffolding now that `__caller__` ownership lives entirely in caller invocation code.
    - The remaining `_compileMacro` `astate.waitAllClosures()` removal is tracked separately in step 21.
    - Latest experiment result: caller scheduling is structurally attached, but macro return/finalization still cannot switch directly from point-in-time text snapshots to `finalSnapshot()` without losing nested caller/import composition.
 19. ✅ **Introduce a dedicated structural block-invocation emitter/helper before removing `asyncAddToBuffer` from block calls**.
    - Implemented:
-     - async block invocation now uses a dedicated `asyncAddBlockInvocationToBuffer(...)` helper in `compile-buffer.js`
+     - async block invocation now uses a dedicated `asyncAddBlockInvocationToBuffer(...)` helper in `buffer.js`
      - `compileBlock` no longer depends on the old generic `asyncAddToBuffer(...)` path
    - The helper preserves the current producer-slot and local emitted-scope behavior that block/super/inheritance invocation still depends on, but gives that path its own explicit home before the later root handoff work.
 
@@ -645,7 +645,7 @@ Migrate from simplest to most complex to catch regressions early:
 22. ✅ **Replace remaining `asyncBlockRender(...)` content-render wrappers**.
    - Implemented:
      - call-extension content args no longer emit raw render-time `astate.asyncBlock(...)`
-     - `compile-emit.compileRenderBoundary(...)` now lowers async render boundaries through a dedicated runtime `runRenderBoundary(...)` helper that creates an isolated unlinked child buffer, snapshots it, and cleans it up
+     - `emit.compileRenderBoundary(...)` now lowers async render boundaries through a dedicated runtime `runRenderBoundary(...)` helper that creates an isolated unlinked child buffer, snapshots it, and cleans it up
    - This keeps content-render boundaries as explicit new-tree ownership without leaving raw compiler-emitted render `asyncBlock` code in place.
 
 23. ✅ **Replace remaining `asyncAddStructuralTextOutput(...)` sites where no real structural child buffer is needed**.
@@ -682,8 +682,8 @@ Migrate from simplest to most complex to catch regressions early:
    - `compileRoot` still keeps its `waitAllClosures()` final handoff for now, but that remaining closure-counting cleanup is tracked separately in the later audit/removal steps.
 
 27. ✅ **Replace the last legacy `astate.asyncBlock(... createOutputBuffer ...)` path with an explicit structural text-output boundary helper**.
-   - The remaining nonconforming buffer-creation path was `asyncAddStructuralTextOutput(...)` in `compile-buffer.js`.
-   - That mutating-expression output case now lowers through `compileTextBoundary(...)` in `compile-boundaries.js`.
+   - The remaining nonconforming buffer-creation path was `asyncAddStructuralTextOutput(...)` in `buffer.js`.
+   - That mutating-expression output case now lowers through `compileTextBoundary(...)` in `boundaries.js`.
    - The child buffer is now created explicitly through `runControlFlowBoundary(...)`, rather than by the generic legacy `AsyncState.asyncBlock(...)` helper deciding to allocate a buffer from a `createOutputBuffer` flag.
    - Result:
      - no remaining structural text-output path relies on generic async-block buffer creation
@@ -704,11 +704,11 @@ Migrate from simplest to most complex to catch regressions early:
 
    Completed audit result:
    - Remaining non-expression closure-counting waits are now concentrated in:
-     - `compile-macro.js` async macro finalization (`astate.waitAllClosures()`)
+     - `macro.js` async macro finalization (`astate.waitAllClosures()`)
      - `compiler.js` root finalization handoff (`astate.waitAllClosures()`)
    - Remaining non-expression direct compiler-emitted async block:
      - `compileGuard(...)` recovery path still uses `emit.asyncBlock(...)`
-   - Generic expression wrappers still exist in `compile-emit.js` / `compiler-base.js` (`asyncBlockValue(...)` and related callers), but those are explicitly out of scope for this step and are not the current blocker for macro/root cleanup.
+   - Generic expression wrappers still exist in `emit.js` / `compiler-base.js` (`asyncBlockValue(...)` and related callers), but those are explicitly out of scope for this step and are not the current blocker for macro/root cleanup.
    - The older non-expression structural cases have already been migrated:
      - control flow → `compileControlFlowBoundary(...)` / `runControlFlowBoundary(...)`
      - render/content boundaries → `compileRenderBoundary(...)` / `runRenderBoundary(...)`
@@ -758,12 +758,12 @@ Migrate from simplest to most complex to catch regressions early:
      - first try to rewrite the site so commands are emitted immediately and unresolved values remain command args
      - use `compileControlFlowBoundary(...)` when the site is just a structural control-flow buffer
      - compile inline when no child boundary is actually needed
-     - introduce a new helper in `compile-boundaries.js` only if the site has real semantics that the generic control-flow boundary does not express well
+     - introduce a new helper in `boundaries.js` only if the site has real semantics that the generic control-flow boundary does not express well
    - Completed in this step:
-     - `compile-loop.js` loop `else` body now compiles directly into the current loop buffer with ordinary scope push/pop; it no longer creates a child boundary through `asyncBufferNode(...)`
+     - `loop.js` loop `else` body now compiles directly into the current loop buffer with ordinary scope push/pop; it no longer creates a child boundary through `asyncBufferNode(...)`
      - `compiler.js` `compileGuard(...)` now lowers through `compileControlFlowBoundary(...)` with an explicit inner scoped frame, instead of using `asyncBufferNode(...)`
-     - `compile-loop.js` iteration body wrapper now lowers directly through `runControlFlowBoundary(...)` for async loops and plain scoped emission for sync loops
-     - `compile-buffer.js` no longer has any live `asyncBufferNode(...)` call sites, so the helper itself has been removed
+     - `loop.js` iteration body wrapper now lowers directly through `runControlFlowBoundary(...)` for async loops and plain scoped emission for sync loops
+     - `buffer.js` no longer has any live `asyncBufferNode(...)` call sites, so the helper itself has been removed
    - Result:
      - there are no remaining statement-side `asyncBufferNode(...)` call sites
      - remaining old async-block cleanup is now concentrated in the value-returning `asyncBlockValue(...)` path
@@ -964,7 +964,7 @@ One simplification over `compileIf`: the old code collected `branchChannels` ins
 
 #### `compileFor` (parallel) ✅ migrated
 
-**Changed in** `compile-loop.js:_compileFor`: outer `asyncBufferNode(node, frame, createScope=true, sequential=false, sourcePositionNode, ...)` replaced by `compileControlFlowBoundary(node, frame, ...)`.
+**Changed in** `loop.js:_compileFor`: outer `asyncBufferNode(node, frame, createScope=true, sequential=false, sourcePositionNode, ...)` replaced by `compileControlFlowBoundary(node, frame, ...)`.
 
 **Non-async scope handling**: `asyncBufferNode(createScope=true)` for non-async nodes emits `frame = frame.push(); ... frame = frame.pop()` to scope loop-variable bindings. `compileControlFlowBoundary`'s non-async path is a simple pass-through with no scope. The callback therefore emits the push/pop manually and does a compiler-level `blockFrame.push(false, true)` for the non-async case:
 
@@ -1014,7 +1014,7 @@ Important implementation details that came out of the migration:
 
 That means the remaining issue is not generic async expression timing inside the macro body. The unresolved case is late structural work from macro/caller composition, especially `linkWithParentCompositionBuffer(...)`. `waitAllClosures` here should be treated as a temporary guard until macro/caller composition returns a structural completion signal that can replace it.
 
-The template-side direct `caller()` output path now goes through a caller-specific dispatch helper in `compile-macro.js` instead of an ad hoc branch embedded in `compileFunCall(...)`. The important pattern for future command-emitting call sites is still the same:
+The template-side direct `caller()` output path now goes through a caller-specific dispatch helper in `macro.js` instead of an ad hoc branch embedded in `compileFunCall(...)`. The important pattern for future command-emitting call sites is still the same:
 - compile raw promise-valued args once
 - do direct structural dispatch in the current buffer for the boundary case
 - keep normal `callWrapAsync(...)` fallback for non-boundary callees
@@ -1032,14 +1032,14 @@ On the expression side, command-emitting async `compileInlineIf` and async `_com
 | File | Tier 1–2 changes | Tier 3–4 changes |
 |---|---|---|
 | `compiler.js` | Remove `asyncAddValueToBuffer` from `compileAsyncVarSet` step 3, `compileChannelDeclaration`; rewrite `compileDo`; rewrite `compileReturn` (remove `waitAllClosures`) | Rewrite `compileIf`, `compileSwitch` to use `runControlFlowBoundary` |
-| `compile-buffer.js` | Remove `asyncAddToBufferScoped` from `compileOutput`; emit `TextCommand` directly | Remove `asyncAddToBuffer`, `asyncAddToBufferScoped` helpers once all call sites gone |
-| `compile-loop.js` | — | ✅ `_compileFor` outer wrapper → `compileControlFlowBoundary` (item 7); sequential body `waitAllClosures` removal pending (item 8) |
-| `compile-inheritance.js` | — | ✅ Rewrite `compileInclude`, `compileExtends`, `compileImport` |
+| `buffer.js` | Remove `asyncAddToBufferScoped` from `compileOutput`; emit `TextCommand` directly | Remove `asyncAddToBuffer`, `asyncAddToBufferScoped` helpers once all call sites gone |
+| `loop.js` | — | ✅ `_compileFor` outer wrapper → `compileControlFlowBoundary` (item 7); sequential body `waitAllClosures` removal pending (item 8) |
+| `inheritance.js` | — | ✅ Rewrite `compileInclude`, `compileExtends`, `compileImport` |
 | `runtime.js` | Re-export runtime boundary helpers from `async-boundaries.js` | — |
 | `async-boundaries.js` | ✅ Owns `runControlFlowBoundary` and `runRenderBoundary` | Runtime structural boundary helpers |
-| `compile-boundaries.js` | ✅ Owns `compileControlFlowBoundary`, `compileRenderBoundary`, `compileTextBoundary`, and `compileCaptureBoundary` | Compiler lowering for structural boundaries |
-| `compile-buffer.js` | Delegates `compileControlFlowBoundary`; still owns buffer-specific helpers | — |
-| `compile-emit.js` | Delegates `compileRenderBoundary`; still owns generic emit utilities such as `getLinkedChannelsArg(...)` | — |
+| `boundaries.js` | ✅ Owns `compileControlFlowBoundary`, `compileRenderBoundary`, `compileTextBoundary`, and `compileCaptureBoundary` | Compiler lowering for structural boundaries |
+| `buffer.js` | Delegates `compileControlFlowBoundary`; still owns buffer-specific helpers | — |
+| `emit.js` | Delegates `compileRenderBoundary`; still owns generic emit utilities such as `getLinkedChannelsArg(...)` | — |
 
 ---
 
@@ -1050,20 +1050,20 @@ On the expression side, command-emitting async `compileInlineIf` and async `_com
 - **`src/runtime/async-boundaries.js`**: Own runtime structural-boundary helpers such as `runControlFlowBoundary` and `runRenderBoundary`.
 - **`src/runtime/runtime.js`**: Re-export runtime structural-boundary helpers.
 - **`src/compiler/compiler.js`**: Migrate `compileIf`, `compileFor`, `compileSwitch`, `compileWhile` one by one — emit `runControlFlowBoundary` at control-flow sites; emit commands synchronously everywhere else; remove `waitAllClosures`.
-- **`src/compiler/compile-inheritance.js`**: ✅ `compileInclude`, `compileExtends`, `compileImport`, and `compileFromImport` migrated to the channels-refactor model.
-- **`src/compiler/compile-boundaries.js`**: Own compiler lowering for structural boundaries (`compileControlFlowBoundary`, `compileRenderBoundary`, `compileTextBoundary`, `compileCaptureBoundary`).
-- **`src/compiler/compile-buffer.js`**: Stop emitting `asyncAddToBuffer` / `asyncAddToBufferScoped`; command-adding paths become synchronous. Keep only the thin `compileControlFlowBoundary` delegate plus buffer-specific helpers.
-- **`src/compiler/compile-emit.js`**: Stop emitting `asyncBlockBegin` / `asyncBlockEnd` / `asyncBlockValue` / `asyncBlockRender` from migrated call sites. Keep only the thin `compileRenderBoundary` delegate plus generic emit helpers until Phase 2.
+- **`src/compiler/inheritance.js`**: ✅ `compileInclude`, `compileExtends`, `compileImport`, and `compileFromImport` migrated to the channels-refactor model.
+- **`src/compiler/boundaries.js`**: Own compiler lowering for structural boundaries (`compileControlFlowBoundary`, `compileRenderBoundary`, `compileTextBoundary`, `compileCaptureBoundary`).
+- **`src/compiler/buffer.js`**: Stop emitting `asyncAddToBuffer` / `asyncAddToBufferScoped`; command-adding paths become synchronous. Keep only the thin `compileControlFlowBoundary` delegate plus buffer-specific helpers.
+- **`src/compiler/emit.js`**: Stop emitting `asyncBlockBegin` / `asyncBlockEnd` / `asyncBlockValue` / `asyncBlockRender` from migrated call sites. Keep only the thin `compileRenderBoundary` delegate plus generic emit helpers until Phase 2.
 
 ### Phase 2 changes (after all `compileXXX` methods are migrated)
 
 - **`src/runtime/async-state.js`**: Remove `AsyncState` entirely.
 - **`src/runtime/runtime.js`**: Re-export `runControlFlowBoundary` and `runRenderBoundary` from the dedicated async-boundary module.
-- **`src/compiler/compile-emit.js`**: Remove `asyncBlockBegin`, `asyncBlockEnd`, `asyncBlockValue`, `asyncBlockRender`, `asyncBlock`, `getAsyncBlockArgs`.
-- **`src/compiler/compile-buffer.js`**: Remove `asyncAddToBuffer`, `asyncAddToBufferScoped`.
+- **`src/compiler/emit.js`**: Remove `asyncBlockBegin`, `asyncBlockEnd`, `asyncBlockValue`, `asyncBlockRender`, `asyncBlock`, `getAsyncBlockArgs`.
+- **`src/compiler/buffer.js`**: Remove `asyncAddToBuffer`, `asyncAddToBufferScoped`.
 - **Generated function signatures**: Remove `astate` parameter and review `cb`.
 
 ### Never changes
 
-`CommandBuffer`, `BufferIterator`, `Channel` subclasses, all command classes, `CompileAnalysis`, `CompileAsync`, `compile-sequential.js`, `compile-loop.js` (structure only), the poison system, and `resolveCommandArgumentsForApply`.
+`CommandBuffer`, `BufferIterator`, `Channel` subclasses, all command classes, `CompileAnalysis`, `CompileAsync`, `sequential.js`, `loop.js` (structure only), the poison system, and `resolveCommandArgumentsForApply`.
 

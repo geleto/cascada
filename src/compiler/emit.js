@@ -1,4 +1,4 @@
-const { DEFAULT_TEMPLATE_TEXT_CHANNEL } = require('./compile-buffer');
+const { DEFAULT_TEMPLATE_TEXT_CHANNEL } = require('./buffer');
 
 module.exports = class CompileEmit {
   constructor(compiler) {

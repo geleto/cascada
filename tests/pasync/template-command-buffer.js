@@ -13,7 +13,7 @@
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
     StringLoader = require('../util').StringLoader;
-    DEFAULT_TEMPLATE_TEXT_OUTPUT = require('../../src/compiler/compile-buffer').DEFAULT_TEMPLATE_TEXT_OUTPUT;
+    DEFAULT_TEMPLATE_TEXT_OUTPUT = require('../../src/compiler/buffer').DEFAULT_TEMPLATE_TEXT_OUTPUT;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;

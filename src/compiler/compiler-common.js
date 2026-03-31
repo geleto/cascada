@@ -5,13 +5,13 @@ const { TemplateError } = require('../lib');
 // const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
 const { Obj } = require('../object');
 const { RESERVED_DECLARATION_NAMES } = require('./validation');
-const CompileSequential = require('./compile-sequential');
-const CompileEmit = require('./compile-emit');
-const CompileInheritance = require('./compile-inheritance');
-const CompileLoop = require('./compile-loop');
-const CompileBuffer = require('./compile-buffer');
-const CompileMacro = require('./compile-macro');
-const CompileBoundaries = require('./compile-boundaries');
+const CompileSequential = require('./sequential');
+const CompileEmit = require('./emit');
+const CompileInheritance = require('./inheritance');
+const CompileLoop = require('./loop');
+const CompileBuffer = require('./buffer');
+const CompileMacro = require('./macro');
+const CompileBoundaries = require('./boundaries');
 
 /**
  * CompilerCommon - Common base class for compiler functionality

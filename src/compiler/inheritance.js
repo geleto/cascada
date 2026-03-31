@@ -1,7 +1,7 @@
 'use strict';
 
 const nodes = require('../nodes');
-const CompileBuffer = require('./compile-buffer');
+const CompileBuffer = require('./buffer');
 
 /**
  * CompileInheritance - Handles template inheritance operations

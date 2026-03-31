@@ -106,9 +106,9 @@ Completed so far:
     - sync frame reads/writes/publish logic now lives directly in:
       - `compiler.js`
       - `compiler-base.js`
-      - `compile-inheritance.js`
-      - `compile-loop.js`
-      - `compile-macro.js`
+      - `inheritance.js`
+      - `loop.js`
+      - `macro.js`
     - runtime sync top-level frame creation is now inlined in `template.js`
 
 - Phase 1 is effectively done:
@@ -662,8 +662,8 @@ Examples:
 
 - `src/runtime/lookup.js`
 - `src/compiler/compiler.js`
-- `src/compiler/compile-loop.js`
-- `src/compiler/compile-macro.js`
+- `src/compiler/loop.js`
+- `src/compiler/macro.js`
 
 Important distinction:
 
@@ -753,7 +753,7 @@ Current shape:
 Examples:
 
 - `src/runtime/loop.js`
-- `src/compiler/compile-loop.js`
+- `src/compiler/loop.js`
 
 Correction to earlier draft:
 
@@ -795,9 +795,9 @@ Current shape:
 
 Examples:
 
-- `src/compiler/compile-emit.js`
+- `src/compiler/emit.js`
 - `src/environment/template.js`
-- `src/compiler/compile-macro.js`
+- `src/compiler/macro.js`
 
 Replacement direction:
 
@@ -817,7 +817,7 @@ Examples:
 
 - `src/runtime/frame.js`
 - `src/compiler/compiler.js`
-- `src/compiler/compile-boundaries.js`
+- `src/compiler/boundaries.js`
 
 Replacement direction:
 
@@ -901,7 +901,7 @@ Cases that already require exact scope reasoning today:
   - `declaresInParent`
   - `parentOwned`
 - shadowing and runtime-name mangling
-  - [compile-rename.js](/c:/Projects/cascada/src/compiler/compile-rename.js)
+  - [rename.js](/c:/Projects/cascada/src/compiler/rename.js)
 - scope-owner lookup
   - `getScopeOwner(...)`
   - `findDeclarationOwner(...)`
@@ -1160,8 +1160,8 @@ Work:
   - `src/runtime/lookup.js`
   - `src/compiler/compiler-base.js`
   - `src/compiler/compiler.js`
-  - `src/compiler/compile-loop.js`
-  - `src/compiler/compile-macro.js`
+  - `src/compiler/loop.js`
+  - `src/compiler/macro.js`
   - inheritance/include/caller boundaries
 - classify each lookup as:
   - source-name dynamic lookup in the modern async path

@@ -222,9 +222,9 @@ This also handles poison the same way as statement-level control-flow boundaries
      - it now targets native promises / marker promises specifically, instead of arbitrary thenables
      - marker-backed arrays/objects now stop the staging walk; their own `RESOLVE_MARKER` promise is the deferred boundary that owns descendant async work
    - The producer audit shows that the remaining native-promise producers are intentional:
-     - block/super/include-style producer slots in `compile-buffer.js`
-     - async import/from-import export lookup in `compile-inheritance.js`
-     - include composition `finalSnapshot()` forwarding in `compile-inheritance.js`
+     - block/super/include-style producer slots in `buffer.js`
+     - async import/from-import export lookup in `inheritance.js`
+     - include composition `finalSnapshot()` forwarding in `inheritance.js`
    - A final producer pass did not find another worthwhile source-side reduction:
      - ordinary var/text command writes in `compiler.js` carry raw Cascada values, not forced native promises
      - include/import composition promises are the real structural/timing units for those features

@@ -12,7 +12,7 @@ Do not bypass these mechanisms to fix a local bug. Shortcuts such as writing to 
 
 This document tracks the output pipeline as implemented in:
 - runtime: `src/runtime/command-buffer.js`, `src/runtime/buffer-iterator.js`, `src/runtime/output.js`, `src/runtime/commands.js`, `src/runtime/guard.js`, `src/runtime/async-state.js`
-- compiler wiring: `src/compiler/compile-buffer.js`, `src/compiler/compile-emit.js`, `src/compiler/compiler.js`, `src/compiler/validation.js`
+- compiler wiring: `src/compiler/buffer.js`, `src/compiler/emit.js`, `src/compiler/compiler.js`, `src/compiler/validation.js`
 
 ## Scope
 - Output types and facades: `text`, `value`, `data`, `sink`, `sequence`
@@ -33,7 +33,7 @@ This document tracks the output pipeline as implemented in:
 
 ## Buffer Ownership And Creation
 - Root/managed scope-root creation sites:
-  - compiler emits `runtime.createCommandBuffer(context, null, frame)` in managed root paths (`compile-emit`/`compile-buffer`).
+  - compiler emits `runtime.createCommandBuffer(context, null, frame)` in managed root paths (`emit`/`buffer`).
 - Async block creation site:
   - `AsyncState.asyncBlock(...)` creates a child buffer only when `usedOutputs` is a non-empty array.
   - the created buffer is passed into the async closure as `currentBuffer` and finalized in `finally` via `markFinishedAndPatchLinks()`.
@@ -125,7 +125,7 @@ Notes:
 ## Compiler Integration
 
 ### Command construction
-File: `src/compiler/compile-buffer.js`
+File: `src/compiler/buffer.js`
 - Output commands are emitted with unresolved args.
 - `snapshot()/isError()/getError()` are compiled to dedicated command classes.
 - Scope/legality validation lives in `src/compiler/validation.js`:
@@ -134,14 +134,14 @@ File: `src/compiler/compile-buffer.js`
   - `validateSinkSnapshotInGuard`
 
 ### Output usage tracking
-File: `src/compiler/compile-buffer.js`
+File: `src/compiler/buffer.js`
 - `registerOutputUsage(frame, outputName)` records `usedOutputs` along lexical chain up to declaration frame.
-- `usedOutputs` metadata is passed to runtime async-block API (`getAsyncBlockArgs` in `compile-emit`).
+- `usedOutputs` metadata is passed to runtime async-block API (`getAsyncBlockArgs` in `emit`).
 - `collectBranchHandlers(...)` also includes `Set`/`CallAssign` writes targeting declared outputs (not only `OutputCommand`),
   so condition-poison paths can poison branch-local output writes correctly.
 
 ### Async-block wiring
-Files: `src/compiler/compile-emit.js`, `src/runtime/async-state.js`
+Files: `src/compiler/emit.js`, `src/runtime/async-state.js`
 - compiler passes `usedOutputs` into `astate.asyncBlock(...)`.
 - runtime allocates child buffer only when `usedOutputs.length > 0`.
 - runtime passes active buffer into closure as `currentBuffer`.

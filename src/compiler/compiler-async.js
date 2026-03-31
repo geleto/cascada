@@ -6,7 +6,7 @@ const {
   validateChannelDeclarationNode
 } = require('./validation');
 const CompilerBaseAsync = require('./compiler-base-async');
-const CompileBuffer = require('./compile-buffer');
+const CompileBuffer = require('./buffer');
 
 const RETURN_CHANNEL_NAME = '__return__';
 

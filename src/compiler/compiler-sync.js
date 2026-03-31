@@ -3,7 +3,7 @@
 const nodes = require('../nodes');
 const { Frame } = require('../runtime/frame');
 const CompilerBaseSync = require('./compiler-base-sync');
-const CompileBuffer = require('./compile-buffer');
+const CompileBuffer = require('./buffer');
 
 class CompilerSync extends CompilerBaseSync {
   init(templateName, options) {

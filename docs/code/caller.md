@@ -451,7 +451,7 @@ This document is only about the `caller()` / nested composition structural attac
    - access to the parent `currentBuffer` at macro call time, so the all-callers buffer can be linked early when the macro actually runs
 
 5. Remove the old late-link path.
-   - Remove the `runtime.linkWithParentCompositionBuffer(...)` caller-path linking from `compile-emit.js` / `compileOutput`.
+   - Remove the `runtime.linkWithParentCompositionBuffer(...)` caller-path linking from `emit.js` / `compileOutput`.
    - The new early-link path must replace it rather than coexist with it.
 
 6. Generate the `caller` binding so each runtime `caller()` invocation:
