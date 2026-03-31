@@ -56,8 +56,8 @@ class Template extends Obj {
     }
   }
 
-  render(ctx, parentSyncFrame, cb) {
-    return this._renderSync(ctx, parentSyncFrame, cb);
+  render(ctx, parentFrame, cb) {
+    return this._renderSync(ctx, parentFrame, cb);
   }
 
   _renderAsync(ctx, cb) {
@@ -104,13 +104,13 @@ class Template extends Obj {
     return syncResult;
   }
 
-  _renderSync(ctx, parentSyncFrame, cb) {
-    const normalized = this._normalizeSyncRenderArgs(ctx, parentSyncFrame, cb);
+  _renderSync(ctx, parentFrame, cb) {
+    const normalized = this._normalizeSyncRenderArgs(ctx, parentFrame, cb);
     ctx = normalized.ctx;
-    parentSyncFrame = normalized.parentSyncFrame;
+    parentFrame = normalized.parentFrame;
     cb = normalized.cb;
 
-    const forceAsync = !parentSyncFrame;
+    const forceAsync = !parentFrame;
 
     // Catch compile errors for sync rendering
     try {
@@ -125,7 +125,7 @@ class Template extends Obj {
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, false);
-    const frame = this._createTopLevelFrame(parentSyncFrame, true);
+    const frame = this._createTopLevelFrame(parentFrame, true);
 
     let didError = false;
     let syncResult = null;
@@ -163,14 +163,14 @@ class Template extends Obj {
   }
 
   // @todo - return a value instead of calling a callback
-  getExported(ctx, parentSyncFrame, cb) {
-    return this._getExportedSync(ctx, parentSyncFrame, cb);
+  getExported(ctx, parentFrame, cb) {
+    return this._getExportedSync(ctx, parentFrame, cb);
   }
 
-  _getExportedSync(ctx, parentSyncFrame, cb) {
-    const normalized = this._normalizeSyncRenderArgs(ctx, parentSyncFrame, cb);
+  _getExportedSync(ctx, parentFrame, cb) {
+    const normalized = this._normalizeSyncRenderArgs(ctx, parentFrame, cb);
     ctx = normalized.ctx;
-    parentSyncFrame = normalized.parentSyncFrame;
+    parentFrame = normalized.parentFrame;
     cb = normalized.cb;
 
     // Catch compile errors for sync exported-value retrieval
@@ -184,7 +184,7 @@ class Template extends Obj {
       }
     }
 
-    const frame = this._createTopLevelFrame(parentSyncFrame, false);
+    const frame = this._createTopLevelFrame(parentFrame, false);
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, false);
     // Sync mode is straightforward.
@@ -199,26 +199,26 @@ class Template extends Obj {
     return undefined;
   }
 
-  _normalizeSyncRenderArgs(ctx, parentSyncFrame, cb) {
+  _normalizeSyncRenderArgs(ctx, parentFrame, cb) {
     if (typeof ctx === 'function') {
       return {
         ctx: {},
-        parentSyncFrame: null,
+        parentFrame: null,
         cb: ctx
       };
     }
-    if (typeof parentSyncFrame === 'function') {
+    if (typeof parentFrame === 'function') {
       return {
         ctx,
-        parentSyncFrame: null,
-        cb: parentSyncFrame
+        parentFrame: null,
+        cb: parentFrame
       };
     }
-    return { ctx, parentSyncFrame, cb };
+    return { ctx, parentFrame, cb };
   }
 
-  _createTopLevelFrame(parentSyncFrame, isolateWrites) {
-    const frame = parentSyncFrame ? parentSyncFrame.push(isolateWrites) : new Frame();
+  _createTopLevelFrame(parentFrame, isolateWrites) {
+    const frame = parentFrame ? parentFrame.push(isolateWrites) : new Frame();
     frame.topLevel = true;
     return frame;
   }

@@ -17,7 +17,7 @@ const CompileAnalysis = require('./compile-analysis');
 const CompileMacro = require('./compile-macro');
 const CompileBoundaries = require('./compile-boundaries');
 const CompileRename = require('./compile-rename');
-const CompileFrame = require('./compile-sync-template');
+const CompileFrame = require('./compile-frame');
 const CompilerBase = require('./compiler-base');
 
 const RETURN_CHANNEL_NAME = '__return__';
@@ -1408,7 +1408,7 @@ class Compiler extends CompilerBase {
     this.emit.line('}');
   }
 
-  _emitSyncTemplateRootCompletion() {
+  _emitSyncRootCompletion() {
     this.emit.line('if(parentTemplate) {');
     this.emit.line('  let parentContext = context.forkForPath(parentTemplate.path);');
     this.emit.line('  parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, cb);');
@@ -1437,11 +1437,11 @@ class Compiler extends CompilerBase {
     this._emitAsyncRootCompletion(node);
   }
 
-  _compileSyncTemplateRootBody(node, frame) {
+  _compileSyncRootBody(node, frame) {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
-    this._emitSyncTemplateRootCompletion();
+    this._emitSyncRootCompletion();
   }
 
   _compileAsyncBlockEntry(block, frame) {
@@ -1456,7 +1456,7 @@ class Compiler extends CompilerBase {
     this.emit.endEntryFunction(block, true);
   }
 
-  _compileSyncTemplateBlockEntry(block, frame) {
+  _compileSyncBlockEntry(block, frame) {
     const name = block.name.value;
     const blockFrame = frame.new();
     this.emit.beginEntryFunction(block, `b_${name}`, blockFrame);
@@ -1480,7 +1480,7 @@ class Compiler extends CompilerBase {
       if (this.asyncMode) {
         this._compileAsyncBlockEntry(block, frame);
       } else {
-        this._compileSyncTemplateBlockEntry(block, frame);
+        this._compileSyncBlockEntry(block, frame);
       }
     });
 
@@ -1510,7 +1510,7 @@ class Compiler extends CompilerBase {
     if (this.asyncMode) {
       this._compileAsyncRootBody(node, frame);
     } else {
-      this._compileSyncTemplateRootBody(node, frame);
+      this._compileSyncRootBody(node, frame);
     }
 
     // Pass the node to _emitFuncEnd for error position info (used in sync catch)

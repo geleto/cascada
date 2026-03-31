@@ -35,7 +35,7 @@ Completed so far:
     - async block entries vs sync-template block entries use explicit helpers
     - `compileRoot(...)` no longer hides that remaining sync-template frame behavior inside one large mixed function
   - the remaining sync-template frame compiler surface is now centralized explicitly:
-    - frame reads/writes/publish helpers now live in `CompileFrame`
+    - frame reads/writes/publish helpers now live in `src/compiler/compile-frame.js`
     - the main `Compiler` no longer carries those frame-operation helpers directly
     - the last compiler-side sync frame fast-path read and top-level check now also go through `CompileFrame`
 
@@ -240,7 +240,7 @@ Current next target:
     - done: the remaining top-level frame marker is now explicitly sync-only `frame.topLevel`
     - done: loop frame metadata writes now go through `setFrameLoopBindings(...)`
     - done: frame-backed template lookup now goes through `contextOrFrameLookup(...)`
-    - done: the remaining live runtime sync-template frame semantics are now centralized in `src/runtime/sync-template-frame.js`
+    - done: the remaining live runtime sync-template frame semantics are now centralized in `src/runtime/frame-runtime.js`
       - top-level frame marker
       - frame-backed template lookup
       - loop metadata frame writes
