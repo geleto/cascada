@@ -105,10 +105,14 @@ class Template extends Obj {
   }
 
   _renderSync(ctx, parentFrame, cb) {
-    const execution = this._prepareSyncExecution(ctx, parentFrame, cb);
-    ctx = execution.ctx;
-    parentFrame = execution.parentFrame;
-    cb = execution.cb;
+    if (typeof ctx === 'function') {
+      cb = ctx;
+      ctx = {};
+      parentFrame = null;
+    } else if (typeof parentFrame === 'function') {
+      cb = parentFrame;
+      parentFrame = null;
+    }
 
     const forceAsync = !parentFrame;
 
@@ -125,7 +129,8 @@ class Template extends Obj {
     }
 
     const context = this._createContext(ctx);
-    const frame = Frame.createTopLevel(parentFrame, true);
+    const frame = parentFrame ? parentFrame.push(true) : new Frame();
+    frame.topLevel = true;
 
     let didError = false;
     let syncResult = null;
@@ -168,10 +173,14 @@ class Template extends Obj {
   }
 
   _getExportedSync(ctx, parentFrame, cb) {
-    const execution = this._prepareSyncExecution(ctx, parentFrame, cb);
-    ctx = execution.ctx;
-    parentFrame = execution.parentFrame;
-    cb = execution.cb;
+    if (typeof ctx === 'function') {
+      cb = ctx;
+      ctx = {};
+      parentFrame = null;
+    } else if (typeof parentFrame === 'function') {
+      cb = parentFrame;
+      parentFrame = null;
+    }
 
     // Catch compile errors for sync exported-value retrieval
     try {
@@ -184,7 +193,8 @@ class Template extends Obj {
       }
     }
 
-    const frame = Frame.createTopLevel(parentFrame, false);
+    const frame = parentFrame ? parentFrame.push(false) : new Frame();
+    frame.topLevel = true;
     const context = this._createContext(ctx);
     // Sync mode is straightforward.
     this.rootRenderFunc(this.env, context, frame, globalRuntime, (err) => {
@@ -198,39 +208,13 @@ class Template extends Obj {
     return undefined;
   }
 
-  _normalizeSyncRenderArgs(ctx, parentFrame, cb) {
-    if (typeof ctx === 'function') {
-      return {
-        ctx: {},
-        parentFrame: null,
-        cb: ctx
-      };
-    }
-    if (typeof parentFrame === 'function') {
-      return {
-        ctx,
-        parentFrame: null,
-        cb: parentFrame
-      };
-    }
-    return { ctx, parentFrame, cb };
-  }
-
-  _prepareSyncExecution(ctx, parentFrame, cb) {
-    return this._normalizeSyncRenderArgs(ctx, parentFrame, cb);
-  }
-
   _createContext(ctx) {
-    return new Context(ctx || {}, this.blocks, this.env, this.path, false);
-  }
-
-  _createMacroContext() {
-    return new Context({}, this.blocks, this.env, this.path, false);
+    return new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
   }
 
   _bindExportedValues(exported) {
     const boundExported = {};
-    const macroContext = this._createMacroContext();
+    const macroContext = this._createContext({});
 
     for (const name in exported) {
       const item = exported[name];
@@ -368,7 +352,7 @@ class AsyncTemplate extends Template {
 
     const exported = context.getExported();
     const boundExported = {};
-    const macroContext = this._createMacroContext();
+    const macroContext = this._createContext({});
 
     for (const name in exported) {
       const item = exported[name];

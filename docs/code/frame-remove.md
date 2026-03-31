@@ -30,32 +30,21 @@ Completed so far:
     - base `Template` is sync-template-oriented again
     - async compile options are owned by `AsyncTemplate` / `Script`
     - shared async render/export helpers now use explicit subclass context hooks instead of generic `scriptMode` branching
-    - template/script context creation is now shared behind plain mode-specific hooks:
-      - `Template._createContext(...)`
-      - `Template._createMacroContext(...)`
-    - sync template argument normalization is now also shared through `Template._prepareSyncExecution(...)`
+    - template/script context creation now shares the plain `Template._createContext(...)` hook
+    - sync template argument normalization now goes through `Template._normalizeSyncRenderArgs(...)`
   - compiler root/block entry generation is now split more honestly by mode:
     - async root body vs sync-template root body use explicit helpers
     - async block entries vs sync-template block entries use explicit helpers
     - `compileRoot(...)` no longer hides that remaining sync-template frame behavior inside one large mixed function
-  - the remaining sync-template frame compiler surface is now centralized explicitly:
-    - frame reads/writes/publish helpers now live in `src/compiler/compile-frame.js`
-    - the main `Compiler` no longer carries those frame-operation helpers directly
-    - the last compiler-side sync frame fast-path read and top-level check now also go through `CompileFrame`
-    - sync frame push/new/pop emission is now centralized there too
-      - loop/body/else scope pushes
-      - managed block scope pushes
-      - sync macro runtime-frame replacement
-      - sync block entry frame push
-    - sync assignment/declaration publish flow is now centralized there too
-      - sync `set` assignment publish
-      - sync imported binding publish
-      - sync macro declaration publish
-    - compiler-side sync frame creation is now centralized there too
-      - root frame creation
-      - sync block compile-frame creation
-      - sync macro compile-frame creation
-    - runtime sync top-level frame creation now goes through `Frame.createTopLevel(...)`
+  - the `CompileFrame` abstraction was removed again:
+    - thin sync frame wrappers were inlined at their real call sites
+    - sync frame reads/writes/publish logic now lives directly in:
+      - `compiler.js`
+      - `compiler-base.js`
+      - `compile-inheritance.js`
+      - `compile-loop.js`
+      - `compile-macro.js`
+    - runtime sync top-level frame creation is now inlined in `template.js`
 
 - Phase 1 is effectively done:
   - `node.isAsync` has been removed as an async compile-routing mechanism

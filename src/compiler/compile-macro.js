@@ -257,7 +257,7 @@ class CompileMacro {
 
     if (compiler.scriptMode) {
       const returnVar = compiler._tmpid();
-      return `(async () => {` +
+    return `(async () => {` +
         callerSyncPrefix +
         `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
         `${bufferId}.markFinishedAndPatchLinks();` +
@@ -382,9 +382,11 @@ class CompileMacro {
 
   _emitSyncMacroBinding(name, emitValueExpr, managedFrame, managedValueExpr = null) {
     const compiler = this.compiler;
-    compiler.frameOps.emitFrameAssignment(name, emitValueExpr);
+    compiler.emit(`frame.set("${name}", `);
+    emitValueExpr();
+    compiler.emit.line(');');
     if (managedFrame && managedValueExpr !== null) {
-      compiler.frameOps.setFrameValue(managedFrame, name, managedValueExpr);
+      managedFrame.set(name, managedValueExpr);
     }
   }
 
@@ -424,7 +426,7 @@ class CompileMacro {
     compiler.emit.withScopedSyntax(() => {
       compiler.compile(node.body, managedFrame);
     });
-    compiler.frameOps.restoreFrame(keepFrame ? 'frame.pop()' : 'callerFrame');
+    compiler.emit.line(`frame = ${keepFrame ? 'frame.pop()' : 'callerFrame'};`);
     return `new runtime.SafeString(${bufferId})`;
   }
 
@@ -518,8 +520,8 @@ class CompileMacro {
     const funcId = `macro_${compiler._tmpid()}`;
     const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
     const currFrame = keepFrame
-      ? compiler.frameOps.createChildFrame(frame, true)
-      : compiler.frameOps.createFreshFrame(frame);
+      ? frame.push(true)
+      : frame.new();
     const oldIsCompilingMacroBody = compiler.sequential.isCompilingMacroBody;
     compiler.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
@@ -534,9 +536,9 @@ class CompileMacro {
     compiler.emit.line('return (function(frame) {');
     compiler.emit.line('let callerFrame = frame;');
     if (keepFrame) {
-      compiler.frameOps.pushFrame(frame, true);
+      compiler.emit.line('frame = frame.push(true);');
     } else {
-      compiler.frameOps.startNewFrame(frame);
+      compiler.emit.line('frame = frame.new();');
     }
     compiler.emit.lines(
       'kwargs = kwargs || {};',
@@ -601,7 +603,15 @@ class CompileMacro {
   }
 
   _emitSyncMacroDeclarationBinding(name, funcId, frame) {
-    this.compiler.frameOps.emitDeclarationPublish(frame, name, funcId, true);
+    frame.set(name, funcId);
+    if (frame.parent) {
+      this.compiler.emit.line(`frame.set("${name}", ${funcId});`);
+      return;
+    }
+    this.compiler.emit.line(`context.setVariable("${name}", ${funcId});`);
+    if (name.charAt(0) !== '_') {
+      this.compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
+    }
   }
 }
 

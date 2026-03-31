@@ -53,29 +53,9 @@ class CompileInheritance {
     }
   }
 
-  _emitSyncImportedBinding(name, id, frame) {
-    this.compiler.frameOps.emitDeclarationPublish(frame, name, id);
-  }
-
-  /**
-   * Collect canonical runtime channel names that should be prelinked for include composition.
-   *
-   * Include composition snapshots visible declared var channels by nearest lexical
-   * name. Mirror that here so nested/shadowed loop metadata links only the
-   * currently visible channel lane for each name.
-   */
-  _collectIncludeLinkCandidates(analysis) {
-    return this.compiler.analysis.getIncludeVisibleVarChannels(analysis)
-      .map((entry) => entry.runtimeName);
-  }
-
-  _templateName() {
-    return this.compiler.templateName === null ? 'undefined' : JSON.stringify(this.compiler.templateName);
-  }
-
   _compileAsyncGetTemplateOrScript(node, frame, eagerCompile, ignoreMissing) {
     const parentTemplateId = this.compiler._tmpid();
-    const parentName = this._templateName();
+    const parentName = JSON.stringify(this.compiler.templateName);
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
 
@@ -95,7 +75,7 @@ class CompileInheritance {
 
   _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
     const templateId = this.compiler._tmpid();
-    const parentName = this._templateName();
+    const parentName = JSON.stringify(this.compiler.templateName);
     const eagerCompileArg = eagerCompile ? 'true' : 'false';
     const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
     const cb = this.compiler._makeCallback(templateId);
@@ -133,7 +113,12 @@ class CompileInheritance {
       (node.withContext ? 'context.getVariables(), frame, ' : '') +
       this.compiler._makeCallback(id));
     this.emit.addScopeLevel();
-    this._emitSyncImportedBinding(target, id, frame);
+    frame.set(target, id);
+    if (frame.parent) {
+      this.emit.line(`frame.set("${target}", ${id});`);
+    } else {
+      this.emit.line(`context.setVariable("${target}", ${id});`);
+    }
   }
 
   _compileAsyncFromImport(node, frame) {
@@ -218,7 +203,12 @@ class CompileInheritance {
       this.emit.line(`var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); cb(err); return;`);
       this.emit.line('}');
 
-      this._emitSyncImportedBinding(alias, id, frame);
+      frame.set(alias, id);
+      if (frame.parent) {
+        this.emit.line(`frame.set("${alias}", ${id});`);
+      } else {
+        this.emit.line(`context.setVariable("${alias}", ${id});`);
+      }
     });
   }
 
@@ -401,7 +391,7 @@ class CompileInheritance {
       this.emit.line(';');
 
       // Keep producer synchronous: carry async template lookup/render in promise chain.
-      this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
+      this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${JSON.stringify(this.compiler.templateName)}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
       // Includes run in a separate template/frame. To preserve caller-visible
       // var-channel reads, copy context vars and inject currently-declared
@@ -419,7 +409,8 @@ class CompileInheritance {
       this.emit.line(`composed._setBoundaryAliases(${aliasMapVar});`);
       // Structural prelinking: attach composed child to parent lanes up front so
       // include-time symbol snapshots do not depend on lookup-time dynamic linking.
-      const includeLinkCandidates = this._collectIncludeLinkCandidates(node._analysis);
+      const includeLinkCandidates = this.compiler.analysis.getIncludeVisibleVarChannels(node._analysis)
+        .map((entry) => entry.runtimeName);
       const parentBufferExpr = this.compiler.buffer.currentBuffer;
       this.compiler.emitLinkWithParentCompositionBuffer(
         includeLinkCandidates,

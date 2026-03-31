@@ -3,7 +3,6 @@
 const lib = require('../lib');
 const scriptTranspiler = require('../script/script-transpiler');
 const { Template } = require('./template');
-const { Context } = require('./context');
 
 /**
  * Script class - represents a compiled Cascada script.
@@ -45,14 +44,6 @@ class Script extends Template {
       this.path,
       Object.assign({ scriptMode: true, asyncMode: true }, this.env.opts)
     );
-  }
-
-  _createContext(ctx) {
-    return new Context(ctx || {}, this.blocks, this.env, this.path, true);
-  }
-
-  _createMacroContext() {
-    return new Context({}, this.blocks, this.env, this.path, true);
   }
 }
 

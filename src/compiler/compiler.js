@@ -16,8 +16,8 @@ const CompileAnalysis = require('./compile-analysis');
 const CompileMacro = require('./compile-macro');
 const CompileBoundaries = require('./compile-boundaries');
 const CompileRename = require('./compile-rename');
-const CompileFrame = require('./compile-frame');
 const CompilerBase = require('./compiler-base');
+const { Frame } = require('../runtime/frame');
 
 const RETURN_CHANNEL_NAME = '__return__';
 
@@ -27,7 +27,7 @@ class Compiler extends CompilerBase {
     super.init(options);
 
     // Properties specific to the full statement-aware compiler
-    this.templateName = templateName;
+    this.templateName = typeof templateName === 'string' ? templateName : undefined;
     this.hasExtends = false;
     this.inBlock = false;
 
@@ -42,7 +42,6 @@ class Compiler extends CompilerBase {
     this.macro = new CompileMacro(this);
     this.boundaries = new CompileBoundaries(this);
     this.rename = new CompileRename(this);
-    this.frameOps = new CompileFrame(this);
     this.analysisState = null;
   }
 
@@ -335,7 +334,7 @@ class Compiler extends CompilerBase {
       this.emit(ids[0] + ' = ');
 
       this.emit('runtime.setPath(');
-      this.emit(this.frameOps.getDirectFrameLookupExpr(node.targets[0].value) + ', ');
+      this.emit(`frame.lookup("${node.targets[0].value}"), `);
       this.compile(node.path, frame);
       this.emit(', ');
       this.compile(node.value, frame);
@@ -356,7 +355,13 @@ class Compiler extends CompilerBase {
     node.targets.forEach((target, i) => {
       const id = ids[i];
       const name = target.value;
-      this.frameOps.emitAssignmentPublish(name, id, true);
+      this.emit.line(`frame.set("${name}", ${id}, true);`);
+      this.emit.line('if (frame.topLevel) {');
+      this.emit.line(`context.setVariable("${name}", ${id});`);
+      if (name.charAt(0) !== '_') {
+        this.emit.line(`context.addResolvedExport("${name}", ${id});`);
+      }
+      this.emit.line('}');
     });
   }
 
@@ -1441,7 +1446,7 @@ class Compiler extends CompilerBase {
     const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
       .filter((hname) => hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL);
     this.emit.beginEntryFunction(block, `b_${name}`, frame, blockLinkedChannels);
-    this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
+    this.emit.line(`context = context.forkForPath(${JSON.stringify(this.templateName)});`);
     this.compile(block.body, frame);
     this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
     this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
@@ -1450,9 +1455,9 @@ class Compiler extends CompilerBase {
 
   _compileSyncBlockEntry(block, frame) {
     const name = block.name.value;
-    const blockFrame = this.frameOps.createFreshFrame(frame);
+    const blockFrame = frame.new();
     this.emit.beginEntryFunction(block, `b_${name}`, blockFrame);
-    this.frameOps.declarePushedFrame(frame, true);
+    this.emit.line('var frame = frame.push(true);');
     this.compile(block.body, blockFrame);
     this.emit.endEntryFunction(block);
   }
@@ -1495,7 +1500,7 @@ class Compiler extends CompilerBase {
     );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
 
-    frame = this.frameOps.createRootFrame();
+    frame = new Frame();
     // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
 
     this.emit.beginEntryFunction(node, 'root', frame);

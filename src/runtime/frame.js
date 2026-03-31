@@ -20,12 +20,6 @@ class Frame {
     this.isolateWrites = isolateWrites;
   }
 
-  static createTopLevel(parentFrame = null, isolateWrites = false) {
-    const frame = parentFrame ? parentFrame.push(isolateWrites) : new Frame();
-    frame.topLevel = true;
-    return frame;
-  }
-
   set(name, val, resolveUp) {
     // Allow variables with dots by automatically creating the
     // nested structure

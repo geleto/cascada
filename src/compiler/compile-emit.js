@@ -128,7 +128,8 @@ module.exports = class CompileEmit {
   managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined, analysisNode = null) {
     let nextFrame = frame;
     if (createScope) {
-      nextFrame = this.compiler.frameOps.pushFrame(frame);
+      nextFrame = frame.push();
+      this.line('frame = frame.push();');
     }
 
     let parentBufferId = null;
@@ -180,7 +181,8 @@ module.exports = class CompileEmit {
       this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     }
     if (createScope) {
-      return { frame: this.compiler.frameOps.popFrame(nextFrame), bufferId };
+      this.line('frame = frame.pop();');
+      return { frame: nextFrame.pop(), bufferId };
     }
     return { frame: nextFrame, bufferId };
   }
