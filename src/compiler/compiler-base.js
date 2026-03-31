@@ -500,18 +500,18 @@ class CompilerBase extends Obj {
     if (this.asyncMode) {
       const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
       if (hasCommandEffects) {
-        this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, frame, function(boundaryFrame) {
+        this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
           this.emit('const cond = await runtime.resolveSingle(');
-          this.compile(node.cond, boundaryFrame);
+          this.compile(node.cond, frame);
           this.emit.line(');');
           this.emit('if(cond) {');
           this.emit('return ');
-          this.compile(node.body, boundaryFrame);
+          this.compile(node.body, frame);
           this.emit.line(';');
           this.emit('} else {');
           if (node.else_) {
             this.emit('return ');
-            this.compile(node.else_, boundaryFrame);
+            this.compile(node.else_, frame);
             this.emit.line(';');
           } else {
             this.emit.line('return "";');
@@ -637,16 +637,16 @@ class CompilerBase extends Obj {
     // left && right -> if (!left) return left; else return right;
     const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
     if (hasCommandEffects) {
-      this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, frame, function(boundaryFrame) {
+      this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const left = await runtime.resolveSingle(');
-        this.compile(node.left, boundaryFrame);
+        this.compile(node.left, frame);
         this.emit.line(');');
         const check = isOr ? 'left' : '!left';
         this.emit(`if (${check}) {`);
         this.emit.line('return left;');
         this.emit('} else {');
         this.emit('return ');
-        this.compile(node.right, boundaryFrame);
+        this.compile(node.right, frame);
         this.emit.line(';');
         this.emit('}');
       });
@@ -1057,8 +1057,8 @@ class CompilerBase extends Obj {
         // Imported callables are structurally ambiguous: they may resolve to a
         // macro boundary or an ordinary function. Give them a child buffer up
         // front so the eventual dispatch happens inside a known current flow.
-        this.boundaries.compileValueBoundary(this.buffer, node, frame, (n, f) => {
-          this._emitAsyncDynamicCall(n, f, 'currentBuffer');
+        this.boundaries.compileValueBoundary(this.buffer, node, (n) => {
+          this._emitAsyncDynamicCall(n, frame, 'currentBuffer');
         });
         return;
       }

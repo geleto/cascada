@@ -50,7 +50,7 @@ module.exports = class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  beginEntryFunction(node, name, frame = null, linkedChannels = null) {
+  beginEntryFunction(node, name, linkedChannels = null) {
     const rootTextChannelName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
       : DEFAULT_TEMPLATE_TEXT_CHANNEL;

@@ -31,7 +31,7 @@ class CompileBoundaries {
     );
   }
 
-  compileExpressionControlFlowBoundary(bufferCompiler, node, frame, emitBody) {
+  compileExpressionControlFlowBoundary(bufferCompiler, node, emitBody) {
     const parentBufferArg = bufferCompiler.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
     const prevBuffer = bufferCompiler.currentBuffer;
@@ -42,14 +42,14 @@ class CompileBoundaries {
     this.compiler.emit.asyncClosureDepth++;
     bufferCompiler.currentBuffer = 'currentBuffer';
 
-    emitBody.call(this.compiler, frame);
+    emitBody.call(this.compiler);
 
     bufferCompiler.currentBuffer = prevBuffer;
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit('})');
   }
 
-  compileValueBoundary(bufferCompiler, node, frame, emitValue, positionNode = node) {
+  compileValueBoundary(bufferCompiler, node, emitValue, positionNode = node) {
     const parentBufferArg = bufferCompiler.currentBuffer || 'null';
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
     const resultId = this.compiler._tmpid();
@@ -59,7 +59,6 @@ class CompileBoundaries {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const innerFrame = frame;
     const prevBuffer = bufferCompiler.currentBuffer;
     const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
     bufferCompiler.currentBuffer = 'currentBuffer';
@@ -67,7 +66,7 @@ class CompileBoundaries {
 
     this.compiler.emit.line('try {');
     this.compiler.emit(`  let ${resultId} = `);
-    emitValue.call(this.compiler, node, innerFrame);
+    emitValue.call(this.compiler, node);
     this.compiler.emit.line(';');
     this.compiler.emit.line(`  return await ${resultId};`);
     this.compiler.emit.line('} catch (e) {');

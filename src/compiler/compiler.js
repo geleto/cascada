@@ -1445,7 +1445,7 @@ class Compiler extends CompilerBase {
     const name = block.name.value;
     const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
       .filter((hname) => hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL);
-    this.emit.beginEntryFunction(block, `b_${name}`, frame, blockLinkedChannels);
+    this.emit.beginEntryFunction(block, `b_${name}`, blockLinkedChannels);
     this.emit.line(`context = context.forkForPath(${JSON.stringify(this.templateName)});`);
     this.compile(block.body, frame);
     this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
@@ -1456,7 +1456,7 @@ class Compiler extends CompilerBase {
   _compileSyncBlockEntry(block, frame) {
     const name = block.name.value;
     const blockFrame = frame.new();
-    this.emit.beginEntryFunction(block, `b_${name}`, blockFrame);
+    this.emit.beginEntryFunction(block, `b_${name}`);
     this.emit.line('var frame = frame.push(true);');
     this.compile(block.body, blockFrame);
     this.emit.endEntryFunction(block);
@@ -1503,7 +1503,7 @@ class Compiler extends CompilerBase {
     frame = new Frame();
     // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
 
-    this.emit.beginEntryFunction(node, 'root', frame);
+    this.emit.beginEntryFunction(node, 'root');
     if (this.asyncMode) {
       this._compileAsyncRootBody(node, frame);
     } else {

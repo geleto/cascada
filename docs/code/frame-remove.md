@@ -196,6 +196,10 @@ Completed so far:
     - `guard.initChannelSnapshots(...)` no longer accepts `frame`
     - `getChannelFromBuffer(...)` was removed in favor of direct `buffer.findChannel(...)`
     - dead `AsyncFrame.lookupAndLocate(...)` was removed
+    - dead compiler helper `frame` threading was reduced further:
+      - `CompileEmit.beginEntryFunction(...)` no longer accepts/pass-throughs `frame`
+      - async expression control-flow boundaries no longer pass a no-op boundary frame argument into their callback bodies
+      - async value boundaries no longer pass a no-op frame argument into value emitters
     - async symbol lookup is now split by real runtime mode:
       - async template symbols use explicit async-template lookup helpers
       - async script symbols use explicit async-script lookup helpers
