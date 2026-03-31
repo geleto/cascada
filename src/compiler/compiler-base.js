@@ -498,20 +498,21 @@ class CompilerBase extends Obj {
 
   compileInlineIf(node, frame) {
     if (this.asyncMode) {
+      const asyncFrame = null;
       const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
       if (hasCommandEffects) {
         this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
           this.emit('const cond = await runtime.resolveSingle(');
-          this.compile(node.cond, frame);
+          this.compile(node.cond, asyncFrame);
           this.emit.line(');');
           this.emit('if(cond) {');
           this.emit('return ');
-          this.compile(node.body, frame);
+          this.compile(node.body, asyncFrame);
           this.emit.line(';');
           this.emit('} else {');
           if (node.else_) {
             this.emit('return ');
-            this.compile(node.else_, frame);
+            this.compile(node.else_, asyncFrame);
             this.emit.line(';');
           } else {
             this.emit.line('return "";');
@@ -522,19 +523,19 @@ class CompilerBase extends Obj {
       }
 
       this.emit('runtime.resolveSingle(');
-      this.compile(node.cond, frame);
+      this.compile(node.cond, asyncFrame);
       this.emit(').then(async function(cond) {');
 
       this.emit('  if(cond) {');
       this.emit('    return ');
-      this.compile(node.body, frame);
+      this.compile(node.body, asyncFrame);
       this.emit(';');
 
       this.emit('  } else {');
 
       if (node.else_) {
         this.emit('    return ');
-        this.compile(node.else_, frame);
+        this.compile(node.else_, asyncFrame);
         this.emit(';');
       } else {
         this.emit('    return "";');
@@ -635,18 +636,19 @@ class CompilerBase extends Obj {
   _compileBinOpShortCircuit(node, frame, isOr) {
     // left || right -> if (left) return left; else return right;
     // left && right -> if (!left) return left; else return right;
+    const asyncFrame = this.asyncMode ? null : frame;
     const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
     if (hasCommandEffects) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const left = await runtime.resolveSingle(');
-        this.compile(node.left, frame);
+        this.compile(node.left, asyncFrame);
         this.emit.line(');');
         const check = isOr ? 'left' : '!left';
         this.emit(`if (${check}) {`);
         this.emit.line('return left;');
         this.emit('} else {');
         this.emit('return ');
-        this.compile(node.right, frame);
+        this.compile(node.right, asyncFrame);
         this.emit.line(';');
         this.emit('}');
       });
@@ -654,7 +656,7 @@ class CompilerBase extends Obj {
     }
 
     this.emit('runtime.resolveSingle(');
-    this.compile(node.left, frame);
+    this.compile(node.left, asyncFrame);
     this.emit(').then(async function(left) {');
 
     const check = isOr ? 'left' : '!left';
@@ -664,7 +666,7 @@ class CompilerBase extends Obj {
     this.emit('  }');
     this.emit('  else {');
     this.emit('    return ');
-    this.compile(node.right, frame);
+    this.compile(node.right, asyncFrame);
     this.emit(';');
 
     this.emit('  }'); // End else
@@ -764,18 +766,19 @@ class CompilerBase extends Obj {
 
   compileCompare(node, frame) {
     if (this.asyncMode) {
+      const asyncFrame = null;
       //use resolveDuo for expr and the first op, optionally await the rest
       this.emit('runtime.resolveDuo(');
-      this.compile(node.expr, frame);
+      this.compile(node.expr, asyncFrame);
       this.emit(',');
-      this.compile(node.ops[0].expr, frame);
+      this.compile(node.ops[0].expr, asyncFrame);
       // Position node should be the first operation where the comparison happens
       this.emit(').then(async function([expr, ref1]){');
       this.emit(`return expr ${compareOps[node.ops[0].type]} ref1`);
       node.ops.forEach((op, index) => {
         if (index > 0) {
           this.emit(` ${compareOps[op.type]} `);
-          this.compileAwaited(op.expr, frame);
+          this.compileAwaited(op.expr, asyncFrame);
         }
       });
       this.emit('})');
@@ -831,6 +834,7 @@ class CompilerBase extends Obj {
 
   compileLookupVal(node, frame) {
     if (this.asyncMode) {
+      const asyncFrame = null;
       const sequenceChannelLookup =
         node._analysis && node._analysis.sequenceChannelLookup;
       if (this.scriptMode && sequenceChannelLookup) {
@@ -861,9 +865,9 @@ class CompilerBase extends Obj {
         } else {
           this.emit('runtime.sequentialMemberLookupAsyncValue((');
         }
-        this.compile(node.target, frame); // Compile the object being accessed.
+        this.compile(node.target, asyncFrame); // Compile the object being accessed.
         this.emit('),');
-        this.compile(node.val, frame); // Compile the property/key expression.
+        this.compile(node.val, asyncFrame); // Compile the property/key expression.
         this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         return;
       }
@@ -876,9 +880,9 @@ class CompilerBase extends Obj {
       } else {
         this.emit(`runtime.memberLookupAsync((`);
       }
-      this.compile(node.target, frame);
+      this.compile(node.target, asyncFrame);
       this.emit('),');
-      this.compile(node.val, frame);
+      this.compile(node.val, asyncFrame);
       this.emit(`, ${errorContextJson})`);
       return; // IMPORTANT: End of all async logic.
     }
@@ -1009,15 +1013,15 @@ class CompilerBase extends Obj {
     const importedCallableFacts = this.asyncMode ? node._analysis.importedCallable : null;
 
     if (this.asyncMode) {
-      if (this._compileSpecialChannelFunCall(node, frame)) {
+      const asyncFrame = null;
+      if (this._compileSpecialChannelFunCall(node)) {
         return;
       }
 
       if (this.macro && this.macro.isDirectCallerCall(node)) {
         this.macro._emitCallerCallDispatch({
           bufferId: this.buffer.currentBuffer,
-          node,
-          frame
+          node
         });
         return;
       }
@@ -1035,9 +1039,9 @@ class CompilerBase extends Obj {
       if (sequenceLockKey) {
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
         this.emit('runtime.sequentialCallWrapValue(');
-        this.compile(node.name, frame);
+        this.compile(node.name, asyncFrame);
         this.emit(`, "${funcName}", context, `);
-        this._compileAggregate(node.args, frame, '[', ']', false, false);
+        this._compileAggregate(node.args, asyncFrame, '[', ']', false, false);
         this.emit(`, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         return;
       }
@@ -1046,10 +1050,10 @@ class CompilerBase extends Obj {
         if (directMacroBinding) {
           this.emit(directMacroBinding);
         } else {
-          this.compile(node.name, frame);
+          this.compile(node.name, asyncFrame);
         }
         this.emit(', context, ');
-        this._compileAggregate(node.args, frame, '[', ']', false, false);
+        this._compileAggregate(node.args, asyncFrame, '[', ']', false, false);
         this.emit(`, ${this.buffer.currentBuffer})`);
         return;
       }
@@ -1058,13 +1062,13 @@ class CompilerBase extends Obj {
         // macro boundary or an ordinary function. Give them a child buffer up
         // front so the eventual dispatch happens inside a known current flow.
         this.boundaries.compileValueBoundary(this.buffer, node, (n) => {
-          this._emitAsyncDynamicCall(n, frame, 'currentBuffer');
+          this._emitAsyncDynamicCall(n, 'currentBuffer');
         });
         return;
       }
       // Dynamic async calls should dispatch in the current boundary with raw
       // promise-valued callee/args, not from a later .then(...).
-      this._emitAsyncDynamicCall(node, frame, this.buffer.currentBuffer);
+      this._emitAsyncDynamicCall(node, this.buffer.currentBuffer);
     } else {
       // In sync mode, compile as usual.
       this.emit('runtime.callWrap(');
@@ -1079,7 +1083,7 @@ class CompilerBase extends Obj {
     }
   }
 
-  _compileSpecialChannelFunCall(node, frame) {
+  _compileSpecialChannelFunCall(node) {
     if (!this.scriptMode) {
       return false;
     }
@@ -1095,7 +1099,7 @@ class CompilerBase extends Obj {
     if (this._compileChannelObservationFunCall(node, specialChannelCall)) {
       return true;
     }
-    return this._compileSequenceChannelFunCall(node, frame, specialChannelCall);
+    return this._compileSequenceChannelFunCall(node, specialChannelCall);
   }
 
   _assertSequenceRootIsContextPath(lockKey, node) {
@@ -1144,11 +1148,11 @@ class CompilerBase extends Obj {
     return false;
   }
 
-  _compileSequenceChannelFunCall(node, frame, specialChannelCall) {
+  _compileSequenceChannelFunCall(node, specialChannelCall) {
     if (specialChannelCall.channelType !== 'sequence' || specialChannelCall.methodName === 'snapshot') {
       return false;
     }
-    this._compileAggregate(node.args, frame, '[', ']', false, false, function (resolvedArgs) {
+    this._compileAggregate(node.args, null, '[', ']', false, false, function (resolvedArgs) {
       this.emit('return ');
       this.buffer.emitAddSequenceCall(
         specialChannelCall.channelName,
@@ -1175,6 +1179,7 @@ class CompilerBase extends Obj {
     this.assertType(node.name, nodes.Symbol);
 
     if (this.asyncMode) {
+      const asyncFrame = null;
       // Although filters are compiled differently to expressions -
       // they still compile to a normal promise-valued expression.
       // Any outer structural wrapping should happen at the caller site,
@@ -1184,7 +1189,7 @@ class CompilerBase extends Obj {
           this.emit(`env.getFilter("${node.name.value}")`);
         },
         ...node.args.children.map((arg) => function () {
-          this.compile(arg, frame);
+          this.compile(arg, asyncFrame);
         })
       ];
       this._compileResolvedPartList(parts, function (result) {
@@ -1203,12 +1208,13 @@ class CompilerBase extends Obj {
     this.assertType(node.name, nodes.Symbol);
 
     if (this.asyncMode) {
+      const asyncFrame = null;
       // Although filters are compiled differently to expressions,
       // they still compile to a normal promise-valued expression.
       // Any outer structural wrapping should happen at the caller site,
       // not here.
       this.emit.line(`let ${symbol} = `);
-      this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
+      this._compileAggregate(node.args, asyncFrame, '[', ']', true, false, function (result) {
         this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
       });
       this.emit(';');
@@ -1231,13 +1237,13 @@ class CompilerBase extends Obj {
     return this.macro.analyzeCaller(node);
   }
 
-  _emitAsyncDynamicCall(node, frame, currentBufferExpr) {
+  _emitAsyncDynamicCall(node, currentBufferExpr) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
     const errorContextJson = JSON.stringify(this._createErrorContext(node));
     this.emit('runtime.callWrapAsync(');
-    this.compile(node.name, frame);
+    this.compile(node.name, null);
     this.emit(`, "${funcName}", context, `);
-    this._compileAggregate(node.args, frame, '[', ']', false, false);
+    this._compileAggregate(node.args, null, '[', ']', false, false);
     this.emit(`, ${errorContextJson}, ${currentBufferExpr})`);
   }
 

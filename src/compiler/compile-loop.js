@@ -45,8 +45,8 @@ class CompileLoop {
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const parentWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
 
-    const forResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, () => {
-      const innerFrame = frame;
+    const forResult = this.compiler.buffer._compileControlFlowBoundary(node, null, () => {
+      const innerFrame = null;
       const arr = this.compiler._tmpid();
 
       if (iteratorCompiler) {
@@ -74,7 +74,6 @@ class CompileLoop {
       const hasConcurrentLimit = Boolean(node.concurrentLimit);
       this._compileAsyncLoopBody(
         node,
-        innerFrame,
         loopVars,
         sequentialLoopBody,
         hasConcurrentLimit,
@@ -202,7 +201,7 @@ class CompileLoop {
     frame = forResult.frame;
   }
 
-  _compileAsyncLoopBody(node, frame, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, loopVarNames = null) {
+  _compileAsyncLoopBody(node, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, loopVarNames = null) {
     this.compiler.emit('(async function(');
     loopVars.forEach((varName, index) => {
       if (index > 0) {
@@ -258,7 +257,7 @@ class CompileLoop {
         this.compiler.emit('try {');
         this.compiler.emit(`${whileCondId} = `);
         this.compiler.buffer.skipOwnWaitedChannel(() => {
-          this.compiler._compileAwaitedExpression(whileConditionNode, frame);
+          this.compiler._compileAwaitedExpression(whileConditionNode, null);
         });
         this.compiler.emit.line(';');
         const whileErrorContext = this.compiler._createErrorContext(node, whileConditionNode);
@@ -274,7 +273,7 @@ class CompileLoop {
       }
 
       this.compiler.emit.withScopedSyntax(() => {
-        this.compiler.compile(node.body, frame);
+        this.compiler.compile(node.body, null);
       });
 
       if (whileConditionNode && catchPoisonPos !== null) {
@@ -313,7 +312,7 @@ class CompileLoop {
     this.compiler.emit.line('});');
     this.compiler.emit.line('}).bind(context);');
 
-    return frame;
+    return null;
   }
 
   _compileSyncLoopBody(node, frame, loopVars, whileConditionNode = null, loopVarNames = null) {

@@ -319,7 +319,7 @@ class CompileInheritance {
         this.emit.line(`  return ${resolvedParentTemplateId};`);
         this.emit.line('});');
       }
-      const extendsResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, () => {
+      const extendsResult = this.compiler.buffer._compileControlFlowBoundary(node, null, () => {
         const templateVar = this.compiler._tmpid();
         if (!node.asyncStoreIn) {
           this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${parentTemplateId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
@@ -369,7 +369,7 @@ class CompileInheritance {
       this.compileIncludeSync(node, frame);
       return;
     }
-    const includeResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, () => {
+    const includeResult = this.compiler.buffer._compileControlFlowBoundary(node, null, () => {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
@@ -385,7 +385,7 @@ class CompileInheritance {
       this.emit(`let ${templateNameVar} = `);
       // Include target lookup is handled by include/import boundary tracking,
       // so it intentionally bypasses root waited-expression tracking.
-      this.compiler.compileExpression(node.template, frame, node.template, true);
+      this.compiler.compileExpression(node.template, null, node.template, true);
       this.emit.line(';');
 
       // Keep producer synchronous: carry async template lookup/render in promise chain.

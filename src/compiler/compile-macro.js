@@ -19,7 +19,7 @@ class CompileMacro {
     );
   }
 
-  _emitCallerCallDispatch({ bufferId, node, frame }) {
+  _emitCallerCallDispatch({ bufferId, node }) {
     const compiler = this.compiler;
     const activeContext = this.currentCallerBindingContext;
     const argsId = compiler._tmpid();
@@ -29,7 +29,7 @@ class CompileMacro {
     // waits in the current boundary, not from a later .then.
     compiler.emit('(() => {');
     compiler.emit(`let ${argsId} = `);
-    compiler._compileAggregate(node.args, frame, '[', ']', false, false);
+    compiler._compileAggregate(node.args, null, '[', ']', false, false);
     compiler.emit.line(';');
     compiler.emit.line(`if (${activeContext.rawCallerVar} && ${activeContext.rawCallerVar}.isMacro) {`);
 
@@ -98,13 +98,13 @@ class CompileMacro {
     const compiler = this.compiler;
     compiler.emit('(function (){');
     const funcId = compiler.asyncMode
-      ? this._compileAsyncCaller(node, frame)
+      ? this._compileAsyncCaller(node)
       : this._compileSyncCaller(node, frame);
     compiler.emit(`return ${funcId};})()`);
   }
 
-  _compileAsyncCaller(node, frame) {
-    const funcId = this._compileAsyncMacro(node, frame);
+  _compileAsyncCaller(node) {
+    const funcId = this._compileAsyncMacro(node);
     const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
     this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
     return funcId;
@@ -430,11 +430,10 @@ class CompileMacro {
     return `new runtime.SafeString(${bufferId})`;
   }
 
-  _compileAsyncMacro(node, frame) {
+  _compileAsyncMacro(node) {
     const compiler = this.compiler;
     const funcId = node._analysis.compiledMacroFuncId;
     const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
-    const currFrame = frame;
     const oldIsCompilingMacroBody = compiler.sequential.isCompilingMacroBody;
     compiler.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
@@ -479,7 +478,7 @@ class CompileMacro {
       compiler.buffer.currentTextChannelVar = callerTextChannelVar;
       returnStatement = this._emitCompiledAsyncMacroBody({
         node,
-        managedFrame: currFrame,
+        managedFrame: null,
         bufferId: 'macroParentBuffer',
         args,
         kwargs,
@@ -491,7 +490,7 @@ class CompileMacro {
       compiler.buffer.currentBuffer = prevBuffer;
       compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     } else {
-      compiler.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
+      compiler.emit.managedBlock(null, false, true, (managedFrame, bufferId) => {
         returnStatement = this._emitCompiledAsyncMacroBody({
           node,
           managedFrame,
@@ -571,18 +570,18 @@ class CompileMacro {
   compileMacro(node, frame) {
     const compiler = this.compiler;
     if (compiler.asyncMode) {
-      this._compileAsyncMacroDeclaration(node, frame);
+      this._compileAsyncMacroDeclaration(node);
       return;
     }
     this._compileSyncMacroDeclaration(node, frame);
   }
 
-  _compileAsyncMacroDeclaration(node, frame) {
+  _compileAsyncMacroDeclaration(node) {
     const compiler = this.compiler;
-    const funcId = this._compileAsyncMacro(node, frame);
+    const funcId = this._compileAsyncMacro(node);
     const name = node.name.value;
     compiler.emit.line(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-    compiler.buffer.asyncAddValueToBuffer(frame, (resultVar) => {
+    compiler.buffer.asyncAddValueToBuffer((resultVar) => {
       compiler.emit(
         `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
       );

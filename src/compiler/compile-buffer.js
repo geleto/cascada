@@ -116,7 +116,7 @@ class CompileBuffer {
     return textPromiseId;
   }
 
-  _compileCommandConstruction(node, frame) {
+  _compileCommandConstruction(node) {
     const isCallNode = node.call instanceof nodes.FunCall;
     const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
     if (!staticPath || staticPath.length === 0) {
@@ -159,7 +159,7 @@ class CompileBuffer {
           this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
         }
         this.compiler.emit('args: ');
-        this.compiler._compileAggregate(node.call.args, frame, '[', ']', false, true);
+        this.compiler._compileAggregate(node.call.args, null, '[', ']', false, true);
         this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
         return;
       }
@@ -222,7 +222,7 @@ class CompileBuffer {
     this.compiler.emit('args: ');
     // Channel commands are constructed with unresolved args; resolution/normalization
     // happens once in runtime right before command.apply().
-    this.compiler._compileAggregate(argList, frame, '[', ']', false, true);
+    this.compiler._compileAggregate(argList, null, '[', ']', false, true);
     this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
   }
 
@@ -304,14 +304,14 @@ class CompileBuffer {
    * Compile channel command: channel.method(args)
    * Handles declared channels (data/text/value/sink) and custom sinks
    */
-  compileChannelCommand(node, frame) {
+  compileChannelCommand(node) {
     // Preserve channel routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
     const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
     const channelName = this.compiler.sequential._extractStaticPathRoot(pathNode);
 
-    this.asyncAddValueToBuffer(frame, (resultVar, f) => {
+    this.asyncAddValueToBuffer((resultVar) => {
       this.compiler.emit(`${resultVar} = `);
-      this._compileCommandConstruction(node, f);
+      this._compileCommandConstruction(node);
     }, node, channelName);
   }
 
@@ -349,10 +349,10 @@ class CompileBuffer {
    * Use when value construction does not require addAsyncArgsCommand producer semantics.
    * The value is added directly to the current buffer (no extra async block).
    */
-  asyncAddValueToBuffer(frame, renderFunction, positionNode, channelName, emitTextCommand = false) {
+  asyncAddValueToBuffer(renderFunction, positionNode, channelName, emitTextCommand = false) {
     const returnId = this.compiler._tmpid();
     this.compiler.emit.line(`let ${returnId};`);
-    renderFunction.call(this.compiler, returnId, frame);
+    renderFunction.call(this.compiler, returnId);
     this.compiler.emit.line(';');
     const valueExpr = emitTextCommand
       ? this._emitTemplateTextCommandExpression(returnId, positionNode)

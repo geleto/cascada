@@ -204,13 +204,42 @@ Completed so far:
       - `emitDeclareReturnChannel(...)` no longer accepts a dead `frame` arg
       - async render/capture/block boundary callbacks no longer receive a no-op `frame` argument when the boundary does not transform frame state
       - async-only `compileCaptureBoundary(...)` and `compileBlockTextBoundary(...)` no longer take/pass through dead `frame` arguments
-      - async control-flow boundaries no longer relay callback-provided compile frames
-        - async `if` / `switch` / `guard` now compile against their outer compiler frame directly
-        - async loop / include / extends control-flow boundaries no longer receive fake child compile-frame callback args
+    - async control-flow boundaries no longer relay callback-provided compile frames
+      - async `if` / `switch` / `guard` now compile against their outer compiler frame directly
+      - async loop / include / extends control-flow boundaries no longer receive fake child compile-frame callback args
+      - async `if` / `switch` / `guard` / loop / include / extends callers no longer pass the outer compiler `frame` into async control-flow boundaries
+    - async root / block / macro compilation no longer carries a compiler `Frame` just for recursion
+      - async root body now compiles children against `null`
+      - async block entries now compile block bodies against `null`
+      - async macro and caller compilation now build macro bodies/defaults against `null`
+      - guard target analysis no longer accepts a dead `frame` argument
+    - more async statement/expression compilation now also compiles against `null`
+      - async loop iterable / limit / body / else compilation no longer carries a compiler frame
+      - async `capture` bodies now compile against `null`
+      - async template output expressions now compile against `null`
+      - async inline-if and async short-circuit expression branches now compile against `null`
+      - async `if` / `switch` / `guard` branch bodies now compile against `null`
+      - async `set` / `do` / `return` compilation no longer carries a compiler frame for value expressions
+      - script-only async channel declarations now compile initializers against `null`
     - async symbol lookup is now split by real runtime mode:
       - async template symbols use explicit async-template lookup helpers
       - async script symbols use explicit async-script lookup helpers
       - async script fallback now goes through explicit `runtime.contextOrScriptChannelLookup(...)`
+    - script-only async channel emission is now frame-free at the compiler helper layer:
+      - `CompileBuffer.asyncAddValueToBuffer(...)` no longer takes or passes through `frame`
+      - script channel command construction now compiles command args against `null`
+      - async macro declaration publishing no longer threads a dead `frame` arg into async buffer value emission
+      - script-only `compileChannelDeclaration(...)` / `compileChannelCommand(...)` no longer expose a live compiler-frame path
+    - more async composition/extension expression paths now also compile against `null`
+      - async include target expressions no longer compile against `frame`
+      - direct async `caller()` dispatch no longer compiles aggregate args against `frame`
+      - async extension invocations no longer pass `frame` into argument/content compilation
+    - a larger async expression/call lowering seam is now frame-free too:
+      - async function-call lowering no longer threads `frame` through dynamic call dispatch
+      - async special sequence-channel call lowering no longer threads `frame`
+      - async filter/filterAsync argument compilation now uses `null`
+      - async comparison lowering now compiles operands against `null`
+      - async member lookup lowering now compiles target/key expressions against `null`
     - dead async expression-helper `frame` args were removed from channel observation helpers
       - `_getObservedChannelName(...)`
       - `_compileChannelObservationFunCall(...)`
