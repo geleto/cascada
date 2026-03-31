@@ -215,6 +215,15 @@ function cps(ast, asyncFilters) {
   return convertStatements(liftSuper(liftFilters(ast, asyncFilters)));
 }
 
+function normalizeAsyncCompilerNodes(ast) {
+  return walk(ast, (node) => {
+    if (node instanceof nodes.IfAsync) {
+      return new nodes.If(node.lineno, node.colno, node.cond, node.body, node.else_);
+    }
+    return undefined;
+  });
+}
+
 // @todo - do this after analysis, rename both AST nodes and analysis nodes
 // use the analysis data for scoping, etc...!!!
 function renameConflictingDeclarations(ast, idPool) {
@@ -345,6 +354,7 @@ function transform(ast, asyncFilters, name, opts) {
   }
   ast = cps(ast, asyncFilters || []);
   if (opts.asyncMode) {
+    ast = normalizeAsyncCompilerNodes(ast);
     ast = renameConflictingDeclarations(ast, opts && opts.idPool);
   }
   return ast;

@@ -260,13 +260,11 @@
           const tok = parser.nextToken();
           const args = parser.parseSignature(null, true);
           parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtensionAsync(this, 'run', args);
+          return new nodes.CallExtension(this, 'run', args);
         }
-        run(context, callback) {
-          // Async extensions use callbacks, not async/await directly
-          setTimeout(() => {
-            callback(new Error('Extension error'));
-          }, 10);
+        async run() {
+          await delay(10);
+          throw new Error('Extension error');
         }
       }
 

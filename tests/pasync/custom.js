@@ -36,7 +36,6 @@
       this.method = method;
       this.supportsBody = options.supportsBody || false;
       this.doNotResolveArgs = options.doNotResolveArgs || false;
-      this.oldAsync = options.oldAsync || false;
       this.numContentArgs = 0; // Will be set during parsing
     }
 
@@ -62,12 +61,7 @@
         this.numContentArgs = contentArgs.length;
       }
 
-      // Return a CallExtension node with arguments and optional content bodies
-      if (this.oldAsync) {
-        return new nodes.CallExtensionAsync(this, 'run', args, contentArgs, !this.doNotResolveArgs);
-      } else {
-        return new nodes.CallExtension(this, 'run', args, contentArgs, !this.doNotResolveArgs);
-      }
+      return new nodes.CallExtension(this, 'run', args, contentArgs, !this.doNotResolveArgs);
     }
 
     parseBody(parser, nodes, tagName) {
@@ -112,12 +106,6 @@
         await Promise.all(args);
       }
 
-      let callback = null;
-      if (this.oldAsync) {
-        //the old async uses a callback as the last argument
-        callback = args.pop();
-      }
-
       const bodies = [];
       for (let i = 0; i < this.numContentArgs; i++) {
         let body = args.pop();
@@ -136,15 +124,7 @@
         bodies.unshift(body);
       }
 
-      const bodyContent = await this.method(context, ...args, bodies.length > 1 ? bodies : bodies[0]);
-
-      if (callback) {
-        callback(null, bodyContent);
-        return undefined;
-      }
-      else {
-        return bodyContent;
-      }
+      return this.method(context, ...args, bodies.length > 1 ? bodies : bodies[0]);
 
       /*if (this.supportsBody && typeof args[args.length - 1] === 'function') {
         const body = args.pop();
@@ -182,27 +162,6 @@
         });
 
         env.addExtension('GreetExtension', greetExtension);
-
-        const template = '{% greet "John" %}';
-        const result = await env.renderTemplateString(template);
-        expect(result).to.equal('Hello, John!');
-      });
-
-      it('should handle a simple callback extension function (old async)', async () => {
-        env.addExtension('getName', {
-          tags: ['greet'],
-          parse(parser, nodes) {
-            var tok = parser.nextToken();
-            var args = parser.parseSignature(null, true);
-            parser.advanceAfterBlockEnd(tok.value);
-            return new nodes.CallExtensionAsync(this, 'run', args);
-          },
-          run(context, name, callback) {
-            setTimeout(() => {
-              callback(null, `Hello, ${name}!`);
-            }, 5);
-          }
-        });
 
         const template = '{% greet "John" %}';
         const result = await env.renderTemplateString(template);
@@ -304,45 +263,6 @@
 
         expect(result.trim()).to.equal(expected.trim());
       });
-
-      it('should handle async extension tags in loops (old async)', async () => {
-        env.addExtension('getNameAsync', {
-          tags: ['getName'],
-          parse(parser, nodes) {
-            var tok = parser.nextToken();
-            var args = parser.parseSignature(null, true);
-            parser.advanceAfterBlockEnd(tok.value);
-            return new nodes.CallExtensionAsync(this, 'run', args);
-          },
-          run(context, number, callback) {
-            const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
-            setTimeout(() => {
-              const result = names[number % names.length];
-              callback(null, result); // Pass the result back via the callback
-            }, 5); // Simulate a small asynchronous delay
-          }
-        });
-
-        const template = `
-        <ul>
-          {%- for i in range(5) %}
-          <li>{% getName i -%}</li>
-          {%- endfor %}
-        </ul>`;
-
-        const result = await env.renderTemplateString(template);
-        const expected = `
-        <ul>
-          <li>Alice</li>
-          <li>Bob</li>
-          <li>Charlie</li>
-          <li>David</li>
-          <li>Eve</li>
-        </ul>`;
-
-        expect(result).to.equal(expected);
-      });
-
 
       it('should properly handle errors thrown in async extension tags', async () => {
         const asyncErrorExtension = new AsyncExtension('asyncError', async () => {
@@ -447,8 +367,8 @@
         const options = [
           { supportsBody: true, extName: 'wrap' }, //the old API, but returning async value
           { supportsBody: true, extName: 'pwrap', doNotResolveArgs: true },
-          { supportsBody: true, extName: 'awrap', oldAsync: true },
-          { supportsBody: true, extName: 'apwrap', oldAsync: true, doNotResolveArgs: true },
+          { supportsBody: true, extName: 'awrap' },
+          { supportsBody: true, extName: 'apwrap', doNotResolveArgs: true },
         ];
         for (const option of options) {
           const extName = option.extName;
@@ -494,7 +414,7 @@
         const options = [
           { supportsBody: true, extName: 'wrap' },
           { supportsBody: true, extName: 'pwrap', doNotResolveArgs: true },
-          { supportsBody: true, extName: 'awrap', oldAsync: true },
+          { supportsBody: true, extName: 'awrap' },
         ];
         for (const option of options) {
           const extName = option.extName;

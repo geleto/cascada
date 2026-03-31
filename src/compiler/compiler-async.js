@@ -25,16 +25,8 @@ class CompilerAsync extends CompilerBaseAsync {
       : {};
   }
 
-  analyzeCallExtensionAsync(node) {
-    return this.analyzeCallExtension(node);
-  }
-
   compileCallExtension(node) {
     this._compileAsyncCallExtension(node, false);
-  }
-
-  compileCallExtensionAsync(node) {
-    this._compileAsyncCallExtension(node, true);
   }
 
   _compileAsyncCallExtension(node, async) {
@@ -710,14 +702,6 @@ class CompilerAsync extends CompilerBaseAsync {
         );
       }
     });
-  }
-
-  analyzeIfAsync(node) {
-    return this.analyzeIf(node);
-  }
-
-  compileIfAsync(node) {
-    this.compileIf(node);
   }
 
   analyzeCapture(node) {
