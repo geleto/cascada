@@ -54,12 +54,12 @@ class CompileInheritance {
   }
 
   _emitSyncImportedBinding(name, id, frame) {
-    this.compiler.setSyncTemplateCompileFrameValue(frame, name, id);
+    this.compiler.syncTemplate.setFrameValue(frame, name, id);
 
     if (frame.parent) {
-      this.compiler.emitSyncTemplateFrameSet(name, id);
+      this.compiler.syncTemplate.emitFrameSet(name, id);
     } else {
-      this.compiler.emitSyncTemplateTopLevelPublish(name, id);
+      this.compiler.syncTemplate.emitTopLevelPublish(name, id);
     }
   }
 
@@ -79,7 +79,7 @@ class CompileInheritance {
     return this.compiler.templateName === null ? 'undefined' : JSON.stringify(this.compiler.templateName);
   }
 
-  _compileGetTemplateOrScript(node, frame, eagerCompile, ignoreMissing) {
+  _compileAsyncGetTemplateOrScript(node, frame, eagerCompile, ignoreMissing) {
     const parentTemplateId = this.compiler._tmpid();
     const parentName = this._templateName();
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
@@ -88,30 +88,36 @@ class CompileInheritance {
     // The relevant position is the template expression node
     const positionNode = node.template || node; // node.template exists for Import, Extends, Include, FromImport
 
-    if (this.compiler.asyncMode) {
-      const getTemplateFunc = this.compiler._tmpid();
-      //the AsyncEnviuronment.getTemplate returns a Promise
-      this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
-      this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
-      // Template/script lookup expressions feed composition boundaries, which
-      // emit their own completion tracking separately from root-expression WRCs.
-      this.compiler.compileExpression(node.template, frame, positionNode, true);
-      this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
-    } else {
-      const cb = this.compiler._makeCallback(parentTemplateId);
-      this.emit('env.getTemplate(');
-      // Template/script lookup expressions feed composition boundaries, which
-      // emit their own completion tracking separately from root-expression WRCs.
-      this.compiler.compileExpression(node.template, frame, node.template, true);
-      this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
-    }
+    const getTemplateFunc = this.compiler._tmpid();
+    // Template/script lookup expressions feed composition boundaries, which
+    // emit their own completion tracking separately from root-expression WRCs.
+    this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
+    this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
+    this.compiler.compileExpression(node.template, frame, positionNode, true);
+    this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
 
     return parentTemplateId;
   }
 
+  _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
+    const templateId = this.compiler._tmpid();
+    const parentName = this._templateName();
+    const eagerCompileArg = eagerCompile ? 'true' : 'false';
+    const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
+    const cb = this.compiler._makeCallback(templateId);
+
+    this.emit('env.getTemplate(');
+    // Template lookup expressions feed composition boundaries, which
+    // emit their own completion tracking separately from root-expression WRCs.
+    this.compiler.compileExpression(node.template, frame, node.template, true);
+    this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
+
+    return templateId;
+  }
+
   _compileAsyncImport(node, frame) {
     const target = node.target.value;
-    const id = this._compileGetTemplateOrScript(node, frame, false, false);
+    const id = this._compileAsyncGetTemplateOrScript(node, frame, false, false);
     const exportedId = this.compiler._tmpid();
     if (node.withContext) {
       const importVarsVar = this.compiler._tmpid();
@@ -127,7 +133,7 @@ class CompileInheritance {
 
   _compileSyncImport(node, frame) {
     const target = node.target.value;
-    const id = this._compileGetTemplateOrScript(node, frame, false, false);
+    const id = this._compileSyncGetTemplate(node, frame, false, false);
     this.emit.addScopeLevel();
     this.emit.line(id + '.getExported(' +
       (node.withContext ? 'context.getVariables(), frame, ' : '') +
@@ -137,7 +143,7 @@ class CompileInheritance {
   }
 
   _compileAsyncFromImport(node, frame) {
-    const importedId = this._compileGetTemplateOrScript(node, frame, false, false);
+    const importedId = this._compileAsyncGetTemplateOrScript(node, frame, false, false);
     const exportedId = this.compiler._tmpid();
     const bindingIds = [];
     if (node.withContext) {
@@ -188,7 +194,7 @@ class CompileInheritance {
   }
 
   _compileSyncFromImport(node, frame) {
-    const importedId = this._compileGetTemplateOrScript(node, frame, false, false);
+    const importedId = this._compileSyncGetTemplate(node, frame, false, false);
     this.emit.addScopeLevel();
     this.emit.line(importedId + '.getExported(' +
       (node.withContext ? 'context.getVariables(), frame, ' : '') +
@@ -312,7 +318,9 @@ class CompileInheritance {
       this.emit.line('context.prepareForAsyncBlocks();');
     }
 
-    const parentTemplateId = this._compileGetTemplateOrScript(node, frame, true, false);
+    const parentTemplateId = this.compiler.asyncMode
+      ? this._compileAsyncGetTemplateOrScript(node, frame, true, false)
+      : this._compileSyncGetTemplate(node, frame, true, false);
 
     if (this.compiler.asyncMode) {
       if (node.asyncStoreIn) {
@@ -446,7 +454,7 @@ class CompileInheritance {
     this.emit.line('tasks.push(');
     this.emit.line('function(callback) {');
 
-    const id = this._compileGetTemplateOrScript(node, frame, false, node.ignoreMissing);
+    const id = this._compileSyncGetTemplate(node, frame, false, node.ignoreMissing);
     this.emit.line(`callback(null,${id});});`);
 
     this.emit.line('});');

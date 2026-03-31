@@ -120,10 +120,10 @@ class AsyncEnvironment extends BaseEnvironment {
   getTemplate(name, eagerCompile, parentName, ignoreMissing) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        return this._getCompiledAsync(resolvedName, eagerCompile, parentName, ignoreMissing, true, false);
+        return this._getCompiledTemplateAsync(resolvedName, eagerCompile, parentName, ignoreMissing);
       });
     }
-    return this._getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, true, false);
+    return this._getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing);
   }
 
   //@todo - in script mode use instead of getTemplate
@@ -131,15 +131,27 @@ class AsyncEnvironment extends BaseEnvironment {
   getScript(name, eagerCompile, parentName, ignoreMissing) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        return this._getCompiledAsync(resolvedName, eagerCompile, parentName, ignoreMissing, true, true);
+        return this._getCompiledScriptAsync(resolvedName, eagerCompile, parentName, ignoreMissing);
       });
     }
-    return this._getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, true, true);
+    return this._getCompiledScriptAsync(name, eagerCompile, parentName, ignoreMissing);
   }
 
-  _getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode) {
+  _getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
     return new Promise((resolve, reject) => {
-      this._getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, (err, tmpl) => {
+      this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, true, (err, tmpl) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(tmpl);
+        }
+      });
+    });
+  }
+
+  _getCompiledScriptAsync(name, eagerCompile, parentName, ignoreMissing) {
+    return new Promise((resolve, reject) => {
+      this._getCompiledScript(name, eagerCompile, parentName, ignoreMissing, (err, tmpl) => {
         if (err) {
           reject(err);
         } else {

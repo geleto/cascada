@@ -12,7 +12,7 @@ const { Context } = require('./context');
 let Environment, AsyncEnvironment;
 
 class Template extends Obj {
-  init(src, env, path, eagerCompile, asyncMode = false, scriptMode = false) {
+  init(src, env, path, eagerCompile) {
     if (!env) {
       if (!Environment) {
         const envModule = require('./environment');
@@ -22,8 +22,8 @@ class Template extends Obj {
     } else {
       this.env = env;
     }
-    this.asyncMode = asyncMode;
-    this.scriptMode = scriptMode;
+    this.asyncMode = false;
+    this.scriptMode = false;
 
     if (lib.isObject(src)) {
       switch (src.type) {
@@ -57,7 +57,7 @@ class Template extends Obj {
   }
 
   render(ctx, parentSyncFrame, cb) {
-    return this._renderSync(ctx, parentSyncFrame, cb);
+    return this._renderSyncTemplate(ctx, parentSyncFrame, cb);
   }
 
   _renderAsync(ctx, cb) {
@@ -76,7 +76,7 @@ class Template extends Obj {
       throw err;
     }
 
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
+    const context = this._createAsyncContext(ctx);
     let syncResult = null;
     let callbackCalled = false;
 
@@ -104,8 +104,8 @@ class Template extends Obj {
     return syncResult;
   }
 
-  _renderSync(ctx, parentSyncFrame, cb) {
-    const normalized = this._normalizeSyncRenderArgs(ctx, parentSyncFrame, cb);
+  _renderSyncTemplate(ctx, parentSyncFrame, cb) {
+    const normalized = this._normalizeSyncTemplateRenderArgs(ctx, parentSyncFrame, cb);
     ctx = normalized.ctx;
     parentSyncFrame = normalized.parentSyncFrame;
     cb = normalized.cb;
@@ -124,8 +124,8 @@ class Template extends Obj {
       }
     }
 
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
-    const frame = this._createTopLevelSyncFrame(parentSyncFrame, true);
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path, false);
+    const frame = this._createTopLevelSyncTemplateFrame(parentSyncFrame, true);
 
     let didError = false;
     let syncResult = null;
@@ -164,11 +164,11 @@ class Template extends Obj {
 
   // @todo - return a value instead of calling a callback
   getExported(ctx, parentSyncFrame, cb) {
-    return this._getExportedSync(ctx, parentSyncFrame, cb);
+    return this._getExportedSyncTemplate(ctx, parentSyncFrame, cb);
   }
 
-  _getExportedSync(ctx, parentSyncFrame, cb) {
-    const normalized = this._normalizeSyncRenderArgs(ctx, parentSyncFrame, cb);
+  _getExportedSyncTemplate(ctx, parentSyncFrame, cb) {
+    const normalized = this._normalizeSyncTemplateRenderArgs(ctx, parentSyncFrame, cb);
     ctx = normalized.ctx;
     parentSyncFrame = normalized.parentSyncFrame;
     cb = normalized.cb;
@@ -184,22 +184,22 @@ class Template extends Obj {
       }
     }
 
-    const frame = this._createTopLevelSyncFrame(parentSyncFrame, false);
+    const frame = this._createTopLevelSyncTemplateFrame(parentSyncFrame, false);
 
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path, false);
     // Sync mode is straightforward.
     this.rootRenderFunc(this.env, context, frame, globalRuntime, (err) => {
       if (err) {
         cb(err, null);
       } else {
-        cb(null, this._bindSyncExportedValues(context.getExported()));
+        cb(null, this._bindSyncTemplateExportedValues(context.getExported()));
       }
     });
 
     return undefined;
   }
 
-  _normalizeSyncRenderArgs(ctx, parentSyncFrame, cb) {
+  _normalizeSyncTemplateRenderArgs(ctx, parentSyncFrame, cb) {
     if (typeof ctx === 'function') {
       return {
         ctx: {},
@@ -217,15 +217,22 @@ class Template extends Obj {
     return { ctx, parentSyncFrame, cb };
   }
 
-  _createTopLevelSyncFrame(parentSyncFrame, isolateWrites) {
+  _createTopLevelSyncTemplateFrame(parentSyncFrame, isolateWrites) {
     const frame = parentSyncFrame ? parentSyncFrame.push(isolateWrites) : new Frame();
-    frame.syncTemplateTopLevel = true;
-    return frame;
+    return globalRuntime.markSyncTemplateFrameTopLevel(frame);
   }
 
-  _bindSyncExportedValues(exported) {
+  _createAsyncContext(ctx) {
+    return new Context(ctx || {}, this.blocks, this.env, this.path, false);
+  }
+
+  _createAsyncMacroContext() {
+    return new Context({}, this.blocks, this.env, this.path, false);
+  }
+
+  _bindSyncTemplateExportedValues(exported) {
     const boundExported = {};
-    const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
+    const macroContext = new Context({}, this.blocks, this.env, this.path, false);
 
     for (const name in exported) {
       const item = exported[name];
@@ -302,7 +309,7 @@ class Template extends Obj {
       this.env.asyncFilters,
       this.env.extensionsList,
       this.path,
-      Object.assign({ scriptMode: this.scriptMode, asyncMode: this.asyncMode }, this.env.opts)
+      Object.assign({ scriptMode: false, asyncMode: false }, this.env.opts)
     );
   }
 
@@ -328,7 +335,9 @@ class AsyncTemplate extends Template {
       }
       env = new AsyncEnvironment();
     }
-    super.init(src, env, path, eagerCompile, true/*async*/, false/*script*/);
+    super.init(src, env, path, eagerCompile);
+    this.asyncMode = true;
+    this.scriptMode = false;
   }
 
   render(ctx, cb) {
@@ -356,12 +365,12 @@ class AsyncTemplate extends Template {
 
     this.compile();
 
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
+    const context = this._createAsyncContext(ctx);
     this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
 
     const exported = context.getExported();
     const boundExported = {};
-    const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
+    const macroContext = this._createAsyncMacroContext();
 
     for (const name in exported) {
       const item = exported[name];
@@ -383,8 +392,17 @@ class AsyncTemplate extends Template {
    */
   _renderForComposition(ctx, cb) {
     this.compile();
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
+    const context = this._createAsyncContext(ctx);
     return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+  }
+
+  _compileSource() {
+    return compiler.compile(this.tmplStr,
+      this.env.asyncFilters,
+      this.env.extensionsList,
+      this.path,
+      Object.assign({ scriptMode: false, asyncMode: true }, this.env.opts)
+    );
   }
 }
 

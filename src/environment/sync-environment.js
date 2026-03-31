@@ -7,7 +7,7 @@ const { Template } = require('./template');
 
 class Environment extends BaseEnvironment {
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
-    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, false, cb);
+    return this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb);
   }
 
   /** @deprecated Use renderTemplate instead */

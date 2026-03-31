@@ -218,7 +218,15 @@ class BaseEnvironment extends EmitterObj {
     return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
   }
 
-  _getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, cb) {
+  _getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, asyncMode, cb) {
+    return this._getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, asyncMode, false, cb);
+  }
+
+  _getCompiledScript(name, eagerCompile, parentName, ignoreMissing, cb) {
+    return this._getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, true, true, cb);
+  }
+
+  _getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, cb) {
     var that = this;
     var tmpl = null;
     if (name && name.raw) {
@@ -245,10 +253,6 @@ class BaseEnvironment extends EmitterObj {
     if (lib.isFunction(eagerCompile)) {
       cb = eagerCompile;
       eagerCompile = false;
-    }
-
-    if (scriptMode && !asyncMode) {
-      throw new Error('Sync script support has been removed; use AsyncScript / AsyncEnvironment instead');
     }
 
     // Check if name is a compiled template/script instance
@@ -331,12 +335,9 @@ class BaseEnvironment extends EmitterObj {
           throw err;
         }
       }
-      let newCompiled;
-      if (scriptMode) {
-        newCompiled = createCompiledScript(info);
-      } else {
-        newCompiled = createCompiledTemplate(info);
-      }
+      const newCompiled = scriptMode
+        ? createCompiledScript(info)
+        : createCompiledTemplate(info);
       if (cb) {
         cb(null, newCompiled);
       } else {

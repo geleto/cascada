@@ -382,9 +382,9 @@ class CompileMacro {
 
   _emitSyncMacroBinding(name, emitValueExpr, managedFrame, managedValueExpr = null) {
     const compiler = this.compiler;
-    compiler.emitSyncTemplateFrameAssignment(name, emitValueExpr);
+    compiler.syncTemplate.emitFrameAssignment(name, emitValueExpr);
     if (managedFrame && managedValueExpr !== null) {
-      compiler.setSyncTemplateCompileFrameValue(managedFrame, name, managedValueExpr);
+      compiler.syncTemplate.setFrameValue(managedFrame, name, managedValueExpr);
     }
   }
 
@@ -596,12 +596,12 @@ class CompileMacro {
 
   _emitSyncMacroDeclarationBinding(name, funcId, frame) {
     const compiler = this.compiler;
-    compiler.setSyncTemplateCompileFrameValue(frame, name, funcId);
+    compiler.syncTemplate.setFrameValue(frame, name, funcId);
     if (frame.parent) {
-      compiler.emitSyncTemplateFrameSet(name, funcId);
+      compiler.syncTemplate.emitFrameSet(name, funcId);
       return;
     }
-    compiler.emitSyncTemplateTopLevelPublish(name, funcId, true);
+    compiler.syncTemplate.emitTopLevelPublish(name, funcId, true);
   }
 }
 

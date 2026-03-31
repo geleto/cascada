@@ -397,57 +397,62 @@ class CompilerBase extends Obj {
       );
     }
     if (this.asyncMode) {
-      this._compileAsyncSymbolLookup(node, name);
+      if (this.scriptMode) {
+        this._compileAsyncScriptSymbolLookup(node, name);
+      } else {
+        this._compileAsyncTemplateSymbolLookup(node, name);
+      }
       return;
     }
     this._compileSyncSymbolLookup(node, frame, name);
   }
 
-  _compileAsyncSymbolLookup(node, name) {
+  _compileAsyncScriptSymbolLookup(node, name) {
     const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
     const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
     if (nodeStaticPathKey) {
       this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-      if (this.scriptMode) {
-        this.emit(`runtime.sequentialContextLookupScriptValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-      } else {
-        this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-      }
+      this.emit(`runtime.sequentialContextLookupScriptValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
       return;
     }
-    if (this.scriptMode) {
-      this.emit('runtime.contextOrChannelLookupScript(' +
-        'context, "' + name + '", ' +
-        `${this.buffer.currentBuffer}, ` +
-        `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
-        ')');
+    this.emit('runtime.contextOrScriptChannelLookup(' +
+      'context, "' + name + '", ' +
+      `${this.buffer.currentBuffer}, ` +
+      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
+      ')');
+  }
+
+  _compileAsyncTemplateSymbolLookup(node, name) {
+    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
+    if (nodeStaticPathKey) {
+      this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
+      this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+      return;
+    }
+
+    const useContextOnlyInheritanceLookup =
+      this.inBlock &&
+      !this.analysis.findDeclaration(node._analysis, name);
+    if (useContextOnlyInheritanceLookup) {
+      const contextRef = this._tmpid();
+      // Preserve context-first semantics for non-output names, then only fall back
+      // to channel-aware lookup for dynamic var-channel visibility.
+      this.emit('(() => {');
+      this.emit(`const ${contextRef} = context.lookup("${name}");`);
+      this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
+      this.emit(`return runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer});`);
+      this.emit('})()');
     } else {
-      const useContextOnlyInheritanceLookup =
-        this.asyncMode &&
-        this.inBlock &&
-        !this.analysis.findDeclaration(node._analysis, name);
-      if (useContextOnlyInheritanceLookup) {
-        const contextRef = this._tmpid();
-        // Preserve context-first semantics for non-output names, then only fall back
-        // to channel-aware lookup for dynamic var-channel visibility.
-        this.emit('(() => {');
-        this.emit(`const ${contextRef} = context.lookup("${name}");`);
-        this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
-        this.emit(`return runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer});`);
-        this.emit('})()');
-      } else {
-        this.emit(`runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer})`);
-      }
+      this.emit(`runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer})`);
     }
   }
 
   _compileSyncSymbolLookup(node, frame, name) {
-    const v = frame.lookup(name);
-    if (v) {
-      this.emit(v);
+    if (this.syncTemplate.emitCompilerFrameLookup(frame, name)) {
       return;
     }
-    this.emit(this.getSyncTemplateLookupExpr(name));
+    this.emit(this.syncTemplate.getFrameContextLookupExpr(name));
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests

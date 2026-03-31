@@ -15,14 +15,31 @@ Completed so far:
     - `precompileScript(...)`
     - `precompileScriptString(...)`
   - script compilation/loading is now async-only at the environment level
-    - `scriptMode` no longer has a sync-script branch in `BaseEnvironment`
-    - sync script requests now fail up front in `BaseEnvironment._getCompiled(...)`
+    - `scriptMode` no longer has a sync-script branch in the environment loader path
     - sync inheritance/template lookup now always goes through `env.getTemplate(...)`
+    - environment loading is now split by the real supported modes instead of one generic mode-switching helper:
+    - `BaseEnvironment._getCompiledTemplate(...)`
+    - `BaseEnvironment._getCompiledScript(...)`
+    - `AsyncEnvironment` now also uses explicit async-template vs async-script loader helpers
   - remaining helper naming was tightened to match that split:
     - async script context lookup now uses `Context.lookupScript(...)`
-    - sync frame-backed template lookup now uses `contextOrSyncTemplateVarLookup(...)`
-    - sync template loop metadata writes now use `setSyncTemplateLoopBindings(...)`
-    - the remaining sync top-level frame marker is now `frame.syncTemplateTopLevel`
+    - sync frame-backed template lookup now uses `contextOrSyncTemplateFrameLookup(...)`
+    - sync template loop metadata writes now use `setSyncTemplateFrameLoopBindings(...)`
+    - the remaining sync top-level frame marker now goes through runtime helpers:
+      - `markSyncTemplateFrameTopLevel(...)`
+      - `isSyncTemplateFrameTopLevel(...)`
+  - the environment/template class split now matches the real supported modes more closely:
+    - base `Template` is sync-template-oriented again
+    - async compile options are owned by `AsyncTemplate` / `AsyncScript`
+    - shared async render/export helpers now use explicit subclass context hooks instead of generic `scriptMode` branching
+  - compiler root/block entry generation is now split more honestly by mode:
+    - async root body vs sync-template root body use explicit helpers
+    - async block entries vs sync-template block entries use explicit helpers
+    - `compileRoot(...)` no longer hides that remaining sync-template frame behavior inside one large mixed function
+  - the remaining sync-template frame compiler surface is now centralized explicitly:
+    - sync-template frame reads/writes/publish helpers now live in `CompileSyncTemplate`
+    - the main `Compiler` no longer carries those frame-operation helpers directly
+    - the last compiler-side sync frame fast-path read and top-level check now also go through `CompileSyncTemplate`
 
 - Phase 1 is effectively done:
   - `node.isAsync` has been removed as an async compile-routing mechanism
@@ -55,7 +72,9 @@ Completed so far:
     - this avoids confusing the macro's local declaration with the parent-owned exported binding
   - async render entry no longer sets `frame.topLevel`
     - there are no remaining async reads of that runtime flag
-    - the remaining top-level frame marker is now explicitly sync-template-only: `frame.syncTemplateTopLevel`
+    - the remaining top-level frame marker is now explicitly sync-template-only runtime state
+      - `markSyncTemplateFrameTopLevel(...)`
+      - `isSyncTemplateFrameTopLevel(...)`
   - dead async frame flags were removed:
     - `_seesRootScope` no longer exists in the async runtime path
     - `_returnWaitCount` was dead and is gone
@@ -111,9 +130,16 @@ Completed so far:
       - `Template._renderAsync(...)`
       - `AsyncTemplate.render(...)` and `AsyncScript.render(...)` no longer route through the shared sync-capable `_render(...)`
     - the shared `Template.getExported(...)` path is now sync-only again
-      - sync internals are now explicit as `Template._getExportedSync(...)`
+      - sync internals are now explicit as `Template._getExportedSyncTemplate(...)`
     - the shared `Template._render(...)` path is now sync-only again
-      - sync internals are now explicit as `Template._renderSync(...)`
+      - sync internals are now explicit as `Template._renderSyncTemplate(...)`
+      - sync template helper internals are now explicit too:
+        - `Template._normalizeSyncTemplateRenderArgs(...)`
+        - `Template._createTopLevelSyncTemplateFrame(...)`
+        - `Template._bindSyncTemplateExportedValues(...)`
+    - base `Template` no longer owns generic async/script compile mode flags
+      - async template/script compile options now live in subclass `_compileSource(...)` overrides
+      - async context creation now lives behind explicit subclass hooks
     - `BaseEnvironment` no longer passes dead async-mode constructor args into `AsyncTemplate(...)`
   - async inheritance execution no longer inherits caller runtime frame ancestry
     - async parent-template handoff no longer threads a runtime frame into parent `rootRenderFunc(...)`
@@ -133,6 +159,10 @@ Completed so far:
     - `compileAsyncVarSet(...)` no longer writes assigned async vars into the compiler frame
     - async sequence-root validation now uses analysis declaration ownership directly instead of compiler-frame synthetic lookup
     - dead buffer-helper `frame` parameters were removed from snapshot / sequence / waited-command emission helpers
+    - root analysis/finalization is now split into explicit helper paths instead of one mixed root tail:
+      - async script root completion
+      - async template root completion
+      - sync template root completion
     - modern async loop / capture / control-flow compilation no longer creates compile-time child frames just for scope shape
       - async loop bodies / else blocks now compile directly against the current compiler frame
       - async `capture`, `if`, `switch`, and `guard` no longer push compile-time child frames
@@ -162,7 +192,11 @@ Completed so far:
     - `Context.resolveExports(...)` no longer accepts `frame` or `runtime`
     - `guard.initChannelSnapshots(...)` no longer accepts `frame`
     - `getChannelFromBuffer(...)` was removed in favor of direct `buffer.findChannel(...)`
-    - dead `contextOrChannelLookupScript(...)` and `AsyncFrame.lookupAndLocate(...)` were removed
+    - dead `AsyncFrame.lookupAndLocate(...)` was removed
+    - async symbol lookup is now split by real runtime mode:
+      - async template symbols use explicit async-template lookup helpers
+      - async script symbols use explicit async-script lookup helpers
+      - async script fallback now goes through explicit `runtime.contextOrScriptChannelLookup(...)`
     - dead async expression-helper `frame` args were removed from channel observation helpers
       - `_getObservedChannelName(...)`
       - `_compileChannelObservationFunCall(...)`
@@ -207,9 +241,15 @@ Current next target:
     - done: compile-time frame-balance helpers are gone
     - the remaining compiler-frame push/new sites are now concentrated in sync / legacy callback paths
   - continue isolating remaining sync-only frame state:
-    - done: `frame.topLevel` was renamed to explicit sync-template-only `frame.syncTemplateTopLevel`
-    - done: loop frame metadata writes now go through explicit sync-template `setSyncTemplateLoopBindings(...)`
-    - done: sync frame-backed template lookup now goes through explicit `contextOrSyncTemplateVarLookup(...)`
+    - done: the remaining sync-template top-level frame marker now goes through explicit runtime helpers
+      - `markSyncTemplateFrameTopLevel(...)`
+      - `isSyncTemplateFrameTopLevel(...)`
+    - done: loop frame metadata writes now go through explicit sync-template `setSyncTemplateFrameLoopBindings(...)`
+    - done: sync frame-backed template lookup now goes through explicit `contextOrSyncTemplateFrameLookup(...)`
+    - done: the remaining live runtime sync-template frame semantics are now centralized in `src/runtime/sync-template-frame.js`
+      - top-level frame marker
+      - sync frame-backed template lookup
+      - sync loop metadata frame writes
     - done: the dead `whileConditionIterator(...)` runtime export was removed
     - done: sync `super()` lookup now goes through explicit `Context.getSyncSuper(...)`
     - done: direct sync exports now go through explicit `Context.addResolvedExport(...)`
@@ -237,16 +277,19 @@ Current next target:
     - done: sync assignment publishing now goes through dedicated helper logic
       - `compileSyncSet(...)` no longer open-codes frame/context/export publish steps
       - most remaining sync-template frame writes now go through explicit compiler helper methods:
-        - `setSyncTemplateCompileFrameValue(...)`
-        - `emitSyncTemplateFrameSet(...)`
-        - `emitSyncTemplateFrameAssignment(...)`
-        - `emitSyncTemplateTopLevelPublish(...)`
+        - centralized under `CompileSyncTemplate`
+        - `setFrameValue(...)`
+        - `emitFrameSet(...)`
+        - `emitFrameAssignment(...)`
+        - `emitTopLevelPublish(...)`
     - done: `compileSet(...)` no longer uses one nested sync/async helper
       - sync assignment lowering now lives in explicit `compileSyncSet(...)`
     - done: `compileSymbol(...)` no longer hides sync frame lookup inside the shared path
       - async symbol lookup and sync frame lookup now live in explicit helper methods
+    - done: async inheritance target loading no longer hides sync-template and async template/script loading behind one mixed helper
+      - `CompileInheritance` now uses explicit async target loading vs sync-template target loading helpers
     - done: `compileSymbol(...)` no longer carries a nested sync fallback branch inside the async lookup path
-      - sync template symbol fallback now also goes through explicit `getSyncTemplateLookupExpr(...)`
+      - sync template symbol fallback now also goes through explicit `CompileSyncTemplate.getFrameContextLookupExpr(...)`
     - done: a few remaining dead helper params/voids were removed
       - `CompileBuffer.asyncAddValueToBuffer(...)`
       - bogus `void` markers in runtime async-boundary helpers

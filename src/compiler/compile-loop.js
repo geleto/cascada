@@ -444,7 +444,7 @@ class CompileLoop {
   }
 
   _emitSyncLoopBindings(loopIndex, loopLength, isLast) {
-    this.compiler.emit.line(`runtime.setSyncTemplateLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+    this.compiler.emit.line(`runtime.setSyncTemplateFrameLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
   }
 
   _emitAsyncLoopVarIterationBinding(node, varName, valueExpr) {
@@ -452,12 +452,12 @@ class CompileLoop {
   }
 
   _emitSyncLoopVarIterationBinding(varName, valueExpr) {
-    this.compiler.emitSyncTemplateFrameSet(varName, valueExpr);
+    this.compiler.syncTemplate.emitFrameSet(varName, valueExpr);
   }
 
   _emitSyncLegacyLoopParamBinding(name, valueExpr, frame) {
-    this.compiler.setSyncTemplateCompileFrameValue(frame, name, name);
-    this.compiler.emitSyncTemplateFrameSet(name, valueExpr);
+    this.compiler.syncTemplate.setFrameValue(frame, name, name);
+    this.compiler.syncTemplate.emitFrameSet(name, valueExpr);
   }
 
   _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast) {
@@ -483,7 +483,7 @@ class CompileLoop {
   }
 
   _emitSyncLegacyLoopMetaBinding(name, valueExpr) {
-    this.compiler.emitSyncTemplateFrameSet(`loop.${name}`, valueExpr);
+    this.compiler.syncTemplate.emitFrameSet(`loop.${name}`, valueExpr);
   }
 
   _compileSyncLegacyCallbackLoop(node, frame, parallel) {

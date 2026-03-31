@@ -3,6 +3,7 @@
 const lib = require('../lib');
 const scriptTranspiler = require('../script/script-transpiler');
 const { Template } = require('./template');
+const { Context } = require('./context');
 
 /**
  * AsyncScript class - represents a compiled async Cascada script
@@ -15,7 +16,9 @@ class AsyncScript extends Template {
       src = template;
     }
 
-    super.init(src, env, path, eagerCompile, true/*async*/, true/*script*/);
+    super.init(src, env, path, eagerCompile);
+    this.asyncMode = true;
+    this.scriptMode = true;
   }
 
   render(ctx, cb) {
@@ -32,6 +35,24 @@ class AsyncScript extends Template {
         }
       });
     });
+  }
+
+  _compileSource() {
+    const compiler = require('../compiler/compiler');
+    return compiler.compile(this.tmplStr,
+      this.env.asyncFilters,
+      this.env.extensionsList,
+      this.path,
+      Object.assign({ scriptMode: true, asyncMode: true }, this.env.opts)
+    );
+  }
+
+  _createAsyncContext(ctx) {
+    return new Context(ctx || {}, this.blocks, this.env, this.path, true);
+  }
+
+  _createAsyncMacroContext() {
+    return new Context({}, this.blocks, this.env, this.path, true);
   }
 }
 

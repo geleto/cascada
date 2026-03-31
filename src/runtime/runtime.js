@@ -4,6 +4,7 @@ var lib = require('../lib');
 const errors = require('./errors');
 const sequential = require('./sequential');
 const lookup = require('./lookup');
+const syncTemplateFrame = require('./sync-template-frame');
 const call = require('./call');
 const frame = require('./frame');
 const output = require('./channel');
@@ -245,9 +246,9 @@ module.exports = {
   memberLookupAsync: lookup.memberLookupAsync,
   memberLookupScript: lookup.memberLookupScript,
   channelLookup: lookup.channelLookup,
-  contextOrSyncTemplateVarLookup: lookup.contextOrSyncTemplateVarLookup,
+  contextOrSyncTemplateFrameLookup: syncTemplateFrame.contextOrSyncTemplateFrameLookup,
   contextOrChannelLookup: lookup.contextOrChannelLookup,
-  contextOrChannelLookupScript: lookup.contextOrChannelLookupScript,
+  contextOrScriptChannelLookup: lookup.contextOrScriptChannelLookup,
 
   isArray: lib.isArray,
   keys: lib.keys,
@@ -264,9 +265,11 @@ module.exports = {
   fromIterator: loop.fromIterator,
   iterateAsyncSequential: loop.iterateAsyncSequential,
   iterateAsyncParallel: loop.iterateAsyncParallel,
-  setSyncTemplateLoopBindings: loop.setSyncTemplateLoopBindings,
+  setSyncTemplateFrameLoopBindings: syncTemplateFrame.setSyncTemplateFrameLoopBindings,
   createLoopBindings: loop.createLoopBindings,
   setLoopValueBindings: loop.setLoopValueBindings,
+  markSyncTemplateFrameTopLevel: syncTemplateFrame.markSyncTemplateFrameTopLevel,
+  isSyncTemplateFrameTopLevel: syncTemplateFrame.isSyncTemplateFrameTopLevel,
 
   sequentialContextLookupValue: sequential.sequentialContextLookupValue,
   sequentialContextLookupScriptValue: sequential.sequentialContextLookupScriptValue,

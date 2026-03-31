@@ -202,17 +202,6 @@ async function _memberLookupScriptComplex(obj, val, errorContext) {
 }
 
 /**
- * Sync template lookup through frame, then context.
- * Returns undefined if variable not found.
- */
-function contextOrSyncTemplateVarLookup(context, frame, name) {
-  var val = frame.lookup(name);
-  return (val !== undefined) ?
-    val :
-    context.lookup(name);
-}
-
-/**
  * Async template symbol lookup through declared channels first, then context.
  */
 function contextOrChannelLookup(_context, name, currentBuffer) {
@@ -256,29 +245,12 @@ function channelLookup(name, currentBuffer) {
  * Async context/frame/channel lookup for scripts.
  * Returns poison for missing names via context.lookupScript.
  */
-function contextOrChannelLookupScript(context, name, currentBuffer, errorContext = null) {
-  const channelRead = channelLookupScript(name, currentBuffer);
+function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext = null) {
+  const channelRead = channelLookup(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
   }
   return context.lookupScript(name, errorContext);
-}
-
-// Script-mode channel lookup variant:
-// ordinary reads stay as ordered snapshot commands, using the producer buffer
-// for cross-tree reads instead of finalSnapshot().
-function channelLookupScript(name, currentBuffer) {
-  const channel = currentBuffer.findChannel(name);
-  if (!channel) {
-    return undefined;
-  }
-  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
-    if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
-      ensureReadChannelLink(currentBuffer, channel, name);
-    }
-    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
-  }
-  return channel._buffer.addSnapshot(channel._channelName, { lineno: 0, colno: 0 });
 }
 
 // Dynamically links the current read buffer into the target channel lane once.
@@ -314,8 +286,7 @@ module.exports = {
   memberLookupScriptRaw,
   memberLookupAsync,
   memberLookupScript,
-  contextOrSyncTemplateVarLookup,
   channelLookup,
   contextOrChannelLookup,
-  contextOrChannelLookupScript,
+  contextOrScriptChannelLookup,
 };

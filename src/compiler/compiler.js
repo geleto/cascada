@@ -17,6 +17,7 @@ const CompileAnalysis = require('./compile-analysis');
 const CompileMacro = require('./compile-macro');
 const CompileBoundaries = require('./compile-boundaries');
 const CompileRename = require('./compile-rename');
+const CompileSyncTemplate = require('./compile-sync-template');
 const CompilerBase = require('./compiler-base');
 
 const RETURN_CHANNEL_NAME = '__return__';
@@ -42,40 +43,12 @@ class Compiler extends CompilerBase {
     this.macro = new CompileMacro(this);
     this.boundaries = new CompileBoundaries(this);
     this.rename = new CompileRename(this);
+    this.syncTemplate = new CompileSyncTemplate(this);
     this.analysisState = null;
   }
 
   isReservedDeclarationName(name) {
     return RESERVED_DECLARATION_NAMES.has(name);
-  }
-
-  setSyncTemplateCompileFrameValue(frame, name, valueExpr, resolveUp = false) {
-    frame.set(name, valueExpr, resolveUp);
-  }
-
-  emitSyncTemplateFrameSet(name, valueExpr, resolveUp = false) {
-    this.emit.line(`frame.set("${name}", ${valueExpr}${resolveUp ? ', true' : ''});`);
-  }
-
-  emitSyncTemplateFrameAssignment(name, emitValueExpr) {
-    this.emit(`frame.set("${name}", `);
-    emitValueExpr();
-    this.emit.line(');');
-  }
-
-  getSyncTemplateLookupExpr(name) {
-    return `runtime.contextOrSyncTemplateVarLookup(context, frame, "${name}")`;
-  }
-
-  getSyncTemplateFrameLookupExpr(name) {
-    return `frame.lookup("${name}")`;
-  }
-
-  emitSyncTemplateTopLevelPublish(name, valueExpr, exportValue = false) {
-    this.emit.line(`context.setVariable("${name}", ${valueExpr});`);
-    if (exportValue && name.charAt(0) !== '_') {
-      this.emit.line(`context.addResolvedExport("${name}", ${valueExpr});`);
-    }
   }
 
   emitDeclareReturnChannel(frame, bufferExpr) {
@@ -363,7 +336,7 @@ class Compiler extends CompilerBase {
       this.emit(ids[0] + ' = ');
 
       this.emit('runtime.setPath(');
-      this.emit(this.getSyncTemplateFrameLookupExpr(node.targets[0].value) + ', ');
+      this.emit(this.syncTemplate.getDirectFrameLookupExpr(node.targets[0].value) + ', ');
       this.compile(node.path, frame);
       this.emit(', ');
       this.compile(node.value, frame);
@@ -389,9 +362,9 @@ class Compiler extends CompilerBase {
   }
 
   _emitSyncSetPublish(name, id) {
-    this.emitSyncTemplateFrameSet(name, id, true);
-    this.emit.line('if(frame.syncTemplateTopLevel) {');
-    this.emitSyncTemplateTopLevelPublish(name, id, true);
+    this.syncTemplate.emitFrameSet(name, id, true);
+    this.emit.line(`if(${this.syncTemplate.getTopLevelCheckExpr()}) {`);
+    this.syncTemplate.emitTopLevelPublish(name, id, true);
     this.emit.line('}');
   }
 
@@ -1344,12 +1317,29 @@ class Compiler extends CompilerBase {
   }
 
   analyzeRoot(node) {
+    const declares = this._getRootDeclarations(node);
+    const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
+      ? node._analysis.sequenceLocks
+      : [];
+    sequenceLocks.forEach((lockName) => {
+      declares.push({ name: lockName, type: 'sequential_path', initializer: null });
+    });
+    return {
+      createScope: true,
+      scopeBoundary: true,
+      declares,
+      textOutput: this._getRootTextOutput()
+    };
+  }
+
+  _getRootDeclarations(node) {
     const declares = [];
-    if (!this.scriptMode) {
-      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
-    } else {
+    if (this.scriptMode) {
       declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
+    } else {
+      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
     }
+
     if (this.asyncMode && !this.scriptMode) {
       const hasExtendsNode = node.children.some((child) => child instanceof nodes.Extends);
       const hasParentTemplateDeclaration = node.children.some((child) =>
@@ -1363,18 +1353,138 @@ class Compiler extends CompilerBase {
         declares.push({ name: '__parentTemplate', type: 'var', initializer: null, internal: true });
       }
     }
+
+    return declares;
+  }
+
+  _getRootTextOutput() {
+    return this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
+  }
+
+  _emitAsyncRootFinalParentLookup() {
+    if (this.hasExtends) {
+      this.emit.line(`  let finalParent = await runtime.channelLookup("__parentTemplate", ${this.buffer.currentBuffer});`);
+    } else {
+      this.emit.line('  let finalParent = null;');
+    }
+  }
+
+  _emitAsyncScriptRootLeafResult(node) {
+    const returnVar = this._tmpid();
+    this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
+    this.emit.line(`    cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
+  }
+
+  _emitAsyncTemplateRootLeafResult() {
+    this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line(`    cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);
+  }
+
+  _emitAsyncRootCompletion(node) {
+    this.emit.line('if (!compositionMode) {');
+    this.emit.line('(async () => {');
+
+    this._emitAsyncRootFinalParentLookup();
+
+    this.emit.line('  if(finalParent) {');
+    this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), runtime, cb, compositionMode);');
+    this.emit.line('  } else {');
+
+    if (this.scriptMode) {
+      this._emitAsyncScriptRootLeafResult(node);
+    } else {
+      this._emitAsyncTemplateRootLeafResult();
+    }
+
+    this.emit.line('  }');
+    this.emit.line('})().catch(e => {');
+    this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`);
+    this.emit.line('  cb(err);');
+    this.emit.line('});');
+    this.emit.line('} else {');
+    this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line(`  return ${this.buffer.currentBuffer};`);
+    this.emit.line('}');
+  }
+
+  _emitSyncTemplateRootCompletion() {
+    this.emit.line('if(parentTemplate) {');
+    this.emit.line('  let parentContext = context.forkForPath(parentTemplate.path);');
+    this.emit.line('  parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, cb);');
+    this.emit.line('} else {');
+    this.emit.line(`  cb(null, ${this.buffer.currentBuffer});`);
+    this.emit.line('}');
+  }
+
+  _compileAsyncRootBody(node, frame) {
+    this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line(`context.linkDeferredExportsToBuffer(${this.buffer.currentBuffer});`);
+    if (this.scriptMode) {
+      this.emitDeclareReturnChannel(frame, this.buffer.currentBuffer);
+    }
     const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
       : [];
-    sequenceLocks.forEach((lockName) => {
-      declares.push({ name: lockName, type: 'sequential_path', initializer: null });
+    for (const name of sequenceLocks) {
+      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
+    }
+    if (this.hasStaticExtends && !this.hasDynamicExtends) {
+      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
+    }
+    this._compileChildren(node, frame);
+    this.emit.line('context.resolveExports(output);');
+    this._emitAsyncRootCompletion(node);
+  }
+
+  _compileSyncTemplateRootBody(node, frame) {
+    this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line('let parentTemplate = null;');
+    this._compileChildren(node, frame);
+    this._emitSyncTemplateRootCompletion();
+  }
+
+  _compileAsyncBlockEntry(block, frame) {
+    const name = block.name.value;
+    const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
+      .filter((hname) => hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL);
+    this.emit.beginEntryFunction(block, `b_${name}`, frame, blockLinkedChannels);
+    this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
+    this.compile(block.body, frame);
+    this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
+    this.emit.endEntryFunction(block, true);
+  }
+
+  _compileSyncTemplateBlockEntry(block, frame) {
+    const name = block.name.value;
+    const blockFrame = frame.new();
+    this.emit.beginEntryFunction(block, `b_${name}`, blockFrame);
+    this.emit.line('var frame = frame.push(true);');
+    this.compile(block.body, blockFrame);
+    this.emit.endEntryFunction(block);
+  }
+
+  _compileBlockEntries(node, frame) {
+    const blockNames = [];
+    const blocks = node.findAll(nodes.Block);
+
+    blocks.forEach((block) => {
+      const name = block.name.value;
+
+      if (blockNames.indexOf(name) !== -1) {
+        this.fail(`Block "${name}" defined more than once.`, block.lineno, block.colno, block);
+      }
+      blockNames.push(name);
+
+      if (this.asyncMode) {
+        this._compileAsyncBlockEntry(block, frame);
+      } else {
+        this._compileSyncTemplateBlockEntry(block, frame);
+      }
     });
-    return {
-      createScope: true,
-      scopeBoundary: true,
-      declares,
-      textOutput: this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL
-    };
+
+    return blocks;
   }
 
 
@@ -1397,114 +1507,17 @@ class Compiler extends CompilerBase {
     // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
 
     this.emit.beginEntryFunction(node, 'root', frame);
-    this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     if (this.asyncMode) {
-      this.emit.line(`context.linkDeferredExportsToBuffer(${this.buffer.currentBuffer});`);
-    }
-    if (this.scriptMode) {
-      this.emitDeclareReturnChannel(frame, this.buffer.currentBuffer);
-    }
-    const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
-      ? node._analysis.sequenceLocks
-      : [];
-    for (const name of sequenceLocks) {
-      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
-    }
-    if (this.asyncMode && this.hasStaticExtends && !this.hasDynamicExtends) {
-      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
-    }
-    if (!this.asyncMode) {
-      this.emit.line('let parentTemplate = null;');
-    }
-    this._compileChildren(node, frame);
-    if (this.asyncMode) {
-      this.emit.line('context.resolveExports(output);');
-    }
-    if (this.asyncMode) {
-      this.emit.line('if (!compositionMode) {');
-      this.emit.line('(async () => {');
-
-      if (this.hasExtends) {
-        this.emit.line(`  let finalParent = await runtime.channelLookup("__parentTemplate", ${this.buffer.currentBuffer});`);
-      } else {
-        this.emit.line('  let finalParent = null;');
-      }
-
-      this.emit.line('  if(finalParent) {');
-      this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), runtime, cb, compositionMode);');
-      this.emit.line('  } else {');
-      if (this.scriptMode) {
-        const returnVar = this._tmpid();
-        this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
-        this.emit.line(`    cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
-      } else {
-        this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line(`    cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);
-      }
-      this.emit.line('  }');
-      this.emit.line('})().catch(e => {');
-      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`); // Store and update the handled error
-      this.emit.line('  cb(err);'); // Pass the updated error to the callback
-      this.emit.line('});');
-      this.emit.line('} else {');
-      // If in composition mode, synchronously return the output array.
-      // The caller is responsible for the lifecycle.
-      // Mark finished before returning so a parent buffer that attaches this
-      // composition result can advance chaining through the child-buffer slot.
-      this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      this.emit.line(`  return ${this.buffer.currentBuffer};`);
-      this.emit.line('}');
-    }
-    else {
-      // SYNC Handoff Logic
-      this.emit.line('if(parentTemplate) {');
-      this.emit.line('  let parentContext = context.forkForPath(parentTemplate.path);');
-      this.emit.line('  parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, cb);');
-      this.emit.line('} else {');
-      this.emit.line(`  cb(null, ${this.buffer.currentBuffer});`);
-      this.emit.line('}');
+      this._compileAsyncRootBody(node, frame);
+    } else {
+      this._compileSyncTemplateRootBody(node, frame);
     }
 
     // Pass the node to _emitFuncEnd for error position info (used in sync catch)
     this.emit.endEntryFunction(node, true);
 
     this.inBlock = true;
-
-    const blockNames = [];
-
-    const blocks = node.findAll(nodes.Block);
-
-    blocks.forEach((block, i) => {
-      const name = block.name.value;
-
-      if (blockNames.indexOf(name) !== -1) {
-        this.fail(`Block "${name}" defined more than once.`, block.lineno, block.colno, block);
-      }
-      blockNames.push(name);
-
-      let tmpFrame = this.asyncMode ? frame : frame.new();
-      const blockLinkedChannels = this.asyncMode
-        ? Array.from(block.body._analysis.usedChannels || []).filter((hname) => hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL)
-        : null;
-      this.emit.beginEntryFunction(block, `b_${name}`, tmpFrame, blockLinkedChannels);
-
-      if (this.asyncMode) {
-        this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
-      }
-      if (!this.asyncMode) {
-        this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
-      }
-      this.compile(block.body, tmpFrame);
-      if (this.asyncMode) {
-        // Block functions in async mode return final text snapshots directly.
-        this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
-        this.emit.endEntryFunction(block, true);
-      } else {
-        this.emit.endEntryFunction(block);
-      }
-    });
+    const blocks = this._compileBlockEntries(node, frame);
 
     this.emit.line('return {');
 
