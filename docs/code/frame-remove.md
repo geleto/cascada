@@ -215,11 +215,14 @@ Completed so far:
       - guard target analysis no longer accepts a dead `frame` argument
     - more async statement/expression compilation now also compiles against `null`
       - async loop iterable / limit / body / else compilation no longer carries a compiler frame
+      - async loop entry/core helpers no longer thread a dead `frame` arg
+      - async loop compilation no longer assigns dead `forResult.frame` state
       - async `capture` bodies now compile against `null`
       - async template output expressions now compile against `null`
       - async inline-if and async short-circuit expression branches now compile against `null`
       - async `if` / `switch` / `guard` branch bodies now compile against `null`
       - async `set` / `do` / `return` compilation no longer carries a compiler frame for value expressions
+      - `compileAsyncVarSet(...)` no longer carries a dead compiler-frame arg
       - script-only async channel declarations now compile initializers against `null`
     - async symbol lookup is now split by real runtime mode:
       - async template symbols use explicit async-template lookup helpers
@@ -240,6 +243,9 @@ Completed so far:
       - async filter/filterAsync argument compilation now uses `null`
       - async comparison lowering now compiles operands against `null`
       - async member lookup lowering now compiles target/key expressions against `null`
+      - async short-circuit lowering no longer carries a dummy `frame` arg
+      - awaited-expression helpers are now explicitly split into async vs sync implementations
+      - function-call wrapper emission is now explicitly split into async vs sync implementations
     - dead async expression-helper `frame` args were removed from channel observation helpers
       - `_getObservedChannelName(...)`
       - `_compileChannelObservationFunCall(...)`
@@ -250,6 +256,11 @@ Completed so far:
   - compile-time async codegen no longer constructs `AsyncFrame`
     - async root compilation now uses plain `Frame` for compiler-only scope tracking
     - `AsyncFrame.withCompilerContext(...)` and `AsyncFrame.inCompilerContext` were removed
+  - async root/block generation is now more explicitly split at the statement compiler layer
+    - `compileRoot(...)` now dispatches to `_compileAsyncRoot(...)` / `_compileSyncRoot(...)`
+    - block entry generation is split between `_compileAsyncBlockEntries(...)` and `_compileSyncBlockEntries(...)`
+    - async root/block entry generation no longer shares mixed `this.asyncMode` branching there
+  - async `guard` compilation no longer carries a dead `frame` argument
   - `AsyncFrame.set(...)` is now an unconditional runtime guard
     - the one-value `THROW_ON_ASYNC_FRAME_ASSIGN` feature flag was removed
     - any remaining runtime async frame write now fails loudly by default

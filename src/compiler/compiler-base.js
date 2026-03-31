@@ -158,33 +158,40 @@ class CompilerBase extends Obj {
   }
 
   _compileAggregate(node, frame, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen) {
-    let doResolve = resolveItems && this.asyncMode;
+    if (this.asyncMode) {
+      this._compileAsyncAggregate(node, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen);
+      return;
+    }
+    this._compileSyncAggregate(node, frame, startChar, endChar, expressionRoot, compileThen, asyncThen);
+  }
+
+  _compileAsyncAggregate(node, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen) {
+    const doResolve = resolveItems;
     if (doResolve) {
       switch (startChar) {
         case '[':
           if (node.children.length === 1) {
-            //@todo - if compileThen resolveSingle and pass the value directly, similar with []
             this.emit('runtime.resolveSingleArr(');
-            this._compileArguments(node, frame, expressionRoot, startChar);
+            this._compileArguments(node, null, expressionRoot, startChar);
             this.emit(')');
           } else if (node.children.length === 2) {
             this.emit('runtime.resolveDuo(');
-            this._compileArguments(node, frame, expressionRoot, startChar);
+            this._compileArguments(node, null, expressionRoot, startChar);
             this.emit(')');
           } else {
             this.emit('runtime.resolveAll([');
-            this._compileArguments(node, frame, expressionRoot, startChar);
+            this._compileArguments(node, null, expressionRoot, startChar);
             this.emit('])');
           }
           break;
         case '{':
           this.emit('runtime.resolveObjectProperties({');
-          this._compileArguments(node, frame, expressionRoot, startChar);
+          this._compileArguments(node, null, expressionRoot, startChar);
           this.emit('})');
           break;
         case '(': {
           this.emit('runtime.resolveAll([');
-          this._compileArguments(node, frame, expressionRoot, '[');
+          this._compileArguments(node, null, expressionRoot, '[');
           this.emit(']).then(function(');
           const result = this._tmpid();
           this.emit(`${result}){ return (`);
@@ -195,8 +202,8 @@ class CompilerBase extends Obj {
             this.emit(`${result}[${i}]`);
           }
           this.emit('); })');
-        }
           break;
+        }
       }
 
       if (compileThen) {
@@ -205,29 +212,45 @@ class CompilerBase extends Obj {
         compileThen.call(this, result, node.children.length);
         this.emit(' })');
       }
-    } else {
-      let wrapper = null;
-      if (this.asyncMode) {
-        if (startChar === '[') wrapper = 'runtime.createArray';
-        if (startChar === '{') wrapper = 'runtime.createObject';
-      }
+      return;
+    }
 
-      if (compileThen) {
-        const result = this._tmpid();
-        this.emit.line(`(${asyncThen ? 'async ' : ''}function(${result}){`);
-        compileThen.call(this, result, node.children.length);
-        this.emit('})(');
-      }
+    let wrapper = null;
+    if (startChar === '[') wrapper = 'runtime.createArray';
+    if (startChar === '{') wrapper = 'runtime.createObject';
 
-      if (wrapper) this.emit(wrapper + '(');
-      this.emit(startChar);
-      this._compileArguments(node, frame, expressionRoot, startChar);
-      this.emit(endChar);
-      if (wrapper) this.emit(')');
+    if (compileThen) {
+      const result = this._tmpid();
+      this.emit.line(`(${asyncThen ? 'async ' : ''}function(${result}){`);
+      compileThen.call(this, result, node.children.length);
+      this.emit('})(');
+    }
 
-      if (compileThen) {
-        this.emit(')');
-      }
+    if (wrapper) this.emit(wrapper + '(');
+    this.emit(startChar);
+    this._compileArguments(node, null, expressionRoot, startChar);
+    this.emit(endChar);
+    if (wrapper) this.emit(')');
+
+    if (compileThen) {
+      this.emit(')');
+    }
+  }
+
+  _compileSyncAggregate(node, frame, startChar, endChar, expressionRoot, compileThen, asyncThen) {
+    if (compileThen) {
+      const result = this._tmpid();
+      this.emit.line(`(${asyncThen ? 'async ' : ''}function(${result}){`);
+      compileThen.call(this, result, node.children.length);
+      this.emit('})(');
+    }
+
+    this.emit(startChar);
+    this._compileArguments(node, frame, expressionRoot, startChar);
+    this.emit(endChar);
+
+    if (compileThen) {
+      this.emit(')');
     }
   }
 
@@ -276,49 +299,70 @@ class CompilerBase extends Obj {
 
   _binFuncEmitter(node, frame, funcName, separator = ',') {
     if (this.asyncMode) {
-      this.emit('(');
-      this.emit('runtime.resolveDuo(');
-      this.compile(node.left, frame);
-      this.emit(',');
-      this.compile(node.right, frame);
-      this.emit(')');
-      // Position node is tricky here, could be left or right. Use the main node.
-      this.emit(`.then(function([left,right]){return ${funcName}(left${separator}right);}))`);
-    } else {
-      this.emit(`${funcName}(`);
-      this.compile(node.left, frame);
-      this.emit(separator);
-      this.compile(node.right, frame);
-      this.emit(')');
+      this._emitAsyncBinFunc(node, funcName, separator);
+      return;
     }
+    this._emitSyncBinFunc(node, frame, funcName, separator);
   }
 
   _binOpEmitter(node, frame, str) {
     if (this.asyncMode) {
-      this.emit('runtime.resolveDuo(');
-      this.compile(node.left, frame);
-      this.emit(',');
-      this.compile(node.right, frame);
-      this.emit(')');
-      // Position node is tricky here, could be left or right. Use the main node.
-      this.emit('.then(function([left,right]){return left ' + str + ' right;})');
-    } else {
-      this.compile(node.left, frame);
-      this.emit(str);
-      this.compile(node.right, frame);
+      this._emitAsyncBinOp(node, str);
+      return;
     }
+    this._emitSyncBinOp(node, frame, str);
   }
 
   _unaryOpEmitter(node, frame, operator) {
     if (this.asyncMode) {
-      this.emit('runtime.resolveSingle(');
-      this.compile(node.target, frame);
-      // Position node should be the target
-      this.emit(`).then(function(target){return ${operator}target;})`);
-    } else {
-      this.emit(operator);
-      this.compile(node.target, frame);
+      this._emitAsyncUnaryOp(node, operator);
+      return;
     }
+    this._emitSyncUnaryOp(node, frame, operator);
+  }
+
+  _emitAsyncBinFunc(node, funcName, separator) {
+    this.emit('(');
+    this.emit('runtime.resolveDuo(');
+    this.compile(node.left, null);
+    this.emit(',');
+    this.compile(node.right, null);
+    this.emit(')');
+    this.emit(`.then(function([left,right]){return ${funcName}(left${separator}right);}))`);
+  }
+
+  _emitSyncBinFunc(node, frame, funcName, separator) {
+    this.emit(`${funcName}(`);
+    this.compile(node.left, frame);
+    this.emit(separator);
+    this.compile(node.right, frame);
+    this.emit(')');
+  }
+
+  _emitAsyncBinOp(node, str) {
+    this.emit('runtime.resolveDuo(');
+    this.compile(node.left, null);
+    this.emit(',');
+    this.compile(node.right, null);
+    this.emit(')');
+    this.emit('.then(function([left,right]){return left ' + str + ' right;})');
+  }
+
+  _emitSyncBinOp(node, frame, str) {
+    this.compile(node.left, frame);
+    this.emit(str);
+    this.compile(node.right, frame);
+  }
+
+  _emitAsyncUnaryOp(node, operator) {
+    this.emit('runtime.resolveSingle(');
+    this.compile(node.target, null);
+    this.emit(`).then(function(target){return ${operator}target;})`);
+  }
+
+  _emitSyncUnaryOp(node, frame, operator) {
+    this.emit(operator);
+    this.compile(node.target, frame);
   }
 
   // --- Expression Compilers ---
@@ -498,65 +542,70 @@ class CompilerBase extends Obj {
 
   compileInlineIf(node, frame) {
     if (this.asyncMode) {
-      const asyncFrame = null;
-      const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
-      if (hasCommandEffects) {
-        this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
-          this.emit('const cond = await runtime.resolveSingle(');
-          this.compile(node.cond, asyncFrame);
-          this.emit.line(');');
-          this.emit('if(cond) {');
-          this.emit('return ');
-          this.compile(node.body, asyncFrame);
-          this.emit.line(';');
-          this.emit('} else {');
-          if (node.else_) {
-            this.emit('return ');
-            this.compile(node.else_, asyncFrame);
-            this.emit.line(';');
-          } else {
-            this.emit.line('return "";');
-          }
-          this.emit('}');
-        });
-        return;
-      }
-
-      this.emit('runtime.resolveSingle(');
-      this.compile(node.cond, asyncFrame);
-      this.emit(').then(async function(cond) {');
-
-      this.emit('  if(cond) {');
-      this.emit('    return ');
-      this.compile(node.body, asyncFrame);
-      this.emit(';');
-
-      this.emit('  } else {');
-
-      if (node.else_) {
-        this.emit('    return ');
-        this.compile(node.else_, asyncFrame);
-        this.emit(';');
-      } else {
-        this.emit('    return "";');
-      }
-      this.emit('  }'); // End else
-
-      this.emit('})');
-    } else {
-      // Sync execution
-      this.emit('(');
-      this.compile(node.cond, frame);
-      this.emit('?');
-      this.compile(node.body, frame);
-      this.emit(':');
-      if (node.else_ !== null) {
-        this.compile(node.else_, frame);
-      } else {
-        this.emit('""');
-      }
-      this.emit(')');
+      this._compileAsyncInlineIf(node);
+      return;
     }
+    this._compileSyncInlineIf(node, frame);
+  }
+
+  _compileAsyncInlineIf(node) {
+    const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
+    if (hasCommandEffects) {
+      this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
+        this.emit('const cond = await runtime.resolveSingle(');
+        this.compile(node.cond, null);
+        this.emit.line(');');
+        this.emit('if(cond) {');
+        this.emit('return ');
+        this.compile(node.body, null);
+        this.emit.line(';');
+        this.emit('} else {');
+        if (node.else_) {
+          this.emit('return ');
+          this.compile(node.else_, null);
+          this.emit.line(';');
+        } else {
+          this.emit.line('return "";');
+        }
+        this.emit('}');
+      });
+      return;
+    }
+
+    this.emit('runtime.resolveSingle(');
+    this.compile(node.cond, null);
+    this.emit(').then(async function(cond) {');
+
+    this.emit('  if(cond) {');
+    this.emit('    return ');
+    this.compile(node.body, null);
+    this.emit(';');
+
+    this.emit('  } else {');
+
+    if (node.else_) {
+      this.emit('    return ');
+      this.compile(node.else_, null);
+      this.emit(';');
+    } else {
+      this.emit('    return "";');
+    }
+    this.emit('  }');
+    this.emit('})');
+  }
+
+  _compileSyncInlineIf(node, frame) {
+    this.emit('(');
+    this.compile(node.cond, frame);
+    this.emit('?');
+    this.compile(node.body, frame);
+    this.emit(':');
+    if (node.else_ !== null) {
+      this.compile(node.else_, frame);
+    } else {
+      this.emit('""');
+    }
+    this.emit(')');
   }
 
   compileIn(node, frame) {
@@ -587,68 +636,89 @@ class CompilerBase extends Obj {
     }
 
     if (this.asyncMode) {
-      const mergedNode = {
-        // Use node.right for position if args exist, else node.left
-        positionNode: (node.right.args && node.right.args.children.length > 0) ? node.right : node.left,
-        children: (node.right.args && node.right.args.children.length > 0) ? [node.left, ...node.right.args.children] : [node.left]
-      };
-      // Resolve the left-hand side and arguments (if any)
-      this._compileAggregate(mergedNode, frame, '[', ']', true, true, function (args) {
-        this.emit.line(`  const testFunc = ${testFunc};`);
-        this.emit.line(`  if (!testFunc) { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; }`);
-        this.emit.line(`  const result = await testFunc.call(context, ${args}[0]`);
-        if (node.right.args && node.right.args.children.length > 0) {
-          this.emit.line(`, ...${args}.slice(1)`);
-        }
-        this.emit.line(');');
-        this.emit.line('  return result === true;');
-      }, true);
-    } else {
-      this.emit(`(${testFunc} ? ${testFunc}.call(context, `);
-      this.compile(node.left, frame);
-      if (node.right.args) {
-        this.emit(', ');
-        this.compile(node.right.args, frame);
-      }
-      this.emit(`) : (() => { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; })())`);
-      this.emit(' === true');
+      this._compileAsyncIs(node, testFunc, failMsg, errorContext);
+      return;
     }
+    this._compileSyncIs(node, frame, testFunc, failMsg, errorContext);
+  }
+
+  _compileAsyncIs(node, testFunc, failMsg, errorContext) {
+    const mergedNode = {
+      positionNode: (node.right.args && node.right.args.children.length > 0) ? node.right : node.left,
+      children: (node.right.args && node.right.args.children.length > 0) ? [node.left, ...node.right.args.children] : [node.left]
+    };
+    this._compileAggregate(mergedNode, null, '[', ']', true, true, function (args) {
+      this.emit.line(`  const testFunc = ${testFunc};`);
+      this.emit.line(`  if (!testFunc) { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; }`);
+      this.emit.line(`  const result = await testFunc.call(context, ${args}[0]`);
+      if (node.right.args && node.right.args.children.length > 0) {
+        this.emit.line(`, ...${args}.slice(1)`);
+      }
+      this.emit.line(');');
+      this.emit.line('  return result === true;');
+    }, true);
+  }
+
+  _compileSyncIs(node, frame, testFunc, failMsg, errorContext) {
+    this.emit(`(${testFunc} ? ${testFunc}.call(context, `);
+    this.compile(node.left, frame);
+    if (node.right.args) {
+      this.emit(', ');
+      this.compile(node.right.args, frame);
+    }
+    this.emit(`) : (() => { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; })())`);
+    this.emit(' === true');
   }
 
   // ensure concatenation instead of addition
   // by adding empty string in between
   compileOr(node, frame) {
     if (this.asyncMode) {
-      this._compileBinOpShortCircuit(node, frame, true);
-    } else {
-      this._binOpEmitter(node, frame, ' || ');
+      this._compileAsyncOr(node);
+      return;
     }
+    this._compileSyncOr(node, frame);
   }
 
   compileAnd(node, frame) {
     if (this.asyncMode) {
-      this._compileBinOpShortCircuit(node, frame, false);
-    } else {
-      this._binOpEmitter(node, frame, ' && ');
+      this._compileAsyncAnd(node);
+      return;
     }
+    this._compileSyncAnd(node, frame);
   }
 
-  _compileBinOpShortCircuit(node, frame, isOr) {
+  _compileAsyncOr(node) {
+    this._compileAsyncBinOpShortCircuit(node, true);
+  }
+
+  _compileSyncOr(node, frame) {
+    this._binOpEmitter(node, frame, ' || ');
+  }
+
+  _compileAsyncAnd(node) {
+    this._compileAsyncBinOpShortCircuit(node, false);
+  }
+
+  _compileSyncAnd(node, frame) {
+    this._binOpEmitter(node, frame, ' && ');
+  }
+
+  _compileAsyncBinOpShortCircuit(node, isOr) {
     // left || right -> if (left) return left; else return right;
     // left && right -> if (!left) return left; else return right;
-    const asyncFrame = this.asyncMode ? null : frame;
     const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
     if (hasCommandEffects) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const left = await runtime.resolveSingle(');
-        this.compile(node.left, asyncFrame);
+        this.compile(node.left, null);
         this.emit.line(');');
         const check = isOr ? 'left' : '!left';
         this.emit(`if (${check}) {`);
         this.emit.line('return left;');
         this.emit('} else {');
         this.emit('return ');
-        this.compile(node.right, asyncFrame);
+        this.compile(node.right, null);
         this.emit.line(';');
         this.emit('}');
       });
@@ -656,7 +726,7 @@ class CompilerBase extends Obj {
     }
 
     this.emit('runtime.resolveSingle(');
-    this.compile(node.left, asyncFrame);
+    this.compile(node.left, null);
     this.emit(').then(async function(left) {');
 
     const check = isOr ? 'left' : '!left';
@@ -666,7 +736,7 @@ class CompilerBase extends Obj {
     this.emit('  }');
     this.emit('  else {');
     this.emit('    return ');
-    this.compile(node.right, asyncFrame);
+    this.compile(node.right, null);
     this.emit(';');
 
     this.emit('  }'); // End else
@@ -703,12 +773,24 @@ class CompilerBase extends Obj {
 
   compilePeekError(node, frame) {
     if (this.asyncMode) {
-      const channelName = this._getObservedChannelName(node.target);
-      if (channelName) {
-        this.buffer.emitAddGetError(channelName, node.target);
-        return;
-      }
+      this._compileAsyncPeekError(node);
+      return;
     }
+    this._compileSyncPeekError(node, frame);
+  }
+
+  _compileAsyncPeekError(node) {
+    const channelName = this._getObservedChannelName(node.target);
+    if (channelName) {
+      this.buffer.emitAddGetError(channelName, node.target);
+      return;
+    }
+    this.emit('runtime.peekError(');
+    this.compile(node.target, null);
+    this.emit(')');
+  }
+
+  _compileSyncPeekError(node, frame) {
     this.emit('runtime.peekError(');
     this.compile(node.target, frame);
     this.emit(')');
@@ -766,30 +848,37 @@ class CompilerBase extends Obj {
 
   compileCompare(node, frame) {
     if (this.asyncMode) {
-      const asyncFrame = null;
-      //use resolveDuo for expr and the first op, optionally await the rest
-      this.emit('runtime.resolveDuo(');
-      this.compile(node.expr, asyncFrame);
-      this.emit(',');
-      this.compile(node.ops[0].expr, asyncFrame);
-      // Position node should be the first operation where the comparison happens
-      this.emit(').then(async function([expr, ref1]){');
-      this.emit(`return expr ${compareOps[node.ops[0].type]} ref1`);
-      node.ops.forEach((op, index) => {
-        if (index > 0) {
-          this.emit(` ${compareOps[op.type]} `);
-          this.compileAwaited(op.expr, asyncFrame);
-        }
-      });
-      this.emit('})');
-    } else {
-      this.compile(node.expr, frame);
-
-      node.ops.forEach((op) => {
-        this.emit(` ${compareOps[op.type]} `);
-        this.compile(op.expr, frame);
-      });
+      this._compileAsyncCompare(node);
+      return;
     }
+    this._compileSyncCompare(node, frame);
+  }
+
+  _compileAsyncCompare(node) {
+    //use resolveDuo for expr and the first op, optionally await the rest
+    this.emit('runtime.resolveDuo(');
+    this.compile(node.expr, null);
+    this.emit(',');
+    this.compile(node.ops[0].expr, null);
+    // Position node should be the first operation where the comparison happens
+    this.emit(').then(async function([expr, ref1]){');
+    this.emit(`return expr ${compareOps[node.ops[0].type]} ref1`);
+    node.ops.forEach((op, index) => {
+      if (index > 0) {
+        this.emit(` ${compareOps[op.type]} `);
+        this.compileAwaited(op.expr, null);
+      }
+    });
+    this.emit('})');
+  }
+
+  _compileSyncCompare(node, frame) {
+    this.compile(node.expr, frame);
+
+    node.ops.forEach((op) => {
+      this.emit(` ${compareOps[op.type]} `);
+      this.compile(op.expr, frame);
+    });
   }
 
   analyzeLookupVal(node, analysisPass) {
@@ -834,60 +923,56 @@ class CompilerBase extends Obj {
 
   compileLookupVal(node, frame) {
     if (this.asyncMode) {
-      const asyncFrame = null;
-      const sequenceChannelLookup =
-        node._analysis && node._analysis.sequenceChannelLookup;
-      if (this.scriptMode && sequenceChannelLookup) {
-        this.buffer.emitAddSequenceGet(
-          sequenceChannelLookup.channelName,
-          sequenceChannelLookup.propertyName,
-          sequenceChannelLookup.subpath,
-          node
-        );
-        return;
-      }
+      this._compileAsyncLookupVal(node);
+      return;
+    }
+    this._compileSyncLookupVal(node, frame);
+  }
 
-      // Handle both sequential and standard lookups.
-
-      // Check if this is a sequential lookup (marked with `!`).
-      const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
-      const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
-      if (nodeStaticPathKey) {
-        this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-        // This is a sequential lookup.
-        // Register the static path key as a variable write so the next lock waits for it.
-        // Multiple static path keys can be in the same block.
-
-        // Create the error context and pass it to the runtime function.
-        const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        if (this.scriptMode) {
-          this.emit('runtime.sequentialMemberLookupScriptValue((');
-        } else {
-          this.emit('runtime.sequentialMemberLookupAsyncValue((');
-        }
-        this.compile(node.target, asyncFrame); // Compile the object being accessed.
-        this.emit('),');
-        this.compile(node.val, asyncFrame); // Compile the property/key expression.
-        this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-        return;
-      }
-
-      // This is a standard (non-sequential) async member lookup.
-      // Pass the error context directly to the runtime function.
-      const errorContextJson = JSON.stringify(this._createErrorContext(node));
-      if (this.scriptMode) {
-        this.emit(`runtime.memberLookupScript((`);
-      } else {
-        this.emit(`runtime.memberLookupAsync((`);
-      }
-      this.compile(node.target, asyncFrame);
-      this.emit('),');
-      this.compile(node.val, asyncFrame);
-      this.emit(`, ${errorContextJson})`);
-      return; // IMPORTANT: End of all async logic.
+  _compileAsyncLookupVal(node) {
+    const sequenceChannelLookup =
+      node._analysis && node._analysis.sequenceChannelLookup;
+    if (this.scriptMode && sequenceChannelLookup) {
+      this.buffer.emitAddSequenceGet(
+        sequenceChannelLookup.channelName,
+        sequenceChannelLookup.propertyName,
+        sequenceChannelLookup.subpath,
+        node
+      );
+      return;
     }
 
-    // Sync path, this is for standard, synchronous member lookups.
+    // Handle both sequential and standard lookups.
+    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
+    if (nodeStaticPathKey) {
+      this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
+      const errorContextJson = JSON.stringify(this._createErrorContext(node));
+      if (this.scriptMode) {
+        this.emit('runtime.sequentialMemberLookupScriptValue((');
+      } else {
+        this.emit('runtime.sequentialMemberLookupAsyncValue((');
+      }
+      this.compile(node.target, null);
+      this.emit('),');
+      this.compile(node.val, null);
+      this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+      return;
+    }
+
+    const errorContextJson = JSON.stringify(this._createErrorContext(node));
+    if (this.scriptMode) {
+      this.emit(`runtime.memberLookupScript((`);
+    } else {
+      this.emit(`runtime.memberLookupAsync((`);
+    }
+    this.compile(node.target, null);
+    this.emit('),');
+    this.compile(node.val, null);
+    this.emit(`, ${errorContextJson})`);
+  }
+
+  _compileSyncLookupVal(node, frame) {
     // Error handling is managed by the top-level try/catch of the compiled template.
     this.emit('runtime.memberLookup((');
     this.compile(node.target, frame); // Mark target as part of a call path
@@ -1000,87 +1085,90 @@ class CompilerBase extends Obj {
   }
 
   compileFunCall(node, frame) {
+    if (this.asyncMode) {
+      this._compileAsyncFunCallNode(node);
+      return;
+    }
+    this._compileSyncFunCallNode(node, frame);
+  }
+
+  _compileAsyncFunCallNode(node) {
+    this._compileAsyncFunCall(node);
+  }
+
+  _compileSyncFunCallNode(node, frame) {
     // Keep track of line/col info at runtime by setting
     // variables within an expression (SYNC MODE ONLY).
-    if (!this.asyncMode) {
-      this.emit('(lineno = ' + node.lineno + ', colno = ' + node.colno + ', ');
-    }
+    this.emit('(lineno = ' + node.lineno + ', colno = ' + node.colno + ', ');
+    this._compileSyncFunCall(node, frame);
+  }
 
+  _compileAsyncFunCall(node) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
-    const directMacroCall = this.asyncMode ? node._analysis.directMacroCall : null;
+    const directMacroCall = node._analysis.directMacroCall;
     const directMacroBinding = directMacroCall ? directMacroCall.binding : null;
     const isDirectMacroCall = !!directMacroCall;
-    const importedCallableFacts = this.asyncMode ? node._analysis.importedCallable : null;
+    const importedCallableFacts = node._analysis.importedCallable;
 
-    if (this.asyncMode) {
-      const asyncFrame = null;
-      if (this._compileSpecialChannelFunCall(node)) {
-        return;
-      }
-
-      if (this.macro && this.macro.isDirectCallerCall(node)) {
-        this.macro._emitCallerCallDispatch({
-          bufferId: this.buffer.currentBuffer,
-          node
-        });
-        return;
-      }
-
-      const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
-      const sequenceLockKey = sequenceLockLookup && sequenceLockLookup.key;
-      if (sequenceLockKey) {
-        let index = sequenceLockKey.indexOf('!', 1);
-        const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
-        const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
-        if (keyRootOutput) {
-          this._failNonContextSequenceRoot(node, keyRootOutput);
-        }
-      }
-      if (sequenceLockKey) {
-        const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        this.emit('runtime.sequentialCallWrapValue(');
-        this.compile(node.name, asyncFrame);
-        this.emit(`, "${funcName}", context, `);
-        this._compileAggregate(node.args, asyncFrame, '[', ']', false, false);
-        this.emit(`, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-        return;
-      }
-      if (isDirectMacroCall) {
-        this.emit('runtime.invokeMacro(');
-        if (directMacroBinding) {
-          this.emit(directMacroBinding);
-        } else {
-          this.compile(node.name, asyncFrame);
-        }
-        this.emit(', context, ');
-        this._compileAggregate(node.args, asyncFrame, '[', ']', false, false);
-        this.emit(`, ${this.buffer.currentBuffer})`);
-        return;
-      }
-      if (importedCallableFacts) {
-        // Imported callables are structurally ambiguous: they may resolve to a
-        // macro boundary or an ordinary function. Give them a child buffer up
-        // front so the eventual dispatch happens inside a known current flow.
-        this.boundaries.compileValueBoundary(this.buffer, node, (n) => {
-          this._emitAsyncDynamicCall(n, 'currentBuffer');
-        });
-        return;
-      }
-      // Dynamic async calls should dispatch in the current boundary with raw
-      // promise-valued callee/args, not from a later .then(...).
-      this._emitAsyncDynamicCall(node, this.buffer.currentBuffer);
-    } else {
-      // In sync mode, compile as usual.
-      this.emit('runtime.callWrap(');
-      this.compile(node.name, frame);
-      // Sync mode is different from async mode in that context is the
-      // Context class instance not the render method context object
-      // This is different from non-global objects that pass the parent of
-      // the function as 'this' which is part of the context object
-      this.emit(', "' + funcName + '", context, ');
-      this._compileAggregate(node.args, frame, '[', ']', false, false);
-      this.emit(`, ${this.buffer.currentBuffer}))`);
+    if (this._compileSpecialChannelFunCall(node)) {
+      return;
     }
+
+    if (this.macro && this.macro.isDirectCallerCall(node)) {
+      this.macro._emitCallerCallDispatch({
+        bufferId: this.buffer.currentBuffer,
+        node
+      });
+      return;
+    }
+
+    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    const sequenceLockKey = sequenceLockLookup && sequenceLockLookup.key;
+    if (sequenceLockKey) {
+      let index = sequenceLockKey.indexOf('!', 1);
+      const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
+      const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
+      if (keyRootOutput) {
+        this._failNonContextSequenceRoot(node, keyRootOutput);
+      }
+    }
+    if (sequenceLockKey) {
+      const errorContextJson = JSON.stringify(this._createErrorContext(node));
+      this.emit('runtime.sequentialCallWrapValue(');
+      this.compile(node.name, null);
+      this.emit(`, "${funcName}", context, `);
+      this._compileAggregate(node.args, null, '[', ']', false, false);
+      this.emit(`, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+      return;
+    }
+    if (isDirectMacroCall) {
+      this.emit('runtime.invokeMacro(');
+      if (directMacroBinding) {
+        this.emit(directMacroBinding);
+      } else {
+        this.compile(node.name, null);
+      }
+      this.emit(', context, ');
+      this._compileAggregate(node.args, null, '[', ']', false, false);
+      this.emit(`, ${this.buffer.currentBuffer})`);
+      return;
+    }
+    if (importedCallableFacts) {
+      this.boundaries.compileValueBoundary(this.buffer, node, (n) => {
+        this._emitAsyncDynamicCall(n, 'currentBuffer');
+      });
+      return;
+    }
+    this._emitAsyncDynamicCall(node, this.buffer.currentBuffer);
+  }
+
+  _compileSyncFunCall(node, frame) {
+    const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
+    this.emit('runtime.callWrap(');
+    this.compile(node.name, frame);
+    this.emit(', "' + funcName + '", context, ');
+    this._compileAggregate(node.args, frame, '[', ']', false, false);
+    this.emit(`, ${this.buffer.currentBuffer}))`);
   }
 
   _compileSpecialChannelFunCall(node) {
@@ -1179,27 +1267,30 @@ class CompilerBase extends Obj {
     this.assertType(node.name, nodes.Symbol);
 
     if (this.asyncMode) {
-      const asyncFrame = null;
-      // Although filters are compiled differently to expressions -
-      // they still compile to a normal promise-valued expression.
-      // Any outer structural wrapping should happen at the caller site,
-      // not here.
-      const parts = [
-        function () {
-          this.emit(`env.getFilter("${node.name.value}")`);
-        },
-        ...node.args.children.map((arg) => function () {
-          this.compile(arg, asyncFrame);
-        })
-      ];
-      this._compileResolvedPartList(parts, function (result) {
-        this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
-      }, false);
-    } else {
-      this.emit('env.getFilter("' + node.name.value + '").call(context, ');
-      this._compileAggregate(node.args, frame, '', '', false, false);
-      this.emit(')');
+      this._compileAsyncFilter(node);
+      return;
     }
+    this._compileSyncFilter(node, frame);
+  }
+
+  _compileAsyncFilter(node) {
+    const parts = [
+      function () {
+        this.emit(`env.getFilter("${node.name.value}")`);
+      },
+      ...node.args.children.map((arg) => function () {
+        this.compile(arg, null);
+      })
+    ];
+    this._compileResolvedPartList(parts, function (result) {
+      this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
+    }, false);
+  }
+
+  _compileSyncFilter(node, frame) {
+    this.emit('env.getFilter("' + node.name.value + '").call(context, ');
+    this._compileAggregate(node.args, frame, '', '', false, false);
+    this.emit(')');
   }
 
   compileFilterAsync(node, frame) {
@@ -1208,23 +1299,25 @@ class CompilerBase extends Obj {
     this.assertType(node.name, nodes.Symbol);
 
     if (this.asyncMode) {
-      const asyncFrame = null;
-      // Although filters are compiled differently to expressions,
-      // they still compile to a normal promise-valued expression.
-      // Any outer structural wrapping should happen at the caller site,
-      // not here.
-      this.emit.line(`let ${symbol} = `);
-      this._compileAggregate(node.args, asyncFrame, '[', ']', true, false, function (result) {
-        this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
-      });
-      this.emit(';');
-    } else {
-      this.emit('env.getFilter("' + node.name.value + '").call(context, ');
-      this._compileAggregate(node.args, frame, '', '', false, false);
-      this.emit.line(', ' + this._makeCallback(symbol));
-      this.emit.addScopeLevel();
+      this._compileAsyncFilterAsync(node, symbol);
+      return;
     }
+    this._compileSyncFilterAsync(node, frame, symbol);
+  }
 
+  _compileAsyncFilterAsync(node, symbol) {
+    this.emit.line(`let ${symbol} = `);
+    this._compileAggregate(node.args, null, '[', ']', true, false, function (result) {
+      this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
+    });
+    this.emit(';');
+  }
+
+  _compileSyncFilterAsync(node, frame, symbol) {
+    this.emit('env.getFilter("' + node.name.value + '").call(context, ');
+    this._compileAggregate(node.args, frame, '', '', false, false);
+    this.emit.line(', ' + this._makeCallback(symbol));
+    this.emit.addScopeLevel();
   }
 
   compileKeywordArgs(node, frame) {
@@ -1326,22 +1419,38 @@ class CompilerBase extends Obj {
 
   compileAwaited(node, frame) {
     if (this.asyncMode) {
-      this.emit('(await ');
-      this.compile(node, frame);
-      this.emit(')');
-    } else {
-      this.compile(node, frame);
+      this._compileAsyncAwaited(node, frame);
+      return;
     }
+    this._compileSyncAwaited(node, frame);
   }
 
   _compileAwaitedExpression(node, frame) {
     if (this.asyncMode) {
-      this.emit('(await ');
-      this._compileExpression(node, frame);
-      this.emit(')');
-    } else {
-      this._compileExpression(node, frame);
+      this._compileAsyncAwaitedExpression(node, frame);
+      return;
     }
+    this._compileSyncAwaitedExpression(node, frame);
+  }
+
+  _compileAsyncAwaited(node, frame) {
+    this.emit('(await ');
+    this.compile(node, frame);
+    this.emit(')');
+  }
+
+  _compileSyncAwaited(node, frame) {
+    this.compile(node, frame);
+  }
+
+  _compileAsyncAwaitedExpression(node, frame) {
+    this.emit('(await ');
+    this._compileExpression(node, frame);
+    this.emit(')');
+  }
+
+  _compileSyncAwaitedExpression(node, frame) {
+    this._compileExpression(node, frame);
   }
 
   // Statement/root-expression wrapper.

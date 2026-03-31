@@ -104,7 +104,11 @@ class Compiler extends CompilerBase {
   }
 
   compileCallExtension(node, frame) {
-    this._compileCallExtension(node, frame, false);
+    this._compileSharedCallExtension(node, frame, false);
+  }
+
+  compileCallExtensionAsync(node, frame) {
+    this._compileSharedCallExtension(node, frame, true);
   }
 
   /**
@@ -112,12 +116,12 @@ class Compiler extends CompilerBase {
    * CallExtensionAsync - uses callback, async = true. This was the way to handle the old nunjucks async
    * @todo - rewrite with _emitAggregate
    */
-  _compileCallExtension(node, frame, async) {
+  _compileSharedCallExtension(node, frame, async) {
     const asyncFrame = this.asyncMode ? null : frame;
     var args = node.args;
     var contentArgs = node.contentArgs;
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
-    var noExtensionCallback = !async;//assign the return value directly, no callback
+    var noExtensionCallback = !async;
     var resolveArgs = node.resolveArgs && this.asyncMode;
     const positionNode = args || node; // Prefer args position if available
 
@@ -191,16 +195,12 @@ class Compiler extends CompilerBase {
 
     const emitExtensionInvocation = (callFrame, extId) => {
       if (noExtensionCallback) {
-        // the extension returns a value directly
         if (!resolveArgs) {
-          // send the arguments as they are - promises or values
           this.emit(`${extId}["${node.prop}"](context`);
         } else {
-          // resolve the arguments before calling the function
           this.emit(`runtime.resolveArguments(${extId}["${node.prop}"].bind(${extId}), 1)(context`);
         }
       } else {
-        // isAsync, the callback should be promisified
         if (!resolveArgs) {
           this.emit(`runtime.promisify(${extId}["${node.prop}"].bind(${extId}))(context`);
         } else {
@@ -228,7 +228,10 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
       const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
       this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
-    } else if (noExtensionCallback) {
+      return;
+    }
+
+    if (noExtensionCallback) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
       this.buffer.addToBuffer(node, frame, () => {
@@ -236,31 +239,24 @@ class Compiler extends CompilerBase {
         emitExtensionInvocation(frame, ext);
         this.emit(`, ${autoescape} && env.opts.autoescape)`);
       }, positionNode, this.buffer.currentTextChannelName, false);
-    } else {
-      //use the original nunjucks callback mechanism
-      this.emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
-      emitCallArgs(frame);
-
-      const res = this._tmpid();
-      this.emit.line(', ' + this._makeCallback(res));
-      frame = this.boundaries.compileTextBoundary(
-        this.buffer,
-        node,
-        frame,
-        positionNode,
-        () => {
-          this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
-        },
-        {
-        }
-      );
-
-      this.emit.addScopeLevel();
+      return;
     }
-  }
 
-  compileCallExtensionAsync(node, frame) {
-    this._compileCallExtension(node, frame, true);
+    this.emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
+    emitCallArgs(frame);
+    const res = this._tmpid();
+    this.emit.line(', ' + this._makeCallback(res));
+    this.boundaries.compileTextBoundary(
+      this.buffer,
+      node,
+      frame,
+      positionNode,
+      () => {
+        this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+      },
+      {}
+    );
+    this.emit.addScopeLevel();
   }
 
   compileNodeList(node, frame) {
@@ -308,7 +304,7 @@ class Compiler extends CompilerBase {
 
   compileSet(node, frame) {
     if (this.asyncMode) {
-      return this.compileAsyncVarSet(node, frame);
+      return this.compileAsyncVarSet(node);
     }
     return this.compileSyncSet(node, frame);
   }
@@ -379,7 +375,7 @@ class Compiler extends CompilerBase {
     return this.compileSet(node, frame);
   }
 
-  compileAsyncVarSet(node, frame) {
+  compileAsyncVarSet(node) {
     if (!this.asyncMode) {
       this.fail('async var channel assignments are only supported in async mode', node.lineno, node.colno, node);
     }
@@ -480,28 +476,23 @@ class Compiler extends CompilerBase {
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
-    const boundaryFrame = this.asyncMode ? null : frame;
-    const switchResult = this.buffer._compileControlFlowBoundary(node, boundaryFrame, (callbackFrame) => {
-      const blockFrame = this.asyncMode ? null : callbackFrame;
+    if (this.asyncMode) {
+      return this._compileAsyncSwitch(node);
+    }
+    return this._compileSyncSwitch(node, frame);
+  }
+
+  _compileAsyncSwitch(node) {
+    this.buffer._compileControlFlowBoundary(node, null, () => {
+      const blockFrame = null;
       let catchPoisonPos;
 
-      if (this.asyncMode) {
-        // Add try-catch wrapper for error handling
-        this.emit('try {');
-        this.emit('const switchResult = ');
-        this._compileAwaitedExpression(node.expr, blockFrame);
-        this.emit(';');
-        this.emit('');
-        // Note: awaited result cannot be a resolved PoisonedValue, so no check needed
-
-        // Emit switch statement
-        this.emit('switch (switchResult) {');
-      } else {
-        // Sync mode - no error handling needed
-        this.emit('switch (');
-        this._compileAwaitedExpression(node.expr, blockFrame);
-        this.emit(') {');
-      }
+      this.emit('try {');
+      this.emit('const switchResult = ');
+      this._compileAwaitedExpression(node.expr, blockFrame);
+      this.emit(';');
+      this.emit('');
+      this.emit('switch (switchResult) {');
 
       // Compile cases — synchronously, no inner asyncBlock wrappers
       node.cases.forEach((c) => {
@@ -523,36 +514,54 @@ class Compiler extends CompilerBase {
 
       this.emit('}'); // Close switch
 
-      if (this.asyncMode) {
-        // Add catch block to poison variables and channels when switch expression fails
-        const errorCtx = this._createErrorContext(node, node.expr);
-        this.emit('} catch (e) {');
-        this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorCtx.lineno}, ${errorCtx.colno}, "${errorCtx.errorContextString}", context.path);`);
-        catchPoisonPos = this.codebuf.length;
-        this.emit('');
-        this.emit('}'); // No re-throw - execution continues with poisoned vars
+      const errorCtx = this._createErrorContext(node, node.expr);
+      this.emit('} catch (e) {');
+      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorCtx.lineno}, ${errorCtx.colno}, "${errorCtx.errorContextString}", context.path);`);
+      catchPoisonPos = this.codebuf.length;
+      this.emit('');
+      this.emit('}');
 
-        // Collect channels from all branches via _analysis (available before compilation)
-        const allChannels = new Set();
-        node.cases.forEach(c => {
-          (c.body._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
-        });
-        if (node.default) {
-          (node.default._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
-        }
+      const allChannels = new Set();
+      node.cases.forEach(c => {
+        (c.body._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
+      });
+      if (node.default) {
+        (node.default._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
+      }
 
-        if (allChannels.size > 0) {
-          for (const channelName of allChannels) {
-            this.emit.insertLine(catchPoisonPos,
-              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
-          }
+      if (allChannels.size > 0) {
+        for (const channelName of allChannels) {
+          this.emit.insertLine(catchPoisonPos,
+            `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
         }
       }
     });
+  }
 
-    if (!this.asyncMode) {
-      frame = switchResult.frame;
-    }
+  _compileSyncSwitch(node, frame) {
+    this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+      this.emit('switch (');
+      this._compileAwaitedExpression(node.expr, blockFrame);
+      this.emit(') {');
+
+      node.cases.forEach((c) => {
+        this.emit('case ');
+        this._compileAwaitedExpression(c.cond, blockFrame);
+        this.emit(': ');
+
+        if (c.body.children.length) {
+          this.compile(c.body, blockFrame);
+          this.emit.line('break;');
+        }
+      });
+
+      if (node.default) {
+        this.emit('default: ');
+        this.compile(node.default, blockFrame);
+      }
+
+      this.emit('}');
+    });
   }
 
   analyzeGuard(node) {
@@ -570,7 +579,7 @@ class Compiler extends CompilerBase {
     return {};
   }
 
-  compileGuard(node, frame) {
+  compileGuard(node) {
     if (!this.asyncMode) {
       this.fail('guard block only supported in async mode', node.lineno, node.colno);
     }
@@ -584,7 +593,7 @@ class Compiler extends CompilerBase {
     const guardStateVar = needsGuardState ? this._tmpid() : null;
     validateGuardVariablesDeclared(variableValidationTargets, this, node);
 
-    const guardResult = this.buffer._compileControlFlowBoundary(node, null, () => {
+    this.buffer._compileControlFlowBoundary(node, null, () => {
       const blockFrame = null;
       const previousGuardDepth = this.guardDepth;
       this.guardDepth = previousGuardDepth + 1;
@@ -720,8 +729,6 @@ class Compiler extends CompilerBase {
         this.guardDepth = previousGuardDepth;
       }
     });
-
-    frame = guardResult.frame;
   }
 
   _getGuardedChannelNames(usedChannels, guardTargets, analysis) {
@@ -853,17 +860,19 @@ class Compiler extends CompilerBase {
   }
 
   //todo! - get rid of the callback
-  compileIf(node, frame, async) {
+  compileIf(node, frame) {
     if (this.asyncMode) {
-      async = false;//old type of async
+      return this._compileAsyncIf(node);
     }
+    return this._compileSyncIf(node, frame);
+  }
 
-    const boundaryFrame = this.asyncMode ? null : frame;
-    const ifResult = this.buffer._compileControlFlowBoundary(node, boundaryFrame, (callbackFrame) => {
-      const blockFrame = this.asyncMode ? null : callbackFrame;
+  _compileAsyncIf(node) {
+    this.buffer._compileControlFlowBoundary(node, null, () => {
+      const blockFrame = null;
       let catchPoisonPos;
 
-      if (this.asyncMode) {
+      {
         const condResultId = this._tmpid();
         // Async mode: Add try-catch wrapper for poison condition handling
         this.emit('try {');
@@ -906,40 +915,57 @@ class Compiler extends CompilerBase {
               `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
           }
         }
-      } else {
-        // Sync mode (unchanged)
-        this.emit('if(');
-        this._compileAwaitedExpression(node.cond, blockFrame);
-        this.emit('){');
-
-        this.emit.withScopedSyntax(() => {
-          let trueFrame = blockFrame;
-          this.compile(node.body, trueFrame);
-          if (async) {
-            this.emit('cb()');
-          }
-        });
-
-        this.emit('} else {');
-
-        if (node.else_) {
-          this.emit.withScopedSyntax(() => {
-            let falseFrame = blockFrame;
-            this.compile(node.else_, falseFrame);
-            if (async) {
-              this.emit('cb()');
-            }
-          });
-        } else if (async) { // not asyncMode
-          this.emit('cb()');
-        }
-        this.emit('}');
       }
     });
+  }
 
-    if (!this.asyncMode) {
-      frame = ifResult.frame;
-    }
+  _compileSyncIf(node, frame) {
+    this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+      this.emit('if(');
+      this._compileAwaitedExpression(node.cond, blockFrame);
+      this.emit('){');
+
+      this.emit.withScopedSyntax(() => {
+        this.compile(node.body, blockFrame);
+      });
+
+      this.emit('} else {');
+
+      if (node.else_) {
+        this.emit.withScopedSyntax(() => {
+          this.compile(node.else_, blockFrame);
+        });
+      }
+      this.emit('}');
+    });
+  }
+
+  _compileLegacyCallbackIf(node, frame) {
+    this.emit('(function(cb) {');
+    this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+      this.emit('if(');
+      this._compileAwaitedExpression(node.cond, blockFrame);
+      this.emit('){');
+
+      this.emit.withScopedSyntax(() => {
+        this.compile(node.body, blockFrame);
+        this.emit('cb()');
+      });
+
+      this.emit('} else {');
+
+      if (node.else_) {
+        this.emit.withScopedSyntax(() => {
+          this.compile(node.else_, blockFrame);
+          this.emit('cb()');
+        });
+      } else {
+        this.emit('cb()');
+      }
+      this.emit('}');
+    });
+    this.emit('})(' + this._makeCallback());
+    this.emit.addScopeLevel();
   }
 
   analyzeIfAsync(node) {
@@ -948,13 +974,10 @@ class Compiler extends CompilerBase {
 
   compileIfAsync(node, frame) {
     if (this.asyncMode) {
-      this.compileIf(node, frame);
-    } else {
-      this.emit('(function(cb) {');
-      this.compileIf(node, frame, true);
-      this.emit('})(' + this._makeCallback());
-      this.emit.addScopeLevel();
+      this._compileAsyncIf(node);
+      return;
     }
+    this._compileLegacyCallbackIf(node, frame);
   }
 
   analyzeIf(node) {
@@ -1167,39 +1190,50 @@ class Compiler extends CompilerBase {
   }
 
   compileCapture(node, frame) {
+    if (this.asyncMode) {
+      this._compileAsyncCapture(node);
+      return;
+    }
+    this._compileSyncCapture(node, frame);
+  }
+
+  _compileAsyncCapture(node) {
     if (this.scriptMode) {
       this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
     }
 
-    if (this.asyncMode) {
-      this.boundaries.compileCaptureBoundary(
-        this.buffer,
-        node,
-        function () {
-          this.compile(node.body, null);
-        },
-        node.body
-      );
-    } else {
-      // Sync capture still uses the legacy local output variable path.
-      const buffer = this.buffer.currentBuffer;
-      const textChannelVar = this.buffer.currentTextChannelVar;
-      const textChannelName = this.buffer.currentTextChannelName;
-      const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
-      this.buffer.currentBuffer = 'output';
-      this.buffer.currentTextChannelVar = 'output_textChannelVar';
-      this.buffer.currentTextChannelName = captureTextOutputName;
-      this.emit.line('(function() {');
-      this.emit.line('let output = "";');
-      this.emit.withScopedSyntax(() => {
-        this.compile(node.body, frame);
-      });
-      this.emit.line('return output;');
-      this.emit.line('})()');
-      this.buffer.currentBuffer = buffer;
-      this.buffer.currentTextChannelVar = textChannelVar;
-      this.buffer.currentTextChannelName = textChannelName;
+    this.boundaries.compileCaptureBoundary(
+      this.buffer,
+      node,
+      function () {
+        this.compile(node.body, null);
+      },
+      node.body
+    );
+  }
+
+  _compileSyncCapture(node, frame) {
+    if (this.scriptMode) {
+      this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
     }
+    // Sync capture still uses the legacy local output variable path.
+    const buffer = this.buffer.currentBuffer;
+    const textChannelVar = this.buffer.currentTextChannelVar;
+    const textChannelName = this.buffer.currentTextChannelName;
+    const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
+    this.buffer.currentBuffer = 'output';
+    this.buffer.currentTextChannelVar = 'output_textChannelVar';
+    this.buffer.currentTextChannelName = captureTextOutputName;
+    this.emit.line('(function() {');
+    this.emit.line('let output = "";');
+    this.emit.withScopedSyntax(() => {
+      this.compile(node.body, frame);
+    });
+    this.emit.line('return output;');
+    this.emit.line('})()');
+    this.buffer.currentBuffer = buffer;
+    this.buffer.currentTextChannelVar = textChannelVar;
+    this.buffer.currentTextChannelName = textChannelName;
   }
 
   // @todo - get rid of the asyncAddToBufferBegin after we have switch var to the new value implementation
@@ -1215,6 +1249,14 @@ class Compiler extends CompilerBase {
   }
 
   compileOutput(node, frame) {
+    if (this.asyncMode) {
+      this._compileAsyncOutput(node);
+      return;
+    }
+    this._compileSyncOutput(node, frame);
+  }
+
+  _compileAsyncOutput(node) {
     if (this.scriptMode) {
       this.fail(
         'Script mode does not support template output nodes. Use declared channels and command instead.',
@@ -1224,50 +1266,51 @@ class Compiler extends CompilerBase {
       );
     }
     const textChannelName = this.buffer.currentTextChannelName;
-    if (this.asyncMode) {
-      const children = node.children;
-      children.forEach(child => {
-        if (child instanceof nodes.TemplateData) {
-          if (child.value) {
-            this.buffer.addToBuffer(node, null, function () {
-              this.compileLiteral(child, null);
-            }, child, textChannelName, true);
+    const children = node.children;
+    children.forEach(child => {
+      if (child instanceof nodes.TemplateData) {
+        if (child.value) {
+          this.buffer.addToBuffer(node, null, function () {
+            this.compileLiteral(child, null);
+          }, child, textChannelName, true);
+        }
+        return;
+      }
+      if (child._analysis?.mutatedChannels?.size > 0) {
+        this.boundaries.compileTextBoundary(
+          this.buffer,
+          node,
+          null,
+          child,
+          () => {
+            this.compileExpression(child, null, child);
+          },
+          {
+            emitInCurrentBuffer: true
           }
-          return;
-        }
-        if (child._analysis?.mutatedChannels?.size > 0) {
-          // Remaining intentional boundary case:
-          // expressions like caller() can still attach composition structure while
-          // evaluating, so this is not just "wait for a text value then emit text".
-          // Keep a dedicated child buffer here; pure value-only output stays on the
-          // synchronous TextCommand path below.
-          this.boundaries.compileTextBoundary(
-            this.buffer,
-            node,
-            null,
-            child,
-            () => {
-              this.compileExpression(child, null, child);
-            },
-            {
-              emitInCurrentBuffer: true
-            }
-          );
-        } else {
-          // Pure value expression: add TextCommand synchronously, no async block needed.
-          // Any promise in args is resolved at apply time by resolveCommandArgumentsForApply.
-          const returnId = this._tmpid();
-          this.emit.line(`let ${returnId};`);
-          this.emit(`${returnId} = `);
-          this.compileExpression(child, null, child);
-          this.emit.line(';');
-          const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
-          this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
-        }
-      });
-      return;
-    }
+        );
+      } else {
+        const returnId = this._tmpid();
+        this.emit.line(`let ${returnId};`);
+        this.emit(`${returnId} = `);
+        this.compileExpression(child, null, child);
+        this.emit.line(';');
+        const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
+        this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
+      }
+    });
+  }
 
+  _compileSyncOutput(node, frame) {
+    if (this.scriptMode) {
+      this.fail(
+        'Script mode does not support template output nodes. Use declared channels and command instead.',
+        node && node.lineno,
+        node && node.colno,
+        node || undefined
+      );
+    }
+    const textChannelName = this.buffer.currentTextChannelName;
     const children = node.children;
     children.forEach(child => {
       if (child instanceof nodes.TemplateData) {
@@ -1470,7 +1513,7 @@ class Compiler extends CompilerBase {
     this.emit.endEntryFunction(block);
   }
 
-  _compileBlockEntries(node, frame) {
+  _compileAsyncBlockEntries(node) {
     const blockNames = [];
     const blocks = node.findAll(nodes.Block);
 
@@ -1481,15 +1524,43 @@ class Compiler extends CompilerBase {
         this.fail(`Block "${name}" defined more than once.`, block.lineno, block.colno, block);
       }
       blockNames.push(name);
-
-      if (this.asyncMode) {
-        this._compileAsyncBlockEntry(block);
-      } else {
-        this._compileSyncBlockEntry(block, frame);
-      }
+      this._compileAsyncBlockEntry(block);
     });
 
     return blocks;
+  }
+
+  _compileSyncBlockEntries(node, frame) {
+    const blockNames = [];
+    const blocks = node.findAll(nodes.Block);
+
+    blocks.forEach((block) => {
+      const name = block.name.value;
+
+      if (blockNames.indexOf(name) !== -1) {
+        this.fail(`Block "${name}" defined more than once.`, block.lineno, block.colno, block);
+      }
+      blockNames.push(name);
+      this._compileSyncBlockEntry(block, frame);
+    });
+
+    return blocks;
+  }
+
+  _compileAsyncRoot(node) {
+    this.emit.beginEntryFunction(node, 'root');
+    this._compileAsyncRootBody(node);
+    this.emit.endEntryFunction(node, true);
+    this.inBlock = true;
+    return this._compileAsyncBlockEntries(node);
+  }
+
+  _compileSyncRoot(node, frame) {
+    this.emit.beginEntryFunction(node, 'root');
+    this._compileSyncRootBody(node, frame);
+    this.emit.endEntryFunction(node, true);
+    this.inBlock = true;
+    return this._compileSyncBlockEntries(node, frame);
   }
 
 
@@ -1507,22 +1578,9 @@ class Compiler extends CompilerBase {
       child.targets[0].value === '__parentTemplate'
     );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
-
-    frame = this.asyncMode ? null : new Frame();
-    // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
-
-    this.emit.beginEntryFunction(node, 'root');
-    if (this.asyncMode) {
-      this._compileAsyncRootBody(node);
-    } else {
-      this._compileSyncRootBody(node, frame);
-    }
-
-    // Pass the node to _emitFuncEnd for error position info (used in sync catch)
-    this.emit.endEntryFunction(node, true);
-
-    this.inBlock = true;
-    const blocks = this._compileBlockEntries(node, frame);
+    const blocks = this.asyncMode
+      ? this._compileAsyncRoot(node)
+      : this._compileSyncRoot(node, new Frame());
 
     this.emit.line('return {');
 
@@ -1540,30 +1598,52 @@ class Compiler extends CompilerBase {
   }
 
   compileDo(node, frame) {
+    if (this.asyncMode) {
+      this._compileAsyncDo(node);
+      return;
+    }
+    this._compileSyncDo(node, frame);
+  }
+
+  _compileAsyncDo(node) {
     node.children.forEach(child => {
-      this.compileExpression(child, this.asyncMode ? null : frame, child);
+      this.compileExpression(child, null, child);
+      this.emit.line(';');
+    });
+  }
+
+  _compileSyncDo(node, frame) {
+    node.children.forEach(child => {
+      this.compileExpression(child, frame, child);
       this.emit.line(';');
     });
   }
 
   compileReturn(node, frame) {
-    const hasValue = !!node.value;
-
     if (this.asyncMode) {
-      const resultVar = this._tmpid();
-      this.emit(`let ${resultVar} = `);
-      if (hasValue) {
-        this.compileExpression(node.value, null, node);
-      } else {
-        this.emit('undefined');
-      }
-      this.emit.line(';');
-      this.emit.line(
-        `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${RETURN_CHANNEL_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}");`
-      );
+      this._compileAsyncReturn(node);
       return;
     }
+    this._compileSyncReturn(node, frame);
+  }
 
+  _compileAsyncReturn(node) {
+    const hasValue = !!node.value;
+    const resultVar = this._tmpid();
+    this.emit(`let ${resultVar} = `);
+    if (hasValue) {
+      this.compileExpression(node.value, null, node);
+    } else {
+      this.emit('undefined');
+    }
+    this.emit.line(';');
+    this.emit.line(
+      `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${RETURN_CHANNEL_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}");`
+    );
+  }
+
+  _compileSyncReturn(node, frame) {
+    const hasValue = !!node.value;
     this.emit('cb(null, ');
     if (hasValue) {
       this.compileExpression(node.value, frame, node);

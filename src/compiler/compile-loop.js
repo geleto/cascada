@@ -9,19 +9,35 @@ class CompileLoop {
 
   compileWhile(node, frame) {
     if (this.compiler.asyncMode) {
-      const iteratorCompiler = (_arrNode, _loopFrame, arrVarName) => {
-        this.compiler.emit.line(`let ${arrVarName} = runtime.whileIterator();`);
-      };
-
-      this._compileAsyncForCore(node, frame, {
-        sequentialLoopBody: true,
-        iteratorCompiler,
-        whileConditionNode: node.cond,
-        loopVarNames: ['iterationCount'],
-        sourcePositionNode: node.cond
-      });
+      this._compileAsyncWhile(node);
       return;
     }
+    this._compileSyncWhile(node, frame);
+  }
+
+  compileFor(node, frame) {
+    if (this.compiler.asyncMode) {
+      this._compileAsyncForCore(node);
+      return;
+    }
+    this._compileSyncForCore(node, frame);
+  }
+
+  _compileAsyncWhile(node) {
+    const iteratorCompiler = (_arrNode, _loopFrame, arrVarName) => {
+      this.compiler.emit.line(`let ${arrVarName} = runtime.whileIterator();`);
+    };
+
+    this._compileAsyncForCore(node, {
+      sequentialLoopBody: true,
+      iteratorCompiler,
+      whileConditionNode: node.cond,
+      loopVarNames: ['iterationCount'],
+      sourcePositionNode: node.cond
+    });
+  }
+
+  _compileSyncWhile(node, frame) {
     this.compiler.emit('while (');
     this.compiler.compileExpression(node.cond, frame, node.cond, true);
     this.compiler.emit(') {');
@@ -29,15 +45,7 @@ class CompileLoop {
     this.compiler.emit('}');
   }
 
-  compileFor(node, frame) {
-    if (this.compiler.asyncMode) {
-      this._compileAsyncForCore(node, frame);
-      return;
-    }
-    this._compileSyncForCore(node, frame);
-  }
-
-  _compileAsyncForCore(node, frame, options = {}) {
+  _compileAsyncForCore(node, options = {}) {
     const sequentialLoopBody = !!options.sequentialLoopBody;
     const iteratorCompiler = options.iteratorCompiler || null;
     const whileConditionNode = options.whileConditionNode || null;
@@ -45,7 +53,7 @@ class CompileLoop {
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const parentWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
 
-    const forResult = this.compiler.buffer._compileControlFlowBoundary(node, null, () => {
+    this.compiler.buffer._compileControlFlowBoundary(node, null, () => {
       const innerFrame = null;
       const arr = this.compiler._tmpid();
 
@@ -118,8 +126,6 @@ class CompileLoop {
       }
       this.compiler.emit.line(`await ${iteratePromiseId};`);
     });
-
-    frame = forResult.frame;
   }
 
   _compileSyncForCore(node, frame, options = {}) {
@@ -497,7 +503,7 @@ class CompileLoop {
 
   compileAsyncEach(node, frame) {
     if (this.compiler.asyncMode) {
-      this._compileAsyncForCore(node, frame, { sequentialLoopBody: true });
+      this._compileAsyncForCore(node, { sequentialLoopBody: true });
       return;
     }
     this._compileSyncLegacyCallbackLoop(node, frame, false);
@@ -505,7 +511,7 @@ class CompileLoop {
 
   compileAsyncAll(node, frame) {
     if (this.compiler.asyncMode) {
-      this._compileAsyncForCore(node, frame, { sequentialLoopBody: false });
+      this._compileAsyncForCore(node, { sequentialLoopBody: false });
       return;
     }
     this._compileSyncLegacyCallbackLoop(node, frame, true);
