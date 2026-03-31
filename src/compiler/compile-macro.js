@@ -257,7 +257,7 @@ class CompileMacro {
 
     if (compiler.scriptMode) {
       const returnVar = compiler._tmpid();
-    return `(async () => {` +
+      return `(async () => {` +
         callerSyncPrefix +
         `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
         `${bufferId}.markFinishedAndPatchLinks();` +
@@ -290,7 +290,7 @@ class CompileMacro {
     const hasCallerSupport = !!(rawCallerVar && allCallersBufferId);
 
     if (compiler.scriptMode) {
-      compiler.emitDeclareReturnChannel(managedFrame, bufferId);
+      compiler.emitDeclareReturnChannel(bufferId);
     }
 
     if (hasCallerSupport) {

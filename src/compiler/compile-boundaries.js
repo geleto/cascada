@@ -165,10 +165,10 @@ class CompileBoundaries {
       textChannelName
     }, () => {
       if (this.compiler.scriptMode) {
-        this.compiler.emitDeclareReturnChannel(frame, 'currentBuffer');
-        innerBodyFunction.call(this.compiler, frame);
+        this.compiler.emitDeclareReturnChannel('currentBuffer');
+        innerBodyFunction.call(this.compiler);
       } else {
-        innerBodyFunction.call(this.compiler, frame);
+        innerBodyFunction.call(this.compiler);
       }
     });
 
@@ -228,8 +228,7 @@ class CompileBoundaries {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const innerFrame = frame;
-    emitBody(innerFrame);
+    emitBody();
     this._emitBoundaryTextCommand(
       bufferCompiler,
       emitBody.resultId,
@@ -246,7 +245,7 @@ class CompileBoundaries {
       bufferCompiler.emitOwnWaitedConcurrencyResolve(boundaryPromiseId, waitedPositionNode);
     }
 
-    return innerFrame;
+    return frame;
   }
 
   compileTextBoundary(bufferCompiler, node, frame, positionNode = node, emitValue, {
@@ -287,20 +286,20 @@ class CompileBoundaries {
     });
   }
 
-  compileBlockTextBoundary(bufferCompiler, node, frame, emitValue) {
+  compileBlockTextBoundary(bufferCompiler, node, emitValue) {
     const positionNode = node;
     const valueId = this.compiler._tmpid();
-    const emitBody = (innerFrame) => {
+    const emitBody = () => {
       this._withBoundaryBufferState(bufferCompiler, {
         bufferExpr: bufferCompiler.currentBuffer,
         textChannelVar: null
       }, () => {
-        emitValue(innerFrame, valueId);
+        emitValue(valueId);
       });
     };
     emitBody.resultId = valueId;
 
-    return this._compileAsyncTextBoundary(bufferCompiler, frame, {
+    this._compileAsyncTextBoundary(bufferCompiler, null, {
       parentBufferExpr: bufferCompiler.currentBuffer,
       linkedChannelsArg: JSON.stringify([bufferCompiler.currentTextChannelName]),
       callbackParams: '(blockBuffer)',
@@ -313,7 +312,7 @@ class CompileBoundaries {
     });
   }
 
-  compileCaptureBoundary(bufferCompiler, node, frame, innerBodyFunction, positionNode = node) {
+  compileCaptureBoundary(bufferCompiler, node, innerBodyFunction, positionNode = node) {
     const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
     const outerParentBuffer = bufferCompiler.currentBuffer;
@@ -323,7 +322,6 @@ class CompileBoundaries {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const innerFrame = frame;
     this._withBoundaryBufferState(bufferCompiler, {
       bufferExpr: 'currentBuffer',
       textChannelVar: 'output_textChannelVar',
@@ -334,7 +332,7 @@ class CompileBoundaries {
       this.compiler.emit.line('let output = currentBuffer;');
       this.compiler.emit.line(`let output_textChannelVar = runtime.declareBufferChannel(currentBuffer, "${captureTextOutputName}", "text", context, null);`);
 
-      innerBodyFunction.call(this.compiler, innerFrame);
+      innerBodyFunction.call(this.compiler);
       this._emitTextChannelSnapshot('currentBuffer', captureTextOutputName, positionNode, 'captureResult');
       this.compiler.emit.line('return captureResult;');
     });
@@ -342,7 +340,6 @@ class CompileBoundaries {
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit('})');
 
-    return { frame: innerFrame };
   }
 }
 

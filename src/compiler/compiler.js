@@ -49,7 +49,7 @@ class Compiler extends CompilerBase {
     return RESERVED_DECLARATION_NAMES.has(name);
   }
 
-  emitDeclareReturnChannel(frame, bufferExpr) {
+  emitDeclareReturnChannel(bufferExpr) {
     this.emit.line(
       `runtime.declareBufferChannel(${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
     );
@@ -160,9 +160,9 @@ class Compiler extends CompilerBase {
             if (this.asyncMode && !resolveArgs) {
               //when args are not resolved, the contentArgs are promises
               this.emit('runtime.normalizeFinalPromise(');
-              this.emit._compileRenderBoundary(node, callFrame, function (f) {
+              this.emit._compileRenderBoundary(node, callFrame, function () {
                 this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
-                this.compile(arg, f);
+                this.compile(arg, callFrame);
               }, arg); // Use content arg node for position
               this.emit(')');
             }
@@ -172,9 +172,9 @@ class Compiler extends CompilerBase {
               this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 
               this.emit.withScopedSyntax(() => {
-                this.emit._compileCallbackRenderBoundary(node, callFrame, function (f) {
+                this.emit._compileCallbackRenderBoundary(node, callFrame, function () {
                   this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
-                  this.compile(arg, f);
+                  this.compile(arg, callFrame);
                 }, 'cb', arg); // Use content arg node for position
                 this.emit.line(';');
               });
@@ -1166,9 +1166,8 @@ class Compiler extends CompilerBase {
       this.boundaries.compileCaptureBoundary(
         this.buffer,
         node,
-        frame,
-        function (f) {
-          this.compile(node.body, f);
+        function () {
+          this.compile(node.body, frame);
         },
         node.body
       );
@@ -1418,7 +1417,7 @@ class Compiler extends CompilerBase {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     this.emit.line(`context.linkDeferredExportsToBuffer(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
-      this.emitDeclareReturnChannel(frame, this.buffer.currentBuffer);
+      this.emitDeclareReturnChannel(this.buffer.currentBuffer);
     }
     const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks

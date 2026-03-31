@@ -200,6 +200,10 @@ Completed so far:
       - `CompileEmit.beginEntryFunction(...)` no longer accepts/pass-throughs `frame`
       - async expression control-flow boundaries no longer pass a no-op boundary frame argument into their callback bodies
       - async value boundaries no longer pass a no-op frame argument into value emitters
+      - async inheritance template-loading helpers no longer thread `frame` just to compile async target expressions
+      - `emitDeclareReturnChannel(...)` no longer accepts a dead `frame` arg
+      - async render/capture/block boundary callbacks no longer receive a no-op `frame` argument when the boundary does not transform frame state
+      - async-only `compileCaptureBoundary(...)` and `compileBlockTextBoundary(...)` no longer take/pass through dead `frame` arguments
     - async symbol lookup is now split by real runtime mode:
       - async template symbols use explicit async-template lookup helpers
       - async script symbols use explicit async-script lookup helpers

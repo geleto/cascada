@@ -53,7 +53,7 @@ class CompileInheritance {
     }
   }
 
-  _compileAsyncGetTemplateOrScript(node, frame, eagerCompile, ignoreMissing) {
+  _compileAsyncGetTemplateOrScript(node, eagerCompile, ignoreMissing) {
     const parentTemplateId = this.compiler._tmpid();
     const parentName = JSON.stringify(this.compiler.templateName);
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
@@ -67,7 +67,7 @@ class CompileInheritance {
     // emit their own completion tracking separately from root-expression WRCs.
     this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
     this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
-    this.compiler.compileExpression(node.template, frame, positionNode, true);
+    this.compiler.compileExpression(node.template, null, positionNode, true);
     this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
 
     return parentTemplateId;
@@ -89,9 +89,9 @@ class CompileInheritance {
     return templateId;
   }
 
-  _compileAsyncImport(node, frame) {
+  _compileAsyncImport(node) {
     const target = node.target.value;
-    const id = this._compileAsyncGetTemplateOrScript(node, frame, false, false);
+    const id = this._compileAsyncGetTemplateOrScript(node, false, false);
     const exportedId = this.compiler._tmpid();
     if (node.withContext) {
       const importVarsVar = this.compiler._tmpid();
@@ -121,8 +121,8 @@ class CompileInheritance {
     }
   }
 
-  _compileAsyncFromImport(node, frame) {
-    const importedId = this._compileAsyncGetTemplateOrScript(node, frame, false, false);
+  _compileAsyncFromImport(node) {
+    const importedId = this._compileAsyncGetTemplateOrScript(node, false, false);
     const exportedId = this.compiler._tmpid();
     const bindingIds = [];
     if (node.withContext) {
@@ -214,7 +214,7 @@ class CompileInheritance {
 
   compileImport(node, frame) {
     if (this.compiler.asyncMode) {
-      this._compileAsyncImport(node, frame);
+      this._compileAsyncImport(node);
       return;
     }
     this._compileSyncImport(node, frame);
@@ -222,7 +222,7 @@ class CompileInheritance {
 
   compileFromImport(node, frame) {
     if (this.compiler.asyncMode) {
-      this._compileAsyncFromImport(node, frame);
+      this._compileAsyncFromImport(node);
       return;
     }
     this._compileSyncFromImport(node, frame);
@@ -256,8 +256,7 @@ class CompileInheritance {
       this.compiler.boundaries.compileBlockTextBoundary(
         this.compiler.buffer,
         node,
-        frame,
-        (f, id) => {
+        (id) => {
           this.emit.line(`let ${id};`);
           // The dynamic check runs when:
           // 1. We're at top level (!this.inBlock)
@@ -303,7 +302,7 @@ class CompileInheritance {
     }
 
     const parentTemplateId = this.compiler.asyncMode
-      ? this._compileAsyncGetTemplateOrScript(node, frame, true, false)
+      ? this._compileAsyncGetTemplateOrScript(node, true, false)
       : this._compileSyncGetTemplate(node, frame, true, false);
 
     if (this.compiler.asyncMode) {
