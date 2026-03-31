@@ -16,6 +16,11 @@ Completed so far:
     - `precompileScriptString(...)`
   - script compilation/loading is now async-only at the environment level
     - `scriptMode` no longer has a sync-script branch in `BaseEnvironment`
+  - remaining helper naming was tightened to match that split:
+    - async script context lookup now uses `Context.lookupScript(...)`
+    - sync frame-backed template lookup now uses `contextOrSyncTemplateVarLookup(...)`
+    - sync template loop metadata writes now use `setSyncTemplateLoopBindings(...)`
+    - the remaining sync top-level frame marker is now `frame.syncTemplateTopLevel`
 
 - Phase 1 is effectively done:
   - `node.isAsync` has been removed as an async compile-routing mechanism
@@ -48,7 +53,7 @@ Completed so far:
     - this avoids confusing the macro's local declaration with the parent-owned exported binding
   - async render entry no longer sets `frame.topLevel`
     - there are no remaining async reads of that runtime flag
-    - the remaining top-level frame marker is now explicitly sync-only: `frame.syncTopLevel`
+    - the remaining top-level frame marker is now explicitly sync-template-only: `frame.syncTemplateTopLevel`
   - dead async frame flags were removed:
     - `_seesRootScope` no longer exists in the async runtime path
     - `_returnWaitCount` was dead and is gone
@@ -200,9 +205,9 @@ Current next target:
     - done: compile-time frame-balance helpers are gone
     - the remaining compiler-frame push/new sites are now concentrated in sync / legacy callback paths
   - continue isolating remaining sync-only frame state:
-    - done: `frame.topLevel` was renamed to explicit sync-only `frame.syncTopLevel`
-    - done: loop frame metadata writes now go through explicit sync-only `setSyncFrameLoopBindings(...)`
-    - done: sync frame-backed template lookup now goes through explicit `contextOrSyncFrameVarLookup(...)`
+    - done: `frame.topLevel` was renamed to explicit sync-template-only `frame.syncTemplateTopLevel`
+    - done: loop frame metadata writes now go through explicit sync-template `setSyncTemplateLoopBindings(...)`
+    - done: sync frame-backed template lookup now goes through explicit `contextOrSyncTemplateVarLookup(...)`
     - done: the dead `whileConditionIterator(...)` runtime export was removed
     - done: sync `super()` lookup now goes through explicit `Context.getSyncSuper(...)`
     - done: direct sync exports now go through explicit `Context.addResolvedExport(...)`
@@ -213,6 +218,7 @@ Current next target:
       - legacy callback loop lowering
       - sync-only render boundary helper paths
       - `CompileBuffer.addToBuffer(...)` no longer duplicates async text/non-text branches
+      - script-only channel declarations no longer carry a dead sync branch in `compileChannelDeclaration(...)`
     - done: macro body emission no longer uses one nested sync/async helper
       - `CompileMacro` now has explicit compiled async vs sync body emission paths
     - done: macro compilation no longer uses one nested sync/async helper

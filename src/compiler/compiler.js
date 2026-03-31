@@ -360,12 +360,12 @@ class Compiler extends CompilerBase {
   }
 
   _emitSyncSetPublish(name, id) {
-    this.emit.line(`frame.set("${name}", ${id}, ${!this.scriptMode});`);
-    this.emit.line('if(frame.syncTopLevel) {');
+    this.emit.line(`frame.set("${name}", ${id}, true);`);
+    this.emit.line('if(frame.syncTemplateTopLevel) {');
     this.emit.line(`  context.setVariable("${name}", ${id});`);
     this.emit.line('}');
     if (name.charAt(0) !== '_') {
-      this.emit.line('if(frame.syncTopLevel) {');
+      this.emit.line('if(frame.syncTemplateTopLevel) {');
       this.emit.line(`  context.addResolvedExport("${name}", ${id});`);
       this.emit.line('}');
     }
@@ -1573,18 +1573,11 @@ class Compiler extends CompilerBase {
       const initNode = node.initializer;
       const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
-      if (this.asyncMode) {
-        const initValueId = this._tmpid();
-        this.emit(`let ${initValueId} = `);
-        this.compileExpression(initNode, frame, initNode);
-        this.emit.line(';');
-        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
-      } else {
-        this.emit(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [`);
-        this.compileExpression(initNode, frame, initNode);
-        this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
-        this.emit.line('');
-      }
+      const initValueId = this._tmpid();
+      this.emit(`let ${initValueId} = `);
+      this.compileExpression(initNode, frame, initNode);
+      this.emit.line(';');
+      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
     }
   }
 

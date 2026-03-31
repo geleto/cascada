@@ -40,23 +40,8 @@ class Context extends Obj {
     }
   }
 
-  //if the variable is not found, throws an error
-  lookupScriptModeRaw(name) {
-    // This is one of the most called functions, so optimize for
-    // the typical case where the name isn't in the globals
-    if (name in this.env.globals && !(name in this.ctx)) {
-      return this.env.globals[name];
-    } else {
-      if (name in this.ctx) {
-        return this.ctx[name];
-      } else {
-        throw new Error(`Can not look up unknown variable/function: ${name}`);
-      }
-    }
-  }
-
   //if the variable is not found, returns a poison value
-  lookupScriptMode(name, errorContext = null) {
+  lookupScript(name, errorContext = null) {
     // This is one of the most called functions, so optimize for
     // the typical case where the name isn't in the globals
     if (name in this.env.globals && !(name in this.ctx)) {

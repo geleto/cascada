@@ -219,7 +219,7 @@ class Template extends Obj {
 
   _createTopLevelSyncFrame(parentSyncFrame, isolateWrites) {
     const frame = parentSyncFrame ? parentSyncFrame.push(isolateWrites) : new Frame();
-    frame.syncTopLevel = true;
+    frame.syncTemplateTopLevel = true;
     return frame;
   }
 

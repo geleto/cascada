@@ -205,7 +205,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext) {
  * Sync template lookup through frame, then context.
  * Returns undefined if variable not found.
  */
-function contextOrSyncFrameVarLookup(context, frame, name) {
+function contextOrSyncTemplateVarLookup(context, frame, name) {
   var val = frame.lookup(name);
   return (val !== undefined) ?
     val :
@@ -254,14 +254,14 @@ function channelLookup(name, currentBuffer) {
 
 /**
  * Async context/frame/channel lookup for scripts.
- * Returns poison for missing names via context.lookupScriptMode.
+ * Returns poison for missing names via context.lookupScript.
  */
 function contextOrChannelLookupScript(context, name, currentBuffer, errorContext = null) {
   const channelRead = channelLookupScript(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
   }
-  return context.lookupScriptMode(name, errorContext);
+  return context.lookupScript(name, errorContext);
 }
 
 // Script-mode channel lookup variant:
@@ -314,7 +314,7 @@ module.exports = {
   memberLookupScriptRaw,
   memberLookupAsync,
   memberLookupScript,
-  contextOrSyncFrameVarLookup,
+  contextOrSyncTemplateVarLookup,
   channelLookup,
   contextOrChannelLookup,
   contextOrChannelLookupScript,

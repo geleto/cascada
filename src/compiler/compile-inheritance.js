@@ -461,15 +461,7 @@ class CompileInheritance {
     this.emit.line('tasks.push(');
     this.emit.line('function(result, callback){');
 
-    // Adding to buffer is synchronous here
-    if (this.compiler.asyncMode) {
-      //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
-      this.compiler.buffer.addToBuffer(node, frame, function () {
-        this.emit('result');
-      }, node, this.compiler.buffer.currentTextChannelName, true);
-    } else {
-      this.emit.line(`${this.compiler.buffer.currentBuffer} += result;`);
-    }
+    this.emit.line(`${this.compiler.buffer.currentBuffer} += result;`);
     this.emit.line('callback(null);');
     this.emit.line('});');
     this.emit.line('env.waterfall(tasks, function(){');

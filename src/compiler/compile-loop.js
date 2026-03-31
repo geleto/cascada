@@ -444,7 +444,7 @@ class CompileLoop {
   }
 
   _emitSyncLoopBindings(loopIndex, loopLength, isLast) {
-    this.compiler.emit.line(`runtime.setSyncFrameLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+    this.compiler.emit.line(`runtime.setSyncTemplateLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
   }
 
   _emitAsyncLoopVarIterationBinding(node, varName, valueExpr) {

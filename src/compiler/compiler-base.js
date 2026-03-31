@@ -447,15 +447,7 @@ class CompilerBase extends Obj {
       this.emit(v);
       return;
     }
-    this.emit(
-      this.scriptMode
-        ? 'runtime.contextOrChannelLookupScript(' +
-          'context, "' + name + '", ' +
-          `${this.buffer.currentBuffer}, ` +
-          `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
-          ')'
-        : `runtime.contextOrSyncFrameVarLookup(context, frame, "${name}")`
-    );
+    this.emit(`runtime.contextOrSyncTemplateVarLookup(context, frame, "${name}")`);
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests
@@ -886,11 +878,7 @@ class CompilerBase extends Obj {
 
     // Sync path, this is for standard, synchronous member lookups.
     // Error handling is managed by the top-level try/catch of the compiled template.
-    if (this.scriptMode) {
-      this.emit(`runtime.memberLookupScript((`);
-    } else {
-      this.emit(`runtime.memberLookup((`);
-    }
+    this.emit('runtime.memberLookup((');
     this.compile(node.target, frame); // Mark target as part of a call path
     this.emit('),');
     this.compile(node.val, frame);

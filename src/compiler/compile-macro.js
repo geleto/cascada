@@ -427,9 +427,7 @@ class CompileMacro {
       compiler.compile(node.body, managedFrame);
     });
     compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
-    return compiler.scriptMode
-      ? bufferId
-      : `new runtime.SafeString(${bufferId})`;
+    return `new runtime.SafeString(${bufferId})`;
   }
 
   _compileAsyncMacro(node, frame) {
