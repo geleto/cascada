@@ -94,12 +94,10 @@ class CompileMacro {
     });
   }
 
-  compileCaller(node, frame) {
+  compileAsyncCaller(node) {
     const compiler = this.compiler;
     compiler.emit('(function (){');
-    const funcId = compiler.asyncMode
-      ? this._compileAsyncCaller(node)
-      : this._compileSyncCaller(node, frame);
+    const funcId = this._compileAsyncCaller(node);
     compiler.emit(`return ${funcId};})()`);
   }
 
@@ -108,6 +106,13 @@ class CompileMacro {
     const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
     this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
     return funcId;
+  }
+
+  compileSyncCaller(node, frame) {
+    const compiler = this.compiler;
+    compiler.emit('(function (){');
+    const funcId = this._compileSyncCaller(node, frame);
+    compiler.emit(`return ${funcId};})()`);
   }
 
   _compileSyncCaller(node, frame) {
@@ -567,16 +572,7 @@ class CompileMacro {
     return funcId;
   }
 
-  compileMacro(node, frame) {
-    const compiler = this.compiler;
-    if (compiler.asyncMode) {
-      this._compileAsyncMacroDeclaration(node);
-      return;
-    }
-    this._compileSyncMacroDeclaration(node, frame);
-  }
-
-  _compileAsyncMacroDeclaration(node) {
+  compileAsyncMacro(node) {
     const compiler = this.compiler;
     const funcId = this._compileAsyncMacro(node);
     const name = node.name.value;
@@ -595,7 +591,7 @@ class CompileMacro {
     }
   }
 
-  _compileSyncMacroDeclaration(node, frame) {
+  compileSyncMacroDeclaration(node, frame) {
     const funcId = this._compileSyncMacro(node, frame, false);
     const name = node.name.value;
     this._emitSyncMacroDeclarationBinding(name, funcId, frame);

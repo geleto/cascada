@@ -187,12 +187,26 @@ module.exports = class CompileEmit {
     return { frame: nextFrame, bufferId };
   }
 
-  _compileRenderBoundary(node, frame, innerBodyFunction, positionNode = node) {
-    return this.compiler.boundaries.compileRenderBoundary(this, node, frame, innerBodyFunction, positionNode);
+  _compileAsyncRenderBoundary(node, innerBodyFunction, positionNode = node) {
+    return this.compiler.boundaries.compileAsyncRenderBoundary(this, node, innerBodyFunction, positionNode);
   }
 
-  _compileCallbackRenderBoundary(node, frame, innerBodyFunction, callbackName, positionNode = node) {
-    return this.compiler.boundaries.compileCallbackRenderBoundary(
+  _compileAsyncCallbackRenderBoundary(node, innerBodyFunction, callbackName, positionNode = node) {
+    return this.compiler.boundaries.compileAsyncCallbackRenderBoundary(
+      this,
+      node,
+      innerBodyFunction,
+      callbackName,
+      positionNode
+    );
+  }
+
+  _compileSyncRenderBoundary(node, frame, innerBodyFunction, positionNode = node) {
+    return this.compiler.boundaries.compileSyncRenderBoundary(this, node, frame, innerBodyFunction, positionNode);
+  }
+
+  _compileSyncCallbackRenderBoundary(node, frame, innerBodyFunction, callbackName, positionNode = node) {
+    return this.compiler.boundaries.compileSyncCallbackRenderBoundary(
       this,
       node,
       frame,

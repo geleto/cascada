@@ -151,7 +151,7 @@ class CompilerBaseSync extends CompilerCommon {
   }
 
   compileCaller(node, frame) {
-    this.macro.compileCaller(node, frame);
+    this.macro.compileSyncCaller(node, frame);
   }
 
   _compileSyncAggregate(node, frame, startChar, endChar, expressionRoot, compileThen, asyncThen) {

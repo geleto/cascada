@@ -212,23 +212,55 @@ class CompileInheritance {
     });
   }
 
-  compileImport(node, frame) {
-    if (this.compiler.asyncMode) {
-      this._compileAsyncImport(node);
-      return;
-    }
+  compileAsyncImport(node) {
+    this._compileAsyncImport(node);
+  }
+
+  compileSyncImport(node, frame) {
     this._compileSyncImport(node, frame);
   }
 
-  compileFromImport(node, frame) {
-    if (this.compiler.asyncMode) {
-      this._compileAsyncFromImport(node);
-      return;
-    }
+  compileAsyncFromImport(node) {
+    this._compileAsyncFromImport(node);
+  }
+
+  compileSyncFromImport(node, frame) {
     this._compileSyncFromImport(node, frame);
   }
 
-  compileBlock(node, frame) {
+  compileAsyncBlock(node) {
+    //var id = this._tmpid();
+
+    // If we are at the top level of a template (`!this.inBlock`) that has a
+    // static `extends` tag, this block is a definition-only. We can safely
+    // skip compiling any rendering code for it, as the parent template is
+    // responsible for its execution. The dynamic extends case is handled later
+    // with a runtime check using the __parentTemplate variable.
+    if (!this.compiler.inBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends) {
+      return;
+    }
+
+    this.compiler.boundaries.compileBlockTextBoundary(
+      this.compiler.buffer,
+      node,
+      (id) => {
+        this.emit.line(`let ${id};`);
+        const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
+        if (needsParentCheck) {
+          this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
+          this.emit.line(`${id} = parentPromise.then((parent) => {`);
+          this.emit.line('  if (parent) return "";');
+          this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
+          this.emit.line('});');
+        } else {
+          this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
+        }
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
+      }
+    );
+  }
+
+  compileSyncBlock(node, frame) {
     //var id = this._tmpid();
 
     // If we are at the top level of a template (`!this.inBlock`) that has a
@@ -251,125 +283,76 @@ class CompileInheritance {
     // because blocks can have side effects, but it seems like a
     // waste of performance to always execute huge top-level
     // blocks twice
-
-    if (this.compiler.asyncMode) {
-      this.compiler.boundaries.compileBlockTextBoundary(
-        this.compiler.buffer,
-        node,
-        (id) => {
-          this.emit.line(`let ${id};`);
-          // The dynamic check runs when:
-          // 1. We're at top level (!this.inBlock)
-          // 2. There might be a dynamic parent (hasDynamicExtends OR hasStaticExtends)
-          //    - hasDynamicExtends: Need to check frame variable
-          //    - hasStaticExtends with hasDynamicExtends: Dynamic can override static
-          const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
-          if (needsParentCheck) {
-            this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
-            this.emit.line(`${id} = parentPromise.then((parent) => {`);
-            this.emit.line('  if (parent) return "";');
-            this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
-            this.emit.line('});');
-          } else {
-            this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}));`);
-          }
-          // Step 7: block invocation boundary completion in limited-loop waited output.
-          this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
-        }
-      );
+    let id = this.compiler._tmpid();
+    if (!this.compiler.inBlock) {
+      this.emit('(parentTemplate ? function(e, c, f, r, cb) { cb(null, ""); } : ');
     }
-    else {
-      let id = this.compiler._tmpid();
-      if (!this.compiler.inBlock) {
-        this.emit('(parentTemplate ? function(e, c, f, r, cb) { cb(null, ""); } : ');
-      }
-      this.emit(`context.getBlock("${node.name.value}")`);
-      if (!this.compiler.inBlock) {
-        this.emit(')');
-      }
-      this.emit.line('(env, context, frame, runtime, ' + this.compiler._makeCallback(id));
-
-      this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
-      this.emit.addScopeLevel();
+    this.emit(`context.getBlock("${node.name.value}")`);
+    if (!this.compiler.inBlock) {
+      this.emit(')');
     }
+    this.emit.line('(env, context, frame, runtime, ' + this.compiler._makeCallback(id));
+
+    this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
+    this.emit.addScopeLevel();
   }
 
-  compileExtends(node, frame) {
+  compileAsyncExtends(node) {
     var k = this.compiler._tmpid();
 
-    if (this.compiler.asyncMode) {
-      this.emit.line('context.prepareForAsyncBlocks();');
+    this.emit.line('context.prepareForAsyncBlocks();');
+    const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
+
+    if (node.asyncStoreIn) {
+      const resolvedParentTemplateId = `${node.asyncStoreIn}_resolvedParentTemplate`;
+      this.emit.line(`let ${node.asyncStoreIn} = Promise.resolve(${parentTemplateId}).then((${resolvedParentTemplateId}) => {`);
+      this.emit.line('  if (context.asyncBlocksPromise) {');
+      this.emit.line(`    return context.asyncBlocksPromise.then(() => ${resolvedParentTemplateId});`);
+      this.emit.line('  }');
+      this.emit.line(`  return ${resolvedParentTemplateId};`);
+      this.emit.line('});');
     }
-
-    const parentTemplateId = this.compiler.asyncMode
-      ? this._compileAsyncGetTemplateOrScript(node, true, false)
-      : this._compileSyncGetTemplate(node, frame, true, false);
-
-    if (this.compiler.asyncMode) {
-      if (node.asyncStoreIn) {
-        const resolvedParentTemplateId = `${node.asyncStoreIn}_resolvedParentTemplate`;
-        // Transformed dynamic extends publishes the parent later through
-        // `set __parentTemplate = tempVar`. Delay that promise until async
-        // block registration is complete, so root cannot observe the parent
-        // before `context.addBlock(...)` / `finishAsyncBlocks()` have settled.
-        this.emit.line(`let ${node.asyncStoreIn} = Promise.resolve(${parentTemplateId}).then((${resolvedParentTemplateId}) => {`);
-        this.emit.line('  if (context.asyncBlocksPromise) {');
-        this.emit.line(`    return context.asyncBlocksPromise.then(() => ${resolvedParentTemplateId});`);
-        this.emit.line('  }');
-        this.emit.line(`  return ${resolvedParentTemplateId};`);
-        this.emit.line('});');
+    this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
+      const templateVar = this.compiler._tmpid();
+      if (!node.asyncStoreIn) {
+        this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${parentTemplateId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
       }
-      const extendsResult = this.compiler.buffer._compileControlFlowBoundary(node, null, () => {
-        const templateVar = this.compiler._tmpid();
-        if (!node.asyncStoreIn) {
-          this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${parentTemplateId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
-        }
-        this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
-        this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
-        this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
-        this.emit.line('}');
-        this.emit.line('await context.finishAsyncBlocks();');
-      });
-      frame = extendsResult.frame;
-    } else {
-      // SYNC MODE
-      this.emit.line(`parentTemplate = ${parentTemplateId};`);
-      this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
-      this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
+      this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
+      this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
+      this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
       this.emit.line('}');
-      this.emit.addScopeLevel();
-    }
+      this.emit.line('await context.finishAsyncBlocks();');
+    });
   }
 
-  compileSuper(node, frame) {
+  compileSyncExtends(node, frame) {
+    var k = this.compiler._tmpid();
+    const parentTemplateId = this._compileSyncGetTemplate(node, frame, true, false);
+    this.emit.line(`parentTemplate = ${parentTemplateId};`);
+    this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
+    this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
+    this.emit.line('}');
+    this.emit.addScopeLevel();
+  }
+
+  compileAsyncSuper(node) {
     var name = node.blockName.value;
     var id = node.symbol.value;
-
-    if (this.compiler.asyncMode) {
-      //this.emit.line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime);`);
-
-      // Call getSuper directly - async blocks now return text snapshot promises
-      // The callback (cb) is passed through for error propagation
-      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer});`);
-      this.emit.line(`${id} = runtime.markSafe(${id});`);
-    }
-    else {
-      const cb = this.compiler._makeCallback(id);
-      this.emit.line(`context.getSyncSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
-      this.emit.line(`${id} = runtime.markSafe(${id});`);
-    }
-
-    if (!this.compiler.asyncMode) {
-      this.emit.addScopeLevel();
-    }
+    this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer});`);
+    this.emit.line(`${id} = runtime.markSafe(${id});`);
   }
 
-  compileInclude(node, frame) {
-    if (!this.compiler.asyncMode) {
-      this.compileIncludeSync(node, frame);
-      return;
-    }
-    const includeResult = this.compiler.buffer._compileControlFlowBoundary(node, null, () => {
+  compileSyncSuper(node, frame) {
+    var name = node.blockName.value;
+    var id = node.symbol.value;
+    const cb = this.compiler._makeCallback(id);
+    this.emit.line(`context.getSyncSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
+    this.emit.line(`${id} = runtime.markSafe(${id});`);
+    this.emit.addScopeLevel();
+  }
+
+  compileAsyncInclude(node) {
+    this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
@@ -426,10 +409,9 @@ class CompileInheritance {
       // command object created for parent enqueue.
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(includeTextPromise, node);
     });
-    frame = includeResult.frame;
   }
 
-  compileIncludeSync(node, frame) {
+  compileSyncInclude(node, frame) {
     //we can't use the async implementation with (async(){...})().then(...
     //as the .render() method is expected to return the result immediately
     this.emit.line('let tasks = [];');

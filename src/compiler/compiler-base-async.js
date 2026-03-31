@@ -81,7 +81,7 @@ class CompilerBaseAsync extends CompilerCommon {
     this._compileAsyncTemplateSymbolLookup(node, name);
   }
 
-  _compileAggregate(node, frame, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen) {
+  _compileAggregate(node, _scopeState, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen) {
     this._compileAsyncAggregate(node, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen);
   }
 
@@ -100,15 +100,15 @@ class CompilerBaseAsync extends CompilerCommon {
     }
   }
 
-  _binFuncEmitter(node, frame, funcName, separator = ',') {
+  _binFuncEmitter(node, _scopeState, funcName, separator = ',') {
     this._emitAsyncBinFunc(node, funcName, separator);
   }
 
-  _binOpEmitter(node, frame, str) {
+  _binOpEmitter(node, _scopeState, str) {
     this._emitAsyncBinOp(node, str);
   }
 
-  _unaryOpEmitter(node, frame, operator) {
+  _unaryOpEmitter(node, _scopeState, operator) {
     this._emitAsyncUnaryOp(node, operator);
   }
 
@@ -501,12 +501,12 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(')');
   }
 
-  compileExpression(node, frame, positionNode, excludeFromWaitedRootTracking = false) {
+  compileExpression(node, _scopeState, positionNode, excludeFromWaitedRootTracking = false) {
     const shouldEmitOwnWaitedResolve = this.buffer.currentWaitedChannelName &&
       !excludeFromWaitedRootTracking;
 
     if (!shouldEmitOwnWaitedResolve) {
-      this._compileExpression(node, frame, positionNode);
+      this._compileExpression(node, null, positionNode);
       return;
     }
 
@@ -517,7 +517,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
     this.emit('(() => { ');
     this.emit(`let ${resultId} = `);
-    this._compileExpression(node, frame, positionNode);
+    this._compileExpression(node, null, positionNode);
     this.emit('; ');
     this.emit(`${waitedOwnerBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${resultId}], pos: ${posLiteral} }), "${waitedChannelName}"); `);
     this.emit(`return ${resultId}; `);
@@ -528,8 +528,8 @@ class CompilerBaseAsync extends CompilerCommon {
     return this.macro.analyzeCaller(node);
   }
 
-  compileCaller(node, frame) {
-    this.macro.compileCaller(node, frame);
+  compileCaller(node) {
+    this.macro.compileAsyncCaller(node);
   }
 
 

@@ -54,7 +54,7 @@ class CompilerSync extends CompilerBaseSync {
             this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 
             this.emit.withScopedSyntax(() => {
-              this.emit._compileCallbackRenderBoundary(node, callFrame, function () {
+              this.emit._compileSyncCallbackRenderBoundary(node, callFrame, function () {
                 this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, frame);
               }, 'cb', arg);
@@ -85,7 +85,7 @@ class CompilerSync extends CompilerBaseSync {
     emitCallArgs(frame);
     const res = this._tmpid();
     this.emit.line(', ' + this._makeCallback(res));
-    this.boundaries.compileTextBoundary(
+    this.boundaries.compileSyncTextBoundary(
       this.buffer,
       node,
       frame,
@@ -147,23 +147,23 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   compileWhile(node, frame) {
-    this.loop.compileWhile(node, frame);
+    this.loop.compileSyncWhile(node, frame);
   }
 
   compileFor(node, frame) {
-    this.loop.compileFor(node, frame);
+    this.loop.compileSyncFor(node, frame);
   }
 
   compileAsyncEach(node, frame) {
-    this.loop.compileAsyncEach(node, frame);
+    this.loop.compileSyncAsyncEach(node, frame);
   }
 
   compileAsyncAll(node, frame) {
-    this.loop.compileAsyncAll(node, frame);
+    this.loop.compileSyncAsyncAll(node, frame);
   }
 
   compileSwitch(node, frame) {
-    this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+    this.buffer._compileSyncControlFlowBoundary(node, frame, (blockFrame) => {
       this.emit('switch (');
       this._compileAwaitedExpression(node.expr, blockFrame);
       this.emit(') {');
@@ -189,7 +189,7 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   compileIf(node, frame) {
-    this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+    this.buffer._compileSyncControlFlowBoundary(node, frame, (blockFrame) => {
       this.emit('if(');
       this._compileAwaitedExpression(node.cond, blockFrame);
       this.emit('){');
@@ -211,7 +211,7 @@ class CompilerSync extends CompilerBaseSync {
 
   _compileLegacyCallbackIf(node, frame) {
     this.emit('(function(cb) {');
-    this.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+    this.buffer._compileSyncControlFlowBoundary(node, frame, (blockFrame) => {
       this.emit('if(');
       this._compileAwaitedExpression(node.cond, blockFrame);
       this.emit('){');
@@ -367,35 +367,35 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   compileMacro(node, frame) {
-    this.macro.compileMacro(node, frame);
+    this.macro.compileSyncMacroDeclaration(node, frame);
   }
 
   compileImport(node, frame) {
-    this.inheritance.compileImport(node, frame);
+    this.inheritance.compileSyncImport(node, frame);
   }
 
   compileFromImport(node, frame) {
-    this.inheritance.compileFromImport(node, frame);
+    this.inheritance.compileSyncFromImport(node, frame);
   }
 
   compileBlock(node, frame) {
-    this.inheritance.compileBlock(node, frame);
+    this.inheritance.compileSyncBlock(node, frame);
   }
 
   compileSuper(node, frame) {
-    this.inheritance.compileSuper(node, frame);
+    this.inheritance.compileSyncSuper(node, frame);
   }
 
   compileExtends(node, frame) {
-    this.inheritance.compileExtends(node, frame);
+    this.inheritance.compileSyncExtends(node, frame);
   }
 
   compileInclude(node, frame) {
-    this.inheritance.compileInclude(node, frame);
+    this.inheritance.compileSyncInclude(node, frame);
   }
 
   compileIncludeSync(node, frame) {
-    this.inheritance.compileIncludeSync(node, frame);
+    this.inheritance.compileSyncInclude(node, frame);
   }
 
   compileDo(node, frame) {

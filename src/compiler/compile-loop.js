@@ -7,23 +7,7 @@ class CompileLoop {
     this.compiler = compiler;
   }
 
-  compileWhile(node, frame) {
-    if (this.compiler.asyncMode) {
-      this._compileAsyncWhile(node);
-      return;
-    }
-    this._compileSyncWhile(node, frame);
-  }
-
-  compileFor(node, frame) {
-    if (this.compiler.asyncMode) {
-      this._compileAsyncForCore(node);
-      return;
-    }
-    this._compileSyncForCore(node, frame);
-  }
-
-  _compileAsyncWhile(node) {
+  compileAsyncWhile(node) {
     const iteratorCompiler = (_arrNode, _loopFrame, arrVarName) => {
       this.compiler.emit.line(`let ${arrVarName} = runtime.whileIterator();`);
     };
@@ -37,7 +21,7 @@ class CompileLoop {
     });
   }
 
-  _compileSyncWhile(node, frame) {
+  compileSyncWhile(node, frame) {
     this.compiler.emit('while (');
     this.compiler.compileExpression(node.cond, frame, node.cond, true);
     this.compiler.emit(') {');
@@ -53,16 +37,15 @@ class CompileLoop {
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const parentWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
 
-    this.compiler.buffer._compileControlFlowBoundary(node, null, () => {
-      const innerFrame = null;
+    this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
       const arr = this.compiler._tmpid();
 
       if (iteratorCompiler) {
-        iteratorCompiler(sourcePositionNode, innerFrame, arr);
+        iteratorCompiler(sourcePositionNode, null, arr);
       } else {
         this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${arr} = `);
-          this.compiler.compileExpression(node.arr, innerFrame, node.arr, true);
+          this.compiler.compileExpression(node.arr, null, node.arr, true);
           this.compiler.emit.line(';');
         });
       }
@@ -71,7 +54,7 @@ class CompileLoop {
       if (node.concurrentLimit) {
         this.compiler.buffer.skipOwnWaitedChannel(() => {
           this.compiler.emit(`let ${limitVar} = `);
-          this.compiler.compileExpression(node.concurrentLimit, innerFrame, node.concurrentLimit, true);
+          this.compiler.compileExpression(node.concurrentLimit, null, node.concurrentLimit, true);
           this.compiler.emit.line(';');
         });
       }
@@ -97,7 +80,7 @@ class CompileLoop {
         elseFuncId = this.compiler._tmpid();
         this.compiler.emit(`let ${elseFuncId} = `);
         this.compiler.emit('(async function() {');
-        this.compiler.compile(node.else_, innerFrame);
+        this.compiler.compile(node.else_, null);
         this.compiler.emit.line('}).bind(context);');
         elseChannels = new Set(node.else_._analysis.usedChannels || []);
       }
@@ -128,13 +111,17 @@ class CompileLoop {
     });
   }
 
-  _compileSyncForCore(node, frame, options = {}) {
+  compileAsyncFor(node) {
+    this._compileAsyncForCore(node);
+  }
+
+  compileSyncFor(node, frame, options = {}) {
     const iteratorCompiler = options.iteratorCompiler || null;
     const whileConditionNode = options.whileConditionNode || null;
     const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
     const sourcePositionNode = options.sourcePositionNode || node.arr;
 
-    const forResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
+    const forResult = this.compiler.buffer._compileSyncControlFlowBoundary(node, frame, (blockFrame) => {
       const innerFrame = blockFrame.push();
       this.compiler.emit.line('frame = frame.push();');
 
@@ -501,19 +488,19 @@ class CompileLoop {
     frame = frame.pop();
   }
 
-  compileAsyncEach(node, frame) {
-    if (this.compiler.asyncMode) {
-      this._compileAsyncForCore(node, { sequentialLoopBody: true });
-      return;
-    }
+  compileAsyncEach(node) {
+    this._compileAsyncForCore(node, { sequentialLoopBody: true });
+  }
+
+  compileSyncAsyncEach(node, frame) {
     this._compileSyncLegacyCallbackLoop(node, frame, false);
   }
 
-  compileAsyncAll(node, frame) {
-    if (this.compiler.asyncMode) {
-      this._compileAsyncForCore(node, { sequentialLoopBody: false });
-      return;
-    }
+  compileAsyncAll(node) {
+    this._compileAsyncForCore(node, { sequentialLoopBody: false });
+  }
+
+  compileSyncAsyncAll(node, frame) {
     this._compileSyncLegacyCallbackLoop(node, frame, true);
   }
 }

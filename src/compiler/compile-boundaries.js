@@ -82,69 +82,60 @@ class CompileBoundaries {
     this.compiler.emit.asyncClosureDepth--;
   }
 
-  compileControlFlowBoundary(bufferCompiler, node, frame, emitFunc = null) {
-    if (this.compiler.asyncMode) {
-      const parentBufferArg = bufferCompiler.currentBuffer;
-      const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-      const trackAsSingleWaitedUnit = !!bufferCompiler.currentWaitedChannelName;
-      const controlFlowWaitedChannelName = trackAsSingleWaitedUnit ? `__waited__${this.compiler._tmpid()}` : null;
-      const controlFlowPromiseId = this.compiler._tmpid();
-      const boundaryRunner = controlFlowWaitedChannelName
-        ? 'runtime.runWaitedControlFlowBoundary'
-        : 'runtime.runControlFlowBoundary';
+  compileAsyncControlFlowBoundary(bufferCompiler, node, emitFunc = null) {
+    const parentBufferArg = bufferCompiler.currentBuffer;
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const trackAsSingleWaitedUnit = !!bufferCompiler.currentWaitedChannelName;
+    const controlFlowWaitedChannelName = trackAsSingleWaitedUnit ? `__waited__${this.compiler._tmpid()}` : null;
+    const controlFlowPromiseId = this.compiler._tmpid();
+    const boundaryRunner = controlFlowWaitedChannelName
+      ? 'runtime.runWaitedControlFlowBoundary'
+      : 'runtime.runControlFlowBoundary';
 
-      this.compiler.emit(
-        `let ${controlFlowPromiseId} = ${boundaryRunner}(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
-      );
-      this.compiler.emit.asyncClosureDepth++;
+    this.compiler.emit(
+      `let ${controlFlowPromiseId} = ${boundaryRunner}(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
+    );
+    this.compiler.emit.asyncClosureDepth++;
 
-      const prevBuffer = bufferCompiler.currentBuffer;
-      const prevWaitedChannelName = bufferCompiler.currentWaitedChannelName;
-      const prevWaitedOwnerBuffer = bufferCompiler.currentWaitedOwnerBuffer;
-      bufferCompiler.currentBuffer = 'currentBuffer';
-      if (trackAsSingleWaitedUnit) {
-        bufferCompiler.currentWaitedChannelName = controlFlowWaitedChannelName;
-        bufferCompiler.currentWaitedOwnerBuffer = 'currentBuffer';
-        this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
-      }
-
-      if (emitFunc) {
-        emitFunc();
-      }
-      this.compiler.emit.asyncClosureDepth--;
-      if (controlFlowWaitedChannelName) {
-        this.compiler.emit.line(`}, "${controlFlowWaitedChannelName}");`);
-      } else {
-        this.compiler.emit.line('});');
-      }
-      bufferCompiler.currentBuffer = prevBuffer;
-      bufferCompiler.currentWaitedChannelName = prevWaitedChannelName;
-      bufferCompiler.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
-      bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
-      return { frame };
+    const prevBuffer = bufferCompiler.currentBuffer;
+    const prevWaitedChannelName = bufferCompiler.currentWaitedChannelName;
+    const prevWaitedOwnerBuffer = bufferCompiler.currentWaitedOwnerBuffer;
+    bufferCompiler.currentBuffer = 'currentBuffer';
+    if (trackAsSingleWaitedUnit) {
+      bufferCompiler.currentWaitedChannelName = controlFlowWaitedChannelName;
+      bufferCompiler.currentWaitedOwnerBuffer = 'currentBuffer';
+      this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
     }
 
+    if (emitFunc) {
+      emitFunc();
+    }
+    this.compiler.emit.asyncClosureDepth--;
+    if (controlFlowWaitedChannelName) {
+      this.compiler.emit.line(`}, "${controlFlowWaitedChannelName}");`);
+    } else {
+      this.compiler.emit.line('});');
+    }
+    bufferCompiler.currentBuffer = prevBuffer;
+    bufferCompiler.currentWaitedChannelName = prevWaitedChannelName;
+    bufferCompiler.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
+    bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
+    return {};
+  }
+
+  compileSyncControlFlowBoundary(bufferCompiler, node, frame, emitFunc = null) {
     if (typeof emitFunc === 'function') {
       emitFunc(frame, bufferCompiler.currentBuffer);
     }
     return { frame };
   }
 
-  _compileRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {
+  _compileAsyncRenderBoundaryImpl(emitCompiler, node, innerBodyFunction, callbackName, positionNode = node) {
     const emitCallbackResult = (resultExpr) => {
       if (callbackName) {
         emitCompiler.line(`  ${callbackName}(null, ${resultExpr});`);
       }
     };
-
-    if (!this.compiler.asyncMode) {
-      const { bufferId: id } = emitCompiler.managedBlock(frame, false, true, (blockFrame) => {
-        innerBodyFunction.call(this.compiler, blockFrame);
-      }, undefined, node);
-      emitCallbackResult(id);
-      emitCompiler.line(`return ${id};`);
-      return;
-    }
 
     emitCompiler.line(`runtime.runRenderBoundary(context, cb, async (currentBuffer) =>{`);
     const resultId = this.compiler._tmpid();
@@ -181,12 +172,34 @@ class CompileBoundaries {
     emitCompiler.line('})');
   }
 
-  compileRenderBoundary(emitCompiler, node, frame, innerBodyFunction, positionNode = node) {
-    return this._compileRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, null, positionNode);
+  _compileSyncRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {
+    const emitCallbackResult = (resultExpr) => {
+      if (callbackName) {
+        emitCompiler.line(`  ${callbackName}(null, ${resultExpr});`);
+      }
+    };
+
+    const { bufferId: id } = emitCompiler.managedBlock(frame, false, true, (blockFrame) => {
+      innerBodyFunction.call(this.compiler, blockFrame);
+    }, undefined, node);
+    emitCallbackResult(id);
+    emitCompiler.line(`return ${id};`);
   }
 
-  compileCallbackRenderBoundary(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {
-    return this._compileRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode);
+  compileAsyncRenderBoundary(emitCompiler, node, innerBodyFunction, positionNode = node) {
+    return this._compileAsyncRenderBoundaryImpl(emitCompiler, node, innerBodyFunction, null, positionNode);
+  }
+
+  compileAsyncCallbackRenderBoundary(emitCompiler, node, innerBodyFunction, callbackName, positionNode = node) {
+    return this._compileAsyncRenderBoundaryImpl(emitCompiler, node, innerBodyFunction, callbackName, positionNode);
+  }
+
+  compileSyncRenderBoundary(emitCompiler, node, frame, innerBodyFunction, positionNode = node) {
+    return this._compileSyncRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, null, positionNode);
+  }
+
+  compileSyncCallbackRenderBoundary(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {
+    return this._compileSyncRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode);
   }
 
   _emitBoundaryTextCommand(
@@ -203,7 +216,6 @@ class CompileBoundaries {
 
   _compileAsyncTextBoundary(
     bufferCompiler,
-    frame,
     {
       parentBufferExpr = bufferCompiler.currentBuffer,
       linkedChannelsArg,
@@ -241,35 +253,35 @@ class CompileBoundaries {
       bufferCompiler.emitOwnWaitedConcurrencyResolve(boundaryPromiseId, waitedPositionNode);
     }
 
+    return null;
+  }
+
+  compileSyncTextBoundary(bufferCompiler, node, frame, positionNode = node, emitValue) {
+    this.compiler.emit(`${bufferCompiler.currentBuffer} += `);
+    emitValue(frame, null);
+    this.compiler.emit.line(';');
     return frame;
   }
 
-  compileTextBoundary(bufferCompiler, node, frame, positionNode = node, emitValue, {
+  compileAsyncTextBoundary(bufferCompiler, node, positionNode = node, emitValue, {
     emitInCurrentBuffer = false,
     waitedPositionNode = positionNode
   } = {}) {
-    if (!this.compiler.asyncMode) {
-      this.compiler.emit(`${bufferCompiler.currentBuffer} += `);
-      emitValue(frame, null);
-      this.compiler.emit.line(';');
-      return frame;
-    }
-
     const valueId = this.compiler._tmpid();
-    const emitBody = (innerFrame) => {
+    const emitBody = () => {
       const emitBufferExpr = emitInCurrentBuffer ? 'currentBuffer' : bufferCompiler.currentBuffer;
       this._withBoundaryBufferState(bufferCompiler, {
         bufferExpr: emitBufferExpr,
         textChannelVar: null
       }, () => {
         this.compiler.emit(`let ${valueId} = `);
-        emitValue(innerFrame, valueId);
+        emitValue(null, valueId);
         this.compiler.emit.line(';');
       });
     };
     emitBody.resultId = valueId;
 
-    return this._compileAsyncTextBoundary(bufferCompiler, frame, {
+    return this._compileAsyncTextBoundary(bufferCompiler, {
       parentBufferExpr: bufferCompiler.currentBuffer,
       linkedChannelsArg: this.compiler.emit.getLinkedChannelsArg(node),
       callbackParams: '(currentBuffer)',
@@ -295,7 +307,7 @@ class CompileBoundaries {
     };
     emitBody.resultId = valueId;
 
-    this._compileAsyncTextBoundary(bufferCompiler, null, {
+    this._compileAsyncTextBoundary(bufferCompiler, {
       parentBufferExpr: bufferCompiler.currentBuffer,
       linkedChannelsArg: JSON.stringify([bufferCompiler.currentTextChannelName]),
       callbackParams: '(blockBuffer)',

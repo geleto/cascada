@@ -69,7 +69,7 @@ class CompilerAsync extends CompilerBaseAsync {
           if (arg) {
             if (!resolveArgs) {
               this.emit('runtime.normalizeFinalPromise(');
-              this.emit._compileRenderBoundary(node, null, function () {
+              this.emit._compileAsyncRenderBoundary(node, function () {
                 this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, null);
               }, arg);
@@ -79,7 +79,7 @@ class CompilerAsync extends CompilerBaseAsync {
               this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 
               this.emit.withScopedSyntax(() => {
-                this.emit._compileCallbackRenderBoundary(node, null, function () {
+                this.emit._compileAsyncCallbackRenderBoundary(node, function () {
                   this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
                   this.compile(arg, null);
                 }, 'cb', arg);
@@ -290,16 +290,16 @@ class CompilerAsync extends CompilerBaseAsync {
     return result;
   }
 
-  compileWhile(node, frame) {
-    this.loop.compileWhile(node, frame);
+  compileWhile(node) {
+    this.loop.compileAsyncWhile(node);
   }
 
   analyzeFor(node, analysisPass) {
     return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
   }
 
-  compileFor(node, frame) {
-    this.loop.compileFor(node, frame);
+  compileFor(node) {
+    this.loop.compileAsyncFor(node);
   }
 
   analyzeAsyncEach(node, analysisPass) {
@@ -314,16 +314,16 @@ class CompilerAsync extends CompilerBaseAsync {
     return result;
   }
 
-  compileAsyncEach(node, frame) {
-    this.loop.compileAsyncEach(node, frame);
+  compileAsyncEach(node) {
+    this.loop.compileAsyncEach(node);
   }
 
   analyzeAsyncAll(node, analysisPass) {
     return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
   }
 
-  compileAsyncAll(node, frame) {
-    this.loop.compileAsyncAll(node, frame);
+  compileAsyncAll(node) {
+    this.loop.compileAsyncAll(node);
   }
 
   analyzeSwitch(node) {
@@ -338,7 +338,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileSwitch(node) {
-    this.buffer._compileControlFlowBoundary(node, null, () => {
+    this.buffer._compileAsyncControlFlowBoundary(node, () => {
       let catchPoisonPos;
 
       this.emit('try {');
@@ -414,7 +414,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const guardStateVar = needsGuardState ? this._tmpid() : null;
     validateGuardVariablesDeclared(variableValidationTargets, this, node);
 
-    this.buffer._compileControlFlowBoundary(node, null, () => {
+    this.buffer._compileAsyncControlFlowBoundary(node, () => {
       const previousGuardDepth = this.guardDepth;
       this.guardDepth = previousGuardDepth + 1;
 
@@ -665,7 +665,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileIf(node) {
-    this.buffer._compileControlFlowBoundary(node, null, () => {
+    this.buffer._compileAsyncControlFlowBoundary(node, () => {
       let catchPoisonPos;
       const condResultId = this._tmpid();
 
@@ -758,10 +758,9 @@ class CompilerAsync extends CompilerBaseAsync {
         return;
       }
       if (child._analysis?.mutatedChannels?.size > 0) {
-        this.boundaries.compileTextBoundary(
+        this.boundaries.compileAsyncTextBoundary(
           this.buffer,
           node,
-          null,
           child,
           () => {
             this.compileExpression(child, null, child);
@@ -811,8 +810,8 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.macro.analyzeMacro(node);
   }
 
-  compileMacro(node, frame) {
-    this.macro.compileMacro(node, frame);
+  compileMacro(node) {
+    this.macro.compileAsyncMacro(node);
   }
 
   analyzeImport(node) {
@@ -823,8 +822,8 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  compileImport(node, frame) {
-    this.inheritance.compileImport(node, frame);
+  compileImport(node) {
+    this.inheritance.compileAsyncImport(node);
   }
 
   analyzeFromImport(node) {
@@ -843,20 +842,20 @@ class CompilerAsync extends CompilerBaseAsync {
     return { declares };
   }
 
-  compileFromImport(node, frame) {
-    this.inheritance.compileFromImport(node, frame);
+  compileFromImport(node) {
+    this.inheritance.compileAsyncFromImport(node);
   }
 
   analyzeBlock(node) {
     return { createScope: true, scopeBoundary: false, parentReadOnly: true };
   }
 
-  compileBlock(node, frame) {
-    this.inheritance.compileBlock(node, frame);
+  compileBlock(node) {
+    this.inheritance.compileAsyncBlock(node);
   }
 
-  compileSuper(node, frame) {
-    this.inheritance.compileSuper(node, frame);
+  compileSuper(node) {
+    this.inheritance.compileAsyncSuper(node);
   }
 
   analyzeChannelDeclaration(node) {
@@ -928,8 +927,8 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  compileExtends(node, frame) {
-    this.inheritance.compileExtends(node, frame);
+  compileExtends(node) {
+    this.inheritance.compileAsyncExtends(node);
   }
 
   analyzeInclude(node) {
@@ -948,12 +947,8 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  compileInclude(node, frame) {
-    this.inheritance.compileInclude(node, frame);
-  }
-
-  compileIncludeSync(node, frame) {
-    this.inheritance.compileIncludeSync(node, frame);
+  compileInclude(node) {
+    this.inheritance.compileAsyncInclude(node);
   }
 
   emitDeclareReturnChannel(bufferExpr) {

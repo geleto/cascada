@@ -77,6 +77,10 @@ Completed so far:
       - function-call dispatch
       - filter / filterAsync dispatch
       - awaited dispatch
+  - async compilation no longer carries `frame` through its public mode-owned entry points:
+    - `CompilerAsync` and `CompilerBaseAsync` no longer mention `frame`
+    - async loop/inheritance/macro/boundary entry points now have explicit frame-free async methods
+    - the remaining `frame` mentions in compiler helper modules are now explicitly sync-only
   - more central mode-specific compile paths now also live in the mode classes:
     - `CompilerAsync` now owns async root/block generation
       - async root completion
