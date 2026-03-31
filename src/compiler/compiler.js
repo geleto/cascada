@@ -7,7 +7,6 @@ const {
 const parser = require('../parser');
 const transformer = require('../transformer');
 const nodes = require('../nodes');
-const { Frame } = require('../runtime/runtime');
 const CompileSequential = require('./compile-sequential');
 const CompileEmit = require('./compile-emit');
 const CompileInheritance = require('./compile-inheritance');
@@ -357,15 +356,8 @@ class Compiler extends CompilerBase {
     node.targets.forEach((target, i) => {
       const id = ids[i];
       const name = target.value;
-      this._emitSyncSetPublish(name, id);
+      this.frameOps.emitAssignmentPublish(name, id, true);
     });
-  }
-
-  _emitSyncSetPublish(name, id) {
-    this.frameOps.emitFrameSet(name, id, true);
-    this.emit.line(`if(${this.frameOps.getTopLevelCheckExpr()}) {`);
-    this.frameOps.emitTopLevelPublish(name, id, true);
-    this.emit.line('}');
   }
 
   analyzeCallAssign(node, analysisPass) {
@@ -1458,9 +1450,9 @@ class Compiler extends CompilerBase {
 
   _compileSyncBlockEntry(block, frame) {
     const name = block.name.value;
-    const blockFrame = frame.new();
+    const blockFrame = this.frameOps.createFreshFrame(frame);
     this.emit.beginEntryFunction(block, `b_${name}`, blockFrame);
-    this.emit.line('var frame = frame.push(true);');
+    this.frameOps.declarePushedFrame(frame, true);
     this.compile(block.body, blockFrame);
     this.emit.endEntryFunction(block);
   }
@@ -1503,7 +1495,7 @@ class Compiler extends CompilerBase {
     );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
 
-    frame = new Frame();
+    frame = this.frameOps.createRootFrame();
     // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
 
     this.emit.beginEntryFunction(node, 'root', frame);

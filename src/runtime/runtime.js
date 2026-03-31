@@ -4,7 +4,6 @@ var lib = require('../lib');
 const errors = require('./errors');
 const sequential = require('./sequential');
 const lookup = require('./lookup');
-const frameRuntime = require('./frame-runtime');
 const call = require('./call');
 const frame = require('./frame');
 const output = require('./channel');
@@ -246,7 +245,6 @@ module.exports = {
   memberLookupAsync: lookup.memberLookupAsync,
   memberLookupScript: lookup.memberLookupScript,
   channelLookup: lookup.channelLookup,
-  contextOrFrameLookup: frameRuntime.contextOrFrameLookup,
   contextOrChannelLookup: lookup.contextOrChannelLookup,
   contextOrScriptChannelLookup: lookup.contextOrScriptChannelLookup,
 
@@ -265,7 +263,6 @@ module.exports = {
   fromIterator: loop.fromIterator,
   iterateAsyncSequential: loop.iterateAsyncSequential,
   iterateAsyncParallel: loop.iterateAsyncParallel,
-  setFrameLoopBindings: frameRuntime.setFrameLoopBindings,
   createLoopBindings: loop.createLoopBindings,
   setLoopValueBindings: loop.setLoopValueBindings,
 

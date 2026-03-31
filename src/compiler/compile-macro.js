@@ -424,7 +424,7 @@ class CompileMacro {
     compiler.emit.withScopedSyntax(() => {
       compiler.compile(node.body, managedFrame);
     });
-    compiler.emit.line('frame = ' + (keepFrame ? 'frame.pop();' : 'callerFrame;'));
+    compiler.frameOps.restoreFrame(keepFrame ? 'frame.pop()' : 'callerFrame');
     return `new runtime.SafeString(${bufferId})`;
   }
 
@@ -517,7 +517,9 @@ class CompileMacro {
     const compiler = this.compiler;
     const funcId = `macro_${compiler._tmpid()}`;
     const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
-    const currFrame = keepFrame ? frame.push(true) : frame.new();
+    const currFrame = keepFrame
+      ? compiler.frameOps.createChildFrame(frame, true)
+      : compiler.frameOps.createFreshFrame(frame);
     const oldIsCompilingMacroBody = compiler.sequential.isCompilingMacroBody;
     compiler.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
@@ -531,8 +533,12 @@ class CompileMacro {
     compiler.emit.line(`return runtime.withPath(this, "${compiler.templateName}", function() {`);
     compiler.emit.line('return (function(frame) {');
     compiler.emit.line('let callerFrame = frame;');
+    if (keepFrame) {
+      compiler.frameOps.pushFrame(frame, true);
+    } else {
+      compiler.frameOps.startNewFrame(frame);
+    }
     compiler.emit.lines(
-      'frame = ' + (keepFrame ? 'frame.push(true);' : 'frame.new();'),
       'kwargs = kwargs || {};',
       'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
       '  kwargs.caller = undefined;',
@@ -595,13 +601,7 @@ class CompileMacro {
   }
 
   _emitSyncMacroDeclarationBinding(name, funcId, frame) {
-    const compiler = this.compiler;
-    compiler.frameOps.setFrameValue(frame, name, funcId);
-    if (frame.parent) {
-      compiler.frameOps.emitFrameSet(name, funcId);
-      return;
-    }
-    compiler.frameOps.emitTopLevelPublish(name, funcId, true);
+    this.compiler.frameOps.emitDeclarationPublish(frame, name, funcId, true);
   }
 }
 

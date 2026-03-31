@@ -1,9 +1,48 @@
 'use strict';
 
+const { Frame } = require('../runtime/frame');
+
 class CompileFrame {
   constructor(compiler) {
     this.compiler = compiler;
     this.emit = compiler.emit;
+  }
+
+  pushFrame(frame, isolateWrites = false) {
+    this.emit.line(`frame = frame.push(${isolateWrites ? 'true' : ''});`);
+    return frame.push(isolateWrites);
+  }
+
+  popFrame(frame) {
+    this.emit.line('frame = frame.pop();');
+    return frame.pop();
+  }
+
+  declarePushedFrame(frame, isolateWrites = false, declaration = 'var', frameName = 'frame') {
+    this.emit.line(`${declaration} ${frameName} = ${frameName}.push(${isolateWrites ? 'true' : ''});`);
+    return frame.push(isolateWrites);
+  }
+
+  startNewFrame(frame, declaration = null, frameName = 'frame') {
+    const prefix = declaration ? `${declaration} ` : '';
+    this.emit.line(`${prefix}${frameName} = ${frameName}.new();`);
+    return frame.new();
+  }
+
+  restoreFrame(frameExpr) {
+    this.emit.line(`frame = ${frameExpr};`);
+  }
+
+  createRootFrame() {
+    return new Frame();
+  }
+
+  createChildFrame(frame, isolateWrites = false) {
+    return frame.push(isolateWrites);
+  }
+
+  createFreshFrame(frame) {
+    return frame.new();
   }
 
   setFrameValue(frame, name, valueExpr, resolveUp = false) {
@@ -30,7 +69,7 @@ class CompileFrame {
   }
 
   getFrameContextLookupExpr(name) {
-    return `runtime.contextOrFrameLookup(context, frame, "${name}")`;
+    return `frame.lookupOrContext(context, "${name}")`;
   }
 
   getDirectFrameLookupExpr(name) {
@@ -44,8 +83,20 @@ class CompileFrame {
     }
   }
 
-  getTopLevelCheckExpr() {
-    return 'frame.topLevel';
+  emitAssignmentPublish(name, valueExpr, exportValue = false) {
+    this.emitFrameSet(name, valueExpr, true);
+    this.emit.line('if (frame.topLevel) {');
+    this.emitTopLevelPublish(name, valueExpr, exportValue);
+    this.emit.line('}');
+  }
+
+  emitDeclarationPublish(frame, name, valueExpr, exportValue = false) {
+    this.setFrameValue(frame, name, valueExpr);
+    if (frame.parent) {
+      this.emitFrameSet(name, valueExpr);
+      return;
+    }
+    this.emitTopLevelPublish(name, valueExpr, exportValue);
   }
 }
 

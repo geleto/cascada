@@ -23,13 +23,17 @@ Completed so far:
     - `AsyncEnvironment` now also uses explicit async-template vs async-script loader helpers
   - remaining helper naming was tightened to match that split:
     - async script context lookup now uses `Context.lookupScript(...)`
-    - frame-backed template lookup now uses `contextOrFrameLookup(...)`
-    - template loop metadata writes now use `setFrameLoopBindings(...)`
+    - frame-backed template lookup now uses `Frame.lookupOrContext(...)`
+    - template loop metadata writes now use `Frame.setLoopBindings(...)`
     - the remaining top-level frame marker is now just `frame.topLevel`
   - the environment/template class split now matches the real supported modes more closely:
     - base `Template` is sync-template-oriented again
     - async compile options are owned by `AsyncTemplate` / `Script`
     - shared async render/export helpers now use explicit subclass context hooks instead of generic `scriptMode` branching
+    - template/script context creation is now shared behind plain mode-specific hooks:
+      - `Template._createContext(...)`
+      - `Template._createMacroContext(...)`
+    - sync template argument normalization is now also shared through `Template._prepareSyncExecution(...)`
   - compiler root/block entry generation is now split more honestly by mode:
     - async root body vs sync-template root body use explicit helpers
     - async block entries vs sync-template block entries use explicit helpers
@@ -38,6 +42,20 @@ Completed so far:
     - frame reads/writes/publish helpers now live in `src/compiler/compile-frame.js`
     - the main `Compiler` no longer carries those frame-operation helpers directly
     - the last compiler-side sync frame fast-path read and top-level check now also go through `CompileFrame`
+    - sync frame push/new/pop emission is now centralized there too
+      - loop/body/else scope pushes
+      - managed block scope pushes
+      - sync macro runtime-frame replacement
+      - sync block entry frame push
+    - sync assignment/declaration publish flow is now centralized there too
+      - sync `set` assignment publish
+      - sync imported binding publish
+      - sync macro declaration publish
+    - compiler-side sync frame creation is now centralized there too
+      - root frame creation
+      - sync block compile-frame creation
+      - sync macro compile-frame creation
+    - runtime sync top-level frame creation now goes through `Frame.createTopLevel(...)`
 
 - Phase 1 is effectively done:
   - `node.isAsync` has been removed as an async compile-routing mechanism
@@ -238,9 +256,9 @@ Current next target:
     - the remaining compiler-frame push/new sites are now concentrated in sync / legacy callback paths
   - continue isolating remaining sync-only frame state:
     - done: the remaining top-level frame marker is now explicitly sync-only `frame.topLevel`
-    - done: loop frame metadata writes now go through `setFrameLoopBindings(...)`
-    - done: frame-backed template lookup now goes through `contextOrFrameLookup(...)`
-    - done: the remaining live runtime sync-template frame semantics are now centralized in `src/runtime/frame-runtime.js`
+    - done: loop frame metadata writes now go through `Frame.setLoopBindings(...)`
+    - done: frame-backed template lookup now goes through `Frame.lookupOrContext(...)`
+    - done: the remaining live runtime sync-template frame semantics were reduced onto `Frame` itself
       - top-level frame marker
       - frame-backed template lookup
       - loop metadata frame writes

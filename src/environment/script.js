@@ -47,11 +47,11 @@ class Script extends Template {
     );
   }
 
-  _createAsyncContext(ctx) {
+  _createContext(ctx) {
     return new Context(ctx || {}, this.blocks, this.env, this.path, true);
   }
 
-  _createAsyncMacroContext() {
+  _createMacroContext() {
     return new Context({}, this.blocks, this.env, this.path, true);
   }
 }

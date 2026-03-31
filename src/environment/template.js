@@ -76,7 +76,7 @@ class Template extends Obj {
       throw err;
     }
 
-    const context = this._createAsyncContext(ctx);
+    const context = this._createContext(ctx);
     let syncResult = null;
     let callbackCalled = false;
 
@@ -105,10 +105,10 @@ class Template extends Obj {
   }
 
   _renderSync(ctx, parentFrame, cb) {
-    const normalized = this._normalizeSyncRenderArgs(ctx, parentFrame, cb);
-    ctx = normalized.ctx;
-    parentFrame = normalized.parentFrame;
-    cb = normalized.cb;
+    const execution = this._prepareSyncExecution(ctx, parentFrame, cb);
+    ctx = execution.ctx;
+    parentFrame = execution.parentFrame;
+    cb = execution.cb;
 
     const forceAsync = !parentFrame;
 
@@ -124,8 +124,8 @@ class Template extends Obj {
       }
     }
 
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path, false);
-    const frame = this._createTopLevelFrame(parentFrame, true);
+    const context = this._createContext(ctx);
+    const frame = Frame.createTopLevel(parentFrame, true);
 
     let didError = false;
     let syncResult = null;
@@ -168,10 +168,10 @@ class Template extends Obj {
   }
 
   _getExportedSync(ctx, parentFrame, cb) {
-    const normalized = this._normalizeSyncRenderArgs(ctx, parentFrame, cb);
-    ctx = normalized.ctx;
-    parentFrame = normalized.parentFrame;
-    cb = normalized.cb;
+    const execution = this._prepareSyncExecution(ctx, parentFrame, cb);
+    ctx = execution.ctx;
+    parentFrame = execution.parentFrame;
+    cb = execution.cb;
 
     // Catch compile errors for sync exported-value retrieval
     try {
@@ -184,9 +184,8 @@ class Template extends Obj {
       }
     }
 
-    const frame = this._createTopLevelFrame(parentFrame, false);
-
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path, false);
+    const frame = Frame.createTopLevel(parentFrame, false);
+    const context = this._createContext(ctx);
     // Sync mode is straightforward.
     this.rootRenderFunc(this.env, context, frame, globalRuntime, (err) => {
       if (err) {
@@ -217,23 +216,21 @@ class Template extends Obj {
     return { ctx, parentFrame, cb };
   }
 
-  _createTopLevelFrame(parentFrame, isolateWrites) {
-    const frame = parentFrame ? parentFrame.push(isolateWrites) : new Frame();
-    frame.topLevel = true;
-    return frame;
+  _prepareSyncExecution(ctx, parentFrame, cb) {
+    return this._normalizeSyncRenderArgs(ctx, parentFrame, cb);
   }
 
-  _createAsyncContext(ctx) {
+  _createContext(ctx) {
     return new Context(ctx || {}, this.blocks, this.env, this.path, false);
   }
 
-  _createAsyncMacroContext() {
+  _createMacroContext() {
     return new Context({}, this.blocks, this.env, this.path, false);
   }
 
   _bindExportedValues(exported) {
     const boundExported = {};
-    const macroContext = new Context({}, this.blocks, this.env, this.path, false);
+    const macroContext = this._createMacroContext();
 
     for (const name in exported) {
       const item = exported[name];
@@ -366,12 +363,12 @@ class AsyncTemplate extends Template {
 
     this.compile();
 
-    const context = this._createAsyncContext(ctx);
+    const context = this._createContext(ctx);
     this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
 
     const exported = context.getExported();
     const boundExported = {};
-    const macroContext = this._createAsyncMacroContext();
+    const macroContext = this._createMacroContext();
 
     for (const name in exported) {
       const item = exported[name];
@@ -393,7 +390,7 @@ class AsyncTemplate extends Template {
    */
   _renderForComposition(ctx, cb) {
     this.compile();
-    const context = this._createAsyncContext(ctx);
+    const context = this._createContext(ctx);
     return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
   }
 

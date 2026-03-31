@@ -144,8 +144,7 @@ class CompileLoop {
     const sourcePositionNode = options.sourcePositionNode || node.arr;
 
     const forResult = this.compiler.buffer._compileControlFlowBoundary(node, frame, (blockFrame) => {
-      const innerFrame = blockFrame.push(false, true);
-      this.compiler.emit.line('frame = frame.push();');
+      const innerFrame = this.compiler.frameOps.pushFrame(blockFrame);
 
       const arr = this.compiler._tmpid();
       if (iteratorCompiler) {
@@ -195,9 +194,7 @@ class CompileLoop {
       });
       this.compiler.emit(`], ${syncOptionsCode});`);
       this.compiler.emit.line('');
-
-      this.compiler.emit.line('frame = frame.pop();');
-      innerFrame.pop();
+      this.compiler.frameOps.popFrame(innerFrame);
     });
 
     frame = forResult.frame;
@@ -327,8 +324,7 @@ class CompileLoop {
 
     let bodyFrame = frame;
     if (bodyCreatesScope) {
-      bodyFrame = frame.push();
-      this.compiler.emit.line('frame = frame.push();');
+      bodyFrame = this.compiler.frameOps.pushFrame(frame);
     }
 
     this._emitSyncLoopBindings(loopIndex, loopLength, isLast);
@@ -353,8 +349,7 @@ class CompileLoop {
     });
 
     if (bodyCreatesScope) {
-      this.compiler.emit.line('frame = frame.pop();');
-      bodyFrame = bodyFrame.pop();
+      bodyFrame = this.compiler.frameOps.popFrame(bodyFrame);
     }
 
     this.compiler.emit.line('};');
@@ -373,15 +368,13 @@ class CompileLoop {
     this.compiler.emit('function() {');
     let elseFrame = frame;
     if (elseCreatesScope) {
-      elseFrame = frame.push();
-      this.compiler.emit.line('frame = frame.push();');
+      elseFrame = this.compiler.frameOps.pushFrame(frame);
     }
 
     this.compiler.compile(node.else_, elseFrame);
 
     if (elseCreatesScope) {
-      this.compiler.emit.line('frame = frame.pop();');
-      elseFrame = elseFrame.pop();
+      elseFrame = this.compiler.frameOps.popFrame(elseFrame);
     }
 
     this.compiler.emit.line('};');
@@ -444,7 +437,7 @@ class CompileLoop {
   }
 
   _emitSyncLoopBindings(loopIndex, loopLength, isLast) {
-    this.compiler.emit.line(`runtime.setFrameLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+    this.compiler.emit.line(`frame.setLoopBindings(${loopIndex}, ${loopLength}, ${isLast});`);
   }
 
   _emitAsyncLoopVarIterationBinding(node, varName, valueExpr) {
@@ -494,8 +487,7 @@ class CompileLoop {
     arr = this.compiler._tmpid();
     asyncMethod = parallel ? 'asyncAll' : 'asyncEach';
 
-    frame = frame.push();
-    this.compiler.emit.line('frame = frame.push();');
+    frame = this.compiler.frameOps.pushFrame(frame);
 
     this.compiler.emit('let ' + arr + ' = runtime.fromIterator(');
     this.compiler.compileExpression(node.arr, frame, node.arr, true);
@@ -549,8 +541,7 @@ class CompileLoop {
       this.compiler.emit.line('}');
     }
 
-    frame = frame.pop();
-    this.compiler.emit.line('frame = frame.pop();');
+    frame = this.compiler.frameOps.popFrame(frame);
   }
 
   compileAsyncEach(node, frame) {

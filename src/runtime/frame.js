@@ -3,6 +3,7 @@
 const {
   checkFrameBalance
 } = require('./checks');
+const { createLoopBindings } = require('./loop');
 
 
 // Frames keep track of scoping both at compile-time and run-time so
@@ -17,6 +18,12 @@ class Frame {
     // if this is true, writes (set) should never propagate upwards past
     // this frame to its parent (though reads may).
     this.isolateWrites = isolateWrites;
+  }
+
+  static createTopLevel(parentFrame = null, isolateWrites = false) {
+    const frame = parentFrame ? parentFrame.push(isolateWrites) : new Frame();
+    frame.topLevel = true;
+    return frame;
   }
 
   set(name, val, resolveUp) {
@@ -63,6 +70,13 @@ class Frame {
     return p && p.lookup(name);
   }
 
+  lookupOrContext(context, name) {
+    var val = this.lookup(name);
+    return (val !== undefined) ?
+      val :
+      context.lookup(name);
+  }
+
   getRoot() {
     let root = this;
     while (root.parent) {
@@ -94,6 +108,17 @@ class Frame {
 
   new() {
     return new Frame();
+  }
+
+  setLoopBindings(index, len, last) {
+    const loopMeta = createLoopBindings(index, len, last);
+    this.set('loop.index', loopMeta.index);
+    this.set('loop.index0', loopMeta.index0);
+    this.set('loop.revindex', loopMeta.revindex);
+    this.set('loop.revindex0', loopMeta.revindex0);
+    this.set('loop.first', loopMeta.first);
+    this.set('loop.last', loopMeta.last);
+    this.set('loop.length', loopMeta.length);
   }
 
 }
