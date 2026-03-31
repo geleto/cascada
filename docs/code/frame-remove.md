@@ -7,7 +7,7 @@ This plan is actively in progress.
 Completed so far:
 
 - Sync script support has been removed from the public/runtime surface:
-  - the `Script` class is gone
+  - the old sync `Script` class is gone
   - sync `Environment` no longer exposes `getScript(...)` or `renderScriptString(...)`
   - top-level sync script helpers were removed from JS and `.d.ts`
     - `compileScript(...)`
@@ -35,9 +35,9 @@ Completed so far:
     - async block entries vs sync-template block entries use explicit helpers
     - `compileRoot(...)` no longer hides that remaining sync-template frame behavior inside one large mixed function
   - the remaining sync-template frame compiler surface is now centralized explicitly:
-    - sync-template frame reads/writes/publish helpers now live in `CompileSyncTemplate`
+    - frame reads/writes/publish helpers now live in `CompileFrame`
     - the main `Compiler` no longer carries those frame-operation helpers directly
-    - the last compiler-side sync frame fast-path read and top-level check now also go through `CompileSyncTemplate`
+    - the last compiler-side sync frame fast-path read and top-level check now also go through `CompileFrame`
 
 - Phase 1 is effectively done:
   - `node.isAsync` has been removed as an async compile-routing mechanism
@@ -126,13 +126,13 @@ Completed so far:
       - `Template._renderAsync(...)`
     - `AsyncTemplate.render(...)` and `Script.render(...)` no longer route through the shared sync-capable `_render(...)`
     - the shared `Template.getExported(...)` path is now sync-only again
-      - sync internals are now explicit as `Template._getExportedSyncTemplate(...)`
+      - sync internals are now explicit as `Template._getExportedSync(...)`
     - the shared `Template._render(...)` path is now sync-only again
-      - sync internals are now explicit as `Template._renderSyncTemplate(...)`
+      - sync internals are now explicit as `Template._renderSync(...)`
       - sync template helper internals are now explicit too:
-        - `Template._normalizeSyncTemplateRenderArgs(...)`
-        - `Template._createTopLevelSyncTemplateFrame(...)`
-        - `Template._bindSyncTemplateExportedValues(...)`
+        - `Template._normalizeSyncRenderArgs(...)`
+        - `Template._createTopLevelFrame(...)`
+        - `Template._bindExportedValues(...)`
     - base `Template` no longer owns generic async/script compile mode flags
       - async template/script compile options now live in subclass `_compileSource(...)` overrides
       - async context creation now lives behind explicit subclass hooks
@@ -271,7 +271,7 @@ Current next target:
     - done: sync assignment publishing now goes through dedicated helper logic
       - `compileSyncSet(...)` no longer open-codes frame/context/export publish steps
       - most remaining sync-template frame writes now go through explicit compiler helper methods:
-        - centralized under `CompileSyncTemplate`
+        - centralized under `CompileFrame`
         - `setFrameValue(...)`
         - `emitFrameSet(...)`
         - `emitFrameAssignment(...)`
@@ -283,7 +283,7 @@ Current next target:
     - done: async inheritance target loading no longer hides sync-template and async template/script loading behind one mixed helper
       - `CompileInheritance` now uses explicit async target loading vs sync-template target loading helpers
     - done: `compileSymbol(...)` no longer carries a nested sync fallback branch inside the async lookup path
-      - sync template symbol fallback now also goes through explicit `CompileSyncTemplate.getFrameContextLookupExpr(...)`
+      - sync template symbol fallback now also goes through explicit `CompileFrame.getFrameContextLookupExpr(...)`
     - done: a few remaining dead helper params/voids were removed
       - `CompileBuffer.asyncAddValueToBuffer(...)`
       - bogus `void` markers in runtime async-boundary helpers

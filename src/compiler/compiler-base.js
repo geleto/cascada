@@ -449,10 +449,10 @@ class CompilerBase extends Obj {
   }
 
   _compileSyncSymbolLookup(node, frame, name) {
-    if (this.syncTemplate.emitCompilerFrameLookup(frame, name)) {
+    if (this.frameOps.emitCompilerFrameLookup(frame, name)) {
       return;
     }
-    this.emit(this.syncTemplate.getFrameContextLookupExpr(name));
+    this.emit(this.frameOps.getFrameContextLookupExpr(name));
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests

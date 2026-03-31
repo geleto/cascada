@@ -17,7 +17,7 @@ const CompileAnalysis = require('./compile-analysis');
 const CompileMacro = require('./compile-macro');
 const CompileBoundaries = require('./compile-boundaries');
 const CompileRename = require('./compile-rename');
-const CompileSyncTemplate = require('./compile-sync-template');
+const CompileFrame = require('./compile-sync-template');
 const CompilerBase = require('./compiler-base');
 
 const RETURN_CHANNEL_NAME = '__return__';
@@ -43,7 +43,7 @@ class Compiler extends CompilerBase {
     this.macro = new CompileMacro(this);
     this.boundaries = new CompileBoundaries(this);
     this.rename = new CompileRename(this);
-    this.syncTemplate = new CompileSyncTemplate(this);
+    this.frameOps = new CompileFrame(this);
     this.analysisState = null;
   }
 
@@ -336,7 +336,7 @@ class Compiler extends CompilerBase {
       this.emit(ids[0] + ' = ');
 
       this.emit('runtime.setPath(');
-      this.emit(this.syncTemplate.getDirectFrameLookupExpr(node.targets[0].value) + ', ');
+      this.emit(this.frameOps.getDirectFrameLookupExpr(node.targets[0].value) + ', ');
       this.compile(node.path, frame);
       this.emit(', ');
       this.compile(node.value, frame);
@@ -362,9 +362,9 @@ class Compiler extends CompilerBase {
   }
 
   _emitSyncSetPublish(name, id) {
-    this.syncTemplate.emitFrameSet(name, id, true);
-    this.emit.line(`if(${this.syncTemplate.getTopLevelCheckExpr()}) {`);
-    this.syncTemplate.emitTopLevelPublish(name, id, true);
+    this.frameOps.emitFrameSet(name, id, true);
+    this.emit.line(`if(${this.frameOps.getTopLevelCheckExpr()}) {`);
+    this.frameOps.emitTopLevelPublish(name, id, true);
     this.emit.line('}');
   }
 

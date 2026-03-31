@@ -57,7 +57,7 @@ class Template extends Obj {
   }
 
   render(ctx, parentSyncFrame, cb) {
-    return this._renderSyncTemplate(ctx, parentSyncFrame, cb);
+    return this._renderSync(ctx, parentSyncFrame, cb);
   }
 
   _renderAsync(ctx, cb) {
@@ -104,8 +104,8 @@ class Template extends Obj {
     return syncResult;
   }
 
-  _renderSyncTemplate(ctx, parentSyncFrame, cb) {
-    const normalized = this._normalizeSyncTemplateRenderArgs(ctx, parentSyncFrame, cb);
+  _renderSync(ctx, parentSyncFrame, cb) {
+    const normalized = this._normalizeSyncRenderArgs(ctx, parentSyncFrame, cb);
     ctx = normalized.ctx;
     parentSyncFrame = normalized.parentSyncFrame;
     cb = normalized.cb;
@@ -125,7 +125,7 @@ class Template extends Obj {
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, false);
-    const frame = this._createTopLevelSyncTemplateFrame(parentSyncFrame, true);
+    const frame = this._createTopLevelFrame(parentSyncFrame, true);
 
     let didError = false;
     let syncResult = null;
@@ -164,11 +164,11 @@ class Template extends Obj {
 
   // @todo - return a value instead of calling a callback
   getExported(ctx, parentSyncFrame, cb) {
-    return this._getExportedSyncTemplate(ctx, parentSyncFrame, cb);
+    return this._getExportedSync(ctx, parentSyncFrame, cb);
   }
 
-  _getExportedSyncTemplate(ctx, parentSyncFrame, cb) {
-    const normalized = this._normalizeSyncTemplateRenderArgs(ctx, parentSyncFrame, cb);
+  _getExportedSync(ctx, parentSyncFrame, cb) {
+    const normalized = this._normalizeSyncRenderArgs(ctx, parentSyncFrame, cb);
     ctx = normalized.ctx;
     parentSyncFrame = normalized.parentSyncFrame;
     cb = normalized.cb;
@@ -184,7 +184,7 @@ class Template extends Obj {
       }
     }
 
-    const frame = this._createTopLevelSyncTemplateFrame(parentSyncFrame, false);
+    const frame = this._createTopLevelFrame(parentSyncFrame, false);
 
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, false);
     // Sync mode is straightforward.
@@ -192,14 +192,14 @@ class Template extends Obj {
       if (err) {
         cb(err, null);
       } else {
-        cb(null, this._bindSyncTemplateExportedValues(context.getExported()));
+        cb(null, this._bindExportedValues(context.getExported()));
       }
     });
 
     return undefined;
   }
 
-  _normalizeSyncTemplateRenderArgs(ctx, parentSyncFrame, cb) {
+  _normalizeSyncRenderArgs(ctx, parentSyncFrame, cb) {
     if (typeof ctx === 'function') {
       return {
         ctx: {},
@@ -217,7 +217,7 @@ class Template extends Obj {
     return { ctx, parentSyncFrame, cb };
   }
 
-  _createTopLevelSyncTemplateFrame(parentSyncFrame, isolateWrites) {
+  _createTopLevelFrame(parentSyncFrame, isolateWrites) {
     const frame = parentSyncFrame ? parentSyncFrame.push(isolateWrites) : new Frame();
     frame.topLevel = true;
     return frame;
@@ -231,7 +231,7 @@ class Template extends Obj {
     return new Context({}, this.blocks, this.env, this.path, false);
   }
 
-  _bindSyncTemplateExportedValues(exported) {
+  _bindExportedValues(exported) {
     const boundExported = {};
     const macroContext = new Context({}, this.blocks, this.env, this.path, false);
 

@@ -1,6 +1,6 @@
 'use strict';
 
-class CompileSyncTemplate {
+class CompileFrame {
   constructor(compiler) {
     this.compiler = compiler;
     this.emit = compiler.emit;
@@ -49,4 +49,4 @@ class CompileSyncTemplate {
   }
 }
 
-module.exports = CompileSyncTemplate;
+module.exports = CompileFrame;

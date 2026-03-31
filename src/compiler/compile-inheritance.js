@@ -54,12 +54,12 @@ class CompileInheritance {
   }
 
   _emitSyncImportedBinding(name, id, frame) {
-    this.compiler.syncTemplate.setFrameValue(frame, name, id);
+    this.compiler.frameOps.setFrameValue(frame, name, id);
 
     if (frame.parent) {
-      this.compiler.syncTemplate.emitFrameSet(name, id);
+      this.compiler.frameOps.emitFrameSet(name, id);
     } else {
-      this.compiler.syncTemplate.emitTopLevelPublish(name, id);
+      this.compiler.frameOps.emitTopLevelPublish(name, id);
     }
   }
 
