@@ -247,6 +247,10 @@ class BaseEnvironment extends EmitterObj {
       eagerCompile = false;
     }
 
+    if (scriptMode && !asyncMode) {
+      throw new Error('Sync script support has been removed; use AsyncScript / AsyncEnvironment instead');
+    }
+
     // Check if name is a compiled template/script instance
     if (name instanceof Template || name instanceof AsyncScript) {
       tmpl = name;
@@ -281,6 +285,39 @@ class BaseEnvironment extends EmitterObj {
     }
     let syncResult;
 
+    const createCompiledScript = (info) => {
+      if (!info) {
+        return new AsyncScript(noopTmplSrcAsync, this, '', eagerCompile);
+      }
+
+      const compiled = new AsyncScript(info.src, this, info.path, eagerCompile);
+      if (!info.noCache) {
+        const compiledCache = this._compiledCaches.get(info.loader) || new Map();
+        compiledCache.set(name, compiled);
+        this._compiledCaches.set(info.loader, compiledCache);
+      }
+      return compiled;
+    };
+
+    const createCompiledTemplate = (info) => {
+      let compiled;
+      if (!info) {
+        compiled = asyncMode
+          ? new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile)
+          : new Template(noopTmplSrc, this, '', eagerCompile);
+      } else {
+        compiled = asyncMode
+          ? new AsyncTemplate(info.src, this, info.path, eagerCompile)
+          : new Template(info.src, this, info.path, eagerCompile);
+        if (!info.noCache) {
+          const compiledCache = this._compiledCaches.get(info.loader) || new Map();
+          compiledCache.set(name, compiled);
+          this._compiledCaches.set(info.loader, compiledCache);
+        }
+      }
+      return compiled;
+    };
+
     const createTemplate = (err, info) => {
       if (!info && !err && !ignoreMissing) {
         err = new Error(`${scriptMode ? 'Script' : 'Template'} not found: ` + name);
@@ -296,35 +333,9 @@ class BaseEnvironment extends EmitterObj {
       }
       let newCompiled;
       if (scriptMode) {
-        if (!asyncMode) {
-          throw new Error('Sync script support has been removed; use AsyncScript / AsyncEnvironment instead');
-        }
-        if (!info) {
-          newCompiled = new AsyncScript(noopTmplSrcAsync, this, '', eagerCompile);
-        } else {
-          newCompiled = new AsyncScript(info.src, this, info.path, eagerCompile);
-          if (!info.noCache) {
-            const compiledCache = this._compiledCaches.get(info.loader) || new Map();
-            compiledCache.set(name, newCompiled);
-            this._compiledCaches.set(info.loader, compiledCache);
-          }
-        }
-      }
-      else {
-        if (!info) {
-          newCompiled = asyncMode ?
-            new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
-            new Template(noopTmplSrc, this, '', eagerCompile, asyncMode, scriptMode);
-        } else {
-          newCompiled = asyncMode ?
-            new AsyncTemplate(info.src, this, info.path, eagerCompile) :
-            new Template(info.src, this, info.path, eagerCompile, asyncMode, scriptMode);
-          if (!info.noCache) {
-            const compiledCache = this._compiledCaches.get(info.loader) || new Map();
-            compiledCache.set(name, newCompiled);
-            this._compiledCaches.set(info.loader, compiledCache);
-          }
-        }
+        newCompiled = createCompiledScript(info);
+      } else {
+        newCompiled = createCompiledTemplate(info);
       }
       if (cb) {
         cb(null, newCompiled);

@@ -447,7 +447,7 @@ class CompilerBase extends Obj {
       this.emit(v);
       return;
     }
-    this.emit(`runtime.contextOrSyncTemplateVarLookup(context, frame, "${name}")`);
+    this.emit(this.getSyncTemplateLookupExpr(name));
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests

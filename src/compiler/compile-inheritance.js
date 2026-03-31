@@ -54,12 +54,12 @@ class CompileInheritance {
   }
 
   _emitSyncImportedBinding(name, id, frame) {
-    frame.set(name, id);
+    this.compiler.setSyncTemplateCompileFrameValue(frame, name, id);
 
     if (frame.parent) {
-      this.emit.line(`frame.set("${name}", ${id});`);
+      this.compiler.emitSyncTemplateFrameSet(name, id);
     } else {
-      this.emit.line(`context.setVariable("${name}", ${id});`);
+      this.compiler.emitSyncTemplateTopLevelPublish(name, id);
     }
   }
 
@@ -99,7 +99,7 @@ class CompileInheritance {
       this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this.compiler._makeCallback(parentTemplateId);
-      this.emit(`env.get${this.compiler.scriptMode ? 'Script' : 'Template'}(`);
+      this.emit('env.getTemplate(');
       // Template/script lookup expressions feed composition boundaries, which
       // emit their own completion tracking separately from root-expression WRCs.
       this.compiler.compileExpression(node.template, frame, node.template, true);

@@ -16,6 +16,8 @@ Completed so far:
     - `precompileScriptString(...)`
   - script compilation/loading is now async-only at the environment level
     - `scriptMode` no longer has a sync-script branch in `BaseEnvironment`
+    - sync script requests now fail up front in `BaseEnvironment._getCompiled(...)`
+    - sync inheritance/template lookup now always goes through `env.getTemplate(...)`
   - remaining helper naming was tightened to match that split:
     - async script context lookup now uses `Context.lookupScript(...)`
     - sync frame-backed template lookup now uses `contextOrSyncTemplateVarLookup(...)`
@@ -219,6 +221,7 @@ Current next target:
       - sync-only render boundary helper paths
       - `CompileBuffer.addToBuffer(...)` no longer duplicates async text/non-text branches
       - script-only channel declarations no longer carry a dead sync branch in `compileChannelDeclaration(...)`
+      - sync inheritance lookup no longer carries a dead `getScript(...)` branch
     - done: macro body emission no longer uses one nested sync/async helper
       - `CompileMacro` now has explicit compiled async vs sync body emission paths
     - done: macro compilation no longer uses one nested sync/async helper
@@ -233,11 +236,17 @@ Current next target:
       - sync import / from-import no longer repeat the same frame/context publish path
     - done: sync assignment publishing now goes through dedicated helper logic
       - `compileSyncSet(...)` no longer open-codes frame/context/export publish steps
+      - most remaining sync-template frame writes now go through explicit compiler helper methods:
+        - `setSyncTemplateCompileFrameValue(...)`
+        - `emitSyncTemplateFrameSet(...)`
+        - `emitSyncTemplateFrameAssignment(...)`
+        - `emitSyncTemplateTopLevelPublish(...)`
     - done: `compileSet(...)` no longer uses one nested sync/async helper
       - sync assignment lowering now lives in explicit `compileSyncSet(...)`
     - done: `compileSymbol(...)` no longer hides sync frame lookup inside the shared path
       - async symbol lookup and sync frame lookup now live in explicit helper methods
     - done: `compileSymbol(...)` no longer carries a nested sync fallback branch inside the async lookup path
+      - sync template symbol fallback now also goes through explicit `getSyncTemplateLookupExpr(...)`
     - done: a few remaining dead helper params/voids were removed
       - `CompileBuffer.asyncAddValueToBuffer(...)`
       - bogus `void` markers in runtime async-boundary helpers

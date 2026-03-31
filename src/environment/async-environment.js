@@ -103,7 +103,7 @@ class AsyncEnvironment extends BaseEnvironment {
         // render script object
         this.getScript(script, false, null, false).then((scr) => {
           if (!scr) {
-            throw new Error(`Template not found: ${script}`);
+            throw new Error(`Script not found: ${script}`);
           }
           scr.render(ctx, callback);
         });

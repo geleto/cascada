@@ -49,6 +49,35 @@ class Compiler extends CompilerBase {
     return RESERVED_DECLARATION_NAMES.has(name);
   }
 
+  setSyncTemplateCompileFrameValue(frame, name, valueExpr, resolveUp = false) {
+    frame.set(name, valueExpr, resolveUp);
+  }
+
+  emitSyncTemplateFrameSet(name, valueExpr, resolveUp = false) {
+    this.emit.line(`frame.set("${name}", ${valueExpr}${resolveUp ? ', true' : ''});`);
+  }
+
+  emitSyncTemplateFrameAssignment(name, emitValueExpr) {
+    this.emit(`frame.set("${name}", `);
+    emitValueExpr();
+    this.emit.line(');');
+  }
+
+  getSyncTemplateLookupExpr(name) {
+    return `runtime.contextOrSyncTemplateVarLookup(context, frame, "${name}")`;
+  }
+
+  getSyncTemplateFrameLookupExpr(name) {
+    return `frame.lookup("${name}")`;
+  }
+
+  emitSyncTemplateTopLevelPublish(name, valueExpr, exportValue = false) {
+    this.emit.line(`context.setVariable("${name}", ${valueExpr});`);
+    if (exportValue && name.charAt(0) !== '_') {
+      this.emit.line(`context.addResolvedExport("${name}", ${valueExpr});`);
+    }
+  }
+
   emitDeclareReturnChannel(frame, bufferExpr) {
     this.emit.line(
       `runtime.declareBufferChannel(${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
@@ -334,7 +363,7 @@ class Compiler extends CompilerBase {
       this.emit(ids[0] + ' = ');
 
       this.emit('runtime.setPath(');
-      this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
+      this.emit(this.getSyncTemplateFrameLookupExpr(node.targets[0].value) + ', ');
       this.compile(node.path, frame);
       this.emit(', ');
       this.compile(node.value, frame);
@@ -360,15 +389,10 @@ class Compiler extends CompilerBase {
   }
 
   _emitSyncSetPublish(name, id) {
-    this.emit.line(`frame.set("${name}", ${id}, true);`);
+    this.emitSyncTemplateFrameSet(name, id, true);
     this.emit.line('if(frame.syncTemplateTopLevel) {');
-    this.emit.line(`  context.setVariable("${name}", ${id});`);
+    this.emitSyncTemplateTopLevelPublish(name, id, true);
     this.emit.line('}');
-    if (name.charAt(0) !== '_') {
-      this.emit.line('if(frame.syncTemplateTopLevel) {');
-      this.emit.line(`  context.addResolvedExport("${name}", ${id});`);
-      this.emit.line('}');
-    }
   }
 
   analyzeCallAssign(node, analysisPass) {
