@@ -309,6 +309,7 @@
       it('should handle include inside conditional extends when included child emits no local text', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('empty-logic.njk', `
+				{% extern flag %}
 				{% if flag %}
 				  {% set local = 1 %}
 				{% endif %}
@@ -318,7 +319,7 @@
 				  {% extends "parent.njk" %}
 				{% endif %}
 				{% block content %}
-				  {% include "empty-logic.njk" %}
+				  {% include "empty-logic.njk" with flag %}
 				  content
 				{% endblock %}
 			  `);

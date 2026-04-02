@@ -73,6 +73,18 @@ class CompileInheritance {
     return parentTemplateId;
   }
 
+  _emitExplicitExternInputs(node, targetVarsVar) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    withVars.forEach((nameNode) => {
+      const externName = this.compiler.analysis && typeof this.compiler.analysis.getBaseChannelName === 'function'
+        ? this.compiler.analysis.getBaseChannelName(nameNode.value)
+        : nameNode.value;
+      this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = `);
+      this.compiler.compileExpression(nameNode, null, nameNode, true);
+      this.emit.line(';');
+    });
+  }
+
   _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
     const templateId = this.compiler._tmpid();
     const parentName = JSON.stringify(this.compiler.templateName);
@@ -357,7 +369,7 @@ class CompileInheritance {
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
       const includeVarsVar = this.compiler._tmpid();
-      const aliasMapVar = this.compiler._tmpid();
+      const includeInputNamesVar = this.compiler._tmpid();
       const includeTextPromise = this.compiler._tmpid();
       // Included template renders into its own default text lane.
       // The caller lane may be scope-specific (e.g. capture text output) and
@@ -374,31 +386,17 @@ class CompileInheritance {
       // Keep producer synchronous: carry async template lookup/render in promise chain.
       this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${JSON.stringify(this.compiler.templateName)}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
-      // Includes run in a separate template/frame. To preserve caller-visible
-      // var-channel reads, copy context vars and inject currently-declared
-      // var channels as snapshot promises from the active command buffer.
-      // This keeps ordering semantics and leaves include logic declaration-driven.
-      this.emit.line(`let ${includeVarsVar} = Object.assign({}, context.getVariables());`);
-      this._emitDeclaredValueSnapshots(node._analysis, includeVarsVar, node);
-      this.emit.line(`let ${aliasMapVar} = {};`);
-      this._emitDeclaredValueAliasMap(node._analysis, aliasMapVar);
+      // Async include passes only explicit extern inputs to the child.
+      this.emit.line(`let ${includeVarsVar} = {};`);
+      this._emitExplicitExternInputs(node, includeVarsVar);
+      this.emit.line(`let ${includeInputNamesVar} = Object.keys(${includeVarsVar});`);
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
+      this.emit.line(`${templateVar}_resolved.compile();`);
+      this.emit.line(`if (!${node.ignoreMissing ? 'true' : 'false'} || ${templateVar}_resolved.path) {`);
+      this.emit.line(`  runtime.validateExternInputs(${templateVar}_resolved.externSpec || [], ${includeInputNamesVar}, "include");`);
+      this.emit.line('}');
       this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeVarsVar}, cb);`);
-      // Compose child buffer with base->canonical aliases (e.g. loop -> loop#7)
-      // so natural names used inside included templates target the right lane.
-      this.emit.line(`composed._setBoundaryAliases(${aliasMapVar});`);
-      // Structural prelinking: attach composed child to parent lanes up front so
-      // include-time symbol snapshots do not depend on lookup-time dynamic linking.
-      const includeLinkCandidates = this.compiler.analysis.getIncludeVisibleVarChannels(node._analysis)
-        .map((entry) => entry.runtimeName);
-      const parentBufferExpr = this.compiler.buffer.currentBuffer;
-      this.compiler.emitLinkWithParentCompositionBuffer(
-        includeLinkCandidates,
-        parentBufferExpr,
-        'composed',
-        'composed._channels'
-      );
       // Includes own a composed child text boundary. Use the child text channel's
       // finalSnapshot() as the structural completion signal rather than adding an
       // extra point-in-time snapshot command for that boundary.

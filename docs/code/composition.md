@@ -853,6 +853,33 @@ the sync compatibility model intact.
 
 This section turns the design into an implementation checklist.
 
+Current status as of April 2, 2026:
+
+- implemented:
+  - parsing / AST support for `extern`, `include ... with ...`, and `block ...
+    with ...`
+  - async root `extern` declaration analysis and `externSpec` exposure on
+    compiled async templates/scripts
+  - async root extern initialization from render context
+  - extern fallback initialization and later-extern rejection
+  - async include explicit-input lowering
+  - parent-side canonicalization for renamed vars passed through `with ...`
+  - runtime include contract validation through `validateExternInputs(...)`
+  - removal of the dead `linkWithParentCompositionBuffer()` path
+- partially implemented:
+  - explicit extern-input plumbing exists for top-level render and async
+    include, but not yet for async import/from-import or async block/extends
+  - obsolete async include visibility/linking machinery has been reduced, but
+    not fully audited/removed everywhere
+  - tests are strong for implemented root/include behavior, but import/block
+    validation and inheritance-contract tests are still pending
+- not implemented yet:
+  - async import/from-import isolation under the extern contract
+  - async block `with ...` contracts
+  - async extends / overriding-block validation
+  - `super()` over explicit invocation inputs
+  - final cleanup/audit of remaining old async composition helpers
+
 Testing policy during migration:
 
 - update broken async tests as each step lands; do not let known-broken tests
@@ -865,6 +892,8 @@ Testing policy during migration:
   not only in the final test pass
 
 ### Step 1: Add syntax and AST support
+
+Status: implemented
 
 Implement:
 
@@ -895,6 +924,18 @@ Add tests:
 
 ### Step 2: Add explicit extern-input plumbing
 
+Status: partially implemented
+
+Implemented now:
+
+- async top-level render entry can initialize explicit root extern inputs
+- async include can pass explicit extern-input maps to children
+
+Still pending in this step:
+
+- async import/from-import explicit extern-input plumbing
+- async block/extends explicit input plumbing
+
 Implement:
 
 - async render/composition entry points can accept explicit extern-input maps
@@ -918,6 +959,8 @@ Add tests:
 
 ### Step 3: Add root-only `extern` validation
 
+Status: implemented
+
 Implement:
 
 - `extern` may appear only at root scope
@@ -938,6 +981,20 @@ Add tests:
 - declaration conflict cases
 
 ### Step 4: Represent `extern` in analysis as a distinct declaration kind
+
+Status: partially implemented
+
+Implemented now:
+
+- `Extern` participates in async declaration analysis as a distinct declaration
+  kind
+- root analysis records an `externSpec`
+- compiled async templates/scripts expose `externSpec`
+- extern declarations are treated as non-renamable in practice
+
+Still pending in this step:
+
+- block contract analysis / explicit block `with ...` metadata
 
 Implement:
 
@@ -964,6 +1021,18 @@ Add tests:
 
 ### Step 5: Define extern initialization ordering and failure rules
 
+Status: partially implemented
+
+Implemented now:
+
+- extern initialization runs in declaration order
+- fallback references to later externs are rejected
+- earlier-extern fallback dependencies work
+
+Still pending in this step:
+
+- any additional cycle detection beyond the current ordering rule, if desired
+
 Implement:
 
 - extern initialization runs in declaration order
@@ -984,6 +1053,8 @@ Add tests:
 - direct and indirect cycle failure
 
 ### Step 6: Make `extern` lower to ordinary local var behavior after initialization
+
+Status: implemented
 
 Implement:
 
@@ -1009,6 +1080,8 @@ Add tests:
 
 ### Step 7: Introduce explicit extern-input initialization at render entry
 
+Status: implemented
+
 Implement:
 
 - top-level async template/script rendering initializes declared `extern`s from
@@ -1029,6 +1102,8 @@ Add tests:
 - missing required extern failure at render entry
 
 ### Step 8: Define async include contract rules before conversion
+
+Status: implemented
 
 Implement:
 
@@ -1051,6 +1126,8 @@ Add tests:
 - include without `with ...` and missing required externs
 
 ### Step 9: Convert async include from implicit visibility to explicit inputs
+
+Status: implemented
 
 Implement:
 
@@ -1087,6 +1164,8 @@ Add tests:
 
 ### Step 10: Keep parent-side alias resolution only for argument binding
 
+Status: implemented
+
 Implement:
 
 - when a parent-side `with name` refers to an internally renamed binding such as
@@ -1105,6 +1184,8 @@ Add tests:
 - nested-scope/duplicated-name cases that require parent-side alias resolution
 
 ### Step 11: Convert async import/from-import to fully isolated semantics
+
+Status: not implemented yet
 
 Implement:
 
@@ -1132,6 +1213,8 @@ Add tests:
 
 ### Step 12: Define block-input declaration rules
 
+Status: not implemented yet
+
 Implement:
 
 - explicit block input names are treated as invocation-local var declarations
@@ -1156,6 +1239,8 @@ Add tests:
 - block input rebinding inside the overriding block
 
 ### Step 13: Convert async block invocation to explicit block inputs
+
+Status: not implemented yet
 
 Implement:
 
@@ -1185,6 +1270,8 @@ Add tests:
 
 ### Step 14: Define `super()` over the same invocation input map
 
+Status: not implemented yet
+
 Implement:
 
 - `super()` receives the same explicit input map as the overriding block
@@ -1203,6 +1290,14 @@ Add tests:
 - child-local rebinding does not affect `super()`
 
 ### Step 15: Do not copy `__caller__` scheduling machinery to blocks
+
+Status: not implemented yet
+
+Note:
+
+- this is still the intended direction
+- no block-specific `__caller__` machinery has been added, but the block/super
+  explicit-input model itself is also not implemented yet
 
 Implement:
 
@@ -1224,6 +1319,19 @@ Add tests:
 - regression coverage proving block/super work without caller-specific channels
 
 ### Step 16: Remove obsolete async include visibility machinery carefully
+
+Status: partially implemented
+
+Implemented now:
+
+- include no longer uses the old parent-var snapshot/visibility path as its
+  semantics
+- the dead `linkWithParentCompositionBuffer()` path has been removed
+
+Still pending in this step:
+
+- final audit/removal of remaining obsolete include-specific helpers and
+  callsites
 
 After the new extern-input path is working, remove obsolete async composition
 logic that is no longer the source of truth for variable visibility:
@@ -1264,6 +1372,25 @@ Add tests:
 
 ### Step 17: Add focused tests
 
+Status: partially implemented
+
+Implemented now:
+
+- parser / transpiler coverage for `extern` and `include ... with ...`
+- sync rejection coverage for `extern`
+- async root extern initialization / fallback / missing-required tests
+- async include explicit-input tests
+- renamed-parent-local tests for `with ...`
+- regular duplicated-var renaming tests for include canonicalization
+- dynamic include-target validation tests
+
+Still pending in this step:
+
+- focused tests for async import/from-import isolation
+- block-input declaration/conflict tests
+- overriding child block `with ...` rejection
+- `super()` explicit-input tests
+
 Add async tests for:
 
 - root-level extern initialization from render context
@@ -1290,6 +1417,8 @@ Keep sync regression coverage to ensure:
 
 ### Step 18: Update user-facing documentation
 
+Status: not implemented yet
+
 After implementation stabilizes, update:
 
 - async template docs
@@ -1297,6 +1426,8 @@ After implementation stabilizes, update:
 - migration notes for async users moving away from implicit parent visibility
 
 ### Step 19: Re-evaluate simplifications after implementation
+
+Status: not implemented yet
 
 Once the implementation exists, review whether the architecture can be
 simplified further:

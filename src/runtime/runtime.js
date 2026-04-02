@@ -129,25 +129,37 @@ function promisify(fn) {
   };
 }
 
-/**
- * Link a composed child buffer into selected parent channel lanes.
- *
- * The compiler provides a conservative channel candidate list; this helper
- * performs a runtime intersection against `presenceMap` (typically child `_channels`)
- * to avoid linking lanes that do not exist for the child.
- */
-function linkWithParentCompositionBuffer(parentBuffer, childBuffer, channelNames, presenceMap) {
-  if (!parentBuffer || !childBuffer || !Array.isArray(channelNames) || channelNames.length === 0) {
-    return;
+function validateExternInputs(externSpec, providedInputNames, operationName = 'include') {
+  const spec = Array.isArray(externSpec) ? externSpec : [];
+  const providedNames = Array.isArray(providedInputNames) ? providedInputNames : [];
+  const declaredNames = new Set();
+
+  for (let i = 0; i < spec.length; i++) {
+    const entry = spec[i];
+    const names = entry && Array.isArray(entry.names) ? entry.names : [];
+    for (let j = 0; j < names.length; j++) {
+      declaredNames.add(names[j]);
+    }
   }
-  if (!(presenceMap instanceof Map)) {
-    return;
+
+  for (let i = 0; i < providedNames.length; i++) {
+    const name = providedNames[i];
+    if (!declaredNames.has(name)) {
+      throw new Error(`${operationName} passed '${name}' but the child template does not declare it as extern`);
+    }
   }
-  for (let i = 0; i < channelNames.length; i++) {
-    const channelName = channelNames[i];
-    const resolvedChannelName = childBuffer._resolveChannelName(channelName);
-    if (presenceMap.has(resolvedChannelName)) {
-      parentBuffer.addBuffer(childBuffer, resolvedChannelName);
+
+  for (let i = 0; i < spec.length; i++) {
+    const entry = spec[i];
+    if (!entry || !entry.required) {
+      continue;
+    }
+    const names = Array.isArray(entry.names) ? entry.names : [];
+    for (let j = 0; j < names.length; j++) {
+      const name = names[j];
+      if (providedNames.indexOf(name) === -1) {
+        throw new Error(`${operationName} is missing required extern '${name}'`);
+      }
     }
   }
 }
@@ -165,7 +177,7 @@ module.exports = {
   ensureDefinedAsync: outputValue.ensureDefinedAsync,
   promisify,
   withPath,
-  linkWithParentCompositionBuffer,
+  validateExternInputs,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runWaitedControlFlowBoundary: asyncBoundaries.runWaitedControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,

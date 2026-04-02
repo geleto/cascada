@@ -588,10 +588,10 @@
           name: 'World'
         };
 
-        const greetingTemplate = 'Hello, {{ name }}!';
+        const greetingTemplate = '{% extern name %}Hello, {{ name }}!';
         loader.addTemplate('greeting.njk', greetingTemplate);
 
-        const mainTemplate = '{% include getTemplateName() %}';
+        const mainTemplate = '{% include getTemplateName() with name %}';
         loader.addTemplate('main.njk', mainTemplate);
 
         const result = await env.renderTemplate('main.njk', context);
@@ -610,10 +610,10 @@
           }
         };
 
-        const greetingTemplate = 'Hello, {{ getName() }}, welcome to';
+        const greetingTemplate = '{% extern getName %}Hello, {{ getName() }}, welcome to';
         loader.addTemplate('greeting.njk', greetingTemplate);
 
-        const mainTemplate = '{% include "greeting.njk" %} {{ getPlace() }}';
+        const mainTemplate = '{% include "greeting.njk" with getName %} {{ getPlace() }}';
         loader.addTemplate('main.njk', mainTemplate);
 
         const result = await env.renderTemplate('main.njk', context);
@@ -628,13 +628,13 @@
           }
         };
 
-        const userTemplate = '{{ getUser().name }} ({{ getUser().role }})';
+        const userTemplate = '{% extern getUser %}{{ getUser().name }} ({{ getUser().role }})';
         loader.addTemplate('user.njk', userTemplate);
 
-        const greetingTemplate = 'Welcome, {% include "user.njk" %}!';
+        const greetingTemplate = '{% extern getUser %}Welcome, {% include "user.njk" with getUser %}!';
         loader.addTemplate('greeting.njk', greetingTemplate);
 
-        const mainTemplate = 'Hello! {% include "greeting.njk" %}';
+        const mainTemplate = 'Hello! {% include "greeting.njk" with getUser %}';
         loader.addTemplate('main.njk', mainTemplate);
 
         const result = await env.renderTemplate('main.njk', context);
@@ -649,10 +649,10 @@
           }
         };
 
-        const userTemplate = '{% set user = getUserInfo(userId) %}{{ user.name }} ({{ user.role }})';
+        const userTemplate = '{% extern userId %}{% extern getUserInfo %}{% set user = getUserInfo(userId) %}{{ user.name }} ({{ user.role }})';
         loader.addTemplate('user.njk', userTemplate);
 
-        const mainTemplate = '{% set userId = 1 %}{% include "user.njk" %}';
+        const mainTemplate = '{% set userId = 1 %}{% include "user.njk" with userId, getUserInfo %}';
         loader.addTemplate('main.njk', mainTemplate);
 
         const result = await env.renderTemplate('main.njk', context);
@@ -667,14 +667,91 @@
           }
         };
 
-        const userTemplate = '{% set user = getUserInfo(userId) %}{{ user.name }} ({{ user.role }})';
+        const userTemplate = '{% extern userId %}{% extern getUserInfo %}{% set user = getUserInfo(userId) %}{{ user.name }} ({{ user.role }})';
         loader.addTemplate('user.njk', userTemplate);
 
-        const mainTemplate = '{%- for userId in [1, 2] -%}{% include "user.njk" %}\n{% endfor -%}';
+        const mainTemplate = '{%- for userId in [1, 2] -%}{% include "user.njk" with userId, getUserInfo %}\n{% endfor -%}';
         loader.addTemplate('main.njk', mainTemplate);
 
         const result = await env.renderTemplate('main.njk', context);
         expect(result).to.equal('User 1 (user)\nUser 2 (admin)\n');
+      });
+
+      it('should fail when include does not provide a required extern', async () => {
+        loader.addTemplate('child.njk', '{% extern userId %}{{ userId }}');
+        loader.addTemplate('main.njk', '{% include "child.njk" %}');
+
+        try {
+          await env.renderTemplate('main.njk', {});
+          expect().fail('Expected include extern validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain("include is missing required extern 'userId'");
+        }
+      });
+
+      it('should fail when include passes a name the child does not declare as extern', async () => {
+        loader.addTemplate('child.njk', 'child');
+        loader.addTemplate('main.njk', '{% include "child.njk" with userId %}');
+
+        try {
+          await env.renderTemplate('main.njk', { userId: 1 });
+          expect().fail('Expected include extern validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain("include passed 'userId' but the child template does not declare it as extern");
+        }
+      });
+
+      it('should allow include to omit with-values when child externs have fallbacks', async () => {
+        loader.addTemplate('child.njk', '{% extern theme = "light" %}[{{ theme }}]');
+        loader.addTemplate('main.njk', 'A{% include "child.njk" %}B');
+
+        const result = await env.renderTemplate('main.njk', {});
+        expect(result).to.equal('A[light]B');
+      });
+
+      it('should validate extern inputs against the resolved dynamic include target', async () => {
+        loader.addTemplate('plain-child.njk', 'plain');
+        loader.addTemplate('extern-child.njk', '{% extern userId %}user={{ userId }}');
+        loader.addTemplate('main.njk', '{% include pickTemplate() with userId %}');
+
+        const okResult = await env.renderTemplate('main.njk', {
+          userId: 7,
+          pickTemplate() {
+            return 'extern-child.njk';
+          }
+        });
+        expect(okResult).to.equal('user=7');
+
+        try {
+          await env.renderTemplate('main.njk', {
+            userId: 7,
+            pickTemplate() {
+              return 'plain-child.njk';
+            }
+          });
+          expect().fail('Expected dynamic include extern validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain("include passed 'userId' but the child template does not declare it as extern");
+        }
+      });
+
+      it('should pass canonical names to includes from duplicated branch-local vars', async () => {
+        loader.addTemplate('child.njk', '{% extern scopedValue %}[{{ scopedValue }}]');
+        loader.addTemplate('main.njk', `
+          {% if usePrimary %}
+            {% var scopedValue = "primary" %}
+            {% include "child.njk" with scopedValue %}
+          {% else %}
+            {% var scopedValue = "fallback" %}
+            {% include "child.njk" with scopedValue %}
+          {% endif %}
+        `);
+
+        const primary = await env.renderTemplate('main.njk', { usePrimary: true });
+        expect(primary.replace(/\s+/g, '')).to.equal('[primary]');
+
+        const fallback = await env.renderTemplate('main.njk', { usePrimary: false });
+        expect(fallback.replace(/\s+/g, '')).to.equal('[fallback]');
       });
     });
 

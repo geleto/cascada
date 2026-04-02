@@ -142,9 +142,9 @@
       it('concurrentLimit loop include reads per-iteration loop metadata', async () => {
         const loader = new StringLoader();
         const localEnv = new AsyncEnvironment(loader);
-        loader.addTemplate('cl-child.njk', 'I{{ loop.index }}|');
+        loader.addTemplate('cl-child.njk', '{% extern loop %}I{{ loop.index }}|');
         loader.addTemplate('cl-parent.njk',
-          '{% for item in [1,2,3,4] of 2 %}{% include "cl-child.njk" %}{% endfor %}');
+          '{% for item in [1,2,3,4] of 2 %}{% include "cl-child.njk" with loop %}{% endfor %}');
         const result = await localEnv.renderTemplate('cl-parent.njk', {});
         expect(result).to.equal('I1|I2|I3|I4|');
       });
@@ -152,10 +152,10 @@
       it('nested concurrentLimit loops with include keep metadata isolated', async () => {
         const loader = new StringLoader();
         const localEnv = new AsyncEnvironment(loader);
-        loader.addTemplate('ncl-inner.njk', 'IN{{ loop.index }}|');
-        loader.addTemplate('ncl-outer.njk', 'OUT{{ loop.index }}|');
+        loader.addTemplate('ncl-inner.njk', '{% extern loop %}IN{{ loop.index }}|');
+        loader.addTemplate('ncl-outer.njk', '{% extern loop %}OUT{{ loop.index }}|');
         loader.addTemplate('ncl-parent.njk',
-          '{% for o in [1,2] of 2 %}{% for i in ["a","b","c"] of 2 %}{% include "ncl-inner.njk" %}{% endfor %}{% include "ncl-outer.njk" %}{% endfor %}');
+          '{% for o in [1,2] of 2 %}{% for i in ["a","b","c"] of 2 %}{% include "ncl-inner.njk" with loop %}{% endfor %}{% include "ncl-outer.njk" with loop %}{% endfor %}');
         const result = await localEnv.renderTemplate('ncl-parent.njk', {});
         expect(result).to.equal('IN1|IN2|IN3|OUT1|IN1|IN2|IN3|OUT2|');
       });
@@ -163,9 +163,9 @@
       it('concurrentLimit with loop target shadow keeps include reading value loop', async () => {
         const loader = new StringLoader();
         const localEnv = new AsyncEnvironment(loader);
-        loader.addTemplate('cl-shadow-child.njk', 'V{{ loop }}|');
+        loader.addTemplate('cl-shadow-child.njk', '{% extern loop %}V{{ loop }}|');
         loader.addTemplate('cl-shadow-parent.njk',
-          '{% for loop in [10,20,30] of 2 %}{% include "cl-shadow-child.njk" %}{% endfor %}');
+          '{% for loop in [10,20,30] of 2 %}{% include "cl-shadow-child.njk" with loop %}{% endfor %}');
         const result = await localEnv.renderTemplate('cl-shadow-parent.njk', {});
         expect(result).to.equal('V10|V20|V30|');
       });
@@ -418,9 +418,9 @@
           }
         };
 
-        loader.addTemplate('cl-branch-include-child.njk', '{{ slowInclude(item) }}');
+        loader.addTemplate('cl-branch-include-child.njk', '{% extern item %}{% extern slowInclude %}{{ slowInclude(item) }}');
         loader.addTemplate('cl-branch-include-parent.njk',
-          '{% for item in [1,2,3] of 1 %}{{ enterOuter() }}{% if choose(item) %}{% include "cl-branch-include-child.njk" %}{% else %}S{{ item }}{% endif %}|{% endfor %}');
+          '{% for item in [1,2,3] of 1 %}{{ enterOuter() }}{% if choose(item) %}{% include "cl-branch-include-child.njk" with item, slowInclude %}{% else %}S{{ item }}{% endif %}|{% endfor %}');
 
         const result = await localEnv.renderTemplate('cl-branch-include-parent.njk', context);
         expect(result).to.equal('I1|S2|I3|');
@@ -2503,7 +2503,29 @@
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% include "inc.njk" %}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
-      expect(source).to.contain('._setBoundaryAliases(');
+      expect(source).to.contain('runtime.validateExternInputs(');
+    });
+
+    it('keeps include extern input keys canonical when parent loop vars are renamed', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% include "inc.njk" with loop %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(source).to.contain('t_15["loop"] = currentBuffer.addSnapshot("loop#');
+      expect(source).to.not.contain('t_15["loop#');
+    });
+
+    it('uses distinct runtime loop channel names for nested includes that both pass loop', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate(
+        '{% for outer in xs of 2 %}{% for inner in ys of 2 %}{% include "inner.njk" with loop %}{% endfor %}{% include "outer.njk" with loop %}{% endfor %}',
+        env
+      );
+      const source = tmpl._compileSource();
+      const includeLoopSnapshots = Array.from(source.matchAll(/\["loop"\]\s*=\s*currentBuffer\.addSnapshot\("(loop#\d+)"/g))
+        .map((match) => match[1]);
+
+      expect(includeLoopSnapshots).to.have.length(2);
+      expect(new Set(includeLoopSnapshots).size).to.be(2);
     });
 
     it('emits WaitResolveCommand for import boundary completion in limited loops', function () {

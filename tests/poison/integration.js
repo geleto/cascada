@@ -106,10 +106,11 @@
 
       loader.addTemplate('main.njk', `
         {% set items = getItems() %}
-        {% include "inner.njk" %}
+        {% include "inner.njk" with items %}
       `);
 
       loader.addTemplate('inner.njk', `
+        {% extern items %}
         {% for item in items %}
           {{ item }}
         {% endfor %}

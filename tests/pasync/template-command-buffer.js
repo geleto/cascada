@@ -72,15 +72,36 @@
       const env = new AsyncEnvironment(loader);
 
       loader.addTemplate('base.njk', 'B[{% block body %}{% endblock %}]');
-      loader.addTemplate('part.njk', '<i>{{ value }}</i>');
+      loader.addTemplate('part.njk', '{% extern value %}<i>{{ value }}</i>');
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
       loader.addTemplate(
         'child.njk',
-        '{% extends "base.njk" %}{% import "macros.njk" as m %}{% block body %}{% include "part.njk" %} {{ m.hi(user) }}{% endblock %}'
+        '{% extends "base.njk" %}{% import "macros.njk" as m %}{% block body %}{% include "part.njk" with value %} {{ m.hi(user) }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', { value: 'V', user: 'U' });
       expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i> Hi U]');
+    });
+
+    it('should keep canonical include input keys for duplicated branch-local vars', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', '{% extern scopedValue %}[{{ scopedValue }}]');
+
+      const tmpl = new AsyncTemplate(`
+        {% if flag %}
+          {% var scopedValue = "A" %}
+          {% include "child.njk" with scopedValue %}
+        {% else %}
+          {% var scopedValue = "B" %}
+          {% include "child.njk" with scopedValue %}
+        {% endif %}
+      `, env, 'branch-include-shadow.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('scopedValue#');
+      expect(source).to.contain('["scopedValue"]');
+      expect(source).to.not.contain('["scopedValue#');
     });
 
     it('should keep observed vs unobserved async errors behavior', async function () {

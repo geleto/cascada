@@ -970,13 +970,8 @@ class CompilerAsync extends CompilerBaseAsync {
       return {};
     }
     const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
-    const includeVisibleChannels = this.analysis.getIncludeVisibleVarChannels(node._analysis)
-      .map((entry) => entry.runtimeName);
-    const uses = textChannel
-      ? [textChannel, ...includeVisibleChannels]
-      : includeVisibleChannels;
     return {
-      uses,
+      uses: textChannel ? [textChannel] : [],
       mutates: textChannel ? [textChannel] : []
     };
   }
@@ -987,7 +982,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   finalizeAnalyzeRoot(node) {
     const externSpec = this._collectRootExternSpec(node);
-    this._validateRootExternFallbackDependencies(node, externSpec);
+    this._validateRootExternFallbackOrder(node, externSpec);
     return { externSpec };
   }
 
@@ -1005,16 +1000,6 @@ class CompilerAsync extends CompilerBaseAsync {
     );
     this.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
     this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? undefined : value);`);
-  }
-
-  emitLinkWithParentCompositionBuffer(channelNames, parentBufferExpr, childBufferExpr, presenceMapExpr, insertPos = null) {
-    const snippet = `runtime.linkWithParentCompositionBuffer(${parentBufferExpr}, ${childBufferExpr}, ${JSON.stringify(channelNames)}, ${presenceMapExpr});`;
-
-    if (typeof insertPos === 'number') {
-      this.emit.insertLine(insertPos, snippet);
-    } else {
-      this.emit.line(snippet);
-    }
   }
 
   _emitAsyncRootFinalParentLookup() {
@@ -1074,7 +1059,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }));
   }
 
-  _validateRootExternFallbackDependencies(node, externSpec) {
+  _validateRootExternFallbackOrder(node, externSpec) {
     const orderedExternNames = [];
     externSpec.forEach((entry) => {
       (entry.names || []).forEach((name) => orderedExternNames.push(name));
