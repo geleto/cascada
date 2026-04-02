@@ -1191,8 +1191,8 @@ Current status as of April 2, 2026:
   - compiled async templates now expose `blockContracts` metadata for block
     input contracts
   - overriding-child blocks now initialize inherited explicit block inputs as
-    local async var channels at block entry using explicit `blockInputNames`
-    carried by the invocation path
+    local async var channels at block entry using the effective block contract
+    derived from the inheritance chain
 - partially implemented:
   - explicit extern-input plumbing exists for top-level render, async include,
     async import/from-import, and async block invocation
@@ -1658,6 +1658,9 @@ Implemented now:
   block entry
 - compiled async templates now expose `blockContracts` metadata that records
   each block's declared async input contract
+- block entry now derives effective inherited input names from
+  `context.getBlockContract(name)` instead of threading a separate
+  `blockInputNames` payload through block calls and `super()`
 
 Still pending in this step:
 
@@ -1876,7 +1879,21 @@ After implementation stabilizes, update:
 
 ### Step 19: Re-evaluate simplifications after implementation
 
-Status: not implemented yet
+Status: partially implemented
+
+Implemented now:
+
+- the temporary explicit `blockInputNames` threading has been removed from
+  async block invocation and `super()`
+- compiled block contract metadata is now used directly at block entry through
+  `context.getBlockContract(name)` to derive effective inherited input names
+
+Still pending in this step:
+
+- whether any further inheritance/runtime caching simplifications are worth
+  adding
+- whether any additional old async composition helper code can be deleted
+  entirely
 
 Once the implementation exists, review whether the architecture can be
 simplified further:

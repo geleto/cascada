@@ -92,6 +92,17 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
+  getBlockContract(name) {
+    const blocks = this.blocks[name] || [];
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const block = blocks[i];
+      if (block && block.blockContract) {
+        return block.blockContract;
+      }
+    }
+    return null;
+  }
+
   beginAsyncExtendsBlockRegistration() {
     this.asyncExtendsBlocksPromise = new Promise((resolve, reject) => {
       this.asyncExtendsBlocksResolver = resolve;
@@ -114,7 +125,7 @@ class Context extends Obj {
     }
   }
 
-  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined, blockInputNames = null) {
+  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
@@ -123,7 +134,7 @@ class Context extends Obj {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    return blk(env, context, runtime, cb, parentBuffer, blockContext, blockRenderCtx, blockInputNames);
+    return blk(env, context, runtime, cb, parentBuffer, blockContext, blockRenderCtx);
   }
 
   getSyncSuper(env, name, block, frame, runtime, cb) {

@@ -1227,9 +1227,9 @@ class CompilerAsync extends CompilerBaseAsync {
       block,
       `b_${name}`,
       blockLinkedChannels,
-      ['blockContext = null', 'blockRenderCtx = undefined', 'blockInputNames = null']
+      ['blockContext = null', 'blockRenderCtx = undefined']
     );
-    this.emit.line('if (blockContext !== null || blockRenderCtx !== undefined || blockInputNames !== null) {');
+    this.emit.line('if (blockContext !== null || blockRenderCtx !== undefined) {');
     this.emit.line(`  context = context.forkForComposition(${JSON.stringify(this.templateName)}, blockContext || {}, blockRenderCtx);`);
     this.emit.line('} else {');
     this.emit.line(`  context = context.forkForPath(${JSON.stringify(this.templateName)});`);
@@ -1319,7 +1319,7 @@ class CompilerAsync extends CompilerBaseAsync {
       return;
     }
     const conflictVar = this._tmpid();
-    this.emit.line(`const ${conflictVar} = Array.isArray(blockInputNames) ? blockInputNames.find((name) => ${JSON.stringify(conflictNames)}.includes(name)) : null;`);
+    this.emit.line(`const ${conflictVar} = (context.getBlockContract(${JSON.stringify(block.name.value)})?.inputNames || []).find((name) => ${JSON.stringify(conflictNames)}.includes(name)) || null;`);
     this.emit.line(`if (${conflictVar}) {`);
     this.emit.line(`  throw new Error("block input '" + ${conflictVar} + "' conflicts with an explicit declaration in the overriding block");`);
     this.emit.line('}');
@@ -1334,7 +1334,7 @@ class CompilerAsync extends CompilerBaseAsync {
     ));
     const runtimeBlockInputNamesVar = this._tmpid();
     const allLocalNamesVar = this._tmpid();
-    this.emit.line(`const ${runtimeBlockInputNamesVar} = Array.isArray(blockInputNames) ? blockInputNames : [];`);
+    this.emit.line(`const ${runtimeBlockInputNamesVar} = context.getBlockContract(${JSON.stringify(block.name.value)})?.inputNames || [];`);
     this.emit.line(`const ${allLocalNamesVar} = Array.from(new Set(${JSON.stringify(staticLocalNames)}.concat(${runtimeBlockInputNamesVar})));`);
     const compositionSourceBufferVar = this._tmpid();
     this.emit.line(`const ${compositionSourceBufferVar} = context.getCompositionSourceBuffer(${JSON.stringify(this.templateName)});`);

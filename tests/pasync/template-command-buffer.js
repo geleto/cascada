@@ -126,9 +126,9 @@
       const tmpl = new AsyncTemplate('{% block content with user %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined, blockInputNames = null) {');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {');
       expect(source).to.contain('const t_');
-      expect(source).to.contain('= Array.isArray(blockInputNames) ? blockInputNames : [];');
+      expect(source).to.contain('= context.getBlockContract("content")?.inputNames || [];');
       expect(source).to.contain('? blockContext?.[name]');
       expect(source).to.contain(`new runtime.VarCommand({ channelName: name, args: [`);
     });
@@ -145,9 +145,9 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined, blockInputNames = null) {');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {');
       expect(source).to.contain('const t_');
-      expect(source).to.contain('= Array.isArray(blockInputNames) ? blockInputNames : [];');
+      expect(source).to.contain('= context.getBlockContract("content")?.inputNames || [];');
       expect(source).to.contain('Array.from(new Set([].concat(');
       expect(source).to.contain('? blockContext?.[name]');
     });
@@ -166,6 +166,7 @@
 
       expect(source).to.contain('blockContext = null');
       expect(source).to.contain('blockRenderCtx = undefined');
+      expect(source).to.not.contain('blockInputNames = null');
       expect(source).to.contain('context.getAsyncSuper(');
       expect(source).to.not.contain('__caller__');
       expect(source).to.not.contain('__callerUsedChannels');
