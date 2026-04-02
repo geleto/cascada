@@ -154,6 +154,20 @@
       expect(source).to.not.contain('WaitResolveCommand({ channelName: "__caller__"');
     });
 
+    it('should keep caller scheduling machinery on async macros that use caller()', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate(
+        '{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}{% call wrap("span") %}X{{ value }}Y{% endcall %}',
+        env,
+        'macro-caller-scheduling.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('__caller__');
+      expect(source).to.contain('__callerUsedChannels');
+      expect(source).to.contain('WaitResolveCommand({ channelName: "__caller__"');
+    });
+
     it('should keep observed vs unobserved async errors behavior', async function () {
       const env = new AsyncEnvironment();
       const context = {

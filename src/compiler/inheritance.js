@@ -393,14 +393,14 @@ class CompileInheritance {
   compileAsyncExtends(node) {
     var k = this.compiler._tmpid();
 
-    this.emit.line('context.prepareForAsyncBlocks();');
+    this.emit.line('context.beginAsyncExtendsBlockRegistration();');
     const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
 
     if (node.asyncStoreIn) {
       const resolvedParentTemplateId = `${node.asyncStoreIn}_resolvedParentTemplate`;
       this.emit.line(`let ${node.asyncStoreIn} = Promise.resolve(${parentTemplateId}).then((${resolvedParentTemplateId}) => {`);
-      this.emit.line('  if (context.asyncBlocksPromise) {');
-      this.emit.line(`    return context.asyncBlocksPromise.then(() => ${resolvedParentTemplateId});`);
+      this.emit.line('  if (context.asyncExtendsBlocksPromise) {');
+      this.emit.line(`    return context.asyncExtendsBlocksPromise.then(() => ${resolvedParentTemplateId});`);
       this.emit.line('  }');
       this.emit.line(`  return ${resolvedParentTemplateId};`);
       this.emit.line('});');
@@ -414,7 +414,7 @@ class CompileInheritance {
       this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
       this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
       this.emit.line('}');
-      this.emit.line('await context.finishAsyncBlocks();');
+      this.emit.line('await context.finishAsyncExtendsBlockRegistration();');
     });
   }
 

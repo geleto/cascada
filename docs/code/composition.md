@@ -713,8 +713,8 @@ Additional current methods/helpers to review explicitly during migration:
 
 - `compiler.emitLinkWithParentCompositionBuffer()`
 - `runtime.linkWithParentCompositionBuffer()`
-- `context.prepareForAsyncBlocks()`
-- `context.finishAsyncBlocks()`
+- `context.beginAsyncExtendsBlockRegistration()`
+- `context.finishAsyncExtendsBlockRegistration()`
 
 ### Parser and AST
 
@@ -1700,7 +1700,7 @@ Add tests:
 
 ### Step 15: Do not copy `__caller__` scheduling machinery to blocks
 
-Status: partially implemented
+Status: implemented
 
 Note:
 
@@ -1708,7 +1708,9 @@ Note:
 - no block-specific `__caller__` machinery has been added
 - block/super currently use direct payload passing rather than caller-style
   scheduling
-- dedicated regression coverage that this remains true is still worth keeping
+- dedicated regression coverage now proves both sides of the split:
+  caller-enabled macros still emit caller scheduling machinery, while
+  block/super compilation stays free of it
 
 Implement:
 
@@ -1766,8 +1768,8 @@ Explicitly audit:
 - `src/compiler/scope-boundaries.js`
 - `compiler.emitLinkWithParentCompositionBuffer()`
 - `runtime.linkWithParentCompositionBuffer()`
-- `context.prepareForAsyncBlocks()`
-- `context.finishAsyncBlocks()`
+- `context.beginAsyncExtendsBlockRegistration()`
+- `context.finishAsyncExtendsBlockRegistration()`
 
 Keep:
 
@@ -1808,6 +1810,8 @@ Implemented now:
 - same-template top-level locals plus explicit block inputs
 - inherited child top-level locals plus explicit block inputs
 - multi-level `super()` chains with explicit inputs and template-local values
+- positive caller-scheduling regression coverage for async macros that use
+  `caller()`
 - regression coverage that block/super compilation does not emit caller-style
   scheduling machinery
 

@@ -92,29 +92,25 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
-  prepareForAsyncBlocks() {
-    this.asyncBlocksPromise = new Promise((resolve, reject) => {
-      this.asyncBlocksResolver = resolve;
+  beginAsyncExtendsBlockRegistration() {
+    this.asyncExtendsBlocksPromise = new Promise((resolve, reject) => {
+      this.asyncExtendsBlocksResolver = resolve;
     }).then(() => {
-      delete this.asyncBlocksPromise;
-      delete this.asyncBlocksResolver;
+      delete this.asyncExtendsBlocksPromise;
+      delete this.asyncExtendsBlocksResolver;
     });
   }
 
   async getAsyncBlock(name) {
-    // this breaks super(), why?
-    //if (this.blocks[name]) {
-    //  return this.getBlock(name);
-    //}
-    if (this.asyncBlocksPromise) {
-      await this.asyncBlocksPromise;
+    if (this.asyncExtendsBlocksPromise) {
+      await this.asyncExtendsBlocksPromise;
     }
     return this.getBlock(name);
   }
 
-  async finishAsyncBlocks() {
-    if (this.asyncBlocksResolver) {
-      this.asyncBlocksResolver();
+  async finishAsyncExtendsBlockRegistration() {
+    if (this.asyncExtendsBlocksResolver) {
+      this.asyncExtendsBlocksResolver();
     }
   }
 
@@ -231,8 +227,8 @@ class Context extends Obj {
     newContext.compositionSourceBuffersByTemplate = this.compositionSourceBuffersByTemplate;
 
     // Share async state properties by REFERENCE.
-    newContext.asyncBlocksPromise = this.asyncBlocksPromise;
-    newContext.asyncBlocksResolver = this.asyncBlocksResolver;
+    newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
+    newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
 
     // Set the ONLY property that should be different.
     newContext.path = newPath;
@@ -251,8 +247,8 @@ class Context extends Obj {
     newContext.exportResolveFunctions = this.exportResolveFunctions;
     newContext.exportChannels = this.exportChannels;
     newContext.compositionSourceBuffersByTemplate = this.compositionSourceBuffersByTemplate;
-    newContext.asyncBlocksPromise = this.asyncBlocksPromise;
-    newContext.asyncBlocksResolver = this.asyncBlocksResolver;
+    newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
+    newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
     newContext.path = newPath;
 
     return newContext;
