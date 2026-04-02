@@ -933,6 +933,209 @@ the sync compatibility model intact.
 
 ---
 
+## User Docs Update Checklist
+
+This section lists the user-visible language and behavior changes that must be
+reflected in the user docs. It exists so details do not get lost inside the
+implementation notes or step-by-step plan.
+
+### Async composition overview
+
+User docs should explain clearly that:
+
+- sync composition remains Nunjucks-compatible
+- async composition is now explicit-contract-based
+- async composition does not rely on ambient parent lexical visibility
+- the biggest visible async/sync difference is that async composition requires
+  explicit `with ...` / `with context` where sync include/import may expose more
+  ambient scope by default
+- these rules apply to both templates and scripts where the relevant
+  composition form exists
+
+### Top-level render inputs
+
+User docs should explain:
+
+- root `extern`s are satisfied from top-level render inputs
+- explicit render inputs win over `extern` fallbacks
+- missing required root `extern`s are errors
+- `extern` is the child-side declaration surface for explicit async inputs
+
+### `extern`
+
+User docs should describe:
+
+- `extern` syntax
+- `extern` being root-only
+- required vs fallback `extern`
+- declaration-ordered fallback initialization
+- later-extern fallback references being invalid
+- `extern` being async-only for now
+- sync mode rejecting `extern`
+- `extern` names being ordinary local names after initialization
+- `extern context` being invalid because `context` is reserved in async
+  composition
+
+Examples to document:
+
+- `extern user`
+- `extern theme = "light"`
+- missing required extern
+- fallback using an earlier extern
+
+### Async `include`
+
+User docs should explain:
+
+- async include uses explicit `with ...`
+- `with context` is optional and explicit
+- named inputs must match child `extern`s
+- explicit named inputs override render-context properties of the same name
+- the child may rebind its local names without mutating the parent binding
+- async include no longer gets implicit parent render-context visibility unless
+  `with context` is used
+- `ignore missing` still suppresses missing-template failure; extern validation
+  only applies when the child template actually resolves
+- child include inputs are declared through root `extern`, not through local
+  declarations inside the include body
+
+Examples to document:
+
+- `{% include "card.njk" with user %}`
+- `{% include "card.njk" with context, user %}`
+- child template using `extern user`
+- include that relies only on fallback externs and therefore needs no explicit
+  named input
+
+### Async `import` / `from import`
+
+User docs should explain:
+
+- async import/from-import support the same `with ...` surface as async include
+- async import/from-import are isolated from parent locals/channels
+- `with context` exposes render-context properties through bare-name lookup
+- named `with ...` inputs satisfy child `extern`s
+- explicit named inputs override render-context properties of the same name
+- required imported-file `extern`s must be satisfied by:
+  - explicit named inputs
+  - `with context`
+  - or fallbacks
+- imported macros still receive their normal explicit macro call arguments; the
+  composition `with ...` inputs only affect the imported file's ambient async
+  lookup surface
+
+Examples to document:
+
+- `{% import "forms.njk" as forms with context %}`
+- `{% import "cards.njk" as cards with user, theme %}`
+- `{% from "lib.njk" import helper with context, theme %}`
+
+### Async `block` / `extends`
+
+User docs should explain:
+
+- async block input contracts are declared on the base/invoking block
+- the base block owns the `with ...` contract
+- the overriding child block receives those inputs when invoked
+- overriding child blocks do not declare matching `extern`s for block inputs
+- `with context` on the base block exposes render-context properties to the
+  overriding block through bare-name lookup
+- explicit named block inputs override render-context properties of the same
+  name
+- overriding async child blocks must not declare their own `with ...`
+- doing so is an error
+- local rebinding inside the overriding block is local to that block execution
+
+Examples to document:
+
+- base template:
+  - `{% block content with context, user %}...{% endblock %}`
+- child template:
+  - `{% block content %}...{% endblock %}`
+- invalid child override:
+  - `{% block content with user %}...{% endblock %}`
+
+### Async `super()`
+
+User docs should explain:
+
+- `super()` receives the same explicit block invocation inputs as the
+  overriding block
+- child-local rebinding inside the override does not affect what `super()`
+  sees
+- `super()` does not receive a second independent `with ...` contract from the
+  child block
+
+Example to document:
+
+- base block with `with user`
+- child override rebinding `user`
+- `super()` still seeing the original invoked `user`
+
+### Async `with context`
+
+User docs should explain:
+
+- `with context` is supported uniformly for async:
+  - include
+  - import
+  - from import
+  - block
+- `with context` exposes render-context properties through ordinary bare-name
+  lookup
+- `with context` does not expose parent locals/channels
+- `with context` does not create a special `context` variable object
+- `with context` can be combined with named inputs, and named inputs shadow
+  render-context properties with the same name
+
+### Reserved `context`
+
+User docs should explain:
+
+- `context` is reserved in async declaration space
+- users cannot declare async vars/externs named `context`
+- this is because `with context` is a special async composition keyword
+- examples that should be shown as invalid:
+  - `extern context`
+  - `{% set context = ... %}` in async templates
+  - `var context = ...` in async scripts
+
+### Explicit name matching and validation
+
+User docs should explain:
+
+- named `with ...` inputs are validated against child `extern`s
+- passing an undeclared name is an error
+- missing a required child `extern` is an error
+- dynamic targets are validated when they resolve
+- static targets may fail earlier, but users should think of the rule as:
+  the resolved target's contract must match the provided inputs
+
+### Local rebinding vs mutation caveat
+
+User docs should explain:
+
+- local rebinding of an explicit async input is local-only
+- this does not automatically imply deep immutability of arbitrary JS objects
+- if a passed object itself is mutated through methods or property writes, that
+  is a separate question from variable rebinding
+
+This point is important so users do not overread "read-only parent access" as
+"deeply immutable values."
+
+### What to keep separate from user docs
+
+User docs should usually not focus on:
+
+- command-buffer aliasing internals
+- channel runtime names like `name#7`
+- internal alias maps
+- old removed include visibility machinery
+
+Those belong in implementation docs, not end-user docs.
+
+---
+
 ## Step-by-Step Implementation Plan
 
 This section turns the design into an implementation checklist.
