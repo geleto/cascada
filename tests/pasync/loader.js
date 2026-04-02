@@ -1148,6 +1148,30 @@
         }
       });
 
+      it('should preserve same-template top-level locals alongside explicit block inputs', async () => {
+        const template = '{% set suffix = "local" %}{% block content with user %}{{ user }} {{ suffix }}{% endblock %}';
+
+        const result = await env.renderTemplateString(template, { user: 'Ada' });
+        expect(result.trim()).to.equal('Ada local');
+      });
+
+      it('should preserve child top-level locals alongside inherited explicit block inputs', async () => {
+        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% set suffix = "child" %}{% block content %}{{ user }} {{ suffix }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Ada child');
+      });
+
+      it('should preserve template-local values across a multi-level super chain with explicit block inputs', async () => {
+        loader.addTemplate('grand.njk', '{% block content with user %}Grand {{ user }}{% endblock %}');
+        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% set parentLabel = "parent" %}{% block content %}Parent {{ parentLabel }} {{ super() }}{% endblock %}');
+        const childTemplate = '{% extends "parent.njk" %}{% set childLabel = "child" %}{% block content %}Child {{ childLabel }} {{ super() }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Child child Parent parent Grand Ada');
+      });
+
       it('should handle blocks inside a for loop with async content', async () => {
         const context = {
           async getItems() {

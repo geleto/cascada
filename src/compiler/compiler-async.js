@@ -915,7 +915,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     if (hasExplicitContract) {
       const rootOwner = this.analysis.getRootScopeOwner(node._analysis);
-      const rootNode = rootOwner && rootOwner.node;
+      const rootNode = rootOwner.node;
       const rootChildren = rootNode && Array.isArray(rootNode.children) ? rootNode.children : [];
       const hasExtends = rootChildren.some((child) => child instanceof nodes.Extends);
       if (hasExtends) {
@@ -1079,6 +1079,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this._emitAsyncRootFinalParentLookup();
     this.emit.line('  if(finalParent) {');
     this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line(`    context.setCompositionSourceBuffer(${JSON.stringify(this.templateName)}, ${this.buffer.currentBuffer});`);
     this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), runtime, cb, compositionMode);');
     this.emit.line('  } else {');
 
@@ -1195,7 +1196,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
     }
-    const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
+    const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
       : [];
     for (const name of sequenceLocks) {
@@ -1212,8 +1213,16 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncBlockEntry(block) {
     const name = block.name.value;
+    const rootOwner = this.analysis.getRootScopeOwner(block._analysis);
+    const locallyInitializedNames = new Set(
+      this._collectRootCompositionLocalChannelNames(rootOwner.node)
+        .concat(this._getBlockInputNames(block))
+    );
     const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
-      .filter((hname) => hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL);
+      .filter((hname) =>
+        hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL &&
+        !locallyInitializedNames.has(hname)
+      );
     this.emit.beginEntryFunction(
       block,
       `b_${name}`,
@@ -1303,7 +1312,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _emitInheritedBlockInputConflictValidation(block) {
-    const conflictNames = Array.isArray(block && block._analysis && block._analysis.inheritedInputConflictNames)
+    const conflictNames = Array.isArray(block._analysis.inheritedInputConflictNames)
       ? block._analysis.inheritedInputConflictNames
       : [];
     if (conflictNames.length === 0) {
@@ -1318,10 +1327,27 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _emitAsyncBlockInputInitialization(block) {
     const blockInputNames = this._getBlockInputNames(block);
-    blockInputNames.forEach((name) => {
+    const blockInputNameSet = new Set(blockInputNames);
+    const rootOwner = this.analysis.getRootScopeOwner(block._analysis);
+    const compositionLocalChannelNames = this._collectRootCompositionLocalChannelNames(rootOwner.node);
+    const allLocalNames = Array.from(new Set(
+      compositionLocalChannelNames.concat(blockInputNames)
+    ));
+    if (allLocalNames.length === 0) {
+      return;
+    }
+    const compositionSourceBufferVar = this._tmpid();
+    this.emit.line(`const ${compositionSourceBufferVar} = context.getCompositionSourceBuffer(${JSON.stringify(this.templateName)});`);
+    allLocalNames.forEach((name) => {
       const blockValueId = this._tmpid();
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
-      this.emit.line(`const ${blockValueId} = context.getVariables()[${JSON.stringify(name)}];`);
+      if (blockInputNameSet.has(name)) {
+        this.emit.line(`const ${blockValueId} = blockContext[${JSON.stringify(name)}];`);
+      } else {
+        this.emit.line(
+          `const ${blockValueId} = ${compositionSourceBufferVar}?.findChannel(${JSON.stringify(name)})?.finalSnapshot() ?? parentBuffer?.findChannel(${JSON.stringify(name)})?.finalSnapshot();`
+        );
+      }
       this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), '${name}');`);
     });
   }
@@ -1336,7 +1362,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeRoot(node) {
     const declares = this._getRootDeclarations(node);
-    const sequenceLocks = Array.isArray(node._analysis && node._analysis.sequenceLocks)
+    const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
       : [];
     sequenceLocks.forEach((lockName) => {
@@ -1392,6 +1418,15 @@ class CompilerAsync extends CompilerBaseAsync {
     }
 
     return declares;
+  }
+
+  _collectRootCompositionLocalChannelNames(node) {
+    const declaredChannels = node._analysis.declaredChannels
+      ? Array.from(node._analysis.declaredChannels.values())
+      : [];
+    return declaredChannels
+      .filter((decl) => decl && decl.type === 'var' && !decl.internal)
+      .map((decl) => decl.name);
   }
 
   _getRootTextOutput() {

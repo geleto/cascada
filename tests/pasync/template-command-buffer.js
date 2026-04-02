@@ -129,8 +129,29 @@
       expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {');
       expect(source).to.contain('runtime.declareBufferChannel(output, "user", "var", context, null);');
       expect(source).to.contain('const t_');
-      expect(source).to.contain('= context.getVariables()["user"];');
+      expect(source).to.contain('= blockContext["user"];');
       expect(source).to.contain(`new runtime.VarCommand({ channelName: 'user', args: [`);
+    });
+
+    it('should keep async block/super compilation free of caller scheduling machinery', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+
+      const tmpl = new AsyncTemplate(
+        '{% extends "base.njk" %}{% block content %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}',
+        env,
+        'block-super-no-caller-scheduling.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('blockContext = null');
+      expect(source).to.contain('blockRenderCtx = undefined');
+      expect(source).to.contain('context.getAsyncSuper(');
+      expect(source).to.not.contain('__caller__');
+      expect(source).to.not.contain('__callerUsedChannels');
+      expect(source).to.not.contain('CALLER_SCHED_CHANNEL_NAME');
+      expect(source).to.not.contain('WaitResolveCommand({ channelName: "__caller__"');
     });
 
     it('should keep observed vs unobserved async errors behavior', async function () {

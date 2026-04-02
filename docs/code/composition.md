@@ -1044,6 +1044,8 @@ User docs should explain:
 - overriding async child blocks must not declare their own `with ...`
 - doing so is an error
 - local rebinding inside the overriding block is local to that block execution
+- child/same-template top-level locals remain visible inside the block
+  alongside those explicit inputs
 
 Examples to document:
 
@@ -1064,6 +1066,7 @@ User docs should explain:
   sees
 - `super()` does not receive a second independent `with ...` contract from the
   child block
+- each template in a `super()` chain still sees its own top-level locals
 
 Example to document:
 
@@ -1180,10 +1183,12 @@ Current status as of April 2, 2026:
   - obsolete async include visibility/linking machinery has been reduced, but
     extends/inheritance auditing is still pending
   - block inputs are now passed through explicit composition context payloads,
-    but overriding-child blocks do not yet model inherited block inputs as full
-    analysis-level local declarations
+    and explicit block invocation now preserves same-template/child top-level
+    local channel values by retaining the child source buffer and lazily
+    snapshotting only the needed local names, but overriding-child blocks do not yet model
+    inherited block inputs as full analysis-level local declarations
   - tests are strong for implemented root/include/import/block behavior, but
-    broader async inheritance contract coverage is still pending
+    some broader async inheritance contract validation is still pending
 - not implemented yet:
   - full cross-template analysis-level block input declarations/conflict
     modeling for overriding child blocks
@@ -1626,6 +1631,10 @@ Implemented now:
   explicit inputs
 - base-block bodies initialize their explicit inputs into local async var
   channels before executing the block body
+- explicit block invocation now preserves top-level template-local channel
+  values for both same-template blocks and overriding child blocks by retaining
+  the child source buffer and lazily snapshotting only the names needed by the
+  block entry
 
 Still pending in this step:
 
@@ -1662,17 +1671,15 @@ Add tests:
 
 ### Step 14: Define `super()` over the same invocation input map
 
-Status: partially implemented
+Status: implemented
 
 Implemented now:
 
 - async `super()` receives the same explicit invocation payload as the
   overriding block
 - child-local rebinding does not leak into `super()`
-
-Still pending in this step:
-
-- broader inheritance-chain validation/coverage beyond the current payload reuse
+- multi-level inheritance chains preserve the same explicit invocation inputs
+  and each template's own top-level local values during `super()` dispatch
 
 Implement:
 
@@ -1795,12 +1802,18 @@ Implemented now:
 - async import/from-import fallback-extern tests
 - dynamic async import validation tests
 - dynamic include-target validation tests
+- block-input declaration/conflict tests
+- overriding child block `with ...` rejection tests
+- `super()` explicit-input tests
+- same-template top-level locals plus explicit block inputs
+- inherited child top-level locals plus explicit block inputs
+- multi-level `super()` chains with explicit inputs and template-local values
+- regression coverage that block/super compilation does not emit caller-style
+  scheduling machinery
 
 Still pending in this step:
 
-- block-input declaration/conflict tests
-- overriding child block `with ...` rejection
-- `super()` explicit-input tests
+- any remaining inheritance validation gaps beyond the current coverage
 
 Add async tests for:
 

@@ -27,6 +27,7 @@ class Context extends Obj {
     this.blocks = {};
     this.exportResolveFunctions = Object.create(null);
     this.exportChannels = Object.create(null);
+    this.compositionSourceBuffersByTemplate = Object.create(null);
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -202,6 +203,20 @@ class Context extends Obj {
     return exported;
   }
 
+  _getCompositionTemplateKey(templateName) {
+    return templateName == null ? '__anonymous__' : String(templateName);
+  }
+
+  setCompositionSourceBuffer(templateName, sourceBuffer) {
+    const key = this._getCompositionTemplateKey(templateName);
+    this.compositionSourceBuffersByTemplate[key] = sourceBuffer || null;
+  }
+
+  getCompositionSourceBuffer(templateName) {
+    const key = this._getCompositionTemplateKey(templateName);
+    return this.compositionSourceBuffersByTemplate[key] || null;
+  }
+
   forkForPath(newPath) {
     // Create a new, empty context object.
     // It will inherit the correct `env` from `this`.
@@ -213,6 +228,7 @@ class Context extends Obj {
     newContext.blocks = this.blocks;       // Share the block definitions for extends/super.
     newContext.exportResolveFunctions = this.exportResolveFunctions;
     newContext.exportChannels = this.exportChannels;
+    newContext.compositionSourceBuffersByTemplate = this.compositionSourceBuffersByTemplate;
 
     // Share async state properties by REFERENCE.
     newContext.asyncBlocksPromise = this.asyncBlocksPromise;
@@ -234,6 +250,7 @@ class Context extends Obj {
     newContext.blocks = this.blocks;
     newContext.exportResolveFunctions = this.exportResolveFunctions;
     newContext.exportChannels = this.exportChannels;
+    newContext.compositionSourceBuffersByTemplate = this.compositionSourceBuffersByTemplate;
     newContext.asyncBlocksPromise = this.asyncBlocksPromise;
     newContext.asyncBlocksResolver = this.asyncBlocksResolver;
     newContext.path = newPath;
