@@ -41,6 +41,48 @@ describe('Cascada Script: Variables', function () {
       const result = await env.renderScriptString(script, {});
       expect(result.result.theme).to.be('light');
     });
+
+    it('should fail clearly when a required script extern is missing', async function () {
+      const script = `
+        extern user
+        return { result: { user: user } }`;
+
+      try {
+        await env.renderScriptString(script, {});
+        expect().fail('Expected missing script extern validation to fail');
+      } catch (error) {
+        expect(error.message).to.contain('Missing required extern: user');
+      }
+    });
+
+    it('should reject nested script extern declarations after transpilation', async function () {
+      const script = `
+        if true
+          extern user
+        endif
+        return { result: {} }`;
+
+      try {
+        await env.renderScriptString(script, { user: 'Ava' });
+        expect().fail('Expected nested script extern validation to fail');
+      } catch (error) {
+        expect(error.message).to.contain('extern declarations are only allowed at the root scope');
+      }
+    });
+
+    it('should reject script extern fallbacks that reference later externs', async function () {
+      const script = `
+        extern a = b
+        extern b = "later"
+        return { result: { a: a } }`;
+
+      try {
+        await env.renderScriptString(script, {});
+        expect().fail('Expected later-script-extern dependency validation to fail');
+      } catch (error) {
+        expect(error.message).to.contain(`extern fallback for 'a' cannot reference later extern 'b'`);
+      }
+    });
   });
 
   describe('Variable Declaration with var', function () {

@@ -121,6 +121,28 @@
       expect(source).to.not.contain('linkWithParentCompositionBuffer');
     });
 
+    it('should keep canonical exported names for from-import bindings renamed in local scopes', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro show() %}Hi{% endmacro %}');
+
+      const tmpl = new AsyncTemplate(`
+        {% if usePrimary %}
+          {% from "macros.njk" import show %}
+          {{ show() }}
+        {% else %}
+          {% from "macros.njk" import show %}
+          {{ show() }}
+        {% endif %}
+      `, env, 'from-import-canonical-export-name.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('cannot import \'show\'');
+      expect(source).to.contain('exported["show"]');
+      expect(source).to.not.contain('cannot import \'show#');
+      expect(source).to.not.contain('exported["show#');
+    });
+
     it('should initialize root externs in declaration order without redundant required-value context writes', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% extern user %}{% extern theme = "light" %}{{ user }}{{ theme }}', env, 'root-extern-init.njk');

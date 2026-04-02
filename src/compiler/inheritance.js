@@ -162,8 +162,8 @@ class CompileInheritance {
           name = nameNode.key.value;
           alias = nameNode.value.value;
         } else {
-          name = nameNode.value;
-          alias = name;
+          name = this.compiler.analysis.getBaseChannelName(nameNode.value);
+          alias = nameNode.value;
         }
 
         const errorContext = this.compiler._generateErrorContext(node, nameNode);
@@ -216,8 +216,8 @@ class CompileInheritance {
         name = nameNode.key.value;
         alias = nameNode.value.value;
       } else {
-        name = nameNode.value;
-        alias = name;
+        name = this.compiler.analysis.getBaseChannelName(nameNode.value);
+        alias = nameNode.value;
       }
 
       const errorContext = this.compiler._generateErrorContext(node, nameNode);

@@ -315,6 +315,83 @@
           expect(unescape(result.trim())).to.equal('<input name="user" value="ctx_user" />');
         });
 
+        it('should not expose parent-local vars through import with context', async () => {
+          loader.addTemplate('context-nonleak-import.njk', `
+            {% macro show() -%}
+            {{ localName }}|{{ renderName }}
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% set localName = "LOCAL" %}
+            {% import "context-nonleak-import.njk" as lib with context %}
+            {{ lib.show() }}
+          `, {
+            renderName: 'RENDER'
+          });
+          expect(result.trim()).to.equal('|RENDER');
+        });
+
+        it('should let explicit import inputs shadow render-context properties of the same name', async () => {
+          loader.addTemplate('extern-import-shadow.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% set username = "explicit_user" %}
+            {% import "extern-import-shadow.njk" as forms with context, username %}
+            {{ forms.userField() }}
+          `, {
+            username: 'render_user'
+          });
+          expect(unescape(result.trim())).to.equal('<input name="user" value="explicit_user" />');
+        });
+
+        it('should let explicit from-import inputs shadow render-context properties of the same name', async () => {
+          loader.addTemplate('extern-from-import-shadow.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% set username = "explicit_user" %}
+            {% from "extern-from-import-shadow.njk" import userField with context, username %}
+            {{ userField() }}
+          `, {
+            username: 'render_user'
+          });
+          expect(unescape(result.trim())).to.equal('<input name="user" value="explicit_user" />');
+        });
+
+        it('should keep render-context properties hidden for import with explicit without context', async () => {
+          const context = {
+            username: Promise.resolve('john_doe')
+          };
+
+          const result = await env.renderTemplateString(`
+            {% import "context-forms.njk" as forms without context %}
+            {{ forms.userField() }}
+          `, context);
+          expect(unescape(result.trim())).to.equal('<input name="user" value="" />');
+        });
+
+        it('should keep render-context properties hidden for from-import with explicit without context', async () => {
+          const context = {
+            username: Promise.resolve('john_doe')
+          };
+
+          const result = await env.renderTemplateString(`
+            {% from "context-forms.njk" import userField without context %}
+            {{ userField() }}
+          `, context);
+          expect(unescape(result.trim())).to.equal('<input name="user" value="" />');
+        });
+
         it('should validate isolated async import contracts against the resolved dynamic target', async () => {
           loader.addTemplate('plain-import-lib.njk', `
             {% macro label() -%}
@@ -367,6 +444,108 @@
           } catch (err) {
             expect(err.message).to.contain(`import is missing required extern 'username'`);
           }
+        });
+
+        it('should validate isolated async from-import contracts against the resolved dynamic target', async () => {
+          loader.addTemplate('plain-from-import-lib.njk', `
+            {% macro label() -%}
+            plain
+            {%- endmacro %}
+          `);
+          loader.addTemplate('fallback-from-import-lib.njk', `
+            {% extern username = "guest" %}
+            {% macro label() -%}
+            {{ username }}
+            {%- endmacro %}
+          `);
+          loader.addTemplate('required-from-import-lib.njk', `
+            {% extern username %}
+            {% macro label() -%}
+            {{ username }}
+            {%- endmacro %}
+          `);
+
+          const plain = await env.renderTemplateString(`
+            {% from pickTemplate() import label %}
+            {{ label() }}
+          `, {
+            pickTemplate() {
+              return 'plain-from-import-lib.njk';
+            }
+          });
+          expect(plain.trim()).to.equal('plain');
+
+          const fallback = await env.renderTemplateString(`
+            {% from pickTemplate() import label %}
+            {{ label() }}
+          `, {
+            pickTemplate() {
+              return 'fallback-from-import-lib.njk';
+            }
+          });
+          expect(fallback.trim()).to.equal('guest');
+
+          try {
+            await env.renderTemplateString(`
+              {% from pickTemplate() import label %}
+              {{ label() }}
+            `, {
+              pickTemplate() {
+                return 'required-from-import-lib.njk';
+              }
+            });
+            expect().fail('Expected dynamic async from-import extern validation to fail');
+          } catch (err) {
+            expect(err.message).to.contain(`from-import is missing required extern 'username'`);
+          }
+        });
+
+        it('should pass canonical names to async imports from duplicated branch-local vars', async () => {
+          loader.addTemplate('extern-import-branch-local.njk', `
+            {% extern scopedValue %}
+            {% macro show() -%}[{{ scopedValue }}]{%- endmacro %}
+          `);
+          loader.addTemplate('main.njk', `
+            {% if usePrimary %}
+              {% var scopedValue = "primary" %}
+              {% import "extern-import-branch-local.njk" as lib with scopedValue %}
+              {{ lib.show() }}
+            {% else %}
+              {% var scopedValue = "fallback" %}
+              {% import "extern-import-branch-local.njk" as lib with scopedValue %}
+              {{ lib.show() }}
+            {% endif %}
+          `);
+
+          const primary = await env.renderTemplate('main.njk', { usePrimary: true });
+          expect(primary.replace(/\s+/g, '')).to.equal('[primary]');
+
+          const fallback = await env.renderTemplate('main.njk', { usePrimary: false });
+          expect(fallback.replace(/\s+/g, '')).to.equal('[fallback]');
+        });
+
+        it('should pass canonical names to async from-imports from duplicated branch-local vars', async () => {
+          loader.addTemplate('extern-from-import-branch-local.njk', `
+            {% extern scopedValue %}
+            {% macro show() -%}[{{ scopedValue }}]{%- endmacro %}
+          `);
+          loader.addTemplate('main.njk', `
+            {% if usePrimary %}
+              {% var scopedValue = "primary" %}
+              {% from "extern-from-import-branch-local.njk" import show with scopedValue %}
+              {{ show() }}
+            {% else %}
+              {% var scopedValue = "fallback" %}
+              {% from "extern-from-import-branch-local.njk" import show with scopedValue %}
+              {{ show() }}
+            {% endif %}
+          `);
+
+          const primary = await env.renderTemplate('main.njk', { usePrimary: true });
+          expect(primary.replace(/\s+/g, '')).to.equal('[primary]');
+
+          const fallback = await env.renderTemplate('main.njk', { usePrimary: false });
+          expect(fallback.replace(/\s+/g, '')).to.equal('[fallback]');
         });
       });
 
@@ -799,6 +978,26 @@
         expect(result).to.equal('Hello, ExternUser!');
       });
 
+      it('should not expose parent-local vars through include with context', async () => {
+        loader.addTemplate('greeting.njk', '{{ localName }}|{{ renderName }}');
+        loader.addTemplate('main.njk', '{% set localName = "LOCAL" %}{% include "greeting.njk" with context %}');
+
+        const result = await env.renderTemplate('main.njk', {
+          renderName: 'RENDER'
+        });
+        expect(result).to.equal('|RENDER');
+      });
+
+      it('should let explicit include inputs shadow render-context properties of the same name', async () => {
+        loader.addTemplate('greeting.njk', '{% extern name %}Hello, {{ name }}!');
+        loader.addTemplate('main.njk', '{% set name = "ExplicitUser" %}{% include "greeting.njk" with context, name %}');
+
+        const result = await env.renderTemplate('main.njk', {
+          name: 'RenderUser'
+        });
+        expect(result).to.equal('Hello, ExplicitUser!');
+      });
+
       it('should not expose render-context properties to include without with context', async () => {
         loader.addTemplate('greeting.njk', 'Hello, {{ name }}!');
         loader.addTemplate('main.njk', '{% include "greeting.njk" %}');
@@ -920,6 +1119,30 @@
         expect(result).to.equal('A[light]B');
       });
 
+      it('should ignore missing includes without validating extern inputs when the target is absent', async () => {
+        loader.addTemplate('main.njk', '{% include pickTemplate() ignore missing with userId %}done');
+
+        const result = await env.renderTemplate('main.njk', {
+          userId: 7,
+          pickTemplate() {
+            return 'missing-child.njk';
+          }
+        });
+        expect(result).to.equal('done');
+      });
+
+      it('should still validate extern inputs for ignore missing includes when the target exists', async () => {
+        loader.addTemplate('child.njk', 'plain');
+        loader.addTemplate('main.njk', '{% include "child.njk" ignore missing with userId %}');
+
+        try {
+          await env.renderTemplate('main.njk', { userId: 7 });
+          expect().fail('Expected ignore-missing include extern validation to fail for existing target');
+        } catch (err) {
+          expect(err.message).to.contain(`include passed 'userId' but the child template does not declare it as extern`);
+        }
+      });
+
       it('should validate extern inputs against the resolved dynamic include target', async () => {
         loader.addTemplate('plain-child.njk', 'plain');
         loader.addTemplate('extern-child.njk', '{% extern userId %}user={{ userId }}');
@@ -943,6 +1166,22 @@
           expect().fail('Expected dynamic include extern validation to fail');
         } catch (err) {
           expect(err.message).to.contain(`include passed 'userId' but the child template does not declare it as extern`);
+        }
+      });
+
+      it('should fail when a resolved dynamic include target is missing a required extern', async () => {
+        loader.addTemplate('required-child.njk', '{% extern userId %}user={{ userId }}');
+        loader.addTemplate('main.njk', '{% include pickTemplate() %}');
+
+        try {
+          await env.renderTemplate('main.njk', {
+            pickTemplate() {
+              return 'required-child.njk';
+            }
+          });
+          expect().fail('Expected dynamic include missing-required extern validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain(`include is missing required extern 'userId'`);
         }
       });
 
@@ -1087,6 +1326,22 @@
         expect(result.trim()).to.equal('Child Ada');
       });
 
+      it('should expose render-context bare names through block with context in an async override', async () => {
+        loader.addTemplate('base.njk', '{% block content with context %}Base {{ username }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ username }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { username: 'Ada' });
+        expect(result.trim()).to.equal('Child Ada');
+      });
+
+      it('should resolve promised block input values in async overrides', async () => {
+        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ user }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: Promise.resolve('Ada') });
+        expect(result.trim()).to.equal('Child Ada');
+      });
+
       it('should pass the same explicit block inputs to super() without seeing child-local rebinding', async () => {
         loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}';
@@ -1178,6 +1433,31 @@
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Child child Parent parent Grand Ada');
+      });
+
+      it('should keep original block inputs through a three-level super chain when the middle block rebinds them', async () => {
+        loader.addTemplate('grand.njk', '{% block content with user %}Grand {{ user }}{% endblock %}');
+        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block content %}{% set user = "Mid" %}Parent {{ user }} {{ super() }}{% endblock %}');
+        const childTemplate = '{% extends "parent.njk" %}{% block content %}Child {{ super() }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Child Parent Mid Grand Ada');
+      });
+
+      it('should allow include with explicit inputs inside an overriding block', async () => {
+        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+        loader.addTemplate('card.njk', '{% extern user %}[{{ user }}]');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}{% include "card.njk" with user %}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('[Ada]');
+      });
+
+      it('should let explicit block inputs shadow render-context properties of the same name', async () => {
+        const template = '{% set user = "ExplicitUser" %}{% block content with context, user %}{{ user }}{% endblock %}';
+
+        const result = await env.renderTemplateString(template, { user: 'RenderUser' });
+        expect(result.trim()).to.equal('ExplicitUser');
       });
 
       it('should handle blocks inside a for loop with async content', async () => {

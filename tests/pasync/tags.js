@@ -48,6 +48,32 @@
         expect(result).to.equal('light');
       });
 
+      it('should initialize multi-target externs from the render context', async () => {
+        const result = await env.renderTemplateString('{% extern user, theme %}{{ user }}-{{ theme }}', {
+          user: 'Ava',
+          theme: 'dark'
+        });
+        expect(result).to.equal('Ava-dark');
+      });
+
+      it('should allow extern fallbacks to reference earlier externs', async () => {
+        const result = await env.renderTemplateString('{% extern prefix = "Dr." %}{% extern title = prefix %}{{ title }}', {});
+        expect(result).to.equal('Dr.');
+      });
+
+      it('should allow extern fallbacks to reference globals', async () => {
+        env.addGlobal('defaultTheme', 'dark');
+        const result = await env.renderTemplateString('{% extern theme = defaultTheme %}{{ theme }}', {});
+        expect(result).to.equal('dark');
+      });
+
+      it('should initialize externs from promised render-context values', async () => {
+        const result = await env.renderTemplateString('{% extern user %}{{ user }}', {
+          user: Promise.resolve('Ava')
+        });
+        expect(result).to.equal('Ava');
+      });
+
       it('should allow local mutation of initialized extern bindings', async () => {
         const result = await env.renderTemplateString('{% extern user %}{% set user = user ~ "!" %}{{ user }}', { user: 'Ava' });
         expect(result).to.equal('Ava!');
@@ -66,6 +92,15 @@
         try {
           await env.renderTemplateString('{% if true %}{% extern user %}{% endif %}', { user: 'Ava' });
           expect().fail('Expected nested extern validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain('extern declarations are only allowed at the root scope');
+        }
+      });
+
+      it('should reject extern declarations inside macro bodies', async () => {
+        try {
+          await env.renderTemplateString('{% macro renderUser() %}{% extern user %}{{ user }}{% endmacro %}{{ renderUser() }}', { user: 'Ava' });
+          expect().fail('Expected macro-local extern validation to fail');
         } catch (err) {
           expect(err.message).to.contain('extern declarations are only allowed at the root scope');
         }
