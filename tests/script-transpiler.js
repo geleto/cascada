@@ -471,6 +471,12 @@ describe('Script Transpiler', () => {
       expect(template).to.equal('{%- include "partial.html" -%}');
     });
 
+    it('should properly convert extern declarations', () => {
+      const script = 'extern user';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- extern user -%}');
+    });
+
     it('should convert depends statements', () => {
       const script = 'depends var1, var2';
       const template = scriptTranspiler.scriptToTemplate(script);
@@ -1119,4 +1125,3 @@ return { text: outText.snapshot() }`;
     });
   });
 });
-

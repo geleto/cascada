@@ -340,6 +340,36 @@
 
       n = parser.parse('{% include ""|default("test.njk") %}');
       expect(n.children[0].typename).to.be('Include');
+
+      isAST(parser.parse('{% include "test.njk" with user, theme %}'),
+        [nodes.Root,
+          [nodes.Include,
+            [nodes.Literal, 'test.njk'],
+            null,
+            [nodes.NodeList,
+              [nodes.Symbol, 'user'],
+              [nodes.Symbol, 'theme']]]]);
+
+      isAST(parser.parse('{% include "test.njk" ignore missing with user %}'),
+        [nodes.Root,
+          [nodes.Include,
+            [nodes.Literal, 'test.njk'],
+            true,
+            [nodes.NodeList,
+              [nodes.Symbol, 'user']]]]);
+    });
+
+    it('should parse extern declarations', function() {
+      isAST(parser.parse('{% extern user %}'),
+        [nodes.Root,
+          [nodes.Extern,
+            [[nodes.Symbol, 'user']]]]);
+
+      isAST(parser.parse('{% extern theme = "light" %}'),
+        [nodes.Root,
+          [nodes.Extern,
+            [[nodes.Symbol, 'theme']],
+            [nodes.Literal, 'light']]]);
     });
 
     it('should parse for loops', function() {
@@ -673,6 +703,19 @@
               [nodes.Pair,
                 [nodes.Symbol, 'foobar'],
                 [nodes.Symbol, 'foobarbaz']]]]]);
+    });
+
+    it('should parse blocks with explicit input lists', function() {
+      isAST(parser.parse('{% block content with user, theme %}{{ user }}{% endblock %}'),
+        [nodes.Root,
+          [nodes.Block,
+            [nodes.Symbol, 'content'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.Symbol, 'user']]],
+            [nodes.NodeList,
+              [nodes.Symbol, 'user'],
+              [nodes.Symbol, 'theme']]]]);
     });
 
     it('should parse whitespace control', function() {

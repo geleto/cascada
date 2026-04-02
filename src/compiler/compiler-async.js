@@ -162,6 +162,43 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
+  analyzeExtern(node) {
+    if (!this.analysis.isRootScopeOwner(node._analysis)) {
+      this.fail(
+        'extern declarations are only allowed at the root scope',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+
+    const declares = [];
+
+    (node.targets || []).forEach((target) => {
+      if (target instanceof nodes.Symbol) {
+        target._analysis = { declarationTarget: true };
+        declares.push({
+          name: target.value,
+          type: 'var',
+          initializer: null,
+          explicit: true,
+          extern: true
+        });
+      }
+    });
+
+    return { declares };
+  }
+
+  compileExtern(node) {
+    this.fail(
+      'extern declarations are parsed in async mode but are not implemented yet',
+      node.lineno,
+      node.colno,
+      node
+    );
+  }
+
   compileSet(node) {
     const ids = [];
     const isDeclarationOnly = !!node.declarationOnly;

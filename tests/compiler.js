@@ -69,6 +69,14 @@
       finish(done);
     });
 
+    it('should reject extern declarations in sync mode', function () {
+      const env = new Environment();
+
+      expect(function () {
+        env.renderTemplateString('{% extern user %}', {});
+      }).to.throwException(/extern declarations are only supported in async mode/);
+    });
+
     it('should compile references', function (done) {
       equal('{{ foo.bar }}',
         {

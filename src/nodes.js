@@ -203,7 +203,11 @@ class KeywordArgs extends Dict {
 
 class Block extends Node {
   get typename() { return 'Block'; }
-  get fields() { return ['name', 'body']; }
+  get fields() { return ['name', 'body', 'withVars']; }
+
+  init(lineno, colno, name, body, withVars) {
+    super.init(lineno, colno, name, body, withVars || new NodeList());
+  }
 }
 
 class Super extends Node {
@@ -223,7 +227,20 @@ class Extends extends TemplateRef {
 
 class Include extends Node {
   get typename() { return 'Include'; }
-  get fields() { return ['template', 'ignoreMissing']; }
+  get fields() { return ['template', 'ignoreMissing', 'withVars']; }
+
+  init(lineno, colno, template, ignoreMissing, withVars) {
+    super.init(lineno, colno, template, ignoreMissing, withVars || new NodeList());
+  }
+}
+
+class Extern extends Node {
+  get typename() { return 'Extern'; }
+  get fields() { return ['targets', 'value']; }
+
+  init(lineno, colno, targets, value) {
+    super.init(lineno, colno, targets || [], value);
+  }
 }
 
 class Set extends Node {
@@ -489,6 +506,7 @@ module.exports = {
   Super: Super,
   Extends: Extends,
   Include: Include,
+  Extern: Extern,
   Set: Set,
   CallAssign: CallAssign,
   ChannelDeclaration: ChannelDeclaration,

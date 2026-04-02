@@ -33,6 +33,26 @@
       env = new AsyncEnvironment();
     });
 
+    describe('"Extern" tag', () => {
+      it('should fail with a clear placeholder error until async extern initialization lands', async () => {
+        try {
+          await env.renderTemplateString('{% extern user %}{{ user }}', { user: 'Ava' });
+          expect().fail('Expected async extern compilation to fail');
+        } catch (err) {
+          expect(err.message).to.contain('extern declarations are parsed in async mode but are not implemented yet');
+        }
+      });
+
+      it('should reject nested extern declarations before async lowering', async () => {
+        try {
+          await env.renderTemplateString('{% if true %}{% extern user %}{% endif %}', { user: 'Ava' });
+          expect().fail('Expected nested extern validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain('extern declarations are only allowed at the root scope');
+        }
+      });
+    });
+
     describe('"Do" tag', () => {
       it('should evaluate a single expression for side effects', async () => {
         let called = false;
@@ -92,4 +112,3 @@
     });
   });
 })();
-

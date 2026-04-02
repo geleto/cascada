@@ -418,6 +418,38 @@ class Parser extends Obj {
     return withContext;
   }
 
+  parseWithVars(errorPrefix = 'parseWithVars') {
+    const tok = this.peekToken();
+    const withVars = new nodes.NodeList(tok.lineno, tok.colno);
+
+    if (!this.skipSymbol('with')) {
+      return null;
+    }
+
+    let nameNode;
+    while ((nameNode = this.parsePrimary())) {
+      if (!(nameNode instanceof nodes.Symbol)) {
+        this.fail(`${errorPrefix}: expected variable name after with`,
+          nameNode.lineno,
+          nameNode.colno);
+      }
+
+      withVars.addChild(nameNode);
+
+      if (!this.skip(lexer.TOKEN_COMMA)) {
+        break;
+      }
+    }
+
+    if (!withVars.children.length) {
+      this.fail(`${errorPrefix}: expected at least one variable after with`,
+        tok.lineno,
+        tok.colno);
+    }
+
+    return withVars;
+  }
+
   parseImport() {
     var importTok = this.peekToken();
     if (!this.skipSymbol('import')) {
@@ -532,6 +564,8 @@ class Parser extends Obj {
         tag.colno);
     }
 
+    node.withVars = this.parseWithVars('parseBlock');
+
     this.advanceAfterBlockEnd(tag.value);
 
     node.body = this.parseUntilBlocks('endblock');
@@ -572,8 +606,75 @@ class Parser extends Obj {
     const node = new nodes.Include(tag.lineno, tag.colno);
     node.template = this.parseExpression();
 
-    if (this.skipSymbol('ignore') && this.skipSymbol('missing')) {
-      node.ignoreMissing = true;
+    while (true) { // eslint-disable-line no-constant-condition
+      const nextTok = this.peekToken();
+      if (!nextTok) {
+        this.fail('parseInclude: expected block end',
+          tag.lineno,
+          tag.colno);
+      }
+
+      if (nextTok.type === lexer.TOKEN_BLOCK_END) {
+        break;
+      }
+
+      if (this.skipSymbol('ignore')) {
+        if (!this.skipSymbol('missing')) {
+          this.fail('parseInclude: expected missing after ignore',
+            tag.lineno,
+            tag.colno);
+        }
+        node.ignoreMissing = true;
+        continue;
+      }
+
+      const withVars = this.parseWithVars('parseInclude');
+      if (withVars) {
+        node.withVars = withVars;
+        continue;
+      }
+
+      this.fail('parseInclude: expected block end, "ignore missing", or "with ..."',
+        tag.lineno,
+        tag.colno);
+    }
+
+    this.advanceAfterBlockEnd(tag.value);
+    return node;
+  }
+
+  parseExtern() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('extern')) {
+      this.fail('parseExtern: expected extern', tag.lineno, tag.colno);
+    }
+
+    const node = new nodes.Extern(tag.lineno, tag.colno, [], null);
+
+    let target;
+    while ((target = this.parsePrimary())) {
+      if (!(target instanceof nodes.Symbol)) {
+        this.fail('parseExtern: variable name expected', target.lineno, target.colno);
+      }
+
+      node.targets.push(target);
+
+      if (!this.skip(lexer.TOKEN_COMMA)) {
+        break;
+      }
+    }
+
+    if (!node.targets.length) {
+      this.fail('parseExtern: expected at least one variable name', tag.lineno, tag.colno);
+    }
+
+    if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+      if (node.targets.length !== 1) {
+        this.fail('parseExtern: initializer is only supported for a single extern binding',
+          tag.lineno,
+          tag.colno);
+      }
+      node.value = this.parseExpression();
     }
 
     this.advanceAfterBlockEnd(tag.value);
@@ -1068,6 +1169,8 @@ class Parser extends Obj {
         return this.parseSetPath();
       case 'var':
         return this.parseVar();
+      case 'extern':
+        return this.parseExtern();
       case 'data':
       case 'text':
       case 'sink':
