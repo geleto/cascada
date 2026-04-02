@@ -126,11 +126,30 @@
       const tmpl = new AsyncTemplate('{% block content with user %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {');
-      expect(source).to.contain('runtime.declareBufferChannel(output, "user", "var", context, null);');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined, blockInputNames = null) {');
       expect(source).to.contain('const t_');
-      expect(source).to.contain('= blockContext["user"];');
-      expect(source).to.contain(`new runtime.VarCommand({ channelName: 'user', args: [`);
+      expect(source).to.contain('= Array.isArray(blockInputNames) ? blockInputNames : [];');
+      expect(source).to.contain('? blockContext?.[name]');
+      expect(source).to.contain(`new runtime.VarCommand({ channelName: name, args: [`);
+    });
+
+    it('should initialize inherited block inputs as local async var channels in overriding blocks', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+
+      const tmpl = new AsyncTemplate(
+        '{% extends "base.njk" %}{% block content %}Child {{ user }}{% endblock %}',
+        env,
+        'child-inherited-block-inputs.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined, blockInputNames = null) {');
+      expect(source).to.contain('const t_');
+      expect(source).to.contain('= Array.isArray(blockInputNames) ? blockInputNames : [];');
+      expect(source).to.contain('Array.from(new Set([].concat(');
+      expect(source).to.contain('? blockContext?.[name]');
     });
 
     it('should keep async block/super compilation free of caller scheduling machinery', function () {

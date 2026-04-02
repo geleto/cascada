@@ -332,21 +332,22 @@ class CompileInheritance {
         const hasExplicitBlockInputs = !!node.withContext || withVars.length > 0;
         const blockVarsVar = hasExplicitBlockInputs ? this.compiler._tmpid() : null;
         const blockContextVar = hasExplicitBlockInputs ? this.compiler._tmpid() : null;
+        const blockInputNamesVar = hasExplicitBlockInputs ? this.compiler._tmpid() : null;
         const blockRenderCtxExpr = node.withContext ? 'context.getRenderContextVariables()' : 'null';
         if (hasExplicitBlockInputs) {
           this.emit.line(`let ${blockVarsVar} = {};`);
           this._emitExplicitExternInputs(node, blockVarsVar);
-          this._emitCompositionContextObject(node, blockVarsVar, blockContextVar);
+          this._emitCompositionContextObject(node, blockVarsVar, blockContextVar, blockInputNamesVar);
         }
         const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
         if (needsParentCheck) {
           this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
           this.emit.line(`${id} = parentPromise.then((parent) => {`);
           this.emit.line('  if (parent) return "";');
-          this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${hasExplicitBlockInputs ? blockContextVar : 'null'}, ${hasExplicitBlockInputs ? blockRenderCtxExpr : 'undefined'}));`);
+          this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${hasExplicitBlockInputs ? blockContextVar : 'null'}, ${hasExplicitBlockInputs ? blockRenderCtxExpr : 'undefined'}, ${hasExplicitBlockInputs ? blockInputNamesVar : 'null'}));`);
           this.emit.line('});');
         } else {
-          this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${hasExplicitBlockInputs ? blockContextVar : 'null'}, ${hasExplicitBlockInputs ? blockRenderCtxExpr : 'undefined'}));`);
+          this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${hasExplicitBlockInputs ? blockContextVar : 'null'}, ${hasExplicitBlockInputs ? blockRenderCtxExpr : 'undefined'}, ${hasExplicitBlockInputs ? blockInputNamesVar : 'null'}));`);
         }
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
       }
@@ -431,7 +432,7 @@ class CompileInheritance {
   compileAsyncSuper(node) {
     var name = node.blockName.value;
     var id = node.symbol.value;
-    this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockContext, blockRenderCtx);`);
+    this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockContext, blockRenderCtx, blockInputNames);`);
     this.emit.line(`${id} = runtime.markSafe(${id});`);
   }
 

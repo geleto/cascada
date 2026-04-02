@@ -281,6 +281,7 @@ class Template extends Obj {
       props = func();
     }
 
+    this.blockContracts = props.blockContracts || {};
     this.blocks = this._getBlocks(props);
     this.externSpec = props.externSpec || [];
     this.rootRenderFunc = props.root;
@@ -301,7 +302,9 @@ class Template extends Obj {
 
     lib.keys(props).forEach((k) => {
       if (k.slice(0, 2) === 'b_') {
-        blocks[k.slice(2)] = props[k];
+        const blockName = k.slice(2);
+        blocks[blockName] = props[k];
+        blocks[blockName].blockContract = this.blockContracts[blockName] || null;
       }
     });
 

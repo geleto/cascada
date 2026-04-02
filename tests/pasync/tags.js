@@ -80,6 +80,17 @@
         ]);
       });
 
+      it('should expose blockContracts on compiled async templates', () => {
+        const tmpl = new AsyncTemplate('{% block content with context, user %}{{ user }}{% endblock %}', env);
+        tmpl.compile();
+        expect(tmpl.blockContracts).to.eql({
+          content: {
+            inputNames: ['user'],
+            withContext: true
+          }
+        });
+      });
+
       it('should reject extern fallbacks that reference later externs', async () => {
         try {
           await env.renderTemplateString('{% extern a = b %}{% extern b = "later" %}{{ a }}', {});

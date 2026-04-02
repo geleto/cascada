@@ -114,7 +114,7 @@ class Context extends Obj {
     }
   }
 
-  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {
+  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined, blockInputNames = null) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
@@ -123,7 +123,7 @@ class Context extends Obj {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    return blk(env, context, runtime, cb, parentBuffer, blockContext, blockRenderCtx);
+    return blk(env, context, runtime, cb, parentBuffer, blockContext, blockRenderCtx, blockInputNames);
   }
 
   getSyncSuper(env, name, block, frame, runtime, cb) {

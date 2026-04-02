@@ -758,6 +758,17 @@ That path is:
 - code generation embeds it on the compiled async template/script object
 - runtime reads it when dynamic include/import targets resolve
 
+For async inheritance, compiled templates should also expose `blockContracts`
+metadata that describes each block's declared async input contract:
+
+- block name
+- explicit `inputNames`
+- whether the block declared `with context`
+
+That metadata is useful for runtime inspection, validation, and future
+cross-template analysis work, even though universal static cross-template block
+declaration analysis is constrained by async loaders.
+
 Async composition analysis should stop treating parent-visible vars as an
 implicitly discoverable property of include/block boundaries.
 
@@ -1177,6 +1188,11 @@ Current status as of April 2, 2026:
     body
   - overriding-child blocks now reject explicit declarations that conflict with
     inherited block input names at runtime when the block payload is invoked
+  - compiled async templates now expose `blockContracts` metadata for block
+    input contracts
+  - overriding-child blocks now initialize inherited explicit block inputs as
+    local async var channels at block entry using explicit `blockInputNames`
+    carried by the invocation path
 - partially implemented:
   - explicit extern-input plumbing exists for top-level render, async include,
     async import/from-import, and async block invocation
@@ -1185,8 +1201,9 @@ Current status as of April 2, 2026:
   - block inputs are now passed through explicit composition context payloads,
     and explicit block invocation now preserves same-template/child top-level
     local channel values by retaining the child source buffer and lazily
-    snapshotting only the needed local names, but overriding-child blocks do not yet model
-    inherited block inputs as full analysis-level local declarations
+    snapshotting only the needed local names, but overriding-child blocks do
+    not yet model inherited block inputs as full analysis-level local
+    declarations
   - tests are strong for implemented root/include/import/block behavior, but
     some broader async inheritance contract validation is still pending
 - not implemented yet:
@@ -1585,6 +1602,8 @@ Implemented now:
   the base block body
 - overriding-child blocks reject explicit declarations that conflict with
   inherited block input names at runtime
+- overriding-child blocks now initialize inherited explicit block inputs as
+  local async var channels at block entry using runtime `blockInputNames`
 
 Still pending in this step:
 
@@ -1631,15 +1650,17 @@ Implemented now:
   explicit inputs
 - base-block bodies initialize their explicit inputs into local async var
   channels before executing the block body
+- overriding-child block bodies now initialize inherited explicit block inputs
+  into local async var channels before executing the block body
 - explicit block invocation now preserves top-level template-local channel
   values for both same-template blocks and overriding child blocks by retaining
   the child source buffer and lazily snapshotting only the names needed by the
   block entry
+- compiled async templates now expose `blockContracts` metadata that records
+  each block's declared async input contract
 
 Still pending in this step:
 
-- inherited block inputs are still payload/context-backed inside overriding
-  child blocks rather than full declared async var channels
 - any broader cleanup/validation work needed to remove remaining implicit
   inheritance assumptions elsewhere
 

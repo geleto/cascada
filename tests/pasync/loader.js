@@ -1148,6 +1148,14 @@
         }
       });
 
+      it('should not treat render-context visibility from with context as inherited explicit block inputs', async () => {
+        loader.addTemplate('base.njk', '{% block content with context %}Base {{ username }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}{% var username = "Grace" %}{{ username }} / {{ super() }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { username: 'Ada' });
+        expect(result.trim()).to.equal('Grace / Base Ada');
+      });
+
       it('should preserve same-template top-level locals alongside explicit block inputs', async () => {
         const template = '{% set suffix = "local" %}{% block content with user %}{{ user }} {{ suffix }}{% endblock %}';
 

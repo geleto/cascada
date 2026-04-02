@@ -1227,9 +1227,9 @@ class CompilerAsync extends CompilerBaseAsync {
       block,
       `b_${name}`,
       blockLinkedChannels,
-      ['blockContext = null', 'blockRenderCtx = undefined']
+      ['blockContext = null', 'blockRenderCtx = undefined', 'blockInputNames = null']
     );
-    this.emit.line('if (blockContext !== null || blockRenderCtx !== undefined) {');
+    this.emit.line('if (blockContext !== null || blockRenderCtx !== undefined || blockInputNames !== null) {');
     this.emit.line(`  context = context.forkForComposition(${JSON.stringify(this.templateName)}, blockContext || {}, blockRenderCtx);`);
     this.emit.line('} else {');
     this.emit.line(`  context = context.forkForPath(${JSON.stringify(this.templateName)});`);
@@ -1319,37 +1319,35 @@ class CompilerAsync extends CompilerBaseAsync {
       return;
     }
     const conflictVar = this._tmpid();
-    this.emit.line(`const ${conflictVar} = blockContext ? Object.keys(blockContext).find((name) => ${JSON.stringify(conflictNames)}.includes(name)) : null;`);
+    this.emit.line(`const ${conflictVar} = Array.isArray(blockInputNames) ? blockInputNames.find((name) => ${JSON.stringify(conflictNames)}.includes(name)) : null;`);
     this.emit.line(`if (${conflictVar}) {`);
     this.emit.line(`  throw new Error("block input '" + ${conflictVar} + "' conflicts with an explicit declaration in the overriding block");`);
     this.emit.line('}');
   }
 
   _emitAsyncBlockInputInitialization(block) {
-    const blockInputNames = this._getBlockInputNames(block);
-    const blockInputNameSet = new Set(blockInputNames);
+    const declaredBlockInputNames = this._getBlockInputNames(block);
     const rootOwner = this.analysis.getRootScopeOwner(block._analysis);
     const compositionLocalChannelNames = this._collectRootCompositionLocalChannelNames(rootOwner.node);
-    const allLocalNames = Array.from(new Set(
-      compositionLocalChannelNames.concat(blockInputNames)
+    const staticLocalNames = Array.from(new Set(
+      compositionLocalChannelNames.concat(declaredBlockInputNames)
     ));
-    if (allLocalNames.length === 0) {
-      return;
-    }
+    const runtimeBlockInputNamesVar = this._tmpid();
+    const allLocalNamesVar = this._tmpid();
+    this.emit.line(`const ${runtimeBlockInputNamesVar} = Array.isArray(blockInputNames) ? blockInputNames : [];`);
+    this.emit.line(`const ${allLocalNamesVar} = Array.from(new Set(${JSON.stringify(staticLocalNames)}.concat(${runtimeBlockInputNamesVar})));`);
     const compositionSourceBufferVar = this._tmpid();
     this.emit.line(`const ${compositionSourceBufferVar} = context.getCompositionSourceBuffer(${JSON.stringify(this.templateName)});`);
-    allLocalNames.forEach((name) => {
-      const blockValueId = this._tmpid();
-      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
-      if (blockInputNameSet.has(name)) {
-        this.emit.line(`const ${blockValueId} = blockContext[${JSON.stringify(name)}];`);
-      } else {
-        this.emit.line(
-          `const ${blockValueId} = ${compositionSourceBufferVar}?.findChannel(${JSON.stringify(name)})?.finalSnapshot() ?? parentBuffer?.findChannel(${JSON.stringify(name)})?.finalSnapshot();`
-        );
-      }
-      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), '${name}');`);
-    });
+    this.emit.line(`if (${allLocalNamesVar}.length > 0) {`);
+    this.emit.line(`for (const name of ${allLocalNamesVar}) {`);
+    const blockValueId = this._tmpid();
+    this.emit.line(`  runtime.declareBufferChannel(${this.buffer.currentBuffer}, name, "var", context, null);`);
+    this.emit.line(`  const ${blockValueId} = ${runtimeBlockInputNamesVar}.includes(name)`);
+    this.emit.line('    ? blockContext?.[name]');
+    this.emit.line(`    : (${compositionSourceBufferVar}?.findChannel(name)?.finalSnapshot() ?? parentBuffer?.findChannel(name)?.finalSnapshot());`);
+    this.emit.line(`  ${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
+    this.emit.line('}');
+    this.emit.line('}');
   }
 
   _compileAsyncRoot(node) {
@@ -1391,8 +1389,23 @@ class CompilerAsync extends CompilerBaseAsync {
       const blockName = `b_${block.name.value}`;
       this.emit.line(`${blockName}: ${blockName},`);
     });
+    this.emit.line(`blockContracts: ${JSON.stringify(this._collectBlockContracts(node))},`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line('root: root\n};');
+  }
+
+  _collectBlockContracts(node) {
+    const contracts = {};
+    const blocks = node.findAll(nodes.Block);
+
+    blocks.forEach((block) => {
+      contracts[block.name.value] = {
+        inputNames: this._getBlockInputNames(block),
+        withContext: !!block.withContext
+      };
+    });
+
+    return contracts;
   }
 
   _getRootDeclarations(node) {
