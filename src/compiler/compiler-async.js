@@ -182,7 +182,8 @@ class CompilerAsync extends CompilerBaseAsync {
           type: 'var',
           initializer: null,
           explicit: true,
-          extern: true
+          extern: true,
+          hasFallback: !!node.value
         });
       }
     });
@@ -191,12 +192,8 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileExtern(node) {
-    this.fail(
-      'extern declarations are parsed in async mode but are not implemented yet',
-      node.lineno,
-      node.colno,
-      node
-    );
+    // Root externs are initialized centrally in the async root entry.
+    // The declaration node itself does not emit body code.
   }
 
   compileSet(node) {
@@ -988,6 +985,12 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance.compileAsyncInclude(node);
   }
 
+  finalizeAnalyzeRoot(node) {
+    const externSpec = this._collectRootExternSpec(node);
+    this._validateRootExternFallbackDependencies(node, externSpec);
+    return { externSpec };
+  }
+
   emitDeclareReturnChannel(bufferExpr) {
     this.emit.line(
       `runtime.declareBufferChannel(${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
@@ -1059,6 +1062,95 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('}');
   }
 
+  _getRootExternNodes(node) {
+    return (node.children || []).filter((child) => child instanceof nodes.Extern);
+  }
+
+  _collectRootExternSpec(node) {
+    return this._getRootExternNodes(node).map((externNode) => ({
+      names: (externNode.targets || []).map((target) => target.value),
+      required: !externNode.value,
+      hasFallback: !!externNode.value
+    }));
+  }
+
+  _validateRootExternFallbackDependencies(node, externSpec) {
+    const orderedExternNames = [];
+    externSpec.forEach((entry) => {
+      (entry.names || []).forEach((name) => orderedExternNames.push(name));
+    });
+    const externIndexByName = new Map();
+    orderedExternNames.forEach((name, index) => externIndexByName.set(name, index));
+
+    this._getRootExternNodes(node).forEach((externNode) => {
+      if (!externNode.value || !externNode.targets || externNode.targets.length !== 1) {
+        return;
+      }
+
+      const currentName = externNode.targets[0].value;
+      const currentIndex = externIndexByName.get(currentName);
+      const referencedSymbolNodes = (externNode.value instanceof nodes.Symbol)
+        ? [externNode.value]
+        : externNode.value.findAll(nodes.Symbol);
+      const referencedSymbols = referencedSymbolNodes
+        .filter((symbolNode) => !(symbolNode._analysis && symbolNode._analysis.declarationTarget))
+        .map((symbolNode) => symbolNode.value);
+
+      referencedSymbols.forEach((name) => {
+        if (!externIndexByName.has(name)) {
+          return;
+        }
+        if (externIndexByName.get(name) > currentIndex) {
+          this.fail(
+            `extern fallback for '${currentName}' cannot reference later extern '${name}'`,
+            externNode.lineno,
+            externNode.colno,
+            externNode,
+            externNode.value
+          );
+        }
+      });
+    });
+  }
+
+  _emitRootExternInitialization(node) {
+    const externNodes = this._getRootExternNodes(node);
+
+    externNodes.forEach((externNode) => {
+      (externNode.targets || []).forEach((target) => {
+        const name = target.value;
+        this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
+      });
+    });
+
+    externNodes.forEach((externNode) => {
+      if (!externNode.targets || externNode.targets.length === 0) {
+        return;
+      }
+
+      externNode.targets.forEach((target) => {
+        const name = target.value;
+        const valueId = this._tmpid();
+        const hasCtxId = this._tmpid();
+
+        this.emit.line(`const ${hasCtxId} = Object.prototype.hasOwnProperty.call(context.ctx, "${name}");`);
+        this.emit.line(`let ${valueId};`);
+        this.emit.line(`if (${hasCtxId}) {`);
+        this.emit.line(`  ${valueId} = context.ctx["${name}"];`);
+        this.emit.line('} else {');
+        if (externNode.value) {
+          this.emit(`  ${valueId} = `);
+          this.compileExpression(externNode.value, null, externNode.value);
+          this.emit.line(';');
+        } else {
+          this.emit.line(`  throw new Error('Missing required extern: ${name}');`);
+        }
+        this.emit.line('}');
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${externNode.lineno}, colno: ${externNode.colno}} }), '${name}');`);
+      });
+    });
+  }
+
   _compileAsyncRootBody(node) {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     this.emit.line(`context.linkDeferredExportsToBuffer(${this.buffer.currentBuffer});`);
@@ -1074,6 +1166,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.hasStaticExtends && !this.hasDynamicExtends) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
     }
+    this._emitRootExternInitialization(node);
     this._compileChildren(node, null);
     this.emit.line('context.resolveExports(output);');
     this._emitAsyncRootCompletion(node);
@@ -1147,6 +1240,7 @@ class CompilerAsync extends CompilerBaseAsync {
       const blockName = `b_${block.name.value}`;
       this.emit.line(`${blockName}: ${blockName},`);
     });
+    this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line('root: root\n};');
   }
 

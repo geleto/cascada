@@ -23,6 +23,26 @@ describe('Cascada Script: Variables', function () {
     env = new AsyncEnvironment();
   });
 
+  describe('Extern declarations', function () {
+    it('should initialize script externs from the render context', async function () {
+      const script = `
+        extern user
+        return { result: { user: user } }`;
+
+      const result = await env.renderScriptString(script, { user: 'Ava' });
+      expect(result.result.user).to.be('Ava');
+    });
+
+    it('should use script extern fallbacks when no render value is provided', async function () {
+      const script = `
+        extern theme = "light"
+        return { result: { theme: theme } }`;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result.result.theme).to.be('light');
+    });
+  });
+
   describe('Variable Declaration with var', function () {
     it('should declare and initialize a variable', async function () {
       const script = `

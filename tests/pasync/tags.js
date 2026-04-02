@@ -4,6 +4,7 @@
   var expect;
   //var unescape;
   var AsyncEnvironment;
+  var AsyncTemplate;
   //var StringLoader;
   //var Environment;
   //var lexer;
@@ -11,7 +12,9 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
+    const envModule = require('../../src/environment/environment');
+    AsyncEnvironment = envModule.AsyncEnvironment;
+    AsyncTemplate = envModule.AsyncTemplate;
     //Environment = require('../../src/environment/environment').Environment;
     //lexer = require('../../src/lexer');
     //unescape = require('he').unescape;
@@ -21,6 +24,7 @@
     expect = window.expect;
     //unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
+    AsyncTemplate = nunjucks.AsyncTemplate;
     //StringLoader = window.StringLoader;
     //Environment = nunjucks.Environment;
     //lexer = nunjucks.lexer;
@@ -34,12 +38,27 @@
     });
 
     describe('"Extern" tag', () => {
-      it('should fail with a clear placeholder error until async extern initialization lands', async () => {
+      it('should initialize root externs from the render context', async () => {
+        const result = await env.renderTemplateString('{% extern user %}{{ user }}', { user: 'Ava' });
+        expect(result).to.equal('Ava');
+      });
+
+      it('should use extern fallbacks when no render value is provided', async () => {
+        const result = await env.renderTemplateString('{% extern theme = "light" %}{{ theme }}', {});
+        expect(result).to.equal('light');
+      });
+
+      it('should allow local mutation of initialized extern bindings', async () => {
+        const result = await env.renderTemplateString('{% extern user %}{% set user = user ~ "!" %}{{ user }}', { user: 'Ava' });
+        expect(result).to.equal('Ava!');
+      });
+
+      it('should fail clearly when a required extern is missing', async () => {
         try {
-          await env.renderTemplateString('{% extern user %}{{ user }}', { user: 'Ava' });
-          expect().fail('Expected async extern compilation to fail');
+          await env.renderTemplateString('{% extern user %}{{ user }}', {});
+          expect().fail('Expected missing extern validation to fail');
         } catch (err) {
-          expect(err.message).to.contain('extern declarations are parsed in async mode but are not implemented yet');
+          expect(err.message).to.contain('Missing required extern: user');
         }
       });
 
@@ -49,6 +68,24 @@
           expect().fail('Expected nested extern validation to fail');
         } catch (err) {
           expect(err.message).to.contain('extern declarations are only allowed at the root scope');
+        }
+      });
+
+      it('should expose externSpec on compiled async templates', () => {
+        const tmpl = new AsyncTemplate('{% extern user %}{% extern theme = "light" %}', env);
+        tmpl.compile();
+        expect(tmpl.externSpec).to.eql([
+          { names: ['user'], required: true, hasFallback: false },
+          { names: ['theme'], required: false, hasFallback: true }
+        ]);
+      });
+
+      it('should reject extern fallbacks that reference later externs', async () => {
+        try {
+          await env.renderTemplateString('{% extern a = b %}{% extern b = "later" %}{{ a }}', {});
+          expect().fail('Expected later-extern dependency validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain(`extern fallback for 'a' cannot reference later extern 'b'`);
         }
       });
     });

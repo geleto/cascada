@@ -282,6 +282,7 @@ class Template extends Obj {
     }
 
     this.blocks = this._getBlocks(props);
+    this.externSpec = props.externSpec || [];
     this.rootRenderFunc = props.root;
     this.compiled = true;
   }
