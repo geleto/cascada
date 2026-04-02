@@ -52,14 +52,19 @@ class CommandBuffer {
 
     // Iterators currently visiting this buffer keyed by channel name.
     this._visitingIterators = new Map();
-    if (parent && parent._boundaryAliases) {
-      // Propagate include-boundary alias projection down the buffer tree.
-      this._inheritBoundaryAliases(parent._boundaryAliases);
+    if (parent && parent._channelAliases) {
+      // Propagate explicit channel-binding aliases down the buffer tree so
+      // nested child buffers can continue routing formal names to the same
+      // caller-owned runtime channels.
+      this._inheritChannelAliases(parent._channelAliases);
     }
   }
 
   _registerChannel(channelName, channel) {
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    // Channel declarations also honor explicit alias bindings so a formal name
+    // can attach to a caller-owned runtime channel name when a feature such as
+    // macro by-reference uses this buffer-level mechanism.
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!this._channels) {
       this._channels = new Map();
     }
@@ -97,7 +102,7 @@ class CommandBuffer {
 
   //@todo - rename this, maybe to finishChannelAndLetIteratorExit
   requestChannelFinish(channelName) {
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!resolvedChannelName) {
       return;
     }
@@ -116,7 +121,7 @@ class CommandBuffer {
     if (channelName === null || channelName === undefined) {
       return this.finished;
     }
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     return this._finishedChannels[resolvedChannelName] === true;
   }
 
@@ -124,7 +129,7 @@ class CommandBuffer {
     if (!iterator || !channelName) {
       return;
     }
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     this._visitingIterators.set(resolvedChannelName, iterator);
   }
 
@@ -132,7 +137,7 @@ class CommandBuffer {
     if (!iterator || !channelName) {
       return;
     }
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     const current = this._visitingIterators.get(resolvedChannelName);
     if (current === iterator) {
       this._visitingIterators.delete(resolvedChannelName);
@@ -158,10 +163,13 @@ class CommandBuffer {
   }
 
   add(value, channelName) {
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     checkFinishedBuffer(this, resolvedChannelName);
     // Normalize command channel/path keys at ingress so all downstream runtime
-    // lookups operate on canonical channel names.
+    // lookups operate on the resolved runtime channel name. This is why the
+    // alias layer lives in CommandBuffer: once a command enters the buffer tree,
+    // the rest of the runtime should not need to care whether it came from a
+    // formal alias such as a by-reference macro parameter.
     if (!isCommandBuffer(value) && value && typeof value === 'object') {
       if (Object.prototype.hasOwnProperty.call(value, 'channelName')) {
         value.channelName = resolvedChannelName;
@@ -178,8 +186,11 @@ class CommandBuffer {
     const slot = target.length - 1;
     if (isCommandBuffer(value)) {
       value.parent = this;
-      if (this._boundaryAliases) {
-        value._inheritBoundaryAliases(this._boundaryAliases);
+      if (this._channelAliases) {
+        // Nested child buffers must preserve the same explicit alias bindings,
+        // otherwise async control-flow inside a macro could stop routing formal
+        // names to the caller-owned runtime channels they were bound to.
+        value._inheritChannelAliases(this._channelAliases);
       }
       if (typeof value._registerLinkedChannel === 'function') {
         value._registerLinkedChannel(resolvedChannelName);
@@ -247,7 +258,7 @@ class CommandBuffer {
       pos
     });
     if (this.isFinished(channelName)) {
-      const resolvedChannelName = this._resolveChannelName(channelName);
+      const resolvedChannelName = this._resolveAliasedChannelName(channelName);
       const output = this._channels.get(resolvedChannelName);
       const path = (this._context && this._context.path) ? this._context.path : null;
       if (!output._buffer.isFinished(resolvedChannelName)) {
@@ -273,7 +284,7 @@ class CommandBuffer {
       pos
     });
     if (this.isFinished(channelName)) {
-      const resolvedChannelName = this._resolveChannelName(channelName);
+      const resolvedChannelName = this._resolveAliasedChannelName(channelName);
       const output = this._channels.get(resolvedChannelName);
       const path = (this._context && this._context.path) ? this._context.path : null;
       if (!output._buffer.isFinished(resolvedChannelName)) {
@@ -407,14 +418,14 @@ class CommandBuffer {
   getChannel(channelName = 'text') {
     const output = this.findChannel(channelName);
     if (!output) {
-      const resolvedChannelName = this._resolveChannelName(channelName);
+      const resolvedChannelName = this._resolveAliasedChannelName(channelName);
       throw new Error(`CommandBuffer channel '${resolvedChannelName}' is unavailable`);
     }
     return output;
   }
 
   findChannel(channelName = 'text') {
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     let current = this;
     while (current) {
       if (current._ownedChannels && current._ownedChannels[resolvedChannelName]) {
@@ -456,29 +467,33 @@ class CommandBuffer {
     return undefined;
   }
 
-  _setBoundaryAliases(map) {
+  _setChannelAliases(map) {
     if (!map) {
       return;
     }
-    this._boundaryAliases = Object.create(null);
+    // Narrow runtime substrate for explicit channel binding, such as future
+    // macro by-reference aliases. This must not be treated as a generic
+    // ambient composition-visibility mechanism.
+    this._channelAliases = Object.create(null);
     const keys = Object.keys(map);
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      this._boundaryAliases[key] = map[key];
+      this._channelAliases[key] = map[key];
     }
   }
 
-  _inheritBoundaryAliases(parentMap) {
+  _inheritChannelAliases(parentMap) {
     if (!parentMap) {
       return;
     }
-    if (!this._boundaryAliases) {
-      // Fast path: reuse parent alias object until this buffer gets own aliases.
-      this._boundaryAliases = parentMap;
+    if (!this._channelAliases) {
+      // Fast path: reuse parent alias object until this buffer gets its own
+      // explicit alias projection.
+      this._channelAliases = parentMap;
       return;
     }
     const inherited = Object.create(null);
-    const own = this._boundaryAliases;
+    const own = this._channelAliases;
     const parentKeys = Object.keys(parentMap);
     for (let i = 0; i < parentKeys.length; i++) {
       const key = parentKeys[i];
@@ -489,18 +504,21 @@ class CommandBuffer {
       const key = ownKeys[i];
       inherited[key] = own[key];
     }
-    this._boundaryAliases = inherited;
+    this._channelAliases = inherited;
   }
 
-  _resolveChannelName(name) {
+  _resolveAliasedChannelName(name) {
     if (typeof name !== 'string') {
       return name;
     }
     if (/#\d+$/.test(name)) {
-      // Already canonical (e.g. loop#4).
+      // Already a resolved runtime channel name (e.g. someVar#7). Do not
+      // remap canonical runtime names through the alias table again.
       return name;
     }
-    const mapped = this._boundaryAliases && this._boundaryAliases[name];
+    // Alias resolution is intentionally narrow: only explicit channel bindings
+    // installed on this buffer may remap the name. Unknown names stay unknown.
+    const mapped = this._channelAliases && this._channelAliases[name];
     return mapped || name;
   }
 
@@ -537,7 +555,7 @@ class CommandBuffer {
     if (!channelName) {
       return;
     }
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     this._linkedChannels[resolvedChannelName] = true;
     this._finishKnownChannelIfRequested(resolvedChannelName);
   }
@@ -546,7 +564,7 @@ class CommandBuffer {
     if (!channelName || !sourceBuffer || typeof sourceBuffer.findChannel !== 'function') {
       return;
     }
-    const resolvedChannelName = this._resolveChannelName(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     const channel = sourceBuffer.findChannel(resolvedChannelName);
     if (channel) {
       this._visibleChannels[resolvedChannelName] = channel;

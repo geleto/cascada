@@ -16,33 +16,6 @@ class CompileInheritance {
 	  this.emit = this.compiler.emit;
   }
 
-  _emitDeclaredValueSnapshots(analysis, targetVarsVar, positionNode) {
-    const lineno = positionNode && positionNode.lineno != null ? positionNode.lineno : 0;
-    const colno = positionNode && positionNode.colno != null ? positionNode.colno : 0;
-    const visibleChannels = this.compiler.analysis.getIncludeVisibleVarChannels(analysis);
-    visibleChannels.forEach((entry) => {
-      const snapshotExpr = this.compiler.buffer.emitAddSnapshot(entry.runtimeName, { lineno, colno }, true);
-      this.emit.line(`${targetVarsVar}[${JSON.stringify(entry.baseName)}] = ${snapshotExpr};`);
-    });
-  }
-
-  _emitDeclaredValueAliasMap(analysis, aliasVar) {
-    const visibleChannels = this.compiler.analysis.getIncludeVisibleVarChannels(analysis);
-    const aliases = Object.create(null);
-    for (let i = 0; i < visibleChannels.length; i++) {
-      const entry = visibleChannels[i];
-      if (entry.baseName === entry.runtimeName) {
-        continue;
-      }
-      aliases[entry.baseName] = entry.runtimeName;
-    }
-    const keys = Object.keys(aliases);
-    for (let i = 0; i < keys.length; i++) {
-      const base = keys[i];
-      this.emit.line(`${aliasVar}[${JSON.stringify(base)}] = ${JSON.stringify(aliases[base])};`);
-    }
-  }
-
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(

@@ -2640,12 +2640,12 @@
     });
   });
 
-  describe('CommandBuffer boundary alias canonicalization', function () {
-    it('maps base channel names to canonical aliases in add()', function () {
+  describe('CommandBuffer channel alias canonicalization', function () {
+    it('maps formal channel names to resolved aliases in add()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null);
       createChannel(buffer, 'loop#4', ctx, 'text');
-      buffer._setBoundaryAliases({ loop: 'loop#4' });
+      buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({
         channelName: 'text',
@@ -2657,11 +2657,11 @@
       expect(buffer.arrays['loop#4']).to.have.length(1);
     });
 
-    it('resolves addSnapshot() through boundary aliases', async function () {
+    it('resolves addSnapshot() through channel aliases', async function () {
       const ctx = { path: 'alias-snapshot.njk' };
       const buffer = new CommandBuffer(ctx, null);
       createChannel(buffer, 'loop#4', ctx, 'text');
-      buffer._setBoundaryAliases({ loop: 'loop#4' });
+      buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.addText('A', { lineno: 1, colno: 1 }, 'loop');
       buffer.markFinishedAndPatchLinks();
@@ -2670,16 +2670,16 @@
       expect(snap).to.be('A');
     });
 
-    it('inherits boundary aliases for child buffers linked through addBuffer', function () {
+    it('inherits channel aliases for child buffers linked through addBuffer', function () {
       const ctx = { path: 'alias-child.njk' };
       const parent = new CommandBuffer(ctx, null);
       const child = new CommandBuffer(ctx, null);
-      parent._setBoundaryAliases({ loop: 'loop#4', someVar: 'someVar#9' });
+      parent._setChannelAliases({ loop: 'loop#4', someVar: 'someVar#9' });
 
       parent.addBuffer(child, 'loop');
 
-      expect(child._boundaryAliases.loop).to.be('loop#4');
-      expect(child._boundaryAliases.someVar).to.be('someVar#9');
+      expect(child._channelAliases.loop).to.be('loop#4');
+      expect(child._channelAliases.someVar).to.be('someVar#9');
       child.add(new TextCommand({
         channelName: 'text',
         args: ['x'],
@@ -2693,33 +2693,33 @@
       const ctx = { path: 'alias-reuse.njk' };
       const parent = new CommandBuffer(ctx, null);
       const child = new CommandBuffer(ctx, null);
-      parent._setBoundaryAliases({ loop: 'loop#4' });
+      parent._setChannelAliases({ loop: 'loop#4' });
 
       parent.addBuffer(child, 'loop');
 
-      expect(child._boundaryAliases).to.be(parent._boundaryAliases);
+      expect(child._channelAliases).to.be(parent._channelAliases);
     });
 
     it('merges parent aliases when child already has own aliases', function () {
       const ctx = { path: 'alias-merge.njk' };
       const parent = new CommandBuffer(ctx, null);
       const child = new CommandBuffer(ctx, null);
-      parent._setBoundaryAliases({ loop: 'loop#4', shared: 'shared#1' });
-      child._setBoundaryAliases({ own: 'own#7', shared: 'shared#9' });
+      parent._setChannelAliases({ loop: 'loop#4', shared: 'shared#1' });
+      child._setChannelAliases({ own: 'own#7', shared: 'shared#9' });
 
       parent.addBuffer(child, 'loop');
 
-      expect(child._boundaryAliases).to.not.be(parent._boundaryAliases);
-      expect(child._boundaryAliases.loop).to.be('loop#4');
-      expect(child._boundaryAliases.own).to.be('own#7');
-      expect(child._boundaryAliases.shared).to.be('shared#9');
+      expect(child._channelAliases).to.not.be(parent._channelAliases);
+      expect(child._channelAliases.loop).to.be('loop#4');
+      expect(child._channelAliases.own).to.be('own#7');
+      expect(child._channelAliases.shared).to.be('shared#9');
     });
 
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
       const buffer = new CommandBuffer(ctx, null);
       createChannel(buffer, 'loop#4', ctx, 'text');
-      buffer._setBoundaryAliases({ loop: 'loop#4' });
+      buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({
         channelName: 'text',
@@ -2730,4 +2730,5 @@
       expect(buffer.arrays['loop#4']).to.have.length(1);
     });
   });
+
 }());

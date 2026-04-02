@@ -699,8 +699,6 @@ The main implementation areas affected by this design are:
 - `src/runtime/command-buffer.js`
   - keep output composition structure
   - stop using parent var-channel visibility as the async composition model
-  - review `_setBoundaryAliases()` as part of removing include-specific child
-    visibility bridging
 - `src/runtime/runtime.js`
   - adjust include/inheritance helpers so only output structure remains linked
 
@@ -953,6 +951,8 @@ Current status as of April 2, 2026:
     satisfied by explicit inputs, render-context visibility, or fallbacks
   - async reserved-name handling for `context`
   - removal of the dead `linkWithParentCompositionBuffer()` path
+  - removal of the old include-specific boundary-alias usage and the unused
+    include helper emitters that supported it
 - partially implemented:
   - explicit extern-input plumbing exists for top-level render, async include,
     and async import/from-import, but not yet for async block/extends
@@ -1454,6 +1454,9 @@ Implemented now:
 - include no longer uses the old parent-var snapshot/visibility path as its
   semantics
 - the dead `linkWithParentCompositionBuffer()` path has been removed
+- the old include-specific boundary-alias usage has been removed
+- the unused include helper emitters `_emitDeclaredValueSnapshots()` and
+  `_emitDeclaredValueAliasMap()` have been removed
 
 Still pending in this step:
 
