@@ -1879,7 +1879,7 @@ After implementation stabilizes, update:
 
 ### Step 19: Re-evaluate simplifications after implementation
 
-Status: partially implemented
+Status: implemented
 
 Implemented now:
 
@@ -1887,13 +1887,9 @@ Implemented now:
   async block invocation and `super()`
 - compiled block contract metadata is now used directly at block entry through
   `context.getBlockContract(name)` to derive effective inherited input names
-
-Still pending in this step:
-
-- whether any further inheritance/runtime caching simplifications are worth
-  adding
-- whether any additional old async composition helper code can be deleted
-  entirely
+- `validateExternInputs(...)` has been simplified to the one explicit
+  call pattern used by the async composition codepaths; the old overloaded
+  compatibility path was removed
 
 Once the implementation exists, review whether the architecture can be
 simplified further:

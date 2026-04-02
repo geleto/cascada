@@ -130,13 +130,9 @@ function promisify(fn) {
 }
 
 function validateExternInputs(externSpec, providedInputNames, availableValueNames, operationName = 'include') {
-  if (typeof availableValueNames === 'string' && operationName === 'include') {
-    operationName = availableValueNames;
-    availableValueNames = providedInputNames;
-  }
   const spec = Array.isArray(externSpec) ? externSpec : [];
   const providedNames = Array.isArray(providedInputNames) ? providedInputNames : [];
-  const availableNames = Array.isArray(availableValueNames) ? availableValueNames : providedNames;
+  const availableNames = new Set(Array.isArray(availableValueNames) ? availableValueNames : providedNames);
   const declaredNames = new Set();
 
   for (let i = 0; i < spec.length; i++) {
@@ -159,13 +155,13 @@ function validateExternInputs(externSpec, providedInputNames, availableValueName
     if (!entry || !entry.required) {
       continue;
     }
-      const names = Array.isArray(entry.names) ? entry.names : [];
-      for (let j = 0; j < names.length; j++) {
-        const name = names[j];
-      if (availableNames.indexOf(name) === -1) {
-          throw new Error(`${operationName} is missing required extern '${name}'`);
-        }
+    const names = Array.isArray(entry.names) ? entry.names : [];
+    for (let j = 0; j < names.length; j++) {
+      const name = names[j];
+      if (!availableNames.has(name)) {
+        throw new Error(`${operationName} is missing required extern '${name}'`);
       }
+    }
   }
 }
 

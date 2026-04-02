@@ -104,7 +104,7 @@ class Context extends Obj {
   }
 
   beginAsyncExtendsBlockRegistration() {
-    this.asyncExtendsBlocksPromise = new Promise((resolve, reject) => {
+    this.asyncExtendsBlocksPromise = new Promise((resolve) => {
       this.asyncExtendsBlocksResolver = resolve;
     }).then(() => {
       delete this.asyncExtendsBlocksPromise;
