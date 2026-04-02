@@ -883,6 +883,36 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeBlock(node) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     const hasExplicitContract = !!node.withContext || withVars.length > 0;
+    const declares = [];
+    const seenBlockInputNames = new Set();
+    withVars.forEach((nameNode) => {
+      nameNode._analysis = Object.assign({}, nameNode._analysis, {
+        skipDeclarationOwner: node._analysis
+      });
+      const canonicalName = this.analysis.getBaseChannelName(nameNode.value);
+      if (seenBlockInputNames.has(canonicalName)) {
+        this.fail(
+          `block input '${canonicalName}' is declared more than once`,
+          nameNode.lineno,
+          nameNode.colno,
+          node,
+          nameNode
+        );
+      }
+      seenBlockInputNames.add(canonicalName);
+      declares.push({
+        name: canonicalName,
+        type: 'var',
+        initializer: null,
+        explicit: true,
+        blockInput: true
+      });
+    });
+    if (declares.length > 0 && node.body) {
+      node.body._analysis = Object.assign({}, node.body._analysis, {
+        declares: ((node.body._analysis && node.body._analysis.declares) || []).concat(declares)
+      });
+    }
     if (hasExplicitContract) {
       const rootOwner = this.analysis.getRootScopeOwner(node._analysis);
       const rootNode = rootOwner && rootOwner.node;
@@ -1189,6 +1219,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('} else {');
     this.emit.line(`  context = context.forkForPath(${JSON.stringify(this.templateName)});`);
     this.emit.line('}');
+    this._emitAsyncBlockInputInitialization(block);
     this.compile(block.body, null);
     this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
     this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
@@ -1210,6 +1241,31 @@ class CompilerAsync extends CompilerBaseAsync {
     });
 
     return blocks;
+  }
+
+  _getBlockInputNames(block) {
+    const withVars = block && block.withVars && block.withVars.children ? block.withVars.children : [];
+    const blockInputNames = [];
+    const seen = new Set();
+    withVars.forEach((nameNode) => {
+      const canonicalName = this.analysis.getBaseChannelName(nameNode.value);
+      if (seen.has(canonicalName)) {
+        return;
+      }
+      seen.add(canonicalName);
+      blockInputNames.push(canonicalName);
+    });
+    return blockInputNames;
+  }
+
+  _emitAsyncBlockInputInitialization(block) {
+    const blockInputNames = this._getBlockInputNames(block);
+    blockInputNames.forEach((name) => {
+      const blockValueId = this._tmpid();
+      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
+      this.emit.line(`const ${blockValueId} = context.getVariables()[${JSON.stringify(name)}];`);
+      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), '${name}');`);
+    });
   }
 
   _compileAsyncRoot(node) {

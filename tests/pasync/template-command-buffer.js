@@ -121,6 +121,18 @@
       expect(source).to.not.contain('linkWithParentCompositionBuffer');
     });
 
+    it('should initialize base-block with inputs as local async var channels', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% block content with user %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {');
+      expect(source).to.contain('runtime.declareBufferChannel(output, "user", "var", context, null);');
+      expect(source).to.contain('const t_');
+      expect(source).to.contain('= context.getVariables()["user"];');
+      expect(source).to.contain(`new runtime.VarCommand({ channelName: 'user' })`);
+    });
+
     it('should keep observed vs unobserved async errors behavior', async function () {
       const env = new AsyncEnvironment();
       const context = {

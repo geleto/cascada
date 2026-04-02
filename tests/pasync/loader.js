@@ -896,7 +896,7 @@
           await env.renderTemplate('main.njk', {});
           expect().fail('Expected include extern validation to fail');
         } catch (err) {
-          expect(err.message).to.contain("include is missing required extern 'userId'");
+          expect(err.message).to.contain(`include is missing required extern 'userId'`);
         }
       });
 
@@ -908,7 +908,7 @@
           await env.renderTemplate('main.njk', { userId: 1 });
           expect().fail('Expected include extern validation to fail');
         } catch (err) {
-          expect(err.message).to.contain("include passed 'userId' but the child template does not declare it as extern");
+          expect(err.message).to.contain(`include passed 'userId' but the child template does not declare it as extern`);
         }
       });
 
@@ -942,7 +942,7 @@
           });
           expect().fail('Expected dynamic include extern validation to fail');
         } catch (err) {
-          expect(err.message).to.contain("include passed 'userId' but the child template does not declare it as extern");
+          expect(err.message).to.contain(`include passed 'userId' but the child template does not declare it as extern`);
         }
       });
 
@@ -1093,6 +1093,35 @@
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Base Ada / Grace');
+      });
+
+      it('should treat base-block with inputs as local vars for rebinding', async () => {
+        const template = '{% block content with user %}{{ user }}{% set user = "Grace" %}/{{ user }}{% endblock %}';
+
+        const result = await env.renderTemplateString(template, { user: 'Ada' });
+        expect(result.trim()).to.equal('Ada/Grace');
+      });
+
+      it('should reject conflicting declarations of base-block input names', async () => {
+        const template = '{% block content with user %}{% var user = "Grace" %}{{ user }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(template, { user: 'Ada' });
+          expect().fail('Expected block input declaration conflict');
+        } catch (err) {
+          expect(String(err)).to.contain(`Identifier 'user' has already been declared.`);
+        }
+      });
+
+      it('should reject duplicate base-block input names', async () => {
+        const template = '{% block content with user, user %}{{ user }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(template, { user: 'Ada' });
+          expect().fail('Expected duplicate block input rejection');
+        } catch (err) {
+          expect(String(err)).to.contain("block input 'user' is declared more than once");
+        }
       });
 
       it('should reject with clauses on overriding async child blocks', async () => {

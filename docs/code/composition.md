@@ -1169,17 +1169,22 @@ Current status as of April 2, 2026:
   - async `super()` now reuses the same explicit block invocation payload
   - async overriding child blocks are rejected when they declare their own
     `with ...` clause
+  - base-block `with ...` names now participate in async declaration/conflict
+    analysis and are initialized as local async var channels in the base block
+    body
 - partially implemented:
   - explicit extern-input plumbing exists for top-level render, async include,
     async import/from-import, and async block invocation
   - obsolete async include visibility/linking machinery has been reduced, but
     extends/inheritance auditing is still pending
   - block inputs are now passed through explicit composition context payloads,
-    but they are not yet represented as full analysis-level local declarations
+    but overriding-child blocks do not yet model inherited block inputs as full
+    analysis-level local declarations
   - tests are strong for implemented root/include/import/block behavior, but
     broader async inheritance contract coverage is still pending
 - not implemented yet:
-  - full analysis-level block input declarations/conflict modeling
+  - full cross-template analysis-level block input declarations/conflict
+    modeling for overriding child blocks
   - any further async extends/block contract validation beyond the current
     overriding-child rejection rule
   - final cleanup/audit of remaining old async composition helpers
@@ -1567,11 +1572,17 @@ Implemented now:
 - explicit block inputs are available inside the overriding block through the
   invocation payload/context
 - child-local rebinding inside the block stays local in practice
+- base-block `with ...` names participate in ordinary local declaration
+  conflict checks
+- base-block `with ...` names are initialized as local async var channels in
+  the base block body
 
 Still pending in this step:
 
-- treating block input names as full analysis-level local declarations
-- full declaration/conflict modeling for block inputs
+- treating inherited block input names as full analysis-level local
+  declarations inside overriding child blocks
+- full declaration/conflict modeling for inherited block inputs in overriding
+  child blocks
 
 Implement:
 
@@ -1595,6 +1606,7 @@ Add tests:
 
 - block input declaration conflicts
 - block input rebinding inside the overriding block
+- duplicate block input names
 
 ### Step 13: Convert async block invocation to explicit block inputs
 
@@ -1607,9 +1619,13 @@ Implemented now:
 - `with context` now seeds render-context visibility for the overriding block
 - overriding blocks receive a fresh composition context payload for those
   explicit inputs
+- base-block bodies initialize their explicit inputs into local async var
+  channels before executing the block body
 
 Still pending in this step:
 
+- inherited block inputs are still payload/context-backed inside overriding
+  child blocks rather than full declared async var channels
 - any broader cleanup/validation work needed to remove remaining implicit
   inheritance assumptions elsewhere
 

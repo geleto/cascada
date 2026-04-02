@@ -160,9 +160,10 @@ class CompileAnalysis {
   }
 
   findDeclarationOwner(analysis, name) {
+    const skipDeclarationOwner = analysis && analysis.skipDeclarationOwner ? analysis.skipDeclarationOwner : null;
     let current = analysis;
     while (current) {
-      if (current.declaredChannels && current.declaredChannels.has(name)) {
+      if (current.declaredChannels && current.declaredChannels.has(name) && current !== skipDeclarationOwner) {
         return current;
       }
       if (current.scopeBoundary) {
