@@ -117,7 +117,7 @@ class Context extends Obj {
     }
   }
 
-  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null) {
+  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
@@ -126,7 +126,7 @@ class Context extends Obj {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    return blk(env, context, runtime, cb, parentBuffer);
+    return blk(env, context, runtime, cb, parentBuffer, blockContext, blockRenderCtx);
   }
 
   getSyncSuper(env, name, block, frame, runtime, cb) {
@@ -219,6 +219,23 @@ class Context extends Obj {
     newContext.asyncBlocksResolver = this.asyncBlocksResolver;
 
     // Set the ONLY property that should be different.
+    newContext.path = newPath;
+
+    return newContext;
+  }
+
+  forkForComposition(newPath, ctx, renderCtx) {
+    // Fresh composition context that keeps shared structural state such as
+    // blocks/exports, but does not share the mutable variable object with the
+    // caller. This lets composition boundaries receive explicit inputs without
+    // turning them back into ambient shared scope.
+    const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx);
+
+    newContext.blocks = this.blocks;
+    newContext.exportResolveFunctions = this.exportResolveFunctions;
+    newContext.exportChannels = this.exportChannels;
+    newContext.asyncBlocksPromise = this.asyncBlocksPromise;
+    newContext.asyncBlocksResolver = this.asyncBlocksResolver;
     newContext.path = newPath;
 
     return newContext;

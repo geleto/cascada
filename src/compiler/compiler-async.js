@@ -881,6 +881,22 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeBlock(node) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    const hasExplicitContract = !!node.withContext || withVars.length > 0;
+    if (hasExplicitContract) {
+      const rootOwner = this.analysis.getRootScopeOwner(node._analysis);
+      const rootNode = rootOwner && rootOwner.node;
+      const rootChildren = rootNode && Array.isArray(rootNode.children) ? rootNode.children : [];
+      const hasExtends = rootChildren.some((child) => child instanceof nodes.Extends);
+      if (hasExtends) {
+        this.fail(
+          'async overriding blocks cannot declare their own with clause; the base block owns the contract',
+          node.lineno,
+          node.colno,
+          node
+        );
+      }
+    }
     return { createScope: true, scopeBoundary: false, parentReadOnly: true };
   }
 
@@ -1162,8 +1178,17 @@ class CompilerAsync extends CompilerBaseAsync {
     const name = block.name.value;
     const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
       .filter((hname) => hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL);
-    this.emit.beginEntryFunction(block, `b_${name}`, blockLinkedChannels);
-    this.emit.line(`context = context.forkForPath(${JSON.stringify(this.templateName)});`);
+    this.emit.beginEntryFunction(
+      block,
+      `b_${name}`,
+      blockLinkedChannels,
+      ['blockContext = null', 'blockRenderCtx = undefined']
+    );
+    this.emit.line('if (blockContext !== null || blockRenderCtx !== undefined) {');
+    this.emit.line(`  context = context.forkForComposition(${JSON.stringify(this.templateName)}, blockContext || {}, blockRenderCtx);`);
+    this.emit.line('} else {');
+    this.emit.line(`  context = context.forkForPath(${JSON.stringify(this.templateName)});`);
+    this.emit.line('}');
     this.compile(block.body, null);
     this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
     this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);

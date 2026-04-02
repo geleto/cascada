@@ -50,7 +50,7 @@ module.exports = class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  beginEntryFunction(node, name, linkedChannels = null) {
+  beginEntryFunction(node, name, linkedChannels = null, extraParams = []) {
     const rootTextChannelName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
       : DEFAULT_TEMPLATE_TEXT_CHANNEL;
@@ -63,7 +63,10 @@ module.exports = class CompileEmit {
       if (name === 'root') {
         this.line(`function ${name}(env, context, runtime, cb, compositionMode = false) {`);
       } else {
-        this.line(`function ${name}(env, context, runtime, cb, parentBuffer = null) {`);
+        const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
+          ? `, ${extraParams.join(', ')}`
+          : '';
+        this.line(`function ${name}(env, context, runtime, cb, parentBuffer = null${extraParamSource}) {`);
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);

@@ -222,6 +222,13 @@ Recommended async rule:
 
 - if an overriding child block also declares `with ...`, that is a compile error
 
+Current implementation status:
+
+- implemented in async mode: an overriding child block declaring its own
+  `with ...` is rejected
+- the base/invoking block is the only place that currently owns the async block
+  input contract
+
 ### `extends`
 
 Async `extends` does not require new syntax on the `extends` tag itself.
@@ -953,17 +960,24 @@ Current status as of April 2, 2026:
   - removal of the dead `linkWithParentCompositionBuffer()` path
   - removal of the old include-specific boundary-alias usage and the unused
     include helper emitters that supported it
+  - async block invocation can now carry explicit `with ...` input/context
+    payloads from the base block invocation site
+  - async `super()` now reuses the same explicit block invocation payload
+  - async overriding child blocks are rejected when they declare their own
+    `with ...` clause
 - partially implemented:
   - explicit extern-input plumbing exists for top-level render, async include,
-    and async import/from-import, but not yet for async block/extends
+    async import/from-import, and async block invocation
   - obsolete async include visibility/linking machinery has been reduced, but
     not fully audited/removed everywhere
-  - tests are strong for implemented root/include/import behavior, but async
-    block/inheritance contract tests are still pending
+  - block inputs are now passed through explicit composition context payloads,
+    but they are not yet represented as full analysis-level local declarations
+  - tests are strong for implemented root/include/import/block behavior, but
+    broader async inheritance contract coverage is still pending
 - not implemented yet:
-  - async block `with ...` contracts
-  - async extends / overriding-block validation
-  - `super()` over explicit invocation inputs
+  - full analysis-level block input declarations/conflict modeling
+  - any further async extends/block contract validation beyond the current
+    overriding-child rejection rule
   - final cleanup/audit of remaining old async composition helpers
 
 Testing policy during migration:
@@ -1340,7 +1354,20 @@ Add tests:
 
 ### Step 12: Define block-input declaration rules
 
-Status: not implemented yet
+Status: partially implemented
+
+Implemented now:
+
+- async overriding child blocks are rejected when they declare their own
+  `with ...` clause
+- explicit block inputs are available inside the overriding block through the
+  invocation payload/context
+- child-local rebinding inside the block stays local in practice
+
+Still pending in this step:
+
+- treating block input names as full analysis-level local declarations
+- full declaration/conflict modeling for block inputs
 
 Implement:
 
@@ -1367,7 +1394,20 @@ Add tests:
 
 ### Step 13: Convert async block invocation to explicit block inputs
 
-Status: not implemented yet
+Status: partially implemented
+
+Implemented now:
+
+- async block invocation evaluates the base block's explicit `with ...`
+  expressions at the invocation site
+- `with context` now seeds render-context visibility for the overriding block
+- overriding blocks receive a fresh composition context payload for those
+  explicit inputs
+
+Still pending in this step:
+
+- any broader cleanup/validation work needed to remove remaining implicit
+  inheritance assumptions elsewhere
 
 Implement:
 
@@ -1397,7 +1437,17 @@ Add tests:
 
 ### Step 14: Define `super()` over the same invocation input map
 
-Status: not implemented yet
+Status: partially implemented
+
+Implemented now:
+
+- async `super()` receives the same explicit invocation payload as the
+  overriding block
+- child-local rebinding does not leak into `super()`
+
+Still pending in this step:
+
+- broader inheritance-chain validation/coverage beyond the current payload reuse
 
 Implement:
 

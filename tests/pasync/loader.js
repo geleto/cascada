@@ -1079,6 +1079,34 @@
         expect(result.trim()).to.equal('Async AModified Async BModified Async C');
       });
 
+      it('should pass explicit block inputs from the base block invocation to the async override', async () => {
+        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ user }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Child Ada');
+      });
+
+      it('should pass the same explicit block inputs to super() without seeing child-local rebinding', async () => {
+        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Base Ada / Grace');
+      });
+
+      it('should reject with clauses on overriding async child blocks', async () => {
+        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content with user %}Child {{ user }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(childTemplate, { user: 'Ada' });
+          expect().fail('Expected async child block with-clause rejection');
+        } catch (err) {
+          expect(String(err)).to.contain('async overriding blocks cannot declare their own with clause');
+        }
+      });
+
       it('should handle blocks inside a for loop with async content', async () => {
         const context = {
           async getItems() {
