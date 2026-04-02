@@ -130,7 +130,7 @@
       expect(source).to.contain('runtime.declareBufferChannel(output, "user", "var", context, null);');
       expect(source).to.contain('const t_');
       expect(source).to.contain('= context.getVariables()["user"];');
-      expect(source).to.contain(`new runtime.VarCommand({ channelName: 'user' })`);
+      expect(source).to.contain(`new runtime.VarCommand({ channelName: 'user', args: [`);
     });
 
     it('should keep observed vs unobserved async errors behavior', async function () {

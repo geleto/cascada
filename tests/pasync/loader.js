@@ -211,7 +211,7 @@
             `, {});
             expect().fail('Expected isolated async import extern validation to fail');
           } catch (err) {
-            expect(err.message).to.contain("import is missing required extern 'username'");
+            expect(err.message).to.contain(`import is missing required extern 'username'`);
           }
         });
 
@@ -245,7 +245,7 @@
             `, {});
             expect().fail('Expected isolated async from-import extern validation to fail');
           } catch (err) {
-            expect(err.message).to.contain("from-import is missing required extern 'username'");
+            expect(err.message).to.contain(`from-import is missing required extern 'username'`);
           }
         });
 
@@ -365,7 +365,7 @@
             });
             expect().fail('Expected dynamic async import extern validation to fail');
           } catch (err) {
-            expect(err.message).to.contain("import is missing required extern 'username'");
+            expect(err.message).to.contain(`import is missing required extern 'username'`);
           }
         });
       });
@@ -1120,7 +1120,7 @@
           await env.renderTemplateString(template, { user: 'Ada' });
           expect().fail('Expected duplicate block input rejection');
         } catch (err) {
-          expect(String(err)).to.contain("block input 'user' is declared more than once");
+          expect(String(err)).to.contain(`block input 'user' is declared more than once`);
         }
       });
 
@@ -1133,6 +1133,18 @@
           expect().fail('Expected async child block with-clause rejection');
         } catch (err) {
           expect(String(err)).to.contain('async overriding blocks cannot declare their own with clause');
+        }
+      });
+
+      it('should reject explicit overriding-block declarations that conflict with inherited block inputs', async () => {
+        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}{% var user = "Grace" %}{{ user }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(childTemplate, { user: 'Ada' });
+          expect().fail('Expected overriding block input conflict');
+        } catch (err) {
+          expect(String(err)).to.contain(`block input 'user' conflicts with an explicit declaration in the overriding block`);
         }
       });
 

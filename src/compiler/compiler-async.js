@@ -930,6 +930,12 @@ class CompilerAsync extends CompilerBaseAsync {
     return { createScope: true, scopeBoundary: false, parentReadOnly: true };
   }
 
+  finalizeAnalyzeBlock(node) {
+    return {
+      inheritedInputConflictNames: this._collectInheritedBlockInputConflictNames(node)
+    };
+  }
+
   compileBlock(node) {
     this.inheritance.compileAsyncBlock(node);
   }
@@ -1219,6 +1225,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('} else {');
     this.emit.line(`  context = context.forkForPath(${JSON.stringify(this.templateName)});`);
     this.emit.line('}');
+    this._emitInheritedBlockInputConflictValidation(block);
     this._emitAsyncBlockInputInitialization(block);
     this.compile(block.body, null);
     this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
@@ -1256,6 +1263,57 @@ class CompilerAsync extends CompilerBaseAsync {
       blockInputNames.push(canonicalName);
     });
     return blockInputNames;
+  }
+
+  _collectInheritedBlockInputConflictNames(block) {
+    const conflictNames = new Set();
+    const rootWithVars = new Set(this._getBlockInputNames(block));
+    const visit = (node) => {
+      if (!node || Array.isArray(node)) {
+        if (Array.isArray(node)) {
+          node.forEach(visit);
+        }
+        return;
+      }
+      if (!(node instanceof nodes.Node)) {
+        return;
+      }
+      const analysis = node._analysis || null;
+      const declares = Array.isArray(analysis && analysis.declares) ? analysis.declares : [];
+      const declaresInParent = Array.isArray(analysis && analysis.declaresInParent) ? analysis.declaresInParent : [];
+      declares.concat(declaresInParent).forEach((decl) => {
+        if (!decl || !decl.name) {
+          return;
+        }
+        if (decl.blockInput || decl.internal || decl.extern) {
+          return;
+        }
+        if (rootWithVars.has(decl.name)) {
+          return;
+        }
+        if (decl.type === 'var' && decl.explicit === false && !decl.parentOwned) {
+          return;
+        }
+        conflictNames.add(decl.name);
+      });
+      node.fields.forEach((field) => visit(node[field]));
+    };
+    visit(block && block.body ? block.body : null);
+    return Array.from(conflictNames);
+  }
+
+  _emitInheritedBlockInputConflictValidation(block) {
+    const conflictNames = Array.isArray(block && block._analysis && block._analysis.inheritedInputConflictNames)
+      ? block._analysis.inheritedInputConflictNames
+      : [];
+    if (conflictNames.length === 0) {
+      return;
+    }
+    const conflictVar = this._tmpid();
+    this.emit.line(`const ${conflictVar} = blockContext ? Object.keys(blockContext).find((name) => ${JSON.stringify(conflictNames)}.includes(name)) : null;`);
+    this.emit.line(`if (${conflictVar}) {`);
+    this.emit.line(`  throw new Error("block input '" + ${conflictVar} + "' conflicts with an explicit declaration in the overriding block");`);
+    this.emit.line('}');
   }
 
   _emitAsyncBlockInputInitialization(block) {

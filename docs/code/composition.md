@@ -1172,6 +1172,8 @@ Current status as of April 2, 2026:
   - base-block `with ...` names now participate in async declaration/conflict
     analysis and are initialized as local async var channels in the base block
     body
+  - overriding-child blocks now reject explicit declarations that conflict with
+    inherited block input names at runtime when the block payload is invoked
 - partially implemented:
   - explicit extern-input plumbing exists for top-level render, async include,
     async import/from-import, and async block invocation
@@ -1576,6 +1578,8 @@ Implemented now:
   conflict checks
 - base-block `with ...` names are initialized as local async var channels in
   the base block body
+- overriding-child blocks reject explicit declarations that conflict with
+  inherited block input names at runtime
 
 Still pending in this step:
 
@@ -1607,6 +1611,7 @@ Add tests:
 - block input declaration conflicts
 - block input rebinding inside the overriding block
 - duplicate block input names
+- runtime conflict rejection for overriding-child explicit declarations
 
 ### Step 13: Convert async block invocation to explicit block inputs
 
