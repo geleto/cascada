@@ -171,15 +171,19 @@ class Caller extends Macro {
 
 class Import extends Node {
   get typename() { return 'Import'; }
-  get fields() { return ['template', 'target', 'withContext']; }
+  get fields() { return ['template', 'target', 'withContext', 'withVars']; }
+
+  init(lineno, colno, template, target, withContext, withVars) {
+    super.init(lineno, colno, template, target, withContext, withVars || new NodeList());
+  }
 }
 
 class FromImport extends Node {
   get typename() { return 'FromImport'; }
-  get fields() { return ['template', 'names', 'withContext']; }
+  get fields() { return ['template', 'names', 'withContext', 'withVars']; }
 
-  init(lineno, colno, template, names, withContext) {
-    super.init(lineno, colno, template, names || new NodeList(), withContext);
+  init(lineno, colno, template, names, withContext, withVars) {
+    super.init(lineno, colno, template, names || new NodeList(), withContext, withVars || new NodeList());
   }
 }
 
@@ -203,10 +207,10 @@ class KeywordArgs extends Dict {
 
 class Block extends Node {
   get typename() { return 'Block'; }
-  get fields() { return ['name', 'body', 'withVars']; }
+  get fields() { return ['name', 'body', 'withContext', 'withVars']; }
 
-  init(lineno, colno, name, body, withVars) {
-    super.init(lineno, colno, name, body, withVars || new NodeList());
+  init(lineno, colno, name, body, withContext, withVars) {
+    super.init(lineno, colno, name, body, withContext, withVars || new NodeList());
   }
 }
 
@@ -227,10 +231,10 @@ class Extends extends TemplateRef {
 
 class Include extends Node {
   get typename() { return 'Include'; }
-  get fields() { return ['template', 'ignoreMissing', 'withVars']; }
+  get fields() { return ['template', 'ignoreMissing', 'withContext', 'withVars']; }
 
-  init(lineno, colno, template, ignoreMissing, withVars) {
-    super.init(lineno, colno, template, ignoreMissing, withVars || new NodeList());
+  init(lineno, colno, template, ignoreMissing, withContext, withVars) {
+    super.init(lineno, colno, template, ignoreMissing, withContext, withVars || new NodeList());
   }
 }
 

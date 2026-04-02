@@ -88,6 +88,24 @@
           expect(err.message).to.contain(`extern fallback for 'a' cannot reference later extern 'b'`);
         }
       });
+
+      it('should reject reserved async declaration name context for extern', async () => {
+        try {
+          await env.renderTemplateString('{% extern context %}', {});
+          expect().fail('Expected reserved-name validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain(`Identifier 'context' is reserved`);
+        }
+      });
+
+      it('should reject reserved async declaration name context for template vars', async () => {
+        try {
+          await env.renderTemplateString('{% set context = 1 %}{{ context }}', {});
+          expect().fail('Expected reserved-name validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain(`Identifier 'context' is reserved`);
+        }
+      });
     });
 
     describe('"Do" tag', () => {

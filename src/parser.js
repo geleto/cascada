@@ -450,6 +450,68 @@ class Parser extends Obj {
     return withVars;
   }
 
+  parseCompositionWithClause(errorPrefix = 'parseCompositionWithClause', opts = {}) {
+    const allowWithoutContext = !!opts.allowWithoutContext;
+    const tok = this.peekToken();
+    let withContext = null;
+    const withVars = new nodes.NodeList(tok.lineno, tok.colno);
+
+    if (this.skipSymbol('without')) {
+      if (!allowWithoutContext) {
+        this.fail(`${errorPrefix}: unexpected "without"`, tok.lineno, tok.colno);
+      }
+      if (!this.skipSymbol('context')) {
+        this.fail(`${errorPrefix}: expected context after without`,
+          tok.lineno,
+          tok.colno);
+      }
+      return { withContext: false, withVars: null };
+    }
+
+    if (!this.skipSymbol('with')) {
+      return { withContext: null, withVars: null };
+    }
+
+    let sawAny = false;
+    let sawContext = false;
+    let nameNode;
+    while ((nameNode = this.parsePrimary())) {
+      sawAny = true;
+      if (!(nameNode instanceof nodes.Symbol)) {
+        this.fail(`${errorPrefix}: expected variable name after with`,
+          nameNode.lineno,
+          nameNode.colno);
+      }
+
+      if (nameNode.value === 'context') {
+        if (sawContext) {
+          this.fail(`${errorPrefix}: duplicate context in with clause`,
+            nameNode.lineno,
+            nameNode.colno);
+        }
+        sawContext = true;
+        withContext = true;
+      } else {
+        withVars.addChild(nameNode);
+      }
+
+      if (!this.skip(lexer.TOKEN_COMMA)) {
+        break;
+      }
+    }
+
+    if (!sawAny) {
+      this.fail(`${errorPrefix}: expected at least one variable after with`,
+        tok.lineno,
+        tok.colno);
+    }
+
+    return {
+      withContext,
+      withVars
+    };
+  }
+
   parseImport() {
     var importTok = this.peekToken();
     if (!this.skipSymbol('import')) {
@@ -467,12 +529,13 @@ class Parser extends Obj {
     }
 
     const target = this.parseExpression();
-    const withContext = this.parseWithContext();
+    const compositionInputs = this.parseCompositionWithClause('parseImport', { allowWithoutContext: true });
     const node = new nodes.Import(importTok.lineno,
       importTok.colno,
       template,
       target,
-      withContext);
+      compositionInputs.withContext,
+      compositionInputs.withVars);
 
     this.advanceAfterBlockEnd(importTok.value);
 
@@ -494,7 +557,7 @@ class Parser extends Obj {
     }
 
     const names = new nodes.NodeList();
-    let withContext;
+    let compositionInputs = { withContext: null, withVars: null };
 
     while (1) { // eslint-disable-line no-constant-condition
       const nextTok = this.peekToken();
@@ -512,6 +575,22 @@ class Parser extends Obj {
           this.dropLeadingWhitespace = true;
         }
 
+        this.nextToken();
+        break;
+      }
+
+      if (nextTok.type === lexer.TOKEN_SYMBOL &&
+        (nextTok.value === 'with' || nextTok.value === 'without')) {
+        compositionInputs = this.parseCompositionWithClause('parseFrom', { allowWithoutContext: true });
+        const endTok = this.peekToken();
+        if (!endTok || endTok.type !== lexer.TOKEN_BLOCK_END) {
+          this.fail('parseFrom: expected block end after with clause',
+            endTok && endTok.lineno !== undefined ? endTok.lineno : fromTok.lineno,
+            endTok && endTok.colno !== undefined ? endTok.colno : fromTok.colno);
+        }
+        if (endTok.value.charAt(0) === '-') {
+          this.dropLeadingWhitespace = true;
+        }
         this.nextToken();
         break;
       }
@@ -538,15 +617,14 @@ class Parser extends Obj {
       } else {
         names.addChild(name);
       }
-
-      withContext = this.parseWithContext();
     }
 
     return new nodes.FromImport(fromTok.lineno,
       fromTok.colno,
       template,
       names,
-      withContext);
+      compositionInputs.withContext,
+      compositionInputs.withVars);
   }
 
   parseBlock() {
@@ -564,7 +642,9 @@ class Parser extends Obj {
         tag.colno);
     }
 
-    node.withVars = this.parseWithVars('parseBlock');
+    const compositionInputs = this.parseCompositionWithClause('parseBlock');
+    node.withContext = compositionInputs.withContext;
+    node.withVars = compositionInputs.withVars;
 
     this.advanceAfterBlockEnd(tag.value);
 
@@ -628,9 +708,10 @@ class Parser extends Obj {
         continue;
       }
 
-      const withVars = this.parseWithVars('parseInclude');
-      if (withVars) {
-        node.withVars = withVars;
+      const compositionInputs = this.parseCompositionWithClause('parseInclude');
+      if (compositionInputs.withVars || compositionInputs.withContext !== null) {
+        node.withContext = compositionInputs.withContext;
+        node.withVars = compositionInputs.withVars;
         continue;
       }
 

@@ -71,7 +71,7 @@
 
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
-const { RESERVED_DECLARATION_NAMES } = require('../compiler/validation');
+const { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES } = require('../compiler/validation');
 
 class ScriptTranspiler {
   constructor() {
@@ -164,7 +164,10 @@ class ScriptTranspiler {
     ]);
 
     // Reserved declaration names are not allowed for script vars or channels.
-    this.RESERVED_DECLARATION_NAMES = RESERVED_DECLARATION_NAMES;
+    this.RESERVED_DECLARATION_NAMES = new Set([
+      ...RESERVED_DECLARATION_NAMES,
+      ...RESERVED_ASYNC_DECLARATION_NAMES
+    ]);
 
     // Track block stack for declaration/assignment blocks
     this.setBlockStack = []; // 'var' or 'set'

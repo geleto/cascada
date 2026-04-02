@@ -1131,6 +1131,7 @@ class CompilerAsync extends CompilerBaseAsync {
           this.emit.line(`  throw new Error('Missing required extern: ${name}');`);
         }
         this.emit.line('}');
+        this.emit.line(`context.setVariable("${name}", ${valueId});`);
         this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${externNode.lineno}, colno: ${externNode.colno}} }), '${name}');`);
       });
     });

@@ -515,7 +515,7 @@
 
     it('Import namespace with async operations', async () => {
       loader.addTemplate('api.njk', `
-        {% macro fetchData(id) %}
+        {% macro fetchData(getData, id) %}
           {{ getData(id).result }}
         {% endmacro %}
         {% macro formatDate(date) %}
@@ -525,9 +525,9 @@
       `);
 
       loader.addTemplate('main.njk', `
-        {% import "api.njk" as api with context %}
+        {% import "api.njk" as api %}
         <div class="api-{{ api.apiVersion }}">
-          {{ api.fetchData(userId) }}
+          {{ api.fetchData(getData, userId) }}
           {{ api.formatDate(currentDate) }}
         </div>
       `);

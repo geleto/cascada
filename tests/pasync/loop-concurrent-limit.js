@@ -231,10 +231,11 @@
             }
           }
         };
+        localEnv.addGlobal('slowImportValue', context.slowImportValue);
 
         loader.addTemplate('cl-import-lib.njk', '{% set imported = slowImportValue() %}');
         loader.addTemplate('cl-import-parent.njk',
-          '{% for item in [1,2] of 1 %}{{ enterOuter() }}{% import "cl-import-lib.njk" as lib with context %}{{ leaveOuter() }}{{ lib.imported }}|{% endfor %}');
+          '{% for item in [1,2] of 1 %}{{ enterOuter() }}{% import "cl-import-lib.njk" as lib %}{{ leaveOuter() }}{{ lib.imported }}|{% endfor %}');
 
         const result = await localEnv.renderTemplate('cl-import-parent.njk', context);
         expect(result).to.equal('I|I|');
@@ -269,10 +270,11 @@
             }
           }
         };
+        localEnv.addGlobal('slowImportValue', context.slowImportValue);
 
         loader.addTemplate('cl-from-lib.njk', '{% set exportedValue = slowImportValue() %}');
         loader.addTemplate('cl-from-parent.njk',
-          '{% for item in [1,2] of 1 %}{{ enterOuter() }}{% from "cl-from-lib.njk" import exportedValue with context %}{{ leaveOuter() }}{{ exportedValue }}|{% endfor %}');
+          '{% for item in [1,2] of 1 %}{{ enterOuter() }}{% from "cl-from-lib.njk" import exportedValue %}{{ leaveOuter() }}{{ exportedValue }}|{% endfor %}');
 
         const result = await localEnv.renderTemplate('cl-from-parent.njk', context);
         expect(result).to.equal('F|F|');
@@ -289,10 +291,11 @@
             throw new Error('import export failed');
           }
         };
+        localEnv.addGlobal('failImport', context.failImport);
 
         loader.addTemplate('cl-import-poison-lib.njk', '{% set imported = failImport() %}');
         loader.addTemplate('cl-import-poison-parent.njk',
-          '{% for item in [1,2] of 1 %}{% import "cl-import-poison-lib.njk" as lib with context %}{{ lib.imported }}{% endfor %}');
+          '{% for item in [1,2] of 1 %}{% import "cl-import-poison-lib.njk" as lib %}{{ lib.imported }}{% endfor %}');
 
         try {
           await localEnv.renderTemplate('cl-import-poison-parent.njk', context);
@@ -312,10 +315,11 @@
             throw new Error('from-import export failed');
           }
         };
+        localEnv.addGlobal('failImport', context.failImport);
 
         loader.addTemplate('cl-from-poison-lib.njk', '{% set exportedValue = failImport() %}');
         loader.addTemplate('cl-from-poison-parent.njk',
-          '{% for item in [1,2] of 1 %}{% from "cl-from-poison-lib.njk" import exportedValue with context %}{{ exportedValue }}{% endfor %}');
+          '{% for item in [1,2] of 1 %}{% from "cl-from-poison-lib.njk" import exportedValue %}{{ exportedValue }}{% endfor %}');
 
         try {
           await localEnv.renderTemplate('cl-from-poison-parent.njk', context);

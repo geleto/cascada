@@ -4,7 +4,7 @@ const nodes = require('../nodes');
 const { TemplateError } = require('../lib');
 // const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
 const { Obj } = require('../object');
-const { RESERVED_DECLARATION_NAMES } = require('./validation');
+const { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES } = require('./validation');
 const CompileSequential = require('./sequential');
 const CompileEmit = require('./emit');
 const CompileInheritance = require('./inheritance');
@@ -444,7 +444,7 @@ class CompilerCommon extends Obj {
   }
 
   isReservedDeclarationName(name) {
-    return RESERVED_DECLARATION_NAMES.has(name);
+    return RESERVED_DECLARATION_NAMES.has(name) || (this.asyncMode && RESERVED_ASYNC_DECLARATION_NAMES.has(name));
   }
 
   _compileChildren(node, frame) {

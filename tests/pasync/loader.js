@@ -138,7 +138,7 @@
         });
       });
 
-      describe('Import with Context', () => {
+      describe('Import isolation', () => {
         beforeEach(() => {
           // Add template that uses context variables
           loader.addTemplate('context-forms.njk', `
@@ -152,22 +152,19 @@
           `);
         });
 
-        it('should handle import with async context values', async () => {
+        it('should allow async import with context to read render-context properties', async () => {
           const context = {
             username: Promise.resolve('john_doe'),
             status: Promise.resolve('active')
           };
 
-          const template = `
+          const result = await env.renderTemplateString(`
             {% import "context-forms.njk" as forms with context %}
             {{ forms.userField() }}
             {{ forms.statusLabel() }}
-          `;
-
-          const result = await env.renderTemplateString(template, context);
-          expect(unescape(result.trim())).to.equal(
-            `<input name="user" value="john_doe" />
-            <label>Status: active</label>`
+          `, context);
+          expect(unescape(result.replace(/\s+/g, ' ').trim())).to.equal(
+            '<input name="user" value="john_doe" /> <label>Status: active</label>'
           );
         });
 
@@ -185,6 +182,191 @@
           expect(unescape(result.trim())).to.equal(
             '<input name="user" value="" />'
           );
+        });
+
+        it('should allow async from-import with context to read render-context properties', async () => {
+          const context = {
+            username: Promise.resolve('john_doe')
+          };
+
+          const result = await env.renderTemplateString(`
+            {% from "context-forms.njk" import userField with context %}
+            {{ userField() }}
+          `, context);
+          expect(unescape(result.trim())).to.equal('<input name="user" value="john_doe" />');
+        });
+
+        it('should reject async import of a template with required externs', async () => {
+          loader.addTemplate('extern-import.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          try {
+            await env.renderTemplateString(`
+              {% import "extern-import.njk" as forms %}
+              {{ forms.userField() }}
+            `, {});
+            expect().fail('Expected isolated async import extern validation to fail');
+          } catch (err) {
+            expect(err.message).to.contain("import is missing required extern 'username'");
+          }
+        });
+
+        it('should allow async import of a template whose externs are satisfied by fallbacks', async () => {
+          loader.addTemplate('fallback-import.njk', `
+            {% extern username = "guest" %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% import "fallback-import.njk" as forms %}
+            {{ forms.userField() }}
+          `, {});
+          expect(unescape(result.trim())).to.equal('<input name="user" value="guest" />');
+        });
+
+        it('should reject async from-import of a template with required externs', async () => {
+          loader.addTemplate('extern-from-import.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          try {
+            await env.renderTemplateString(`
+              {% from "extern-from-import.njk" import userField %}
+              {{ userField() }}
+            `, {});
+            expect().fail('Expected isolated async from-import extern validation to fail');
+          } catch (err) {
+            expect(err.message).to.contain("from-import is missing required extern 'username'");
+          }
+        });
+
+        it('should allow async from-import of a template whose externs are satisfied by fallbacks', async () => {
+          loader.addTemplate('fallback-from-import.njk', `
+            {% extern username = "guest" %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% from "fallback-from-import.njk" import userField %}
+            {{ userField() }}
+          `, {});
+          expect(unescape(result.trim())).to.equal('<input name="user" value="guest" />');
+        });
+
+        it('should allow async import explicit named with inputs for extern-backed imports', async () => {
+          loader.addTemplate('extern-import-with-vars.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% import "extern-import-with-vars.njk" as forms with username %}
+            {{ forms.userField() }}
+          `, {
+            username: 'manual_user'
+          });
+          expect(unescape(result.trim())).to.equal('<input name="user" value="manual_user" />');
+        });
+
+        it('should allow async from-import explicit named with inputs for extern-backed imports', async () => {
+          loader.addTemplate('extern-from-import-with-vars.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% from "extern-from-import-with-vars.njk" import userField with username %}
+            {{ userField() }}
+          `, {
+            username: 'manual_user'
+          });
+          expect(unescape(result.trim())).to.equal('<input name="user" value="manual_user" />');
+        });
+
+        it('should allow async import with context to satisfy required externs from render context', async () => {
+          loader.addTemplate('extern-import-with-context.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% import "extern-import-with-context.njk" as forms with context %}
+            {{ forms.userField() }}
+          `, {
+            username: 'ctx_user'
+          });
+          expect(unescape(result.trim())).to.equal('<input name="user" value="ctx_user" />');
+        });
+
+        it('should validate isolated async import contracts against the resolved dynamic target', async () => {
+          loader.addTemplate('plain-import-lib.njk', `
+            {% macro label() -%}
+            plain
+            {%- endmacro %}
+          `);
+          loader.addTemplate('fallback-import-lib.njk', `
+            {% extern username = "guest" %}
+            {% macro label() -%}
+            {{ username }}
+            {%- endmacro %}
+          `);
+          loader.addTemplate('required-import-lib.njk', `
+            {% extern username %}
+            {% macro label() -%}
+            {{ username }}
+            {%- endmacro %}
+          `);
+
+          const plain = await env.renderTemplateString(`
+            {% import pickTemplate() as lib %}
+            {{ lib.label() }}
+          `, {
+            pickTemplate() {
+              return 'plain-import-lib.njk';
+            }
+          });
+          expect(plain.trim()).to.equal('plain');
+
+          const fallback = await env.renderTemplateString(`
+            {% import pickTemplate() as lib %}
+            {{ lib.label() }}
+          `, {
+            pickTemplate() {
+              return 'fallback-import-lib.njk';
+            }
+          });
+          expect(fallback.trim()).to.equal('guest');
+
+          try {
+            await env.renderTemplateString(`
+              {% import pickTemplate() as lib %}
+              {{ lib.label() }}
+            `, {
+              pickTemplate() {
+                return 'required-import-lib.njk';
+              }
+            });
+            expect().fail('Expected dynamic async import extern validation to fail');
+          } catch (err) {
+            expect(err.message).to.contain("import is missing required extern 'username'");
+          }
         });
       });
 
@@ -325,10 +507,10 @@
           expect(result).to.equal('Hello, Alice (delayed)!');
         });
 
-        it('should handle async variables and functions in imported macros', async () => {
+        it('should handle async variables and functions passed as macro arguments', async () => {
           // Add the template to the loader
           loader.addTemplate('greeting_macros.njk', `
-            {%- macro greetWithContext() -%}
+            {%- macro greet(getName) -%}
             {{ getName() }}
             {%- endmacro -%}
           `);
@@ -341,8 +523,8 @@
           };
 
           const template = `
-            {% import "greeting_macros.njk" as gm with context %}
-            {{ gm.greetWithContext() }}
+            {% import "greeting_macros.njk" as gm %}
+            {{ gm.greet(getName) }}
           `;
 
           const result = await env.renderTemplateString(template, context);
@@ -553,7 +735,7 @@
           expect(result.trim()).to.equal('Hello, Charlie!');
         });
 
-        it('should handle async function called within imported macro with context', async () => {
+        it('should allow async import with context when macros depend on render-context locals', async () => {
           loader.addTemplate('greet_macro_with_context.njk', `
           {%- macro greet() -%}
           Hello, {{ getName() }}!
@@ -567,12 +749,10 @@
             }
           };
 
-          const template = `
-          {% import "greet_macro_with_context.njk" as macros with context %}
-          {{ macros.greet() }}
-        `;
-
-          const result = await env.renderTemplateString(template, context);
+          const result = await env.renderTemplateString(`
+            {% import "greet_macro_with_context.njk" as macros with context %}
+            {{ macros.greet() }}
+          `, context);
           expect(result.trim()).to.equal('Hello, Diana!');
         });
       });
@@ -596,6 +776,37 @@
 
         const result = await env.renderTemplate('main.njk', context);
         expect(result).to.equal('Hello, World!');
+      });
+
+      it('should allow include with context to read render-context properties as bare names', async () => {
+        loader.addTemplate('greeting.njk', 'Hello, {{ name }} from {{ city }}!');
+        loader.addTemplate('main.njk', '{% include "greeting.njk" with context %}');
+
+        const result = await env.renderTemplate('main.njk', {
+          name: 'World',
+          city: 'London'
+        });
+        expect(result).to.equal('Hello, World from London!');
+      });
+
+      it('should allow include with context to satisfy required externs from render context', async () => {
+        loader.addTemplate('greeting.njk', '{% extern name %}Hello, {{ name }}!');
+        loader.addTemplate('main.njk', '{% include "greeting.njk" with context %}');
+
+        const result = await env.renderTemplate('main.njk', {
+          name: 'ExternUser'
+        });
+        expect(result).to.equal('Hello, ExternUser!');
+      });
+
+      it('should not expose render-context properties to include without with context', async () => {
+        loader.addTemplate('greeting.njk', 'Hello, {{ name }}!');
+        loader.addTemplate('main.njk', '{% include "greeting.njk" %}');
+
+        const result = await env.renderTemplate('main.njk', {
+          name: 'Hidden'
+        });
+        expect(result).to.equal('Hello, !');
       });
 
       it('should handle async functions in includeed template', async () => {
@@ -959,12 +1170,11 @@
           }
         };
 
-        const template = `
+        const result = await env.renderTemplateString(`
           {%- import "macros.njk" as macros with context -%}
           {{ macros.asyncMacro1() }} {{ macros.asyncMacro2() }}
-        `;
-        const result = await env.renderTemplateString(template, context);
-        expect(result.trim()).to.equal('[Macro1: Value1] [Macro2: Value2]');
+        `, context);
+        expect(result.replace(/\s+/g, ' ').trim()).to.equal('[Macro1: Value1] [Macro2: Value2]');
       });
 
       it('should "from import" multiple async macros and use them', async () => {
@@ -991,13 +1201,11 @@
           }
         };
 
-        const template = `
+        const result = await env.renderTemplateString(`
           {% from "macros.njk" import asyncMacro1, asyncMacro2 with context %}
           {{ asyncMacro1() }} {{ asyncMacro2() }}
-        `;
-
-        const result = await env.renderTemplateString(template, context);
-        expect(result.trim()).to.equal('[Macro1: Value1] [Macro2: Value2]');
+        `, context);
+        expect(result.replace(/\s+/g, ' ').trim()).to.equal('[Macro1: Value1] [Macro2: Value2]');
       });
 
     });

@@ -68,8 +68,8 @@
     it('should preserve this context for imported regular functions', async () => {
       var loader = new StringLoader();
       env = new AsyncEnvironment(loader);
-      loader.addTemplate('context-export-func-lib.njk', '{% set myExport = myFunc %}');
-      loader.addTemplate('context-export-func-main.njk', '{% import "context-export-func-lib.njk" as lib with context %}{{ lib.myExport() }}');
+      loader.addTemplate('context-export-func-lib.njk', '{% macro callFunc(fn) %}{{ fn() }}{% endmacro %}');
+      loader.addTemplate('context-export-func-main.njk', '{% import "context-export-func-lib.njk" as lib %}{{ lib.callFunc(myFunc) }}');
 
       const myObj = {
         foo: 'bar',

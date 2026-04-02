@@ -453,7 +453,7 @@ class CompileAnalysis {
     if (!this.compiler || !this.compiler.isReservedDeclarationName || !this.compiler.isReservedDeclarationName(decl.name)) {
       return;
     }
-    if (decl.type === 'var' && !this.compiler.scriptMode) {
+    if (decl.name !== 'context' && decl.type === 'var' && !this.compiler.scriptMode) {
       return;
     }
     const originNode = analysis.node || null;

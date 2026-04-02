@@ -208,8 +208,8 @@ class Template extends Obj {
     return undefined;
   }
 
-  _createContext(ctx) {
-    return new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
+  _createContext(ctx, renderCtx) {
+    return new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode, renderCtx);
   }
 
   _bindExportedValues(exported) {
@@ -340,20 +340,24 @@ class AsyncTemplate extends Template {
     });
   }
 
-  getExported(ctx, cb) {
+  getExported(ctx, renderCtx, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
+      renderCtx = ctx;
+    } else if (typeof renderCtx === 'function') {
+      cb = renderCtx;
+      renderCtx = ctx;
     }
 
     this.compile();
 
-    const context = this._createContext(ctx);
+    const context = this._createContext(ctx, renderCtx);
     this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
 
     const exported = context.getExported();
     const boundExported = {};
-    const macroContext = this._createContext({});
+    const macroContext = context;
 
     for (const name in exported) {
       const item = exported[name];
@@ -373,9 +377,9 @@ class AsyncTemplate extends Template {
    * composition buffer finishes.
    * It sets the compositionMode argument of rootRenderFunc to true
    */
-  _renderForComposition(ctx, cb) {
+  _renderForComposition(ctx, cb, renderCtx) {
     this.compile();
-    const context = this._createContext(ctx);
+    const context = this._createContext(ctx, renderCtx);
     return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
   }
 

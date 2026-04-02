@@ -105,7 +105,8 @@ describe('Cascada Script: Variables', function () {
       const scripts = [
         'var data = 1',
         'var value = 2',
-        'var sink = 3'
+        'var sink = 3',
+        'var context = 4'
       ];
 
       for (const script of scripts) {

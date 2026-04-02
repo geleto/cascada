@@ -85,6 +85,17 @@ class CompileInheritance {
     });
   }
 
+  _emitCompositionContextObject(node, explicitVarsVar, compositionCtxVar, explicitNamesVar = null) {
+    this.emit.line(`let ${compositionCtxVar} = {};`);
+    if (node.withContext) {
+      this.emit.line(`Object.assign(${compositionCtxVar}, context.getRenderContextVariables());`);
+    }
+    this.emit.line(`Object.assign(${compositionCtxVar}, ${explicitVarsVar});`);
+    if (explicitNamesVar) {
+      this.emit.line(`let ${explicitNamesVar} = Object.keys(${explicitVarsVar});`);
+    }
+  }
+
   _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
     const templateId = this.compiler._tmpid();
     const parentName = JSON.stringify(this.compiler.templateName);
@@ -102,22 +113,48 @@ class CompileInheritance {
   }
 
   _compileAsyncImport(node) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    if (!node.withContext && withVars.length === 0) {
+      const target = node.target.value;
+      const id = this._compileAsyncGetTemplateOrScript(node, false, false);
+      const exportedId = this.compiler._tmpid();
+      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
+      this.emit.line('  resolvedTemplate.compile();');
+      this.emit.line('  runtime.validateIsolatedExternSpec(resolvedTemplate.externSpec || [], "import");');
+      this.emit.line('  return resolvedTemplate.getExported(null, cb);');
+      this.emit.line('});');
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
+      this._emitValueImportBinding(target, exportedId, node);
+      return;
+    }
+
     const target = node.target.value;
     const id = this._compileAsyncGetTemplateOrScript(node, false, false);
     const exportedId = this.compiler._tmpid();
-    if (node.withContext) {
-      const importVarsVar = this.compiler._tmpid();
-      this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
-      this._emitDeclaredValueSnapshots(node._analysis, importVarsVar, node);
-      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, cb));`);
-    } else {
-      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => resolvedTemplate.getExported(null, cb));`);
-    }
+    const importVarsVar = this.compiler._tmpid();
+    const importInputNamesVar = this.compiler._tmpid();
+    const importContextVar = this.compiler._tmpid();
+    this.emit.line(`let ${importVarsVar} = {};`);
+    this._emitExplicitExternInputs(node, importVarsVar);
+    this._emitCompositionContextObject(node, importVarsVar, importContextVar, importInputNamesVar);
+    this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
+    this.emit.line('  resolvedTemplate.compile();');
+    this.emit.line(`  runtime.validateExternInputs(resolvedTemplate.externSpec || [], ${importInputNamesVar}, Object.keys(${importContextVar}), "import");`);
+    this.emit.line(`  return resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb);`);
+    this.emit.line('});');
     this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
   }
 
   _compileSyncImport(node, frame) {
+    if (node.withVars && node.withVars.children && node.withVars.children.length > 0) {
+      this.compiler.fail(
+        'sync import does not support explicit with variables',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     const target = node.target.value;
     const id = this._compileSyncGetTemplate(node, frame, false, false);
     this.emit.addScopeLevel();
@@ -134,17 +171,70 @@ class CompileInheritance {
   }
 
   _compileAsyncFromImport(node) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    if (!node.withContext && withVars.length === 0) {
+      const importedId = this._compileAsyncGetTemplateOrScript(node, false, false);
+      const exportedId = this.compiler._tmpid();
+      const bindingIds = [];
+      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
+      this.emit.line('  resolvedTemplate.compile();');
+      this.emit.line('  runtime.validateIsolatedExternSpec(resolvedTemplate.externSpec || [], "from-import");');
+      this.emit.line('  return resolvedTemplate.getExported(null, cb);');
+      this.emit.line('});');
+
+      node.names.children.forEach((nameNode) => {
+        let name;
+        let alias;
+        let id = this.compiler._tmpid();
+
+        if (nameNode instanceof nodes.Pair) {
+          name = nameNode.key.value;
+          alias = nameNode.value.value;
+        } else {
+          name = nameNode.value;
+          alias = name;
+        }
+
+        const errorContext = this.compiler._generateErrorContext(node, nameNode);
+        const failMsg = `cannot import '${name}'`.replace(/"/g, '\\"');
+
+        this.emit.line(`let ${id} = (async () => { try {`);
+        this.emit.line(`  let exported = await ${exportedId};`);
+        this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
+        this.emit.line(`    return exported["${name}"];`);
+        this.emit.line(`  } else {`);
+        this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err;`);
+        this.emit.line(`  }`);
+        this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
+        bindingIds.push(id);
+
+        this._emitValueImportBinding(alias, id, node);
+      });
+
+      if (bindingIds.length > 0) {
+        const boundaryCompletion = this.compiler._tmpid();
+        this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(boundaryCompletion, node);
+      } else {
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
+      }
+      return;
+    }
+
     const importedId = this._compileAsyncGetTemplateOrScript(node, false, false);
     const exportedId = this.compiler._tmpid();
     const bindingIds = [];
-    if (node.withContext) {
-      const importVarsVar = this.compiler._tmpid();
-      this.emit.line(`let ${importVarsVar} = Object.assign({}, context.getVariables());`);
-      this._emitDeclaredValueSnapshots(node._analysis, importVarsVar, node);
-      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(${importVarsVar}, cb));`);
-    } else {
-      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => resolvedTemplate.getExported(null, cb));`);
-    }
+    const importVarsVar = this.compiler._tmpid();
+    const importInputNamesVar = this.compiler._tmpid();
+    const importContextVar = this.compiler._tmpid();
+    this.emit.line(`let ${importVarsVar} = {};`);
+    this._emitExplicitExternInputs(node, importVarsVar);
+    this._emitCompositionContextObject(node, importVarsVar, importContextVar, importInputNamesVar);
+    this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
+    this.emit.line('  resolvedTemplate.compile();');
+    this.emit.line(`  runtime.validateExternInputs(resolvedTemplate.externSpec || [], ${importInputNamesVar}, Object.keys(${importContextVar}), "from-import");`);
+    this.emit.line(`  return resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb);`);
+    this.emit.line('});');
 
     node.names.children.forEach((nameNode) => {
       let name;
@@ -185,6 +275,14 @@ class CompileInheritance {
   }
 
   _compileSyncFromImport(node, frame) {
+    if (node.withVars && node.withVars.children && node.withVars.children.length > 0) {
+      this.compiler.fail(
+        'sync from-import does not support explicit with variables',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     const importedId = this._compileSyncGetTemplate(node, frame, false, false);
     this.emit.addScopeLevel();
     this.emit.line(importedId + '.getExported(' +
@@ -370,6 +468,7 @@ class CompileInheritance {
       const templateNameVar = this.compiler._tmpid();
       const includeVarsVar = this.compiler._tmpid();
       const includeInputNamesVar = this.compiler._tmpid();
+      const includeContextVar = this.compiler._tmpid();
       const includeTextPromise = this.compiler._tmpid();
       // Included template renders into its own default text lane.
       // The caller lane may be scope-specific (e.g. capture text output) and
@@ -389,14 +488,14 @@ class CompileInheritance {
       // Async include passes only explicit extern inputs to the child.
       this.emit.line(`let ${includeVarsVar} = {};`);
       this._emitExplicitExternInputs(node, includeVarsVar);
-      this.emit.line(`let ${includeInputNamesVar} = Object.keys(${includeVarsVar});`);
+      this._emitCompositionContextObject(node, includeVarsVar, includeContextVar, includeInputNamesVar);
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);
       this.emit.line(`if (!${node.ignoreMissing ? 'true' : 'false'} || ${templateVar}_resolved.path) {`);
-      this.emit.line(`  runtime.validateExternInputs(${templateVar}_resolved.externSpec || [], ${includeInputNamesVar}, "include");`);
+      this.emit.line(`  runtime.validateExternInputs(${templateVar}_resolved.externSpec || [], ${includeInputNamesVar}, Object.keys(${includeContextVar}), "include");`);
       this.emit.line('}');
-      this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeVarsVar}, cb);`);
+      this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeContextVar}, cb, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'});`);
       // Includes own a composed child text boundary. Use the child text channel's
       // finalSnapshot() as the structural completion signal rather than adding an
       // extra point-in-time snapshot command for that boundary.

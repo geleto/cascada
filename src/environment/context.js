@@ -5,7 +5,7 @@ const { Obj } = require('../object');
 const { createPoison } = require('../runtime/errors');
 
 class Context extends Obj {
-  init(ctx, blocks, env, path, scriptMode = false) {
+  init(ctx, blocks, env, path, scriptMode = false, renderCtx) {
     // Has to be tied to an environment so we can tap into its globals.
     if (!env) {
       // Lazy load Environment to avoid circular dependency
@@ -17,7 +17,11 @@ class Context extends Obj {
     this.path = path || null;
     this.scriptMode = !!scriptMode;
 
-    // Make a duplicate of ctx
+    // Preserve the original render context separately from the working context
+    // so async composition can expose it explicitly via `with context`
+    // without leaking current local vars/channels.
+    const initialRenderCtx = renderCtx === undefined ? ctx : (renderCtx || {});
+    this.renderCtx = lib.extend({}, initialRenderCtx);
     this.ctx = lib.extend({}, ctx);
 
     this.blocks = {};
@@ -67,6 +71,10 @@ class Context extends Obj {
 
   getVariables() {
     return this.ctx;
+  }
+
+  getRenderContextVariables() {
+    return this.renderCtx;
   }
 
   addBlock(name, block) {
@@ -197,10 +205,11 @@ class Context extends Obj {
   forkForPath(newPath) {
     // Create a new, empty context object.
     // It will inherit the correct `env` from `this`.
-    const newContext = new Context({}, {}, this.env, null, this.scriptMode);
+    const newContext = new Context({}, {}, this.env, null, this.scriptMode, this.renderCtx);
 
     // Share critical state objects by REFERENCE. Do NOT copy them.
     newContext.ctx = this.ctx;           // Share the variable store.
+    newContext.renderCtx = this.renderCtx;
     newContext.blocks = this.blocks;       // Share the block definitions for extends/super.
     newContext.exportResolveFunctions = this.exportResolveFunctions;
     newContext.exportChannels = this.exportChannels;

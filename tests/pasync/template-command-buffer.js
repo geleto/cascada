@@ -104,6 +104,23 @@
       expect(source).to.not.contain('["scopedValue#');
     });
 
+    it('should compile async import with context and explicit inputs without parent-var linking', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% extern theme %}{% macro hi() %}{{ theme }}{{ name }}{% endmacro %}');
+
+      const tmpl = new AsyncTemplate(
+        '{% import "macros.njk" as m with context, theme %}{{ m.hi() }}',
+        env,
+        'import-with-context-and-vars.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('context.getRenderContextVariables()');
+      expect(source).to.contain('runtime.validateExternInputs(');
+      expect(source).to.not.contain('linkWithParentCompositionBuffer');
+    });
+
     it('should keep observed vs unobserved async errors behavior', async function () {
       const env = new AsyncEnvironment();
       const context = {

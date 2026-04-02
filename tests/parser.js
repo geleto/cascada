@@ -346,6 +346,7 @@
           [nodes.Include,
             [nodes.Literal, 'test.njk'],
             null,
+            null,
             [nodes.NodeList,
               [nodes.Symbol, 'user'],
               [nodes.Symbol, 'theme']]]]);
@@ -354,6 +355,16 @@
         [nodes.Root,
           [nodes.Include,
             [nodes.Literal, 'test.njk'],
+            true,
+            null,
+            [nodes.NodeList,
+              [nodes.Symbol, 'user']]]]);
+
+      isAST(parser.parse('{% include "test.njk" with context, user %}'),
+        [nodes.Root,
+          [nodes.Include,
+            [nodes.Literal, 'test.njk'],
+            null,
             true,
             [nodes.NodeList,
               [nodes.Symbol, 'user']]]]);
@@ -663,7 +674,9 @@
         [nodes.Root,
           [nodes.Import,
             [nodes.Literal, 'foo/bar.njk'],
-            [nodes.Symbol, 'baz']]]);
+            [nodes.Symbol, 'baz'],
+            null,
+            [nodes.NodeList]]]);
 
       isAST(parser.parse('{% from "foo/bar.njk" import baz, foobar as foobarbaz %}'),
         [nodes.Root,
@@ -673,7 +686,9 @@
               [nodes.Symbol, 'baz'],
               [nodes.Pair,
                 [nodes.Symbol, 'foobar'],
-                [nodes.Symbol, 'foobarbaz']]]]]);
+                [nodes.Symbol, 'foobarbaz']]],
+            null,
+            [nodes.NodeList]]]);
 
       isAST(parser.parse('{% import "foo/bar.html"|replace("html", "j2") as baz %}'),
         [nodes.Root,
@@ -686,7 +701,9 @@
                 [nodes.Literal, 'j2']
               ]
             ],
-            [nodes.Symbol, 'baz']]]);
+            [nodes.Symbol, 'baz'],
+            null,
+            [nodes.NodeList]]]);
 
       isAST(parser.parse('{% from ""|default("foo/bar.njk") import baz, foobar as foobarbaz %}'),
         [nodes.Root,
@@ -702,7 +719,29 @@
               [nodes.Symbol, 'baz'],
               [nodes.Pair,
                 [nodes.Symbol, 'foobar'],
-                [nodes.Symbol, 'foobarbaz']]]]]);
+                [nodes.Symbol, 'foobarbaz']]],
+            null,
+            [nodes.NodeList]]]);
+
+      isAST(parser.parse('{% import "foo/bar.njk" as baz with context, user, theme %}'),
+        [nodes.Root,
+          [nodes.Import,
+            [nodes.Literal, 'foo/bar.njk'],
+            [nodes.Symbol, 'baz'],
+            true,
+            [nodes.NodeList,
+              [nodes.Symbol, 'user'],
+              [nodes.Symbol, 'theme']]]]);
+
+      isAST(parser.parse('{% from "foo/bar.njk" import baz with context, user %}'),
+        [nodes.Root,
+          [nodes.FromImport,
+            [nodes.Literal, 'foo/bar.njk'],
+            [nodes.NodeList,
+              [nodes.Symbol, 'baz']],
+            true,
+            [nodes.NodeList,
+              [nodes.Symbol, 'user']]]]);
     });
 
     it('should parse blocks with explicit input lists', function() {
@@ -713,9 +752,21 @@
             [nodes.NodeList,
               [nodes.Output,
                 [nodes.Symbol, 'user']]],
+            null,
             [nodes.NodeList,
               [nodes.Symbol, 'user'],
               [nodes.Symbol, 'theme']]]]);
+
+      isAST(parser.parse('{% block content with context, user %}{{ user }}{% endblock %}'),
+        [nodes.Root,
+          [nodes.Block,
+            [nodes.Symbol, 'content'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.Symbol, 'user']]],
+            true,
+            [nodes.NodeList,
+              [nodes.Symbol, 'user']]]]);
     });
 
     it('should parse whitespace control', function() {

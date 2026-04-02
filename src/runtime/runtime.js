@@ -129,9 +129,14 @@ function promisify(fn) {
   };
 }
 
-function validateExternInputs(externSpec, providedInputNames, operationName = 'include') {
+function validateExternInputs(externSpec, providedInputNames, availableValueNames, operationName = 'include') {
+  if (typeof availableValueNames === 'string' && operationName === 'include') {
+    operationName = availableValueNames;
+    availableValueNames = providedInputNames;
+  }
   const spec = Array.isArray(externSpec) ? externSpec : [];
   const providedNames = Array.isArray(providedInputNames) ? providedInputNames : [];
+  const availableNames = Array.isArray(availableValueNames) ? availableValueNames : providedNames;
   const declaredNames = new Set();
 
   for (let i = 0; i < spec.length; i++) {
@@ -154,14 +159,18 @@ function validateExternInputs(externSpec, providedInputNames, operationName = 'i
     if (!entry || !entry.required) {
       continue;
     }
-    const names = Array.isArray(entry.names) ? entry.names : [];
-    for (let j = 0; j < names.length; j++) {
-      const name = names[j];
-      if (providedNames.indexOf(name) === -1) {
-        throw new Error(`${operationName} is missing required extern '${name}'`);
+      const names = Array.isArray(entry.names) ? entry.names : [];
+      for (let j = 0; j < names.length; j++) {
+        const name = names[j];
+      if (availableNames.indexOf(name) === -1) {
+          throw new Error(`${operationName} is missing required extern '${name}'`);
+        }
       }
-    }
   }
+}
+
+function validateIsolatedExternSpec(externSpec, operationName = 'import') {
+  validateExternInputs(externSpec, [], [], operationName);
 }
 
 module.exports = {
@@ -178,6 +187,7 @@ module.exports = {
   promisify,
   withPath,
   validateExternInputs,
+  validateIsolatedExternSpec,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runWaitedControlFlowBoundary: asyncBoundaries.runWaitedControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,

@@ -1,6 +1,7 @@
 'use strict';
 
 const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', '__return__']);
+const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
 
 /**
  * Validate that guard variables are declared in the scope.
@@ -105,6 +106,7 @@ function validateChannelObservationCall(compiler, { node, command, channelName, 
 
 module.exports = {
   RESERVED_DECLARATION_NAMES,
+  RESERVED_ASYNC_DECLARATION_NAMES,
   validateGuardVariablesDeclared,
   validateChannelDeclarationNode,
   validateSinkSnapshotInGuard,

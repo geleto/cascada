@@ -323,10 +323,10 @@
       }
     });
 
-    it('should report correct path for error in macro with imported context', async () => {
+    it('should report correct path for error in imported macro', async () => {
       var mainTemplateName = 'error-macro-context-main.njk';
       var macroTemplateName = 'error-macro-context-lib.njk';
-      loader.addTemplate(mainTemplateName, '{% import "' + macroTemplateName + '" as lib with context %}{{ lib.myMacro() }}');
+      loader.addTemplate(mainTemplateName, '{% import "' + macroTemplateName + '" as lib %}{{ lib.myMacro() }}');
       loader.addTemplate(macroTemplateName, '{% macro myMacro() %}{{ nonExistentVar }}{% endmacro %}');
       env = new AsyncEnvironment(loader, { throwOnUndefined: true });
       try {
@@ -355,17 +355,15 @@
       var mainTemplateName = 'error-import-async-main.njk';
       var libTemplateName = 'error-import-async-lib.njk';
 
-      loader.addTemplate(mainTemplateName, `{% import "${libTemplateName}" as lib with context %}{{ lib.val }}`);
+      loader.addTemplate(mainTemplateName, `{% import "${libTemplateName}" as lib %}{{ lib.val }}`);
       loader.addTemplate(libTemplateName, '{% set val = errorAsyncFunc() %}');//poison starts at lib template
+      env.addGlobal('errorAsyncFunc', async () => {
+        await new Promise(resolve => setTimeout(resolve, 3));
+        throw new Error('Async error during import');
+      });
 
       try {
-        await env.renderTemplate(mainTemplateName, {
-          errorAsyncFunc: async () => {
-            // Simulate async work then error
-            await new Promise(resolve => setTimeout(resolve, 3));
-            throw new Error('Async error during import');
-          }
-        });
+        await env.renderTemplate(mainTemplateName, {});
         expect().fail('Expected an error to be thrown');
       } catch (err) {
         expect(err.message).to.contain('Async error during import');

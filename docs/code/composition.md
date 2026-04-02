@@ -100,12 +100,20 @@ supplies values explicitly through `with ...`. At the top-level render entry
 point, the render context supplies those values. The child receives fresh local
 bindings initialized from those values.
 
+Async composition also supports explicit render-context access through
+`with context`.
+
+That special token does not inject render-context properties as child locals.
+Instead, it makes the child use the render context for ordinary bare-name
+lookup in the same way the parent does.
+
 Important consequences:
 
 - value passing across composition boundaries is explicit
 - local rebinding inside the child is allowed
 - child locals are initialized from passed values rather than bound to parent
   variable channels
+- render-context visibility is explicit through `with context`
 - shared mutable state must use channels or other explicit stateful constructs
 
 This makes async composition much closer to macro invocation than to ambient
@@ -170,22 +178,25 @@ So `extern` does not introduce a second runtime storage model for async vars.
 Async include becomes explicit:
 
 ```njk
-{% include "card.njk" with user, theme %}
+{% include "card.njk" with context, user, theme %}
 ```
 
 Meaning:
 
+- if `context` is listed, the child gets render-context visibility through
+  ordinary bare-name lookup
 - evaluate `user` and `theme` in the parent scope
 - pass them as named inputs
 - initialize matching child `extern` bindings
 - do not expose any other parent locals
+- do not expose render-context properties unless `with context` is used
 
 ### `block`
 
 Async block contracts are explicit:
 
 ```njk
-{% block content with user, theme %}
+{% block content with context, user, theme %}
 ```
 
 Ownership of the contract:
@@ -199,6 +210,8 @@ Ownership of the contract:
 
 Meaning:
 
+- if `context` is listed, the overriding block gets render-context visibility
+  through ordinary bare-name lookup
 - when this block is invoked, `user` and `theme` are evaluated in the invoking
   scope
 - the overriding block receives fresh local bindings for those names
@@ -223,17 +236,56 @@ semantics become explicit.
 
 ### `import` and `from import`
 
-Async import is isolated.
+Async import is isolated from parent lexical vars and channels, but it uses the
+same `with` surface as other async composition forms.
 
 That means:
 
-- no parent scope access
-- no `with context`
-- imported files must rely on their own declarations, globals, and explicit
-  macro arguments
+- no implicit parent scope access
+- `with name1, name2` passes explicit named inputs that initialize matching
+  child `extern`s
+- `with context` makes render-context properties visible through ordinary
+  bare-name lookup in the imported file
+- imported files still rely on their own declarations, globals, explicit
+  composition inputs, and explicit macro arguments
 
-If an imported file declares required `extern`s with no defaults, importing it
-is invalid in async mode because import does not supply extern inputs.
+Examples:
+
+```njk
+{% import "forms.njk" as forms with context %}
+{% from "lib.njk" import helper with context, theme %}
+{% import "cards.njk" as cards with user, theme %}
+```
+
+If an imported file declares required `extern`s with no defaults, async import
+is invalid unless those `extern`s are provided through `with ...` or satisfied
+by fallbacks.
+
+### Async `with context`
+
+For consistency, all async composition forms support `with context`:
+
+- `include`
+- `block`
+- `import`
+- `from import`
+
+Meaning in async mode:
+
+- `with context` is explicit opt-in access to the render context
+- it does not pass parent frame locals or async var channels
+- it does not create a special local binding that must be declared via
+  `extern`
+- instead, it seeds child lookup so bare names can read render-context
+  properties the same way the parent does
+
+Reserved-name rule:
+
+- `context` is reserved in async composition syntax
+- async local declarations named `context` are invalid
+- `extern context` is invalid
+- `with context` always means the special render-context access, never a normal
+  variable named `context`
 
 ### Sync handling of `extern`
 
@@ -445,19 +497,24 @@ So the recommendation is:
 
 ### Import and From Import
 
-Async imports should be treated as isolated libraries.
+Async imports should be treated as isolated libraries with the same explicit
+`with` surface as other async composition forms.
 
 That means:
 
 - no ambient parent locals
-- no `with context`
+- no implicit parent frame/channel access
+- `with context` is allowed and exposes render-context properties through
+  ordinary bare-name lookup
+- named `with ...` inputs initialize declared child `extern`s
 - no implicit `extern` provisioning from the importer
 
 Imported macros continue to receive explicit macro arguments as usual.
 
-This is the cleanest rule and fits the user's preferred direction:
+This keeps import isolated while preserving async consistency:
 
-- import has no parent scope access
+- import has no implicit parent scope access
+- import still uses the same explicit `with ...` interface as include/block
 
 ### Comparison Table
 
@@ -466,6 +523,7 @@ This is the cleanest rule and fits the user's preferred direction:
 | `include` | Parent `with ...` or top-level render context | No | Yes | No | No |
 | `block` override | Invoking block's `with ...` | No | Yes | No | No |
 | `super()` | Same block invocation input map | No | Yes, in its own local invocation scope | No | No |
+| `import` / `from import` | Parent `with ...` plus optional `with context` | No | Yes, for imported-file locals | No | No |
 | macro params | Call arguments / kwargs | No | Yes | No | No |
 | `caller()` body | Call-site scope plus explicit caller args | Yes, by caller design | Yes, in caller-local scope | No parent-owned mutation; separate caller composition subtree | Yes |
 
@@ -554,17 +612,23 @@ Recommended async validation rules:
 
 1. `extern` is root-only.
 2. `extern` names must not conflict with local declarations or reserved names.
-3. A passed `with` name must correspond to a declared child `extern`.
-4. A required child `extern` with no fallback must be provided by the render
+3. `context` is reserved for async composition and cannot be declared as a
+   local var or `extern`.
+4. A passed `with` name must correspond to a declared child `extern`, except
+   for the reserved special token `context`.
+5. A required child `extern` with no fallback must be provided by the render
    entry point or by the composition caller.
-5. `import` of a file with required `extern`s and no defaults is invalid.
-6. `extern` fallback initializers should not introduce hidden ambient
+6. Async `import` of a file with required `extern`s and no defaults is invalid
+   unless those inputs are supplied explicitly with `with ...`.
+7. `extern` fallback initializers should not introduce hidden ambient
    dependencies.
-7. `extern` declarations participate in ordinary var usage/mutation analysis.
-8. `extern` declarations are never renamed.
-9. extern fallback initializers may depend only on earlier externs and globals.
-10. extern initialization cycles are invalid.
-11. block input names participate in ordinary local declaration conflict rules.
+8. `extern` declarations participate in ordinary var usage/mutation analysis.
+9. `extern` declarations are never renamed.
+10. extern fallback initializers may depend only on earlier externs and globals.
+11. extern initialization cycles are invalid.
+12. block input names participate in ordinary local declaration conflict rules.
+13. `with context` must not implicitly expose parent frame locals or async var
+    channels.
 
 Validation timing:
 
@@ -600,7 +664,8 @@ The main implementation areas affected by this design are:
   - parse `extern`
   - parse `include ... with ...`
   - parse `block ... with ...`
-  - keep legacy `with context` parsing for sync compatibility
+  - support `with ...` consistently across async composition forms
+  - keep sync `with context` parsing unchanged
 - `src/nodes.js`
   - add `Extern`
   - extend `Include` / `Block` metadata for explicit inputs
@@ -656,15 +721,17 @@ Recommended parser additions:
 - `extern`
 - `include ... with name1, name2`
 - `block name with name1, name2`
+- `import ... with name1, name2`
+- `from ... import ... with name1, name2`
 
 Recommended AST shape:
 
 - new `Extern` node
 - `Include` gains explicit `withVars`
 - `Block` gains explicit `withVars`
-- legacy `withContext` remains parseable for sync compatibility on import/from
-  import, but async compilation rejects or ignores it according to the chosen
-  migration rule
+- `Import` / `FromImport` retain `withContext` and gain explicit `withVars`
+- async compilation distinguishes the reserved `context` token from ordinary
+  explicit extern inputs
 
 ### Analysis
 
@@ -749,10 +816,12 @@ phase is complete.
 Async include lowering should:
 
 1. evaluate the explicit `with ...` expressions in the parent scope
-2. build an extern input object
-3. render the child with that extern input object
-4. keep child output composition ordering
-5. avoid any parent var-channel linking or boundary aliasing for child variable
+2. if `with context` is present, seed child render-context visibility for bare
+   lookup
+3. build an extern input object from the remaining named inputs
+4. render the child with that extern input object
+5. keep child output composition ordering
+6. avoid any parent var-channel linking or boundary aliasing for child variable
    reads
 
 If parent-side names have been renamed internally, alias resolution is still
@@ -768,11 +837,13 @@ template resolves at runtime.
 Async block invocation should:
 
 1. evaluate the block's declared `with ...` expressions at the invocation site
-2. build a block-input object
-3. invoke the overriding block with child-template scope plus initialized block
+2. if `with context` is present, seed block render-context visibility for bare
+   lookup
+3. build a block-input object from the remaining named inputs
+4. invoke the overriding block with child-template scope plus initialized block
    locals
-4. preserve a separate inheritance-chain context for `super()`
-5. avoid macro-style detached caller scheduling unless a distinct structural
+5. preserve a separate inheritance-chain context for `super()`
+6. avoid macro-style detached caller scheduling unless a distinct structural
    need appears
 
 ### Import lowering
@@ -780,8 +851,13 @@ Async block invocation should:
 Async import/from-import lowering should:
 
 - use isolated child execution
-- never request parent lexical inputs
-- validate that required `extern`s are satisfiable by fallbacks alone
+- support the same async `with ...` surface as include/block
+- if `with context` is present, seed imported-file render-context visibility for
+  bare lookup
+- initialize explicit named inputs through child `extern`s
+- never request parent frame locals or async var channels implicitly
+- validate that required `extern`s are satisfied by explicit named inputs or
+  fallbacks
 
 If the imported target is dynamic, the same validation must happen at runtime
 when the imported template resolves.
@@ -812,14 +888,15 @@ The rule is:
 Recommended migration order:
 
 1. Add `extern` parsing, AST, and root-only validation.
-2. Add `with ...` parsing for include and block.
+2. Add `with ...` parsing for all composition forms.
 3. Build root/block `externSpec` collection.
 4. Convert async include to extern-input initialization.
 5. Remove async include parent-var visibility/link machinery while keeping
    parent-side alias resolution for argument binding.
 6. Convert async inheritance/block invocation to explicit block inputs.
 7. Define `super()` over the same invocation input map.
-8. Remove async `with context` support from import/from-import semantics.
+8. Add uniform async `with context` support across include/import/block while
+   keeping parent frame locals and async var channels isolated.
 
 The sync path is not part of this migration.
 
@@ -833,10 +910,12 @@ The intended async composition model is:
 - async composition uses explicit contracts
 - `extern` is the child-side declaration surface
 - `with ...` is the parent-side provisioning surface
+- `with context` is the uniform async opt-in to render-context visibility
 - `include` gets explicit inputs and local-only mutation
 - `block` gets explicit inputs and child-scope execution
 - `super()` uses the same explicit block-input contract
-- `import` is isolated
+- `import` is isolated from parent locals/channels while still supporting
+  explicit `with ...`
 
 Architecturally:
 
@@ -856,25 +935,32 @@ This section turns the design into an implementation checklist.
 Current status as of April 2, 2026:
 
 - implemented:
-  - parsing / AST support for `extern`, `include ... with ...`, and `block ...
-    with ...`
+  - parsing / AST support for `extern`, `include ... with ...`, `block ...
+    with ...`, `import ... with ...`, and `from ... import ... with ...`
   - async root `extern` declaration analysis and `externSpec` exposure on
     compiled async templates/scripts
   - async root extern initialization from render context
   - extern fallback initialization and later-extern rejection
   - async include explicit-input lowering
+  - async include `with context` handling using render-context visibility
   - parent-side canonicalization for renamed vars passed through `with ...`
   - runtime include contract validation through `validateExternInputs(...)`
+  - async import/from-import isolation
+  - async import/from-import explicit named `with ...` inputs
+  - async import/from-import `with context` handling using render-context
+    visibility
+  - runtime validation that async import/from-import required externs are
+    satisfied by explicit inputs, render-context visibility, or fallbacks
+  - async reserved-name handling for `context`
   - removal of the dead `linkWithParentCompositionBuffer()` path
 - partially implemented:
-  - explicit extern-input plumbing exists for top-level render and async
-    include, but not yet for async import/from-import or async block/extends
+  - explicit extern-input plumbing exists for top-level render, async include,
+    and async import/from-import, but not yet for async block/extends
   - obsolete async include visibility/linking machinery has been reduced, but
     not fully audited/removed everywhere
-  - tests are strong for implemented root/include behavior, but import/block
-    validation and inheritance-contract tests are still pending
+  - tests are strong for implemented root/include/import behavior, but async
+    block/inheritance contract tests are still pending
 - not implemented yet:
-  - async import/from-import isolation under the extern contract
   - async block `with ...` contracts
   - async extends / overriding-block validation
   - `super()` over explicit invocation inputs
@@ -900,8 +986,10 @@ Implement:
 - parse `extern`
 - parse `include ... with ...`
 - parse `block name with ...`
+- parse `import ... with ...`
+- parse `from ... import ... with ...`
 - add AST support for `Extern`
-- add explicit input lists to `Include` and `Block`
+- add explicit input lists to `Include`, `Block`, `Import`, and `FromImport`
 
 Keep unchanged:
 
@@ -920,6 +1008,9 @@ Add tests:
 - parser coverage for `extern`
 - parser coverage for `include ... with ...`
 - parser coverage for `block ... with ...`
+- parser coverage for `import ... with ...`
+- parser coverage for `from ... import ... with ...`
+- parser coverage for async `with context, var1, var2`
 - regression coverage that sync `with context` parsing still works unchanged
 
 ### Step 2: Add explicit extern-input plumbing
@@ -930,10 +1021,11 @@ Implemented now:
 
 - async top-level render entry can initialize explicit root extern inputs
 - async include can pass explicit extern-input maps to children
+- async import/from-import can validate isolated extern contracts without using
+  ambient caller scope
 
 Still pending in this step:
 
-- async import/from-import explicit extern-input plumbing
 - async block/extends explicit input plumbing
 
 Implement:
@@ -941,12 +1033,15 @@ Implement:
 - async render/composition entry points can accept explicit extern-input maps
 - async include/block/import paths have a dedicated way to pass extern inputs
   without reusing ambient shared context visibility
+- async composition paths can separately carry the special `with context` flag
+  without treating it as an extern input
 - block invocation can carry an explicit input map separately from normal shared
   inheritance state
 
 Verify:
 
 - extern inputs can be supplied distinctly from legacy ambient scope
+- `with context` can be supplied distinctly from extern inputs
 - the new plumbing can be used by top-level render, include, and block
   invocation
 - no implementation step after this needs to smuggle externs through parent
@@ -1108,6 +1203,7 @@ Status: implemented
 Implement:
 
 - define whether async `include "x"` with no `with ...` is valid
+- define how async `include ... with context` exposes render-context properties
 - recommended rule:
   - valid when the child has no required externs
   - valid when all child externs have fallbacks
@@ -1118,12 +1214,16 @@ Verify:
 - includes with no `with ...` behave consistently
 - required child externs are enforced
 - fallback-only child externs work without explicit inputs
+- `with context` exposes render-context properties without exposing parent frame
+  locals or async var channels
 
 Add tests:
 
 - include without `with ...` and no required externs
 - include without `with ...` and fallback-only externs
 - include without `with ...` and missing required externs
+- include with `with context`
+- include with `with context, var1`
 
 ### Step 9: Convert async include from implicit visibility to explicit inputs
 
@@ -1132,8 +1232,10 @@ Status: implemented
 Implement:
 
 - async include evaluates only the parent-side `with ...` expressions
+- async include treats reserved `context` separately from named extern inputs
 - build an extern-input object for the child
 - initialize child extern locals from that object
+- seed child render-context visibility only when `with context` is present
 - remove implicit include-visible parent var exposure
 - remove parent var-channel linking for include-passed variables
 - remove parent command-buffer binding for include-passed variables
@@ -1146,6 +1248,8 @@ Keep:
 Verify:
 
 - included children can read only passed externs and fallback externs
+- included children can read render-context properties only when `with context`
+  is present
 - child rebinding does not affect the parent
 - output ordering remains unchanged
 - includes no longer depend on parent var visibility linking
@@ -1159,6 +1263,7 @@ Update broken tests as needed:
 Add tests:
 
 - include with explicit extern inputs
+- include with `with context`
 - include local rebinding without parent mutation
 - include output ordering under explicit inputs
 
@@ -1183,32 +1288,54 @@ Add tests:
 - passing renamed parent locals through `with ...`
 - nested-scope/duplicated-name cases that require parent-side alias resolution
 
-### Step 11: Convert async import/from-import to fully isolated semantics
+### Step 11: Convert async import/from-import to the uniform async `with` model
 
-Status: not implemented yet
+Status: implemented
 
 Implement:
 
 - async import/from-import never request parent lexical visibility
-- async `with context` import semantics are removed or rejected in async mode
-- imported files with required externs must rely on fallbacks only
+- async import/from-import support the same `with ...` interface as other async
+  composition forms
+- async `with context` exposes render-context properties through ordinary bare
+  lookup, but does not expose parent frame locals or async var channels
+- explicit named `with ...` inputs initialize imported-file externs
+- imported files with required externs must be satisfied by explicit `with ...`
+  inputs or fallbacks
 - dynamic import targets perform the same validation at runtime once resolved
+
+Implemented now:
+
+- async import/from-import do not request parent lexical visibility
+- async import/from-import support explicit named `with ...` inputs
+- async `with context` exposes render-context properties through ordinary bare
+  lookup
+- imported files with required externs fail unless satisfied by explicit named
+  inputs, render-context visibility, or fallbacks
+- dynamic import validation exists
 
 Verify:
 
 - async imports cannot see parent locals
+- async imports can see render-context properties only when `with context` is
+  present
+- async imports can receive explicit extern inputs through `with ...`
 - imported macros still work through explicit macro arguments
 - importing files with unsatisfied required externs fails clearly
 
 Update broken tests as needed:
 
-- convert old async import tests that depended on `with context` visibility
+- replace old temporary async rejection tests with the uniform async
+  `with context` behavior
 - keep sync import compatibility tests unchanged
 
 Add tests:
 
-- isolated async import
-- isolated async from-import
+- isolated async import without `with context`
+- async import with `with context`
+- async import with explicit named inputs
+- async from-import with `with context`
+- async from-import with explicit named inputs
 - dynamic import validation
 
 ### Step 12: Define block-input declaration rules
@@ -1382,11 +1509,14 @@ Implemented now:
 - async include explicit-input tests
 - renamed-parent-local tests for `with ...`
 - regular duplicated-var renaming tests for include canonicalization
+- isolated async import/from-import tests
+- async import/from-import required-extern rejection tests
+- async import/from-import fallback-extern tests
+- dynamic async import validation tests
 - dynamic include-target validation tests
 
 Still pending in this step:
 
-- focused tests for async import/from-import isolation
 - block-input declaration/conflict tests
 - overriding child block `with ...` rejection
 - `super()` explicit-input tests
