@@ -152,6 +152,38 @@
       expect(source).to.contain('runtime.callWrapAsync(');
     });
 
+    it('should not link unrelated locals into an imported namespace call boundary', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro hi() %}Hi{% endmacro %}');
+
+      const tmpl = new AsyncTemplate(
+        '{% import "macros.njk" as m %}{% var scopedValue = "A" %}{{ m.hi() }}',
+        env,
+        'imported-member-boundary-links-only-import.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('runtime.runValueBoundary(output, ["m","__text__"]');
+      expect(source).to.not.contain('runtime.runValueBoundary(output, ["m","scopedValue","__text__"]');
+    });
+
+    it('should not link unrelated locals into a from-import call boundary', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro hi() %}Hi{% endmacro %}');
+
+      const tmpl = new AsyncTemplate(
+        '{% from "macros.njk" import hi %}{% var scopedValue = "A" %}{{ hi() }}',
+        env,
+        'from-import-boundary-links-only-import.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('runtime.runValueBoundary(output, ["hi","__text__"]');
+      expect(source).to.not.contain('runtime.runValueBoundary(output, ["hi","scopedValue","__text__"]');
+    });
+
     it('should not treat a macro parameter shadowing a from-import binding as imported callable', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);

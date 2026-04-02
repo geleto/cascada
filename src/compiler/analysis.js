@@ -220,42 +220,6 @@ class CompileAnalysis {
     return false;
   }
 
-  getIncludeVisibleVarChannels(analysis) {
-    const visibleChannels = [];
-    const visibleNames = new Set();
-    let current = analysis;
-    while (current) {
-      if (current.declaredChannels) {
-        current.declaredChannels.forEach((decl, name) => {
-          if (!decl || decl.type !== 'var') {
-            return;
-          }
-          if ((name === '__return__') || (decl.runtimeName === '__return__')) {
-            //do not expose __return__ to included templates, as it is only meaningful in the context of the caller template
-            return;
-          }
-          const runtimeName = decl.runtimeName || name;
-          const baseName = this.getBaseChannelName(runtimeName);
-          if (visibleNames.has(baseName)) {
-            return;
-          }
-          visibleNames.add(baseName);
-          visibleChannels.push({
-            name,
-            decl,
-            runtimeName,
-            baseName
-          });
-        });
-      }
-      if (current.scopeBoundary) {
-        break;
-      }
-      current = current.parent;
-    }
-    return visibleChannels;
-  }
-
   getBaseChannelName(runtimeName) {
     const hashIndex = runtimeName.indexOf('#');
     if (hashIndex === -1) {

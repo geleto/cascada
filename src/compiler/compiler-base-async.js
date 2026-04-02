@@ -354,14 +354,14 @@ class CompilerBaseAsync extends CompilerCommon {
       );
       if (isImportedCallable) {
         importedCallable = true;
-        const visibleChannels = analysisPass.getIncludeVisibleVarChannels(node._analysis)
-          .map((entry) => entry.runtimeName);
-        const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
-        const allUses = new Set(visibleChannels);
-        if (textChannel) {
-          allUses.add(textChannel);
+        const importedChannelName = importedDecl && (importedDecl.runtimeName || importedRoot);
+        if (importedChannelName) {
+          uses.push(importedChannelName);
         }
-        allUses.forEach((name) => uses.push(name));
+        const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
+        if (textChannel) {
+          uses.push(textChannel);
+        }
       }
     }
 

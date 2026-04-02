@@ -678,8 +678,8 @@ The main implementation areas affected by this design are:
   - extend `Include` / `Block` metadata for explicit inputs
 - `src/compiler/analysis.js`
   - collect and validate root/block extern contracts
-  - contains `getIncludeVisibleVarChannels()`, one of the key include-specific
-    async visibility mechanisms to retire from composition semantics
+  - contains naming helpers such as `getBaseChannelName()` that still matter
+    for explicit async composition input binding
 - `src/compiler/boundaries.js`
   - review async boundary creation/ownership so explicit extern input passing
     uses normal output composition without preserving old parent-var visibility
@@ -711,7 +711,6 @@ The main implementation areas affected by this design are:
 
 Additional current methods/helpers to review explicitly during migration:
 
-- `analysis.getIncludeVisibleVarChannels()`
 - `compiler.emitLinkWithParentCompositionBuffer()`
 - `runtime.linkWithParentCompositionBuffer()`
 - `context.prepareForAsyncBlocks()`
@@ -1163,6 +1162,8 @@ Current status as of April 2, 2026:
   - removal of the dead `linkWithParentCompositionBuffer()` path
   - removal of the old include-specific boundary-alias usage and the unused
     include helper emitters that supported it
+  - removal of the old `analysis.getIncludeVisibleVarChannels()` helper and its
+    final imported-callable callsite
   - async block invocation can now carry explicit `with ...` input/context
     payloads from the base block invocation site
   - async `super()` now reuses the same explicit block invocation payload
@@ -1172,7 +1173,7 @@ Current status as of April 2, 2026:
   - explicit extern-input plumbing exists for top-level render, async include,
     async import/from-import, and async block invocation
   - obsolete async include visibility/linking machinery has been reduced, but
-    not fully audited/removed everywhere
+    extends/inheritance auditing is still pending
   - block inputs are now passed through explicit composition context payloads,
     but they are not yet represented as full analysis-level local declarations
   - tests are strong for implemented root/include/import/block behavior, but
@@ -1671,13 +1672,15 @@ Add tests:
 
 ### Step 15: Do not copy `__caller__` scheduling machinery to blocks
 
-Status: not implemented yet
+Status: partially implemented
 
 Note:
 
 - this is still the intended direction
-- no block-specific `__caller__` machinery has been added, but the block/super
-  explicit-input model itself is also not implemented yet
+- no block-specific `__caller__` machinery has been added
+- block/super currently use direct payload passing rather than caller-style
+  scheduling
+- dedicated regression coverage that this remains true is still worth keeping
 
 Implement:
 
@@ -1710,11 +1713,13 @@ Implemented now:
 - the old include-specific boundary-alias usage has been removed
 - the unused include helper emitters `_emitDeclaredValueSnapshots()` and
   `_emitDeclaredValueAliasMap()` have been removed
+- the old `analysis.getIncludeVisibleVarChannels()` helper and its last
+  imported-callable callsite have been removed
 
 Still pending in this step:
 
-- final audit/removal of remaining obsolete include-specific helpers and
-  callsites
+- final audit/removal of any remaining obsolete inheritance/composition helpers
+  and callsites
 
 After the new extern-input path is working, remove obsolete async composition
 logic that is no longer the source of truth for variable visibility:
@@ -1731,7 +1736,6 @@ Explicitly audit:
 
 - `src/compiler/boundaries.js`
 - `src/compiler/scope-boundaries.js`
-- `analysis.getIncludeVisibleVarChannels()`
 - `compiler.emitLinkWithParentCompositionBuffer()`
 - `runtime.linkWithParentCompositionBuffer()`
 - `context.prepareForAsyncBlocks()`
