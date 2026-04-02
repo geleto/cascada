@@ -49,9 +49,7 @@ class CompileInheritance {
   _emitExplicitExternInputs(node, targetVarsVar) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     withVars.forEach((nameNode) => {
-      const externName = this.compiler.analysis && typeof this.compiler.analysis.getBaseChannelName === 'function'
-        ? this.compiler.analysis.getBaseChannelName(nameNode.value)
-        : nameNode.value;
+      const externName = this.compiler.analysis.getBaseChannelName(nameNode.value);
       this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = `);
       this.compiler.compileExpression(nameNode, null, nameNode, true);
       this.emit.line(';');

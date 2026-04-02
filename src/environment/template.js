@@ -347,7 +347,7 @@ class AsyncTemplate extends Template {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
-      renderCtx = ctx;
+      renderCtx = null;
     } else if (typeof renderCtx === 'function') {
       cb = renderCtx;
       renderCtx = ctx;

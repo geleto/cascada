@@ -121,6 +121,17 @@
       expect(source).to.not.contain('linkWithParentCompositionBuffer');
     });
 
+    it('should initialize root externs in declaration order without redundant required-value context writes', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% extern user %}{% extern theme = "light" %}{{ user }}{{ theme }}', env, 'root-extern-init.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('runtime.declareBufferChannel(output, "user", "var", context, null);');
+      expect(source).to.contain('runtime.declareBufferChannel(output, "theme", "var", context, null);');
+      expect(source).to.not.contain('context.setVariable("user"');
+      expect(source).to.contain('context.setVariable("theme"');
+    });
+
     it('should initialize base-block with inputs as local async var channels', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% block content with user %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');

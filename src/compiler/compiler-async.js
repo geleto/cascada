@@ -1155,22 +1155,16 @@ class CompilerAsync extends CompilerBaseAsync {
     const externNodes = this._getRootExternNodes(node);
 
     externNodes.forEach((externNode) => {
-      (externNode.targets || []).forEach((target) => {
-        const name = target.value;
-        this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
-      });
-    });
-
-    externNodes.forEach((externNode) => {
       if (!externNode.targets || externNode.targets.length === 0) {
         return;
       }
 
-      externNode.targets.forEach((target) => {
+      (externNode.targets || []).forEach((target) => {
         const name = target.value;
         const valueId = this._tmpid();
         const hasCtxId = this._tmpid();
 
+        this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
         this.emit.line(`const ${hasCtxId} = Object.prototype.hasOwnProperty.call(context.ctx, "${name}");`);
         this.emit.line(`let ${valueId};`);
         this.emit.line(`if (${hasCtxId}) {`);
@@ -1180,11 +1174,11 @@ class CompilerAsync extends CompilerBaseAsync {
           this.emit(`  ${valueId} = `);
           this.compileExpression(externNode.value, null, externNode.value);
           this.emit.line(';');
+          this.emit.line(`  context.setVariable("${name}", ${valueId});`);
         } else {
           this.emit.line(`  throw new Error('Missing required extern: ${name}');`);
         }
         this.emit.line('}');
-        this.emit.line(`context.setVariable("${name}", ${valueId});`);
         this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${externNode.lineno}, colno: ${externNode.colno}} }), '${name}');`);
       });
     });
