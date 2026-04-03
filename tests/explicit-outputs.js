@@ -186,6 +186,20 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.be(100);
     });
 
+    it('should preserve outer var writes across async if boundaries', async () => {
+      const script = `
+        var result = 1
+        if delayed(true, 10)
+          result = 2
+        endif
+        return result
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.be(2);
+    });
+
     it('should implicitly snapshot var channels in expressions', async () => {
       const script = `
         var x
@@ -570,6 +584,21 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       `;
       const result = await render(script);
       expect(result).to.eql({ data: { x: 1 }, other: 42, flag: true });
+    });
+
+    it('should keep root return isolated from nested macro returns', async () => {
+      const script = `
+        macro inner()
+          return delayed(11, 5)
+        endmacro
+
+        var macroValue = inner()
+        return { macroValue: macroValue, rootValue: 22 }
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.eql({ macroValue: 11, rootValue: 22 });
     });
 
     it('should reject when root return value is a rejecting promise', async () => {

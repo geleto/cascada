@@ -175,6 +175,22 @@
       expect(result).to.eql({ snap: 10, isError: false, error: null });
     });
 
+    it('should keep caller return values isolated from the enclosing return', async () => {
+      const script = `
+        macro runner()
+          return caller()
+        endmacro
+
+        var callerResult = call runner()
+          return 7
+        endcall
+
+        return { callerResult: callerResult, rootValue: 9 }`;
+
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ callerResult: 7, rootValue: 9 });
+    });
+
     it('should support multiple caller invocations across different control-flow paths', async () => {
       const script = `
         macro visit(includePrefix)
