@@ -109,12 +109,19 @@ Even if `_channels` were removed, the current implementation would still be too 
 1. checks local `_ownedChannels`
 2. checks local `_visibleChannels`
 3. checks linked child-owned channels
-4. walks up ancestor buffers and checks their `_ownedChannels`
+4. walks up ancestor buffers and, at each ancestor level:
+   - checks ancestor `_ownedChannels`
+   - checks ancestor `_visibleChannels`
+   - checks ancestor-linked child-owned channels via `_findLinkedChildOwnedChannel(...)`
 5. finally falls back to `_channels`
 
 Steps 4 and 5 create ambient parent-channel visibility.
 
-That means a child can often discover a parent-owned channel even when the compiler did not link that lane into the child.
+That means a child can often discover channels through several ambient paths even when the compiler did not link that lane into the child:
+
+- direct parent ownership
+- ancestor-owned explicit visibility links
+- channels owned by children linked under an ancestor
 
 This is especially dangerous because [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js) assumes:
 
@@ -140,6 +147,8 @@ The refactor should make channel resolution explicit.
 It should not:
 
 - walk ancestor `_ownedChannels` generically
+- walk ancestor `_visibleChannels` generically
+- walk ancestor-linked child-owned channels generically
 - use a hierarchy-global fallback registry
 
 That gives us a clean model:
@@ -157,8 +166,8 @@ The compiler-derived linked-channel set should drive both:
 
 When a child buffer is created with a list of linked channels:
 
-- the child should be structurally attached to the parent on those lanes
-- the child should also receive explicit visibility to those same parent-owned channels
+- the child should be structurally attached to the effective link target on those lanes
+- the child should also receive explicit visibility to those same externally owned channels from that effective link target
 
 That means linked channels are not just a finish-tracking detail. They are the explicit contract for what parent-owned channels a child may observe or mutate in order.
 
@@ -187,6 +196,12 @@ This is how the buffer iterator walks each lane and how child buffers are insert
 ### `_ownedChannels`
 
 Local channel ownership only.
+
+`_ownedChannels` should remain even if eager lane creation makes `arrays` sufficient for lane-name enumeration. The map still carries useful ownership semantics:
+
+- O(1) ownership checks
+- a direct answer to "does this buffer own this channel?"
+- separation between structural lane existence and channel ownership
 
 ### `_visibleChannels`
 
@@ -286,14 +301,28 @@ When `runtime.declareBufferChannel(buffer, name, type, ...)` is called, the buff
 
 No later command should need to create the lane on demand.
 
+This part of the refactor should also clean up a current implementation issue: `declareBufferChannel(...)` effectively registers channels twice today because `Channel` construction registers once and `declareBufferChannel(...)` registers again with the returned facade/object. That is mostly benign right now because later writes overwrite earlier ones idempotently, but once eager creation and finish behavior are tightened it becomes important to normalize this into a single intentional registration path.
+
+This applies to ordinary channel types and also to `sink` / `sequence` channels. `sink` / `sequence` still have their extra `_channelRegistry` behavior, but they are not exempt from the general channel-registration cleanup.
+
 ### Linked lanes
 
 When a child buffer is created with compiler-derived linked channels, the runtime should eagerly create:
 
 - `child.arrays[channelName] = []`
-- `child._visibleChannels[channelName] = parent.findChannel(channelName)` if available
+- `child._visibleChannels[channelName] = linkTarget.findChannel(channelName)` if available
 
 This makes the child's structural participation and channel visibility explicit from the start.
+
+The ordering matters:
+
+1. resolve the effective link target (`linkedParent || parent`)
+2. resolve aliases/canonical runtime names consistently
+3. eagerly create the child lane array
+4. eagerly install explicit visibility from the effective link target
+5. structurally attach the child to the effective link target on that lane
+
+That sequencing should be made explicit in the implementation, especially if `_linkedChannels` and `_registerLinkedChannel(...)` are removed.
 
 ### Local-only channels declared later at runtime
 
@@ -314,6 +343,12 @@ At that point:
 - linked-lane existence becomes part of the actual structural model rather than extra bookkeeping
 
 That makes `_linkedChannels` redundant.
+
+However, the current `_registerLinkedChannel(...)` method also has a second side effect:
+
+- it calls `_finishKnownChannelIfRequested(...)`
+
+So if `_linkedChannels` is removed, that finish-related side effect must move to the eager linked-lane creation path rather than being lost.
 
 ## Important Distinction: Structural Eagerness vs Lazy Value Semantics
 
@@ -343,6 +378,46 @@ The preferred options are:
 - keep it disabled and document that the refactored model depends on compile-time structural linking, or
 - redesign it so any future dynamic mode still preserves explicit visibility/lane semantics rather than calling back into ambient linkage behavior
 
+## Finish Lifecycle Interaction
+
+The current implementation has a two-phase finish lifecycle:
+
+- `requestChannelFinish(...)`
+- `markFinishedAndPatchLinks()`
+- `_finishKnownChannelIfRequested(...)`
+- `_tryCompleteFinish()`
+
+This lifecycle matters for the refactor because channels and lanes are not materialized at exactly the same moment today.
+
+Two important current behaviors:
+
+- `_registerChannel(...)` calls `_finishKnownChannelIfRequested(...)`
+- `_registerLinkedChannel(...)` calls `_finishKnownChannelIfRequested(...)`
+
+So a finish request that arrives before a channel or linked lane is fully registered can still be satisfied once the relevant structure appears.
+
+After the refactor:
+
+- eager linked-lane creation must preserve the finish behavior currently hanging off `_registerLinkedChannel(...)`
+- eager lane creation and channel-object registration must be designed together so an early finish request cannot leave the buffer in an inconsistent partially-finished state
+
+In other words, removing lazy lane creation does not eliminate finish coordination; it changes where that coordination should occur.
+
+## `_collectKnownChannelNames()` Sources
+
+Today `_collectKnownChannelNames()` merges names from four sources:
+
+- `arrays`
+- `_ownedChannels`
+- `_linkedChannels`
+- `_visitingIterators`
+
+The discussion around removing `_linkedChannels` should not ignore `_visitingIterators`.
+
+Under a fully eager lane model, `_visitingIterators` may become redundant as a source of channel names because any lane an iterator can visit should already exist in `arrays`.
+
+But that needs to be stated explicitly and validated, not assumed silently.
+
 ## Snapshot And Lookup Implications
 
 Once `_channels` and ambient ancestor visibility are removed, several methods should stop consulting the global registry and instead go through explicit lookup:
@@ -355,6 +430,8 @@ Once `_channels` and ambient ancestor visibility are removed, several methods sh
 Those paths should use `findChannel(...)` or `getChannel(...)` so they obey the same explicit visibility rules as ordinary lookups.
 
 This is important both for correctness and for keeping snapshot behavior aligned with structural lane participation.
+
+One nuance worth calling out: the regular non-finished command path already goes through `_addCommand(...)` -> `add(...)` and does not consult `_channels`. The main asymmetry today is that the finished-snapshot fast path consults `_channels` directly. That makes the finished path broader and less disciplined than the ordinary path, which is exactly the opposite of what we want.
 
 ## Compiler/Runtime Integration
 
@@ -398,6 +475,8 @@ Important notes:
 
 The existing compiler filtering rules around these channels should remain the source of truth.
 
+`sink` and `sequence` channels should participate in eager lane creation just like other declared channels. Their extra `_channelRegistry` behavior is an additional concern, not a reason to exclude them from the structural cleanup.
+
 ## Deferred Exports And Composition
 
 The refactor must preserve explicit visibility flows such as:
@@ -436,6 +515,21 @@ That would require additional redesign of how block contracts and composition-lo
 
 So the command-buffer refactor should aggressively eliminate lazy structural creation where the structure is already known, but it should not pretend that every channel name in the system is currently compile-time static.
 
+## Canonical Runtime Channel Names
+
+The alias layer depends on the distinction between:
+
+- formal/channel-source names
+- canonical resolved runtime channel names
+
+The current implementation treats names matching the canonical runtime form like `someVar#7` as already resolved and therefore not eligible for another alias remap.
+
+That convention is load-bearing for the alias model and should remain documented during the refactor because it affects:
+
+- when alias resolution runs
+- how `_visibleChannels` keys are stored
+- how eager visibility injection should normalize names
+
 ## Suggested Target Behavior For `createCommandBuffer(...)`
 
 `createCommandBuffer(...)` should become the main eager-structure setup point for child buffers.
@@ -460,6 +554,8 @@ This makes boundary creation deterministic and compile-time-driven.
 
 Because `createCommandBuffer(...)` currently supports both `parent` and `linkedParent`, the implementation should continue to resolve an explicit effective link target rather than assuming those two are always the same object.
 
+The wording in the implementation and documentation should consistently say "effective link target" or "link target" here, not just "parent", because some important creation sites pass `parent = null` and `linkedParent = someBuffer`.
+
 ## Suggested Target Behavior For `findChannel(...)`
 
 The lookup order should become:
@@ -473,6 +569,8 @@ And then stop.
 It should not:
 
 - search ancestor `_ownedChannels`
+- search ancestor `_visibleChannels`
+- search ancestor-linked child-owned channels
 - consult `_channels`
 
 That is the key simplification that makes `usedChannels` actually meaningful.
@@ -492,6 +590,21 @@ Possible future optimization directions:
 - maintain a per-lane child-channel index instead of repeated reverse scans
 
 Those are optional follow-up optimizations, not required for the correctness refactor.
+
+There is also a semantic question here, not just a performance one: once visibility is made explicit, we may want to forbid deep recursive descendant discovery entirely and require that any buffer needing access to an externally owned channel receives it explicitly through `_visibleChannels`. If that stricter rule is adopted, `_findLinkedChildOwnedChannel(...)` would become much narrower or disappear altogether.
+
+## Alias Timing And Visibility Injection
+
+Alias handling is orthogonal, but timing still matters.
+
+Today aliases can be inherited when a child buffer is inserted through `add(...)`.
+
+If eager visibility injection happens before structural insertion, the implementation must make sure:
+
+- keys stored into `_visibleChannels` are normalized the same way `findChannel(...)` will later normalize lookup names
+- alias inheritance timing does not cause visibility to be installed under one name while later lookups occur under another
+
+This is another reason to define a single canonical-name normalization step in the eager creation path.
 
 ## Refactor Risks
 
