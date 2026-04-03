@@ -2,670 +2,1239 @@
 
 ## Overview
 
-This document records the findings from evaluating the current `CommandBuffer` architecture and the refactor direction around channel visibility, lane linking, and eager runtime structure creation.
+This document records the current understanding of `CommandBuffer` and the target refactor direction.
 
-The immediate trigger was this line in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js):
+The original trigger was the shared `_channels` registry in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js):
 
 ```js
 this._channels = parent ? parent._channels : new Map();
 ```
 
-That line makes channel registration effectively hierarchy-global. It is too broad for the current compiler/runtime model, because the compiler already computes which parent-visible channels a child buffer actually uses, and the runtime already accepts that narrower set when creating child buffers.
+That line is too broad, but the correct fix is not just deleting it. The deeper issue is that the command-buffer runtime still allows too much ambient visibility and too much lazy structural creation.
 
-The main conclusion is:
+The target architecture should be:
 
-- the current shared `_channels` registry is overreaching and should be removed
-- visibility should become explicit rather than ambient
-- structural lanes and declared channels should be created eagerly from compile-time information rather than lazily on first write/read
+- static lane sets per buffer
+- eager lane creation
+- local-only channel lookup
+- no runtime-dynamic channel names
+- no command-buffer-level special treatment for "special" channels
+- composition/import/export based on explicit named inputs and snapshots, not ambient buffer visibility
 
-This is not just a one-line change. The shared registry is only one part of the problem.
+## Main Conclusions
 
-There is also one important orthogonal piece of runtime state that is not part of the four-way simplification below:
+The refactor should move toward these rules:
 
-- `_channelAliases`
+1. Channel/lane structure must be static for each buffer.
+2. `add()` must never create missing lanes.
+3. `findChannel()` must be local-only and O(1).
+4. The command buffer should not understand lexical scoping beyond what compile-time analysis already encoded.
+5. `usedChannels` is the real source of truth; runtime visibility is just its materialized form.
+6. Composition should not use channel linking/lookup for data transport.
+7. Deferred exports should ultimately resolve from producer snapshots, not ambient visibility.
+8. Command-buffer parent/child structure must not be confused with lexical scope ownership.
 
-That alias layer is used for explicit channel binding cases such as macro/caller aliasing. It is not the same kind of state as `_ownedChannels`, `_visibleChannels`, `_linkedChannels`, or `_channels`, and it should be treated as a separate concern during the refactor rather than merged into the ownership/visibility model.
+## Current Problems
 
-## Current Runtime State
+### 1. Ambient visibility
 
-`CommandBuffer` currently tracks four related pieces of channel state:
+Current `findChannel(...)` in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js) can discover channels through:
 
-- `_linkedChannels`
-- `_ownedChannels`
-- `_visibleChannels`
-- `_channels`
+- local `_ownedChannels`
+- local `_visibleChannels`
+- linked child-owned channels
+- ancestor `_ownedChannels`
+- ancestor `_visibleChannels`
+- ancestor-linked child-owned channels
+- fallback `_channels`
 
-Their current roles are:
+That is much broader than the compiler's explicit linking model.
 
-### `_ownedChannels`
+The compiler already computes:
 
-`_ownedChannels` contains channels declared by this buffer itself.
+- `usedChannels`
+- `declaredChannels`
+- linked parent-visible channels for each boundary
 
-Examples:
+So the runtime should not rediscover channels beyond that contract.
 
-- channels created by `runtime.declareBufferChannel(...)`
-- text channels declared for local text boundaries
-- local `var`, `data`, `sink`, `sequence`, and `sequential_path` channels
+### 2. Lazy structural creation
 
-This concept is valid and should remain.
+Current `add(...)` still does:
 
-### `_visibleChannels`
+```js
+if (!this.arrays[resolvedChannelName]) {
+  this.arrays[resolvedChannelName] = [];
+}
+```
 
-`_visibleChannels` contains explicit lookup-only visibility links to channels owned elsewhere.
+This is wrong for the target model.
 
-This is currently used for composition/export-style cases where a buffer should be able to read a channel without structurally owning a child buffer on that lane.
+It silently hides:
 
-This concept is also valid and should remain.
+- missing declaration bugs
+- missing link bugs
+- mismatches between compiler analysis and runtime structure
 
-### `_linkedChannels`
+In the new model, a missing lane in `add(...)` must be a hard internal error.
 
-`_linkedChannels` records channel names that are structurally linked into the buffer tree, so finish accounting knows that the buffer participates in those lanes even if it does not own the channel itself.
+### 3. Shared/global registry
 
-Today this is mostly a bookkeeping structure for finish behavior.
+`_channels` is a hierarchy-wide registry of all channels. It bypasses explicit ownership and visibility and especially leaks into finished-snapshot paths.
 
-This concept can probably be removed if lane arrays are created eagerly for all linked lanes at buffer creation time.
+The regular command path already does not need it. The most problematic use is the finished-snapshot fast path.
 
-### `_channels`
+### 4. Runtime-dynamic channel names
 
-`_channels` is a shared registry of channel objects across the whole hierarchy.
+There are still places where channel names are declared in runtime loops, especially in composition/block-local logic.
 
-This is the problematic structure.
+This should not remain.
 
-It bypasses boundary-local ownership and visibility and makes channels discoverable far outside the lanes/scopes the compiler intended a child to see.
+The goal of this refactor is that every buffer has a statically known channel/lane set.
 
-## Why `_channels` Is Wrong
+## Target Runtime Model
 
-The compiler already computes channel usage information:
+### Static lane set
 
-- `node._analysis.usedChannels`
-- `node._analysis.mutatedChannels`
-- per-boundary linked channels in [src/compiler/emit.js](C:\Projects\cascada\src\compiler\emit.js)
+Each `CommandBuffer` should be created with a fixed lane set.
 
-`getLinkedChannelsArg(...)` already filters `usedChannels` down to the channels a child buffer should be structurally attached to:
+That lane set should contain:
 
-- current text channel is included when needed
-- `__return__` is excluded
-- channels declared locally inside the child are excluded
+- all local declared channels for that buffer
+- all parent-linked used channels for that buffer
 
-That filtered set is already passed to runtime helpers such as:
+From that moment on:
 
-- `runtime.runControlFlowBoundary(...)`
-- `runtime.runValueBoundary(...)`
-- `runtime.runWaitedControlFlowBoundary(...)`
-- direct `runtime.createCommandBuffer(...)` calls in macro/caller paths
+- `arrays[name]` exists for every lane
+- no new lane names are introduced later
 
-The runtime boundary helpers in [src/runtime/async-boundaries.js](C:\Projects\cascada\src\runtime\async-boundaries.js) already pass those linked channels into `createCommandBuffer(...)`.
+This static lane set is intentionally a structural superset. A declared local variable/channel may still need a lane even if it is never read later, because declarations and writes still need somewhere to land.
 
-So the architecture is already half-way to a narrower, explicit model.
+So:
 
-The problem is that `_channels` undermines it by keeping all registered channels globally reachable anyway.
+- declared-but-unused local channels do not break the model
+- they simply become unused eager lanes
+- pruning such lanes is an optional later optimization, not a correctness requirement
 
-## The Deeper Problem: Ambient Visibility
+### Three populations of lane names
 
-Even if `_channels` were removed, the current implementation would still be too broad.
+For planning the refactor, it helps to separate the lane names into three populations:
 
-`findChannel(...)` in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js) currently:
+1. parent-linked channels: `usedChannels - declaredChannels`
+2. locally declared channels: `declaredChannels`
+3. current composition/block-input runtime names
 
-1. checks local `_ownedChannels`
-2. checks local `_visibleChannels`
-3. checks linked child-owned channels
-4. walks up ancestor buffers and, at each ancestor level:
-   - checks ancestor `_ownedChannels`
-   - checks ancestor `_visibleChannels`
-   - checks ancestor-linked child-owned channels via `_findLinkedChildOwnedChannel(...)`
-5. finally falls back to `_channels`
+The first two populations are already compiler-known and should be eagerly materialized.
 
-Steps 4 and 5 create ambient parent-channel visibility.
+The third population is the current blocker to "everything is static", and it should be eliminated as part of this refactor rather than preserved as a special runtime escape hatch.
 
-That means a child can often discover channels through several ambient paths even when the compiler did not link that lane into the child:
+### Local addressability map
 
-- direct parent ownership
-- ancestor-owned explicit visibility links
-- channels owned by children linked under an ancestor
+The runtime should maintain a local map of channels addressable from this buffer.
 
-This is especially dangerous because [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js) assumes:
+That map should include:
 
-- if `findChannel(name)` returns a channel whose owner is in the current buffer ancestry
-- then `currentBuffer.addSnapshot(name, ...)` is a valid ordered read
+- local channels actually declared in this buffer
+- parent-linked channels that static analysis says this buffer may read/write through
 
-That assumption is only valid if the current buffer actually participates in that lane structurally.
+`findChannel(name)` should just look up the resolved/canonical name in that local map.
 
-With ambient visibility, a child can enqueue a snapshot on a channel lane that was never linked into its buffer tree.
+That means:
 
-That is the core architectural mismatch.
+- no ancestor walk
+- no descendant recursion
+- no global fallback registry
 
-## What The Correct Model Should Be
+Common-case lookup should be O(1).
 
-The refactor should make channel resolution explicit.
+### Scope ownership vs child buffers
 
-`findChannel(...)` should only resolve:
+Command-buffer child buffers are often just async ordering boundaries. They are not the same thing as child lexical scopes.
 
-1. channels owned by this buffer
-2. channels explicitly visible to this buffer
-3. channels owned by linked child buffers reachable through this buffer's lane structure
+That means:
 
-It should not:
+- a truly child-scope-owned declaration must not become visible to the parent just because it lives in a child buffer
+- a parent-scope-owned declaration emitted inside a child buffer still needs an ordered runtime binding strategy
 
-- walk ancestor `_ownedChannels` generically
-- walk ancestor `_visibleChannels` generically
-- walk ancestor-linked child-owned channels generically
-- use a hierarchy-global fallback registry
+The second case is the real reason the current runtime sometimes reaches across buffer boundaries. The refactor should describe that case narrowly instead of speaking about "child-owned channels" flowing upward.
 
-That gives us a clean model:
+The target rule is:
 
-- ownership is local
-- visibility is explicit
-- structural participation in a lane is explicit
+- no lookup should rediscover channels by scanning child buffers
+- if an outer-scope-owned declaration needs to be addressable across an async boundary, that must come from the normal `usedChannels` / parent-linked-lane wiring computed by analysis
 
-## How Parent Visibility Should Work
+This is important: the outer-scope-owned case does not require a new special runtime propagation mechanism. If analysis is correct, the child buffer sees that name as a parent-linked used channel and the parent already owns the lane.
 
-The compiler-derived linked-channel set should drive both:
+### No runtime lookup recursion
 
-1. structural linking
-2. visibility
+The earlier transitional idea of:
 
-When a child buffer is created with a list of linked channels:
+- "channels owned by linked child buffers reachable through this buffer's lane structure"
 
-- the child should be structurally attached to the effective link target on those lanes
-- the child should also receive explicit visibility to those same externally owned channels from that effective link target
+should be dropped from ordinary `findChannel(...)`.
 
-That means linked channels are not just a finish-tracking detail. They are the explicit contract for what parent-owned channels a child may observe or mutate in order.
+If visibility is explicit and complete, `findChannel(...)` should not need to scan child buffers at all.
 
-This is the natural runtime interpretation of compiler-side `usedChannels`.
+`_findLinkedChildOwnedChannel(...)` should therefore not survive as a soft fallback. During migration it may temporarily become an assertion/debug trap to detect incomplete analysis, but the target state is full removal.
 
-## Recommended Simplified State Model
+## Used Channels, Visible Channels, Owned Channels
 
-The current four structures should not survive unchanged.
+### `usedChannels` is the real source of truth
 
-The recommended target model is:
+The compiler's static analysis already determines which channels a buffer may access.
 
-- keep `arrays`
-- keep `_ownedChannels`
-- keep `_visibleChannels`
-- remove `_channels`
-- remove `_linkedChannels` after eager lane creation is in place
+That is the important set.
 
-That leaves three runtime concepts:
+Runtime visibility should be nothing more than the materialized form of compile-time `usedChannels`.
 
-### `arrays`
+In other words:
 
-Per-lane structural command storage.
+- compile time computes names
+- runtime installs concrete channel references for those names
 
-This is how the buffer iterator walks each lane and how child buffers are inserted into a parent lane in source order.
+This is why "visible channels" only make sense as explicit runtime materialization of static analysis, not as a discovery mechanism.
 
-### `_ownedChannels`
+In the stricter model, the local addressability map is the runtime form of:
 
-Local channel ownership only.
+- parent-linked `usedChannels`
+- plus local declarations that belong to this buffer's own lane set
 
-`_ownedChannels` should remain even if eager lane creation makes `arrays` sufficient for lane-name enumeration. The map still carries useful ownership semantics:
+### Do we need `_visibleChannels`?
 
-- O(1) ownership checks
-- a direct answer to "does this buffer own this channel?"
-- separation between structural lane existence and channel ownership
+As a runtime storage concept, yes, but only as a materialized addressability map.
 
-### `_visibleChannels`
+It should not mean:
 
-Explicit read/write visibility to externally owned channels.
+- "ambiently visible because something up the hierarchy had it"
 
-This includes:
+It should mean:
 
-- linked parent-visible channels for ordinary async boundaries
-- composition/export visibility links such as deferred exports
-- any future explicit alias/binding cases that are truly visibility-oriented
+- "this channel is explicitly available to this buffer because compile-time analysis said so"
 
-This recommendation does not remove `_channelAliases`. Alias resolution should stay as a narrow name-remapping layer that runs before ownership/visibility lookup.
+### Do we need `_ownedChannels`?
 
-## Are `_ownedChannels` And `_visibleChannels` Both Needed?
+For lookup, probably not.
 
-Yes.
+The command buffer is not the right layer for lexical scoping. Compile-time analysis and variable renaming already solve that problem.
 
-They represent different semantics:
+So the runtime does not need a deep concept of scoping ownership in order to resolve names.
 
-- `_ownedChannels` means "this buffer declared and owns this channel"
-- `_visibleChannels` means "this buffer may resolve this channel, but ownership lives elsewhere"
+However, `_ownedChannels` may still be useful as metadata for:
 
-Those are meaningfully different and should not be merged.
+- assertions
+- debugging
+- a fast answer to "is this locally declared here?"
+- separating local declaration semantics from externally supplied visibility
 
-Keeping them separate helps preserve important runtime distinctions:
+So the likely target is:
 
-- where the iterator belongs
-- where completion lives
-- whether a channel is local state or externally sourced visibility
+- one local addressability map used by `findChannel(...)`
+- optional ownership metadata retained only if it still serves a clear purpose
 
-## Is `_visibleChannels` Redundant Once `usedChannels` Is Used Properly?
+The important point is: `_ownedChannels` should not drive cross-buffer lookup behavior.
 
-No.
+## Eager Arrays
 
-The current comment in `command-buffer.js` says `_visibleChannels` may become redundant once `usedChannels` is used.
+### Recommendation
 
-That is only partly true.
+Arrays should be eagerly created, not lazily created.
 
-What becomes redundant is ambient channel visibility through `_channels` and ancestor walks.
+This should apply to:
 
-But explicit non-structural visibility is still needed for cases like:
+- all locally declared channels
+- all linked parent-provided channels
 
-- deferred exports via `context.linkDeferredExportsToBuffer(...)`
-- composition source buffers
-- other explicit external exposure mechanisms
+### Why eager is better
 
-So `_visibleChannels` should remain. Its purpose just becomes narrower and cleaner.
+Eager creation:
 
-## Channel Aliases Are Orthogonal
+- matches static analysis
+- makes finish accounting deterministic
+- exposes missing-link bugs immediately
+- removes "first write defines structure" behavior
+- simplifies iterator/finish reasoning
 
-The current command-buffer implementation also maintains `_channelAliases`.
-
-That structure is not part of the ownership/visibility/structural-lane simplification. It serves a different purpose:
-
-- remapping formal names to resolved runtime channel names
-- preserving macro/caller alias bindings down the buffer tree
-- normalizing command ingress so downstream runtime logic sees canonical runtime channel names
-
-The refactor should preserve that alias layer, but keep it narrow:
-
-- aliasing should remain explicit
-- aliasing should not become a substitute for ambient visibility
-- aliasing should resolve names before ownership/visibility lookup
-
-So the intended simplification is about `_channels`, `_linkedChannels`, `_ownedChannels`, `_visibleChannels`, and eager `arrays` behavior, not about removing `_channelAliases`.
-
-## Eager Initialization Requirement
-
-The refactor should eliminate lazy creation of buffer lanes and channel-lane storage within the command-buffer/channel subsystem.
-
-This is consistent with the compile-time architecture.
-
-Today there are several lazy behaviors:
-
-- `CommandBuffer.add(...)` creates `arrays[channelName]` on first write
-- comments in `command-buffer.js` explicitly describe channel arrays as being created lazily
-- some finish behavior relies on `_linkedChannels` because structural lanes may exist conceptually without an array being present yet
-
-This should be changed.
-
-One more structural-laziness point exists today in [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js):
-
-- `LOOKUP_DYNAMIC_CHANNEL_LINKING`
-
-That feature flag enables a runtime path where an ordered read can lazily attach the current buffer to a channel lane on demand.
-
-This is intentionally disabled today, but it is still part of the runtime surface area and should be accounted for by the refactor.
-
-## Recommended Eager Rules
-
-### Declared channels
-
-When `runtime.declareBufferChannel(buffer, name, type, ...)` is called, the buffer should eagerly create:
-
-- `buffer._ownedChannels[name]`
-- `buffer.arrays[name]`
-
-No later command should need to create the lane on demand.
-
-This part of the refactor should also clean up a current implementation issue: `declareBufferChannel(...)` effectively registers channels twice today because `Channel` construction registers once and `declareBufferChannel(...)` registers again with the returned facade/object. That is mostly benign right now because later writes overwrite earlier ones idempotently, but once eager creation and finish behavior are tightened it becomes important to normalize this into a single intentional registration path.
-
-This applies to ordinary channel types and also to `sink` / `sequence` channels. `sink` / `sequence` still have their extra `_channelRegistry` behavior, but they are not exempt from the general channel-registration cleanup.
-
-### Linked lanes
-
-When a child buffer is created with compiler-derived linked channels, the runtime should eagerly create:
-
-- `child.arrays[channelName] = []`
-- `child._visibleChannels[channelName] = linkTarget.findChannel(channelName)` if available
-
-This makes the child's structural participation and channel visibility explicit from the start.
-
-The ordering matters:
-
-1. resolve the effective link target (`linkedParent || parent`)
-2. resolve aliases/canonical runtime names consistently
-3. eagerly create the child lane array
-4. eagerly install explicit visibility from the effective link target
-5. structurally attach the child to the effective link target on that lane
-
-That sequencing should be made explicit in the implementation, especially if `_linkedChannels` and `_registerLinkedChannel(...)` are removed.
-
-### Local-only channels declared later at runtime
-
-If a channel is truly runtime-dynamic and is declared by an explicit runtime declaration site, that declaration should also eagerly materialize its lane immediately.
-
-No first-write allocation should remain in this subsystem.
-
-## Why Eager Lane Creation Lets Us Remove `_linkedChannels`
-
-Today `_linkedChannels` exists largely so finish logic knows about lanes that may not yet have an array or command entry.
-
-If every linked lane is created eagerly in `arrays`, then `arrays` already captures structural lane existence.
-
-At that point:
-
-- `_collectKnownChannelNames()` can use `Object.keys(arrays)`
-- finish/accounting no longer needs `_linkedChannels`
-- linked-lane existence becomes part of the actual structural model rather than extra bookkeeping
-
-That makes `_linkedChannels` redundant.
-
-However, the current `_registerLinkedChannel(...)` method also has a second side effect:
-
-- it calls `_finishKnownChannelIfRequested(...)`
-
-So if `_linkedChannels` is removed, that finish-related side effect must move to the eager linked-lane creation path rather than being lost.
-
-## Important Distinction: Structural Eagerness vs Lazy Value Semantics
-
-This refactor should remove lazy channel/lane creation.
-
-It should not be confused with removing Cascada's broader lazy value and promise-resolution semantics.
-
-The runtime still intentionally supports deferred/lazy values in areas such as:
-
-- [src/runtime/resolve.js](C:\Projects\cascada\src\runtime\resolve.js)
-- [src/runtime/set-path.js](C:\Projects\cascada\src\runtime\set-path.js)
-- command argument application in [src/runtime/commands.js](C:\Projects\cascada\src\runtime\commands.js)
-
-Those are about value semantics and transparent async behavior.
-
-They are not the same as lazily creating buffer lanes or lazily deciding whether a channel exists structurally.
-
-So the intended rule is:
-
-- remove lazy channel/lane materialization in the command-buffer/channel structure
-- do not conflate that with removing lazy/deferred value resolution across the whole engine
-
-In the same spirit, the optional `LOOKUP_DYNAMIC_CHANNEL_LINKING` path should not remain as an accidental escape hatch that reintroduces structural laziness into the command-buffer model.
-
-The preferred options are:
-
-- keep it disabled and document that the refactored model depends on compile-time structural linking, or
-- redesign it so any future dynamic mode still preserves explicit visibility/lane semantics rather than calling back into ambient linkage behavior
-
-## Finish Lifecycle Interaction
-
-The current implementation has a two-phase finish lifecycle:
-
-- `requestChannelFinish(...)`
-- `markFinishedAndPatchLinks()`
-- `_finishKnownChannelIfRequested(...)`
-- `_tryCompleteFinish()`
-
-This lifecycle matters for the refactor because channels and lanes are not materialized at exactly the same moment today.
-
-Two important current behaviors:
-
-- `_registerChannel(...)` calls `_finishKnownChannelIfRequested(...)`
-- `_registerLinkedChannel(...)` calls `_finishKnownChannelIfRequested(...)`
-
-So a finish request that arrives before a channel or linked lane is fully registered can still be satisfied once the relevant structure appears.
+### What `add(...)` should do
 
 After the refactor:
 
-- eager linked-lane creation must preserve the finish behavior currently hanging off `_registerLinkedChannel(...)`
-- eager lane creation and channel-object registration must be designed together so an early finish request cannot leave the buffer in an inconsistent partially-finished state
+- `add(...)` should assume the lane already exists
+- a missing `arrays[name]` should be an internal assertion/error
+- the lazy fallback should be removed
 
-In other words, removing lazy lane creation does not eliminate finish coordination; it changes where that coordination should occur.
+## What Replaces `_collectKnownChannelNames()`
 
-## `_collectKnownChannelNames()` Sources
+`_collectKnownChannelNames()` is not a global channel store. It is currently a helper for finish accounting.
 
-Today `_collectKnownChannelNames()` merges names from four sources:
+It also exists because the current runtime has no single authoritative lane list. It has to reconstruct that list by merging several partial structures.
 
-- `arrays`
-- `_ownedChannels`
-- `_linkedChannels`
-- `_visitingIterators`
+Its current job is to infer:
 
-The discussion around removing `_linkedChannels` should not ignore `_visitingIterators`.
+- which lanes this buffer should consider when closing
+- which lanes must be marked finished before aggregate `buffer.finished` becomes true
 
-Under a fully eager lane model, `_visitingIterators` may become redundant as a source of channel names because any lane an iterator can visit should already exist in `arrays`.
+In the target model, it should be replaced by the static lane set for the buffer.
 
-But that needs to be stated explicitly and validated, not assumed silently.
+Possible forms:
 
-## Snapshot And Lookup Implications
+- `buffer._laneNames`
+- `buffer._totalLaneCount`
 
-Once `_channels` and ambient ancestor visibility are removed, several methods should stop consulting the global registry and instead go through explicit lookup:
+Because arrays are eager, `Object.keys(arrays)` is already structurally that list.
 
-- `addSnapshot(...)`
-- `addRawSnapshot(...)`
-- `_runFinishedSnapshotCommand(...)`
-- any other path that currently assumes `_channels.get(...)`
+For efficiency and clarity, we should store lane metadata explicitly at construction rather than recomputing it later.
 
-Those paths should use `findChannel(...)` or `getChannel(...)` so they obey the same explicit visibility rules as ordinary lookups.
+The practical choice is:
 
-This is important both for correctness and for keeping snapshot behavior aligned with structural lane participation.
+- `buffer._laneNames` as the authoritative static lane list
+- `buffer._totalLaneCount = buffer._laneNames.length`
 
-One nuance worth calling out: the regular non-finished command path already goes through `_addCommand(...)` -> `add(...)` and does not consult `_channels`. The main asymmetry today is that the finished-snapshot fast path consults `_channels` directly. That makes the finished path broader and less disciplined than the ordinary path, which is exactly the opposite of what we want.
+Then `Object.keys(arrays)` becomes only a debugging sanity check, not the runtime source of truth.
 
-## Compiler/Runtime Integration
+### `_visitingIterators`
 
-The compiler already provides most of the information the runtime needs.
+Today `_collectKnownChannelNames()` also includes `_visitingIterators.keys()`.
 
-Relevant places:
+Under the target eager model, any lane an iterator can visit must already exist in `arrays`.
 
-- channel usage analysis in [src/compiler/analysis.js](C:\Projects\cascada\src\compiler\analysis.js)
-- linked channel filtering in [src/compiler/emit.js](C:\Projects\cascada\src\compiler\emit.js)
-- boundary creation in [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
-- direct buffer creation in macro/caller code in [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js)
+So `_visitingIterators` should become redundant as a source of lane names.
 
-The refactor should reuse those compile-time results rather than inventing a second runtime-only visibility mechanism.
+That means `_collectKnownChannelNames()` itself should disappear rather than surviving as a merged-name helper.
 
-The intended flow is:
+However, `_visitingIterators` itself should remain. It is still needed as the notification mechanism for:
 
-1. compiler computes `usedChannels`
-2. compiler filters that to linked parent-visible channels
-3. runtime creates child buffer with exactly those lanes visible/linked
-4. lookup/snapshot behavior respects only explicit ownership/visibility
+- `_notifyCommandOrBufferAdded(...)`
+- `_notifyChannelFinished(...)`
 
-This also means the runtime should not try to "discover" missing structure later through fallback registry lookup or lazy lane creation.
+What goes away is only its role in lane enumeration.
 
-## Sequence Locks And Special Channels
+## Finish Semantics
 
-The refactor must preserve the special treatment of:
+This is the most important structural point.
 
-- `sequential_path` channels such as `!foo`
-- `__return__`
-- text channels such as `__text__`
-- caller scheduling channels such as `__caller__`
-- waited channels such as generated `__waited__...`
-- `__parentTemplate`
+### What aggregate buffer finish means
 
-Important notes:
+`buffer.finished` should mean:
 
-- sequence locks are declared eagerly at root/macro scope and should remain explicit channels
-- `__return__` should continue to be excluded from parent-linking
-- waited channels should remain local timing channels and should not be linked as general parent-visible channels
-- text channels are special because child structural text composition often intentionally links them
+- all lanes of this buffer are closed
+- no more entries will be appended to this buffer's arrays
 
-The existing compiler filtering rules around these channels should remain the source of truth.
+It should **not** mean:
 
-`sink` and `sequence` channels should participate in eager lane creation just like other declared channels. Their extra `_channelRegistry` behavior is an additional concern, not a reason to exclude them from the structural cleanup.
+- all descendant child buffers have been fully traversed
+- all child buffer iterators have completed
 
-## Deferred Exports And Composition
+### What iterators care about
 
-The refactor must preserve explicit visibility flows such as:
+The iterator in [src/runtime/buffer-iterator.js](C:\Projects\cascada\src\runtime\buffer-iterator.js) shows the real semantics:
 
-- `context.linkDeferredExportsToBuffer(...)`
-- composition source buffer lookup
-- inherited block input capture from composition source buffers or parent buffers
+- it walks `buffer.arrays[channelName]`
+- when it encounters a child buffer entry, it enters it
+- it leaves that child only when `childBuffer.isFinished(channelName)` is true
 
-These are exactly the cases where `_visibleChannels` remains necessary.
+So there are two separate concerns:
 
-They should not be re-expanded into ambient hierarchy visibility.
+1. This buffer's own lane is closed.
+2. Child buffer entries encountered in that lane may themselves need to close before traversal can continue.
 
-The document's recommendations assume that composition/export visibility remains explicit and opt-in, not inherited automatically through ancestry.
+Those child buffers do not need to be part of aggregate lane-name enumeration. They are already represented structurally as entries in the lane arrays.
 
-## Runtime-Dynamic Channel Names: Important Caveat
+### What we should track
 
-Most channel names are already compile-time known and declared explicitly.
+At the command-buffer level, we should track:
 
-However, there are still a few runtime-dynamic declaration sites.
+- fixed lane set for this buffer
+- per-lane finished flags for this buffer
 
-The main example observed during the review is inherited/composed block local setup in [src/compiler/compiler-async.js](C:\Projects\cascada\src\compiler\compiler-async.js), where channel names are declared in a loop based on runtime block contracts and local-name lists.
+We should not separately track:
 
-That means two different claims must be distinguished:
+- child buffers that were entered
+- child buffers that were not entered yet
 
-### Feasible now
+The iterator handles child buffers structurally when it encounters them.
 
-"No lazy channel/lane creation for compile-time-known declarations and linked lanes."
+### What may replace repeated lane scans
 
-This is fully compatible with the refactor direction.
+Once lane counts are truly static, finish can become counter-based:
 
-### Not automatically solved by this refactor
+- `_totalLaneCount`
+- `_finishedLaneCount`
 
-"No runtime-dynamic channel declaration anywhere in the engine."
+Then `_tryCompleteFinish()` no longer needs to rescan lane names every time.
 
-That would require additional redesign of how block contracts and composition-local names are propagated.
+This optimization is valid only once runtime-dynamic channel names are gone.
 
-So the command-buffer refactor should aggressively eliminate lazy structural creation where the structure is already known, but it should not pretend that every channel name in the system is currently compile-time static.
+### Can the two-stage finish lifecycle collapse?
 
-## Canonical Runtime Channel Names
+Probably yes, once static lane creation is complete.
 
-The alias layer depends on the distinction between:
+Today `_finishRequestedChannels` and `_finishKnownChannelIfRequested(...)` exist because finish requests can arrive before a lane or channel has been materialized.
 
-- formal/channel-source names
-- canonical resolved runtime channel names
+With eager lane creation, `requestChannelFinish(name)` should be able to:
 
-The current implementation treats names matching the canonical runtime form like `someVar#7` as already resolved and therefore not eligible for another alias remap.
+1. resolve the canonical lane name
+2. assert that the lane exists in the static lane set
+3. mark the lane finished immediately
+4. notify any visiting iterator
+5. update aggregate finish state
 
-That convention is load-bearing for the alias model and should remain documented during the refactor because it affects:
+So the likely target is:
 
-- when alias resolution runs
-- how `_visibleChannels` keys are stored
-- how eager visibility injection should normalize names
+- remove `_finishRequestedChannels`
+- remove `_finishKnownChannelIfRequested(...)`
+- keep per-lane finished state and aggregate completion logic
 
-## Suggested Target Behavior For `createCommandBuffer(...)`
+This simplification is valid only once lane existence is guaranteed statically.
 
-`createCommandBuffer(...)` should become the main eager-structure setup point for child buffers.
+## Linked Lanes
 
-Given:
+Linked lanes should be eagerly created.
 
-- `context`
-- `parent`
-- `linkedChannels`
-- `linkedParent`
+The constructor or create-time setup should receive enough static information to know:
 
-it should:
+- which lanes are local
+- which lanes are parent-provided
 
-1. create the child buffer
+A good model is:
+
+- all lane names for this buffer
+- owned/local lane names
+
+Then:
+
+- lanes in `allLaneNames` are eagerly created in `arrays`
+- lane names not locally owned are connected to parent-provided channel refs
+
+This is much cleaner than today's lazy "buffer becomes linked when children are inserted" behavior.
+
+The intended constructor-time split is:
+
+- parent-linked channels: statically imported from the effective link target
+- declared/local channels: statically reserved in the lane set and later bound to concrete channel objects by `declareBufferChannel(...)`
+
+That keeps all structural information static while still allowing channel objects themselves to be attached at the normal declaration point.
+
+## `createCommandBuffer(...)`
+
+`createCommandBuffer(...)` should become the place where buffer structure is made complete.
+
+It should conceptually receive:
+
+- context
+- static lane names for the new buffer
+- locally declared/owned channel names (or specs)
+- external used channels to import from the link target
+- alias information if needed
+
+Then it should:
+
+1. create the buffer
 2. resolve the effective link target
-3. for each linked channel:
-   - eagerly create `child.arrays[channelName] = []`
-   - explicitly install `child._visibleChannels[channelName]` from the link target if that channel exists
-   - structurally attach the child to the parent on that lane
+3. establish canonical-name/alias resolution
+4. eagerly create all lane arrays
+5. install the local addressability map
+6. register locally declared channels
+7. install external channel refs for statically used parent channels
 
-This makes boundary creation deterministic and compile-time-driven.
+No later structural discovery should be required.
 
-Because `createCommandBuffer(...)` currently supports both `parent` and `linkedParent`, the implementation should continue to resolve an explicit effective link target rather than assuming those two are always the same object.
+### Compiler/API changes needed
 
-The wording in the implementation and documentation should consistently say "effective link target" or "link target" here, not just "parent", because some important creation sites pass `parent = null` and `linkedParent = someBuffer`.
+Today `createCommandBuffer(...)` is called with linked channels only.
 
-## Suggested Target Behavior For `findChannel(...)`
+To make local lane creation eager, the compiler also needs to pass declared-channel information derived from `node._analysis.declaredChannels`.
 
-The lookup order should become:
+That likely means:
 
-1. local `_ownedChannels`
-2. local `_visibleChannels`
-3. linked child-owned channels reachable through this buffer's structural lane arrays
+- adding a compiler helper analogous to `getLinkedChannelsArg(...)` for declared channels
+- updating async-boundary and macro call sites to pass both linked and declared channel metadata
+- treating the lane spec, not ad hoc runtime declaration order, as the source of structural truth
 
-And then stop.
+## Channel Registration Cleanup
 
-It should not:
+Current channel registration is messy because `Channel` construction registers once and `declareBufferChannel(...)` registers again.
 
-- search ancestor `_ownedChannels`
-- search ancestor `_visibleChannels`
-- search ancestor-linked child-owned channels
-- consult `_channels`
+The clean fix is:
 
-That is the key simplification that makes `usedChannels` actually meaningful.
+- remove `_buffer._registerChannel(...)` from `Channel` construction
+- make `declareBufferChannel(...)` the single canonical registration entry point
 
-## Likely Lookup Hotspot And Possible Optimization
+This applies to:
 
-One likely consequence of removing ambient visibility is that `_findLinkedChildOwnedChannel(...)` will become more important as a fallback path.
+- text
+- var
+- data
+- sink
+- sequence
+- sequential_path
 
-Today it scans a lane array in reverse and recursively descends into child buffers to find a linked child-owned channel. That is functionally correct, but it may become a noticeable lookup cost if many buffers and lanes are present.
+`sink` / `sequence` may still keep extra registry state if it is genuinely needed, but that is separate from the main channel-registration path.
 
-This is not a reason to keep `_channels`, but it is worth tracking as a likely optimization target.
+Related cleanup:
 
-Possible future optimization directions:
+- `targetBuffer._channelTypes[channelName] = channelType` appears to be dead write-only state today
+- if lane specs become constructor-time metadata, channel type should live there instead of in a parallel runtime map
 
-- cache visible linked-child ownership once discovered
-- eagerly register child-owned linked channels into a parent-side lookup structure
-- maintain a per-lane child-channel index instead of repeated reverse scans
+## `_channels`
 
-Those are optional follow-up optimizations, not required for the correctness refactor.
+The shared `_channels` registry should be removed.
 
-There is also a semantic question here, not just a performance one: once visibility is made explicit, we may want to forbid deep recursive descendant discovery entirely and require that any buffer needing access to an externally owned channel receives it explicitly through `_visibleChannels`. If that stricter rule is adopted, `_findLinkedChildOwnedChannel(...)` would become much narrower or disappear altogether.
+It currently leaks into finished-snapshot handling and bypasses explicit structure.
 
-## Alias Timing And Visibility Injection
+The most concentrated dependency is `_runFinishedSnapshotCommand(...)`, which currently does direct `_channels.get(channelName)` lookup for the finished-buffer snapshot fast path. That method should be converted to use the local addressability map just like the rest of the runtime.
 
-Alias handling is orthogonal, but timing still matters.
+Also, while it still exists during transition, the guard:
 
-Today aliases can be inherited when a child buffer is inserted through `add(...)`.
+```js
+if (!this._channels) {
+  this._channels = new Map();
+}
+```
 
-If eager visibility injection happens before structural insertion, the implementation must make sure:
+in `_registerChannel(...)` is dead code because `_channels` is always initialized in the constructor.
 
-- keys stored into `_visibleChannels` are normalized the same way `findChannel(...)` will later normalize lookup names
-- alias inheritance timing does not cause visibility to be installed under one name while later lookups occur under another
+That guard should be deleted even in any intermediate stage.
 
-This is another reason to define a single canonical-name normalization step in the eager creation path.
+## Channel Aliases
 
-## Refactor Risks
+`_channelAliases` should remain as a separate concern.
 
-This change will likely expose bugs that were previously hidden by over-broad visibility.
+They are not currently central to macro/caller behavior, but they should be kept for future implementation.
 
-The most likely sensitive areas are:
+The important rule is:
 
-- imported namespace/member-call boundaries
-- from-import call boundaries
-- caller/call-block machinery
-- macro invocation buffers
-- block/super/composition-local variable initialization
+- alias resolution is orthogonal to ownership/visibility
+- channel maps should store canonical/resolved names
+- visibility installation must use the same resolved names that lookups will later use
+
+Canonical runtime names like `name#7` are already treated as resolved and should continue to be.
+
+## Special Channels
+
+There should be no command-buffer-level special treatment for:
+
+- `__return__`
+- text channels
+- sequential path channels
+- `__caller__`
+- waited channels
 - `__parentTemplate`
-- deferred exports
-- sequence lock access
 
-That is expected and desirable. The current broad model may be allowing invalid cross-boundary reads to succeed accidentally.
+These are special at the **compiler/code generation** level, not at the command-buffer structural level.
 
-## Tests That Should Be Added Or Strengthened
+The right place to keep any special handling is compiler-side filtering and lowering, such as:
 
-The refactor should be validated with explicit tests for:
+- deciding declaration ownership
+- deciding which buffer gets a lane at construction time
+- deciding when generated code performs writes or snapshots
 
-- child buffer cannot resolve an unrelated parent channel
-- child buffer can resolve a linked parent-visible channel
-- lookup cannot enqueue a snapshot on an unlinked lane
-- deferred exports still resolve through explicit visibility links
-- composition source buffer reads still work
-- sequence locks still resolve correctly
-- alias-based channel lookup still works
-- disabled dynamic linking mode does not become required for correct ordered reads
-- finished snapshot behavior still works without `_channels`
-- macro caller scheduling still only links the intended channels
-- imported-call boundaries still do not pull unrelated locals into linked channels
+The runtime should stay name-agnostic.
 
-Some existing tests already cover parts of this behavior, especially around:
+Important constraint:
 
-- imported-call boundary channel linking
-- caller scheduling
-- alias-based snapshots
-- per-channel finish/snapshot behavior
+- even if the compiler treats some internal channels specially when assigning ownership or lane membership, runtime add/lookup/snapshot behavior must still stay uniform
+- there must be no runtime shortcut that bypasses the normal command-buffer hierarchy for these channels
 
-Those tests should be preserved and expanded rather than replaced.
+### `__return__` needs scope-unique ownership
+
+`__return__` needs special care during implementation review.
+
+The correct rule is:
+
+- each real return-owning scope gets its own unique runtime return channel name
+- all `return` writes inside that same scope target that same name
+- nested callable/render scopes get a different return channel name
+
+So a scope-unique runtime name such as `__return__#<scopeId>` is a good model.
+
+What must not happen is:
+
+- generating a fresh unique return channel name per individual `return` statement
+
+That would incorrectly split one logical return lane into many lanes.
+
+In practice this means:
+
+- the unique return channel name should be assigned once when the return-owning scope is created
+- declaration, writes, snapshots, and analysis/linking should all consistently use that same scope-stable runtime name
+
+This keeps nested return scopes isolated while still allowing structural child buffers inside the same scope to target the correct owning return lane.
+
+### Current analysis status for `__return__`
+
+The current compiler/analysis already models return ownership partially, but not explicitly enough for the refactor target.
+
+Today:
+
+- script roots declare an internal `__return__` channel
+- macros declare an internal `__return__` channel
+- caller scopes declare an internal `__return__` channel
+- `return` statements record mutation of `__return__`
+
+So return-owning scopes already exist in the analysis indirectly through normal declaration machinery.
+
+What is still missing is an explicit return-scope identity model:
+
+- there is no dedicated `returnScopeId`
+- there is no dedicated `returnChannelRuntimeName`
+- there is no rename pass for `__return__` comparable to the current loop renaming
+
+For the refactor, analysis should make return ownership explicit, for example with metadata such as:
+
+- `ownsReturnScope: true`
+- `returnScopeId`
+- `returnChannelRuntimeName`
+
+Then each `return` statement should resolve to the nearest owning return scope and use that scope-stable runtime return channel name consistently for:
+
+- declaration
+- writes
+- snapshots
+- `usedChannels` / `declaredChannels`
+- parent-linked-lane filtering
+
+From the command-buffer perspective:
+
+- `__return__` is just a normal var channel
+- sequential-path channels are just normal channels of their own type
+- text channels are just channels
+
+So the runtime rules should be uniform:
+
+- no shortcut lookup
+- no shortcut add
+- no shortcut snapshot
+- no bypass of hierarchical buffer behavior
+
+If any such bypass still exists, it should be removed early.
+
+## Deferred Exports
+
+Current deferred exports in [src/environment/context.js](C:\Projects\cascada\src\environment\context.js) work by:
+
+- storing a promise placeholder in `context.ctx`
+- remembering the producing `{ channelName, buffer }`
+- later resolving that export from `channel.finalSnapshot()`
+
+So yes: deferred exports are ultimately resolved from final snapshots.
+
+### Why are they linked to buffers today?
+
+After auditing the current code, the justification looks weak.
+
+`addDeferredExport(...)` stores both:
+
+- the resolver in `exportResolveFunctions`
+- the explicit producer record `{ channelName, buffer }` in `exportChannels`
+
+Then `resolveExports(...)` resolves from that explicit producer buffer directly.
+
+### Target direction
+
+This should be simplified.
+
+Deferred exports should not need general-purpose buffer linking if the producer `{ buffer, channelName }` is already known.
+
+The clean target is:
+
+- deferred exports resolve directly from their producer channel `finalSnapshot()`
+- they do not rely on ambient visibility or general buffer linking
+
+`resolveExports(...)` in [src/environment/context.js](C:\Projects\cascada\src\environment\context.js) already mostly follows this model because it stores `{ buffer, channelName }` pairs and resolves from the producer buffer directly.
+
+That means `linkDeferredExportsToBuffer(...)` should be audited aggressively. It may already be redundant for export resolution itself.
+
+## `linkDeferredExportsToBuffer(...)`
+
+This is part of the current export/linkage mechanism, not extern passing.
+
+After auditing current callers, it appears to be used only from async-root setup, and `linkVisibleChannel(...)` is only used by this export-linking path.
+
+That should likely shrink or disappear as export handling is simplified around direct producer snapshots.
+
+Also, `resolveExports(...)` still has a fallback arm that does:
+
+- `currentBuffer.findChannel(name)`
+
+After auditing `Context`, this fallback appears defensive rather than essential:
+
+- `addDeferredExport(...)` always creates both a non-null resolver and an `exportChannels[name]` record
+- `addResolvedExport(...)` stores a resolved value and marks the resolver slot as `null`
+
+So in normal deferred-export flow, a non-null resolver should already imply an explicit producer record. The fallback should therefore become an assertion during refactor, and then be removed once the invariant is validated by tests.
+
+## Composition And Extern Inputs
+
+Current composition still has some buffer-based machinery:
+
+- `compositionSourceBuffer`
+- `findChannel(name)?.finalSnapshot()`
+- block input recovery from composition buffers or parent buffers
+
+Architecturally, this should change.
+
+The target is:
+
+- all composition operations use explicit named inputs
+- this should follow the same `with ...` / extern-style pattern consistently
+- composition should not rely on channel linking/visibility for value transport
+- composition should pass named snapshots/promises/macros as inputs
+
+So yes: composition should move away from buffer linking.
+
+This is not just an adjacent cleanup. It is the main remaining source of runtime-dynamic channel names, so it needs to be solved as part of this refactor if we want fully static lane sets.
+
+The chosen direction should be stated directly:
+
+- composition/block calls should use explicit `with ...`-style named inputs
+- block entry functions should receive those inputs explicitly rather than discovering names from block contracts at runtime
+- the current runtime loop over `context.getBlockContract(...).inputNames` should be removed
+
+## Runtime-Dynamic Channel Names
+
+This should be fixed as part of this refactor.
+
+The target is:
+
+- no runtime-dynamic channel names
+- all buffer lane/channel names are statically known
+
+That means composition/block input handling must be redesigned so it does not loop over runtime names and call:
+
+- `declareBufferChannel(currentBuffer, name, ...)`
+
+Instead:
+
+- composition should pass explicit named snapshot values
+- the receiving template/script should use explicit extern/input bindings
+- the buffer structure should be fully determined at compile time
+
+So the current composition/block-input runtime loop is not something to accommodate with a permanent lazy fallback. It is technical debt to remove.
+
+This is not a follow-up; it is part of the refactor's target architecture.
+
+## What About `owned` vs `visible` if Everything Is Static?
+
+If buffer structure becomes fully static, the strongest simplification is:
+
+- compile-time analysis determines the full set of channel names a buffer can address
+- runtime materializes one local map for those names
+- optional ownership metadata may survive only for assertions/debugging
+
+So the likely end state is:
+
+- local addressability map is the real runtime structure
+- `_ownedChannels` is optional metadata, not a separate visibility system
+
+## `getFinishedPromise()`
+
+`getFinishedPromise()` remains load-bearing.
+
+It is the bridge used by async-boundary finalization to wait for a child buffer to complete.
+
+What changes is not its existence, but what resolves it:
+
+- today it resolves when `_tryCompleteFinish()` succeeds after merged lane discovery
+- after the refactor it should resolve when the static-lane completion check succeeds
+
+## Tests And Invariants
+
+The refactor should preserve and strengthen invariants such as:
+
+- `findChannel()` is local-only
+- `add()` cannot create lanes
+- missing lane in `add()` is an internal error
+- `_linkedChannels` is removed
+- child lexical scope never becomes visible to the parent through buffer traversal
+- no runtime-dynamic channel names remain
+- deferred exports resolve from final snapshots
+- composition uses explicit named inputs, not channel visibility
+- special channels receive no command-buffer-level shortcut treatment
+- aggregate finish depends only on this buffer's lane set
+
+## Migration Strategy
+
+Because the current runtime still tolerates incomplete analysis in a few places, the refactor should introduce stricter invariants in stages:
+
+1. add debug/development assertions around missing lanes, missing linked parent channels, unexpected export fallbacks, and unexpected child-buffer discovery
+2. run the focused and full test suites to surface any remaining analysis gaps
+3. remove the old fallback paths once the assertions stop firing
+
+This is especially important for:
+
+- `add()` missing-lane checks
+- removal of `_findLinkedChildOwnedChannel(...)`
+- removal of deferred-export fallback lookup
+- composition/block-input staticization
+
+## Implementation Plan
+
+This section turns the target architecture into a practical implementation sequence. The order matters: each step should shrink one category of ambiguity while preserving as much existing behavior as possible.
+
+### Step 1. Make scope ownership and lane specs explicit in analysis
+
+Goal:
+
+- make the compiler the authoritative source for lane membership and return-scope ownership before changing runtime lookup rules
+
+Primary files:
+
+- [src/compiler/analysis.js](C:\Projects\cascada\src\compiler\analysis.js)
+- [src/compiler/emit.js](C:\Projects\cascada\src\compiler\emit.js)
+- [src/compiler/compiler-async.js](C:\Projects\cascada\src\compiler\compiler-async.js)
+- [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js)
+- [src/compiler/rename.js](C:\Projects\cascada\src\compiler\rename.js)
+
+Changes:
+
+- add a compiler helper parallel to `getLinkedChannelsArg(...)` for declared/local lane specs
+- update `getLinkedChannelsArg(...)` filtering so scope-unique return names like `__return__#<scopeId>` are still excluded from parent-linked lanes
+- keep declaration ownership and parent-linked usage separate and explicit
+- add explicit return-scope metadata such as:
+  - `ownsReturnScope`
+  - `returnScopeId`
+  - `returnChannelRuntimeName`
+- assign a scope-stable runtime return name like `__return__#<scopeId>` once per return-owning scope
+- make `return` analysis resolve to the nearest owning return scope instead of mutating bare `__return__`
+- validate lane-spec assumptions early:
+  - after filtering out local declarations from raw `usedChannels`, the resulting parent-linked set must be disjoint from the local declared set
+  - every referenced parent-linked lane must correspond to an analyzable outer declaration
+  - every return-owning scope must have exactly one scope-stable return runtime name
+
+Tests for this step:
+
+- add/extend compile-source tests showing nested scopes get distinct return runtime names
+- keep existing passing integration tests green:
+  - root return isolated from nested macro returns
+  - caller return isolated from the enclosing return
+
+Still-unimplemented tests to add here:
+
+- integration test: structural child buffers inside the same return scope still target the enclosing return lane
+- if early-return semantics are implemented as part of this work, unskip and update:
+  - `should support early return`
+  - `should support conditional return branches`
+  - `should support return inside loops`
+  - `should support return inside guard/recover blocks`
+
+Important note:
+
+- same-scope return routing and true early-return control flow are related but not identical. If early-exit semantics remain out of scope for this refactor, only add tests for correct lane targeting, not for "stop executing the rest of the scope."
+- the declared-lane helper is the main prerequisite for Step 2; full `__return__` scope-uniqueness work can proceed in parallel if needed
+- the new declared-lane helper must be threaded through the same boundary creation call sites that currently use `getLinkedChannelsArg(...)`, especially in `boundaries.js`, `loop.js`, and root/macro buffer creation paths
+- lane-spec validation should begin as warnings or debug assertions during migration and only become hard errors after Step 10 removes the remaining runtime-dynamic composition lanes
+
+### Step 2. Change `createCommandBuffer(...)` to receive static lane specs and build eager arrays
+
+Goal:
+
+- make buffer structure complete at construction time
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/async-boundaries.js](C:\Projects\cascada\src\runtime\async-boundaries.js)
+- [src/compiler/buffer.js](C:\Projects\cascada\src\compiler\buffer.js)
+- [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
+- [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js)
+
+Changes:
+
+- extend buffer creation so the runtime receives:
+  - parent-linked lane names
+  - local declared lane names
+- apply the same static-lane-spec model to root buffers as well as child buffers
+- update the compiler call sites that currently pass only linked channels so they also pass declared-lane specs
+- eagerly create `arrays[name] = []` for the full static lane set
+- move alias inheritance/canonical-name setup into construction-time buffer initialization, before populating any local addressability entries
+- store:
+  - `buffer._laneNames`
+  - `buffer._totalLaneCount`
+- keep child/parent structural insertion separate from lane creation
+- assert at construction time that every parent-linked lane resolves on the effective link target (`linkedParent` where present, otherwise `parent`)
+- do not remove `_registerLinkedChannel(...)` calls from `add()` yet; that compatibility cleanup belongs to Step 11 when finish bookkeeping is collapsed
+
+Tests for this step:
+
+- existing passing test: outer var writes across async `if` boundaries
+
+Still-unimplemented tests to add here:
+
+- integration test: declared-but-unused local channels do not prevent buffer completion
+- targeted runtime/integration test: `getFinishedPromise()` still resolves for buffers with unused eager local lanes
+- integration test anchor: loop body buffers still behave correctly under eager lane creation
+- integration test anchor: macro/caller invocation buffers still behave correctly under eager lane creation
+
+Clarification:
+
+- `buffer._laneNames` / `buffer._totalLaneCount` are introduced here as constructor-time metadata
+- Step 5 will start using them for finish accounting; it does not reintroduce them
+- alias setup here is a sequencing change to existing behavior, not a new alias feature
+
+### Step 3. Introduce the local addressability map and clean up channel registration
+
+Goal:
+
+- make one local map the source of channel resolution
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/channel.js](C:\Projects\cascada\src\runtime\channel.js)
+
+Changes:
+
+- make `declareBufferChannel(...)` the single canonical registration path
+- remove registration from `Channel` construction
+- repurpose `_visibleChannels` into the unified local addressability map during migration, so it becomes the single primary runtime lookup structure
+- install locally declared channel objects into that map
+- install parent-linked channel refs from static analysis into that same map
+- keep `_ownedChannels` only as optional assertions/debug metadata; it must no longer participate in lookup
+- remove dead `_channelTypes` state if nothing reads it
+- move iterator binding along with the registration cleanup so channel iterators still bind to the owning buffer correctly
+- establish and enforce the construction-order invariant for parent-linked refs:
+  - parent-linked channel refs must already exist on the effective link target when the child buffer is constructed
+  - if that invariant is violated, fail via assertion during migration rather than adding a new deferred-binding fallback
+
+Tests for this step:
+
+- keep existing declaration and snapshot suites green
+- keep existing call-block parent-variable read tests green
+
+Still-unimplemented tests to add here:
+
+- integration test: a true child lexical scope does not become parent-visible merely because a child buffer exists
+- integration test: outer-scope-owned declarations emitted through async boundaries still resolve correctly without child-buffer discovery
+
+### Step 4. Remove ambient lookup and child-buffer scanning from normal resolution
+
+Goal:
+
+- make `findChannel()` local-only
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+
+Changes:
+
+- remove ancestor walk from `findChannel(...)`
+- remove `_findLinkedChildOwnedChannel(...)` from the normal lookup path
+- re-evaluate `channelLookup(...)` routing so it uses the local map semantics directly instead of relying on ambient ancestry assumptions
+- during migration, temporarily convert unexpected child-buffer discovery into an assertion/debug trap
+
+Clarification:
+
+- Step 4 changes behavior by making lookup local-only and wiring `_findLinkedChildOwnedChannel(...)` out of normal resolution
+- Step 7 is only the dead-code cleanup for disabled dynamic lookup-linking
+- Step 12 is where any surviving `_findLinkedChildOwnedChannel(...)` assertion trap is deleted entirely
+
+Tests for this step:
+
+- existing passing tests:
+  - read outer variable directly inside call block
+  - allow reading parent variables in call blocks
+  - allow observing outer var channel inside call blocks
+
+Still-unimplemented tests to add here:
+
+- integration test: parent lookup cannot see a child-scope-only declaration across an async/control-flow boundary
+- debug/assertion test: if `_findLinkedChildOwnedChannel(...)` would have been needed, the suite fails loudly instead of silently succeeding
+
+### Step 5. Replace finish discovery with static lane accounting
+
+Goal:
+
+- introduce explicit lane metadata and prepare finish logic for later simplification
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/buffer-iterator.js](C:\Projects\cascada\src\runtime\buffer-iterator.js)
+
+Changes:
+
+- replace `_collectKnownChannelNames()` with the constructor-time lane list
+- keep `_visitingIterators` only as a notification mechanism
+- introduce `_totalLaneCount`
+- introduce `_finishedLaneCount` alongside the existing scan-based aggregate check and assert that the two agree during migration
+- increment `_finishedLaneCount` in `_markChannelFinished(...)`, which remains the per-lane finished-state transition point
+- do not fully remove `_linkedChannels` / `_finishRequestedChannels` yet if runtime-dynamic lanes or lazy lane creation still exist anywhere
+- simplify `markFinishedAndPatchLinks()` to iterate the constructor-time lane list directly
+
+Clarification:
+
+- `_collectKnownChannelNames()` should stop driving the main finish path here, but it may remain temporarily for assertion parity until Step 11 removes the old finish scaffolding completely
+- `_linkedChannels` / `_finishRequestedChannels` survive until after Step 10; Step 11 is where they are actually removed
+
+Tests for this step:
+
+- existing passing tests around normal flattening and buffer completion should remain green
+
+Still-unimplemented tests to add here:
+
+- integration test: declared-but-unused lanes do not block aggregate finish
+- integration test: child buffers entered through iterators still complete correctly under static lane accounting
+
+### Step 6. Make missing lanes a hard error and remove lazy lane creation
+
+Goal:
+
+- stop hiding compiler/runtime mismatches
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+
+Changes:
+
+- remove the lazy `if (!this.arrays[name]) this.arrays[name] = []` path from `add(...)`
+- assert that every add/snapshot path targets a known static lane
+- keep this assertion behind a development/debug gate at first
+- do not make it unconditional until after Step 10 removes runtime-dynamic composition lanes; Step 12 is where it should become unconditional
+- acknowledge that `_addCommand(...)` will now fail through the same missing-lane assertion path, which is the desired outcome for an invalid compiled/runtime contract
+- leave `_registerLinkedChannel(...)` calls in `add()` alone for now if they are still carrying finish-accounting compatibility; that cleanup belongs to Step 11
+
+Tests for this step:
+
+- keep all passing integration tests green
+
+Still-unimplemented tests to add here:
+
+- targeted runtime test: missing lane in `add()` throws immediately
+- targeted runtime test: missing linked parent channel at buffer creation throws immediately
+
+### Step 7. Remove dynamic lookup-time linking and child-buffer discovery fallbacks
+
+Goal:
+
+- make lookup stop mutating structure or rescuing incomplete analysis
+
+Primary files:
+
+- [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+
+Changes:
+
+- remove dead `LOOKUP_DYNAMIC_CHANNEL_LINKING` support
+- remove dead `ensureReadChannelLink(...)`
+- remove dead `_readChannelLinks`
+- if `_findLinkedChildOwnedChannel(...)` is still present as an assertion trap from Step 4, keep Step 7 limited to the dead dynamic-linking cleanup and defer final trap removal to Step 12
+
+Tests for this step:
+
+- existing parent-variable read tests should remain green; no behavioral change is expected because dynamic lookup linking is already disabled
+
+Still-unimplemented tests to add here:
+
+- no new behavior-focused tests are required here beyond confirming the existing Step 4 tests still pass
+
+### Step 8. Remove `_channels` and fix the finished-snapshot fast path
+
+Goal:
+
+- eliminate the hierarchy-wide channel registry completely
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+
+Changes:
+
+- remove `_channels`
+- remove its dead initialization guard in `_registerChannel(...)`
+- route `addSnapshot(...)`, `addRawSnapshot(...)`, and especially `_runFinishedSnapshotCommand(...)` through the local addressability map
+- update the finished-buffer fast path in `addSnapshot(...)` / `addRawSnapshot(...)` so both channel retrieval and the `output._buffer.isFinished(...)` guard use the local addressability map instead of `_channels`
+- narrow `_registerChannel(...)` so it no longer manages `_channels`; if `_ownedChannels` remains as debug metadata, its write can stay there
+
+Tests for this step:
+
+- keep existing snapshot suites green
+
+Still-unimplemented tests to add here:
+
+- integration test: finished-buffer snapshot still works after `_channels` removal
+- integration test: finished raw snapshot still works after `_channels` removal
+
+### Step 9. Simplify deferred exports around explicit producer records
+
+Goal:
+
+- stop using buffer visibility for export resolution
+
+Primary files:
+
+- [src/environment/context.js](C:\Projects\cascada\src\environment\context.js)
+- [src/compiler/compiler-async.js](C:\Projects\cascada\src\compiler\compiler-async.js)
+
+Changes:
+
+- make `resolveExports(...)` rely on the explicit `{ buffer, channelName }` producer record
+- convert the `currentBuffer.findChannel(name)` fallback into an assertion first
+- remove `linkDeferredExportsToBuffer(...)` once tests confirm it is unnecessary
+- keep `exportChannels` / `exportResolveFunctions` as the explicit producer-record mechanism
+- remove the emitted `context.linkDeferredExportsToBuffer(...)` call from compiler output
+- remove `linkVisibleChannel(...)` as well, since export linking is its only current use
+
+Tests for this step:
+
+- keep existing async import/from-import export tests green
+- keep loop-concurrent-limit async export tests green
+
+Still-unimplemented tests to add here:
+
+- integration test: exported async value resolves correctly without parent visibility linking
+- integration test: `resolveExports(...)` fails/asserts if a deferred resolver exists without an explicit producer record
+
+### Step 10. Remove runtime-dynamic block/composition channel names
+
+Goal:
+
+- make composition fully static and align it with the same explicit-input model as other composition operations
+
+Primary files:
+
+- [src/compiler/compiler-async.js](C:\Projects\cascada\src\compiler\compiler-async.js)
+- [src/compiler/inheritance.js](C:\Projects\cascada\src\compiler\inheritance.js)
+- [src/environment/context.js](C:\Projects\cascada\src\environment\context.js)
+
+Changes:
+
+- redesign block/composition entry so inputs are passed explicitly via `with ...`-style named inputs
+- make block entry functions receive an explicit named-input object or equivalent explicit parameter payload
+- have the compiler generate that payload from statically known call-site inputs instead of discovering input names at runtime
+- rewrite `_emitAsyncBlockInputInitialization(...)` around those static explicit inputs
+- stop looping over `context.getBlockContract(...).inputNames` at runtime to declare channels
+- remove the runtime `declareBufferChannel(currentBuffer, name, ...)` loop for composition inputs
+- remove `compositionSourceBuffer`-based channel lookup from block input initialization
+- keep composition value transport snapshot-based and explicit
+- update `Context.forkForComposition(...)` if its current contract assumes channel/buffer-based composition lookup
+- audit whether `setCompositionSourceBuffer(...)`, `getCompositionSourceBuffer(...)`, `getBlockContract(...)`, and `forkForComposition(...)` still have any remaining purpose after this redesign
+
+Concrete target:
+
+- block/call-site compilation should construct the explicit named-input payload from compile-time-known inputs
+- the generated block entry function should consume that payload directly instead of recovering names from `Context`
+- `inheritance.js` and `compiler-async.js` must agree on the new entry-function signature and call shape
+- in practice, `inheritance.js` should build and pass the explicit named-input payload at block override/super call sites, and `compiler-async.js` block entry code should accept that payload directly
+- compile-time block-input metadata must exist at the call site; if current analysis does not yet provide that, this step must add it explicitly before runtime loop removal can proceed
+
+Dependency:
+
+- this step requires block input names to be compile-time-known at call sites; if Step 1 does not already provide that, Step 10 must add it explicitly
+
+Tests for this step:
+
+- keep current composition/import tests green
+
+Still-unimplemented tests to add here:
+
+- integration test: composition block inputs work through explicit named `with ...` inputs
+- compile-source test: generated block entry code no longer loops over runtime block-contract input names
+- integration test: no runtime-dynamic channel declaration is needed for composition/block inputs
+
+### Step 11. Collapse finish handling and remove remaining compatibility state
+
+Goal:
+
+- finish the transition to fully static lane-based completion once all dynamic structure creation is gone
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/buffer-iterator.js](C:\Projects\cascada\src\runtime\buffer-iterator.js)
+
+Changes:
+
+- remove `_linkedChannels`
+- remove `_registerLinkedChannel(...)`
+- remove the `_registerLinkedChannel(...)` call from `add()`
+- remove `_finishRequestedChannels`
+- remove `_finishKnownChannelIfRequested(...)`
+- remove the backward-compatibility alias `markChannelFinished(...)` if it no longer serves a purpose
+- make `requestChannelFinish(...)` the direct lane-finish path:
+  - resolve canonical name
+  - assert the lane exists
+  - call `_markChannelFinished(...)`
+  - notify iterators / update aggregate completion through the surviving finish path
+- update `_tryCompleteFinish()` so it stops scanning lane names and instead resolves completion when `_finishedLaneCount === _totalLaneCount`
+- make aggregate finish rely on:
+  - `_totalLaneCount`
+  - `_finishedLaneCount`
+- keep per-lane finished flags
+- keep `_visitingIterators` only for notifications
+- keep `_ownedChannels` as debug/assert metadata only unless Step 12 proves it is no longer useful
+
+Tests for this step:
+
+- declared-but-unused lanes do not block aggregate finish
+- child buffers entered through iterators still complete correctly under static lane accounting
+- `getFinishedPromise()` resolves under the final static-lane finish model
+
+### Step 12. Remove migration fallbacks and make invariants unconditional
+
+Goal:
+
+- finish the cleanup and stop tolerating partial analysis/runtime drift
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+- [src/environment/context.js](C:\Projects\cascada\src\environment\context.js)
+
+Changes:
+
+- delete `_findLinkedChildOwnedChannel(...)` if it survived as a migration-time assertion trap
+- delete any remaining export fallback lookup
+- delete any temporary debug-only compatibility paths that are no longer needed
+- make the static-lane / local-lookup invariants unconditional
+- finalize the disposition of `_ownedChannels`:
+  - keep it only as debug/assert metadata if it still provides value
+  - otherwise remove it entirely
+- audit `parent` vs `linkedParent` separately:
+  - keep `parent` if it is still required for iterator/tree structure
+  - remove or simplify `linkedParent` only if it no longer serves a distinct purpose after local-only lookup and eager linking are in place
+- remove `compositionSourceBuffersByTemplate` and related helpers if Step 10 leaves them unused
+- remove `getBlockContract(...)` as well if Step 10 leaves no remaining callers
+
+Final verification for this step:
+
+- run focused suites for:
+  - `tests/explicit-outputs.js`
+  - `tests/pasync/calls.js`
+  - `tests/pasync/composition.js`
+  - `tests/pasync/template-command-buffer.js`
+  - `tests/pasync/loop-concurrent-limit.js`
+- then run the full relevant test suite
 
 ## Final Recommendation
 
 The refactor should proceed with these goals:
 
-1. Remove `_channels`
-2. Remove ambient ancestor-channel visibility from `findChannel(...)`
-3. Keep `_ownedChannels`
-4. Keep `_visibleChannels`
-5. Eagerly create lane arrays for:
-   - all declared channels
-   - all linked structural lanes
-6. Remove `_linkedChannels` once eager lane creation makes it redundant
-7. Route all snapshot/lookup paths through explicit ownership/visibility resolution
-8. Reuse compiler-derived `usedChannels` / linked-channel analysis rather than inventing new runtime inference
+1. Remove `_channels`.
+2. Remove lazy lane creation from `add()`.
+3. Replace `_collectKnownChannelNames()` with a static per-buffer lane set.
+4. Track aggregate finish only for this buffer's own lanes.
+5. Make `findChannel()` local-only and O(1).
+6. Remove descendant/ancestor/global lookup from normal channel resolution.
+7. Keep lexical scope ownership separate from command-buffer parent/child structure.
+8. Remove `_linkedChannels`.
+9. Make `declareBufferChannel(...)` the single canonical registration path.
+10. Collapse finish handling once static lane creation guarantees lane existence.
+11. Keep `_channelAliases` as a separate future-facing concern.
+12. Treat all channels uniformly inside command-buffer/runtime logic.
+13. Redesign composition around explicit named inputs/snapshots.
+14. Remove runtime-dynamic channel names as part of this refactor.
 
 In short:
 
-- ownership should be local
-- visibility should be explicit
-- structure should be eager
-- the command-buffer subsystem should be driven by compile-time channel analysis wherever possible
+- structure should be static
+- arrays should be eager
+- lookup should be local
+- finish should be lane-based
+- exports should resolve from snapshots
+- composition should use explicit inputs
+- command-buffer logic should stop carrying language-level special cases
