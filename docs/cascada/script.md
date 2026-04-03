@@ -84,13 +84,6 @@ console.log(result);
 
 The syntax is familiar, but the execution is fundamentally different. To understand how Cascada achieves effortless concurrency, read the next section on Cascada's execution model.
 
-## ⚠️ Features Currently Not Implemented
-
-The following feature is documented in this guide but is **not yet implemented**:
-
-- **Cross-Script Dependencies (`extern`, `reads`, `modifies`)** - Declaring variable dependencies across script boundaries: `extern` to declare expected variables in child scripts, and `reads`/`modifies` to grant access from parent scripts with `import`, `include`, and `extends` (see [Declaring Cross-Script Dependencies](#declaring-cross-script-dependencies))
-
-These features are planned for future releases, check out the [Development Status and Roadmap](#development-status-and-roadmap) section.
 
 ## Cascada's Execution Model
 
@@ -1702,7 +1695,6 @@ guard out, db!, status
 > **Rules:**
 > - `*` cannot be combined with any other selector
 > - Duplicate selectors are invalid
-> - Selectors do not use `@name` syntax
 > - Lock selectors (`lock!`, `!`) are for sequential-operation lock paths, not `sequence` channels
 
 **Hierarchical Protection of Sequential Paths:**
@@ -2054,22 +2046,60 @@ For most cases, returning a `var` or a plain object literal is simpler than decl
 
 
 ## Modular Scripts
-**Note:** This functionality is under active development. Currently you cannot safely access mutable variables from a parent script.
 
-Cascada provides powerful tools for composing scripts, promoting code reuse and the separation of concerns. This allows you to break down complex workflows into smaller, maintainable files. The three primary mechanisms are [`import`](#importing-libraries-with-import) for namespaced libraries, [`include`](#including-scripts-with-include) for embedding content, and [`extends`/`block`](#script-inheritance-with-extends-and-block) for script inheritance.
+Cascada provides tools for composing scripts across files. The three primary mechanisms are [`import`](#importing-libraries-with-import) for namespaced libraries, [`include`](#including-scripts-with-include) for embedding content, and [`extends`/`block`](#script-inheritance-with-extends-and-block) for script inheritance.
 
-### Declaring Cross-Script Dependencies
+Cross-script data passing uses an **explicit-contract model**: the child script declares what it expects with `extern`, and the parent passes values using `with` at the call site. There is no implicit sharing of parent-scope variables.
 
-> **⚠️ NOT IMPLEMENTED:** This feature is not yet available in the current version of Cascada. See [Development Status and Roadmap](#development-status-and-roadmap) for details.
+### `extern`: Declaring Expected Inputs
 
-To enable its powerful parallel execution model, Cascada's compiler must understand all variable dependencies at compile time. When you split your logic across multiple files, you must explicitly declare how these files share variables using three keywords:
+`extern` declares a variable that a child script expects to receive from its caller. It is only valid at root scope (not inside `if`, `for`, macros, etc.).
 
-*   **`extern`**: Used in the *called* script. Declares which variables it **expects** to receive from a parent script.
-*   **`reads`**: Used in the *calling* script. Grants **read-only permission** to the specified variables.
-*   **`modifies`**: Used in the *calling* script. Grants **full read and write permission** to the specified variables.
+```cascada
+// required — caller must provide it
+extern user
+
+// optional — uses "light" if caller doesn't provide it
+extern theme = "light"
+```
+
+**Rules:**
+- **Vars only**: `extern` works only with `var`-type values. Channels (`data`, `text`, `sink`, `sequence`) cannot be declared as externs or passed via `with`.
+- **Value-copy semantics**: `extern` receives a copy of the caller's value at the time of the call. Mutating it inside the child does not affect the parent.
+- **Declaration order**: externs are initialized in the order they are declared. An `extern` cannot reference another `extern` declared after it in its fallback expression.
+- **Post-init**: after initialization, an `extern` variable behaves exactly like a normal local `var`.
+- **Required vs. optional**: an `extern` without a fallback is required. If the caller does not provide it (via `with` or `with context`), a runtime error is thrown.
+- **Reserved name**: `context` is a reserved name. `extern context` and `var context = ...` are compile errors.
+
+### Passing Values with `with`
+
+All composition operations (`import`, `from import`, `include`, `block`) use the same `with` clause to pass values into a child script's `extern` bindings.
+
+```cascada
+// named vars only
+include "widget.script" with user, theme
+
+// render-context lookup only
+import "helpers.script" as h with context
+
+// both — named inputs take priority over context
+import "ui.script" as ui with context, locale
+
+// explicit opt-out from context
+import "strict.script" as s without context
+```
+
+**`with varName, ...`** — passes the named parent `var`s by value. Only `var` declarations can be listed; channels (`data`, `text`, `sink`, `sequence`) cannot be passed across a composition boundary.
+
+**`with context`** — makes the parent's render context (the object passed to the renderer) visible to bare-name lookups inside the child. It does **not** expose parent local variables or channels, and it does **not** create a variable named `context` inside the child.
+
+**`without context`** — explicitly opts out of render-context access. Useful to make isolation guarantees clear.
+
+Named inputs always take priority over context lookup. An `extern` is satisfied in this order: explicit `with` value → `with context` lookup → own fallback initializer → error.
 
 ### Importing Libraries with `import`
-Use `import` to load a script as a library of reusable, stateless components, primarily macros. By default, an `import` is completely isolated: it does not execute and cannot access the parent's variables or global context.
+
+Use `import` to load a script as a library of reusable components, primarily macros. An `import` is isolated by default: it does not execute inline and cannot access the parent's variables or render context.
 
 #### Importing a Namespace with `as`
 
@@ -2136,25 +2166,21 @@ return formattedUser
 </table>
 
 ### Including Scripts with `include`
-Use `include` to execute another script within the current script's scope. Unlike `import`, the included script runs immediately and has access to the global context. Use `reads` and `modifies` to grant access to parent variables (the included script must declare them with `extern`).
+
+Use `include` to execute another script inline. The included script runs in isolation: it only sees what is explicitly passed via `with`. Parent-scope local variables and channels are not accessible.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <details open>
-<summary><strong><code>user_widget.script</code></strong></summary>
+<summary><strong><code>user-widget.script</code></strong></summary>
 
 ```cascada
-// The script declares that it expects 'user' and
-// 'usageStats' variables from its parent.
-extern user, usageStats
+// Declares what this script expects from its caller
+extern user
+extern theme = "default"
 
-// Use these variables to build its part of the data.
-data out
-out.widget.user.name = user.name
-
-// Modify a variable from the parent scope.
-usageStats.widgetLoads++
+return { name: user.name, theme: theme }
 ```
 </details>
 </td>
@@ -2164,12 +2190,9 @@ usageStats.widgetLoads++
 
 ```cascada
 var user = fetchUser(1)
-var usageStats = { widgetLoads: 0 }
+var theme = "dark"
 
-// Include the component, defining its permissions.
-include "user_widget.script" reads user modifies usageStats
-
-return usageStats
+include "user-widget.script" with user, theme
 ```
 </details>
 </td>
@@ -2177,12 +2200,36 @@ return usageStats
 </table>
 
 ### Script Inheritance with `extends` and `block`
-Use `extends` for an "inversion of control" pattern, where a "child" script provides specific implementations for placeholder `block`s defined in a "base" script.
+Use `extends` for an "inversion of control" pattern, where a "child" script fills in placeholder `block`s defined in a "base" script.
 
-#### Scoping in `extends` and `block`
-- **Shared State & Contract:** The base script uses `reads` and `modifies` on the `block` definition to declare a "contract" for which variables the child's implementation can access. The child script must use `extern` to declare these variables.
-- **Top-Level `var` in Child:** Variables declared at the top level of the child script (outside any `block`) are set before the base script's layout is executed.
-- **`var` Inside a `block`:** Variables declared inside a `block` are local to that block and cannot be seen by the base script or other blocks.
+The **base** script owns the `with` contract for each `block`, declaring which vars are passed into the block's scope:
+
+```cascada
+// base.script
+var header = buildHeader(title)
+block body with title, user
+  // default content — title and user are available here
+  var body = "Default body for " + title
+endblock
+```
+
+A child script overrides the block and receives the declared inputs automatically:
+
+```cascada
+// child.script
+extends "base.script"
+
+block body
+  // title and user are available here without re-declaring them
+  var body = "Custom body for " + user.name + " — " + title
+endblock
+```
+
+**Rules:**
+- The base block's `with` clause is the contract. The overriding child block cannot add its own `with` clause.
+- `super()` inside an overriding block renders the base block's content with the **original** inputs passed by the caller — not any locally reassigned values.
+- Top-level `var` declarations in the child script (outside any `block`) are visible inside blocks.
+- Variables declared inside a `block` are local to that block and not visible elsewhere.
 
 ## Extending Cascada
 
@@ -2589,18 +2636,12 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 
 ### Differences from classic Nunjucks
 
-- **Async templates & Cascada Script:** `if`, `for`/`each`/`while`, and `switch` branches run in their own scope, so `set`/`var` stay local unless you intentionally write to an outer variable. This avoids race conditions and keeps loops parallel.
-- **Sync templates (`asyncMode: false`):** No scope isolation - control-flow blocks share the parent frame exactly like Nunjucks.
-
-So: async builds get safer block-local semantics; fully synchronous templates keep the legacy behavior.
+- **Block-local scoping:** `if`, `for`/`each`/`while`, and `switch` branches run in their own scope. `var` declarations inside them stay local unless you intentionally write to an outer variable. This avoids race conditions and keeps loops parallel.
 
 ### Roadmap
 This roadmap outlines key features and enhancements that are planned or currently in progress.
 
 -   **Streaming support** - see the [Streaming Proposal](https://github.com/geleto/cascada/blob/master/docs/cascada/streaming.md)
-
--   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
-    Support declaring variable dependencies with the `extern`, `reads`, and `modifies` keywords.
 
 -   **Expanded Sequential Execution (`!`) Support**
     Enhancing the `!` marker to work on variables and not just objects from the global context.
