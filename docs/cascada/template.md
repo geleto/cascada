@@ -50,9 +50,16 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 | **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}`                                                             |
 | **Block Assignment**     | *(not available in scripts)*                               | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
 | **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
-| **Include**              | `include "header.html"`                                    | `{% include "header.html" %}`                                                |
-| **Import namespace**     | `import "utils.html" as utils`                             | `{% import "utils.html" as utils %}`                                         |
-| **Import names**         | `from "utils.html" import helper`                          | `{% from "utils.html" import helper %}`                                      |
+| **Block**                | `block name`<br>  `...`<br>`endblock`                      | `{% block name %}`<br>  `...`<br>`{% endblock %}`                            |
+| **Block with inputs**    | `block name with var1, var2`                               | `{% block name with var1, var2 %}`                                           |
+| **Include**              | `include "file"`                                           | `{% include "file" %}`                                                       |
+| **Include with inputs**  | `include "file" with context, var1, var2`                  | `{% include "file" with context, var1, var2 %}`                              |
+| **Import namespace**     | `import "file" as lib`                                     | `{% import "file" as lib %}`                                                 |
+| **Import with inputs**   | `import "file" as lib with context, var1`                  | `{% import "file" as lib with context, var1 %}`                              |
+| **Import names**         | `from "file" import helper`                                | `{% from "file" import helper %}`                                            |
+| **From import with inputs** | `from "file" import helper with context, var1`          | `{% from "file" import helper with context, var1 %}`                         |
+| **Extern (required)**    | `extern user`                                              | `{% extern user %}`                                                          |
+| **Extern (with default)**| `extern theme = "light"`                                   | `{% extern theme = "light" %}`                                               |
 | **Guard Block**          | `guard`<br>  `...`<br>  `recover`<br>  `...`<br>`endguard` | `{% guard %}`<br>  `...`<br>  `{% recover %}`<br>  `...`<br>`{% endguard %}` |
 | **Revert**               | `revert`                                                   | `{% revert %}`                                                               |
 
@@ -172,18 +179,34 @@ endcall
 {% endguard %}
 ```
 
-## Variable Scoping in Async Mode
+## Async Composition (`extern`, `with`, `block` contracts)
 
-In Nunjucks and non-async Cascada templates, conditional statements (`if` and `switch`) do not create a variable scope. Variables set within these blocks are created in the parent scope.
+The full composition model is documented in the [Cascada Script docs](https://geleto.github.io/cascada-script/#modular-scripts). The same rules apply to templates — only the syntax differs.
 
-In async Cascada templates, `if` and `switch` create local variable scopes. Variables set within these blocks are local to the block and not visible in the parent scope.
+The `extern`/`with`/`with context` model is **async-only**. In non-async (classic Nunjucks) mode, included templates retain implicit access to all parent-scope variables, `extern` is rejected as a compile error, and `with` clauses on `include`/`import`/`block` are not available.
 
-## Async Inheritance Scope Note
+### Key rules
 
-In async mode, variable scope changed:
+- `include`, `import`, and `from import` are **isolated**: they only see what is explicitly passed via `with`. Parent-scope `{% set %}` variables are not visible in the child.
+- `{% extern name %}` declares a required input; `{% extern name = default %}` declares an optional one with a fallback. `extern` is valid only at root scope and only in async templates — sync templates reject it.
+- `{% set context = ... %}` and `{% extern context %}` are compile errors in async mode — `context` is a reserved name.
+- `with context` exposes the **render context** (the object passed to the renderer) to bare-name lookups inside the child. It does **not** expose parent locals and does **not** create a `context` variable.
+- Named `with` inputs take priority over `with context` lookup.
+- The **base** template owns the `with` contract for each `block`. Overriding child blocks cannot add their own `with` clause.
+- `super()` sees the original inputs from the base block's `with` clause, not any locally reassigned values.
 
-* `include` in async templates retains access to parent-scope variables (for example, values set with `{% set %}` before the include).
-* `extends` and `super` in scripts and async templates no longer can read parent-scope template variables.
+## Variable Scoping
+
+| Construct | Classic Nunjucks / sync | Async Cascada Template |
+|---|---|---|
+| `if` / `switch` | No scope — `{% set %}` writes to parent | Local scope — variables stay inside the branch |
+| `for` / `each` loop body | All iterations share one inner scope that is discarded after the loop | Each iteration has its own isolated scope |
+| `while` loop body | Uses the parent scope directly — `{% set %}` inside writes to the outer scope | Each iteration has its own isolated scope |
+| `include` | Child sees all parent `{% set %}` variables | Isolated — child sees only explicit `with` inputs |
+| `block` inputs | Not applicable | Declared by the base template's `with` clause; available as locals inside the block |
+| Child top-level `{% set %}` | Visible in the child's blocks | Visible in the child's own blocks |
+
+The short version: in async mode every construct that can run concurrently gets its own scope, preventing race conditions between parallel iterations or branches.
 
 ## Unsupported Features
 
