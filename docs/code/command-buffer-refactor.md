@@ -12,6 +12,8 @@ this._channels = parent ? parent._channels : new Map();
 
 That line is too broad, but the correct fix is not just deleting it. The deeper issue is that the command-buffer runtime still allows too much ambient visibility and too much lazy structural creation.
 
+Composition/import/export follow-up work now lives in [composition-update.md](C:\Projects\cascada\docs\code\composition-update.md). This document focuses on the core command-buffer/runtime structure changes.
+
 The target architecture should be:
 
 - static lane sets per buffer
@@ -19,7 +21,6 @@ The target architecture should be:
 - local-only channel lookup
 - no runtime-dynamic channel names
 - no command-buffer-level special treatment for "special" channels
-- composition/import/export based on explicit named inputs and snapshots, not ambient buffer visibility
 
 ## Main Conclusions
 
@@ -30,9 +31,7 @@ The refactor should move toward these rules:
 3. `findChannel()` must be local-only and O(1).
 4. The command buffer should not understand lexical scoping beyond what compile-time analysis already encoded.
 5. `usedChannels` is the real source of truth; runtime visibility is just its materialized form.
-6. Composition should not use channel linking/lookup for data transport.
-7. Deferred exports should ultimately resolve from producer snapshots, not ambient visibility.
-8. Command-buffer parent/child structure must not be confused with lexical scope ownership.
+6. Command-buffer parent/child structure must not be confused with lexical scope ownership.
 
 ## Current Problems
 
@@ -86,7 +85,7 @@ The regular command path already does not need it. The most problematic use is t
 
 ### 4. Runtime-dynamic channel names
 
-There are still places where channel names are declared in runtime loops, especially in composition/block-local logic.
+There are still places where channel names are declared in runtime loops through compatibility paths.
 
 This should not remain.
 
@@ -122,7 +121,7 @@ For planning the refactor, it helps to separate the lane names into three popula
 
 1. parent-linked channels: `usedChannels - declaredChannels`
 2. locally declared channels: `declaredChannels`
-3. current composition/block-input runtime names
+3. remaining runtime-dynamic compatibility names
 
 The first two populations are already compiler-known and should be eagerly materialized.
 
@@ -608,111 +607,6 @@ So the runtime rules should be uniform:
 
 If any such bypass still exists, it should be removed early.
 
-## Deferred Exports
-
-Current deferred exports in [src/environment/context.js](C:\Projects\cascada\src\environment\context.js) work by:
-
-- storing a promise placeholder in `context.ctx`
-- remembering the producing `{ channelName, buffer }`
-- later resolving that export from `channel.finalSnapshot()`
-
-So yes: deferred exports are ultimately resolved from final snapshots.
-
-### Why are they linked to buffers today?
-
-After auditing the current code, the justification looks weak.
-
-`addDeferredExport(...)` stores both:
-
-- the resolver in `exportResolveFunctions`
-- the explicit producer record `{ channelName, buffer }` in `exportChannels`
-
-Then `resolveExports(...)` resolves from that explicit producer buffer directly.
-
-### Target direction
-
-This should be simplified.
-
-Deferred exports should not need general-purpose buffer linking if the producer `{ buffer, channelName }` is already known.
-
-The clean target is:
-
-- deferred exports resolve directly from their producer channel `finalSnapshot()`
-- they do not rely on ambient visibility or general buffer linking
-
-`resolveExports(...)` in [src/environment/context.js](C:\Projects\cascada\src\environment\context.js) already mostly follows this model because it stores `{ buffer, channelName }` pairs and resolves from the producer buffer directly.
-
-That means `linkDeferredExportsToBuffer(...)` should be audited aggressively. It may already be redundant for export resolution itself.
-
-## `linkDeferredExportsToBuffer(...)`
-
-This is part of the current export/linkage mechanism, not extern passing.
-
-After auditing current callers, it appears to be used only from async-root setup, and `linkVisibleChannel(...)` is only used by this export-linking path.
-
-That should likely shrink or disappear as export handling is simplified around direct producer snapshots.
-
-Also, `resolveExports(...)` still has a fallback arm that does:
-
-- `currentBuffer.findChannel(name)`
-
-After auditing `Context`, this fallback appears defensive rather than essential:
-
-- `addDeferredExport(...)` always creates both a non-null resolver and an `exportChannels[name]` record
-- `addResolvedExport(...)` stores a resolved value and marks the resolver slot as `null`
-
-So in normal deferred-export flow, a non-null resolver should already imply an explicit producer record. The fallback should therefore become an assertion during refactor, and then be removed once the invariant is validated by tests.
-
-## Composition And Extern Inputs
-
-Current composition still has some buffer-based machinery:
-
-- `compositionSourceBuffer`
-- `findChannel(name)?.finalSnapshot()`
-- block input recovery from composition buffers or parent buffers
-
-Architecturally, this should change.
-
-The target is:
-
-- all composition operations use explicit named inputs
-- this should follow the same `with ...` / extern-style pattern consistently
-- composition should not rely on channel linking/visibility for value transport
-- composition should pass named snapshots/promises/macros as inputs
-
-So yes: composition should move away from buffer linking.
-
-This is not just an adjacent cleanup. It is the main remaining source of runtime-dynamic channel names, so it needs to be solved as part of this refactor if we want fully static lane sets.
-
-The chosen direction should be stated directly:
-
-- composition/block calls should use explicit `with ...`-style named inputs
-- block entry functions should receive those inputs explicitly rather than discovering names from block contracts at runtime
-- the current runtime loop over `context.getBlockContract(...).inputNames` should be removed
-
-## Runtime-Dynamic Channel Names
-
-This should be fixed as part of this refactor.
-
-The target is:
-
-- no runtime-dynamic channel names
-- all buffer lane/channel names are statically known
-
-That means composition/block input handling must be redesigned so it does not loop over runtime names and call:
-
-- `declareBufferChannel(currentBuffer, name, ...)`
-
-Instead:
-
-- composition should pass explicit named snapshot values
-- the receiving template/script should use explicit extern/input bindings
-- the buffer structure should be fully determined at compile time
-
-So the current composition/block-input runtime loop is not something to accommodate with a permanent lazy fallback. It is technical debt to remove.
-
-This is not a follow-up; it is part of the refactor's target architecture.
-
 ## What About `owned` vs `visible` if Everything Is Static?
 
 If buffer structure becomes fully static, the strongest simplification is:
@@ -747,8 +641,6 @@ The refactor should preserve and strengthen invariants such as:
 - `_linkedChannels` is removed
 - child lexical scope never becomes visible to the parent through buffer traversal
 - no runtime-dynamic channel names remain
-- deferred exports resolve from final snapshots
-- composition uses explicit named inputs, not channel visibility
 - special channels receive no command-buffer-level shortcut treatment
 - aggregate finish depends only on this buffer's lane set
 
@@ -756,7 +648,7 @@ The refactor should preserve and strengthen invariants such as:
 
 Because the current runtime still tolerates incomplete analysis in a few places, the refactor should introduce stricter invariants in stages:
 
-1. add debug/development assertions around missing lanes, missing linked parent channels, unexpected export fallbacks, and unexpected child-buffer discovery
+1. add debug/development assertions around missing lanes, missing linked parent channels, and unexpected child-buffer discovery
 2. run the focused and full test suites to surface any remaining analysis gaps
 3. remove the old fallback paths once the assertions stop firing
 
@@ -764,8 +656,6 @@ This is especially important for:
 
 - `add()` missing-lane checks
 - removal of `_findLinkedChildOwnedChannel(...)`
-- removal of deferred-export fallback lookup
-- composition/block-input staticization
 
 ## Implementation Plan
 
@@ -822,7 +712,7 @@ Important note:
 - same-scope return routing and true early-return control flow are related but not identical. If early-exit semantics remain out of scope for this refactor, only add tests for correct lane targeting, not for "stop executing the rest of the scope."
 - the declared-lane helper is the main prerequisite for Step 2; full `__return__` scope-uniqueness work can proceed in parallel if needed
 - the new declared-lane helper must be threaded through the same boundary creation call sites that currently use `getLinkedChannelsArg(...)`, especially in `boundaries.js`, `loop.js`, and root/macro buffer creation paths
-- lane-spec validation should begin as warnings or debug assertions during migration and only become hard errors after Step 10 removes the remaining runtime-dynamic composition lanes
+- lane-spec validation should begin as warnings or debug assertions during migration and only become hard errors after the remaining runtime-dynamic lane cases have been removed
 
 ### Step 2. Change `createCommandBuffer(...)` to receive static lane specs and build eager arrays
 
@@ -852,7 +742,7 @@ Changes:
   - `buffer._totalLaneCount`
 - keep child/parent structural insertion separate from lane creation
 - assert at construction time that every parent-linked lane resolves on the effective link target (`linkedParent` where present, otherwise `parent`)
-- do not remove `_registerLinkedChannel(...)` calls from `add()` yet; that compatibility cleanup belongs to Step 11 when finish bookkeeping is collapsed
+- do not remove `_registerLinkedChannel(...)` calls from `add()` yet; that compatibility cleanup belongs to Step 9 when finish bookkeeping is collapsed
 
 Tests for this step:
 
@@ -928,7 +818,7 @@ Clarification:
 
 - Step 4 changes behavior by making lookup local-only and wiring `_findLinkedChildOwnedChannel(...)` out of normal resolution
 - Step 7 is only the dead-code cleanup for disabled dynamic lookup-linking
-- Step 12 is where any surviving `_findLinkedChildOwnedChannel(...)` assertion trap is deleted entirely
+- Step 10 is where any surviving `_findLinkedChildOwnedChannel(...)` assertion trap is deleted entirely
 
 Tests for this step:
 
@@ -965,8 +855,8 @@ Changes:
 
 Clarification:
 
-- `_collectKnownChannelNames()` should stop driving the main finish path here, but it may remain temporarily for assertion parity until Step 11 removes the old finish scaffolding completely
-- `_linkedChannels` / `_finishRequestedChannels` survive until after Step 10; Step 11 is where they are actually removed
+- `_collectKnownChannelNames()` should stop driving the main finish path here, but it may remain temporarily for assertion parity until Step 9 removes the old finish scaffolding completely
+- `_linkedChannels` / `_finishRequestedChannels` survive until static lane completion is fully in place; Step 9 is where they are actually removed
 
 Tests for this step:
 
@@ -992,9 +882,9 @@ Changes:
 - remove the lazy `if (!this.arrays[name]) this.arrays[name] = []` path from `add(...)`
 - assert that every add/snapshot path targets a known static lane
 - keep this assertion behind a development/debug gate at first
-- do not make it unconditional until after Step 10 removes runtime-dynamic composition lanes; Step 12 is where it should become unconditional
+- do not make it unconditional until after the remaining runtime-dynamic lane cases are gone; Step 10 is where it should become unconditional
 - acknowledge that `_addCommand(...)` will now fail through the same missing-lane assertion path, which is the desired outcome for an invalid compiled/runtime contract
-- leave `_registerLinkedChannel(...)` calls in `add()` alone for now if they are still carrying finish-accounting compatibility; that cleanup belongs to Step 11
+- leave `_registerLinkedChannel(...)` calls in `add()` alone for now if they are still carrying finish-accounting compatibility; that cleanup belongs to Step 9
 
 Tests for this step:
 
@@ -1021,7 +911,7 @@ Changes:
 - remove dead `LOOKUP_DYNAMIC_CHANNEL_LINKING` support
 - remove dead `ensureReadChannelLink(...)`
 - remove dead `_readChannelLinks`
-- if `_findLinkedChildOwnedChannel(...)` is still present as an assertion trap from Step 4, keep Step 7 limited to the dead dynamic-linking cleanup and defer final trap removal to Step 12
+- if `_findLinkedChildOwnedChannel(...)` is still present as an assertion trap from Step 4, keep Step 7 limited to the dead dynamic-linking cleanup and defer final trap removal to Step 10
 
 Tests for this step:
 
@@ -1058,84 +948,7 @@ Still-unimplemented tests to add here:
 - integration test: finished-buffer snapshot still works after `_channels` removal
 - integration test: finished raw snapshot still works after `_channels` removal
 
-### Step 9. Simplify deferred exports around explicit producer records
-
-Goal:
-
-- stop using buffer visibility for export resolution
-
-Primary files:
-
-- [src/environment/context.js](C:\Projects\cascada\src\environment\context.js)
-- [src/compiler/compiler-async.js](C:\Projects\cascada\src\compiler\compiler-async.js)
-
-Changes:
-
-- make `resolveExports(...)` rely on the explicit `{ buffer, channelName }` producer record
-- convert the `currentBuffer.findChannel(name)` fallback into an assertion first
-- remove `linkDeferredExportsToBuffer(...)` once tests confirm it is unnecessary
-- keep `exportChannels` / `exportResolveFunctions` as the explicit producer-record mechanism
-- remove the emitted `context.linkDeferredExportsToBuffer(...)` call from compiler output
-- remove `linkVisibleChannel(...)` as well, since export linking is its only current use
-
-Tests for this step:
-
-- keep existing async import/from-import export tests green
-- keep loop-concurrent-limit async export tests green
-
-Still-unimplemented tests to add here:
-
-- integration test: exported async value resolves correctly without parent visibility linking
-- integration test: `resolveExports(...)` fails/asserts if a deferred resolver exists without an explicit producer record
-
-### Step 10. Remove runtime-dynamic block/composition channel names
-
-Goal:
-
-- make composition fully static and align it with the same explicit-input model as other composition operations
-
-Primary files:
-
-- [src/compiler/compiler-async.js](C:\Projects\cascada\src\compiler\compiler-async.js)
-- [src/compiler/inheritance.js](C:\Projects\cascada\src\compiler\inheritance.js)
-- [src/environment/context.js](C:\Projects\cascada\src\environment\context.js)
-
-Changes:
-
-- redesign block/composition entry so inputs are passed explicitly via `with ...`-style named inputs
-- make block entry functions receive an explicit named-input object or equivalent explicit parameter payload
-- have the compiler generate that payload from statically known call-site inputs instead of discovering input names at runtime
-- rewrite `_emitAsyncBlockInputInitialization(...)` around those static explicit inputs
-- stop looping over `context.getBlockContract(...).inputNames` at runtime to declare channels
-- remove the runtime `declareBufferChannel(currentBuffer, name, ...)` loop for composition inputs
-- remove `compositionSourceBuffer`-based channel lookup from block input initialization
-- keep composition value transport snapshot-based and explicit
-- update `Context.forkForComposition(...)` if its current contract assumes channel/buffer-based composition lookup
-- audit whether `setCompositionSourceBuffer(...)`, `getCompositionSourceBuffer(...)`, `getBlockContract(...)`, and `forkForComposition(...)` still have any remaining purpose after this redesign
-
-Concrete target:
-
-- block/call-site compilation should construct the explicit named-input payload from compile-time-known inputs
-- the generated block entry function should consume that payload directly instead of recovering names from `Context`
-- `inheritance.js` and `compiler-async.js` must agree on the new entry-function signature and call shape
-- in practice, `inheritance.js` should build and pass the explicit named-input payload at block override/super call sites, and `compiler-async.js` block entry code should accept that payload directly
-- compile-time block-input metadata must exist at the call site; if current analysis does not yet provide that, this step must add it explicitly before runtime loop removal can proceed
-
-Dependency:
-
-- this step requires block input names to be compile-time-known at call sites; if Step 1 does not already provide that, Step 10 must add it explicitly
-
-Tests for this step:
-
-- keep current composition/import tests green
-
-Still-unimplemented tests to add here:
-
-- integration test: composition block inputs work through explicit named `with ...` inputs
-- compile-source test: generated block entry code no longer loops over runtime block-contract input names
-- integration test: no runtime-dynamic channel declaration is needed for composition/block inputs
-
-### Step 11. Collapse finish handling and remove remaining compatibility state
+### Step 9. Collapse finish handling and remove remaining compatibility state
 
 Goal:
 
@@ -1165,7 +978,7 @@ Changes:
   - `_finishedLaneCount`
 - keep per-lane finished flags
 - keep `_visitingIterators` only for notifications
-- keep `_ownedChannels` as debug/assert metadata only unless Step 12 proves it is no longer useful
+- keep `_ownedChannels` as debug/assert metadata only unless Step 10 proves it is no longer useful
 
 Tests for this step:
 
@@ -1173,7 +986,7 @@ Tests for this step:
 - child buffers entered through iterators still complete correctly under static lane accounting
 - `getFinishedPromise()` resolves under the final static-lane finish model
 
-### Step 12. Remove migration fallbacks and make invariants unconditional
+### Step 10. Remove migration fallbacks and make invariants unconditional
 
 Goal:
 
@@ -1183,12 +996,10 @@ Primary files:
 
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
 - [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
-- [src/environment/context.js](C:\Projects\cascada\src\environment\context.js)
 
 Changes:
 
 - delete `_findLinkedChildOwnedChannel(...)` if it survived as a migration-time assertion trap
-- delete any remaining export fallback lookup
 - delete any temporary debug-only compatibility paths that are no longer needed
 - make the static-lane / local-lookup invariants unconditional
 - finalize the disposition of `_ownedChannels`:
@@ -1197,17 +1008,13 @@ Changes:
 - audit `parent` vs `linkedParent` separately:
   - keep `parent` if it is still required for iterator/tree structure
   - remove or simplify `linkedParent` only if it no longer serves a distinct purpose after local-only lookup and eager linking are in place
-- remove `compositionSourceBuffersByTemplate` and related helpers if Step 10 leaves them unused
-- remove `getBlockContract(...)` as well if Step 10 leaves no remaining callers
 
 Final verification for this step:
 
 - run focused suites for:
   - `tests/explicit-outputs.js`
   - `tests/pasync/calls.js`
-  - `tests/pasync/composition.js`
   - `tests/pasync/template-command-buffer.js`
-  - `tests/pasync/loop-concurrent-limit.js`
 - then run the full relevant test suite
 
 ## Final Recommendation
@@ -1226,8 +1033,6 @@ The refactor should proceed with these goals:
 10. Collapse finish handling once static lane creation guarantees lane existence.
 11. Keep `_channelAliases` as a separate future-facing concern.
 12. Treat all channels uniformly inside command-buffer/runtime logic.
-13. Redesign composition around explicit named inputs/snapshots.
-14. Remove runtime-dynamic channel names as part of this refactor.
 
 In short:
 
@@ -1235,6 +1040,4 @@ In short:
 - arrays should be eager
 - lookup should be local
 - finish should be lane-based
-- exports should resolve from snapshots
-- composition should use explicit inputs
 - command-buffer logic should stop carrying language-level special cases
