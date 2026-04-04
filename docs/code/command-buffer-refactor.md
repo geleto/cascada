@@ -33,6 +33,28 @@ The refactor should move toward these rules:
 5. `usedChannels` is the real source of truth; runtime visibility is just its materialized form.
 6. Command-buffer parent/child structure must not be confused with lexical scope ownership.
 
+## Current Runtime State
+
+Before changing the runtime, it helps to name the structures that currently overlap:
+
+- `_ownedChannels`: channels declared locally in this buffer
+- `_visibleChannels`: channels the buffer can currently resolve directly
+- `_linkedChannels`: bookkeeping for child buffers structurally linked into this buffer's lanes
+- `_channels`: hierarchy-wide registry shared across parent/child buffers
+
+The refactor is not just about deleting one of these maps. The real problem is that they currently overlap in responsibility:
+
+- some structures describe lexical ownership
+- some describe runtime addressability
+- some describe structural child-buffer linking
+- one bypasses all of the above
+
+The target model should separate those concerns much more sharply:
+
+- one local addressability map for lookup
+- static lane metadata for structure/finish
+- optional ownership metadata only if it remains useful for assertions/debugging
+
 ## Current Problems
 
 ### 1. Ambient visibility
@@ -56,6 +78,8 @@ The compiler already computes:
 - linked parent-visible channels for each boundary
 
 So the runtime should not rediscover channels beyond that contract.
+
+This matters not only for name resolution, but also for ordered traversal semantics. Helpers such as lookup/snapshot logic assume that if a buffer can observe a lane, that lane is structurally part of the buffer's linked hierarchy in source order. Ambient ancestor/descendant discovery breaks that assumption by making a channel appear readable even when the current buffer was never explicitly wired into the lane that owns the ordered command stream.
 
 ### 2. Lazy structural creation
 
@@ -82,6 +106,8 @@ In the new model, a missing lane in `add(...)` must be a hard internal error.
 `_channels` is a hierarchy-wide registry of all channels. It bypasses explicit ownership and visibility and especially leaks into finished-snapshot paths.
 
 The regular command path already does not need it. The most problematic use is the finished-snapshot fast path.
+
+More concretely, `_channels` lets the runtime answer "does some channel with this name exist anywhere in the hierarchy?" when what it really needs to answer is "is this buffer explicitly wired to the lane that owns the ordered history for this name?" Those are not equivalent questions. The first one is a global existence test; the second is the compiler/runtime contract the iterator model actually depends on.
 
 ### 4. Runtime-dynamic channel names
 
@@ -253,6 +279,24 @@ Eager creation:
 - removes "first write defines structure" behavior
 - simplifies iterator/finish reasoning
 
+### Structural eagerness vs lazy value semantics
+
+This refactor should make structure eager, not values eager.
+
+In other words:
+
+- lane existence should be known at buffer construction time
+- lane arrays should exist before any writes happen
+- channel visibility/addressability should be installed before any lookup happens
+
+But values inside those lanes can still remain lazy:
+
+- commands can still be appended later
+- child buffers can still finish later
+- async values carried by commands can still resolve later
+
+So the change here is "make the shape of the buffer tree static and explicit", not "force all runtime data to become precomputed or synchronous."
+
 ### What `add(...)` should do
 
 After the refactor:
@@ -385,6 +429,12 @@ So the likely target is:
 
 This simplification is valid only once lane existence is guaranteed statically.
 
+### Finish lifecycle interaction during migration
+
+One implementation trap here is that eager creation changes *when* lanes become known, but it must not accidentally change the observable finish behavior of the existing runtime while intermediate compatibility code still exists.
+
+Today some finish behavior is coupled to registration paths such as `_registerChannel(...)` and `_registerLinkedChannel(...)`. As long as those hooks still exist, eager lane creation must preserve their effective finish-side effects somewhere equivalent. Only after static lane metadata fully owns finish accounting should those legacy registration-time finish paths be removed.
+
 ## Linked Lanes
 
 Linked lanes should be eagerly created.
@@ -482,6 +532,8 @@ It currently leaks into finished-snapshot handling and bypasses explicit structu
 
 The most concentrated dependency is `_runFinishedSnapshotCommand(...)`, which currently does direct `_channels.get(channelName)` lookup for the finished-buffer snapshot fast path. That method should be converted to use the local addressability map just like the rest of the runtime.
 
+This asymmetry is important. Normal command traversal is already much closer to the intended structural model because it walks buffer lanes and child-buffer entries in order. The finished-snapshot fast path is broader: it can answer from a global registry even when the current buffer was never explicitly linked to that lane. That is why `_channels` removal is not just cleanup; it closes one of the biggest remaining "ambient visibility" loopholes.
+
 Also, while it still exists during transition, the guard:
 
 ```js
@@ -507,6 +559,8 @@ The important rule is:
 - visibility installation must use the same resolved names that lookups will later use
 
 Canonical runtime names like `name#7` are already treated as resolved and should continue to be.
+
+The important sequencing constraint is that alias/canonical-name setup must happen before eager lane creation is treated as complete. Otherwise the runtime can eagerly create a lane under one name, then later attempt lookup or visibility installation under a different resolved name and falsely conclude that the lane is missing. So alias inheritance and canonical-name resolution belong in construction-time initialization, not as an afterthought once channels start registering.
 
 ## Special Channels
 
@@ -643,6 +697,9 @@ The refactor should preserve and strengthen invariants such as:
 - no runtime-dynamic channel names remain
 - special channels receive no command-buffer-level shortcut treatment
 - aggregate finish depends only on this buffer's lane set
+- lookup/snapshot logic cannot observe a lane unless the buffer was explicitly wired to that lane's ordered structure
+- alias-based lookup, lane creation, and visibility installation all agree on the same canonical runtime name
+- removing `_channels` does not change finished-snapshot correctness for explicitly linked lanes
 
 ## Migration Strategy
 
