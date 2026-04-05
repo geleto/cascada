@@ -28,6 +28,8 @@ The composition update should move toward these rules:
 4.  Block entry should receive explicit named-input payloads instead of recovering input names from Context at runtime.
     
 5.  Composition-specific runtime helpers should disappear once explicit payload passing is in place.
+
+6.  Explicit block inputs and `with context` render-context visibility must remain distinct semantics during the refactor.
     
 
 Terminology note:
@@ -90,9 +92,9 @@ If that audit result holds, the cleanup is broader than just one call site:
 
 -   linkVisibleChannel(...) becomes removable
     
--   the \_visibleChannels export-linking role becomes removable as well
+-   the \_visibleChannels export-linking role becomes removable as well, if no other writers are introduced
     
--   any remaining \_visibleChannels usage should then be justified only by the non-composition command-buffer lookup model
+-   any broader findChannel(...) traversal cleanup still belongs to the command-buffer/runtime migration, not to Step A alone
     
 
 Also, resolveExports(...) still has a fallback arm that does:
@@ -140,6 +142,8 @@ The target is:
 -   composition should not rely on channel linking/visibility for value transport
     
 -   composition should pass named snapshots/promises/macros as inputs
+
+-   explicit block inputs and `with context` render-context visibility should remain separate channels of information rather than being collapsed into one generic inherited-input mechanism
     
 
 So yes: composition should move away from buffer linking.
@@ -153,6 +157,10 @@ The chosen direction should be stated directly:
 -   block entry functions should receive those inputs explicitly rather than discovering names from block contracts at runtime
     
 -   the current runtime loop over context.getBlockContract(...).inputNames should be removed
+
+One important nuance:
+
+-   the explicit payload path already exists for direct block invocations that have explicit `withVars` / `with context`; the remaining work is to generalize that model to overriding blocks and `super()` paths that currently fall back to runtime recovery when `blockContext` is null
     
 
 ## Runtime-Dynamic Composition Channel Names
@@ -182,6 +190,12 @@ Instead:
 
 So the current composition/block-input runtime loop is not something to accommodate with a permanent lazy fallback. It is technical debt to remove.
 
+However, that runtime-loop removal depends on a separate structural prerequisite:
+
+-   block/composition inputs still need real local var channels/lane declarations before block bodies run
+
+-   if the command-buffer refactor has not yet made local declared lanes constructor-time/static, this plan must keep a temporary declaration path until that prerequisite lands
+
 ## Tests And Invariants
 
 The composition update should preserve and strengthen invariants such as:
@@ -193,6 +207,14 @@ The composition update should preserve and strengthen invariants such as:
 -   composition uses explicit named inputs, not channel visibility
     
 -   no runtime-dynamic composition/block-input channel declaration remains
+
+-   explicit block inputs do not become conflated with `with context` render-context visibility
+
+-   same-template and inherited block invocation snapshot values at invocation time rather than reading final channel state later
+
+-   removing compositionSourceBuffer lookup also removes the parentBuffer?.findChannel(name)?.finalSnapshot() fallback, unless that fallback is deliberately justified and retained
+
+-   extern/input validation rejects self-cycles and indirect initialization cycles as part of the same explicit-input contract model
     
 
 ## Migration Strategy
@@ -211,6 +233,8 @@ This is especially important for:
 -   removal of deferred-export fallback lookup
     
 -   composition/block-input staticization
+
+-   distinguishing temporary command-buffer/runtime prerequisites from composition-specific cleanup
     
 
 ## Implementation Plan
@@ -244,6 +268,8 @@ Changes:
 -   remove linkVisibleChannel(...) as well, since export linking is its only current use
     
 -   audit whether the \_visibleChannels slot still has any remaining purpose once export-linking no longer writes into it
+
+-   if the writer audit still shows no non-export users, remove the \_visibleChannels storage only; any broader findChannel(...) traversal simplification remains a later/runtime concern
     
 
 Ordering constraint:
@@ -283,21 +309,23 @@ Primary files:
 
 Changes:
 
--   redesign block/composition entry so inputs are passed explicitly via with ...\-style named inputs
+-   redesign block/composition entry so the existing explicit `blockContext` payload path becomes the universal path, not just the path for direct `with ...` block invocations
     
 -   make block entry functions receive an explicit named-input object or equivalent explicit parameter payload
     
--   have the compiler generate that payload from statically known call-site inputs instead of discovering input names at runtime
+-   have the compiler generate that payload from statically known call-site inputs where possible, and add a deliberate cross-template contract propagation mechanism where separate template compilation means the caller cannot know inherited block inputs purely from its own local AST
     
--   rewrite \_emitAsyncBlockInputInitialization(...) around those static explicit inputs
+-   rewrite \_emitAsyncBlockInputInitialization(...) around those explicit inputs
     
--   stop using \_collectRootCompositionLocalChannelNames(...) as a runtime recovery mechanism during block entry
+-   stop using \_collectRootCompositionLocalChannelNames(...) as a compile-time source that feeds the generated runtime recovery loop for block entry
     
 -   stop looping over context.getBlockContract(...).inputNames at runtime to declare channels
     
 -   remove the runtime declareBufferChannel(currentBuffer, name, ...) loop for composition inputs
     
 -   remove compositionSourceBuffer\-based channel lookup from block input initialization
+
+-   remove the parentBuffer?.findChannel(name)?.finalSnapshot() fallback from block input initialization as part of the same cleanup, unless a deliberate replacement/retention rationale is written down
     
 -   keep composition value transport snapshot-based and explicit
     
@@ -308,7 +336,7 @@ Changes:
 
 Concrete target:
 
--   block/call-site compilation should construct the explicit named-input payload from compile-time-known inputs
+-   block/call-site compilation should construct the explicit named-input payload from explicit invocation inputs plus any intentionally visible same-template / inherited locals captured at invocation time
     
 -   the generated block entry function should consume that payload directly
     
@@ -318,30 +346,58 @@ Concrete target:
     
 -   in practice, inheritance.js should build and pass the explicit named-input payload at block override/super call sites, and compiler-async.js block entry code should accept that payload directly
     
--   compile-time block-input metadata must exist at the call site; if current analysis does not yet provide that, this step must add it explicitly before runtime loop removal can proceed
+-   explicit block inputs and `with context` render-context visibility must remain separate in that payload/entry design
     
--   the current getBlockContract(...) use in block-input conflict validation should move to compile time if possible; this helper currently serves both runtime input discovery and runtime conflict checking, and both uses need to be retired or replaced deliberately
+-   the current getBlockContract(...) use in runtime input-name discovery must be retired through the new explicit payload path
+
+-   the current getBlockContract(...) use in inherited-input conflict validation needs a separate migration path; it cannot be treated as the same problem as runtime input-name discovery because it has different cross-template knowledge requirements
     
 
 Dependency:
 
--   this step requires block input names to be compile-time-known at call sites; if earlier analysis does not already provide that, this step must add it explicitly
+-   this step depends on a concrete answer for cross-template inherited block-input knowledge during `extends`; in the current architecture that information is available only after runtime parent loading/block registration, so the replacement may need runtime-registered merged contracts or equivalent template metadata propagation rather than purely local compile-time knowledge
+
+-   this step also depends on the command-buffer/lane work needed to ensure block-input locals still have a valid declared-channel/lane story after the runtime declaration loop is removed
     
 
 Tests for this step:
 
 -   keep current composition/import tests green
+
+-   keep current async inheritance/block-input integration tests green, especially the `tests/pasync/loader.js` cases around explicit block inputs, `with context`, and multi-level `super()` chains
+
+-   keep current compile-shape tests in `tests/pasync/template-command-buffer.js` green until their expectations are intentionally updated to the new code shape
     
 
 Still-unimplemented tests to add here:
 
 -   integration test: composition block inputs work through explicit named with ... inputs
+
+-   integration test: same-template block invocation snapshots template-local values at invocation time rather than final channel state
+
+-   integration test: same-template block invocation with async-produced locals snapshots invocation-time values
+
+-   integration test: overriding block treats inherited block inputs as ordinary local bindings inside nested if / loop / guard scopes
+
+-   integration test: overriding block assignment to an inherited input inside nested scopes does not leak into super()
+
+-   integration test: multi-level super() chain preserves original invocation inputs even when the middle block rebinds them
     
 -   compile-source test: generated block entry code no longer loops over runtime block-contract input names
     
--   compile-source test: generated block entry code no longer uses \_collectRootCompositionLocalChannelNames(...) as a runtime recovery source
+-   compile-source test: generated block entry code no longer uses the output of \_collectRootCompositionLocalChannelNames(...) to build the runtime recovery loop
+
+-   compile-source/integration test: block entry no longer reads context.getCompositionSourceBuffer(...) for input initialization
+
+-   compile-source/integration test: block entry no longer reads parentBuffer?.findChannel(name)?.finalSnapshot() for inherited/composition input initialization
     
 -   integration test: no runtime-dynamic channel declaration is needed for composition/block inputs
+
+-   integration test: `with context` render-context visibility is not treated as inherited explicit block inputs
+
+-   validation test: extern self-cycle is rejected
+
+-   validation test: extern indirect cycle across multiple declarations is rejected
     
 
 ### Step C. Remove remaining composition/export fallback helpers
@@ -368,9 +424,17 @@ Changes:
     
 -   remove compositionSourceBuffersByTemplate and related helpers if Step B leaves them unused
     
--   remove getBlockContract(...) as well if Step B leaves no remaining callers
+-   remove getBlockContract(...) only after both of its current roles have been retired or deliberately replaced:
+
+    -   runtime input-name discovery
+
+    -   inherited-input conflict validation
     
 -   delete any temporary debug-only compatibility paths that only exist to support the old composition/export model
+
+-   simplify Context.init(...), forkForPath(...), and forkForComposition(...) once compositionSourceBuffersByTemplate is gone, so those context shapes stop carrying the removed shared state
+
+-   if Step A removed the last writer to \_visibleChannels and no later step reintroduces one, delete any remaining dead \_visibleChannels storage/read paths here if they were intentionally deferred from Step A
     
 
 Final verification for this step:
@@ -381,9 +445,15 @@ Final verification for this step:
 -   tests/pasync/composition.js
     
 -   tests/pasync/loop-concurrent-limit.js
+
+-   tests/pasync/loader.js
+
+-   tests/pasync/template-command-buffer.js
     
 
 -   then run the full relevant async composition/import/export suite
+
+-   also run the extern validation suites because extern/input-cycle behavior is part of the same explicit-input contract surface
     
 
 ## Final Recommendation
@@ -399,6 +469,12 @@ The composition update should proceed with these goals:
 4.  Remove runtime-dynamic block/composition input declaration.
     
 5.  Delete composition/export compatibility helpers once the new path is proven.
+
+6.  Preserve the semantic distinction between explicit block inputs and `with context`.
+
+7.  Treat inherited-input conflict validation and inherited-input transport as separate migration problems.
+
+8.  Fold extern/input cycle validation into the same cleanup effort instead of leaving it adjacent to the composition rewrite.
     
 
 In short:
@@ -407,6 +483,10 @@ In short:
     
 -   composition should use explicit inputs
     
--   composition entry should be compile-time-shaped rather than runtime-discovered
-    
--
+-   composition entry should move to explicit payloads, with cross-template contract propagation handled deliberately rather than implicitly
+
+-   block-input transport and block-input conflict validation should be migrated separately
+
+-   `with context` should remain distinct from explicit inherited inputs
+
+-   extern/input cycle validation should be part of the same explicit-input cleanup
