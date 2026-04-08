@@ -5,7 +5,7 @@ const { Obj } = require('../object');
 const { createPoison } = require('../runtime/errors');
 
 class Context extends Obj {
-  init(ctx, blocks, env, path, scriptMode = false, renderCtx) {
+  init(ctx, blocks, env, path, scriptMode = false, renderCtx, externCtx = undefined) {
     // Has to be tied to an environment so we can tap into its globals.
     if (!env) {
       // Lazy load Environment to avoid circular dependency
@@ -23,11 +23,13 @@ class Context extends Obj {
     const initialRenderCtx = renderCtx === undefined ? ctx : (renderCtx || {});
     this.renderCtx = lib.extend({}, initialRenderCtx);
     this.ctx = lib.extend({}, ctx);
+    this.externCtx = externCtx === undefined ? null : lib.extend({}, externCtx);
 
     this.blocks = {};
     this.exportResolveFunctions = Object.create(null);
     this.exportChannels = Object.create(null);
     this.compositionSourceBuffersByTemplate = Object.create(null);
+    this.extendsCompositionByParent = new WeakMap();
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -78,6 +80,10 @@ class Context extends Obj {
     return this.renderCtx;
   }
 
+  getExternContextVariables() {
+    return this.externCtx || this.ctx;
+  }
+
   addBlock(name, block) {
     this.blocks[name] = this.blocks[name] || [];
     if (this.blocks[name].length > 0) {
@@ -87,6 +93,10 @@ class Context extends Obj {
     return this;
   }
 
+  // Transitional dual-syntax compatibility check.
+  // While legacy `with ...` block inputs still exist, we allow pure-legacy
+  // pairs through here. Once Step D/E remove that syntax, this can collapse to
+  // a single explicit-signature validation path.
   _validateBlockContractCompatibility(name, overridingBlock, parentBlock) {
     const overridingContract = overridingBlock && overridingBlock.blockContract;
     const parentContract = parentBlock && parentBlock.blockContract;
@@ -125,6 +135,9 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
+  // Temporary bridge for the explicit-signature migration.
+  // Step D removes runtime block-entry dependence on this metadata, and Step E
+  // can remove the helper entirely once no runtime readers remain.
   getBlockContract(name) {
     const blocks = this.blocks[name] || [];
     for (let i = blocks.length - 1; i >= 0; i--) {
@@ -137,6 +150,9 @@ class Context extends Obj {
   }
 
   beginAsyncExtendsBlockRegistration() {
+    if (this.asyncExtendsBlocksPromise) {
+      throw new Error('Async extends block registration is already in progress for this context');
+    }
     this.asyncExtendsBlocksPromise = new Promise((resolve) => {
       this.asyncExtendsBlocksResolver = resolve;
     }).then(() => {
@@ -233,36 +249,70 @@ class Context extends Obj {
     return exported;
   }
 
+  // Temporary bridge helper for Step D migration.
+  // This exists only for the remaining composition-source-buffer path and
+  // should disappear when that bridge is removed.
   _getCompositionTemplateKey(templateName) {
     return templateName == null ? '__anonymous__' : String(templateName);
   }
 
+  // Temporary bridge for Step D migration.
+  // Remove this once inheritance payloads stop rediscovering same-template
+  // locals through composition source buffers.
   setCompositionSourceBuffer(templateName, sourceBuffer) {
     const key = this._getCompositionTemplateKey(templateName);
     this.compositionSourceBuffersByTemplate[key] = sourceBuffer || null;
   }
 
+  // Temporary bridge for Step D migration.
+  // Remove this together with the remaining buffer-based local recovery path.
   getCompositionSourceBuffer(templateName) {
     const key = this._getCompositionTemplateKey(templateName);
     return this.compositionSourceBuffersByTemplate[key] || null;
   }
 
+  setExtendsComposition(templateObject, rootContext, externContext) {
+    if (!templateObject || typeof templateObject !== 'object') {
+      throw new Error('Extends composition requires a resolved parent template/script object');
+    }
+    this.extendsCompositionByParent.set(templateObject, {
+      // forkForComposition() copies these again into the new child Context, so
+      // keep only a single stored snapshot here.
+      rootContext: rootContext || {},
+      externContext: externContext || {}
+    });
+  }
+
+  getExtendsComposition(templateObject) {
+    if (!templateObject || typeof templateObject !== 'object') {
+      throw new Error('Extends composition lookup requires a resolved parent template/script object');
+    }
+    return this.extendsCompositionByParent.get(templateObject) || null;
+  }
+
+  // Temporary bridge until shared composition/inheritance runtime state moves
+  // into its own reusable object. At that point forks should share that object
+  // directly instead of copying this field list manually.
+  _copySharedStructuralState(newContext) {
+    newContext.blocks = this.blocks;
+    newContext.exportResolveFunctions = this.exportResolveFunctions;
+    newContext.exportChannels = this.exportChannels;
+    newContext.compositionSourceBuffersByTemplate = this.compositionSourceBuffersByTemplate;
+    newContext.extendsCompositionByParent = this.extendsCompositionByParent;
+    newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
+    newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
+    return newContext;
+  }
+
   forkForPath(newPath) {
     // Create a new, empty context object.
     // It will inherit the correct `env` from `this`.
-    const newContext = new Context({}, {}, this.env, null, this.scriptMode, this.renderCtx);
+    const newContext = new Context({}, {}, this.env, null, this.scriptMode, this.renderCtx, this.externCtx);
 
     // Share critical state objects by REFERENCE. Do NOT copy them.
     newContext.ctx = this.ctx;           // Share the variable store.
     newContext.renderCtx = this.renderCtx;
-    newContext.blocks = this.blocks;       // Share the block definitions for extends/super.
-    newContext.exportResolveFunctions = this.exportResolveFunctions;
-    newContext.exportChannels = this.exportChannels;
-    newContext.compositionSourceBuffersByTemplate = this.compositionSourceBuffersByTemplate;
-
-    // Share async state properties by REFERENCE.
-    newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
-    newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
+    this._copySharedStructuralState(newContext);
 
     // Set the ONLY property that should be different.
     newContext.path = newPath;
@@ -270,19 +320,14 @@ class Context extends Obj {
     return newContext;
   }
 
-  forkForComposition(newPath, ctx, renderCtx) {
+  forkForComposition(newPath, ctx, renderCtx, externCtx = undefined) {
     // Fresh composition context that keeps shared structural state such as
     // blocks/exports, but does not share the mutable variable object with the
     // caller. This lets composition boundaries receive explicit inputs without
     // turning them back into ambient shared scope.
-    const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx);
+    const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx, externCtx);
 
-    newContext.blocks = this.blocks;
-    newContext.exportResolveFunctions = this.exportResolveFunctions;
-    newContext.exportChannels = this.exportChannels;
-    newContext.compositionSourceBuffersByTemplate = this.compositionSourceBuffersByTemplate;
-    newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
-    newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
+    this._copySharedStructuralState(newContext);
     newContext.path = newPath;
 
     return newContext;

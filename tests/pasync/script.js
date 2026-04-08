@@ -9,10 +9,12 @@ if (typeof require !== 'undefined') {
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
   Script = environment.Script;
+  var StringLoader = require('../util').StringLoader; // eslint-disable-line no-var
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   Script = nunjucks.Script;
+  var StringLoader = window.util.StringLoader; // eslint-disable-line no-var
 }
 
 describe('Cascada Script: Variables', function () {
@@ -82,6 +84,28 @@ describe('Cascada Script: Variables', function () {
       } catch (error) {
         expect(error.message).to.contain(`extern fallback for 'a' cannot reference later extern 'b'`);
       }
+    });
+
+    it('should configure base script externs through extends with', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.script', `
+        extern theme = "light"
+        return "[" + theme + "] " + user.name + ": " + title
+      `);
+
+      loader.addTemplate('child.script', `
+        var theme = "dark"
+        extends "base.script" with theme
+      `);
+
+      const result = await env.renderScript('child.script', {
+        title: 'Q1 Report',
+        user: { name: 'Ada' }
+      });
+
+      expect(result).to.be('[dark] Ada: Q1 Report');
     });
   });
 

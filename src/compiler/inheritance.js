@@ -56,6 +56,21 @@ class CompileInheritance {
     });
   }
 
+  _emitImmediateExternInputs(node, targetVarsVar) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    withVars.forEach((nameNode) => {
+      const externName = this.compiler.analysis.getBaseChannelName(nameNode.value);
+      const helperName = this.compiler.scriptMode
+        ? 'captureCompositionScriptValue'
+        : 'captureCompositionValue';
+      this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = runtime.${helperName}(context, ${JSON.stringify(externName)}, ${this.compiler.buffer.currentBuffer}`);
+      if (this.compiler.scriptMode) {
+        this.emit(`, { lineno: ${nameNode.lineno}, colno: ${nameNode.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, nameNode))}, path: context.path }`);
+      }
+      this.emit.line(');');
+    });
+  }
+
   _emitNamedInputBindings(nameNodes, targetVarsVar) {
     nameNodes.forEach((nameNode) => {
       const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
@@ -86,9 +101,9 @@ class CompileInheritance {
     return new nodes.NodeList(node.lineno, node.colno, allArgs);
   }
 
-  _emitCompositionContextObject(node, explicitVarsVar, compositionCtxVar, explicitNamesVar = null) {
+  _emitCompositionContextObject(node, explicitVarsVar, compositionCtxVar, explicitNamesVar = null, includeRenderContext = !!node.withContext) {
     this.emit.line(`let ${compositionCtxVar} = {};`);
-    if (node.withContext) {
+    if (includeRenderContext) {
       this.emit.line(`Object.assign(${compositionCtxVar}, context.getRenderContextVariables());`);
     }
     this.emit.line(`Object.assign(${compositionCtxVar}, ${explicitVarsVar});`);
@@ -429,18 +444,17 @@ class CompileInheritance {
   }
 
   compileAsyncExtends(node) {
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    if (node.withContext !== null || withVars.length > 0) {
-      this.compiler.fail(
-        'extends with explicit composition inputs is not implemented yet',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
     var k = this.compiler._tmpid();
+    const extendsVarsVar = this.compiler._tmpid();
+    const extendsExternInputNamesVar = this.compiler._tmpid();
+    const extendsExternContextVar = this.compiler._tmpid();
+    const extendsRootContextVar = this.compiler._tmpid();
 
     this.emit.line('context.beginAsyncExtendsBlockRegistration();');
+    this.emit.line(`let ${extendsVarsVar} = {};`);
+    this._emitImmediateExternInputs(node, extendsVarsVar);
+    this._emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, extendsExternInputNamesVar, !!node.withContext);
+    this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
     const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
 
     if (node.asyncStoreIn) {
@@ -458,6 +472,9 @@ class CompileInheritance {
         this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${parentTemplateId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
       }
       this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
+      this.emit.line(`${templateVar}.compile();`);
+      this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
+      this.emit.line(`context.setExtendsComposition(${templateVar}, ${extendsRootContextVar}, ${extendsExternContextVar});`);
       this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
       this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
       this.emit.line('}');

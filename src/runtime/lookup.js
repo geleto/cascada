@@ -213,6 +213,19 @@ function contextOrChannelLookup(_context, name, currentBuffer) {
 }
 
 /**
+ * Capture the current template symbol value for an explicit composition
+ * boundary such as `extends ... with ...`.
+ *
+ * Unlike channelLookup(), this does not perform an ordered snapshot read.
+ * It captures the value that exists at the current source position so the
+ * caller can pass that plain value (or promise) through an explicit
+ * composition payload.
+ */
+function captureCompositionValue(_context, name, currentBuffer) {
+  return captureCompositionValueImpl(name, currentBuffer, () => _context.lookup(name));
+}
+
+/**
  * Channel-only lookup for known declared var channels.
  * Returns undefined when no channel binding is available.
  *
@@ -227,6 +240,9 @@ function contextOrChannelLookup(_context, name, currentBuffer) {
 function channelLookup(name, currentBuffer) {
   const channel = currentBuffer.findChannel(name);
   if (!channel) {
+    return undefined;
+  }
+  if (isBlockedCrossTemplateChannelRead(currentBuffer, channel)) {
     return undefined;
   }
   if (isBufferInAncestry(currentBuffer, channel._buffer)) {
@@ -251,6 +267,55 @@ function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext
     return channelRead;
   }
   return context.lookupScript(name, errorContext);
+}
+
+function captureCompositionScriptValue(context, name, currentBuffer, errorContext = null) {
+  return captureCompositionValueImpl(
+    name,
+    currentBuffer,
+    () => context.lookupScript(name, errorContext)
+  );
+}
+
+const COMPOSITION_CAPTURE_UNAVAILABLE = Symbol('COMPOSITION_CAPTURE_UNAVAILABLE');
+
+// Temporary Step C bridge for `extends ... with ...`.
+// Revisit or remove this once later inheritance payload work decides whether
+// composition capture remains a narrow runtime primitive or is fully subsumed
+// by explicit payload construction.
+function captureCompositionValueImpl(name, currentBuffer, fallbackLookup) {
+  const channel = currentBuffer.findChannel(name);
+  if (channel) {
+    const captured = getCurrentCompositionChannelValue(channel);
+    if (captured !== COMPOSITION_CAPTURE_UNAVAILABLE) {
+      return captured;
+    }
+  }
+  return fallbackLookup();
+}
+
+// Temporary Step C bridge for `extends ... with ...`.
+// This is intentionally separate from ordered channel reads and must not be
+// treated as a general replacement for snapshot-based observation.
+function getCurrentCompositionChannelValue(channel) {
+  if (!channel) {
+    return COMPOSITION_CAPTURE_UNAVAILABLE;
+  }
+  if (typeof channel.getTemporaryCompositionAssignedValue === 'function') {
+    return channel.getTemporaryCompositionAssignedValue();
+  }
+  return COMPOSITION_CAPTURE_UNAVAILABLE;
+}
+
+// Temporary Step C fence until later payload work removes the need for linked
+// buffers to act as a source of ordinary bare-name lookup across templates.
+function isBlockedCrossTemplateChannelRead(currentBuffer, channel) {
+  if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
+    return false;
+  }
+  const currentPath = currentBuffer._context ? currentBuffer._context.path : null;
+  const channelPath = channel._context ? channel._context.path : null;
+  return !!(currentPath && channelPath !== currentPath);
 }
 
 // Dynamically links the current read buffer into the target channel lane once.
@@ -288,5 +353,7 @@ module.exports = {
   memberLookupScript,
   channelLookup,
   contextOrChannelLookup,
+  captureCompositionValue,
   contextOrScriptChannelLookup,
+  captureCompositionScriptValue,
 };

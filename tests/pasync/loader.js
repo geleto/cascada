@@ -1648,6 +1648,72 @@
         const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('if-local');
       });
+
+      it('should configure base externs through extends with explicit named inputs', async () => {
+        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
+        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block content(user) %}Child {{ super() }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', theme: 'render' });
+        expect(result.trim()).to.equal('Child Base Ada / dark');
+      });
+
+      it('should copy extends with values when extends executes, not after later reassignment', async () => {
+        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
+        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% set theme = "changed" %}{% block content(user) %}{{ super() }} / {{ theme }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Base Ada / dark / changed');
+      });
+
+      it('should let extends with context expose render-context values to base externs while explicit names still win', async () => {
+        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% extern locale = "en" %}{% block content(user) with context %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
+        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with context, theme %}{% block content(user) with context %}{{ super() }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', locale: 'de', siteName: 'Docs', theme: 'render-theme' });
+        expect(result.trim()).to.equal('Base Ada / de / dark / Docs');
+      });
+
+      it('should not let render-context values satisfy base externs without extends with context', async () => {
+        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% extern locale = "en" %}{% block content(user) with context %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
+        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block content(user) with context %}{{ super() }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', locale: 'de', siteName: 'Docs' });
+        expect(result.trim()).to.equal('Base Ada / en / dark / Docs');
+      });
+
+      it('should pass pending promise values transparently through extends with', async () => {
+        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
+        const childTemplate = '{% set theme = getTheme() %}{% extends "base.njk" with theme %}{% block content(user) %}{{ super() }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, {
+          user: 'Ada',
+          getTheme() {
+            return delay(5).then(() => 'async-dark');
+          }
+        });
+        expect(result.trim()).to.equal('Base Ada / async-dark');
+      });
+
+      it('should keep child locals out of the base root unless explicitly passed through extends with', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }} / {{ siteName }}{% endblock %}');
+        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" %}{% block content(user) %}{{ super() }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', siteName: 'Docs' });
+        expect(result.trim()).to.equal('Base Ada /  /');
+      });
+
+      it('should isolate extends-with root configuration across concurrent renders of the same templates', async () => {
+        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
+        loader.addTemplate('child.njk', '{% set theme = inputTheme %}{% extends "base.njk" with theme %}{% block content(user) %}{{ super() }}{% endblock %}');
+
+        const [first, second] = await Promise.all([
+          env.renderTemplate('child.njk', { user: 'Ada', inputTheme: 'dark' }),
+          env.renderTemplate('child.njk', { user: 'Grace', inputTheme: 'blue' })
+        ]);
+
+        expect(first.trim()).to.equal('Base Ada / dark');
+        expect(second.trim()).to.equal('Base Grace / blue');
+      });
     });
 
     describe('Import multiple items', () => {

@@ -857,6 +857,10 @@ Primary files:
 
 -   src/compiler/compiler-async.js
 
+-   src/environment/context.js
+
+-   src/runtime/lookup.js
+
 -   src/runtime/runtime.js
 
 
@@ -864,7 +868,9 @@ Changes:
 
 -   treat `extends ... with ...` as root-level base configuration using the same explicit `extern` input model as import-like composition, rather than as inherited ambient scope
 
--   reuse `_emitExplicitExternInputs(...)` to collect named root inputs
+-   reuse the same explicit extern validation/context-object pipeline used by import/include-style composition, but do **not** force `extends ... with ...` through ordered lane snapshots when the semantics are "copy what exists now"
+
+-   keep `_emitExplicitExternInputs(...)` for import/include-style boundaries, but allow `extends ... with ...` to use a dedicated immediate-capture helper when that is the simpler and more correct implementation
 
 -   reuse `_emitCompositionContextObject(...)` to merge explicit values with optional `with context`
 
@@ -879,6 +885,43 @@ Changes:
 -   keep `with context` used on `extends ... with ...` scoped to root-extern resolution only, not to block/method argument transport
 
 -   preserve one explicit root-input object shape for import/include/extends boundaries instead of creating an extends-only format
+
+-   store per-parent root composition state in `Context` keyed by the resolved parent template/script object, so parent root extern resolution can use explicit root inputs and explicit render-context visibility without reopening ambient child scope or depending on path-string identity
+
+-   make same-template root vars/externs available to that template's own blocks through an explicit root composition-source-buffer registration at root entry, instead of relying on later parent/child buffer discovery
+
+-   tighten ordinary cross-template channel lookup so a parent block cannot accidentally read a child block lane just because the buffers are linked for output ordering
+
+
+What landed in the implementation:
+
+-   `extends ... with ...` now validates against the base template or script `externSpec` using the same `validateExternInputs(...)` path as other explicit-composition boundaries
+
+-   the explicit values for `extends ... with ...` are captured immediately at the `extends` line, not through ordered snapshot commands
+
+-   that immediate capture uses the current var-channel value directly, and if the var channel has not materialized its target yet, it falls back to the most recent queued var-command argument
+
+-   that behavior is intentional because `extends ... with ...` is a root-configuration capture point, not a normal ordered expression read
+
+-   the runtime no longer peeks into buffer lane arrays to recover that captured value; Step C now keeps the latest explicitly assigned value on var channels themselves, which is a better temporary implementation surface until later cleanup removes or generalizes the capture helper
+
+-   that temporary capture bridge is now isolated in named helper functions and marked as Step C-only scaffolding, rather than being left inline in generic buffer/lookup code
+
+-   pending promises are preserved as pending promises during this capture; the parent root receives the promise and resolves it through normal transparent-async behavior later
+
+-   `with context` on `extends ... with ...` currently affects only the base-root extern-resolution context; it does not make render-context names ambient inside parent blocks or methods
+
+-   the parent root context built for extends now contains only:
+
+    -   explicit `extends ... with ...` values
+
+    -   render-context values when `extends ... with context` is declared
+
+    It does not contain arbitrary child locals unless they were explicitly passed.
+
+-   the runtime now fences bare-name channel lookup across template-path boundaries through an explicit temporary helper, so linked command buffers still preserve output ordering but no longer act as a cross-template ambient data transport while Step D removes the remaining ambient lookup paths
+
+-   the stored `extends ... with ...` composition payload is now keyed by the resolved parent template or script object, not only by its path string
 
 
 Ordering constraint:
@@ -896,16 +939,24 @@ Tests for this step:
 
 -   keep extern validation tests green
 
+-   keep focused `extends ... with ...` template tests green for:
+
+    -   base extern configuration
+
+    -   copy-at-extends timing
+
+    -   explicit-name-over-render-context precedence
+
+    -   pending-promise handoff
+
+    -   no child-local leakage into the base root
+
+    -   concurrent renders of the same base/child templates keep their `extends ... with ...` root configuration isolated
+
+-   keep focused script tests green for base-script extern configuration via `extends ... with ...`
+
 
 Still-unimplemented tests to add here:
-
--   integration test: `extends ... with ...` configures root externs in the base template or base script
-
--   integration test: child `var` declarations immediately before `extends ... with ...` are the values copied into the base root contract
-
--   integration test: `extends ... with context, name` resolves explicit names before render-context lookup for base externs
-
--   integration test: `extends ... with ...` passes through pending promises transparently rather than eagerly awaiting them at the boundary
 
 -   integration test: `from import` continues to use the normal root `externSpec` validation model rather than a special subset-only validation rule
 
@@ -936,15 +987,21 @@ Changes:
 
 -   rewrite `_emitAsyncBlockInputInitialization(...)` around explicit signature locals and explicit argument payloads
 
--   remove the runtime declare-loop over dynamically discovered input names
+-   remove the runtime declare-loop over dynamically discovered input names; all inherited locals needed by a block entry should come from compile-time-known payload fields
 
 -   stop using `_collectRootCompositionLocalChannelNames(...)` as a source for reconstructing inheritance inputs at runtime
+
+-   remove the remaining block-entry bridge that still reads same-template locals through `compositionSourceBuffer` and caller fallbacks through `parentBuffer?.findChannel(...)`
+
+-   preserve the Step C rule that root-composition capture points use "copy now, keep promises as promises" semantics rather than ordered channel snapshots
+
+-   do not undo the Step C cross-template lookup fence; explicit payloads should replace those data reads completely
 
 -   remove compositionSourceBuffer-based channel lookup from inheritance argument initialization
 
 -   remove the `parentBuffer?.findChannel(name)?.finalSnapshot()` fallback from inheritance argument initialization
 
--   keep argument transport snapshot-based and explicit
+-   keep inheritance transport capture-based and explicit; where the desired semantics are "copy what exists at the invocation site right now", prefer immediate capture over ordered channel snapshots
 
 -   replace "base-only contract discovered later" semantics with "every override declares the signature explicitly"
 
@@ -954,6 +1011,22 @@ Changes:
 
     -   per-call argument payloads for `block(...)`, `method(...)`, and `super(...)`
 
+-   make per-call inheritance payloads carry three logically separate pieces of information:
+
+    -   declared signature arguments for the current frame
+
+    -   the original arguments for that frame, so bare `super()` can forward them unchanged
+
+    -   same-template local captures keyed by template path (or an equivalent explicit representation), so each block implementation can read its own template's captured locals without reopening ambient buffer lookup
+
+-   commit to one structured inheritance payload shape instead of a flat `blockContext` namespace; for example:
+
+    -   `args`: declared signature arguments for the current frame
+
+    -   `originalArgs`: the incoming arguments for that frame, preserved for bare `super()`
+
+    -   `localsByTemplate`: same-template local captures keyed by template path (or another explicit template identity)
+
 -   ensure `inheritance.js` and `compiler-async.js` agree on one explicit call shape for parent/child block invocation and for `super(...)`
 
 -   preserve the original invocation-argument payload separately from the child's current local state so bare `super()` forwards original arguments correctly
@@ -962,22 +1035,62 @@ Changes:
 
 -   keep `with context` separate from explicit arguments: it remains inherited render-context visibility, not part of the argument payload
 
--   capture same-template locals intentionally visible at a template block invocation site at invocation time rather than recovering them later by channel lookup
+-   capture same-template locals intentionally visible in the effective block invocation environment at invocation time rather than recovering them later by channel lookup
+
+-   do that capture at the invocation site, not in block entry; block entry should consume a payload, not rediscover values
+
+-   if the same local must remain visible across an override chain, forward it explicitly as part of the inheritance payload instead of assuming the parent or child buffer tree can supply it later
+
+-   do not define same-template local capture in terms of a root-level closure-only model; a closure may be a valid implementation technique in simple cases, but the semantic rule is capture from the effective invocation environment so loop/branch/block-local cases continue to work
 
 -   update `Context.forkForComposition(...)` only as needed for the new explicit payload model; do not preserve buffer-based input lookup under a new name
 
+-   re-evaluate any Step C helper that exists only for the bridge:
+
+    -   if `captureCompositionValue(...)` or `captureCompositionScriptValue(...)` are still used only by `extends ... with ...`, keep them narrowly scoped as composition-capture helpers
+
+    -   if a helper is only compensating for bridge-era block initialization, delete it once explicit payloads replace that bridge
+
+    -   if a Step C helper turns out to be the right generic capture primitive for invocation-site payload construction, keep it but document that role explicitly instead of treating it as bridge debt
+
+    -   the current Step C implementation already shares one internal "current captured value" helper between template and script lookup; keep that shared primitive only if Step D still needs immediate capture semantics, otherwise delete it with the bridge
+
+    -   the Step C implementation should not read dynamic lane arrays directly for composition capture; if it still needs temporary runtime state, keep that state on the relevant var channels or another narrow capture primitive rather than on broad buffer-level composition structures
+
 -   keep buffer threading only where block/super execution still needs it for output ordering; remove buffer lookup for data transport
 
+-   keep `blockLinkedChannels` or equivalent channel-link state only for output ordering / execution wiring; after Step D it must no longer be part of inheritance data recovery for args or locals
+
 -   stop using `context.getBlockContract(...)` to decide what locals a block should declare at runtime
+
+-   move inherited-input conflict validation out of emitted runtime code; use analysis metadata or link/load-time signature metadata instead of runtime `context.getBlockContract(...)` checks
+
+-   explicitly delete the legacy `!signatureDeclared` branch in `_emitAsyncBlockInputInitialization(...)`; once Step D lands, inheritance entry should have only the explicit-signature path
+
+-   explicitly delete `_emitInheritedBlockInputConflictValidation(...)` runtime checks once Step D lands, because Step B's `_validateBlockContractCompatibility(...)` already provides the correct link/load-time replacement
+
+-   treat `Context.getBlockContract(...)` as bridge-era metadata access only; once block entry consumes explicit payloads, remove it from runtime behavior entirely
+
+-   centralize parent-call payload construction so normal parent invocation, bare `super()`, and `super(...)` all build the same explicit payload shape rather than each path cloning and mutating `blockContext`
+
+-   re-scope Step C's immediate-capture helpers (`captureCompositionValue(...)`, `captureCompositionScriptValue(...)`) as explicit composition-capture primitives, not general-purpose lookup; if they remain after Step D, document that narrower role clearly
+
+-   after explicit inheritance payload transport lands, tighten ordinary cross-template channel lookup further if possible so template-crossing data access requires an explicit composition or inheritance payload rather than an ambient lookup path
+
+-   once the remaining bridge-era composition fields are gone, consider extracting Context's shared structural/runtime state (`blocks`, export state, async-extends registration state, parent-keyed extends composition state) into a separate shared object reused by forks instead of manually sharing individual fields
+
+-   once Step D removes the remaining bridge-era inheritance lookup paths, consider extracting the parent-root handoff logic out of `_emitAsyncRootCompletion(...)` into a narrower runtime/context helper so the compiler no longer open-codes the extends parent-context setup and dispatch flow inline
+
+-   once Step D settles the final explicit payload model, consider factoring the emitted `extends` setup in `compileAsyncExtends(...)` into a smaller helper that builds both root/extern context shapes together rather than open-coding the full sequence inline
 
 
 Dependency:
 
 -   this step depends on Step B landing first so the AST, metadata, and validation model are stable
 
--   this step depends on the command-buffer/lane work needed to ensure declared argument locals have a valid static declared-channel/lane story after the runtime declaration loop is removed
+-   this step does **not** need to wait on a separate command-buffer/lane refactor just to remove dynamic-name discovery; Step B already proved we can declare fixed compile-time-known locals directly
 
--   if that prerequisite is not available yet, this step needs a temporary compatibility shim that declares the known argument locals through a fixed compile-time list rather than through runtime-discovered inherited names; the blocker is removal of dynamic-name discovery, not removal of local declaration itself
+-   if a compatibility shim is still needed anywhere, it should be narrowly about payload shape during migration, not about preserving runtime discovery of local names
 
 
 Tests for this step:
@@ -985,6 +1098,12 @@ Tests for this step:
 -   keep current async inheritance/super integration tests green once they are updated to the new explicit-signature syntax and semantics
 
 -   update compile-shape tests in `tests/pasync/template-command-buffer.js` to assert that inheritance entry code uses declared signatures rather than runtime-discovered input-name loops
+
+-   add compile-shape or focused integration tests asserting that invocation sites build explicit inheritance payloads and block entry consumes them without `compositionSourceBuffer` or `parentBuffer.findChannel(...)` recovery
+
+-   add compile-shape or focused validation tests asserting that inherited-input conflict validation no longer emits runtime `context.getBlockContract(...)` checks
+
+-   add compile-shape tests asserting that `super()` and `super(...)` both use the same payload-construction helper or emitted shape
 
 
 Still-unimplemented tests to add here:
@@ -1008,6 +1127,16 @@ Still-unimplemented tests to add here:
 -   compile-source/integration test: block entry no longer reads `parentBuffer?.findChannel(name)?.finalSnapshot()` for inheritance argument initialization
 
 -   integration test: no runtime-dynamic channel declaration is needed for inheritance arguments
+
+-   integration test: same-template locals intentionally visible at a block invocation site are captured once and survive through the override chain without later buffer lookup
+
+-   integration test: child-local values do not leak into parent blocks unless explicitly forwarded in the inheritance payload
+
+-   integration test: parent-template locals needed by `super()` continue to work after `compositionSourceBuffer` removal because they are forwarded explicitly, not rediscovered
+
+-   integration test: two invocations of the same block in parallel keep same-template local captures isolated per invocation after the explicit payload rewrite
+
+-   compile-source/integration test: runtime `Context.getBlockContract(...)` is no longer used by block entry or conflict validation once the explicit payload rewrite is complete
 
 
 ### Step E. Delete remaining legacy composition and inheritance helpers
@@ -1042,6 +1171,8 @@ Changes:
 
 -   simplify `Context.init(...)`, `forkForPath(...)`, and `forkForComposition(...)` once composition source-buffer state is gone
 
+-   simplify async-extends registration state (`beginAsyncExtendsBlockRegistration(...)` / `finishAsyncExtendsBlockRegistration(...)`) once the shared composition/inheritance state has a better home than `Context` itself
+
 -   if Step A removed the last writer to `_visibleChannels` and no later step reintroduces one, delete any remaining dead `_visibleChannels` storage/read paths
 
 -   delete the old parser/compiler/runtime helpers that only exist for legacy inherited-input recovery, including:
@@ -1074,6 +1205,8 @@ Done criteria for this step:
 -   no compiled output still contains runtime-discovered inherited-input loops or composition-source-buffer recovery
 
 -   the remaining uses of current-buffer or parent-buffer parameters are execution/output-ordering uses only, not data-transport lookups
+
+-   `extends ... with ...` still keeps its immediate copy semantics after Step D/E cleanup; no later refactor should accidentally turn it back into an ordered snapshot read
 
 
 Final verification for this step:

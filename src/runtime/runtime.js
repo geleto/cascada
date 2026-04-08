@@ -264,7 +264,9 @@ module.exports = {
   memberLookupScript: lookup.memberLookupScript,
   channelLookup: lookup.channelLookup,
   contextOrChannelLookup: lookup.contextOrChannelLookup,
+  captureCompositionValue: lookup.captureCompositionValue,
   contextOrScriptChannelLookup: lookup.contextOrScriptChannelLookup,
+  captureCompositionScriptValue: lookup.captureCompositionScriptValue,
 
   isArray: lib.isArray,
   keys: lib.keys,

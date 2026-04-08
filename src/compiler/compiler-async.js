@@ -1080,9 +1080,13 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('(async () => {');
     this._emitAsyncRootFinalParentLookup();
     this.emit.line('  if(finalParent) {');
+    this.emit.line('    const extendsComposition = context.getExtendsComposition(finalParent);');
+    this.emit.line('    const parentContext = extendsComposition');
+    this.emit.line('      ? context.forkForComposition(finalParent.path, extendsComposition.rootContext, context.getRenderContextVariables(), extendsComposition.externContext)');
+    this.emit.line('      : context.forkForPath(finalParent.path);');
     this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
     this.emit.line(`    context.setCompositionSourceBuffer(${JSON.stringify(this.templateName)}, ${this.buffer.currentBuffer});`);
-    this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), runtime, cb, compositionMode);');
+    this.emit.line('    finalParent.rootRenderFunc(env, parentContext, runtime, cb, compositionMode);');
     this.emit.line('  } else {');
 
     if (this.scriptMode) {
@@ -1222,12 +1226,14 @@ class CompilerAsync extends CompilerBaseAsync {
         const name = target.value;
         const valueId = this._tmpid();
         const hasCtxId = this._tmpid();
+        const externCtxVar = this._tmpid();
 
         this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
-        this.emit.line(`const ${hasCtxId} = Object.prototype.hasOwnProperty.call(context.ctx, "${name}");`);
+        this.emit.line(`const ${externCtxVar} = context.getExternContextVariables();`);
+        this.emit.line(`const ${hasCtxId} = Object.prototype.hasOwnProperty.call(${externCtxVar}, "${name}");`);
         this.emit.line(`let ${valueId};`);
         this.emit.line(`if (${hasCtxId}) {`);
-        this.emit.line(`  ${valueId} = context.ctx["${name}"];`);
+        this.emit.line(`  ${valueId} = ${externCtxVar}["${name}"];`);
         this.emit.line('} else {');
         if (externNode.value) {
           this.emit(`  ${valueId} = `);
@@ -1245,6 +1251,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRootBody(node) {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line(`context.setCompositionSourceBuffer(${JSON.stringify(this.templateName)}, ${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
     }
@@ -1286,6 +1293,8 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('} else {');
     this.emit.line(`  context = context.forkForPath(${JSON.stringify(this.templateName)});`);
     this.emit.line('}');
+    this.emit.line(`${this.buffer.currentBuffer}._context = context;`);
+    this.emit.line(`${this.buffer.currentTextChannelVar}._context = context;`);
     this._emitInheritedBlockInputConflictValidation(block);
     this._emitAsyncBlockInputInitialization(block);
     const previousCompilingBlock = this.currentCompilingBlock;
@@ -1390,6 +1399,9 @@ class CompilerAsync extends CompilerBaseAsync {
     return Array.from(conflictNames);
   }
 
+  // Temporary bridge for the explicit-signature migration.
+  // Step D deletes this emitted runtime check and relies on link/load-time
+  // compatibility validation instead.
   _emitInheritedBlockInputConflictValidation(block) {
     const conflictNames = Array.isArray(block._analysis.inheritedInputConflictNames)
       ? block._analysis.inheritedInputConflictNames
@@ -1404,6 +1416,9 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('}');
   }
 
+  // Temporary bridge while Step B/Step C coexist with the older inherited-input
+  // recovery model. Step D rewrites this around explicit payloads only and
+  // deletes the legacy non-signature path entirely.
   _emitAsyncBlockInputInitialization(block) {
     const blockSignature = this._getBlockSignature(block);
     const declaredBlockInputNames = blockSignature.inputNames;
@@ -1420,6 +1435,8 @@ class CompilerAsync extends CompilerBaseAsync {
     if (blockSignature.signatureDeclared) {
       this.emit.line(`const ${allLocalNamesVar} = ${JSON.stringify(staticLocalNames)};`);
     } else {
+      // Temporary legacy branch: remove completely once all inherited inputs use
+      // explicit signatures and payloads.
       this.emit.line(`const ${runtimeBlockInputNamesVar} = context.getBlockContract(${JSON.stringify(block.name.value)})?.inputNames || [];`);
       this.emit.line(`const ${allLocalNamesVar} = Array.from(new Set(${JSON.stringify(staticLocalNames)}.concat(${runtimeBlockInputNamesVar})));`);
     }
@@ -1513,18 +1530,16 @@ class CompilerAsync extends CompilerBaseAsync {
       declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
     }
 
-    if (!this.scriptMode) {
-      const hasExtendsNode = node.children.some((child) => child instanceof nodes.Extends);
-      const hasParentTemplateDeclaration = node.children.some((child) =>
-        child instanceof nodes.Set &&
-        child.varType === 'declaration' &&
-        child.targets &&
-        child.targets[0] &&
-        child.targets[0].value === '__parentTemplate'
-      );
-      if (hasExtendsNode && !hasParentTemplateDeclaration) {
-        declares.push({ name: '__parentTemplate', type: 'var', initializer: null, internal: true });
-      }
+    const hasExtendsNode = node.children.some((child) => child instanceof nodes.Extends);
+    const hasParentTemplateDeclaration = node.children.some((child) =>
+      child instanceof nodes.Set &&
+      child.varType === 'declaration' &&
+      child.targets &&
+      child.targets[0] &&
+      child.targets[0].value === '__parentTemplate'
+    );
+    if (hasExtendsNode && !hasParentTemplateDeclaration) {
+      declares.push({ name: '__parentTemplate', type: 'var', initializer: null, internal: true });
     }
 
     return declares;

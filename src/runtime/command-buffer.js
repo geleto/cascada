@@ -3,6 +3,7 @@
 const {
   ErrorCommand,
   TextCommand,
+  VarCommand,
   SequenceCallCommand,
   SequenceGetCommand,
   SequentialPathReadCommand,
@@ -177,6 +178,7 @@ class CommandBuffer {
     if (!this.arrays[resolvedChannelName]) {
       this.arrays[resolvedChannelName] = [];
     }
+    this._recordTemporaryCompositionAssignedValue(resolvedChannelName, value);
     const target = this.arrays[resolvedChannelName];
     target.push(value);
     const slot = target.length - 1;
@@ -195,6 +197,24 @@ class CommandBuffer {
 
     this._notifyCommandOrBufferAdded(resolvedChannelName);
     return slot;
+  }
+
+  // Temporary Step C bridge for `extends ... with ...`.
+  // This should be removed completely once later composition steps stop relying
+  // on immediate current-value capture while the inheritance payload rewrite lands.
+  _recordTemporaryCompositionAssignedValue(resolvedChannelName, value) {
+    const ownedChannel = this._ownedChannels[resolvedChannelName];
+    if (!ownedChannel || typeof ownedChannel.recordTemporaryCompositionAssignedValue !== 'function') {
+      return;
+    }
+    if (!(value instanceof VarCommand)) {
+      return;
+    }
+    ownedChannel.recordTemporaryCompositionAssignedValue(
+      Array.isArray(value.arguments) && value.arguments.length > 0
+        ? value.arguments[0]
+        : undefined
+    );
   }
 
   addBuffer(buffer, channelName) {
