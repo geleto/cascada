@@ -40,6 +40,7 @@ class CompilerCommon extends Obj {
     this.templateName = typeof options.templateName === 'string' ? options.templateName : undefined;
     this.hasExtends = false;
     this.inBlock = false;
+    this.currentCompilingBlock = null;
     this.sequential = new CompileSequential(this);
     this.emit = new CompileEmit(this);
     this.async = null;
@@ -123,6 +124,59 @@ class CompilerCommon extends Obj {
     if (!types.some(t => node instanceof t)) {
       this.fail(`assertType: invalid type: ${node.typename}`, node.lineno, node.colno, node);
     }
+  }
+
+  _parseCallableSignature(argsNode, opts = {}) {
+    const allowKeywordArgs = opts.allowKeywordArgs !== false;
+    const symbolsOnly = !!opts.symbolsOnly;
+    const label = opts.label || 'callable signature';
+    const ownerNode = opts.ownerNode || argsNode;
+    const args = [];
+    let kwargs = null;
+
+    if (!argsNode) {
+      return {
+        args,
+        kwargs,
+        positionalNames: [],
+        keywordNames: []
+      };
+    }
+
+    argsNode.children.forEach((arg, i) => {
+      if (i === argsNode.children.length - 1 && arg instanceof nodes.KeywordArgs) {
+        if (!allowKeywordArgs) {
+          this.fail(
+            `${label} does not support keyword arguments`,
+            arg.lineno,
+            arg.colno,
+            ownerNode,
+            arg
+          );
+        }
+        kwargs = arg;
+        return;
+      }
+
+      if (symbolsOnly && !(arg instanceof nodes.Symbol)) {
+        this.fail(
+          `${label} only supports identifier arguments`,
+          arg.lineno,
+          arg.colno,
+          ownerNode,
+          arg
+        );
+      }
+
+      args.push(arg);
+    });
+
+    return {
+      args,
+      kwargs,
+      positionalNames: args.map((n) => n.value),
+      keywordNames: ((kwargs && kwargs.children) || []).map((n) => n.key.value)
+    };
   }
 
   _getNodeName(node) {
@@ -410,6 +464,7 @@ class CompilerCommon extends Obj {
       nodes.Array,
       nodes.Dict,
       nodes.FunCall,
+      nodes.Super,
       nodes.Caller,
       nodes.Filter,
       nodes.LookupVal,

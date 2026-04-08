@@ -1326,6 +1326,14 @@
         expect(result.trim()).to.equal('Child Ada');
       });
 
+      it('should pass explicit block signature inputs from the base block invocation to the async override', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}Child {{ user }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Child Ada');
+      });
+
       it('should expose render-context bare names through block with context in an async override', async () => {
         loader.addTemplate('base.njk', '{% block content with context %}Base {{ username }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ username }}{% endblock %}';
@@ -1348,6 +1356,70 @@
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Base Ada / Grace');
+      });
+
+      it('should allow super(...) to override inherited signature inputs for the parent block call', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{{ super("Grace") }} / {{ user }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Base Grace / Ada');
+      });
+
+      it('should evaluate super(...) arguments at the original call site', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{% set user = "Grace" %}{{ super(user) }} / {{ user }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('Base Grace / Grace');
+      });
+
+      it('should evaluate each super(...) call independently at its own call site', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}[{{ user }}]{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{{ super(user) }}{% set user = "Grace" %}{{ super(user) }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
+        expect(result.trim()).to.equal('[Ada][Grace]');
+      });
+
+      it('should reject super(...) calls that pass more args than the block signature declares', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{{ super("Grace", "Extra") }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(childTemplate, { user: 'Ada' });
+          expect().fail('Expected super(...) arity validation');
+        } catch (err) {
+          expect(String(err)).to.contain('super(...) for block "content" received too many arguments');
+        }
+      });
+
+      it('should reject super(...) keyword arguments in async mode', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{{ super(user="Grace") }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(childTemplate, { user: 'Ada' });
+          expect().fail('Expected super(...) keyword-argument rejection');
+        } catch (err) {
+          expect(String(err)).to.contain('super(...) does not support keyword arguments');
+        }
+      });
+
+      it('should allow overriding signature blocks to redeclare with context', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) with context %}Base {{ user }} {{ username }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) with context %}Child {{ user }} {{ username }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
+        expect(result.trim()).to.equal('Child Ada Grace');
+      });
+
+      it('should keep render-context visibility disabled by default for signature blocks without with context', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ username }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}Child {{ user }} / {{ username }}{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
+        expect(result.trim()).to.equal('Child Ada /');
       });
 
       it('should treat base-block with inputs as local vars for rebinding', async () => {
@@ -1388,6 +1460,49 @@
           expect().fail('Expected async child block with-clause rejection');
         } catch (err) {
           expect(String(err)).to.contain('async overriding blocks cannot declare their own with clause');
+        }
+      });
+
+      it('should reject overriding block signatures that do not match the parent signature', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(username) %}Child {{ username }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
+          expect().fail('Expected overriding block signature mismatch');
+        } catch (err) {
+          expect(String(err)).to.contain('block "content" signature mismatch');
+          expect(String(err)).to.contain('content(username)');
+          expect(String(err)).to.contain('content(user)');
+        }
+      });
+
+      it('should reject overriding block signatures when with-context mode differs from the parent', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) with context %}Child {{ user }} {{ username }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
+          expect().fail('Expected overriding block context-mode mismatch');
+        } catch (err) {
+          expect(String(err)).to.contain('block "content" signature mismatch');
+          expect(String(err)).to.contain('content(user) with context');
+          expect(String(err)).to.contain('content(user)');
+        }
+      });
+
+      it('should surface block signature mismatches during parent registration in a multi-file inheritance chain', async () => {
+        loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
+        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block content(user) %}Parent {{ super() }}{% endblock %}');
+        const childTemplate = '{% extends "parent.njk" %}{% block content(username) %}Child {{ username }}{% endblock %}';
+
+        try {
+          await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
+          expect().fail('Expected multi-file signature mismatch');
+        } catch (err) {
+          expect(String(err)).to.contain('block "content" signature mismatch');
+          expect(String(err)).to.contain('content(username)');
+          expect(String(err)).to.contain('content(user)');
         }
       });
 
@@ -1442,6 +1557,14 @@
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Child Parent Mid Grand Ada');
+      });
+
+      it('should preserve plain super() behavior when called multiple times in one block', async () => {
+        loader.addTemplate('base.njk', '{% block content %}Base{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}[{{ super() }}][{{ super() }}]{% endblock %}';
+
+        const result = await env.renderTemplateString(childTemplate, {});
+        expect(result.trim()).to.equal('[Base][Base]');
       });
 
       it('should allow include with explicit inputs inside an overriding block', async () => {

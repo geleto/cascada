@@ -5,6 +5,8 @@
   //var unescape;
   var AsyncEnvironment;
   var AsyncTemplate;
+  var CompilerAsync;
+  var nodes;
   //var StringLoader;
   //var Environment;
   //var lexer;
@@ -15,6 +17,8 @@
     const envModule = require('../../src/environment/environment');
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
+    CompilerAsync = require('../../src/compiler/compiler-async');
+    nodes = require('../../src/nodes');
     //Environment = require('../../src/environment/environment').Environment;
     //lexer = require('../../src/lexer');
     //unescape = require('he').unescape;
@@ -25,6 +29,8 @@
     //unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     AsyncTemplate = nunjucks.AsyncTemplate;
+    CompilerAsync = (nunjucks.compiler && nunjucks.compiler.CompilerAsync) || null;
+    nodes = nunjucks.nodes;
     //StringLoader = window.StringLoader;
     //Environment = nunjucks.Environment;
     //lexer = nunjucks.lexer;
@@ -116,12 +122,13 @@
       });
 
       it('should expose blockContracts on compiled async templates', () => {
-        const tmpl = new AsyncTemplate('{% block content with context, user %}{{ user }}{% endblock %}', env);
+        const tmpl = new AsyncTemplate('{% block content(user) with context %}{{ user }}{% endblock %}', env);
         tmpl.compile();
         expect(tmpl.blockContracts).to.eql({
           content: {
             inputNames: ['user'],
-            withContext: true
+            withContext: true,
+            signatureDeclared: true
           }
         });
       });
@@ -133,6 +140,30 @@
         } catch (err) {
           expect(err.message).to.contain(`extern fallback for 'a' cannot reference later extern 'b'`);
         }
+      });
+
+      it('should reject direct extern fallback cycles', async () => {
+        try {
+          await env.renderTemplateString('{% extern a = a %}{{ a }}', {});
+          expect().fail('Expected extern cycle validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain('extern cycle detected: a -> a');
+        }
+      });
+
+      it('should reject indirect extern fallback cycles', async () => {
+        if (!CompilerAsync) {
+          return;
+        }
+        const compiler = new CompilerAsync('cycle-test.njk', { asyncMode: true, templateName: 'cycle-test.njk' });
+        const ast = new nodes.Root(0, 0, [
+          new nodes.Extern(0, 0, [new nodes.Symbol(0, 0, 'a')], new nodes.Symbol(0, 0, 'b')),
+          new nodes.Extern(0, 0, [new nodes.Symbol(0, 0, 'b')], new nodes.Symbol(0, 0, 'a'))
+        ]);
+
+        expect(() => compiler._validateRootExternCycles(ast)).to.throwException((err) => {
+          expect(err.message).to.contain('extern cycle detected: a -> b -> a');
+        });
       });
 
       it('should reject reserved async declaration name context for extern', async () => {

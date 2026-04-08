@@ -882,14 +882,15 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeBlock(node) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    const hasExplicitContract = !!node.withContext || withVars.length > 0;
+    const signature = this._getBlockSignature(node);
+    const hasLegacyWithClause = !signature.signatureDeclared && (!!node.withContext || withVars.length > 0);
     const declares = [];
     const seenBlockInputNames = new Set();
-    withVars.forEach((nameNode) => {
+    signature.nameNodes.forEach((nameNode, index) => {
       nameNode._analysis = Object.assign({}, nameNode._analysis, {
         skipDeclarationOwner: node._analysis
       });
-      const canonicalName = this.analysis.getBaseChannelName(nameNode.value);
+      const canonicalName = signature.inputNames[index];
       if (seenBlockInputNames.has(canonicalName)) {
         this.fail(
           `block input '${canonicalName}' is declared more than once`,
@@ -913,7 +914,7 @@ class CompilerAsync extends CompilerBaseAsync {
         declares: ((node.body._analysis && node.body._analysis.declares) || []).concat(declares)
       });
     }
-    if (hasExplicitContract) {
+    if (hasLegacyWithClause) {
       const rootOwner = this.analysis.getRootScopeOwner(node._analysis);
       const rootNode = rootOwner.node;
       const rootChildren = rootNode && Array.isArray(rootNode.children) ? rootNode.children : [];
@@ -1035,6 +1036,7 @@ class CompilerAsync extends CompilerBaseAsync {
   finalizeAnalyzeRoot(node) {
     const externSpec = this._collectRootExternSpec(node);
     this._validateRootExternFallbackOrder(node, externSpec);
+    this._validateRootExternCycles(node);
     return { externSpec };
   }
 
@@ -1151,6 +1153,63 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
+  _validateRootExternCycles(node) {
+    const externNodes = this._getRootExternNodes(node);
+    const dependencyGraph = new Map();
+    const externNames = new Set();
+
+    externNodes.forEach((externNode) => {
+      if (!externNode.targets || externNode.targets.length !== 1 || !externNode.value) {
+        return;
+      }
+      const currentName = externNode.targets[0].value;
+      const referencedSymbolNodes = (externNode.value instanceof nodes.Symbol)
+        ? [externNode.value]
+        : externNode.value.findAll(nodes.Symbol);
+      const referencedNames = referencedSymbolNodes
+        .filter((symbolNode) => !(symbolNode._analysis && symbolNode._analysis.declarationTarget))
+        .map((symbolNode) => symbolNode.value);
+      externNames.add(currentName);
+      dependencyGraph.set(currentName, referencedNames);
+    });
+
+    const visited = new Set();
+    const visiting = [];
+
+    const visit = (name, ownerNode) => {
+      if (visiting.includes(name)) {
+        const cycleStart = visiting.indexOf(name);
+        const cycle = visiting.slice(cycleStart).concat(name);
+        this.fail(
+          `extern cycle detected: ${cycle.join(' -> ')}`,
+          ownerNode.lineno,
+          ownerNode.colno,
+          ownerNode,
+          ownerNode.value || ownerNode
+        );
+      }
+      if (visited.has(name)) {
+        return;
+      }
+      visited.add(name);
+      visiting.push(name);
+      const deps = dependencyGraph.get(name) || [];
+      deps.forEach((depName) => {
+        if (externNames.has(depName)) {
+          visit(depName, ownerNode);
+        }
+      });
+      visiting.pop();
+    };
+
+    externNodes.forEach((externNode) => {
+      if (!externNode.targets || externNode.targets.length !== 1 || !externNode.value) {
+        return;
+      }
+      visit(externNode.targets[0].value, externNode);
+    });
+  }
+
   _emitRootExternInitialization(node) {
     const externNodes = this._getRootExternNodes(node);
 
@@ -1229,7 +1288,13 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('}');
     this._emitInheritedBlockInputConflictValidation(block);
     this._emitAsyncBlockInputInitialization(block);
-    this.compile(block.body, null);
+    const previousCompilingBlock = this.currentCompilingBlock;
+    this.currentCompilingBlock = block;
+    try {
+      this.compile(block.body, null);
+    } finally {
+      this.currentCompilingBlock = previousCompilingBlock;
+    }
     this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
     this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
     this.emit.endEntryFunction(block, true);
@@ -1253,18 +1318,39 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _getBlockInputNames(block) {
+    return this._getBlockSignature(block).inputNames;
+  }
+
+  _getBlockInputNameNodes(block) {
+    return this._getBlockSignature(block).nameNodes;
+  }
+
+  _getBlockSignature(block) {
+    const signatureArgs = block && block.args && block.args.children ? block.args : null;
+    if (signatureArgs && signatureArgs.children.length > 0) {
+      const parsed = this._parseCallableSignature(signatureArgs, {
+        allowKeywordArgs: false,
+        symbolsOnly: true,
+        label: 'block signature',
+        ownerNode: block
+      });
+      return {
+        inputNames: parsed.args.map((nameNode) => this.analysis.getBaseChannelName(nameNode.value)),
+        nameNodes: parsed.args,
+        signatureDeclared: true
+      };
+    }
+
     const withVars = block && block.withVars && block.withVars.children ? block.withVars.children : [];
-    const blockInputNames = [];
-    const seen = new Set();
+    const inputNames = [];
     withVars.forEach((nameNode) => {
-      const canonicalName = this.analysis.getBaseChannelName(nameNode.value);
-      if (seen.has(canonicalName)) {
-        return;
-      }
-      seen.add(canonicalName);
-      blockInputNames.push(canonicalName);
+      inputNames.push(this.analysis.getBaseChannelName(nameNode.value));
     });
-    return blockInputNames;
+    return {
+      inputNames,
+      nameNodes: withVars,
+      signatureDeclared: false
+    };
   }
 
   _collectInheritedBlockInputConflictNames(block) {
@@ -1319,25 +1405,41 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _emitAsyncBlockInputInitialization(block) {
-    const declaredBlockInputNames = this._getBlockInputNames(block);
+    const blockSignature = this._getBlockSignature(block);
+    const declaredBlockInputNames = blockSignature.inputNames;
     const rootOwner = this.analysis.getRootScopeOwner(block._analysis);
     const compositionLocalChannelNames = this._collectRootCompositionLocalChannelNames(rootOwner.node);
     const staticLocalNames = Array.from(new Set(
       compositionLocalChannelNames.concat(declaredBlockInputNames)
     ));
-    const runtimeBlockInputNamesVar = this._tmpid();
     const allLocalNamesVar = this._tmpid();
-    this.emit.line(`const ${runtimeBlockInputNamesVar} = context.getBlockContract(${JSON.stringify(block.name.value)})?.inputNames || [];`);
-    this.emit.line(`const ${allLocalNamesVar} = Array.from(new Set(${JSON.stringify(staticLocalNames)}.concat(${runtimeBlockInputNamesVar})));`);
+    const explicitBlockInputNamesVar = this._tmpid();
+    const runtimeBlockInputNamesVar = blockSignature.signatureDeclared ? null : this._tmpid();
+
+    this.emit.line(`const ${explicitBlockInputNamesVar} = ${JSON.stringify(declaredBlockInputNames)};`);
+    if (blockSignature.signatureDeclared) {
+      this.emit.line(`const ${allLocalNamesVar} = ${JSON.stringify(staticLocalNames)};`);
+    } else {
+      this.emit.line(`const ${runtimeBlockInputNamesVar} = context.getBlockContract(${JSON.stringify(block.name.value)})?.inputNames || [];`);
+      this.emit.line(`const ${allLocalNamesVar} = Array.from(new Set(${JSON.stringify(staticLocalNames)}.concat(${runtimeBlockInputNamesVar})));`);
+    }
     const compositionSourceBufferVar = this._tmpid();
+    // Bridge path for Step B only: Step D removes buffer-based inherited input recovery
+    // and replaces it with explicit invocation payloads.
     this.emit.line(`const ${compositionSourceBufferVar} = context.getCompositionSourceBuffer(${JSON.stringify(this.templateName)});`);
     this.emit.line(`if (${allLocalNamesVar}.length > 0) {`);
     this.emit.line(`for (const name of ${allLocalNamesVar}) {`);
     const blockValueId = this._tmpid();
     this.emit.line(`  runtime.declareBufferChannel(${this.buffer.currentBuffer}, name, "var", context, null);`);
-    this.emit.line(`  const ${blockValueId} = ${runtimeBlockInputNamesVar}.includes(name)`);
-    this.emit.line('    ? blockContext?.[name]');
-    this.emit.line(`    : (${compositionSourceBufferVar}?.findChannel(name)?.finalSnapshot() ?? parentBuffer?.findChannel(name)?.finalSnapshot());`);
+    if (blockSignature.signatureDeclared) {
+      this.emit.line(`  const ${blockValueId} = ${explicitBlockInputNamesVar}.includes(name)`);
+      this.emit.line('    ? blockContext?.[name]');
+      this.emit.line(`    : (${compositionSourceBufferVar}?.findChannel(name)?.finalSnapshot() ?? parentBuffer?.findChannel(name)?.finalSnapshot());`);
+    } else {
+      this.emit.line(`  const ${blockValueId} = ${runtimeBlockInputNamesVar}.includes(name)`);
+      this.emit.line('    ? blockContext?.[name]');
+      this.emit.line(`    : (${compositionSourceBufferVar}?.findChannel(name)?.finalSnapshot() ?? parentBuffer?.findChannel(name)?.finalSnapshot());`);
+    }
     this.emit.line(`  ${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
     this.emit.line('}');
     this.emit.line('}');
@@ -1392,9 +1494,11 @@ class CompilerAsync extends CompilerBaseAsync {
     const blocks = node.findAll(nodes.Block);
 
     blocks.forEach((block) => {
+      const signature = this._getBlockSignature(block);
       contracts[block.name.value] = {
-        inputNames: this._getBlockInputNames(block),
-        withContext: !!block.withContext
+        inputNames: signature.inputNames,
+        withContext: !!block.withContext,
+        signatureDeclared: signature.signatureDeclared
       };
     });
 

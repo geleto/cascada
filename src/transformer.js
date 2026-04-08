@@ -145,24 +145,38 @@ function liftSuper(ast) {
       return;
     }
 
-    let hasSuper = false;
-    const symbol = gensym();
+    const superNodes = [];
 
     blockNode.body = walk(blockNode.body, (node) => {
       if (node instanceof nodes.FunCall && node.name.value === 'super') {
-        hasSuper = true;
+        const args = node.args && node.args.children ? node.args.children : [];
+        if (args.length > 0) {
+          return new nodes.Super(
+            node.lineno,
+            node.colno,
+            blockNode.name,
+            null,
+            node.args || new nodes.NodeList(node.lineno, node.colno)
+          );
+        }
+        const symbol = gensym();
         const tempSymbolNode = new nodes.Symbol(node.lineno, node.colno, symbol);
         tempSymbolNode.isCompilerInternal = true;
+        const superNodeInternalSymbol = new nodes.Symbol(node.lineno, node.colno, symbol);
+        superNodeInternalSymbol.isCompilerInternal = true;
+        superNodes.push(new nodes.Super(
+          node.lineno,
+          node.colno,
+          blockNode.name,
+          superNodeInternalSymbol,
+          node.args || new nodes.NodeList(node.lineno, node.colno)
+        ));
         return tempSymbolNode;
       }
     });
 
-    if (hasSuper) {
-      const superNodeInternalSymbol = new nodes.Symbol(0, 0, symbol);
-      superNodeInternalSymbol.isCompilerInternal = true;
-      blockNode.body.children.unshift(new nodes.Super(
-        0, 0, blockNode.name, superNodeInternalSymbol
-      ));
+    if (superNodes.length > 0) {
+      blockNode.body.children.unshift(...superNodes);
     }
   });
 }

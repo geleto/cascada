@@ -635,14 +635,26 @@ class Parser extends Obj {
 
     const node = new nodes.Block(tag.lineno, tag.colno);
 
-    node.name = this.parsePrimary();
+    node.name = this.parsePrimary(true);
     if (!(node.name instanceof nodes.Symbol)) {
       this.fail('parseBlock: variable name expected',
         tag.lineno,
         tag.colno);
     }
 
+    if (this.peekToken().type === lexer.TOKEN_LEFT_PAREN) {
+      node.args = this.parseSignature(false);
+    }
+
     const compositionInputs = this.parseCompositionWithClause('parseBlock');
+    if (node.args && node.args.children.length > 0 &&
+      compositionInputs.withVars && compositionInputs.withVars.children && compositionInputs.withVars.children.length > 0) {
+      this.fail(
+        'parseBlock: block signatures cannot be combined with legacy named with inputs',
+        tag.lineno,
+        tag.colno
+      );
+    }
     node.withContext = compositionInputs.withContext;
     node.withVars = compositionInputs.withVars;
 
@@ -671,6 +683,9 @@ class Parser extends Obj {
 
     const node = new nodes.Extends(tag.lineno, tag.colno);
     node.template = this.parseExpression();
+    const compositionInputs = this.parseCompositionWithClause('parseExtends', { allowWithoutContext: true });
+    node.withContext = compositionInputs.withContext;
+    node.withVars = compositionInputs.withVars;
 
     this.advanceAfterBlockEnd(tag.value);
     return node;

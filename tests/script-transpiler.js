@@ -42,6 +42,7 @@ describe('Script Transpiler', () => {
         expect(scriptTranspiler._getBlockType('if')).to.equal('START');
         expect(scriptTranspiler._getBlockType('for')).to.equal('START');
         expect(scriptTranspiler._getBlockType('block')).to.equal('START');
+        expect(scriptTranspiler._getBlockType('method')).to.equal('START');
         expect(scriptTranspiler._getBlockType('macro')).to.equal('START');
         expect(scriptTranspiler._getBlockType('else')).to.equal('MIDDLE');
         expect(scriptTranspiler._getBlockType('elif')).to.equal('MIDDLE');
@@ -50,6 +51,7 @@ describe('Script Transpiler', () => {
         expect(scriptTranspiler._getBlockType('endif')).to.equal('END');
         expect(scriptTranspiler._getBlockType('endfor')).to.equal('END');
         expect(scriptTranspiler._getBlockType('endblock')).to.equal('END');
+        expect(scriptTranspiler._getBlockType('endmethod')).to.equal('END');
         expect(scriptTranspiler._getBlockType('endmacro')).to.equal('END');
         expect(scriptTranspiler._getBlockType('@text')).to.equal(null);
       });
@@ -1082,6 +1084,20 @@ return { text: outText.snapshot() }`;
       expect(template).to.contain('{%- command outText("<h1>" + frameVar1 + "</h1>") -%}');
       expect(template).to.contain('{%- set frameVar3 = "Updated Value" -%}');
       expect(template).to.contain('{%- include includedTemplateName + ".njk" depends = var1, var2 -%}');
+      expect(template).to.contain('{%- endblock -%}');
+    });
+
+    it('should transpile methods to template blocks', () => {
+      const script = `method buildBody(title, user) with context
+  text outText
+  outText("Hello " + user.name + " from " + siteName + ": " + title)
+endmethod`;
+
+      const template = scriptTranspiler.scriptToTemplate(script);
+
+      expect(template).to.contain('{%- block buildBody(title, user) with context -%}');
+      expect(template).to.contain('{%- text outText -%}');
+      expect(template).to.contain('{%- command outText("Hello " + user.name + " from " + siteName + ": " + title) -%}');
       expect(template).to.contain('{%- endblock -%}');
     });
   });

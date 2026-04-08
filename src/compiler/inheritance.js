@@ -56,6 +56,36 @@ class CompileInheritance {
     });
   }
 
+  _emitNamedInputBindings(nameNodes, targetVarsVar) {
+    nameNodes.forEach((nameNode) => {
+      const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
+      this.emit(`${targetVarsVar}[${JSON.stringify(inputName)}] = `);
+      this.compiler.compileExpression(nameNode, null, nameNode, true);
+      this.emit.line(';');
+    });
+  }
+
+  _getPositionalSuperArgsNode(node) {
+    const allArgs = node.args && node.args.children ? node.args.children.slice() : [];
+    if (allArgs.length === 0) {
+      return new nodes.NodeList(node.lineno, node.colno);
+    }
+    const lastArg = allArgs[allArgs.length - 1];
+    if (lastArg instanceof nodes.KeywordArgs) {
+      if (lastArg.children.length > 0) {
+        this.compiler.fail(
+          'super(...) does not support keyword arguments',
+          lastArg.lineno,
+          lastArg.colno,
+          node,
+          lastArg
+        );
+      }
+      allArgs.pop();
+    }
+    return new nodes.NodeList(node.lineno, node.colno, allArgs);
+  }
+
   _emitCompositionContextObject(node, explicitVarsVar, compositionCtxVar, explicitNamesVar = null) {
     this.emit.line(`let ${compositionCtxVar} = {};`);
     if (node.withContext) {
@@ -326,14 +356,14 @@ class CompileInheritance {
       node,
       (id) => {
         this.emit.line(`let ${id};`);
-        const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-        const hasExplicitBlockInputs = !!node.withContext || withVars.length > 0;
+        const explicitInputNameNodes = this.compiler._getBlockInputNameNodes(node);
+        const hasExplicitBlockInputs = !!node.withContext || explicitInputNameNodes.length > 0;
         const blockVarsVar = hasExplicitBlockInputs ? this.compiler._tmpid() : null;
         const blockContextVar = hasExplicitBlockInputs ? this.compiler._tmpid() : null;
         const blockRenderCtxExpr = node.withContext ? 'context.getRenderContextVariables()' : 'null';
         if (hasExplicitBlockInputs) {
           this.emit.line(`let ${blockVarsVar} = {};`);
-          this._emitExplicitExternInputs(node, blockVarsVar);
+          this._emitNamedInputBindings(explicitInputNameNodes, blockVarsVar);
           this._emitCompositionContextObject(node, blockVarsVar, blockContextVar);
         }
         const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
@@ -352,6 +382,16 @@ class CompileInheritance {
   }
 
   compileSyncBlock(node, frame) {
+    const args = node.args && node.args.children ? node.args.children : [];
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    if (args.length > 0 || node.withContext !== null || withVars.length > 0) {
+      this.compiler.fail(
+        'block signatures and block with-clauses are only supported in async mode',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     //var id = this._tmpid();
 
     // If we are at the top level of a template (`!this.inBlock`) that has a
@@ -389,6 +429,15 @@ class CompileInheritance {
   }
 
   compileAsyncExtends(node) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    if (node.withContext !== null || withVars.length > 0) {
+      this.compiler.fail(
+        'extends with explicit composition inputs is not implemented yet',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     var k = this.compiler._tmpid();
 
     this.emit.line('context.beginAsyncExtendsBlockRegistration();');
@@ -417,6 +466,15 @@ class CompileInheritance {
   }
 
   compileSyncExtends(node, frame) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    if (node.withContext !== null || withVars.length > 0) {
+      this.compiler.fail(
+        'extends with explicit composition inputs is not implemented yet',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     var k = this.compiler._tmpid();
     const parentTemplateId = this._compileSyncGetTemplate(node, frame, true, false);
     this.emit.line(`parentTemplate = ${parentTemplateId};`);
@@ -428,12 +486,63 @@ class CompileInheritance {
 
   compileAsyncSuper(node) {
     var name = node.blockName.value;
-    var id = node.symbol.value;
-    this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockContext, blockRenderCtx);`);
+    var id = node.symbol ? node.symbol.value : null;
+    const positionalArgsNode = this._getPositionalSuperArgsNode(node);
+    const args = positionalArgsNode.children;
+    const compilingBlock = this.compiler.currentCompilingBlock;
+    const knownInputNames = compilingBlock ? this.compiler._getBlockInputNames(compilingBlock) : [];
+
+    if (args.length > knownInputNames.length) {
+      this.compiler.fail(
+        `super(...) for block "${name}" received too many arguments`,
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+
+    if (!id) {
+      const superArgsVar = this.compiler._tmpid();
+      const superBlockContextVar = this.compiler._tmpid();
+      this.emit('(() => {');
+      this.emit(`const ${superArgsVar} = `);
+      this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+      this.emit.line(';');
+      this.emit.line(`const ${superBlockContextVar} = Object.assign({}, blockContext || {});`);
+      knownInputNames.slice(0, args.length).forEach((inputName, idx) => {
+        this.emit.line(`${superBlockContextVar}[${JSON.stringify(inputName)}] = ${superArgsVar}[${idx}];`);
+      });
+      this.emit(`return runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${superBlockContextVar}, blockRenderCtx));`);
+      this.emit('})()');
+      return;
+    }
+    if (args.length > 0) {
+      const superArgsVar = this.compiler._tmpid();
+      const superBlockContextVar = this.compiler._tmpid();
+      this.emit(`const ${superArgsVar} = `);
+      this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+      this.emit.line(';');
+      this.emit.line(`const ${superBlockContextVar} = Object.assign({}, blockContext || {});`);
+      knownInputNames.slice(0, args.length).forEach((inputName, idx) => {
+        this.emit.line(`${superBlockContextVar}[${JSON.stringify(inputName)}] = ${superArgsVar}[${idx}];`);
+      });
+      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${superBlockContextVar}, blockRenderCtx);`);
+    } else {
+      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockContext, blockRenderCtx);`);
+    }
     this.emit.line(`${id} = runtime.markSafe(${id});`);
   }
 
   compileSyncSuper(node, frame) {
+    const args = node.args && node.args.children ? node.args.children : [];
+    if (args.length > 0) {
+      this.compiler.fail(
+        'super(...) is only supported in async mode',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     var name = node.blockName.value;
     var id = node.symbol.value;
     const cb = this.compiler._makeCallback(id);

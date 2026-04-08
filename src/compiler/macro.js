@@ -185,26 +185,17 @@ class CompileMacro {
   }
 
   _parseMacroSignature(node) {
-    const compiler = this.compiler;
-    const args = [];
-    let kwargs = null;
-
-    node.args.children.forEach((arg, i) => {
-      if (i === node.args.children.length - 1 && arg instanceof nodes.Dict) {
-        kwargs = arg;
-      } else {
-        compiler.assertType(arg, nodes.Symbol);
-        args.push(arg);
-      }
+    const signature = this.compiler._parseCallableSignature(node.args, {
+      allowKeywordArgs: true,
+      symbolsOnly: true,
+      label: 'macro signature',
+      ownerNode: node
     });
-
-    return {
-      args,
-      kwargs,
-      realNames: [...args.map((n) => `l_${n.value}`), 'kwargs'],
-      argNames: args.map((n) => `"${n.value}"`),
-      kwargNames: ((kwargs && kwargs.children) || []).map((n) => `"${n.key.value}"`)
-    };
+    return Object.assign({}, signature, {
+      emittedArgNames: signature.positionalNames.map((name) => `"${name}"`),
+      emittedKwargNames: signature.keywordNames.map((name) => `"${name}"`),
+      emittedParamNames: signature.positionalNames.map((name) => `l_${name}`).concat('kwargs')
+    });
   }
 
   _emitCallerBindingValue({ bufferId, rawCallerVar, allCallersBufferId, positionNode }) {
@@ -438,7 +429,13 @@ class CompileMacro {
   _compileAsyncMacro(node) {
     const compiler = this.compiler;
     const funcId = node._analysis.compiledMacroFuncId;
-    const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
+    const {
+      args,
+      kwargs,
+      emittedParamNames,
+      emittedArgNames,
+      emittedKwargNames
+    } = this._parseMacroSignature(node);
     const oldIsCompilingMacroBody = compiler.sequential.isCompilingMacroBody;
     compiler.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
@@ -446,9 +443,9 @@ class CompileMacro {
 
     compiler.emit.lines(
       `let ${funcId} = runtime.makeMacro(`,
-      `[${argNames.join(', ')}], `,
-      `[${kwargNames.join(', ')}], `,
-      `function (${realNames.join(', ')}, macroParentBuffer) {`
+      `[${emittedArgNames.join(', ')}], `,
+      `[${emittedKwargNames.join(', ')}], `,
+      `function (${emittedParamNames.join(', ')}, macroParentBuffer) {`
     );
 
     compiler.emit.line(`return runtime.withPath(this, "${compiler.templateName}", function() {`);
@@ -522,7 +519,13 @@ class CompileMacro {
   _compileSyncMacro(node, frame, keepFrame) {
     const compiler = this.compiler;
     const funcId = `macro_${compiler._tmpid()}`;
-    const { args, kwargs, realNames, argNames, kwargNames } = this._parseMacroSignature(node);
+    const {
+      args,
+      kwargs,
+      emittedParamNames,
+      emittedArgNames,
+      emittedKwargNames
+    } = this._parseMacroSignature(node);
     const currFrame = keepFrame
       ? frame.push(true)
       : frame.new();
@@ -531,9 +534,9 @@ class CompileMacro {
 
     compiler.emit.lines(
       `let ${funcId} = runtime.makeMacro(`,
-      `[${argNames.join(', ')}], `,
-      `[${kwargNames.join(', ')}], `,
-      `function (${realNames.join(', ')}) {`
+      `[${emittedArgNames.join(', ')}], `,
+      `[${emittedKwargNames.join(', ')}], `,
+      `function (${emittedParamNames.join(', ')}) {`
     );
 
     compiler.emit.line(`return runtime.withPath(this, "${compiler.templateName}", function() {`);

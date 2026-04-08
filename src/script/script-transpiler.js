@@ -91,7 +91,7 @@ class ScriptTranspiler {
     // Define block-related configuration
     this.SYNTAX = {
       // Block-related tags
-      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
+      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
       lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'sink', 'sequence'],
 
       // Middle tags with their parent block types
@@ -111,6 +111,7 @@ class ScriptTranspiler {
         'if': 'endif',
         'switch': 'endswitch',
         'block': 'endblock',
+        'method': 'endmethod',
         'macro': 'endmacro',
         'filter': 'endfilter',
         'call': 'endcall',
@@ -128,7 +129,7 @@ class ScriptTranspiler {
       // Tags that should never be treated as multi-line
       neverContinued: [
         'else', 'elif', 'case', 'default',
-        'endif', 'endfor', 'endswitch', 'endblock', 'endmacro',
+        'endif', 'endfor', 'endswitch', 'endblock', 'endmethod', 'endmacro',
         'endfilter', 'endcall', 'endcall_assign', 'endraw', 'endverbatim',
         'endwhile', 'endvar', 'recover'
       ],
@@ -1476,6 +1477,10 @@ class ScriptTranspiler {
           let tagName = processedLine.tagName;
           if (tagName === 'each') {
             tagName = 'asyncEach';
+          } else if (tagName === 'method') {
+            tagName = 'block';
+          } else if (tagName === 'endmethod') {
+            tagName = 'endblock';
           }
           output += `{%- ${tagName}`;
           break;

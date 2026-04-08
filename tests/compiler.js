@@ -1334,6 +1334,45 @@
       finish(done);
     });
 
+    it('should reject block signatures in sync mode', function(done) {
+      try {
+        equal(
+          '{% block block1(user) %}{{ user }}{% endblock %}',
+          ''
+        );
+        expect().fail('Expected sync block signature rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('block signatures and block with-clauses are only supported in async mode');
+      }
+      finish(done);
+    });
+
+    it('should reject super(...) in sync mode', function(done) {
+      try {
+        equal(
+          '{% extends "base.njk" %}{% block block1 %}{{ super("arg") }}{% endblock %}',
+          ''
+        );
+        expect().fail('Expected sync super(...) rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('super(...) is only supported in async mode');
+      }
+      finish(done);
+    });
+
+    it('should reject extends with explicit composition inputs in sync mode', function(done) {
+      try {
+        equal(
+          '{% extends "base.njk" with user %}{% block block1 %}X{% endblock %}',
+          ''
+        );
+        expect().fail('Expected sync extends-with rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('extends with explicit composition inputs is not implemented yet');
+      }
+      finish(done);
+    });
+
     it('should let super() see global vars from child template', function (done) {
       equal(
         '{% extends "base-show.njk" %}{% set var = "child" %}' +

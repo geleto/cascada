@@ -80,8 +80,41 @@ class Context extends Obj {
 
   addBlock(name, block) {
     this.blocks[name] = this.blocks[name] || [];
+    if (this.blocks[name].length > 0) {
+      this._validateBlockContractCompatibility(name, this.blocks[name][this.blocks[name].length - 1], block);
+    }
     this.blocks[name].push(block);
     return this;
+  }
+
+  _validateBlockContractCompatibility(name, overridingBlock, parentBlock) {
+    const overridingContract = overridingBlock && overridingBlock.blockContract;
+    const parentContract = parentBlock && parentBlock.blockContract;
+    if (!overridingContract || !parentContract) {
+      return;
+    }
+    if (!overridingContract.signatureDeclared && !parentContract.signatureDeclared) {
+      return;
+    }
+
+    const overridingNames = overridingContract.inputNames || [];
+    const parentNames = parentContract.inputNames || [];
+    const sameLength = overridingNames.length === parentNames.length;
+    const sameNames = sameLength && overridingNames.every((value, index) => value === parentNames[index]);
+    const sameContextMode = !!overridingContract.withContext === !!parentContract.withContext;
+    if (sameNames && sameContextMode) {
+      return;
+    }
+
+    const formatContract = (contract) => {
+      const args = (contract.inputNames || []).join(', ');
+      const contextSuffix = contract.withContext ? ' with context' : '';
+      return `${name}(${args})${contextSuffix}`;
+    };
+
+    throw new lib.TemplateError(
+      `block "${name}" signature mismatch: overriding block declares ${formatContract(overridingContract)} but parent declares ${formatContract(parentContract)}`
+    );
   }
 
   getBlock(name) {

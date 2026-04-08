@@ -207,16 +207,20 @@ class KeywordArgs extends Dict {
 
 class Block extends Node {
   get typename() { return 'Block'; }
-  get fields() { return ['name', 'body', 'withContext', 'withVars']; }
+  get fields() { return ['name', 'args', 'body', 'withContext', 'withVars']; }
 
-  init(lineno, colno, name, body, withContext, withVars) {
-    super.init(lineno, colno, name, body, withContext, withVars || new NodeList());
+  init(lineno, colno, name, args, body, withContext, withVars) {
+    super.init(lineno, colno, name, args || new NodeList(), body, withContext, withVars || new NodeList());
   }
 }
 
 class Super extends Node {
   get typename() { return 'Super'; }
-  get fields() { return ['blockName', 'symbol']; }
+  get fields() { return ['blockName', 'symbol', 'args']; }
+
+  init(lineno, colno, blockName, symbol, args) {
+    super.init(lineno, colno, blockName, symbol, args || new NodeList());
+  }
 }
 
 class TemplateRef extends Node {
@@ -226,7 +230,11 @@ class TemplateRef extends Node {
 
 class Extends extends TemplateRef {
   get typename() { return 'Extends'; }
-  get fields() { return ['template', 'asyncStoreIn']; }
+  get fields() { return ['template', 'withContext', 'withVars', 'asyncStoreIn']; }
+
+  init(lineno, colno, template, withContext, withVars, asyncStoreIn) {
+    super.init(lineno, colno, template, withContext, withVars || new NodeList(), asyncStoreIn);
+  }
 }
 
 class Include extends Node {
