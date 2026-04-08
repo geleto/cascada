@@ -171,22 +171,7 @@ class Context extends Obj {
     this.ctx[name] = promise;
   }
 
-  linkDeferredExportsToBuffer(parentBuffer) {
-    if (!parentBuffer || !this.exportChannels) {
-      return;
-    }
-    const names = Object.keys(this.exportChannels);
-    for (let i = 0; i < names.length; i++) {
-      const name = names[i];
-      const exportChannel = this.exportChannels[name];
-      if (!exportChannel || !exportChannel.buffer || !exportChannel.channelName) {
-        continue;
-      }
-      parentBuffer.linkVisibleChannel(exportChannel.channelName, exportChannel.buffer);
-    }
-  }
-
-  resolveExports(currentBuffer) {
+  resolveExports() {
     const names = Object.keys(this.exportResolveFunctions);
     for (const name of names) {
       const resolve = this.exportResolveFunctions[name];
@@ -194,10 +179,15 @@ class Context extends Obj {
         continue;
       }
       const exportChannel = this.exportChannels[name];
-      const channel = exportChannel
-        ? exportChannel.buffer.findChannel(exportChannel.channelName)
-        : currentBuffer.findChannel(name);
+      if (!exportChannel || !exportChannel.buffer || !exportChannel.channelName) {
+        throw new Error(`Deferred export "${name}" is missing an explicit producer record${this.path ? ` in ${this.path}` : ''}`);
+      }
+      const channel = exportChannel.buffer.getOwnChannel(exportChannel.channelName);
+      if (!channel) {
+        throw new Error(`Deferred export "${name}" could not resolve producer channel "${exportChannel.channelName}"${this.path ? ` in ${this.path}` : ''}`);
+      }
       resolve(channel.finalSnapshot());
+      this.exportResolveFunctions[name] = null;
     }
   }
 

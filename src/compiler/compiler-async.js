@@ -1186,7 +1186,6 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRootBody(node) {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
-    this.emit.line(`context.linkDeferredExportsToBuffer(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
     }
@@ -1201,7 +1200,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     this._emitRootExternInitialization(node);
     this._compileChildren(node, null);
-    this.emit.line('context.resolveExports(output);');
+    this.emit.line('context.resolveExports();');
     this._emitAsyncRootCompletion(node);
   }
 

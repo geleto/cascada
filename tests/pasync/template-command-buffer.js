@@ -4,6 +4,7 @@
   var expect;
   var AsyncEnvironment;
   var AsyncTemplate;
+  var Context;
   var StringLoader;
   var DEFAULT_TEMPLATE_TEXT_OUTPUT;
 
@@ -12,12 +13,14 @@
     const envModule = require('../../src/environment/environment');
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
+    Context = envModule.Context;
     StringLoader = require('../util').StringLoader;
     DEFAULT_TEMPLATE_TEXT_OUTPUT = require('../../src/compiler/buffer').DEFAULT_TEMPLATE_TEXT_OUTPUT;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     AsyncTemplate = nunjucks.AsyncTemplate;
+    Context = nunjucks.Context;
     StringLoader = window.util.StringLoader;
   }
 
@@ -152,6 +155,31 @@
       expect(source).to.contain('runtime.declareBufferChannel(output, "theme", "var", context, null);');
       expect(source).to.not.contain('context.setVariable("user"');
       expect(source).to.contain('context.setVariable("theme"');
+    });
+
+    it('should resolve deferred exports without emitting visibility-link compatibility calls', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
+
+      const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'deferred-export-producer-records.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('context.addDeferredExport("m", "m", output);');
+      expect(source).to.contain('context.resolveExports();');
+      expect(source).to.not.contain('context.linkDeferredExportsToBuffer(');
+      expect(source).to.not.contain('linkVisibleChannel(');
+    });
+
+    it('should assert when a deferred export is missing its explicit producer record', function () {
+      const env = new AsyncEnvironment();
+      const context = new Context({}, {}, env, 'missing-export-producer.njk');
+
+      context.addDeferredExport('value', 'value', null);
+
+      expect(function () {
+        context.resolveExports();
+      }).to.throwException(/missing an explicit producer record/);
     });
 
     it('should initialize base-block with inputs as local async var channels', function () {

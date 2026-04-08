@@ -487,6 +487,19 @@
       expect(result).to.equal('1');
     });
 
+    it('should resolve async exported values after removing deferred-export visibility linking', async () => {
+      loader.addTemplate('lib-async-export.njk', '{% set x = slowValue() %}');
+      loader.addTemplate('main.njk', '{% import "lib-async-export.njk" as lib %}{{ lib.x }}');
+
+      env = new AsyncEnvironment(loader);
+      env.addGlobal('slowValue', async () => {
+        return new Promise((resolve) => setTimeout(() => resolve('async-export'), 10));
+      });
+      const result = await env.renderTemplate('main.njk', {});
+
+      expect(result).to.equal('async-export');
+    });
+
     it('From import with async macro and values', async () => {
       loader.addTemplate('utils.njk', `
         {% macro formatUser(user) %}

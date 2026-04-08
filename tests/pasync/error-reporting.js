@@ -5,16 +5,19 @@
   var AsyncEnvironment;
   var StringLoader;
   var path;
+  var delay;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     path = require('path');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
     StringLoader = require('../util').StringLoader;
+    delay = require('../util').delay;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     StringLoader = window.util.StringLoader;
+    delay = window.util.delay;
     // eslint-disable-next-line no-unused-vars
     path = {
       join: function () {
