@@ -50,7 +50,7 @@ In short, Cascada lets developers **write clear, linear logic** while the engine
 - [Error Handling](#error-handling)
 - [Macros and Reusable Components](#macros-and-reusable-components)
 - [Return Statements](#return-statements)
-- [Modular Scripts](#modular-scripts)
+- [Composition and Loading](#composition-and-loading)
 - [Extending Cascada](#extending-cascada)
 - [API Reference](#api-reference)
 - [Development Status and Roadmap](#development-status-and-roadmap)
@@ -136,8 +136,9 @@ What makes Cascada Script remarkable is how unremarkable it looks. Despite execu
 | Sequential loop | `each item in list / endeach` | Iterations run in strict order |
 | While loop | `while condition / endwhile` | Condition-based loop |
 | Filters | `value \| filterName(args)` | Transform values with built-in or custom filters |
-| Function calls | `funcName(a, b, keyword=c)` | Call context functions, globals, or macro results |
+| Function calls | `funcName(a, b, keyword=c)` | Call context functions, globals, macro results, or inherited methods |
 | Macros | `macro name(args) … endmacro` | Define reusable, callable script components |
+| Methods | `method name(args) … endmethod` | Define overridable, value-returning methods for `extends` chains |
 | Imports | `import "file" as ns` | Modular code organization across files |
 | Comments | `// line`, `/* block */` | Standard comment syntax |
 
@@ -151,7 +152,7 @@ Everything above is the language you already know. Cascada adds a small set of s
 | `sink` channel | `sink name = obj` | Send ordered commands to an external stateful object |
 | `sequence` channel | `sequence name = obj` | Sequential reads and calls on an external object |
 | Sequential operator | `obj!.method()`, `obj!.prop` | Enforce strict execution order on a context object path |
-| Guard | `guard [targets] / recover err / endguard` | Transaction-like block: auto-restores channel/sequence state on error |
+| Guard | `guard [targets] / recover [err] / endguard` | Transaction-like block: auto-restores channel/sequence state on error |
 | Dataflow error propagation | `value is error`, `value#message` | Failures flow as values that poison  thrown exceptions; inspect with `#` |
 
 ### Core Syntax and Expressions
@@ -1616,7 +1617,7 @@ You can think of `guard` like a save point: if the block finishes in an error, t
 guard [targets...]
   // 1. Attempt risky operations
   // 2. Changes to guarded targets are tracked for recovery
-recover err  // (Optional - binds the error payload for inspection)
+recover [err]  // Optional recover block; 'err' variable binding is also optional
   // 3. Runs ONLY if the guard block remains poisoned
   // 4. Guarded state has already been restored
 endguard
@@ -1751,7 +1752,7 @@ If present, it runs only if the guard finishes poisoned:
 * Guarded channels have already been reverted
 * Guarded sequential paths have already been repaired
 * Guarded variables have already been restored
-* `recover err` provides access to the final `PoisonError` via the `#` peek operator
+* `recover err` binds the final `PoisonError` for inspection via the `#` peek operator — the variable name is optional; bare `recover` (without a binding) is also valid
 
 > Note: If all errors are detected and repaired inside the guard (using `is error`), the guard is considered successful and no recovery occurs.
 
@@ -2045,191 +2046,376 @@ return reportData.snapshot()
 For most cases, returning a `var` or a plain object literal is simpler than declaring a channel. Use channels when you need ordered writes, structured path updates, text building, or `sink`/`sequence` behavior.
 
 
-## Modular Scripts
+## Composition and Loading
 
-Cascada provides tools for composing scripts across files. The three primary mechanisms are [`import`](#importing-libraries-with-import) for namespaced libraries, [`include`](#including-scripts-with-include) for embedding content, and [`extends`/`block`](#script-inheritance-with-extends-and-block) for script inheritance.
+When a project grows beyond a single file, Cascada Script provides two ways to organize logic:
 
-Cross-script data passing uses an **explicit-contract model**: the child script declares what it expects with `extern`, and the parent passes values using `with` at the call site. There is no implicit sharing of parent-scope variables.
+- **`import`** — load a library of reusable macros from another file
+- **`extends` / `method`** — inherit a base script's structure and override specific behaviors
 
-### `extern`: Declaring Expected Inputs
+Both use the same **explicit-contract model**: any value that crosses a composition boundary must be declared with `extern` and explicitly passed with `with`. There is no implicit sharing of parent-scope variables.
 
-`extern` declares a variable that a child script expects to receive from its caller. It is only valid at root scope (not inside `if`, `for`, macros, etc.).
+> **Note:** The `include` tag from Nunjucks templates is not supported in Cascada Script.
+
+### Importing Libraries with `import`
+
+Use `import` to share macros across multiple scripts — helper functions, formatters, validators — without duplicating them. The imported script's top-level body does not run in the caller; only its macro definitions are exposed.
+
+#### Importing a Namespace with `as`
+
+Bind the library to a name and call its macros through that namespace:
+
+```cascada
+// formatters.script
+macro formatUser(user)
+  return user.firstName + " " + user.lastName
+endmacro
+```
+
+```cascada
+// main.script
+import "formatters.script" as fmt
+
+var user = fetchUser(1)
+return { name: fmt.formatUser(user) }
+```
+
+This returns `{ name: "Alice Durand" }`.
+
+#### Importing Specific Names with `from`
+
+Pull specific macros directly into the caller's namespace instead:
+
+```cascada
+// formatters.script — same file as above
+macro formatUser(user)
+  return user.firstName + " " + user.lastName
+endmacro
+```
+
+```cascada
+// main.script
+from "formatters.script" import formatUser
+
+var user = fetchUser(1)
+return { name: formatUser(user) }
+```
+
+This returns `{ name: "Alice Durand" }`.
+
+Use `as` when importing several macros from the same library; use `from ... import` when you only need one or two specific names directly in scope.
+
+#### Passing Values to Libraries with `with`
+
+A library can declare **`extern`** values — inputs it expects the caller to provide. The caller passes them with `with`. Here the same library is enriched with a configurable `locale`:
+
+```cascada
+// formatters.script
+extern locale = "en"    // optional — defaults to "en"
+
+macro formatUser(user)
+  return user.firstName + " " + user.lastName + " [" + locale + "]"
+endmacro
+```
+
+```cascada
+// main.script
+var locale = "fr"
+import "formatters.script" as fmt with locale
+
+var user = fetchUser(1)
+return { user: fmt.formatUser(user) }
+```
+
+This returns `{ user: "Alice Durand [fr]" }`.
+
+Instead of passing an explicit var, you can expose the render context so the library resolves its externs from it:
+
+```cascada
+// main.script — locale comes from the render context, no child var needed
+import "formatters.script" as fmt with context
+
+var user = fetchUser(1)
+return { user: fmt.formatUser(user) }
+```
+
+This returns `{ user: "Alice Durand [en-GB]" }` when `locale` comes from the render context.
+
+`from ... import` follows the same `with` rules. Named inputs always take priority over context lookup. The full `extern` / `with` rules are in the next section.
+
+### `extern` and `with`: Cross-File Contracts
+
+The examples above showed the pattern: a library declares `extern` for each value it needs; the caller satisfies those externs with `with`. This section covers the complete rules.
 
 ```cascada
 // required — caller must provide it
 extern user
 
-// optional — uses "light" if caller doesn't provide it
+// optional — defaults to "light" if caller doesn't provide it
 extern theme = "light"
 ```
 
-**Rules:**
+`extern` is only valid at root scope (not inside `if`, `for`, macros, etc.).
+
+**`extern` rules:**
 - **Vars only**: `extern` works only with `var`-type values. Channels (`data`, `text`, `sink`, `sequence`) cannot be declared as externs or passed via `with`.
-- **Value-copy semantics**: `extern` receives a copy of the caller's value at the time of the call. Mutating it inside the child does not affect the parent.
-- **Declaration order**: externs are initialized in the order they are declared. An `extern` cannot reference another `extern` declared after it in its fallback expression.
-- **Post-init**: after initialization, an `extern` variable behaves exactly like a normal local `var`.
-- **Required vs. optional**: an `extern` without a fallback is required. If the caller does not provide it (via `with` or `with context`), a runtime error is thrown.
-- **Reserved name**: `context` is a reserved name. `extern context` and `var context = ...` are compile errors.
+- **Value-copy semantics**: the caller's value is copied at the composition boundary. Mutating it inside the child does not affect the caller.
+- **Transparent async**: an `extern` can hold a promise just like a normal `var`.
+- **Declaration order**: externs initialize in declaration order. A fallback expression cannot reference an `extern` declared later:
+  ```cascada
+  extern a = b   // ERROR: b is declared later
+  extern b = "default"
+  ```
+- **Post-init behavior**: after initialization, an `extern` behaves exactly like a normal local `var`.
+- **Required vs. optional**: an `extern` without a fallback is required. If the caller does not provide it, rendering fails with a contract error.
+- **Reserved name**: `context` is reserved. `extern context` and `var context = ...` are compile errors.
 
-### Passing Values with `with`
+**`with varName, ...`** — passes the named parent `var`s by value. Only `var` declarations can be listed; channels cannot cross a composition boundary.
 
-All composition operations (`import`, `from import`, `include`, `block`) use the same `with` clause to pass values into a child script's `extern` bindings.
+**`with context`** — makes the render context (the object passed to the renderer) available to bare-name lookups inside the child. It does **not** expose parent local variables or channels, and it does **not** create a variable named `context` inside the child.
 
-```cascada
-// named vars only
-include "widget.script" with user, theme
+**`without context`** — explicitly opts out of render-context access. Useful to make isolation guarantees visible in code.
 
-// render-context lookup only
-import "helpers.script" as h with context
-
-// both — named inputs take priority over context
-import "ui.script" as ui with context, locale
-
-// explicit opt-out from context
-import "strict.script" as s without context
-```
-
-**`with varName, ...`** — passes the named parent `var`s by value. Only `var` declarations can be listed; channels (`data`, `text`, `sink`, `sequence`) cannot be passed across a composition boundary.
-
-**`with context`** — makes the parent's render context (the object passed to the renderer) visible to bare-name lookups inside the child. It does **not** expose parent local variables or channels, and it does **not** create a variable named `context` inside the child.
-
-**`without context`** — explicitly opts out of render-context access. Useful to make isolation guarantees clear.
-
-Named inputs always take priority over context lookup. An `extern` is satisfied in this order: explicit `with` value → `with context` lookup → own fallback initializer → error.
-
-### Importing Libraries with `import`
-
-Use `import` to load a script as a library of reusable components, primarily macros. An `import` is isolated by default: it does not execute inline and cannot access the parent's variables or render context.
-
-#### Importing a Namespace with `as`
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>utils.script</code></strong></summary>
+**Resolution order**: explicit `with` value → `with context` lookup → own `extern` fallback → error.
 
 ```cascada
-macro formatUser(user)
-  return user.firstName + " " + user.lastName
-endmacro
+// Given: extern locale = "en" in the library
+import "formatters.script" as fmt with context, locale
+// locale  — satisfied by the explicit var (wins over context and over "en")
+// any other extern — looked up in context, then falls back to its own default
 ```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>main.script</code></strong></summary>
 
-```cascada
-import "utils.script" as utils
+### Script Inheritance with `extends` and `method`
 
-var user = fetchUser(1)
-var fullName = utils.formatUser(user)
+Use `extends` when you want to build a family of related scripts that share structure but differ in specific behaviors. The base script defines **methods** — named override points that take arguments and return a value. Child scripts inherit the full flow of the base and replace individual methods with their own implementations.
 
-return { user: fullName }
-```
-</details>
-</td>
-</tr>
-</table>
+A common pattern: a base report script fetches data, orchestrates the flow, and calls `buildBody` to format the content. Different child scripts supply their own `buildBody` — one for summaries, one for detailed output — without duplicating the fetch-and-orchestrate logic.
 
-#### Importing Specific Macros with `from`
-Use `from ... import` to pull specific macros into the current script's namespace, allowing you to call them directly.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>utils.script</code></strong></summary>
-
-```cascada
-macro formatUser(user)
-  return user.firstName + " " + user.lastName
-endmacro
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>main.script</code></strong></summary>
-
-```cascada
-from "utils.script" import formatUser
-
-var user = fetchUser(1)
-var formattedUser = formatUser(user)
-return formattedUser
-```
-</details>
-</td>
-</tr>
-</table>
-
-### Including Scripts with `include`
-
-Use `include` to execute another script inline. The included script runs in isolation: it only sees what is explicitly passed via `with`. Parent-scope local variables and channels are not accessible.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>user-widget.script</code></strong></summary>
-
-```cascada
-// Declares what this script expects from its caller
-extern user
-extern theme = "default"
-
-return { name: user.name, theme: theme }
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>main.script</code></strong></summary>
-
-```cascada
-var user = fetchUser(1)
-var theme = "dark"
-
-include "user-widget.script" with user, theme
-```
-</details>
-</td>
-</tr>
-</table>
-
-### Script Inheritance with `extends` and `block`
-Use `extends` for an "inversion of control" pattern, where a "child" script fills in placeholder `block`s defined in a "base" script.
-
-The **base** script owns the `with` contract for each `block`, declaring which vars are passed into the block's scope:
+> If you know class-based OOP, `extends` / `method` / `super` map onto familiar concepts with some key differences — see [Comparison to Class Inheritance](#comparison-to-class-inheritance) below.
 
 ```cascada
 // base.script
-var header = buildHeader(title)
-block body with title, user
-  // default content — title and user are available here
-  var body = "Default body for " + title
-endblock
-```
+// title and user come from the render context
+method buildBody(title, user)
+  return user.name + ": " + title
+endmethod
 
-A child script overrides the block and receives the declared inputs automatically:
+var body = buildBody(title, user)
+return body
+```
 
 ```cascada
 // child.script
 extends "base.script"
 
-block body
-  // title and user are available here without re-declaring them
-  var body = "Custom body for " + user.name + " — " + title
-endblock
+method buildBody(title, user)
+  return "[Custom] " + user.name + ": " + title
+endmethod
 ```
 
-**Rules:**
-- The base block's `with` clause is the contract. The overriding child block cannot add its own `with` clause.
-- `super()` inside an overriding block renders the base block's content with the **original** inputs passed by the caller — not any locally reassigned values.
-- Top-level `var` declarations in the child script (outside any `block`) are visible inside blocks.
-- Variables declared inside a `block` are local to that block and not visible elsewhere.
+You render the child script, not the base script. The base script's top-level flow runs with the child's `buildBody` in place:
+
+```javascript
+await env.renderScript("child.script", {
+  title: "Q1 Report",
+  user: { name: "Ada" }
+})
+```
+
+This renders to `"[Custom] Ada: Q1 Report"`.
+
+**Method rules:**
+- Every overriding method declares its own argument list. Parent and child signatures must match.
+- Method arguments are ordinary local bindings. You can reassign them locally without affecting the caller.
+- Methods return values via `return`. Method bodies do not issue channel commands — use the surrounding script flow for output assembly and methods to compute the values that feed into it.
+- Top-level `var` declarations in the child script are visible in the child's own top-level flow, but method arguments and locals belong to the method body.
+
+#### `extends ... with ...`
+
+Use `extends ... with ...` to configure the base script before it runs. If the base declares root-level `extern` values, the child supplies them via `with`. This is the place for data that applies to the whole run — not per-method-call, but once for the entire execution.
+
+Here is the same base from above, now with two configurable values:
+
+```cascada
+// base.script
+extern theme = "light"
+extern locale = "en"
+
+method buildBody(title, user)
+  return "[" + locale + "/" + theme + "] " + user.name + ": " + title
+endmethod
+
+var body = buildBody(title, user)
+return body
+```
+
+```cascada
+// child.script — configures the base without overriding the method
+var theme = "dark"
+var locale = "de"
+
+extends "base.script" with theme, locale
+```
+
+```javascript
+await env.renderScript("child.script", {
+  title: "Q1 Report",
+  user: { name: "Ada" }
+})
+```
+
+This renders to `"[de/dark] Ada: Q1 Report"`.
+
+`extends` can appear after `var` declarations in the child — the natural position when those vars are being computed before being handed to the base.
+
+**Pass-through pattern.** A child can declare its own `extern` and forward it directly to the base, letting callers configure a value that flows all the way down the chain. Rendering the wrapper still runs the base script's top-level flow and returns the base script's output.
+
+```cascada
+// wrapper.script — receives theme from its own caller and forwards it to the base
+extern theme
+extends "base.script" with theme
+```
+
+**Combining `with context` and named vars.** You can expose render-context lookup for satisfying the base's root `extern` values, while still overriding specific externs explicitly. Named vars always win over context lookup:
+
+```cascada
+// child.script — hardcodes theme, exposes locale from render context
+var theme = "dark"
+
+extends "base.script" with context, theme
+```
+
+In the base script, `theme` resolves to `"dark"` (explicit), while `locale` is looked up in the render context.
+
+**Rules for `extends ... with ...`:**
+- It passes values into the base script's root-level `extern` declarations.
+- Values are copied at the composition boundary, just like `import ... with ...`. Reassigning the child variable later does not affect the already-configured base value.
+- `extends` can appear after `var` declarations in the child. Values are copied when `extends` runs, not when the vars are first declared.
+- This configures base-script state; it does not replace method arguments. Use method arguments for per-call override inputs.
+- `with context` and `without context` follow the same rules as they do for `import`.
+
+#### `method ... with context`
+
+`extends ... with ...` configures the base once before it runs. `method ... with context` is different: it gives an individual method body access to the render context on each call.
+
+A base method can declare `with context` to read render-context values by bare name inside the body:
+
+```cascada
+// base.script
+method buildBody(title, user) with context
+  return "[" + siteName + "] " + user.name + ": " + title
+endmethod
+
+var body = buildBody(title, user)
+return body
+```
+
+The `with context` contract is inherited automatically by child overrides — the child does not need to re-declare it:
+
+```cascada
+// child.script
+extends "base.script"
+
+method buildBody(title, user)
+  return "[Child/" + siteName + "] " + user.name + ": " + title
+endmethod
+```
+
+```javascript
+await env.renderScript("child.script", {
+  title: "Q1 Report",
+  user: { name: "Ada" },
+  siteName: "Acme"
+})
+```
+
+This renders to `"[Child/Acme] Ada: Q1 Report"`.
+
+**Named arguments take precedence over render-context names.** If an argument and a render-context property share the same name, the explicit argument wins.
+
+There is no special `without context` form for methods. The default is already "without context" unless the base method declares `with context`.
+
+If a base method declares `with context`, child overrides inherit that render-context visibility automatically, and `super()` / `super(...)` call the parent method with the same inherited render-context access.
+
+#### `super()` and `super(...)`
+
+Use `super()` when the child wants to augment the parent's result rather than replace it entirely — adding a prefix, wrapping the output, or delegating to the parent for certain inputs.
+
+Bare `super()` calls the parent with the original invocation arguments:
+
+```cascada
+// child.script — wraps the parent result
+extends "base.script"
+
+method buildBody(title, user)
+  return "URGENT — " + super()
+endmethod
+```
+
+With `title: "Q1 Report"` and `user: { name: "Ada" }`, this renders to `"URGENT — Ada: Q1 Report"`.
+
+`super(...)` lets the child change what the parent sees:
+
+```cascada
+// child.script — passes different args to the parent
+extends "base.script"
+
+method buildBody(title, user)
+  return super(title, { name: "Anonymous" })
+endmethod
+```
+
+With `title: "Q1 Report"` and `user: { name: "Ada" }`, this renders to `"Anonymous: Q1 Report"`.
+
+#### Methods vs. macros
+
+Both are callable, but they serve different roles:
+
+- **`macro`**: a reusable helper for shared utilities. Does not participate in inheritance or `super()`.
+- **`method`**: an explicit override point in an `extends` chain. Use when a base script needs child scripts to customize part of its behavior.
+- Methods return values via `return` and do not issue channel commands directly. Output assembly belongs to the script's top-level flow; methods compute the values that feed into it.
+
+#### Comparison to Class Inheritance
+
+If you know object-oriented languages, `extends` / `method` / `super` will feel familiar. Here is how the concepts map, and where they diverge:
+
+| OOP concept | Cascada equivalent | Notes |
+|---|---|---|
+| `class Child extends Base` | `extends "base.script"` | File-level, not type-level. You render the child file. |
+| Constructor parameters | `extern` in base + `extends ... with ...` | Configured once per render, not per instantiation. |
+| Virtual / abstract method | `method` | Every override must re-declare the full signature. |
+| `super.method(args)` | `super(args)` | Bare `super()` reuses the original invocation's arguments. |
+| Instance state (`this.x`) | Not available | No shared mutable state between calls. Use `extern` for configuration that is copied once per render. |
+| Multiple inheritance | Not supported | A child script can extend only one base. |
+
+**The key difference: no instances.** `extern theme = "light"` in a base script is like a constructor parameter with a default. `extends "base.script" with theme` is like passing `{ theme }` to the parent constructor — but there are no objects. Rendering `child.script` runs the base script's top-level flow exactly once, with the child's method overrides active. There is no `this`, no per-object state, and `extends` is a file-level relationship between scripts, not a type-level one.
+
+### Loaders and File Resolution
+
+When you write:
+
+```cascada
+import "utils.script" as utils
+extends "base.script"
+```
+
+the environment resolves those file names through its configured **loader** or loaders.
+
+Loaders define:
+
+- where scripts are loaded from, such as the filesystem, a web server, a database, or a precompiled bundle
+- how relative paths are resolved
+- which source wins when multiple loaders are configured
+
+In practice:
+
+- `FileSystemLoader` loads scripts from disk
+- `WebLoader` loads scripts over HTTP in browser environments
+- `PrecompiledLoader` loads scripts that were precompiled ahead of time
+
+You can pass one loader or several loaders to `AsyncEnvironment`. If multiple loaders are configured, Cascada tries them in order until one finds the requested script.
+
+The detailed loader API is documented in [API Reference](#api-reference).
 
 ## Extending Cascada
 

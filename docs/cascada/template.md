@@ -50,10 +50,9 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 | **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}`                                                             |
 | **Block Assignment**     | *(not available in scripts)*                               | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
 | **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
-| **Block**                | `block name`<br>  `...`<br>`endblock`                      | `{% block name %}`<br>  `...`<br>`{% endblock %}`                            |
-| **Block with inputs**    | `block name with var1, var2`                               | `{% block name with var1, var2 %}`                                           |
-| **Include**              | `include "file"`                                           | `{% include "file" %}`                                                       |
-| **Include with inputs**  | `include "file" with context, var1, var2`                  | `{% include "file" with context, var1, var2 %}`                              |
+| **Inherited Override**   | `method name(arg1, arg2)`<br>  `...`<br>`endmethod`        | `{% block name(arg1, arg2) %}`<br>  `...`<br>`{% endblock %}`                |
+| **Include**              | *(not supported in scripts)*                               | `{% include "file" %}`                                                       |
+| **Include with inputs**  | *(not supported in scripts)*                               | `{% include "file" with context, var1, var2 %}`                              |
 | **Import namespace**     | `import "file" as lib`                                     | `{% import "file" as lib %}`                                                 |
 | **Import with inputs**   | `import "file" as lib with context, var1`                  | `{% import "file" as lib with context, var1 %}`                              |
 | **Import names**         | `from "file" import helper`                                | `{% from "file" import helper %}`                                            |
@@ -179,21 +178,54 @@ endcall
 {% endguard %}
 ```
 
-## Async Composition (`extern`, `with`, `block` contracts)
+## Async Composition (`extern`, `with`, inheritance contracts)
 
-The full composition model is documented in the [Cascada Script docs](https://geleto.github.io/cascada-script/#modular-scripts). The same rules apply to templates — only the syntax differs.
+The full composition model — `extern`, `with`, `with context`, `extends ... with ...`, resolution order, pass-through patterns — is documented in [Composition and Loading](https://geleto.github.io/cascada-script/#composition-and-loading) in the script docs. The same rules apply to templates; only the syntax differs.
 
-The `extern`/`with`/`with context` model is **async-only**. In non-async (classic Nunjucks) mode, included templates retain implicit access to all parent-scope variables, `extern` is rejected as a compile error, and `with` clauses on `include`/`import`/`block` are not available.
+**Template-specific notes:**
 
-### Key rules
+- `include` is supported in templates (it is not available in scripts). It follows the same isolation and `with` rules as `import`.
+- Template inheritance uses `{% block name(args) %}` / `{% endblock %}` where scripts use `method name(args)` / `endmethod`.
+- `extern`, `with` clauses, and the explicit-contract model are **async-only**. In classic Nunjucks (sync) mode, `extern` is a compile error and templates retain implicit access to all parent-scope variables.
 
-- `include`, `import`, and `from import` are **isolated**: they only see what is explicitly passed via `with`. Parent-scope `{% set %}` variables are not visible in the child.
-- `{% extern name %}` declares a required input; `{% extern name = default %}` declares an optional one with a fallback. `extern` is valid only at root scope and only in async templates — sync templates reject it.
-- `{% set context = ... %}` and `{% extern context %}` are compile errors in async mode — `context` is a reserved name.
-- `with context` exposes the **render context** (the object passed to the renderer) to bare-name lookups inside the child. It does **not** expose parent locals and does **not** create a `context` variable.
-- Named `with` inputs take priority over `with context` lookup.
-- The **base** template owns the `with` contract for each `block`. Overriding child blocks cannot add their own `with` clause.
-- `super()` sees the original inputs from the base block's `with` clause, not any locally reassigned values.
+### Inheritance Example
+
+```nunjucks
+{# base.njk #}
+{% extern theme = "light" %}
+{% block content(user) with context %}
+  Base {{ user }} / {{ siteName }} / {{ theme }}
+{% endblock %}
+```
+
+```nunjucks
+{# child.njk #}
+{% set theme = "dark" %}
+{% extends "base.njk" with theme %}
+
+{% block content(user) %}
+  {% set user = "Grace" %}
+  Child {{ user }} / {{ siteName }} / {{ super() }}
+{% endblock %}
+```
+
+Rendered with:
+
+```javascript
+{ user: "Ada", siteName: "Docs" }
+```
+
+Produces:
+
+```text
+Child Grace / Docs / Base Ada / Docs / dark
+```
+
+What this shows:
+
+- `super()` still sees the original block argument `user = "Ada"`, even though the child reassigned the local `user` to `"Grace"`.
+- `siteName` is visible inside both blocks because of `with context`, not because it is an explicit argument.
+- `theme` comes from the `extends ... with ...` composition boundary, not from block arguments or render context.
 
 ## Variable Scoping
 
@@ -203,7 +235,7 @@ The `extern`/`with`/`with context` model is **async-only**. In non-async (classi
 | `for` / `each` loop body | All iterations share one inner scope that is discarded after the loop | Each iteration has its own isolated scope |
 | `while` loop body | Uses the parent scope directly — `{% set %}` inside writes to the outer scope | Each iteration has its own isolated scope |
 | `include` | Child sees all parent `{% set %}` variables | Isolated — child sees only explicit `with` inputs |
-| `block` inputs | Not applicable | Declared by the base template's `with` clause; available as locals inside the block |
+| `block` inputs | Not applicable | Declared by the block signature, e.g. `{% block content(user) %}`; available as locals inside the block |
 | Child top-level `{% set %}` | Visible in the child's blocks | Visible in the child's own blocks |
 
 The short version: in async mode every construct that can run concurrently gets its own scope, preventing race conditions between parallel iterations or branches.
