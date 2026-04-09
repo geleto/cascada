@@ -1305,13 +1305,13 @@ class CompilerAsync extends CompilerBaseAsync {
       blockLinkedChannels,
       ['blockPayload = null', 'blockRenderCtx = undefined']
     );
-    const payloadArgsVar = this._tmpid();
+    const payloadOriginalArgsVar = this._tmpid();
     const payloadLocalCapturesVar = this._tmpid();
-    this.emit.line(`const ${payloadArgsVar} = blockPayload && blockPayload.args ? blockPayload.args : {};`);
+    this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
     this.emit.line(`const ${payloadLocalCapturesVar} = blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate[${templateKey}] ? blockPayload.localsByTemplate[${templateKey}] : {};`);
     if (hasExplicitBlockContext) {
       const payloadContextVar = this._tmpid();
-      this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${block.withContext ? '(blockRenderCtx || {})' : '{}'}, ${payloadLocalCapturesVar}, ${payloadArgsVar});`);
+      this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${block.withContext ? '(blockRenderCtx || {})' : '{}'}, ${payloadLocalCapturesVar}, ${payloadOriginalArgsVar});`);
       this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);
       this.emit.line(`  context = context.forkForComposition(${templateKey}, ${payloadContextVar}, blockRenderCtx);`);
       this.emit.line('} else {');
@@ -1325,7 +1325,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this._emitAsyncBlockInputInitialization(block, {
       declaredBlockInputNames,
       localCaptureNames,
-      payloadArgsVar,
+      payloadOriginalArgsVar,
       payloadLocalCapturesVar
     });
     const previousCompilingBlock = this.currentCompilingBlock;
@@ -1494,13 +1494,13 @@ class CompilerAsync extends CompilerBaseAsync {
     ));
     const allLocalNamesVar = this._tmpid();
     const explicitBlockInputNamesVar = this._tmpid();
-    const blockPayloadArgsVar = options.payloadArgsVar || this._tmpid();
+    const blockPayloadOriginalArgsVar = options.payloadOriginalArgsVar || this._tmpid();
     const blockPayloadLocalsVar = options.payloadLocalCapturesVar || this._tmpid();
 
     this.emit.line(`const ${explicitBlockInputNamesVar} = ${JSON.stringify(declaredBlockInputNames)};`);
     this.emit.line(`const ${allLocalNamesVar} = ${JSON.stringify(staticLocalNames)};`);
-    if (!options.payloadArgsVar) {
-      this.emit.line(`const ${blockPayloadArgsVar} = blockPayload && blockPayload.args ? blockPayload.args : {};`);
+    if (!options.payloadOriginalArgsVar) {
+      this.emit.line(`const ${blockPayloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
     }
     if (!options.payloadLocalCapturesVar) {
       const templateKey = JSON.stringify(this.templateName == null ? '__anonymous__' : String(this.templateName));
@@ -1510,7 +1510,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`for (const name of ${allLocalNamesVar}) {`);
     const blockValueId = this._tmpid();
     this.emit.line(`  runtime.declareBufferChannel(${this.buffer.currentBuffer}, name, "var", context, null);`);
-    this.emit.line(`  const ${blockValueId} = ${explicitBlockInputNamesVar}.includes(name) ? ${blockPayloadArgsVar}[name] : ${blockPayloadLocalsVar}[name];`);
+      this.emit.line(`  const ${blockValueId} = ${explicitBlockInputNamesVar}.includes(name) ? ${blockPayloadOriginalArgsVar}[name] : ${blockPayloadLocalsVar}[name];`);
     this.emit.line(`  ${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
     this.emit.line('}');
     this.emit.line('}');

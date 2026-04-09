@@ -311,8 +311,7 @@ class Context extends Obj {
     const argValues = lib.extend({}, args || {});
     const templateKey = this._getInheritanceTemplateKey(templateName);
     const payload = {
-      args: argValues,
-      originalArgs: lib.extend({}, argValues),
+      originalArgs: argValues,
       localsByTemplate: Object.create(null)
     };
     if (localCaptures && typeof localCaptures === 'object') {
@@ -329,13 +328,12 @@ class Context extends Obj {
     if (!payload && !nextArgs) {
       return null;
     }
-    const sourceArgs = lib.extend({}, (payload && (payload.originalArgs || payload.args)) || {});
+    const sourceArgs = lib.extend({}, (payload && payload.originalArgs) || {});
     if (nextArgs && typeof nextArgs === 'object') {
       lib.extend(sourceArgs, nextArgs);
     }
     return {
-      args: sourceArgs,
-      originalArgs: lib.extend({}, sourceArgs),
+      originalArgs: sourceArgs,
       localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload && payload.localsByTemplate)
     };
   }
@@ -354,12 +352,10 @@ class Context extends Obj {
     }
     const basePayload = hasPayload
       ? {
-          args: lib.extend({}, payload.args || {}),
-          originalArgs: lib.extend({}, payload.originalArgs || payload.args || {}),
+          originalArgs: lib.extend({}, payload.originalArgs || {}),
           localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload.localsByTemplate)
         }
       : {
-          args: {},
           originalArgs: {},
           localsByTemplate: Object.create(null)
         };

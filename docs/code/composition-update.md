@@ -1023,9 +1023,7 @@ Changes:
 
 -   commit to one structured inheritance payload shape instead of a flat `blockContext` namespace; for example:
 
-    -   `args`: declared signature arguments for the current frame
-
-    -   `originalArgs`: the incoming arguments for that frame, preserved for bare `super()`
+    -   `originalArgs`: the current frame's explicit block or method arguments, preserved for bare `super()` and reused as the base for `super(...)`
 
     -   `localsByTemplate`: same-template local captures keyed by template path (or another explicit template identity)
 
@@ -1077,7 +1075,9 @@ Changes:
 
 -   after explicit inheritance payload transport lands, tighten ordinary cross-template channel lookup further if possible so template-crossing data access requires an explicit composition or inheritance payload rather than an ambient lookup path
 
--   once the remaining bridge-era composition fields are gone, consider extracting Context's shared structural/runtime state (`blocks`, export state, async-extends registration state, parent-keyed extends composition state) into a separate shared object reused by forks instead of manually sharing individual fields
+-   once the remaining bridge-era composition fields are gone, extract the extends/inheritance state currently mixed into `Context` into a dedicated shared composition/inheritance runtime object reused by forks instead of manually sharing individual fields
+    -   this shared object should own things like `blocks`, export/deferred-export state, async-extends registration state, parent-keyed extends composition state, and template-local inheritance captures
+    -   `Context` should then keep only per-fork local state (`ctx`, `renderCtx`, `externCtx`, `path`, etc.) plus a reference to that shared object
 
 -   once Step D removes the remaining bridge-era inheritance lookup paths, consider extracting the parent-root handoff logic out of `_emitAsyncRootCompletion(...)` into a narrower runtime/context helper so the compiler no longer open-codes the extends parent-context setup and dispatch flow inline
 
@@ -1088,13 +1088,11 @@ What landed in the implementation:
 
 -   inheritance call sites now build one structured payload shape instead of a flat `blockContext`
 
-    -   `args`: the current frame's explicit block or method arguments
-
-    -   `originalArgs`: the preserved incoming arguments for bare `super()`
+    -   `originalArgs`: the preserved incoming arguments for the current frame, reused directly by bare `super()` and copied/overridden for `super(...)`
 
     -   `localsByTemplate`: explicit same-template local captures keyed by template identity
 
--   direct block invocation now uses `Context.createInheritancePayload(...)` plus `Context.prepareInheritancePayloadForBlock(...)` so the callee receives explicit args and same-template captures without reopening ambient buffer lookup
+-   direct block invocation now uses `Context.createInheritancePayload(...)` plus `Context.prepareInheritancePayloadForBlock(...)` so the callee receives explicit per-frame arguments and same-template captures without reopening ambient buffer lookup
 
 -   `super()` and `super(...)` now both use `Context.createSuperInheritancePayload(...)`, so parent-call payload construction is centralized instead of cloning and mutating a flat object inline
 

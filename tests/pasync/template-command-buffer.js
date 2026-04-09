@@ -189,7 +189,7 @@
 
       expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {');
       expect(source).to.contain('context.createInheritancePayload("block-input-vars.njk"');
-      expect(source).to.contain('blockPayload && blockPayload.args ? blockPayload.args : {}');
+      expect(source).to.contain('blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {}');
       expect(source).to.contain('blockPayload && blockPayload.localsByTemplate');
       expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
       expect(source).to.not.contain('context.getBlockContract("content")');
