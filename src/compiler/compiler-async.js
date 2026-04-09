@@ -1076,16 +1076,32 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _emitAsyncRootCompletion(node) {
+    const templateKey = JSON.stringify(this.templateName == null ? '__anonymous__' : String(this.templateName));
     this.emit.line('if (!compositionMode) {');
     this.emit.line('(async () => {');
     this._emitAsyncRootFinalParentLookup();
     this.emit.line('  if(finalParent) {');
+    const templateLocalCaptures = this._collectTemplateInheritanceCaptureNames(node);
+    if (templateLocalCaptures.length > 0) {
+      const templateLocalCapturesVar = this._tmpid();
+      this.emit.line(`    const ${templateLocalCapturesVar} = {};`);
+      templateLocalCaptures.forEach((name) => {
+        const helperName = this.scriptMode
+          ? 'captureCompositionScriptValue'
+          : 'captureCompositionValue';
+        this.emit(`    ${templateLocalCapturesVar}[${JSON.stringify(name)}] = runtime.${helperName}(context, ${JSON.stringify(name)}, ${this.buffer.currentBuffer}`);
+        if (this.scriptMode) {
+          this.emit(`, { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }`);
+        }
+        this.emit.line(');');
+      });
+      this.emit.line(`    context.setTemplateLocalCaptures(${templateKey}, ${templateLocalCapturesVar});`);
+    }
     this.emit.line('    const extendsComposition = context.getExtendsComposition(finalParent);');
     this.emit.line('    const parentContext = extendsComposition');
     this.emit.line('      ? context.forkForComposition(finalParent.path, extendsComposition.rootContext, context.getRenderContextVariables(), extendsComposition.externContext)');
     this.emit.line('      : context.forkForPath(finalParent.path);');
     this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line(`    context.setCompositionSourceBuffer(${JSON.stringify(this.templateName)}, ${this.buffer.currentBuffer});`);
     this.emit.line('    finalParent.rootRenderFunc(env, parentContext, runtime, cb, compositionMode);');
     this.emit.line('  } else {');
 
@@ -1251,7 +1267,6 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRootBody(node) {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
-    this.emit.line(`context.setCompositionSourceBuffer(${JSON.stringify(this.templateName)}, ${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
     }
@@ -1272,10 +1287,12 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncBlockEntry(block) {
     const name = block.name.value;
-    const rootOwner = this.analysis.getRootScopeOwner(block._analysis);
+    const templateKey = JSON.stringify(this.templateName == null ? '__anonymous__' : String(this.templateName));
+    const declaredBlockInputNames = this._getBlockInputNames(block);
+    const hasExplicitBlockContext = declaredBlockInputNames.length > 0 || !!block.withContext;
+    const localCaptureNames = this._getBlockLocalCaptureNames(block);
     const locallyInitializedNames = new Set(
-      this._collectRootCompositionLocalChannelNames(rootOwner.node)
-        .concat(this._getBlockInputNames(block))
+      localCaptureNames.concat(declaredBlockInputNames)
     );
     const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
       .filter((hname) =>
@@ -1286,17 +1303,31 @@ class CompilerAsync extends CompilerBaseAsync {
       block,
       `b_${name}`,
       blockLinkedChannels,
-      ['blockContext = null', 'blockRenderCtx = undefined']
+      ['blockPayload = null', 'blockRenderCtx = undefined']
     );
-    this.emit.line('if (blockContext !== null || blockRenderCtx !== undefined) {');
-    this.emit.line(`  context = context.forkForComposition(${JSON.stringify(this.templateName)}, blockContext || {}, blockRenderCtx);`);
-    this.emit.line('} else {');
-    this.emit.line(`  context = context.forkForPath(${JSON.stringify(this.templateName)});`);
-    this.emit.line('}');
+    const payloadArgsVar = this._tmpid();
+    const payloadLocalCapturesVar = this._tmpid();
+    this.emit.line(`const ${payloadArgsVar} = blockPayload && blockPayload.args ? blockPayload.args : {};`);
+    this.emit.line(`const ${payloadLocalCapturesVar} = blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate[${templateKey}] ? blockPayload.localsByTemplate[${templateKey}] : {};`);
+    if (hasExplicitBlockContext) {
+      const payloadContextVar = this._tmpid();
+      this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${block.withContext ? '(blockRenderCtx || {})' : '{}'}, ${payloadLocalCapturesVar}, ${payloadArgsVar});`);
+      this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);
+      this.emit.line(`  context = context.forkForComposition(${templateKey}, ${payloadContextVar}, blockRenderCtx);`);
+      this.emit.line('} else {');
+      this.emit.line(`  context = context.forkForPath(${templateKey});`);
+      this.emit.line('}');
+    } else {
+      this.emit.line(`context = context.forkForPath(${templateKey});`);
+    }
     this.emit.line(`${this.buffer.currentBuffer}._context = context;`);
     this.emit.line(`${this.buffer.currentTextChannelVar}._context = context;`);
-    this._emitInheritedBlockInputConflictValidation(block);
-    this._emitAsyncBlockInputInitialization(block);
+    this._emitAsyncBlockInputInitialization(block, {
+      declaredBlockInputNames,
+      localCaptureNames,
+      payloadArgsVar,
+      payloadLocalCapturesVar
+    });
     const previousCompilingBlock = this.currentCompilingBlock;
     this.currentCompilingBlock = block;
     try {
@@ -1332,6 +1363,57 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _getBlockInputNameNodes(block) {
     return this._getBlockSignature(block).nameNodes;
+  }
+
+  _getBlockLocalCaptureNames(block) {
+    const blockInputNames = new Set(this._getBlockInputNames(block));
+    const usedChannels = Array.from((block && block.body && block.body._analysis && block.body._analysis.usedChannels) || []);
+    const captureNames = [];
+    const seenCaptureNames = new Set();
+
+    usedChannels.forEach((name) => {
+      if (!name ||
+        name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL ||
+        name === RETURN_CHANNEL_NAME ||
+        name.indexOf('!') === 0 ||
+        blockInputNames.has(name) ||
+        seenCaptureNames.has(name)) {
+        return;
+      }
+
+      const declaration = this.analysis.findDeclaration(block.body._analysis, name);
+      if (!declaration || declaration.internal || declaration.blockInput || declaration.type !== 'var') {
+        return;
+      }
+
+      const declarationOwner = this.analysis.findDeclarationOwner(block.body._analysis, name);
+      if (declarationOwner === block._analysis || declarationOwner === block.body._analysis) {
+        return;
+      }
+
+      seenCaptureNames.add(name);
+      captureNames.push(name);
+    });
+
+    return captureNames;
+  }
+
+  _collectTemplateInheritanceCaptureNames(node) {
+    const captureNames = [];
+    const seenCaptureNames = new Set();
+    const blocks = node.findAll(nodes.Block);
+
+    blocks.forEach((block) => {
+      this._getBlockLocalCaptureNames(block).forEach((name) => {
+        if (seenCaptureNames.has(name)) {
+          return;
+        }
+        seenCaptureNames.add(name);
+        captureNames.push(name);
+      });
+    });
+
+    return captureNames;
   }
 
   _getBlockSignature(block) {
@@ -1399,64 +1481,36 @@ class CompilerAsync extends CompilerBaseAsync {
     return Array.from(conflictNames);
   }
 
-  // Temporary bridge for the explicit-signature migration.
-  // Step D deletes this emitted runtime check and relies on link/load-time
-  // compatibility validation instead.
-  _emitInheritedBlockInputConflictValidation(block) {
-    const conflictNames = Array.isArray(block._analysis.inheritedInputConflictNames)
-      ? block._analysis.inheritedInputConflictNames
-      : [];
-    if (conflictNames.length === 0) {
-      return;
-    }
-    const conflictVar = this._tmpid();
-    this.emit.line(`const ${conflictVar} = (context.getBlockContract(${JSON.stringify(block.name.value)})?.inputNames || []).find((name) => ${JSON.stringify(conflictNames)}.includes(name)) || null;`);
-    this.emit.line(`if (${conflictVar}) {`);
-    this.emit.line(`  throw new Error("block input '" + ${conflictVar} + "' conflicts with an explicit declaration in the overriding block");`);
-    this.emit.line('}');
-  }
-
-  // Temporary bridge while Step B/Step C coexist with the older inherited-input
-  // recovery model. Step D rewrites this around explicit payloads only and
-  // deletes the legacy non-signature path entirely.
-  _emitAsyncBlockInputInitialization(block) {
+  _emitAsyncBlockInputInitialization(block, options = {}) {
     const blockSignature = this._getBlockSignature(block);
-    const declaredBlockInputNames = blockSignature.inputNames;
-    const rootOwner = this.analysis.getRootScopeOwner(block._analysis);
-    const compositionLocalChannelNames = this._collectRootCompositionLocalChannelNames(rootOwner.node);
+    const declaredBlockInputNames = Array.isArray(options.declaredBlockInputNames)
+      ? options.declaredBlockInputNames
+      : blockSignature.inputNames;
+    const compositionLocalChannelNames = Array.isArray(options.localCaptureNames)
+      ? options.localCaptureNames
+      : this._getBlockLocalCaptureNames(block);
     const staticLocalNames = Array.from(new Set(
       compositionLocalChannelNames.concat(declaredBlockInputNames)
     ));
     const allLocalNamesVar = this._tmpid();
     const explicitBlockInputNamesVar = this._tmpid();
-    const runtimeBlockInputNamesVar = blockSignature.signatureDeclared ? null : this._tmpid();
+    const blockPayloadArgsVar = options.payloadArgsVar || this._tmpid();
+    const blockPayloadLocalsVar = options.payloadLocalCapturesVar || this._tmpid();
 
     this.emit.line(`const ${explicitBlockInputNamesVar} = ${JSON.stringify(declaredBlockInputNames)};`);
-    if (blockSignature.signatureDeclared) {
-      this.emit.line(`const ${allLocalNamesVar} = ${JSON.stringify(staticLocalNames)};`);
-    } else {
-      // Temporary legacy branch: remove completely once all inherited inputs use
-      // explicit signatures and payloads.
-      this.emit.line(`const ${runtimeBlockInputNamesVar} = context.getBlockContract(${JSON.stringify(block.name.value)})?.inputNames || [];`);
-      this.emit.line(`const ${allLocalNamesVar} = Array.from(new Set(${JSON.stringify(staticLocalNames)}.concat(${runtimeBlockInputNamesVar})));`);
+    this.emit.line(`const ${allLocalNamesVar} = ${JSON.stringify(staticLocalNames)};`);
+    if (!options.payloadArgsVar) {
+      this.emit.line(`const ${blockPayloadArgsVar} = blockPayload && blockPayload.args ? blockPayload.args : {};`);
     }
-    const compositionSourceBufferVar = this._tmpid();
-    // Bridge path for Step B only: Step D removes buffer-based inherited input recovery
-    // and replaces it with explicit invocation payloads.
-    this.emit.line(`const ${compositionSourceBufferVar} = context.getCompositionSourceBuffer(${JSON.stringify(this.templateName)});`);
+    if (!options.payloadLocalCapturesVar) {
+      const templateKey = JSON.stringify(this.templateName == null ? '__anonymous__' : String(this.templateName));
+      this.emit.line(`const ${blockPayloadLocalsVar} = blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate[${templateKey}] ? blockPayload.localsByTemplate[${templateKey}] : {};`);
+    }
     this.emit.line(`if (${allLocalNamesVar}.length > 0) {`);
     this.emit.line(`for (const name of ${allLocalNamesVar}) {`);
     const blockValueId = this._tmpid();
     this.emit.line(`  runtime.declareBufferChannel(${this.buffer.currentBuffer}, name, "var", context, null);`);
-    if (blockSignature.signatureDeclared) {
-      this.emit.line(`  const ${blockValueId} = ${explicitBlockInputNamesVar}.includes(name)`);
-      this.emit.line('    ? blockContext?.[name]');
-      this.emit.line(`    : (${compositionSourceBufferVar}?.findChannel(name)?.finalSnapshot() ?? parentBuffer?.findChannel(name)?.finalSnapshot());`);
-    } else {
-      this.emit.line(`  const ${blockValueId} = ${runtimeBlockInputNamesVar}.includes(name)`);
-      this.emit.line('    ? blockContext?.[name]');
-      this.emit.line(`    : (${compositionSourceBufferVar}?.findChannel(name)?.finalSnapshot() ?? parentBuffer?.findChannel(name)?.finalSnapshot());`);
-    }
+    this.emit.line(`  const ${blockValueId} = ${explicitBlockInputNamesVar}.includes(name) ? ${blockPayloadArgsVar}[name] : ${blockPayloadLocalsVar}[name];`);
     this.emit.line(`  ${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
     this.emit.line('}');
     this.emit.line('}');
@@ -1502,6 +1556,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`${blockName}: ${blockName},`);
     });
     this.emit.line(`blockContracts: ${JSON.stringify(this._collectBlockContracts(node))},`);
+    this.emit.line(`blockInheritedInputConflictNames: ${JSON.stringify(this._collectBlockInheritedInputConflictNames(node))},`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line('root: root\n};');
   }
@@ -1520,6 +1575,19 @@ class CompilerAsync extends CompilerBaseAsync {
     });
 
     return contracts;
+  }
+
+  _collectBlockInheritedInputConflictNames(node) {
+    const conflictNames = {};
+    const blocks = node.findAll(nodes.Block);
+
+    blocks.forEach((block) => {
+      conflictNames[block.name.value] = Array.isArray(block._analysis && block._analysis.inheritedInputConflictNames)
+        ? block._analysis.inheritedInputConflictNames
+        : [];
+    });
+
+    return conflictNames;
   }
 
   _getRootDeclarations(node) {
@@ -1543,15 +1611,6 @@ class CompilerAsync extends CompilerBaseAsync {
     }
 
     return declares;
-  }
-
-  _collectRootCompositionLocalChannelNames(node) {
-    const declaredChannels = node._analysis.declaredChannels
-      ? Array.from(node._analysis.declaredChannels.values())
-      : [];
-    return declaredChannels
-      .filter((decl) => decl && decl.type === 'var' && !decl.internal)
-      .map((decl) => decl.name);
   }
 
   _getRootTextOutput() {

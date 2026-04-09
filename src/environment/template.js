@@ -299,12 +299,15 @@ class Template extends Obj {
 
   _getBlocks(props) {
     var blocks = {};
+    const blockConflictNames = props.blockInheritedInputConflictNames || {};
 
     lib.keys(props).forEach((k) => {
       if (k.slice(0, 2) === 'b_') {
         const blockName = k.slice(2);
         blocks[blockName] = props[k];
         blocks[blockName].blockContract = this.blockContracts[blockName] || null;
+        blocks[blockName].templatePath = this.path == null ? '__anonymous__' : String(this.path);
+        blocks[blockName].inheritedInputConflictNames = blockConflictNames[blockName] || [];
       }
     });
 

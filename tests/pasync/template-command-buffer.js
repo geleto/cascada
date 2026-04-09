@@ -187,10 +187,13 @@
       const tmpl = new AsyncTemplate('{% block content with user %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {');
-      expect(source).to.contain('const t_');
-      expect(source).to.contain('= context.getBlockContract("content")?.inputNames || [];');
-      expect(source).to.contain('? blockContext?.[name]');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {');
+      expect(source).to.contain('context.createInheritancePayload("block-input-vars.njk"');
+      expect(source).to.contain('blockPayload && blockPayload.args ? blockPayload.args : {}');
+      expect(source).to.contain('blockPayload && blockPayload.localsByTemplate');
+      expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
+      expect(source).to.not.contain('context.getBlockContract("content")');
+      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
       expect(source).to.contain(`new runtime.VarCommand({ channelName: name, args: [`);
     });
 
@@ -206,11 +209,13 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {');
-      expect(source).to.contain('const t_');
-      expect(source).to.contain('= context.getBlockContract("content")?.inputNames || [];');
-      expect(source).to.contain('Array.from(new Set([].concat(');
-      expect(source).to.contain('? blockContext?.[name]');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {');
+      expect(source).to.contain('blockPayload && blockPayload.localsByTemplate');
+      expect(source).to.contain('context.forkForPath("child-inherited-block-inputs.njk")');
+      expect(source).to.contain('blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate["child-inherited-block-inputs.njk"]');
+      expect(source).to.not.contain('context.getBlockContract("content")');
+      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
+      expect(source).to.not.contain('findChannel(name)?.finalSnapshot()');
     });
 
     it('should keep async block/super compilation free of caller scheduling machinery', function () {
@@ -225,9 +230,12 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('blockContext = null');
+      expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('blockRenderCtx = undefined');
-      expect(source).to.not.contain('blockInputNames = null');
+      expect(source).to.contain('context.createSuperInheritancePayload(blockPayload)');
+      expect(source).to.not.contain('blockContext = null');
+      expect(source).to.not.contain('context.getBlockContract(');
+      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
       expect(source).to.contain('context.getAsyncSuper(');
       expect(source).to.not.contain('__caller__');
       expect(source).to.not.contain('__callerUsedChannels');

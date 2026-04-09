@@ -888,7 +888,7 @@ Changes:
 
 -   store per-parent root composition state in `Context` keyed by the resolved parent template/script object, so parent root extern resolution can use explicit root inputs and explicit render-context visibility without reopening ambient child scope or depending on path-string identity
 
--   make same-template root vars/externs available to that template's own blocks through an explicit root composition-source-buffer registration at root entry, instead of relying on later parent/child buffer discovery
+-   Step C may temporarily use a narrow helper to keep same-template root values available across inheritance, but that temporary transport should be replaced in Step D by explicit template-local capture payloads rather than by any long-lived composition-source-buffer path
 
 -   tighten ordinary cross-template channel lookup so a parent block cannot accidentally read a child block lane just because the buffers are linked for output ordering
 
@@ -922,6 +922,8 @@ What landed in the implementation:
 -   the runtime now fences bare-name channel lookup across template-path boundaries through an explicit temporary helper, so linked command buffers still preserve output ordering but no longer act as a cross-template ambient data transport while Step D removes the remaining ambient lookup paths
 
 -   the stored `extends ... with ...` composition payload is now keyed by the resolved parent template or script object, not only by its path string
+
+-   Step D has now removed the temporary composition-source-buffer inheritance bridge, so Step C's surviving runtime capture helpers are scoped only to explicit composition capture points such as `extends ... with ...`
 
 
 Ordering constraint:
@@ -1069,8 +1071,6 @@ Changes:
 
 -   explicitly delete `_emitInheritedBlockInputConflictValidation(...)` runtime checks once Step D lands, because Step B's `_validateBlockContractCompatibility(...)` already provides the correct link/load-time replacement
 
--   treat `Context.getBlockContract(...)` as bridge-era metadata access only; once block entry consumes explicit payloads, remove it from runtime behavior entirely
-
 -   centralize parent-call payload construction so normal parent invocation, bare `super()`, and `super(...)` all build the same explicit payload shape rather than each path cloning and mutating `blockContext`
 
 -   re-scope Step C's immediate-capture helpers (`captureCompositionValue(...)`, `captureCompositionScriptValue(...)`) as explicit composition-capture primitives, not general-purpose lookup; if they remain after Step D, document that narrower role clearly
@@ -1082,6 +1082,33 @@ Changes:
 -   once Step D removes the remaining bridge-era inheritance lookup paths, consider extracting the parent-root handoff logic out of `_emitAsyncRootCompletion(...)` into a narrower runtime/context helper so the compiler no longer open-codes the extends parent-context setup and dispatch flow inline
 
 -   once Step D settles the final explicit payload model, consider factoring the emitted `extends` setup in `compileAsyncExtends(...)` into a smaller helper that builds both root/extern context shapes together rather than open-coding the full sequence inline
+
+
+What landed in the implementation:
+
+-   inheritance call sites now build one structured payload shape instead of a flat `blockContext`
+
+    -   `args`: the current frame's explicit block or method arguments
+
+    -   `originalArgs`: the preserved incoming arguments for bare `super()`
+
+    -   `localsByTemplate`: explicit same-template local captures keyed by template identity
+
+-   direct block invocation now uses `Context.createInheritancePayload(...)` plus `Context.prepareInheritancePayloadForBlock(...)` so the callee receives explicit args and same-template captures without reopening ambient buffer lookup
+
+-   `super()` and `super(...)` now both use `Context.createSuperInheritancePayload(...)`, so parent-call payload construction is centralized instead of cloning and mutating a flat object inline
+
+-   root completion now stores per-template local captures through `Context.setTemplateLocalCaptures(...)` before parent root render begins, replacing the temporary composition-source-buffer handoff
+
+-   block entry now consumes `blockPayload` directly and initializes declared local async var channels from compile-time-known payload fields
+
+-   block entry no longer reads `context.getBlockContract(...)`, `context.getCompositionSourceBuffer(...)`, or `parentBuffer?.findChannel(name)?.finalSnapshot()` to reconstruct inheritance locals
+
+-   emitted `_emitInheritedBlockInputConflictValidation(...)` runtime checks are gone; link/load-time validation now happens through block metadata attached to compiled templates and checked in `Context.addBlock(...)`
+
+-   blocks with explicit signatures or `with context` still use `forkForComposition(...)` so explicit input visibility stays isolated, while plain blocks without an explicit contract keep `forkForPath(...)` and shadow only the names carried in the payload
+
+-   the now-unused runtime `Context.getBlockContract(...)` helper and the temporary composition-source-buffer storage/helpers have already been removed from the implementation
 
 
 Dependency:
@@ -1114,18 +1141,6 @@ Still-unimplemented tests to add here:
 
 -   integration test: three-level inheritance chain preserves per-frame original arguments correctly for bare `super()`
 
--   integration test: `with context` visibility remains separate from explicit block or method arguments
-
--   integration test: `without context` still opts out correctly under explicit argument payloads
-
--   compile-source test: generated block entry code no longer loops over runtime block-contract input names
-
--   compile-source test: generated block entry code no longer uses the output of `_collectRootCompositionLocalChannelNames(...)` to build a runtime recovery loop
-
--   compile-source/integration test: block entry no longer reads `context.getCompositionSourceBuffer(...)` for inheritance argument initialization
-
--   compile-source/integration test: block entry no longer reads `parentBuffer?.findChannel(name)?.finalSnapshot()` for inheritance argument initialization
-
 -   integration test: no runtime-dynamic channel declaration is needed for inheritance arguments
 
 -   integration test: same-template locals intentionally visible at a block invocation site are captured once and survive through the override chain without later buffer lookup
@@ -1135,8 +1150,6 @@ Still-unimplemented tests to add here:
 -   integration test: parent-template locals needed by `super()` continue to work after `compositionSourceBuffer` removal because they are forwarded explicitly, not rediscovered
 
 -   integration test: two invocations of the same block in parallel keep same-template local captures isolated per invocation after the explicit payload rewrite
-
--   compile-source/integration test: runtime `Context.getBlockContract(...)` is no longer used by block entry or conflict validation once the explicit payload rewrite is complete
 
 
 ### Step E. Delete remaining legacy composition and inheritance helpers
@@ -1163,12 +1176,6 @@ Changes:
 
 -   delete any remaining export fallback lookup
 
--   remove the emitted `context.setCompositionSourceBuffer(...)` call from async root/inheritance setup once no readers remain
-
--   remove `compositionSourceBuffersByTemplate` and related helpers once Step D leaves them unused
-
--   remove `getBlockContract(...)` only after its runtime input-discovery role is gone and any remaining metadata role has been replaced or made metadata-only
-
 -   simplify `Context.init(...)`, `forkForPath(...)`, and `forkForComposition(...)` once composition source-buffer state is gone
 
 -   simplify async-extends registration state (`beginAsyncExtendsBlockRegistration(...)` / `finishAsyncExtendsBlockRegistration(...)`) once the shared composition/inheritance state has a better home than `Context` itself
@@ -1182,10 +1189,6 @@ Changes:
     -   legacy block `withVars` parsing/compilation paths
 
     -   emitted block-entry loops over runtime-discovered inherited input names
-
-    -   `context.getCompositionSourceBuffer(...)` / `setCompositionSourceBuffer(...)`
-
-    -   `parentBuffer?.findChannel(name)?.finalSnapshot()` inheritance-input recovery
 
     -   `context.linkDeferredExportsToBuffer(...)`
 

@@ -28,8 +28,8 @@ class Context extends Obj {
     this.blocks = {};
     this.exportResolveFunctions = Object.create(null);
     this.exportChannels = Object.create(null);
-    this.compositionSourceBuffersByTemplate = Object.create(null);
     this.extendsCompositionByParent = new WeakMap();
+    this.inheritanceLocalCapturesByTemplate = Object.create(null);
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -88,6 +88,7 @@ class Context extends Obj {
     this.blocks[name] = this.blocks[name] || [];
     if (this.blocks[name].length > 0) {
       this._validateBlockContractCompatibility(name, this.blocks[name][this.blocks[name].length - 1], block);
+      this._validateInheritedInputConflicts(name, this.blocks[name][this.blocks[name].length - 1], block);
     }
     this.blocks[name].push(block);
     return this;
@@ -127,6 +128,23 @@ class Context extends Obj {
     );
   }
 
+  _validateInheritedInputConflicts(name, overridingBlock, parentBlock) {
+    const parentContract = parentBlock && parentBlock.blockContract;
+    const conflictNames = overridingBlock && Array.isArray(overridingBlock.inheritedInputConflictNames)
+      ? overridingBlock.inheritedInputConflictNames
+      : [];
+    if (!parentContract || conflictNames.length === 0) {
+      return;
+    }
+    const conflictingName = (parentContract.inputNames || []).find((inputName) => conflictNames.includes(inputName));
+    if (!conflictingName) {
+      return;
+    }
+    throw new lib.TemplateError(
+      `block input '${conflictingName}' conflicts with an explicit declaration in the overriding block`
+    );
+  }
+
   getBlock(name) {
     if (!this.blocks[name]) {
       throw new Error('unknown block "' + name + '"');
@@ -135,30 +153,18 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
-  // Temporary bridge for the explicit-signature migration.
-  // Step D removes runtime block-entry dependence on this metadata, and Step E
-  // can remove the helper entirely once no runtime readers remain.
-  getBlockContract(name) {
-    const blocks = this.blocks[name] || [];
-    for (let i = blocks.length - 1; i >= 0; i--) {
-      const block = blocks[i];
-      if (block && block.blockContract) {
-        return block.blockContract;
-      }
-    }
-    return null;
-  }
-
   beginAsyncExtendsBlockRegistration() {
-    if (this.asyncExtendsBlocksPromise) {
-      throw new Error('Async extends block registration is already in progress for this context');
+    if (!this.asyncExtendsBlocksPromise) {
+      this.asyncExtendsBlocksPendingCount = 0;
+      this.asyncExtendsBlocksPromise = new Promise((resolve) => {
+        this.asyncExtendsBlocksResolver = resolve;
+      }).then(() => {
+        delete this.asyncExtendsBlocksPromise;
+        delete this.asyncExtendsBlocksResolver;
+        delete this.asyncExtendsBlocksPendingCount;
+      });
     }
-    this.asyncExtendsBlocksPromise = new Promise((resolve) => {
-      this.asyncExtendsBlocksResolver = resolve;
-    }).then(() => {
-      delete this.asyncExtendsBlocksPromise;
-      delete this.asyncExtendsBlocksResolver;
-    });
+    this.asyncExtendsBlocksPendingCount = (this.asyncExtendsBlocksPendingCount || 0) + 1;
   }
 
   async getAsyncBlock(name) {
@@ -169,12 +175,18 @@ class Context extends Obj {
   }
 
   async finishAsyncExtendsBlockRegistration() {
-    if (this.asyncExtendsBlocksResolver) {
+    if (!this.asyncExtendsBlocksResolver) {
+      return;
+    }
+    if (this.asyncExtendsBlocksPendingCount > 0) {
+      this.asyncExtendsBlocksPendingCount -= 1;
+    }
+    if (this.asyncExtendsBlocksPendingCount === 0) {
       this.asyncExtendsBlocksResolver();
     }
   }
 
-  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockContext = null, blockRenderCtx = undefined) {
+  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
@@ -183,7 +195,7 @@ class Context extends Obj {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    return blk(env, context, runtime, cb, parentBuffer, blockContext, blockRenderCtx);
+    return blk(env, context, runtime, cb, parentBuffer, context.prepareInheritancePayloadForBlock(blk, blockPayload), blockRenderCtx);
   }
 
   getSyncSuper(env, name, block, frame, runtime, cb) {
@@ -249,26 +261,8 @@ class Context extends Obj {
     return exported;
   }
 
-  // Temporary bridge helper for Step D migration.
-  // This exists only for the remaining composition-source-buffer path and
-  // should disappear when that bridge is removed.
-  _getCompositionTemplateKey(templateName) {
+  _getInheritanceTemplateKey(templateName) {
     return templateName == null ? '__anonymous__' : String(templateName);
-  }
-
-  // Temporary bridge for Step D migration.
-  // Remove this once inheritance payloads stop rediscovering same-template
-  // locals through composition source buffers.
-  setCompositionSourceBuffer(templateName, sourceBuffer) {
-    const key = this._getCompositionTemplateKey(templateName);
-    this.compositionSourceBuffersByTemplate[key] = sourceBuffer || null;
-  }
-
-  // Temporary bridge for Step D migration.
-  // Remove this together with the remaining buffer-based local recovery path.
-  getCompositionSourceBuffer(templateName) {
-    const key = this._getCompositionTemplateKey(templateName);
-    return this.compositionSourceBuffersByTemplate[key] || null;
   }
 
   setExtendsComposition(templateObject, rootContext, externContext) {
@@ -290,6 +284,95 @@ class Context extends Obj {
     return this.extendsCompositionByParent.get(templateObject) || null;
   }
 
+  setTemplateLocalCaptures(templateName, captures) {
+    const key = this._getInheritanceTemplateKey(templateName);
+    this.inheritanceLocalCapturesByTemplate[key] = lib.extend({}, captures || {});
+  }
+
+  getTemplateLocalCaptures(templateName) {
+    const key = this._getInheritanceTemplateKey(templateName);
+    return this.inheritanceLocalCapturesByTemplate[key] || null;
+  }
+
+  _cloneInheritanceLocalsByTemplate(localsByTemplate) {
+    const cloned = Object.create(null);
+    if (!localsByTemplate || typeof localsByTemplate !== 'object') {
+      return cloned;
+    }
+    const templateNames = Object.keys(localsByTemplate);
+    for (let i = 0; i < templateNames.length; i++) {
+      const templateName = templateNames[i];
+      cloned[templateName] = lib.extend({}, localsByTemplate[templateName] || {});
+    }
+    return cloned;
+  }
+
+  createInheritancePayload(templateName, args, localCaptures) {
+    const argValues = lib.extend({}, args || {});
+    const templateKey = this._getInheritanceTemplateKey(templateName);
+    const payload = {
+      args: argValues,
+      originalArgs: lib.extend({}, argValues),
+      localsByTemplate: Object.create(null)
+    };
+    if (localCaptures && typeof localCaptures === 'object') {
+      const localValues = lib.extend({}, localCaptures);
+      if (Object.keys(localValues).length > 0) {
+        payload.localsByTemplate[templateKey] = localValues;
+      }
+    }
+    return payload;
+  }
+
+  createSuperInheritancePayload(currentPayload, nextArgs = null) {
+    const payload = currentPayload && typeof currentPayload === 'object' ? currentPayload : null;
+    if (!payload && !nextArgs) {
+      return null;
+    }
+    const sourceArgs = lib.extend({}, (payload && (payload.originalArgs || payload.args)) || {});
+    if (nextArgs && typeof nextArgs === 'object') {
+      lib.extend(sourceArgs, nextArgs);
+    }
+    return {
+      args: sourceArgs,
+      originalArgs: lib.extend({}, sourceArgs),
+      localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload && payload.localsByTemplate)
+    };
+  }
+
+  prepareInheritancePayloadForBlock(block, payload) {
+    const templatePath = this._getInheritanceTemplateKey(
+      block && Object.prototype.hasOwnProperty.call(block, 'templatePath') ? block.templatePath : this.path
+    );
+    const storedLocals = this.getTemplateLocalCaptures(templatePath);
+    const hasPayload = !!(payload && typeof payload === 'object');
+    if (!hasPayload && !storedLocals) {
+      return null;
+    }
+    if (hasPayload && !storedLocals) {
+      return payload;
+    }
+    const basePayload = hasPayload
+      ? {
+          args: lib.extend({}, payload.args || {}),
+          originalArgs: lib.extend({}, payload.originalArgs || payload.args || {}),
+          localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload.localsByTemplate)
+        }
+      : {
+          args: {},
+          originalArgs: {},
+          localsByTemplate: Object.create(null)
+        };
+    if (storedLocals) {
+      basePayload.localsByTemplate[templatePath] = lib.extend(
+        {},
+        storedLocals,
+        basePayload.localsByTemplate[templatePath] || {}
+      );
+    }
+    return basePayload;
+  }
+
   // Temporary bridge until shared composition/inheritance runtime state moves
   // into its own reusable object. At that point forks should share that object
   // directly instead of copying this field list manually.
@@ -297,10 +380,11 @@ class Context extends Obj {
     newContext.blocks = this.blocks;
     newContext.exportResolveFunctions = this.exportResolveFunctions;
     newContext.exportChannels = this.exportChannels;
-    newContext.compositionSourceBuffersByTemplate = this.compositionSourceBuffersByTemplate;
     newContext.extendsCompositionByParent = this.extendsCompositionByParent;
+    newContext.inheritanceLocalCapturesByTemplate = this.inheritanceLocalCapturesByTemplate;
     newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
     newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
+    newContext.asyncExtendsBlocksPendingCount = this.asyncExtendsBlocksPendingCount;
     return newContext;
   }
 
