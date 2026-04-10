@@ -2,14 +2,12 @@
 
 ## Overview
 
-This document describes the next-generation `extends`/composition architecture for Cascada. The central insight is that every Cascada script (and template) is implicitly a **class**:
+This document describes the next-generation `extends`/composition architecture for Cascada. The model treats every script and template as a **class**:
 
-- Code outside of methods is a **constructor**.
-- `extends` is **inheritance**, triggering constructor chaining.
-- `shared` channels are **instance variables** shared across the hierarchy.
-- `import "X" as ns with { ... }` is `new X({ ... })` — each import creates an independent instance.
-
-This model supports the **Template Method Pattern** (ancestor drives orchestration, descendants override steps), the **Strategy Pattern** (caller drives an imported stateful namespace), and **full OOP-style composition** with shared mutable state across the inheritance hierarchy.
+- Code outside methods/blocks is a **constructor**.
+- `extends` chains constructors the same way `super()` chains class constructors in JS.
+- `shared` channels are **instance variables** visible across the entire hierarchy.
+- `import "X.script" as ns with { ... }` is `new X({ ... })` — each import is an independent instance.
 
 ---
 
@@ -20,24 +18,21 @@ This model supports the **Template Method Pattern** (ancestor drives orchestrati
 | Class definition | Any `.script` or `.njk` file |
 | Constructor | Code outside methods/blocks |
 | Method | `method name(args)` (script) or `block name` (template) |
-| `super()` | `super()` call inside a method |
+| Overriding a method | Declaring the same method name in a descendant |
+| `super()` | `super()` inside a method, calls the next ancestor's version |
 | Inheritance | `extends "parent.script"` |
-| Instance variable | `shared var x`, `shared data d`, etc. |
+| Instance variable | `shared var x`, `shared text t`, `shared data d`, `shared sequence s` |
 | `new X({ ... })` | `import "X.script" as ns with { ... }` |
-| `this` | The namespace object `ns` |
+| `this` / `self` | The namespace object `ns` |
 | Independent instances | Multiple `import ... as ns1`, `import ... as ns2` |
 
 ---
 
 ## The `shared` Keyword
 
-### What It Is
+`shared` declares an instance variable that is visible across the entire inheritance hierarchy. Any level that declares `shared x` with the same name refers to the same channel.
 
-`shared` declares an instance variable that is visible across the entire inheritance hierarchy. Any ancestor or descendant that declares `shared x` with the same name refers to the same channel in the root buffer.
-
-### Supported Channel Types
-
-Any channel type may be marked `shared`:
+All channel types are supported:
 
 ```
 shared var theme = "dark"
@@ -46,81 +41,80 @@ shared data state
 shared sequence db
 ```
 
-This means `shared` is not limited to variables — text buffers, data accumulators, and sequence paths can all be shared across the hierarchy.
+### Semantics
 
-### Semantics: Initialize-If-Not-Set
+`shared x = default` is an **initialize-if-not-set** declaration: the value is written only if the channel has not already received a value. A `shared` channel set by a `with { }` argument or by a descendant's pre-extends code will not be overwritten by an ancestor's `shared x = default`.
 
-`shared x = default` is an **initialize-if-not-set** declaration. The assignment only takes effect if the channel has not already been set. Because the most-derived child (C) runs its pre-extends code first, C's assignment wins over B's, which wins over A's. A `with` value beats all.
+`shared x` without an assignment declares participation in the channel without providing a default.
 
-Declaration without assignment (`shared var theme`) means: "I will read/write this channel, but I am not providing a default here."
+A regular unconditional assignment (`x = newValue`) in any constructor code overwrites whatever is currently in the channel, regardless of whether it was set earlier.
 
-### Why Not `extern`
+### `shared` vs `extern`
 
-`extern` is retained for non-extends composition — it means "required input from a caller via the `with { }` block." `shared` means "instance state shared across the hierarchy." These are distinct concepts and deserve distinct keywords.
+`extern` is retained for non-extends composition. It means "required input from a caller's `with { }` block." `shared` means "instance state jointly owned by the hierarchy." They are distinct concepts with distinct keywords.
 
 ---
 
-## Constructor Chaining Execution Model
+## Constructor Chaining
 
-### Mental Model: `super()` at the `extends` Keyword
-
-The `extends` line is the equivalent of a `super()` call. Code before `extends` is pre-super initialization; code after is post-super initialization.
+The `extends` keyword is the equivalent of a `super()` call. Code before `extends` in a file is that level's pre-super initialization; code after `extends` in the same file is its post-super code.
 
 ```
-// C.script
-shared var theme = "dark"   // C's default (pre-super)
+// C.script (most-derived child)
+shared var theme = "dark"    // C's default — initialize-if-not-set; runs first
 shared var count = 0
+extends "B.script"           // ← constructor chain; C waits here for B and A to finish
+count = count + 1            // C's post-super code — runs after B and A complete
 
-extends "B.script" {        // ← this IS the super() call
-    // B runs here
-}
+// B.script (intermediate)
+shared var count = 0         // lower priority — only applies if C didn't set count
+extends "A.script"
+// B's post-super code here
 
-count = count + 1           // C's post-super code
+// A.script (root ancestor — no extends)
+method buildHeader()
+  text "Default header"
+endmethod
+buildHeader()                // A drives its own orchestration
 ```
 
-### Nested Execution Order
+### Execution Order
 
-Given a three-level hierarchy `C extends B extends A`:
+The hierarchy `C extends B extends A` produces this conceptual nesting at runtime:
 
 ```
-C pre-extends code          (in C's root buffer)
-  extends B {               (async boundary, child buffer of C's root)
-    B pre-extends code
-      extends A {           (async boundary, child buffer of B's buffer)
-        A's full body       (innermost — A drives its own orchestration)
-      }
-    B post-extends code
-  }
-C post-extends code
+C pre-extends code           (C's root buffer)
+  B pre-extends code         (child buffer of C's root)
+    A's full body            (child buffer of B's buffer)
+  B post-extends code        (B's buffer)
+C post-extends code          (C's root buffer)
 ```
 
-The nesting is important: each ancestor's constructor runs **inside** a nested async boundary created by the descendant below it. This is not a sequential hand-off — it is the same nested-child-buffer model used by `if`, `for`, and `macro` blocks.
+Each ancestor runs inside a nested async boundary created by the descendant below it — the same child-buffer model used by `if`, `for`, and `macro` blocks. This is not a sequential hand-off.
 
-### Who Drives the Flow
-
-Each level drives its own flow independently. The root ancestor (A) runs its full constructor logic. B has a before and after slot around A's execution. C has before and after slots around B+A's execution. There is no single "driver" — each ancestor is its own execution unit.
+Each level independently drives its own code. A drives its own orchestration. B drives its own pre- and post-extends logic. C drives its own. The `extends` line is the synchronization point where a level waits for all inner ancestors to finish before continuing.
 
 ---
 
 ## Buffer Structure
 
-C's buffer is the **root buffer**. B and A execute inside nested child buffers. This is the reverse of what intuition might suggest.
+C's buffer is the **root buffer**. B and A execute inside nested child buffers.
 
 ```
-C's root buffer           ← shared channels live here
-  └── extends-B boundary buffer   (child of C's root)
-        └── extends-A boundary buffer  (child of B's buffer)
+C's root buffer                        ← shared channels registered here
+  └── extends-B child buffer
+        └── extends-A child buffer
               └── A's constructor commands
-                  └── (A's own async blocks, if any)
+                    └── (A's own async child buffers, if any)
 ```
 
 ### Why C's Buffer Is the Root
 
-`findChannel` traverses upward through the parent chain. Because A's buffer is a grandchild of C's root, A can resolve `shared var theme` by walking up through B's buffer and into C's root. No special routing or aliasing is needed. The natural upward traversal delivers shared state automatically.
+`findChannel` traverses up the parent chain. Because A's buffer is a grandchild of C's root, any `shared x` access in A walks up through B's buffer and finds the channel in C's root. No special routing or aliasing is needed — the natural upward traversal delivers shared state automatically.
 
-### Channel Ownership
+### Channel Registration
 
-Shared channels are **registered in C's root buffer** (the most-derived child's buffer). B and A declare `shared x` too, but since their buffers are children of C's root, `findChannel` resolves their reads and writes to C's root buffer's channel — the same physical channel. All writes to `shared x` from any level of the hierarchy land in the same place.
+`shared x` is declared in each file independently. At runtime, when the hierarchy is assembled by the most-derived child's instantiation, C's root buffer owns the physical channel. B's and A's `findChannel` calls for `x` traverse upward and resolve to that same channel. All writes from any level land in the same place.
 
 ---
 
@@ -128,13 +122,11 @@ Shared channels are **registered in C's root buffer** (the most-derived child's 
 
 ### Hoisting
 
-Before any constructor code runs, **all methods are registered** across the entire hierarchy. This happens bottom-up: C's methods are registered first, then B's (as fallbacks for any methods C did not define), then A's (as fallbacks for anything B did not cover). The result is that when A's constructor runs, it sees the complete, fully-overridden method table.
+All methods across the entire hierarchy are registered **before any constructor code runs**. Registration is bottom-up: C's methods first (highest priority), then B's (for any names C did not define), then A's. Position within a file does not matter — a method declared at the bottom of C.script is visible to C's pre-extends code at the top.
 
-Order within a single file does not matter. A method declared at the bottom of C.script is visible to C's pre-extends code at the top.
+### Dynamic Dispatch
 
-### Dynamic Dispatch (JS Semantics)
-
-Method calls use **JS-style dynamic dispatch**: calling a method by name always invokes the most-derived override, regardless of which ancestor makes the call.
+Method calls use **JS-style dynamic dispatch**: the most-derived override is always invoked, regardless of which ancestor issues the call.
 
 ```
 // A.script
@@ -142,187 +134,205 @@ method buildHeader()
   text "Default header"
 endmethod
 
-// A's constructor calls buildHeader
-buildHeader()           // ← calls C's override, not A's
+// In A's constructor:
+buildHeader()    // dispatches to C's override, not A's own definition
 ```
 
-This is the same as `this.buildHeader()` in a JS constructor — the child's override is called even from the parent constructor.
+This matches JS class constructor semantics: calling a method from the parent constructor always reaches the child's override.
 
-### Safety Rule for JS Dispatch
+### Safety Rule
 
-This creates a known risk: if A's constructor calls `buildHeader()` and C's override of `buildHeader` reads `shared var title` that C sets in its **post-extends** code, `title` is not yet set when A's constructor runs. The safety rule:
+If A's constructor calls a method and the child's override reads a `shared` variable that the child only sets in its **post-extends** code, that variable is not yet set when A runs. The rule:
 
-> Methods called from an ancestor's constructor should only read `shared` variables that are set in a descendant's **pre-extends** code or supplied via `with { }`.
+> Methods called from an ancestor's constructor should only read `shared` variables initialized in a descendant's pre-extends code or supplied via `with { }`.
 
-This rule is a documentation/design contract, not a compile-time enforcement. It mirrors the same risk in JS class constructors.
-
----
-
-## Instantiation: `import ... as ns with { ... }`
-
-### Syntax
-
-```
-import "Component.script" as ns with { theme: "dark", label: "OK" }
-```
-
-This creates a **new independent instance** of `Component.script` and its entire ancestry chain. Each `import ... as ns` call creates its own root buffer, its own shared channels, and its own method table. Multiple imports create multiple independent instances.
-
-### `with { }` Values
-
-`with` values are pre-loaded into the root buffer **before any constructor code runs**. They have the highest initialization priority and cannot be overridden by `shared x = default` declarations. This is the equivalent of passing constructor arguments.
-
-### The Namespace Object
-
-`ns` is the namespace object returned by the import. It exposes:
-
-- All methods declared across the hierarchy (most-derived wins)
-- All `shared` channels readable as properties
-- Callable as `ns.methodName(args)` — invokes the method with `ns`'s buffer as execution context
-
-### Multiple Instances
-
-```
-import "Button.script" as okBtn with { label: "OK" }
-import "Button.script" as cancelBtn with { label: "Cancel" }
-```
-
-`okBtn` and `cancelBtn` are completely independent instances with no shared state. Each has its own root buffer, its own `shared` channels, its own method dispatch table.
-
----
-
-## Initialization Priority
-
-From highest to lowest priority:
-
-1. **`with { }` values** — pre-loaded before any constructor runs; always wins
-2. **Most-derived child's pre-extends assignments** — C runs first; its `shared x = v` sets x if `with` did not
-3. **Intermediate ancestors' pre-extends assignments** — B runs next; sets x if C and `with` did not
-4. **Root ancestor's assignments** — A runs last; sets x if no one above did
-5. **`shared x = default` at any level** — initialize-if-not-set; first writer wins (C beats B beats A)
-
-This ordering is a natural consequence of the constructor chaining execution order: C runs before B, which runs before A.
+This is a design contract, not a compile-time enforcement — the same implicit constraint present in JS class constructors.
 
 ---
 
 ## `super()` Inside Methods
 
-When a child overrides a method, it can call `super()` to invoke the parent's version:
+`super()` inside a method calls the next ancestor in the chain that defines the same method name. If B overrides a method and C overrides it too, C's `super()` calls B's version, and B's `super()` calls A's.
 
 ```
 // C.script
 method buildHeader()
   text "<strong>"
-  super()             // calls B's buildHeader, or A's if B didn't override
+  super()       // calls B's buildHeader
   text "</strong>"
+endmethod
+
+// B.script
+method buildHeader()
+  text "<em>"
+  super()       // calls A's buildHeader
+  text "</em>"
+endmethod
+
+// A.script
+method buildHeader()
+  text "Title"
 endmethod
 ```
 
-`super()` is a static call resolved at compile time to the next ancestor in the chain that defines the same method name.
+`super()` is resolved at compile time to the next ancestor that defines the same method name.
 
 ---
 
-## Template/Script Unification
+## Instantiation: `import ... as ns with { ... }`
+
+```
+import "Component.script" as ns with { theme: "dark", label: "OK" }
+```
+
+This creates an independent instance of `Component.script` and its entire ancestry. Each `import ... as ns` produces its own root buffer, its own `shared` channels, and its own method table.
+
+### `with { }` Values
+
+`with` values are pre-loaded into the root buffer **before any constructor code runs**. They cannot be overridden by any `shared x = default` declaration anywhere in the hierarchy.
+
+### The Namespace Object
+
+`ns` exposes:
+
+- All methods from the hierarchy (most-derived wins)
+- All `shared` channels as readable properties
+- Method calls as `ns.methodName(args)`, executing with `ns`'s root buffer as the command target
+
+### Multiple Instances
+
+```
+import "Button.script" as okBtn     with { label: "OK" }
+import "Button.script" as cancelBtn with { label: "Cancel" }
+```
+
+`okBtn` and `cancelBtn` are completely independent — separate root buffers, separate `shared` channel state, no cross-instance coupling.
+
+---
+
+## Initialization Priority
+
+1. **`with { }` values** — pre-loaded before any constructor runs; cannot be overridden.
+2. **`shared x = default` declarations** — initialize-if-not-set; whichever constructor level runs first wins. C's pre-extends code runs before B's, which runs before A's, so the most-derived child's default takes precedence over ancestor defaults.
+
+Unconditional assignments in post-extends code run after the ancestor chain completes and overwrite whatever was set during construction — they are not subject to the initialize-if-not-set rule.
+
+---
+
+## Template Composition
 
 The same model applies to Nunjucks-style templates:
 
-- Template body = constructor
-- `block` definitions = methods
-- `extends "parent.njk"` = same constructor-chaining `extends`
-- `{{ caller() }}` = method body invocation from macro caller
-- `shared` channels work identically
+- Template body code = constructor
+- `{% block name %}` definitions = methods (overridable per hierarchy level)
+- `{% extends "parent.njk" %}` = constructor-chaining extends
 
-For templates, code before `{% extends %}` is pre-super code; code after (if any) is post-super code. This is unusual but consistent with the model.
+`shared` channels work identically in templates. Code before `{% extends %}` in a child template is pre-extends initialization; code after it is post-extends code.
 
 ---
 
-## Relationship to `caller()` Architecture
+## End-to-End Example
 
-The `caller()` mechanism (documented in `caller.md`) uses a three-level buffer structure with `__caller__<id>` coordination channels because the caller body can produce observable commands that must be structurally attached before the macro's composition boundary finishes.
+```
+// Base.script (A — root ancestor)
+shared var theme = "light"    // lowest-priority default
 
-Namespace method calls via `ns.method()` do **not** need this mechanism. When a `SequenceCallCommand` fires from the caller's buffer, the child buffer for that method invocation is registered synchronously. There is no late-attachment problem because the child buffer registration happens at the moment the command is applied, not asynchronously afterward.
+method renderTitle()
+  text "Default Title"
+endmethod
 
-The `caller()` problem is about template-rendering boundaries. Method calls are function-call boundaries. These are fundamentally different and the `__caller__<id>` machinery is not needed for method dispatch.
+renderTitle()                 // calls most-derived override due to dynamic dispatch
+text " — theme: " + theme
+
+// Middle.script (B)
+extends "Base.script"
+// no overrides, no pre/post code here
+
+// Top.script (C — most-derived)
+shared var theme = "dark"     // wins over Base's default
+
+method renderTitle()
+  text "Custom Title"
+endmethod
+
+extends "Middle.script"
+
+// Instantiation
+import "Top.script" as comp with { theme: "brand" }
+comp.renderTitle()
+```
+
+Execution: `theme` is pre-loaded as `"brand"` from `with { }`. C's `shared var theme = "dark"` is a no-op (already set). B has no pre-extends code. A's `shared var theme = "light"` is also a no-op. A's constructor calls `renderTitle()` — dynamic dispatch reaches C's override — outputs `"Custom Title"`. Then appends `" — theme: brand"`.
 
 ---
 
-## Static Analysis Considerations
+## Static Analysis
 
-### `shared` Channel Ownership
+### `shared` Channels
 
-The analysis pass must determine that `shared x` declared in multiple files across the hierarchy refers to the same logical channel. The analysis for a complete `extends` chain must:
+Each file is compiled independently, without knowledge of which descendants will extend it. At compile time, `shared x` in any file is compiled as "access channel `x` via upward `findChannel` traversal." The physical channel registration in C's root buffer is a **runtime step** that happens when the hierarchy is instantiated.
 
-1. Collect all `shared` declarations from all ancestors.
-2. Resolve name conflicts: same name = same channel.
-3. Register the channel in the root buffer (most-derived child's buffer).
-4. Route all reads and writes through `findChannel` upward traversal — no explicit aliasing needed.
+Analysis must:
+
+- Identify `shared` channel reads and writes per file
+- Propagate observable effects upward for buffer linking (same mechanism as `extern` propagation)
+- Not apply `extern` read-only boundary rules to `shared` channels — `shared` channels are writable by any hierarchy level
 
 ### Method Table Construction
 
-Static analysis for method hoisting must:
-
-1. Collect all method definitions across the hierarchy.
-2. Apply most-derived-wins ordering.
-3. Make the full override table available before any constructor code is emitted.
-
-### Read-Only Boundaries for `extern`
-
-The existing `extern` read-only boundary rules remain unchanged. `shared` channels are different: they are writable by any level of the hierarchy. Analysis must not apply the `extern` read-only rule to `shared` channels.
+The override table is assembled at runtime during instantiation, bottom-up. Static analysis records method signatures per file; the runtime builds the dispatch table.
 
 ---
 
 ## Implementation Notes
 
-### Current Implementation vs This Design
+### Root Buffer Inversion
 
-The current `compileAsyncExtends` in `src/compiler/inheritance.js` uses a sequential hand-off model: child completes, then parent template runs `rootRenderFunc()`. The new model replaces this with nested async boundaries where C's buffer is the root and B+A execute inside nested child buffers.
-
-The current `_emitAsyncRootCompletion` in `src/compiler/compiler-async.js` would need changes to support the new root-buffer-is-the-child model.
-
-### Key Runtime Change: Who Owns the Root Buffer
-
-Currently the base ancestor (A) effectively owns the root output buffer. In the new model, the most-derived child (C) owns the root buffer. This inversion is required for `shared` channel resolution via `findChannel` upward traversal to work correctly.
+Currently `compileAsyncExtends` (`src/compiler/inheritance.js`) uses a sequential hand-off model: child completes, then parent runs `rootRenderFunc()`. The new model inverts this: C's buffer is the root, and B+A execute inside nested child buffers. `_emitAsyncRootCompletion` in `src/compiler/compiler-async.js` requires corresponding changes.
 
 ### `getFinishedPromise()` on `CommandBuffer`
 
-The `caller.md` architecture already specifies adding `getFinishedPromise()` to `CommandBuffer`. This same mechanism is useful for the `extends` boundary: the extends-boundary child buffer can expose its finished promise so the surrounding constructor code knows when the nested ancestor chain has completed.
+`getFinishedPromise()` (specified in `caller.md`) is also useful for `extends` boundaries: the extends-boundary child buffer exposes its finished promise so the surrounding constructor code knows when the nested ancestor chain has finished scheduling all its commands.
 
-### Compatibility with Existing `extern` / `with` Pipeline
+### Namespace Method Calls
 
-The `with { }` value pre-loading from Steps C/D of `composition-update.md` remains valid and is reused here. `extern` continues to work for non-extends imports. The new `shared` keyword is additive and does not break the existing `extern` path.
+Namespace method calls (`ns.method()`) use function-call boundaries, not template-rendering boundaries. The child buffer for a method invocation is registered synchronously when the call command fires, so there is no late-attachment problem and no special coordination channel is needed.
+
+### Compatibility
+
+The `with { }` value pre-loading from `composition-update.md` (Steps C/D) is reused unchanged. `extern` continues to work for non-extends imports. `shared` is additive — it does not break the existing `extern`/`with` pipeline.
 
 ---
 
-## Summary of Key Design Decisions
+## Key Design Decisions
 
 | Decision | Rationale |
 |---|---|
-| C's buffer is the root | Enables `findChannel` upward traversal for shared channel access without aliasing |
-| `shared` not `extern` for hierarchy state | `extern` = "required from caller"; `shared` = "instance state"; distinct concepts |
-| Initialize-if-not-set semantics | Most-derived child runs first so its default wins; consistent with JS |
-| Method hoisting before constructor code | Matches JS class semantics; parent sees full override table |
-| JS-style dynamic dispatch | Familiar mental model; parent constructor calls child's override |
-| `import...as...with` = `new X({...})` | Clean class instantiation; each import is an independent instance |
-| No `__caller__<id>` for method calls | Method invocations are function-call boundaries, not rendering boundaries |
-| `extends` = nested async boundary | Same model as `if`/`for`/`macro` — consistent with rest of engine |
+| C's buffer is the root | `findChannel` upward traversal gives B and A access to shared channels without aliasing |
+| `shared` not `extern` | `extern` = input from caller; `shared` = hierarchy instance state — distinct concepts |
+| Initialize-if-not-set for `shared x = default` | Most-derived child runs first, so its defaults naturally win over ancestor defaults |
+| Method hoisting before constructor code | Parent sees the full override table; matches JS class semantics |
+| JS-style dynamic dispatch | Parent constructor calls child's override — same mental model as JS |
+| `import...as...with` = `new X({...})` | Each import is a fully independent instance with its own root buffer |
+| `extends` = nested async boundary | Consistent with `if`/`for`/`macro` — no special-cased execution model |
 
 ---
 
-## Regression Requirements
+## Compatibility Requirements
 
-Any implementation of this architecture must not break:
+Must not break:
 
-- Plain script/template files without `extends`
-- `import` without `as ns` (side-effect-only imports)
+- Plain scripts and templates without `extends`
+- `import` without `as ns` (side-effect or value imports)
 - Existing `extern` / `with` pipeline for non-extends composition
 - `caller()` in macros (separate mechanism, documented in `caller.md`)
 - Waited-loop text materialization
 - Sequential `!` paths
 
-And it must enable:
+Must enable:
 
-- `shared` channels readable and writable from all levels of the hierarchy
-- JS-style dynamic dispatch in ancestor constructors
+- `shared` channels readable and writable at any hierarchy level
+- JS-style dynamic dispatch from ancestor constructors
 - Multiple independent instances via `import...as`
 - `with` values overriding `shared` defaults
-- Post-extends code in any ancestor (not just the root)
+- Post-extends code in any ancestor
