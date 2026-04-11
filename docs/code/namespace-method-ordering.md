@@ -16,125 +16,88 @@ The goal is **channel-level ordering**: calls that touch the same channel are se
 
 ---
 
-## Core Insight: Iterator Position Encodes Program Order
+## Core Insight: DFS Order Is Program Order
 
-When the calling script's buffer iterator applies a method-call command, it is at a specific position in the calling buffer tree. This position — the iterator's stack of `{ buffer, index }` pairs at that moment — encodes the call's place in the program order.
-
-Because the buffer iterator is single-threaded and processes commands in depth-first order, any two call commands that the iterator applies have a well-defined total order: earlier DFS position = earlier in program order.
-
-The problem arises because call arguments may be async. A call at position P_A (earlier in DFS) whose args take 1 second to resolve will have its method execute later than a call at position P_B > P_A with immediate args. The coordination mechanism must enforce program order on channel writes even when method executions arrive out of that order.
+The calling buffer iterator processes commands in depth-first order — a total ordering that matches source-code (program) order. Because `apply()` is synchronous, every call command registers its ordering information before the iterator moves to the next command. There is no need to track explicit position metadata: DFS order of registration is program order.
 
 ---
 
-## Two-Phase Registration
+## The Coordination Channel
 
-Each call command operates in two phases:
+Each namespace instance owns a coordination channel. Its `_target` is a promise map:
 
-### Phase 1: Command fires (synchronous)
+```
+{ channelName: Promise<committed> }
+```
 
-When the calling iterator applies the call command at position P:
+Each entry resolves when the last committed write to that channel has been applied by the namespace buffer iterator. Initially all entries resolve immediately (no pending writes).
 
-- The command immediately **registers** with the namespace coordination object, carrying:
-  - **Position**: the iterator's current `{ buffer, index }` stack
-  - **Channel metadata**: which channels this method reads and writes
-  - **Level-finish promises**: for each buffer in the stack, a promise that resolves when that buffer finishes being traversed — signals that no more commands will fire from within it
-  - **Execution slot promise**: a deferred promise the coordination object will resolve when this call's turn arrives
-- The command-applied event is synchronous — registration happens before args start resolving
-
-### Phase 2: Arguments resolve, method executes
-
-- Once all arguments resolve, the method waits on the execution slot promise provided by the coordination object
-- When the coordination object resolves that promise (the call's turn in channel order has arrived), the method executes
-- After its writes are committed, it signals the coordination object, which advances the next waiting call
+Channel metadata — `{ reads: Set<channelName>, writes: Set<channelName> }` — comes from single-file static analysis of each method body, embedded in the method object at compile time. It travels with the method at runtime; no multi-file analysis is needed at the call site.
 
 ---
 
-## The Coordination Object
+## How `apply()` Works
 
-Each namespace instance owns one coordination object. It is the "class that defers execution" — it receives registrations, maintains per-channel ordering state, and controls when each method actually runs.
+When the calling iterator applies a namespace method call command:
+
+**Step 1 — Capture deps (synchronous):**
+For each channel in `reads` and `writes`, read `target[ch]` as a dependency promise. This captures the "last committed write before this call" for each relevant channel.
+
+**Step 2 — Register write slots (synchronous, before returning):**
+For each channel in `writes`, create a new deferred `done[ch]` and immediately set `target[ch] = done[ch].promise`. Any command applied after this (later in DFS order) that touches `ch` will find the new pending promise as its dependency.
+
+**Step 3 — Fire and return:**
+Launch an async operation and return from `apply()` immediately.
 
 ```
-CoordinationObject {
-  perChannelQueue: Map<channelName, ChannelQueue>
-}
+apply(target):
+  deps = [target[ch] for ch in (reads ∪ writes)]
+  done = {}
+  for ch in writes:
+    done[ch] = new Deferred
+    target[ch] = done[ch].promise   // visible to all subsequent commands
+  async:
+    await Promise.all(deps)
+    resolvedArgs = await resolve(this.args)
+    childBuffer = this.method.execute(resolvedArgs)
+    onLeaveBuffer(childBuffer):
+      for ch in writes: done[ch].resolve()
 ```
-
-On registration (phase 1), for each channel in the call's `writes`:
-
-1. Get or create `perChannelQueue[channelName]`
-2. Append a new entry: `{ position: P, executionSlot: Deferred, writeCommitted: Deferred }`
-3. Chain: this entry's execution slot resolves only after the previous entry's `writeCommitted` has resolved
-
-On registration for channels in `reads` (non-fast-snapshot):
-
-1. Get or create `perChannelQueue[channelName]`
-2. Append: `{ position: P, readCommitted: Deferred }`
-3. Any subsequent write entry on this channel must wait for `readCommitted` before its execution slot opens
-4. The entry's `readCommitted` resolves when the method's read of this channel completes
-
-For fast-snapshot reads (e.g., `var`): no queue entry is created. The value is captured synchronously at execution time. Subsequent writes are not blocked.
 
 ---
 
-## The Per-Channel Queue
+## Write Committed Signal
 
-For each channel, the queue is an ordered list of pending operations, ordered by position (DFS order of the calling buffer).
+Write-committed is signalled by `onLeaveBuffer` on the method's child buffer in the namespace: when the iterator finishes traversing that child buffer, every write command inside it has been applied. At that point the deferred `done[ch]` promises resolve, unblocking any downstream calls that were waiting for a consistent channel state.
 
-```
-ChannelQueue for 'count':
-  [
-    { position: P1, type: write, executionSlot: Deferred, writeCommitted: Deferred },
-    { position: P2, type: read,  readCommitted: Deferred },
-    { position: P3, type: write, executionSlot: Deferred, writeCommitted: Deferred },
-  ]
-```
+**Why not `WaitResolveCommand`:** `WaitResolveCommand` signals at a specific command mid-buffer. Here the unit of completion is the entire child buffer — all of a method's write commands live inside one child buffer, and we need all of them applied before signalling committed.
 
-Chaining rules:
+**Why not `getFinishedPromise()`:** `getFinishedPromise()` on `CommandBuffer` resolves when the buffer is done *receiving* commands (scheduling complete), not when the iterator has *applied* them. `onLeaveBuffer` is the correct signal.
 
-- **write after write**: `P3.executionSlot` resolves only when `P1.writeCommitted` resolves
-- **write after read**: `P3.executionSlot` resolves only when `P2.readCommitted` resolves
-- **read after write**: read execution waits for `P1.writeCommitted`
-- **read after read**: multiple reads between the same two writes can run concurrently — no dependency between them
+---
 
-This gives correct read-write ordering with maximum concurrency between non-conflicting operations.
+## Ordering Rules
+
+**Write after write:** the second write's deps include the first write's `done[ch]` promise → it executes only after the first write is committed.
+
+**Read after write:** the read's deps include the write's `done[ch]` promise → the read executes only after the write is committed.
+
+**Write after read:** the write's deps include `target[ch]` at registration time. Since reads do not update `target[ch]`, the write sees the same predecessor promise as the read and the two may execute concurrently. For **fast-snapshot channels** (see below) this is correct because the read value is already captured; for non-fast-snapshot channels, write-after-read ordering is not enforced by this mechanism.
+
+**Concurrent writes on disjoint channels:** calls whose `writes` sets have no overlap have independent `done` promises and run concurrently.
 
 ---
 
 ## Fast-Snapshot Reads
 
-For channel types whose values can be captured synchronously (notably `var`, whose current value lives on `_target` and requires no buffer traversal):
+For channels whose current value can be captured synchronously — notably `var`, whose value lives directly on the namespace's `_target` — the value is read inside `apply()`, synchronously, in DFS order, before any subsequent command's `apply()` runs.
 
-- The read resolves at execution time without waiting for the iterator to apply anything
-- No queue entry is created for that channel
-- Subsequent writes to that channel are not blocked by this read
+Consequences:
+- No dependency promise is needed for a fast-snapshot read: the value is already in hand.
+- Subsequent writes to the same channel are not blocked: the read is already complete.
+- The correctness argument: because DFS order is program order, all commands registered before a write have already captured their `var` values before the write's `apply()` fires.
 
-This mirrors the existing optimization in the command buffer iterator where fast-snapshot commands never enter `_pendingObservables` and do not delay subsequent mutable commands.
-
----
-
-## Structural Completion vs Value Result
-
-These are explicitly separate in this design:
-
-- **Value result**: the method's return value — resolves when the return channel has a value. This may happen before all the method's write commands have been applied by the namespace buffer iterator.
-
-- **Write committed**: each `writeCommitted` promise in the channel queue resolves when the specific write command is actually applied by the namespace buffer iterator — not when the method returns.
-
-A subsequent call waiting for channel `count` to be in a consistent state waits for `writeCommitted`, not for the method's return value. This prevents the bug where a downstream call reads a stale value because the upstream method returned early (before its writes were applied).
-
-The coordination object therefore needs to hook into the namespace buffer iterator's command-application event for each write, not just the method's return promise. The `getFinishedPromise()` mechanism on `CommandBuffer` (specified in `caller.md`) provides the buffer-level signal; per-write command promises provide the individual-command signal.
-
----
-
-## Cleanup via Level-Finish Promises
-
-Each registered call carries a level-finish promise for each buffer in its position stack. When buffer B finishes being traversed:
-
-- No more calls will register with positions inside B
-- All registrations from positions inside B have already occurred (phase 1 is synchronous)
-- Queue entries from those positions can be garbage collected once their promises resolve
-
-This bounds the size of the per-channel queues: entries accumulate only while the corresponding buffers are still active.
+This matches the existing fast-snapshot optimization in the buffer iterator where such commands never enter `_pendingObservables` and do not delay subsequent mutable commands.
 
 ---
 
@@ -143,31 +106,30 @@ This bounds the size of the per-channel queues: entries accumulate only while th
 ```
 // Calling script
 var x = slowOp()
-ns.setCount(x)       // writes count — position (root, 3); x is async, method executes later
-
-ns.setLabel("ok")    // writes label — position (root, 5); immediate args, method executes first
-
-ns.render()          // reads count, label — position (root, 7)
+ns.setCount(x)       // writes count — args async, registers synchronously at DFS position 1
+ns.setLabel("ok")    // writes label — registers at DFS position 2
+ns.render()          // reads count, label — registers at DFS position 3
 ```
 
-Registration order at the coordination object (synchronous, DFS order):
-1. `setCount` registers at position (root, 3): writes `count`; execution slot is immediately open (no prior write)
-2. `setLabel` registers at position (root, 5): writes `label`; execution slot open (no conflict with `count`)
-3. `render` registers at position (root, 7): reads `count`, `label`; waits for `setCount.writeCommitted` and `setLabel.writeCommitted`
+Registration sequence (synchronous, DFS order):
 
-Execution order:
-- `setLabel` args resolve immediately → its execution slot is open → executes → `label.writeCommitted` resolves
-- `setCount` args resolve (after `slowOp` finishes) → its execution slot was already open → executes → `count.writeCommitted` resolves
+1. `setCount` applied: deps = `[target.count]` (resolved); creates `done.count`; sets `target.count = done.count.promise`. Fires async: waits for `x` to resolve, executes `setCount`, resolves `done.count` when child buffer done.
+2. `setLabel` applied: deps = `[target.label]` (resolved); creates `done.label`; sets `target.label = done.label.promise`. Fires async: args immediate, executes `setLabel`, resolves `done.label` when child buffer done.
+3. `render` applied: deps = `[target.count, target.label]` = `[done.count.promise, done.label.promise]`. Fires async: waits for both to resolve, then executes `render`.
+
+Execution:
+- `setLabel` args resolve immediately → executes → `done.label` resolves
+- `setCount` args resolve after `slowOp` → executes → `done.count` resolves
 - `render` was waiting for both → now executes → reads consistent values of both channels
 
-`setCount` and `setLabel` run concurrently (different channels). `render` correctly sees both writes.
+`setCount` and `setLabel` run concurrently (disjoint channels). `render` correctly sees both committed writes.
 
 ---
 
 ## Relationship to Existing Machinery
 
-- The position stack and level-finish promises come from the calling script's `BufferIterator`. No new iterator state is needed — the iterator already tracks this information.
-- `getFinishedPromise()` on `CommandBuffer` (from `caller.md`) provides the buffer-level finish signal.
-- The per-channel queue is a new runtime object, local to each namespace coordination object. It does not modify the calling buffer tree or the namespace buffer tree.
-- The namespace's buffer iterator continues to apply commands in its own DFS order. The coordination object controls only WHEN a method fires; the namespace iterator determines HOW its commands are applied.
-- Channel metadata (`{ reads: Set, writes: Set }`) is derived from single-file static analysis of each method body in the namespace script. It travels with the method object at runtime and requires no multi-file analysis at the call site.
+- The coordination channel uses the existing channel and `_target` infrastructure — no new iterator state is needed in the calling buffer.
+- `onLeaveBuffer` on the namespace child buffer provides the write-committed signal; it fires when the namespace iterator finishes traversing the child buffer.
+- The per-channel promise map is local to each namespace instance's coordination channel. It does not modify the calling buffer tree.
+- The namespace buffer iterator continues to apply commands in its own DFS order. The coordination channel controls only *when* a method fires; the namespace iterator determines *how* its commands are applied.
+- Channel metadata (`{ reads, writes }`) is derived from single-file static analysis and embedded in the method object — no call-site analysis required.

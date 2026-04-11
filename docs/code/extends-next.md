@@ -212,52 +212,41 @@ import "Button.script" as cancelBtn with { label: "Cancel" }
 
 ## Namespace Method Call Ordering
 
-Using `!` (`ns!.method()`) serializes all calls through the `ns` key globally — including calls that touch completely different channels. The goal is channel-level ordering: calls that write the same channel sequence relative to each other; calls on disjoint channels run concurrently.
+Using `!` (`ns!.method()`) serializes all calls through the `ns` key globally — including calls that touch completely different channels. The goal is **channel-level ordering**: calls that write the same channel are sequenced; calls on disjoint channels run concurrently.
 
-### What the Call Command Carries
+### The Coordination Channel
 
-When the calling buffer iterator applies a namespace method call command, the command captures three things synchronously — before the call's arguments have resolved:
+Each namespace instance owns a coordination channel. Its `_target` is a promise map `{ channelName: Promise }`, where each entry resolves when the last committed write to that channel has been applied by the namespace buffer iterator. Initially all entries are resolved (no pending writes).
 
-- **Array id stack values**: the buffer identity and current array index at each level of the iterator's stack. This encodes the call's position in the calling buffer tree, giving its place in program order relative to other calls.
-- **Per-level finish promises**: one promise per buffer in the stack, resolving when that buffer finishes being traversed — after which no more calls will fire from within it.
-- **Command-applied promise**: resolves when the iterator applies this command. Fires before the call's arguments resolve, so the call is registered in program order even if its method executes later.
+Channel metadata — which channels a method reads and writes — comes from single-file static analysis of the method body, embedded in the method object at compile time. No call-site analysis is needed.
 
-### The Coordination Class
+### How the Call Command Works
 
-Each namespace instance owns a coordination class. When a call command fires:
+When the calling buffer iterator applies a namespace method call command, `apply()` runs synchronously:
 
-- The class immediately returns a deferred promise — the call is registered but execution is deferred
-- The class is **channel-aware**: it knows which channels the method reads (used) and writes (mutated), from single-file static analysis of the method body embedded in the method object
-- Once arguments resolve and the channel ordering conditions are met, the method executes and the deferred promise resolves
+1. **Capture deps**: for each channel in `reads` and `writes`, read `target[ch]` as a dependency promise.
+2. **Register writes**: for each channel in `writes`, create a new deferred `done[ch]` and set `target[ch] = done[ch].promise` — before `apply()` returns. Any subsequent command that touches `ch` will see this new pending promise.
+3. **Fire and return**: launch an async operation and return immediately.
 
-### The Per-Channel Mirror Structure
+The async operation: wait for all deps and resolve the call's arguments, execute the method (which creates a child buffer in the namespace), then resolve `done[ch]` for all write channels when `onLeaveBuffer` fires on that child buffer.
 
-For each `shared` channel, the coordination class maintains a mirror. The mirror is command-buffer-like — it shadows the shape of the calling script's buffer tree, reconstructed from the array id stack values. Each node records the write and read state of that channel at that position.
+Because `apply()` runs synchronously during the iterator's DFS traversal, calls register in program order naturally — no position tracking or separate mirroring is needed.
 
-The mirror tracks two sides simultaneously:
+### Write Committed Signal
 
-- The **calling buffer structure**: which calls are pending, their positions, their program order
-- The **channel state on the namespace side**: which writes have committed, which reads are in flight
+Write-committed is signalled by `onLeaveBuffer` on the method's child buffer in the namespace: when the iterator finishes traversing that child buffer, every write command inside it has been applied. The deferred `done[ch]` promises then resolve, unblocking any downstream calls waiting on those channels.
 
-**Write after write**: a write at position P waits for the preceding write's committed promise.
+`WaitResolveCommand` is not used here — it signals at a specific command mid-buffer; the entire child buffer is the unit of completion for write-committed.
 
-**Read after write**: a read waits for the preceding write's committed promise.
+### Read Commands
 
-**Write after read**: a write waits for all pending reads between the previous write and P.
-
-**Concurrent reads**: multiple reads between the same two writes have no dependency on each other and run concurrently.
-
-### Write Committed vs Method Returned
-
-The method's return value may resolve before its write commands are applied by the namespace buffer iterator. The mirror tracks a per-write **committed promise** — resolved when the write command is actually applied by the iterator, not when the method returns. Downstream calls waiting on a channel wait for the committed promise, not the return value.
+A call that only reads channel `ch` includes `target[ch]` in its deps (waits for the last committed write before executing). It does **not** update `target[ch]`, so subsequent write commands are not blocked by this pending read.
 
 ### Fast-Snapshot Reads
 
-For channels like `var` whose current value can be captured synchronously from `_target` without buffer traversal, reads resolve immediately at execution time. No pending read entry is added to the mirror and subsequent writes are not blocked. This matches the existing fast-snapshot optimization in the buffer iterator where such commands never enter `_pendingObservables`.
+For channels whose current value can be captured synchronously (notably `var`, whose value lives directly on the namespace's `_target`), the value is read at `apply()` time — synchronously, in DFS order, before any subsequent command's `apply()` runs. No dependency promise is needed and subsequent writes are not blocked.
 
-### Cleanup
-
-When a per-level finish promise resolves, the mirror knows no more calls will arrive from positions within that buffer. Mirror entries for completed buffer levels are discarded once their promises have settled.
+This matches the existing fast-snapshot optimization in the buffer iterator where such commands never enter `_pendingObservables`.
 
 ---
 
