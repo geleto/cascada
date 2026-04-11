@@ -210,6 +210,57 @@ import "Button.script" as cancelBtn with { label: "Cancel" }
 
 ---
 
+## Namespace Method Call Ordering
+
+Using `!` (`ns!.method()`) serializes all calls through the `ns` key globally — including calls that touch completely different channels. The goal is channel-level ordering: calls that write the same channel sequence relative to each other; calls on disjoint channels run concurrently.
+
+### What the Call Command Carries
+
+When the calling buffer iterator applies a namespace method call command, the command captures three things synchronously — before the call's arguments have resolved:
+
+- **Array id stack values**: the buffer identity and current array index at each level of the iterator's stack. This encodes the call's position in the calling buffer tree, giving its place in program order relative to other calls.
+- **Per-level finish promises**: one promise per buffer in the stack, resolving when that buffer finishes being traversed — after which no more calls will fire from within it.
+- **Command-applied promise**: resolves when the iterator applies this command. Fires before the call's arguments resolve, so the call is registered in program order even if its method executes later.
+
+### The Coordination Class
+
+Each namespace instance owns a coordination class. When a call command fires:
+
+- The class immediately returns a deferred promise — the call is registered but execution is deferred
+- The class is **channel-aware**: it knows which channels the method reads (used) and writes (mutated), from single-file static analysis of the method body embedded in the method object
+- Once arguments resolve and the channel ordering conditions are met, the method executes and the deferred promise resolves
+
+### The Per-Channel Mirror Structure
+
+For each `shared` channel, the coordination class maintains a mirror. The mirror is command-buffer-like — it shadows the shape of the calling script's buffer tree, reconstructed from the array id stack values. Each node records the write and read state of that channel at that position.
+
+The mirror tracks two sides simultaneously:
+
+- The **calling buffer structure**: which calls are pending, their positions, their program order
+- The **channel state on the namespace side**: which writes have committed, which reads are in flight
+
+**Write after write**: a write at position P waits for the preceding write's committed promise.
+
+**Read after write**: a read waits for the preceding write's committed promise.
+
+**Write after read**: a write waits for all pending reads between the previous write and P.
+
+**Concurrent reads**: multiple reads between the same two writes have no dependency on each other and run concurrently.
+
+### Write Committed vs Method Returned
+
+The method's return value may resolve before its write commands are applied by the namespace buffer iterator. The mirror tracks a per-write **committed promise** — resolved when the write command is actually applied by the iterator, not when the method returns. Downstream calls waiting on a channel wait for the committed promise, not the return value.
+
+### Fast-Snapshot Reads
+
+For channels like `var` whose current value can be captured synchronously from `_target` without buffer traversal, reads resolve immediately at execution time. No pending read entry is added to the mirror and subsequent writes are not blocked. This matches the existing fast-snapshot optimization in the buffer iterator where such commands never enter `_pendingObservables`.
+
+### Cleanup
+
+When a per-level finish promise resolves, the mirror knows no more calls will arrive from positions within that buffer. Mirror entries for completed buffer levels are discarded once their promises have settled.
+
+---
+
 ## Initialization Priority
 
 1. **`with { }` values** — pre-loaded before any constructor runs; cannot be overridden.
@@ -296,7 +347,7 @@ Currently `compileAsyncExtends` (`src/compiler/inheritance.js`) uses a sequentia
 
 ### Namespace Method Calls
 
-Namespace method calls (`ns.method()`) use function-call boundaries, not template-rendering boundaries. The child buffer for a method invocation is registered synchronously when the call command fires, so there is no late-attachment problem and no special coordination channel is needed.
+Namespace method calls (`ns.method()`) use function-call boundaries, not template-rendering boundaries, so there is no late-attachment problem. Channel-level ordering is handled by the coordination class described in the Namespace Method Call Ordering section above.
 
 ### Compatibility
 
@@ -315,6 +366,7 @@ The `with { }` value pre-loading from `composition-update.md` (Steps C/D) is reu
 | JS-style dynamic dispatch | Parent constructor calls child's override — same mental model as JS |
 | `import...as...with` = `new X({...})` | Each import is a fully independent instance with its own root buffer |
 | `extends` = nested async boundary | Consistent with `if`/`for`/`macro` — no special-cased execution model |
+| Per-channel mirror for `ns.method()` calls | Channel-level concurrency without `!`; mirrors calling buffer structure for program-order enforcement |
 
 ---
 
