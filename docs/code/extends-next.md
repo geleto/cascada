@@ -2,29 +2,80 @@
 
 ## Overview
 
-This document describes the next-generation `extends`/composition architecture for Cascada. The model treats every script and template as a **class**:
+`extends` gives Cascada scripts and templates class-based inheritance:
 
-- Code outside methods/blocks is a **constructor**.
-- `extends` chains constructors the same way `super()` chains class constructors in JS.
-- `shared` channels are **instance variables** visible across the entire hierarchy.
-- `import "X.script" as ns with { ... }` is `new X({ ... })` — each import is an independent instance.
+| JS OOP | Cascada |
+|---|---|
+| `class C extends B` | `C.script` with `extends "B.script"` |
+| Constructor body | Code outside methods/blocks |
+| `super()` in constructor | The `extends "parent.script"` line |
+| Method | `method name(args)` / `{% block name %}` |
+| Override | Same method name in a descendant file |
+| Adding instance variables in a subclass | `shared` declarations in any descendant file |
+| `super()` in a method | `super()` |
+| Instance variable | `shared var x`, `shared text t`, `shared data d`, `shared sequence s` |
+| `new X({ init })` | `import "X.script" as ns with { init }` |
+| `this` | The namespace object `ns` |
+| Multiple instances | `import ... as ns1`, `import ... as ns2` |
+
+### Two Ways to Run a Hierarchy
+
+**Render the script directly** — render `C.script` as the entry point. The hierarchy runs; C's buffer is the root and its output is the result.
+
+**Namespace instantiation** — `import "C.script" as ns with { ... }` creates an independent instance in an isolated buffer. The importing script drives output; `ns` exposes methods and `shared` channels as a component.
+
+The inheritance mechanism is identical in both cases.
+
+### Return Values
+
+The most-derived child's `return` takes precedence. If C contains `return data.snapshot()`, any `return` in an ancestor's constructor is ignored. If C has no explicit return, the nearest ancestor's return propagates up — the same "most-derived wins" rule as method overrides.
 
 ---
 
-## The Class Metaphor
+## Execution Model
 
-| OOP concept | Cascada equivalent |
-|---|---|
-| Class definition | Any `.script` or `.njk` file |
-| Constructor | Code outside methods/blocks |
-| Method | `method name(args)` (script) or `block name` (template) |
-| Overriding a method | Declaring the same method name in a descendant |
-| `super()` | `super()` inside a method, calls the next ancestor's version |
-| Inheritance | `extends "parent.script"` |
-| Instance variable | `shared var x`, `shared text t`, `shared data d`, `shared sequence s` |
-| `new X({ ... })` | `import "X.script" as ns with { ... }` |
-| `this` / `self` | The namespace object `ns` |
-| Independent instances | Multiple `import ... as ns1`, `import ... as ns2` |
+The `extends "parent.script"` line is the `super()` call. Code before it is pre-super; code after it runs once the ancestor chain has finished.
+
+```
+// C.script (most-derived)
+shared var theme = "dark"    // C sets its default
+extends "B.script"           // ← wait for B and A
+count = count + 1            // post-super: runs after entire ancestor chain
+
+// B.script
+shared var count = 0
+extends "A.script"
+
+// A.script (root ancestor)
+method buildHeader()
+  text "Default header"
+endmethod
+buildHeader()
+```
+
+Runtime nesting for `C extends B extends A`:
+
+```
+C pre-extends code              (C's root buffer)
+  B pre-extends code            (child buffer)
+    A's full body               (child buffer)
+      └─ A's own async blocks
+  B post-extends code
+C post-extends code
+```
+
+Each level independently drives its own code. `extends` is the synchronisation point where that level waits for all inner ancestors to finish before continuing.
+
+C's buffer is always the **root buffer**; B and A run inside nested child buffers:
+
+```
+C's root buffer                    ← shared channels live here
+  └── extends-B child buffer
+        └── extends-A child buffer
+              └── A's constructor commands
+```
+
+`findChannel` traverses up the parent chain, so `shared x` in A or B walks up to C's root automatically — no aliasing needed. Any level can declare new `shared` channels; they are registered in C's root buffer on first access.
 
 ---
 
@@ -52,69 +103,6 @@ A regular unconditional assignment (`x = newValue`) in any constructor code over
 ### `shared` vs `extern`
 
 `extern` is retained for non-extends composition. It means "required input from a caller's `with { }` block." `shared` means "instance state jointly owned by the hierarchy." They are distinct concepts with distinct keywords.
-
----
-
-## Constructor Chaining
-
-The `extends` keyword is the equivalent of a `super()` call. Code before `extends` in a file is that level's pre-super initialization; code after `extends` in the same file is its post-super code.
-
-```
-// C.script (most-derived child)
-shared var theme = "dark"    // C's default — initialize-if-not-set; runs first
-shared var count = 0
-extends "B.script"           // ← constructor chain; C waits here for B and A to finish
-count = count + 1            // C's post-super code — runs after B and A complete
-
-// B.script (intermediate)
-shared var count = 0         // lower priority — only applies if C didn't set count
-extends "A.script"
-// B's post-super code here
-
-// A.script (root ancestor — no extends)
-method buildHeader()
-  text "Default header"
-endmethod
-buildHeader()                // A drives its own orchestration
-```
-
-### Execution Order
-
-The hierarchy `C extends B extends A` produces this conceptual nesting at runtime:
-
-```
-C pre-extends code           (C's root buffer)
-  B pre-extends code         (child buffer of C's root)
-    A's full body            (child buffer of B's buffer)
-  B post-extends code        (B's buffer)
-C post-extends code          (C's root buffer)
-```
-
-Each ancestor runs inside a nested async boundary created by the descendant below it — the same child-buffer model used by `if`, `for`, and `macro` blocks. This is not a sequential hand-off.
-
-Each level independently drives its own code. A drives its own orchestration. B drives its own pre- and post-extends logic. C drives its own. The `extends` line is the synchronization point where a level waits for all inner ancestors to finish before continuing.
-
----
-
-## Buffer Structure
-
-C's buffer is the **root buffer**. B and A execute inside nested child buffers.
-
-```
-C's root buffer                        ← shared channels registered here
-  └── extends-B child buffer
-        └── extends-A child buffer
-              └── A's constructor commands
-                    └── (A's own async child buffers, if any)
-```
-
-### Why C's Buffer Is the Root
-
-`findChannel` traverses up the parent chain. Because A's buffer is a grandchild of C's root, any `shared x` access in A walks up through B's buffer and finds the channel in C's root. No special routing or aliasing is needed — the natural upward traversal delivers shared state automatically.
-
-### Channel Registration
-
-`shared x` is declared in each file independently. At runtime, when the hierarchy is assembled by the most-derived child's instantiation, C's root buffer owns the physical channel. B's and A's `findChannel` calls for `x` traverse upward and resolve to that same channel. All writes from any level land in the same place.
 
 ---
 
@@ -336,7 +324,7 @@ Currently `compileAsyncExtends` (`src/compiler/inheritance.js`) uses a sequentia
 
 ### Namespace Method Calls
 
-Namespace method calls (`ns.method()`) use function-call boundaries, not template-rendering boundaries, so there is no late-attachment problem. Channel-level ordering is handled by the coordination class described in the Namespace Method Call Ordering section above.
+Namespace method calls (`ns.method()`) use function-call boundaries, not template-rendering boundaries, so there is no late-attachment problem. Channel-level ordering is handled by the coordination channel described in the Namespace Method Call Ordering section above.
 
 ### Compatibility
 
@@ -355,7 +343,7 @@ The `with { }` value pre-loading from `composition-update.md` (Steps C/D) is reu
 | JS-style dynamic dispatch | Parent constructor calls child's override — same mental model as JS |
 | `import...as...with` = `new X({...})` | Each import is a fully independent instance with its own root buffer |
 | `extends` = nested async boundary | Consistent with `if`/`for`/`macro` — no special-cased execution model |
-| Per-channel mirror for `ns.method()` calls | Channel-level concurrency without `!`; mirrors calling buffer structure for program-order enforcement |
+| Coordination channel for `ns.method()` calls | `_target` as a promise map gives channel-level ordering without `!`; synchronous `apply()` registration enforces program order via DFS traversal |
 
 ---
 
