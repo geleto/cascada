@@ -32,7 +32,7 @@ Each namespace instance owns a coordination channel. Its `_target` is a promise 
 
 Each entry resolves when the last committed write to that channel has been applied by the namespace buffer iterator. Initially all entries resolve immediately (no pending writes).
 
-Channel metadata — `{ reads: Set<channelName>, writes: Set<channelName> }` — comes from single-file static analysis of each method body, embedded in the method object at compile time. It travels with the method at runtime; no multi-file analysis is needed at the call site.
+Channel metadata — `{ reads: Set<channelName>, writes: Set<channelName> }` — comes from single-file static analysis of each method body, embedded in the method object at compile time. These sets must be filtered to **shared instance channels only**; local/internal/helper channels are not coordination edges and must not participate in namespace ordering. The metadata travels with the method at runtime; no multi-file analysis is needed at the call site.
 
 ---
 
@@ -47,12 +47,14 @@ For each channel in `reads` and `writes`, read `target[ch]` as a dependency prom
 For each channel in `writes`, create a new deferred `done[ch]` and immediately set `target[ch] = done[ch].promise`. Any command applied after this (later in DFS order) that touches `ch` will find the new pending promise as its dependency.
 
 **Step 3 — Fire and return:**
-Launch an async operation and return from `apply()` immediately.
+Launch an async operation, keep a separate deferred for the method's own return
+value, and return from `apply()` immediately.
 
 ```
 apply(target):
   deps = [target[ch] for ch in (reads ∪ writes)]
   done = {}
+  result = new Deferred
   for ch in writes:
     done[ch] = new Deferred
     target[ch] = done[ch].promise   // visible to all subsequent commands
@@ -62,7 +64,17 @@ apply(target):
     childBuffer = this.method.execute(resolvedArgs)
     onLeaveBuffer(childBuffer):
       for ch in writes: done[ch].resolve()
+      result.resolve(childBuffer.methodResult)
 ```
+
+The important separation is:
+
+- `done[ch]` tracks **write committed** for coordination.
+- `result` tracks the method call's own return value for the caller.
+
+This return path is separate from any hierarchy-wide constructor/root return
+slot. Namespace method calls must not read from or overwrite the instance-wide
+constructor return state.
 
 ---
 
@@ -132,4 +144,4 @@ Execution:
 - `onLeaveBuffer` on the namespace child buffer provides the write-committed signal; it fires when the namespace iterator finishes traversing the child buffer.
 - The per-channel promise map is local to each namespace instance's coordination channel. It does not modify the calling buffer tree.
 - The namespace buffer iterator continues to apply commands in its own DFS order. The coordination channel controls only *when* a method fires; the namespace iterator determines *how* its commands are applied.
-- Channel metadata (`{ reads, writes }`) is derived from single-file static analysis and embedded in the method object — no call-site analysis required.
+- Channel metadata (`{ reads, writes }`) is derived from single-file static analysis, filtered to shared instance channels, and embedded in the method object — no call-site analysis required.
