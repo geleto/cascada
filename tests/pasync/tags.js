@@ -127,8 +127,7 @@
         expect(tmpl.blockContracts).to.eql({
           content: {
             inputNames: ['user'],
-            withContext: true,
-            signatureDeclared: true
+            withContext: true
           }
         });
       });

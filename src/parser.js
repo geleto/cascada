@@ -418,38 +418,6 @@ class Parser extends Obj {
     return withContext;
   }
 
-  parseWithVars(errorPrefix = 'parseWithVars') {
-    const tok = this.peekToken();
-    const withVars = new nodes.NodeList(tok.lineno, tok.colno);
-
-    if (!this.skipSymbol('with')) {
-      return null;
-    }
-
-    let nameNode;
-    while ((nameNode = this.parsePrimary())) {
-      if (!(nameNode instanceof nodes.Symbol)) {
-        this.fail(`${errorPrefix}: expected variable name after with`,
-          nameNode.lineno,
-          nameNode.colno);
-      }
-
-      withVars.addChild(nameNode);
-
-      if (!this.skip(lexer.TOKEN_COMMA)) {
-        break;
-      }
-    }
-
-    if (!withVars.children.length) {
-      this.fail(`${errorPrefix}: expected at least one variable after with`,
-        tok.lineno,
-        tok.colno);
-    }
-
-    return withVars;
-  }
-
   parseCompositionWithClause(errorPrefix = 'parseCompositionWithClause', opts = {}) {
     const allowWithoutContext = !!opts.allowWithoutContext;
     const tok = this.peekToken();
@@ -647,16 +615,14 @@ class Parser extends Obj {
     }
 
     const compositionInputs = this.parseCompositionWithClause('parseBlock');
-    if (node.args && node.args.children.length > 0 &&
-      compositionInputs.withVars && compositionInputs.withVars.children && compositionInputs.withVars.children.length > 0) {
+    if (compositionInputs.withVars && compositionInputs.withVars.children && compositionInputs.withVars.children.length > 0) {
       this.fail(
-        'parseBlock: block signatures cannot be combined with legacy named with inputs',
+        'parseBlock: named block with-inputs are no longer supported; use block name(args)',
         tag.lineno,
         tag.colno
       );
     }
     node.withContext = compositionInputs.withContext;
-    node.withVars = compositionInputs.withVars;
 
     this.advanceAfterBlockEnd(tag.value);
 

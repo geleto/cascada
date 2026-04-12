@@ -417,8 +417,7 @@ class CompileInheritance {
 
   compileSyncBlock(node, frame) {
     const args = node.args && node.args.children ? node.args.children : [];
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    if (args.length > 0 || node.withContext !== null || withVars.length > 0) {
+    if (args.length > 0 || node.withContext !== null) {
       this.compiler.fail(
         'block signatures and block with-clauses are only supported in async mode',
         node.lineno,
@@ -502,6 +501,7 @@ class CompileInheritance {
   }
 
   compileSyncExtends(node, frame) {
+    const k = this.compiler._tmpid();
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     if (node.withContext !== null || withVars.length > 0) {
       this.compiler.fail(
@@ -511,7 +511,6 @@ class CompileInheritance {
         node
       );
     }
-    var k = this.compiler._tmpid();
     const parentTemplateId = this._compileSyncGetTemplate(node, frame, true, false);
     this.emit.line(`parentTemplate = ${parentTemplateId};`);
     this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
@@ -521,8 +520,8 @@ class CompileInheritance {
   }
 
   compileAsyncSuper(node) {
-    var name = node.blockName.value;
-    var id = node.symbol ? node.symbol.value : null;
+    const name = node.blockName.value;
+    const id = node.symbol ? node.symbol.value : null;
     const positionalArgsNode = this._getPositionalSuperArgsNode(node);
     const args = positionalArgsNode.children;
     const compilingBlock = this.compiler.currentCompilingBlock;
@@ -582,9 +581,14 @@ class CompileInheritance {
         node.colno,
         node
       );
+      return;
     }
-    var name = node.blockName.value;
-    var id = node.symbol.value;
+    this._compileSyncBareSuper(node, frame);
+  }
+
+  _compileSyncBareSuper(node, frame) {
+    const name = node.blockName.value;
+    const id = node.symbol.value;
     const cb = this.compiler._makeCallback(id);
     this.emit.line(`context.getSyncSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
     this.emit.line(`${id} = runtime.markSafe(${id});`);

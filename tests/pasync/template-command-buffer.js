@@ -184,7 +184,7 @@
 
     it('should initialize base-block with inputs as local async var channels', function () {
       const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% block content with user %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
+      const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
       expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {');
@@ -200,7 +200,7 @@
     it('should initialize inherited block inputs as local async var channels in overriding blocks', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+      loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
 
       const tmpl = new AsyncTemplate(
         '{% extends "base.njk" %}{% block content %}Child {{ user }}{% endblock %}',
@@ -221,7 +221,7 @@
     it('should keep async block/super compilation free of caller scheduling machinery', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+      loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
 
       const tmpl = new AsyncTemplate(
         '{% extends "base.njk" %}{% block content %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}',

@@ -881,9 +881,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeBlock(node) {
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     const signature = this._getBlockSignature(node);
-    const hasLegacyWithClause = !signature.signatureDeclared && (!!node.withContext || withVars.length > 0);
     const declares = [];
     const seenBlockInputNames = new Set();
     signature.nameNodes.forEach((nameNode, index) => {
@@ -914,27 +912,7 @@ class CompilerAsync extends CompilerBaseAsync {
         declares: ((node.body._analysis && node.body._analysis.declares) || []).concat(declares)
       });
     }
-    if (hasLegacyWithClause) {
-      const rootOwner = this.analysis.getRootScopeOwner(node._analysis);
-      const rootNode = rootOwner.node;
-      const rootChildren = rootNode && Array.isArray(rootNode.children) ? rootNode.children : [];
-      const hasExtends = rootChildren.some((child) => child instanceof nodes.Extends);
-      if (hasExtends) {
-        this.fail(
-          'async overriding blocks cannot declare their own with clause; the base block owns the contract',
-          node.lineno,
-          node.colno,
-          node
-        );
-      }
-    }
     return { createScope: true, scopeBoundary: false, parentReadOnly: true };
-  }
-
-  finalizeAnalyzeBlock(node) {
-    return {
-      inheritedInputConflictNames: this._collectInheritedBlockInputConflictNames(node)
-    };
   }
 
   compileBlock(node) {
@@ -1417,68 +1395,17 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _getBlockSignature(block) {
-    const signatureArgs = block && block.args && block.args.children ? block.args : null;
-    if (signatureArgs && signatureArgs.children.length > 0) {
-      const parsed = this._parseCallableSignature(signatureArgs, {
-        allowKeywordArgs: false,
-        symbolsOnly: true,
-        label: 'block signature',
-        ownerNode: block
-      });
-      return {
-        inputNames: parsed.args.map((nameNode) => this.analysis.getBaseChannelName(nameNode.value)),
-        nameNodes: parsed.args,
-        signatureDeclared: true
-      };
-    }
-
-    const withVars = block && block.withVars && block.withVars.children ? block.withVars.children : [];
-    const inputNames = [];
-    withVars.forEach((nameNode) => {
-      inputNames.push(this.analysis.getBaseChannelName(nameNode.value));
+    const signatureArgs = block && block.args && block.args.children ? block.args : new nodes.NodeList();
+    const parsed = this._parseCallableSignature(signatureArgs, {
+      allowKeywordArgs: false,
+      symbolsOnly: true,
+      label: 'block signature',
+      ownerNode: block
     });
     return {
-      inputNames,
-      nameNodes: withVars,
-      signatureDeclared: false
+      inputNames: parsed.args.map((nameNode) => this.analysis.getBaseChannelName(nameNode.value)),
+      nameNodes: parsed.args
     };
-  }
-
-  _collectInheritedBlockInputConflictNames(block) {
-    const conflictNames = new Set();
-    const rootWithVars = new Set(this._getBlockInputNames(block));
-    const visit = (node) => {
-      if (!node || Array.isArray(node)) {
-        if (Array.isArray(node)) {
-          node.forEach(visit);
-        }
-        return;
-      }
-      if (!(node instanceof nodes.Node)) {
-        return;
-      }
-      const analysis = node._analysis || null;
-      const declares = Array.isArray(analysis && analysis.declares) ? analysis.declares : [];
-      const declaresInParent = Array.isArray(analysis && analysis.declaresInParent) ? analysis.declaresInParent : [];
-      declares.concat(declaresInParent).forEach((decl) => {
-        if (!decl || !decl.name) {
-          return;
-        }
-        if (decl.blockInput || decl.internal || decl.extern) {
-          return;
-        }
-        if (rootWithVars.has(decl.name)) {
-          return;
-        }
-        if (decl.type === 'var' && decl.explicit === false && !decl.parentOwned) {
-          return;
-        }
-        conflictNames.add(decl.name);
-      });
-      node.fields.forEach((field) => visit(node[field]));
-    };
-    visit(block && block.body ? block.body : null);
-    return Array.from(conflictNames);
   }
 
   _emitAsyncBlockInputInitialization(block, options = {}) {
@@ -1510,7 +1437,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`for (const name of ${allLocalNamesVar}) {`);
     const blockValueId = this._tmpid();
     this.emit.line(`  runtime.declareBufferChannel(${this.buffer.currentBuffer}, name, "var", context, null);`);
-      this.emit.line(`  const ${blockValueId} = ${explicitBlockInputNamesVar}.includes(name) ? ${blockPayloadOriginalArgsVar}[name] : ${blockPayloadLocalsVar}[name];`);
+    this.emit.line(`  const ${blockValueId} = ${explicitBlockInputNamesVar}.includes(name) ? ${blockPayloadOriginalArgsVar}[name] : ${blockPayloadLocalsVar}[name];`);
     this.emit.line(`  ${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
     this.emit.line('}');
     this.emit.line('}');
@@ -1556,7 +1483,6 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`${blockName}: ${blockName},`);
     });
     this.emit.line(`blockContracts: ${JSON.stringify(this._collectBlockContracts(node))},`);
-    this.emit.line(`blockInheritedInputConflictNames: ${JSON.stringify(this._collectBlockInheritedInputConflictNames(node))},`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line('root: root\n};');
   }
@@ -1569,25 +1495,11 @@ class CompilerAsync extends CompilerBaseAsync {
       const signature = this._getBlockSignature(block);
       contracts[block.name.value] = {
         inputNames: signature.inputNames,
-        withContext: !!block.withContext,
-        signatureDeclared: signature.signatureDeclared
+        withContext: !!block.withContext
       };
     });
 
     return contracts;
-  }
-
-  _collectBlockInheritedInputConflictNames(node) {
-    const conflictNames = {};
-    const blocks = node.findAll(nodes.Block);
-
-    blocks.forEach((block) => {
-      conflictNames[block.name.value] = Array.isArray(block._analysis && block._analysis.inheritedInputConflictNames)
-        ? block._analysis.inheritedInputConflictNames
-        : [];
-    });
-
-    return conflictNames;
   }
 
   _getRootDeclarations(node) {

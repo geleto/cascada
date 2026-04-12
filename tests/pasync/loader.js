@@ -1318,14 +1318,6 @@
         expect(result.trim()).to.equal('Async AModified Async BModified Async C');
       });
 
-      it('should pass explicit block inputs from the base block invocation to the async override', async () => {
-        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ user }}{% endblock %}';
-
-        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
-        expect(result.trim()).to.equal('Child Ada');
-      });
-
       it('should pass explicit block signature inputs from the base block invocation to the async override', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content(user) %}Child {{ user }}{% endblock %}';
@@ -1336,23 +1328,23 @@
 
       it('should expose render-context bare names through block with context in an async override', async () => {
         loader.addTemplate('base.njk', '{% block content with context %}Base {{ username }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ username }}{% endblock %}';
+        const childTemplate = '{% extends "base.njk" %}{% block content with context %}Child {{ username }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { username: 'Ada' });
         expect(result.trim()).to.equal('Child Ada');
       });
 
       it('should resolve promised block input values in async overrides', async () => {
-        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ user }}{% endblock %}';
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}Child {{ user }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: Promise.resolve('Ada') });
         expect(result.trim()).to.equal('Child Ada');
       });
 
       it('should pass the same explicit block inputs to super() without seeing child-local rebinding', async () => {
-        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}';
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Base Ada / Grace');
@@ -1423,14 +1415,14 @@
       });
 
       it('should treat base-block with inputs as local vars for rebinding', async () => {
-        const template = '{% block content with user %}{{ user }}{% set user = "Grace" %}/{{ user }}{% endblock %}';
+        const template = '{% block content(user) %}{{ user }}{% set user = "Grace" %}/{{ user }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, { user: 'Ada' });
         expect(result.trim()).to.equal('Ada/Grace');
       });
 
       it('should reject conflicting declarations of base-block input names', async () => {
-        const template = '{% block content with user %}{% var user = "Grace" %}{{ user }}{% endblock %}';
+        const template = '{% block content(user) %}{% var user = "Grace" %}{{ user }}{% endblock %}';
 
         try {
           await env.renderTemplateString(template, { user: 'Ada' });
@@ -1441,7 +1433,7 @@
       });
 
       it('should reject duplicate base-block input names', async () => {
-        const template = '{% block content with user, user %}{{ user }}{% endblock %}';
+        const template = '{% block content(user, user) %}{{ user }}{% endblock %}';
 
         try {
           await env.renderTemplateString(template, { user: 'Ada' });
@@ -1451,15 +1443,15 @@
         }
       });
 
-      it('should reject with clauses on overriding async child blocks', async () => {
-        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+      it('should reject legacy named block with-input syntax', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content with user %}Child {{ user }}{% endblock %}';
 
         try {
           await env.renderTemplateString(childTemplate, { user: 'Ada' });
-          expect().fail('Expected async child block with-clause rejection');
+          expect().fail('Expected legacy named block with-input rejection');
         } catch (err) {
-          expect(String(err)).to.contain('async overriding blocks cannot declare their own with clause');
+          expect(String(err)).to.contain('named block with-inputs are no longer supported');
         }
       });
 
@@ -1506,54 +1498,42 @@
         }
       });
 
-      it('should reject explicit overriding-block declarations that conflict with inherited block inputs', async () => {
-        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content %}{% var user = "Grace" %}{{ user }}{% endblock %}';
-
-        try {
-          await env.renderTemplateString(childTemplate, { user: 'Ada' });
-          expect().fail('Expected overriding block input conflict');
-        } catch (err) {
-          expect(String(err)).to.contain(`block input 'user' conflicts with an explicit declaration in the overriding block`);
-        }
-      });
-
       it('should not treat render-context visibility from with context as inherited explicit block inputs', async () => {
         loader.addTemplate('base.njk', '{% block content with context %}Base {{ username }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content %}{% var username = "Grace" %}{{ username }} / {{ super() }}{% endblock %}';
+        const childTemplate = '{% extends "base.njk" %}{% block content with context %}{% var username = "Grace" %}{{ username }} / {{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { username: 'Ada' });
         expect(result.trim()).to.equal('Grace / Base Ada');
       });
 
       it('should preserve same-template top-level locals alongside explicit block inputs', async () => {
-        const template = '{% set suffix = "local" %}{% block content with user %}{{ user }} {{ suffix }}{% endblock %}';
+        const template = '{% set suffix = "local" %}{% block content(user) %}{{ user }} {{ suffix }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, { user: 'Ada' });
         expect(result.trim()).to.equal('Ada local');
       });
 
       it('should preserve child top-level locals alongside inherited explicit block inputs', async () => {
-        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% set suffix = "child" %}{% block content %}{{ user }} {{ suffix }}{% endblock %}';
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% set suffix = "child" %}{% block content(user) %}{{ user }} {{ suffix }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Ada child');
       });
 
       it('should preserve template-local values across a multi-level super chain with explicit block inputs', async () => {
-        loader.addTemplate('grand.njk', '{% block content with user %}Grand {{ user }}{% endblock %}');
-        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% set parentLabel = "parent" %}{% block content %}Parent {{ parentLabel }} {{ super() }}{% endblock %}');
-        const childTemplate = '{% extends "parent.njk" %}{% set childLabel = "child" %}{% block content %}Child {{ childLabel }} {{ super() }}{% endblock %}';
+        loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
+        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% set parentLabel = "parent" %}{% block content(user) %}Parent {{ parentLabel }} {{ super() }}{% endblock %}');
+        const childTemplate = '{% extends "parent.njk" %}{% set childLabel = "child" %}{% block content(user) %}Child {{ childLabel }} {{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Child child Parent parent Grand Ada');
       });
 
       it('should keep original block inputs through a three-level super chain when the middle block rebinds them', async () => {
-        loader.addTemplate('grand.njk', '{% block content with user %}Grand {{ user }}{% endblock %}');
-        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block content %}{% set user = "Mid" %}Parent {{ user }} {{ super() }}{% endblock %}');
-        const childTemplate = '{% extends "parent.njk" %}{% block content %}Child {{ super() }}{% endblock %}';
+        loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
+        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block content(user) %}{% set user = "Mid" %}Parent {{ user }} {{ super() }}{% endblock %}');
+        const childTemplate = '{% extends "parent.njk" %}{% block content(user) %}Child {{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Child Parent Mid Grand Ada');
@@ -1568,16 +1548,16 @@
       });
 
       it('should allow include with explicit inputs inside an overriding block', async () => {
-        loader.addTemplate('base.njk', '{% block content with user %}Base {{ user }}{% endblock %}');
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
         loader.addTemplate('card.njk', '{% extern user %}[{{ user }}]');
-        const childTemplate = '{% extends "base.njk" %}{% block content %}{% include "card.njk" with user %}{% endblock %}';
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{% include "card.njk" with user %}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('[Ada]');
       });
 
       it('should let explicit block inputs shadow render-context properties of the same name', async () => {
-        const template = '{% set user = "ExplicitUser" %}{% block content with context, user %}{{ user }}{% endblock %}';
+        const template = '{% set user = "ExplicitUser" %}{% block content(user) with context %}{{ user }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, { user: 'RenderUser' });
         expect(result.trim()).to.equal('ExplicitUser');

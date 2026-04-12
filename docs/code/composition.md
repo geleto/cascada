@@ -196,7 +196,7 @@ Meaning:
 Async block contracts are explicit:
 
 ```njk
-{% block content with context, user, theme %}
+{% block content(user, theme) with context %}
 ```
 
 Ownership of the contract:
@@ -724,7 +724,7 @@ Recommended parser additions:
 
 - `extern`
 - `include ... with name1, name2`
-- `block name with name1, name2`
+- `block name(arg1, arg2) with context`
 - `import ... with name1, name2`
 - `from ... import ... with name1, name2`
 
@@ -732,7 +732,8 @@ Recommended AST shape:
 
 - new `Extern` node
 - `Include` gains explicit `withVars`
-- `Block` gains explicit `withVars`
+- `Block` uses explicit signature args for inheritance contracts; it no longer
+  carries legacy block-level `withVars`
 - `Import` / `FromImport` retain `withContext` and gain explicit `withVars`
 - async compilation distinguishes the reserved `context` token from ordinary
   explicit extern inputs
@@ -1044,16 +1045,17 @@ Examples to document:
 
 User docs should explain:
 
-- async block input contracts are declared on the base/invoking block
-- the base block owns the `with ...` contract
+- async block input contracts are explicit signatures, not legacy block
+  `with ...` input lists
+- the base block and overriding child block both declare the same explicit
+  signature
 - the overriding child block receives those inputs when invoked
 - overriding child blocks do not declare matching `extern`s for block inputs
 - `with context` on the base block exposes render-context properties to the
   overriding block through bare-name lookup
 - explicit named block inputs override render-context properties of the same
   name
-- overriding async child blocks must not declare their own `with ...`
-- doing so is an error
+- legacy named block `with` input syntax is no longer supported
 - local rebinding inside the overriding block is local to that block execution
 - child/same-template top-level locals remain visible inside the block
   alongside those explicit inputs
@@ -1061,9 +1063,9 @@ User docs should explain:
 Examples to document:
 
 - base template:
-  - `{% block content with context, user %}...{% endblock %}`
+  - `{% block content(user) with context %}...{% endblock %}`
 - child template:
-  - `{% block content %}...{% endblock %}`
+  - `{% block content(user) %}...{% endblock %}`
 - invalid child override:
   - `{% block content with user %}...{% endblock %}`
 

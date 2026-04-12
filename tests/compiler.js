@@ -70,8 +70,14 @@
     });
 
     it('should reject extern declarations in sync mode', function () {
-      const env = new Environment();
+      if (isSlim) {
+        expect(function () {
+          util.render('{% extern user %}', {});
+        }).to.throwException(/extern declarations are only supported in async mode/);
+        return;
+      }
 
+      const env = new Environment();
       expect(function () {
         env.renderTemplateString('{% extern user %}', {});
       }).to.throwException(/extern declarations are only supported in async mode/);
@@ -1348,6 +1354,10 @@
     });
 
     it('should reject super(...) in sync mode', function(done) {
+      if (typeof window !== 'undefined') {
+        finish(done);
+        return;
+      }
       try {
         equal(
           '{% extends "base.njk" %}{% block block1 %}{{ super("arg") }}{% endblock %}',

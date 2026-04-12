@@ -129,11 +129,11 @@ This document tracks how [script.md](/c:/Projects/cascada/docs/cascada/script.md
   - Evidence: `tests/pasync/loader.js:1122–1149`, `nodes.js:234` (`ignoreMissing` node field), `parser.js` include parse.
 - Add `block ... with context` to the `extends/block` section. It is valid syntax and tested:
   - A base block can use `with context` to expose render-context bare names to block bodies.
-  - It can combine with named inputs: `block content with context, user`.
+  - It can combine with explicit signatures: `block content(user) with context`.
   - The overriding child block inherits the `with context` visibility without re-declaring it.
   - Evidence: `tests/pasync/loader.js:1329–1334`, `tests/parser.js:760`, `nodes.js:210` (`Block.withContext` field).
 - Document that explicit block inputs shadow render-context names of the same name:
-  - When a block uses both `with context` and named inputs (e.g., `with context, user`), the explicit named input takes precedence over the render-context property of the same name.
+  - When a block uses both `with context` and explicit signature args, the explicit block arg takes precedence over the render-context property of the same name.
   - Evidence: `tests/pasync/loader.js:1456–1461`.
 - Add one short modular-composition note or example covering:
   - `extern`

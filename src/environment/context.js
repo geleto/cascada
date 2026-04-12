@@ -88,23 +88,15 @@ class Context extends Obj {
     this.blocks[name] = this.blocks[name] || [];
     if (this.blocks[name].length > 0) {
       this._validateBlockContractCompatibility(name, this.blocks[name][this.blocks[name].length - 1], block);
-      this._validateInheritedInputConflicts(name, this.blocks[name][this.blocks[name].length - 1], block);
     }
     this.blocks[name].push(block);
     return this;
   }
 
-  // Transitional dual-syntax compatibility check.
-  // While legacy `with ...` block inputs still exist, we allow pure-legacy
-  // pairs through here. Once Step D/E remove that syntax, this can collapse to
-  // a single explicit-signature validation path.
   _validateBlockContractCompatibility(name, overridingBlock, parentBlock) {
     const overridingContract = overridingBlock && overridingBlock.blockContract;
     const parentContract = parentBlock && parentBlock.blockContract;
     if (!overridingContract || !parentContract) {
-      return;
-    }
-    if (!overridingContract.signatureDeclared && !parentContract.signatureDeclared) {
       return;
     }
 
@@ -125,23 +117,6 @@ class Context extends Obj {
 
     throw new lib.TemplateError(
       `block "${name}" signature mismatch: overriding block declares ${formatContract(overridingContract)} but parent declares ${formatContract(parentContract)}`
-    );
-  }
-
-  _validateInheritedInputConflicts(name, overridingBlock, parentBlock) {
-    const parentContract = parentBlock && parentBlock.blockContract;
-    const conflictNames = overridingBlock && Array.isArray(overridingBlock.inheritedInputConflictNames)
-      ? overridingBlock.inheritedInputConflictNames
-      : [];
-    if (!parentContract || conflictNames.length === 0) {
-      return;
-    }
-    const conflictingName = (parentContract.inputNames || []).find((inputName) => conflictNames.includes(inputName));
-    if (!conflictingName) {
-      return;
-    }
-    throw new lib.TemplateError(
-      `block input '${conflictingName}' conflicts with an explicit declaration in the overriding block`
     );
   }
 
@@ -352,13 +327,13 @@ class Context extends Obj {
     }
     const basePayload = hasPayload
       ? {
-          originalArgs: lib.extend({}, payload.originalArgs || {}),
-          localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload.localsByTemplate)
-        }
+        originalArgs: lib.extend({}, payload.originalArgs || {}),
+        localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload.localsByTemplate)
+      }
       : {
-          originalArgs: {},
-          localsByTemplate: Object.create(null)
-        };
+        originalArgs: {},
+        localsByTemplate: Object.create(null)
+      };
     if (storedLocals) {
       basePayload.localsByTemplate[templatePath] = lib.extend(
         {},

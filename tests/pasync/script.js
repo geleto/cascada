@@ -3,18 +3,19 @@
 let expect;
 let AsyncEnvironment;
 let Script;
+let StringLoader;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
   Script = environment.Script;
-  var StringLoader = require('../util').StringLoader; // eslint-disable-line no-var
+  StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   Script = nunjucks.Script;
-  var StringLoader = window.util.StringLoader; // eslint-disable-line no-var
+  StringLoader = window.util.StringLoader;
 }
 
 describe('Cascada Script: Variables', function () {

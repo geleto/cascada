@@ -1065,7 +1065,7 @@ Changes:
 
 -   move inherited-input conflict validation out of emitted runtime code; use analysis metadata or link/load-time signature metadata instead of runtime `context.getBlockContract(...)` checks
 
--   explicitly delete the legacy `!signatureDeclared` branch in `_emitAsyncBlockInputInitialization(...)`; once Step D lands, inheritance entry should have only the explicit-signature path
+-   explicitly delete the legacy block-input branch in `_emitAsyncBlockInputInitialization(...)`; once Step D lands, inheritance entry should have only the explicit-signature path
 
 -   explicitly delete `_emitInheritedBlockInputConflictValidation(...)` runtime checks once Step D lands, because Step B's `_validateBlockContractCompatibility(...)` already provides the correct link/load-time replacement
 
@@ -1193,6 +1193,17 @@ Changes:
     -   `CommandBuffer.linkVisibleChannel(...)`
 
 -   keep `parentBuffer` or current-buffer threading only where block/super execution still needs it for output ordering; do not preserve any removed lookup behavior under the same parameter just for compatibility
+
+
+What landed in the implementation:
+
+-   block input syntax now uses explicit signatures only: `block name(arg1, arg2)` with optional `with context`
+
+-   legacy named block `with` input syntax such as `block content with user` or `block content with context, user` is now rejected at parse time
+
+-   `nodes.Block` no longer stores `withVars`, and block contracts no longer carry transitional `signatureDeclared` metadata
+
+-   parser/compiler/template metadata no longer collect or propagate inherited-input conflict metadata that only existed to support the legacy dual-syntax migration
 
 -   if `blockContracts` remains under that name, make sure it is metadata-only by this point; if the name is misleading, rename it here to an explicit signature-metadata term
 

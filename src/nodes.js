@@ -207,10 +207,10 @@ class KeywordArgs extends Dict {
 
 class Block extends Node {
   get typename() { return 'Block'; }
-  get fields() { return ['name', 'args', 'body', 'withContext', 'withVars']; }
+  get fields() { return ['name', 'args', 'body', 'withContext']; }
 
-  init(lineno, colno, name, args, body, withContext, withVars) {
-    super.init(lineno, colno, name, args || new NodeList(), body, withContext, withVars || new NodeList());
+  init(lineno, colno, name, args, body, withContext) {
+    super.init(lineno, colno, name, args || new NodeList(), body, withContext);
   }
 }
 
