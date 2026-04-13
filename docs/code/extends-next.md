@@ -62,6 +62,15 @@ Before any constructor code starts, the runtime bootstraps the hierarchy:
 
 Both direct render and namespace instantiation use this same bootstrap step.
 
+On the new static inheritance / namespace-instantiation path:
+
+- `with { }` preloads declared `shared` names only
+- unknown `with` keys are an error
+- this preload path does not target `extern`
+
+`extern` remains the caller-input mechanism for ordinary composition paths such
+as plain `import`, `from import`, and `include`.
+
 ## Constructor Chain
 
 For `C extends B extends A`:
@@ -96,6 +105,19 @@ Execution order:
 
 `extends` is therefore a constructor boundary, not a deferred parent-render
 handoff.
+
+## Apply-Complete Barriers
+
+When this architecture says post-`extends` code or namespace teardown waits for
+a buffer to finish applying, that wait is aggregate:
+
+- it is not tied to a single iterator leave event
+- it means all active channels for that buffer have finished applying
+- child-buffer work attached under that buffer has also finished applying in the
+  ordinary command-buffer tree sense
+
+This aggregate apply-complete barrier is what post-`extends` code and namespace
+lifetime use.
 
 ## `shared`
 
@@ -134,6 +156,9 @@ instance state. In current Cascada terms, it is the channel type used for the
 
 - `extern` means caller-provided composition input
 - `shared` means hierarchy-owned instance state
+
+For this inheritance model, `with { }` preloads `shared` state rather than
+binding `extern` inputs.
 
 ## Methods, Overrides, and `super()`
 
@@ -262,6 +287,14 @@ buffer/tree semantics handle dependencies and ordering.
 - all methods from the hierarchy
 - shared channels through namespace properties
 - no ambient caller-side variables
+
+First implementation restriction:
+
+- namespace semantics apply only to the direct binding introduced by
+  `import ... as ns`
+- aliasing, passing, or returning that namespace value is out of scope
+- only direct syntactic uses such as `ns.method()`, `ns.x`, and
+  `ns.log.snapshot()` participate in namespace dispatch
 
 Caller-side access rules:
 

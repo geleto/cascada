@@ -23,6 +23,14 @@ Scope:
 - async templates are in scope for the template side of this plan
 - sync template extends stays on its current path unless a later step widens
   scope explicitly
+- on the new static inheritance / namespace-instantiation path, `with { }`
+  preloads declared `shared` names only
+- unknown `with` keys on that new path are an error
+- `extern` remains the mechanism for ordinary composition paths, not the new
+  static inheritance path
+- namespace semantics apply only to the direct binding introduced by
+  `import ... as ns`; aliasing/passing/returning that value is out of scope for
+  the first implementation
 
 Implementation rule for every step:
 
@@ -151,6 +159,17 @@ needed by the inheritance model.
 **Goal:** Make `extends` run parent constructors in nested child buffers under
 the most-derived root buffer.
 
+### Apply-complete contract
+
+For this step, `waitForApplyComplete()` must be aggregate, not per-event:
+
+- it must not resolve from a single iterator leave event
+- it must mean all active channels for that buffer have finished applying
+- child-buffer work attached under that buffer must also be applied before it
+  resolves
+
+This aggregate apply-complete wait is the barrier used by post-`extends` code.
+
 ### Runtime shape
 
 - C owns the root buffer
@@ -164,8 +183,8 @@ the most-derived root buffer.
 - rewrite async `extends` compilation around child buffers at the `extends` site
 - add `waitForApplyComplete()` on `CommandBuffer`
 - `waitForApplyComplete()` returns a Promise stored on the buffer
-- resolve that Promise from the iterator leave-buffer path when the iterator has
-  finished applying the buffer
+- resolve that Promise only when aggregate apply-complete has been reached for
+  the buffer, across all relevant channels, after child-buffer work has applied
 - at the `extends` site, await `childBuffer.waitForApplyComplete()` directly in
   the compiled async flow before emitting post-extends code
 - use that apply-complete await for post-extends code instead of
@@ -204,11 +223,10 @@ the most-derived root buffer.
 - retire static-path `__parentTemplate` analysis/declaration/transformer
   plumbing that only exists to support that handoff; keep `__parentTemplate`
   only for the dynamic path
-- retire static-path inheritance payload/local-capture plumbing that only
-  exists to support block calls across the old parent-handoff model:
-  `createInheritancePayload`, `createSuperInheritancePayload`,
-  `prepareInheritancePayloadForBlock`, and the corresponding local-capture
-  metadata on `Context`; do not preserve this on the new static path
+- do not remove static-path inheritance payload/local-capture plumbing yet if
+  async template block args / local captures / `super(...)` still depend on it;
+  land that deletion only together with the replacement path used by static
+  async templates
 - retire static-path extends-composition state that only exists to support the
   old parent-handoff model: `extendsCompositionByParent`,
   `setExtendsComposition()`, `getExtendsComposition()`, and
@@ -253,6 +271,8 @@ the most-derived root buffer.
 - add a hierarchy bootstrap helper
 - emit metadata for static parent lookup, shared schema, and method signatures
 - add a context path that consumes a prebuilt dispatch table
+- validate `with { }` keys for the new static inheritance / namespace path
+  against declared shared schema, and preload only declared shared names
 - remove `beginAsyncExtendsBlockRegistration` /
   `finishAsyncExtendsBlockRegistration` / `getAsyncBlock` usage from the
   static-extends path only
@@ -382,6 +402,15 @@ This requires a new typed namespace-binding structure parallel to the existing
 `importedBindings` Set. The current Set/boolean imported-callable tracking is
 not enough to distinguish namespace instances from ordinary imported bindings.
 
+First implementation restriction:
+
+- namespace semantics apply only to the direct binding introduced by
+  `import ... as ns`
+- aliasing, passing, or returning that binding is out of scope
+- compile only direct syntactic uses such as `ns.method()`, `ns.x`,
+  `ns.log.snapshot()`, `ns.db.isError()`, and `ns.db.getError()` to the
+  namespace-side path
+
 ### Side-channel semantics
 
 - side-channel `apply()` runs immediately
@@ -502,6 +531,9 @@ expression in the ordinary Cascada way.
 This step intentionally changes the behavior of extending templates: top-level
 code before and after `{% extends %}` becomes real pre-extends and post-extends
 constructor code instead of being ignored in the classic Nunjucks style.
+
+This step must also update or explicitly gate legacy tests that still assert
+the old Nunjucks-style behavior for static `extends`.
 
 ### Reuse
 
