@@ -90,15 +90,13 @@ needed by the inheritance model.
 
 ### Tests
 
-`tests/pasync/shared-keyword.js`
+`tests/pasync/extends.js`
 
 - `shared var theme = "dark"` parses
 - `shared text log` parses
 - `shared` inside a method fails
 - `shared text log = "x"` fails
 - `shared data state = 1` fails
-
-`tests/pasync/method-syntax.js`
 
 - `method foo() ... endmethod` compiles correctly
 - method arguments are preserved

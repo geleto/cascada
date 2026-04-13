@@ -92,7 +92,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'sink', 'sequence'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'sink', 'sequence', 'shared'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -1213,15 +1213,21 @@ class ScriptTranspiler {
     return true;
   }
 
-  _parseChannelDeclaration(codeContent, lineIndex) {
+  _parseChannelDeclaration(codeContent, lineIndex, isShared = false) {
     const trimmed = codeContent.trim();
-    const channelType = this._getFirstWord(trimmed);
+    const declarationSource = isShared
+      ? trimmed.substring('shared'.length).trim()
+      : trimmed;
+    const channelType = this._getFirstWord(declarationSource);
     if (!channelType) return null;
-    if (!(channelType === 'data' || channelType === 'text' || channelType === 'sink' || channelType === 'sequence')) {
+    const allowedChannelTypes = isShared
+      ? ['var', 'data', 'text', 'sequence']
+      : ['data', 'text', 'sink', 'sequence'];
+    if (!allowedChannelTypes.includes(channelType)) {
       return null;
     }
 
-    const remainder = trimmed.substring(channelType.length).trim();
+    const remainder = declarationSource.substring(channelType.length).trim();
     const nameMatch = remainder.match(/^([A-Za-z_][A-Za-z0-9_]*)\b/);
     if (!nameMatch) {
       throw new Error(`Invalid channel declaration at line ${lineIndex + 1}`);
@@ -1231,20 +1237,26 @@ class ScriptTranspiler {
       throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or channel name at line ${lineIndex + 1}`);
     }
     const initializer = remainder.substring(name.length).trim();
-    return { channelType, name, initializer };
+    return { channelType, name, initializer, isShared };
   }
 
-  _processChannelDeclaration(parseResult, lineIndex) {
-    const decl = this._parseChannelDeclaration(parseResult.codeContent, lineIndex);
+  _processChannelDeclaration(parseResult, lineIndex, isShared = false) {
+    const decl = this._parseChannelDeclaration(parseResult.codeContent, lineIndex, isShared);
     if (!decl) {
       throw new Error(`Invalid channel declaration at line ${lineIndex + 1}`);
+    }
+
+    if (isShared && this.channelScopes.length > 1) {
+      throw new Error(`shared declarations are only allowed at the root scope (line ${lineIndex + 1})`);
     }
 
     this.declareChannel(decl.name, decl.channelType);
 
     parseResult.lineType = 'TAG';
-    parseResult.tagName = decl.channelType;
-    parseResult.codeContent = parseResult.codeContent.substring(decl.channelType.length + 1).trim();
+    parseResult.tagName = isShared ? 'shared' : decl.channelType;
+    parseResult.codeContent = isShared
+      ? parseResult.codeContent.substring('shared'.length + 1).trim()
+      : parseResult.codeContent.substring(decl.channelType.length + 1).trim();
     parseResult.blockType = null;
   }
 
@@ -1261,6 +1273,11 @@ class ScriptTranspiler {
       return new RegExp(`^${firstWord}\\s+[A-Za-z_][A-Za-z0-9_]*(\\s*=.*)?$`).test(codeContent);
     }
     return false;
+  }
+
+  _isSharedChannelDeclarationLine(firstWord, codeContent) {
+    if (firstWord !== 'shared' || !codeContent) return false;
+    return /^shared\s+(var|data|text|sequence)\s+[A-Za-z_][A-Za-z0-9_]*(\s*=.*)?$/.test(codeContent);
   }
 
   /**
@@ -1320,6 +1337,8 @@ class ScriptTranspiler {
       throw new Error(`Explicit 'value' declarations are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'var') {
       this._processVar(parseResult, lineIndex);
+    } else if (this._isSharedChannelDeclarationLine(firstWord, code)) {
+      this._processChannelDeclaration(parseResult, lineIndex, true);
     } else if (this._isChannelDeclarationLine(firstWord, code)) {
       this._processChannelDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {

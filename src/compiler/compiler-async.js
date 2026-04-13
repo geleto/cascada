@@ -924,10 +924,18 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeChannelDeclaration(node) {
+    if (node.isShared && !this.analysis.isRootScopeOwner(node._analysis)) {
+      this.fail(
+        'shared declarations are only allowed at the root scope',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     node.name._analysis = { declarationTarget: true };
     const name = node.name.value;
     return {
-      declares: [{ name, type: node.channelType, initializer: node.initializer || null }],
+      declares: [{ name, type: node.channelType, initializer: node.initializer || null, shared: !!node.isShared }],
       uses: [name]
     };
   }
@@ -940,6 +948,7 @@ class CompilerAsync extends CompilerBaseAsync {
       nameNode,
       channelType,
       hasInitializer: !!node.initializer,
+      isShared: !!node.isShared,
       asyncMode: this.asyncMode,
       scriptMode: this.scriptMode,
       isNameSymbol: nameNode instanceof nodes.Symbol
@@ -947,7 +956,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const name = nameNode.value;
 
     this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
-    if (channelType === 'sink' || channelType === 'sequence') {
+    if (channelType === 'sink' || (channelType === 'sequence' && node.initializer)) {
       this.compile(node.initializer, null);
     } else {
       this.emit('null');

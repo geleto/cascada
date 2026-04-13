@@ -277,7 +277,11 @@ class CallAssign extends Node {
 
 class ChannelDeclaration extends Node {
   get typename() { return 'ChannelDeclaration'; }
-  get fields() { return ['channelType', 'name', 'initializer']; }
+  get fields() { return ['channelType', 'name', 'initializer', 'isShared']; }
+
+  init(lineno, colno, channelType, name, initializer, isShared) {
+    super.init(lineno, colno, channelType, name, initializer, !!isShared);
+  }
 }
 
 class Switch extends Node {

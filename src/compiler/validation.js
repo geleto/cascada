@@ -46,6 +46,7 @@ function validateChannelDeclarationNode(compiler, {
   nameNode,
   channelType,
   hasInitializer,
+  isShared,
   asyncMode,
   scriptMode,
   isNameSymbol
@@ -62,7 +63,7 @@ function validateChannelDeclarationNode(compiler, {
   if ((channelType === 'data' || channelType === 'text') && hasInitializer) {
     compiler.fail(`${channelType} channels cannot have initializers`, node.lineno, node.colno, node);
   }
-  if ((channelType === 'sink' || channelType === 'sequence') && !hasInitializer) {
+  if ((channelType === 'sink' || (channelType === 'sequence' && !isShared)) && !hasInitializer) {
     compiler.fail(`${channelType} channels must have an initializer`, node.lineno, node.colno, node);
   }
 }

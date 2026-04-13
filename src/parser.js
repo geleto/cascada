@@ -903,9 +903,9 @@ class Parser extends Obj {
     return this._parseVarLikeDeclaration('var', 'declaration', 'endvar', 'parseVar');
   }
 
-  parseChannelDeclaration() {
+  parseChannelDeclaration(isShared = false) {
     const tag = this.peekToken();
-    const channelType = tag.value;
+    const channelType = isShared ? this.peekToken().value : tag.value;
     if (!this.skipSymbol(channelType)) {
       this.fail('parseChannelDeclaration: expected channel declaration', tag.lineno, tag.colno);
     }
@@ -918,6 +918,10 @@ class Parser extends Obj {
     let initializer = null;
     if (channelType === 'sink' || channelType === 'sequence') {
       if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+        if (isShared && channelType === 'sequence') {
+          this.advanceAfterBlockEnd('shared');
+          return new nodes.ChannelDeclaration(tag.lineno, tag.colno, channelType, nameNode, null, true);
+        }
         this.fail(`parseChannelDeclaration: ${channelType} channels must have an initializer`, tag.lineno, tag.colno);
       }
       initializer = this.parseExpression();
@@ -934,8 +938,34 @@ class Parser extends Obj {
       }
     }
 
-    this.advanceAfterBlockEnd(tag.value);
-    return new nodes.ChannelDeclaration(tag.lineno, tag.colno, channelType, nameNode, initializer);
+    this.advanceAfterBlockEnd(isShared ? 'shared' : tag.value);
+    return new nodes.ChannelDeclaration(tag.lineno, tag.colno, channelType, nameNode, initializer, isShared);
+  }
+
+  parseSharedDeclaration() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('shared')) {
+      this.fail('parseSharedDeclaration: expected shared', tag.lineno, tag.colno);
+    }
+
+    const typeTok = this.peekToken();
+    if (!typeTok || typeTok.type !== lexer.TOKEN_SYMBOL) {
+      this.fail(
+        'parseSharedDeclaration: expected shared var, text, data, or sequence declaration',
+        tag.lineno,
+        tag.colno
+      );
+    }
+
+    if (!['var', 'text', 'data', 'sequence'].includes(typeTok.value)) {
+      this.fail(
+        'parseSharedDeclaration: expected shared var, text, data, or sequence declaration',
+        typeTok.lineno,
+        typeTok.colno
+      );
+    }
+
+    return this.parseChannelDeclaration(true);
   }
 
   parseSwitch() {
@@ -1238,6 +1268,8 @@ class Parser extends Obj {
       case 'sink':
       case 'sequence':
         return this.parseChannelDeclaration();
+      case 'shared':
+        return this.parseSharedDeclaration();
       case 'macro':
         return this.parseMacro();
       case 'call':
