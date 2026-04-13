@@ -1,574 +1,552 @@
 # `extends-next` Implementation Plan
 
-## Agent Prompt
+## Overview
 
-You are implementing the `extends-next` class-system composition architecture
-for the Cascada engine. The target design is fully specified in
-`docs/code/extends-next.md` and `docs/code/namespace-method-ordering.md`.
-Read both documents before starting any step.
+This plan implements the inheritance architecture described in
+`docs/code/extends-next.md`.
 
-Your working codebase is a JavaScript/Node.js project. Key directories:
-- `src/compiler/` — compiler passes, AST transformation, code generation
-- `src/environment/` — public API, `AsyncEnvironment`, `AsyncTemplate`, context
-- `src/runtime/` — runtime helpers, command buffer, buffer iterator, commands
-- `src/parser.js`, `src/nodes.js` — parser and AST node definitions
-- `tests/pasync/` — async test suite; add new tests here
+The design has four core runtime pieces:
 
-Follow all rules in `AGENTS.md`. Use `it.only()` / `describe.only()` to isolate
-tests during development. Run `npm run test:quick` for fast feedback. After each
-step passes its own tests, remove `.only()` and run `npm run test:quick` to
-check for regressions before proceeding.
+1. shared root-owned channels
+2. root-buffer constructor chaining for `extends`
+3. hierarchy bootstrap before constructor execution
+4. namespace instances built from one long-lived buffer plus a side-channel
 
-Implement steps in order. Each step is self-contained and testable. Do not
-implement a later step's design inside an earlier step.
+Implement the steps in order. Each step should land with focused tests before
+moving on.
 
-## Scope Decision
+Scope:
 
-This plan targets **static ancestry only** for the first `extends-next`
-implementation.
+- static ancestry only
+- the full parent chain must be known before constructor execution starts
+- dynamic or computed parent selection is out of scope for this plan
+- async templates are in scope for the template side of this plan
+- sync template extends stays on its current path unless a later step widens
+  scope explicitly
 
-- Static `extends "base.script"` / `{% extends "base.njk" %}` are in scope.
-- Dynamic or conditional parent selection is out of scope for these steps.
-- Existing dynamic-extends behavior should either remain on the current path or
-  be rejected explicitly for `extends-next` features until a separate
-  bootstrap-compatible design exists.
+Implementation rule for every step:
 
----
+- say what existing machinery is reused
+- say what static-extends / namespace path replaces
+- say what stays in place for legacy or dynamic paths
 
-## Context: What Already Exists
+## Step 1 - Script Syntax
 
-- `extends` compiles in `src/compiler/inheritance.js` (`compileAsyncExtends`,
-  `compileSyncExtends`)
-- `_emitAsyncRootCompletion` in `src/compiler/compiler-async.js` handles the
-  current sequential hand-off model (child completes → parent `rootRenderFunc()`)
-- `getAsyncSuper` / `getBlock` / `addBlock` in `src/environment/context.js`
-  manage the block table
-- `findChannel` in `src/runtime/command-buffer.js` already traverses parent
-  chain (used for upward lookup)
-- `getFinishedPromise()` on `CommandBuffer` (`src/runtime/command-buffer.js:78`)
-  resolves when buffer is done receiving commands
-- `onLeaveBuffer` fires when the buffer iterator finishes traversing a child
-  buffer (`src/runtime/buffer-iterator.js:171`)
-- `_analysis.usedChannels` (Set) — all channels touched by a node
-- `_analysis.mutatedChannels` (Set) — channels written by a node
-  (`src/compiler/analysis.js:621-622`)
-- `composition-update.md` Steps A–E are complete; `captureCompositionValue`,
-  `createInheritancePayload`, `forkForComposition` are in place
+**Goal:** Add the script `shared` syntax and verify the script method syntax
+needed by the inheritance model.
 
----
+### Add
 
-## Step 1 — `shared` Keyword: Parser and Nodes
+- `shared var x`
+- `shared text x`
+- `shared data x`
+- `shared sequence x`
 
-**Goal:** Parse `shared var x`, `shared text t`, `shared data d`,
-and `shared sequence db` declaration syntax in script mode.
+### Verify
 
-Default-value legality and initialize-if-not-set semantics are specified in
-Step 3, not here.
+- `method name(args) ... endmethod`
 
-### Changes
+### Parser rules
 
-**Frontend rule**
-- Reuse the existing script frontend where possible instead of introducing a
-  second direct-parser syntax path for script-only keywords.
+- `shared` is allowed in script constructor scope
+- `shared` is not allowed inside a method/block body
+- `shared text x = ...` is invalid
+- `shared data x = ...` is invalid
+- `extends` remains a statement, not an expression
 
-**`src/nodes.js`**
-- Prefer extending existing channel-declaration metadata with a `shared` flag
-  over introducing a separate `SharedDeclaration` family.
-- If a dedicated node is still used, keep it as a thin syntax wrapper that
-  lowers immediately into the normal channel-declaration model.
+### Main files
 
-**`src/script/script-transpiler.js`**
-- Recognize `shared` as a script statement-opening keyword and lower it into one
-  explicit parser/runtime form.
+- `src/script/script-transpiler.js`
+- `src/parser.js`
+- `src/nodes.js`
 
-**`src/parser.js`**
-- Parse the lowered representation.
-- Error on `shared` in template (non-script) mode unless template-side `shared`
-  syntax is deliberately added later.
-- Error on `shared` inside a method/block body (only valid at file top level or
-  in constructor scope).
+### Reuse
+
+- keep the existing script lowering of `method -> block` and
+  `endmethod -> endblock` in `src/script/script-transpiler.js`
+- keep using the existing `Block` node shape unless a small metadata addition
+  such as `isMethod` is needed
+- keep using the existing channel-declaration parsing path rather than creating
+  a second AST family for shared declarations
+
+### Replace / extend
+
+- extend the script frontend so `shared` lowers into the normal
+  channel-declaration pipeline
+- add only the extra metadata needed to mark a declaration as shared
+
+### Keep
+
+- plain `block` / template block parsing stays unchanged
+- plain channel declarations stay unchanged
 
 ### Tests
 
-`tests/pasync/shared-keyword.js` — parser-only tests using `_compileSource()`:
-- `shared var theme = "dark"` parses without error.
-- `shared text log` (no default) parses without error.
-- `shared` inside a method body throws a parse error.
-- `shared` in template mode throws a parse error.
+`tests/pasync/shared-keyword.js`
 
----
+- `shared var theme = "dark"` parses
+- `shared text log` parses
+- `shared` inside a method fails
+- `shared text log = "x"` fails
+- `shared data state = 1` fails
 
-## Step 2 — `method ... endmethod` Syntax
+`tests/pasync/method-syntax.js`
 
-**Goal:** Verify and complete `method name(args) ... endmethod` in script mode
-as a block definition equivalent to `{% block name(args) %}`.
+- `method foo() ... endmethod` compiles correctly
+- method arguments are preserved
+- bad `endmethod` usage fails clearly
 
-### What already exists
+## Step 2 - Shared Root Channels
 
-`src/script/script-transpiler.js` already maps `method` → `block` and
-`endmethod` → `endblock` during transpilation. Basic `method foo() ... endmethod`
-already works. This step only adds what is missing.
+**Goal:** Compile shared declarations as one root-owned channel per shared name.
 
-### Changes
+### Semantics
 
-**`src/nodes.js`**
-- Add `isMethod` boolean field to `Block.fields` for diagnostic messages.
-  Set it when the `Block` node is created from a `method` transpilation.
+- `shared var x = value` uses initialize-if-not-set
+- `shared var x` declares participation without a default
+- `shared sequence db = sinkExpr` initializes the shared sequence
+- `shared sequence db` declares participation without an initializer
 
-**`src/script/script-transpiler.js`**
-- Verify that `method name(args)` correctly passes the argument signature
-  through to `{% block name(args) %}`. Confirm with a test — if the signature
-  is dropped or mangled, fix it here.
+### Main work
 
-**`src/parser.js`** (template mode guard)
-- If `method` ever reaches the template-mode parser without transpilation,
-  emit a clear error. Check whether the transpiler already prevents this;
-  if so, no change needed.
+- record shared-channel schema on the compiled file
+- add a helper on `CommandBuffer` to declare/find shared channels on the root
+- add `initializeIfNotSet` support for `VarCommand`
 
-### Tests
+### Main files
 
-`tests/pasync/method-syntax.js`:
-- `method foo() ... endmethod` compiles to the same output as
-  `{% block foo() %} ... {% endblock %}`.
-- `method add(a, b) ... endmethod` — signature is preserved correctly.
-- `endmethod` without `method` throws a parse/transpiler error.
-- `method` in template mode (non-script) throws an error.
+- compiler shared-declaration path
+- `src/runtime/command-buffer.js`
+- `src/runtime/commands.js`
 
----
+### Reuse
 
-## Step 3 — `shared` Channel Analysis
+- keep using the existing `ChannelDeclaration` node shape and normal channel
+  declaration compilation path as the base
+- keep the existing parser restriction that `text` and `data` declarations do
+  not accept scalar initializers
+- keep ordinary `VarCommand` behavior except for the added
+  `initializeIfNotSet` option
 
-**Goal:** Compile shared declarations into channel declarations that use
-upward `findChannel` traversal instead of declaring a new channel locally.
+### Replace / extend
 
-### Initialize-if-not-set semantics per channel type
+- extend declaration compilation so shared declarations bind to the root-owned
+  channel instead of declaring a local channel in the current buffer
 
-`shared x = default` must work for all supported channel types. The mechanism
-differs by type and must be specified explicitly — `VarCommand.initializeIfNotSet`
-only covers `var`:
+### Keep
 
-- **`shared var x = default`**: emit a `VarCommand` with an `initializeIfNotSet`
-  flag. In `VarCommand.apply()`, skip the write if the channel's current value
-  is not `undefined`.
-- **`shared text t`**: `text` channels do not take a scalar default. `shared text t`
-  without a default declares participation; with a default it is not meaningful.
-  Disallow `shared text t = "..."` at the parser level. An unconditional `t.append(...)`
-  in pre-extends code is the correct way to initialize shared text.
-- **`shared data d`**: same pattern as `text` — no scalar default is meaningful.
-  Disallow `shared data d = ...` at the parser level. Shared data is populated
-  through channel method calls in constructor code.
-- **`shared sequence db`**: the current sequence channel requires an initializer
-  (enforced in `src/compiler/validation.js`). For `shared sequence db`, decide
-  one of:
-  - **Option A** (recommended): require `shared sequence db = sinkExpr` just
-    like a regular `sequence` declaration. The root-owned channel is initialized
-    once by the most-derived file that provides an initializer; others declare
-    participation with `shared sequence db` (no initializer).
-  - **Option B**: relax the validation rule for shared sequence channels so that
-    an initializer is optional, with a `null`/`undefined` target until set via
-    bootstrap `with { }` or pre-extends code.
-  Whichever option is chosen must be stated explicitly here before implementation.
-
-### Changes
-
-**`src/compiler/compiler-async.js`** (or `compiler.js` for sync path)
-- Add `compileSharedDeclaration(node)` / `analyzeSharedDeclaration(node)` or
-  the equivalent on the reused declaration node shape.
-- Analysis: mark the channel name as `shared: true` in the scope's declared
-  channels. Shared channels must cross scope boundaries and not be blocked by
-  `scopeBoundary` rules.
-- Compilation: emit one root-owned shared-channel declaration path that walks up
-  to the root buffer and registers the channel there if not already present.
-- Avoid a special-purpose shared runtime path if ordinary channel declaration
-  machinery can be reused with a `shared` modifier.
-- Emit initialize-if-not-set writes according to the per-type rules above.
-
-**`src/runtime/command-buffer.js`**
-- Add `declareSharedChannel(name, keyword)`: walks `this.parent` chain to find
-  the root buffer (no parent), calls `getChannel(name)` or creates it there.
-
-**`src/runtime/commands.js`**
-- Add `initializeIfNotSet` flag to `VarCommand.apply()`: skip the write if the
-  channel's current value is not `undefined`. No equivalent flag is needed for
-  `text`/`data`/`sequence` because those types do not have a scalar default.
+- non-shared channel declarations continue to use the current local-buffer path
 
 ### Tests
 
-`tests/pasync/shared-channels.js`:
-- `shared var x = 1` in A, `shared var x = 2` in C (most-derived): C's value
-  wins when rendered as `C extends A`.
-- `shared var x` (no default) in A: channel exists but is `undefined` without
-  other initialization.
-- Unconditional `x = 3` in C's post-extends code overwrites A's
-  initialize-if-not-set write.
-- `with { x: 99 }` prevents any `shared x = default` from overwriting it.
+`tests/pasync/shared-channels.js`
 
----
+- descendant shared var default beats ancestor default
+- `with { x: 99 }` beats shared defaults
+- a later plain assignment overwrites the initialized value
+- `shared sequence` supports both declaration-only and initialized forms
 
-## Step 4 — Root Buffer Inversion
+## Step 3 - Root-Buffer Constructor Chaining
 
-**Goal:** Invert the extends execution model so C's buffer is the root and B+A
-execute in nested child buffers, instead of the current child-completes-then-
-parent-runs hand-off.
+**Goal:** Make `extends` run parent constructors in nested child buffers under
+the most-derived root buffer.
 
-This is the most architecturally invasive step. Read
-`src/compiler/inheritance.js` and `src/compiler/compiler-async.js` carefully
-before starting.
+### Runtime shape
 
-### Current model (to replace)
+- C owns the root buffer
+- B runs in a child buffer created at C's `extends` site
+- A runs in a child buffer created at B's `extends` site
+- post-extends code runs only after the parent child buffer has been fully
+  applied
 
-`_emitAsyncRootCompletion` in `compiler-async.js`:
-1. Template body finishes running.
-2. Looks up `finalParent` from `__parentTemplate` channel.
-3. Calls `finalParent.rootRenderFunc(env, parentContext, runtime, cb, ...)`.
-4. The child buffer completes separately; the parent renders to its own buffer.
+### Main work
 
-### New model
+- rewrite async `extends` compilation around child buffers at the `extends` site
+- add `waitForApplyComplete()` on `CommandBuffer`
+- `waitForApplyComplete()` returns a Promise stored on the buffer
+- resolve that Promise from the iterator leave-buffer path when the iterator has
+  finished applying the buffer
+- at the `extends` site, await `childBuffer.waitForApplyComplete()` directly in
+  the compiled async flow before emitting post-extends code
+- use that apply-complete await for post-extends code instead of
+  `getFinishedPromise()`
+- update async root completion so composition mode returns the root buffer
+- remove static-path inheritance payload/local-capture threading rather than
+  adapting it; it is dead machinery in the new model
+- remove static-path extends-composition context threading rather than adapting
+  it; it is dead machinery in the new model
 
-1. C runs first; its buffer is the root.
-2. When C hits `extends "B.script"`, it creates a child buffer and calls B's
-   `rootRenderFunc` inside that child buffer synchronously as part of C's
-   execution flow.
-3. B similarly creates a child buffer for A.
-4. The `extends` site waits for the child buffer to be fully *applied* by the
-   iterator before continuing with post-extends code.
+### Main files
 
-**Scope note:** this step applies only to static ancestry. Dynamic or
-conditional extends stay on the old path or are rejected for `extends-next`.
+- `src/compiler/inheritance.js`
+- `src/compiler/compiler-async.js`
+- `src/runtime/command-buffer.js`
+- `src/runtime/buffer-iterator.js`
+- `src/environment/context.js`
 
-### Changes
+### Reuse
 
-**`src/compiler/inheritance.js`** — `compileAsyncExtends(node)`
-- Replace the current `rootRenderFunc` call emission with:
-  1. Create an extends child buffer: `runtime.createCommandBuffer(context, parentBuffer, ...)`.
-  2. Call the resolved parent template's `rootRenderFunc` with `compositionMode = true`
-     so it returns its root buffer rather than calling `cb`.
-  3. Attach that buffer as a child of the current buffer.
-  4. Post-extends code must wait until the ancestor chain's commands have been
-     *applied* by the iterator, not merely scheduled. Use `onLeaveBuffer` on the
-     extends child buffer to signal completion — specifically, register a callback
-     on the child buffer that resolves a promise, then emit a `WaitResolveCommand`
-     with that promise. Do **not** use `getFinishedPromise()` here:
-     `getFinishedPromise()` resolves when the buffer finishes receiving commands
-     (scheduling complete), not when the iterator has applied them. Applied
-     ordering is required so shared-channel values written by ancestors are
-     visible to post-extends code.
+- keep the existing command-buffer tree model and child-buffer attachment model
+- keep composition-mode root rendering as the mechanism that returns a buffer
+  instead of finalizing via callback
 
-**`src/compiler/compiler-async.js`** — `_emitAsyncRootCompletion(node)`
-- Remove the `finalParent` lookup and `rootRenderFunc` call.
-- When `compositionMode` is true: `markFinishedAndPatchLinks()` and return
-  the root buffer (caller attaches it as a child).
-- When `compositionMode` is false (top-level entry): mark finished and call `cb`.
+### Replace
 
-**`src/environment/template.js`** / `src/environment/context.js`
-- `rootRenderFunc` signature: add `compositionMode` parameter.
-- `forkForPath` / `forkForComposition` at the extends site now creates a context
-  whose root buffer is the instance root buffer (C's buffer), not a fresh one.
+- replace the static-extends branch of `compileAsyncExtends()` that currently:
+  - calls `context.beginAsyncExtendsBlockRegistration()`
+  - writes `__parentTemplate`
+  - records `setExtendsComposition(...)`
+  - incrementally registers parent blocks through `context.addBlock(...)`
+  - calls `context.finishAsyncExtendsBlockRegistration()`
+- replace the static-extends part of `_emitAsyncRootCompletion()` that
+  currently looks up `finalParent` and calls
+  `finalParent.rootRenderFunc(...)` after the child finishes
+- retire static-path `__parentTemplate` analysis/declaration/transformer
+  plumbing that only exists to support that handoff; keep `__parentTemplate`
+  only for the dynamic path
+- retire static-path inheritance payload/local-capture plumbing that only
+  exists to support block calls across the old parent-handoff model:
+  `createInheritancePayload`, `createSuperInheritancePayload`,
+  `prepareInheritancePayloadForBlock`, and the corresponding local-capture
+  metadata on `Context`; do not preserve this on the new static path
+- retire static-path extends-composition state that only exists to support the
+  old parent-handoff model: `extendsCompositionByParent`,
+  `setExtendsComposition()`, `getExtendsComposition()`, and
+  `forkForComposition()` at the static `extends` boundary; do not preserve this
+  on the new static path
+- replace the idea of a structural barrier command/channel for static `extends`
+  with a direct await on `childBuffer.waitForApplyComplete()` in the compiled
+  async control flow
 
-### Tests
+### Keep
 
-`tests/pasync/extends-root-inversion.js`:
-- `C extends B extends A`: all three levels' constructor code runs; output order
-  is pre-C, pre-B, A-body, post-B, post-C.
-- `shared var x` set in C's pre-extends code is visible in A's constructor via
-  upward `findChannel`.
-- The `onLeaveBuffer` + `WaitResolveCommand` barrier ensures post-extends code
-  in B does not run before A's constructor commands have been fully applied.
-
----
-
-## Step 5 — Two-Phase Hierarchy Bootstrap
-
-**Goal:** Before any constructor code runs, resolve the full ancestry chain,
-pre-register shared channels, preload `with { }` values, and build the method
-dispatch table.
-
-### Changes
-
-**New file: `src/runtime/hierarchy-bootstrap.js`**
-- `bootstrapHierarchy(rootTemplate, withValues, env)`:
-  1. Walk the **static** extends chain: for each template in the chain, call
-     `template.compile()` if not already compiled, then read its static parent
-     name from compiled metadata. Collect `[C, B, A]` in most-derived-first
-     order. Templates are lazily compiled by default — bootstrap must ensure each
-     ancestor is compiled before reading its chain metadata.
-  2. Collect all `sharedChannelSchema` entries from each template's compiled
-     metadata (channel name → keyword). Register them in the root buffer, most-
-     derived first (so C's type wins if there is a conflict).
-  3. Preload `withValues` into the root buffer's shared channels using
-     initialize-if-not-set semantics.
-  4. Build the dispatch table: for each method/block name, register most-derived
-     override first (skip if already registered).
-  5. Return `{ rootBuffer, dispatchTable }`.
-
-**`src/compiler/compiler-async.js`**
-- Emit `sharedChannelSchema` as compiled metadata on the template object: an
-  array of `{ name, keyword }` for every `shared` declaration in this file.
-- Emit `blockContracts` already handles block signatures; ensure `isMethod` is
-  also recorded.
-
-**`src/environment/context.js`**
-- `beginAsyncExtendsBlockRegistration`: remove from the **static-extends path
-  only**. Retain the function for dynamic extends, which remains on the old path
-  until a separate bootstrap-compatible design exists. Do not remove the function
-  entirely or the existing dynamic-extends tests will break.
-- Add `setDispatchTable(table)`: replace current `addBlock` chain-walking with a
-  pre-built table, used only on the static-extends/namespace path.
+- keep `getFinishedPromise()` for scheduling-complete use cases unrelated to the
+  extends barrier
+- keep dynamic-extends machinery alive for the dynamic path until that path is
+  redesigned explicitly
+- keep the existing sync path unchanged unless a later step explicitly widens
+  scope
 
 ### Tests
 
-`tests/pasync/hierarchy-bootstrap.js`:
-- Methods from C are visible during A's constructor (hoisting).
-- `with { x: 5 }` is visible as the value of `shared var x` in A's constructor,
-  even though A runs after bootstrap.
-- If C and A both declare `shared var x`, C's type (var) is used.
+`tests/pasync/extends-root-inversion.js`
 
----
+- constructor order is `pre-C`, `pre-B`, `A`, `post-B`, `post-C`
+- shared state written in descendant pre-extends code is visible to ancestors
+- post-extends code waits for parent application, not just scheduling
 
-## Step 6 — Return Value Threading
+## Step 4 - Hierarchy Bootstrap
 
-**Goal:** Most-derived explicit return takes precedence; ancestor fallback
-returns propagate if the most-derived has none.
+**Goal:** Build the hierarchy instance before constructor execution starts.
 
-### Changes
+### Bootstrap responsibilities
 
-**`src/runtime/command-buffer.js`**
-- Add a `returnSlot` to the root buffer: a deferred that holds the script return
-  value. Initially unset.
-- `setReturn(value, priority)`: sets the slot only if `priority` is higher than
-  any previously recorded return (most-derived = highest priority).
+1. resolve the static ancestry chain
+2. compile each ancestor before reading its metadata
+3. register shared-channel schema on the root buffer
+4. preload `with { }` values into shared state
+5. build the method/block dispatch table most-derived first
+6. start constructor execution
 
-**`src/compiler/compiler-async.js`** — `_emitScriptRootLeafResult(node)`
-- Instead of directly calling `cb(null, result)`, emit a call to
-  `rootBuffer.setReturn(result, priority)`.
-- `priority` is the template's depth in the hierarchy (0 = most-derived,
-  higher = deeper ancestor). Depth is not known at compile time — it is only
-  known after bootstrap resolves the full chain. Bootstrap must therefore pass
-  the depth value to each ancestor's render call as a parameter (e.g., added to
-  the `compositionMode` argument or as a new `hierarchyDepth` parameter on
-  `rootRenderFunc`). The compiled leaf-result code reads this runtime parameter
-  rather than a compile-time constant.
-- The root buffer's `markFinishedAndPatchLinks()` triggers resolution of the
-  return slot; the top-level callback receives the winning value.
+### Main work
 
-### Tests
+- add a hierarchy bootstrap helper
+- emit metadata for static parent lookup, shared schema, and method signatures
+- add a context path that consumes a prebuilt dispatch table
+- remove `beginAsyncExtendsBlockRegistration` /
+  `finishAsyncExtendsBlockRegistration` / `getAsyncBlock` usage from the
+  static-extends path only
+- keep those methods in `context.js` for the dynamic-extends path
 
-`tests/pasync/extends-return.js`:
-- C has `return data.snapshot()`, A has `return text.snapshot()`: C's wins.
-- Neither C nor B has an explicit return, A has `return data.snapshot()`: A's
-  propagates.
-- No file has an explicit return: result is the rendered text output.
+### Main files
 
----
+- new hierarchy-bootstrap helper
+- compiler metadata emission
+- `src/environment/context.js`
 
-## Step 7 — Namespace Instances (`import ... as ns`)
+### Reuse
 
-**Goal:** `import "C.script" as ns with { ... }` creates an independent
-namespace object that exposes methods and `shared` channels.
+- keep `template.compile()` as the way to materialize compiled metadata before
+  bootstrap reads it
+- keep the existing `Context.blocks` block-table shape and
+  `getBlock()` / `getAsyncSuper()` lookup model
+- prebuild the dispatch table in the same shape already consumed by `Context`
+  rather than inventing a second method-dispatch representation
 
-### Changes
+### Replace
 
-**`src/parser.js`**
-- Normalize namespace instantiation syntax on `import "X.script" as ns with { ... }`.
-- The namespace-import distinction (`import ... as ns` vs plain `import`) is
-  still expressed by whether `as target` is present on the node.
-- If the current script frontend only supports the existing capture-style
-  `with name1, name2` form, add the minimal frontend lowering needed so the
-  namespace form can accept `with { key: value }` and preserve it through to
-  compilation as explicit preload values.
-- Plain `import` / `include` keep their existing `extern`-composition meaning.
-  Namespace import uses the `with { ... }` payload for shared-instance preload.
+- replace incremental static-extends block registration with bootstrap-time
+  dispatch-table construction for the static path
 
-**Syntax/frontend rule**
-- The target syntax for namespace instantiation is
-  `import "X.script" as ns with { key: value }`.
-- If the current parser/transpiler does not yet preserve that object-literal
-  form, this step includes the necessary frontend work. Do not leave the plan
-  in a mixed-syntax state.
+### Keep
 
-**`src/compiler/inheritance.js`** — `_compileAsyncImport(node)`
-- Read the existing `_compileAsyncImport` carefully before modifying it — it
-  already has branching for `from-import` vs plain `import` and handles
-  `withVars`/`withContext` composition. The namespace path (`as ns`) must be
-  added as a new branch without disturbing the existing plain-import path.
-- If the import has `as ns`:
-  1. Run `bootstrapHierarchy` to compile the chain, register shared channels,
-     preload `withValues`, and build the dispatch table.
-  2. Execute the hierarchy's constructor chain: call C's `rootRenderFunc` with
-     `compositionMode = true`, creating nested child buffers for B and A. The
-     namespace's root buffer is a child of the calling buffer so its commands
-     are DFS-ordered relative to the caller.
-  3. Wait for the root buffer to finish (via `onLeaveBuffer` on the namespace
-     root buffer) before the namespace object is usable.
-  4. Construct the namespace object:
-     - One property per method name: a function that emits a
-       `NamespaceMethodCallCommand` into the calling buffer.
-     - One getter per `shared` channel name: reads from the namespace's root
-       buffer at access time.
-  5. Bind the namespace object to the `ns` variable.
-
-**`src/environment/context.js`**
-- `createNamespaceContext(rootBuffer, dispatchTable)`: returns a context
-  configured for the namespace root buffer.
+- keep `beginAsyncExtendsBlockRegistration()` /
+  `finishAsyncExtendsBlockRegistration()` / `getAsyncBlock()` wired for the
+  dynamic-extends path
+- keep existing `super()` lookup entrypoints if the bootstrap table can feed
+  them directly
 
 ### Tests
 
-`tests/pasync/namespace-import.js`:
-- `import "C.script" as comp` creates a usable namespace.
-- `comp.methodName(args)` executes the method and its result is available.
-- `comp.sharedVar` reads the shared channel value.
-- Two imports of the same script produce independent instances.
+`tests/pasync/hierarchy-bootstrap.js`
 
----
+- methods from C are visible while A's constructor runs
+- `with { }` preload is visible to ancestor constructor code
+- shared schema is registered before constructor work begins
 
-## Step 8 — Method Reads/Writes Analysis
+## Step 5 - Constructor Return Rules
 
-**Goal:** Attach `{ reads: Set, writes: Set }` to each compiled method object to
-support the coordination channel in Step 9.
+**Goal:** Implement the simplified return model.
 
-### Changes
+### Rules
 
-**`src/compiler/analysis.js`**
-- `_finalizeOutputUsage` (see `src/compiler/analysis.js:569`) already computes
-  both `mutatedChannels` (writes) and `usedChannels` (reads + writes) on every
-  node's `_analysis`. The read-only set is `usedChannels − mutatedChannels`. No
-  new traversal is needed.
-- Expose a `getMethodChannelSets(blockNode)` helper that returns
-  `{ reads: Set, writes: Set }` derived from `blockNode.body._analysis`.
-- Filter both sets to **shared instance channels only**: keep only names that
-  appear in the template's `sharedChannelSchema` (added in Step 5). This
-  requires Step 5 to be complete before Step 8. Do not include internal,
-  local, text, or return channels in coordination metadata — those are
-  implementation details that would over-serialize unrelated calls.
+- only the entry file's explicit `return` counts in direct render
+- ancestor constructor returns are ignored
+- namespace import ignores constructor return
+- async templates follow the same inheritance model without constructor returns
 
-**`src/compiler/compiler-async.js`** — `_compileAsyncBlockEntries`
-- For each block/method, emit `b_name.reads = new Set([...])` and
-  `b_name.writes = new Set([...])` after the function definition, using
-  `getMethodChannelSets`. These sets are only meaningful for namespace method
-  calls; they are harmless on non-namespace blocks.
+### Main work
 
-### Tests
+- most of the runtime effect of this step should fall out of Step 3, because
+  removing the static parent handoff also removes the old path by which an
+  ancestor constructor became the outer final result
+- keep explicit return handling rooted in the entry render only
+- make ancestor constructor returns non-final in composition/inheritance mode
+- ensure namespace import always yields the namespace object
 
-- Inspect `_compileSource()` output to verify `reads` / `writes` sets are
-  emitted on method functions.
-- A method that writes `shared var count` has `count` in `writes`.
-- A method that only reads `shared var theme` has `theme` in `reads` and not
-  in `writes`.
+### Main files
 
----
+- `src/compiler/compiler-async.js`
+- return-handling paths for script render and composition render
 
-## Step 9 — Coordination Channel for Namespace Method Ordering
+### Reuse
 
-**Goal:** Implement channel-level method ordering without globally serializing
-the whole namespace. Full spec in `docs/code/namespace-method-ordering.md`.
+- keep the existing top-level entry render as the only place that finalizes the
+  direct-render result
 
-### Changes
+### Replace / simplify
 
-**`src/runtime/commands.js`**
-- Add `NamespaceMethodCallCommand` as an **observable command**
-  (`isObservable = true`, carries a `promise` field):
-  - Fields: `method`, `args`, `reads`, `writes`.
-  - `apply(target)` (synchronous):
-    1. Capture deps: `deps = [target[ch] for ch in reads ∪ writes]`.
-    2. Register write slots: for each `ch` in `writes`, create `Deferred done[ch]`,
-       set `target[ch] = done[ch].promise`.
-    3. Create a `Deferred result` for the method's return value. Set
-       `this.promise = result.promise` so callers that await `comp.method()`
-       receive the return value.
-    4. Fire and return: launch async operation.
-       - Async: `await Promise.all(deps)`, resolve args, then invoke the method.
-         Method invocation creates a child buffer in the namespace. The namespace
-         has its own buffer iterator running; when that iterator finishes
-         traversing the method's child buffer it calls `onLeaveBuffer` on the
-         child buffer object. Wire `done[ch]` resolution to this event by
-         registering a callback on the child buffer before it is attached to the
-         namespace root buffer — for example, set `childBuffer._onLeave = () =>
-         { writes.forEach(ch => done[ch].resolve()); }` and invoke it from
-         `onLeaveBuffer`. Once all `done[ch]` are resolved, resolve `result`
-         from the method invocation's own completion path.
-       - The method-return path is **separate** from Step 6's hierarchy/root
-         return-slot. Step 6 governs constructor/root explicit returns for the
-         whole instance. Namespace method calls need their own per-call result
-         channel or deferred so `ns.method()` can resolve to that method's value
-         without reading or mutating the instance-wide constructor return slot.
-  - The observable form means the buffer iterator places `this.promise` in
-    `_pendingObservables` exactly like `SequenceCallCommand` — the calling
-    expression awaits it and receives the method's return value.
-  - This satisfies `comp.methodName(args)` being a usable value in expressions.
+- do not introduce a hierarchy-wide return-slot or ancestor-priority system
+- after Step 3, verify whether any remaining ancestor-return finalization logic
+  still exists; only patch the leftover cases
 
-**`src/runtime/command-buffer.js`**
-- `createCoordinationChannel()`: returns a special channel whose `_target` is a
-  plain object (the promise map `{}`). The coordination channel lives on the
-  namespace root buffer.
-- Add support for a per-buffer `_onLeave` hook (or equivalent) that
-  `onLeaveBuffer` calls when the iterator exits the buffer. This is how
-  `NamespaceMethodCallCommand` wires `done[ch]` resolution without polling.
+### Keep
 
-**`src/compiler/inheritance.js`** — namespace method call emission
-- When `ns.method(args)` is called, emit a `NamespaceMethodCallCommand` with
-  the method's `reads` and `writes` sets (from Step 8).
-- For fast-snapshot `var` channels: read the value synchronously from `target`
-  inside `apply()` rather than adding a dependency promise.
+- namespace import still produces the namespace object
+- template renders stay on their normal text-result path
 
 ### Tests
 
-`tests/pasync/namespace-ordering.js`:
-- `ns.setCount(x); ns.setLabel("ok"); ns.render()`: `render` sees both
-  committed writes even when `setCount` is slow (mock delay on `x`).
-- Two calls writing disjoint channels run concurrently (verify with timing mocks).
-- Write-after-read: later write is not blocked by earlier read of same channel
-  (verify explicitly).
-- Fast-snapshot: `var` channel value captured synchronously at call time.
+`tests/pasync/extends-return.js`
 
----
+- if C returns explicitly, that value is the direct-render result
+- if only A returns explicitly and C does not, A's return is ignored
+- namespace import still yields the namespace object when constructor code
+  contains an explicit `return`
 
-## Step 10 — Template Extends Behavioral Change
+## Step 6 - Namespace Instances
 
-**Depends on:** Step 4 (root buffer inversion) must be complete and all
-Step 4 tests passing before this step is started. The guard removed here is
-only safe to remove once the new execution model is in place.
+**Goal:** Implement namespace instances as one long-lived namespace buffer plus
+one side-channel.
 
-**Goal:** Make template `{% extends %}` follow the new pre/post-extends model
-where code before `{% extends %}` is pre-extends initialization and code after
-it is post-extends code (currently, template code outside blocks in a child is
-largely ignored by Nunjucks-compatible semantics).
+The side-channel is a runtime object owned by the namespace instance. It accepts
+namespace operations from caller code, immediately enqueues the corresponding
+namespace command or per-call child buffer into the namespace buffer tree, and
+returns the resulting promise to the caller.
 
-**Note:** This step changes observable behavior for existing templates that
-extend a parent. Run the full test suite carefully and document the breaking
-change.
+### Creation
 
-### Changes
+- `import "C.script" as ns with { ... }` creates one long-lived namespace buffer
+  as a child of the caller buffer
+- bootstrap builds the shared schema and dispatch table
+- constructor execution runs immediately into that namespace buffer
+- the caller receives a namespace object bound to `ns`
 
-**`src/compiler/inheritance.js`** — `compileSyncExtends` / `compileAsyncExtends`
-- Remove the early-exit that skips rendering top-level non-block code in
-  extending templates.
-- Emit pre-extends code into the current buffer before the extends boundary.
-- Emit post-extends code after the Step 4 apply-complete barrier
-  (`onLeaveBuffer` + `WaitResolveCommand`), not after `getFinishedPromise()`.
+### Namespace object semantics
 
-**`src/compiler/compiler-async.js`**
-- Remove the `if (!this.inBlock && this.hasStaticExtends && !this.hasDynamicExtends) return;`
-  guard in `compileAsyncBlock` — this guard skips block definitions in child
-  templates and is no longer needed once the root buffer inversion is in place.
+- `ns.method(args)` compiles to a namespace-side call path
+- `shared var` reads compile as namespace shared-value reads
+- `shared text`, `shared data`, and `shared sequence` observations compile as
+  namespace-side observation commands
+- `.snapshot()`, `.isError()`, and `.getError()` remain current-buffer
+  observations, not JS method calls on stored objects
+
+Shared-var reads therefore use the same namespace-side operation path as other
+namespace operations, not a plain JS object field read.
+
+The compiler therefore needs explicit namespace-binding tracking so it can
+distinguish `ns.method()` and `ns.state.snapshot()` from ordinary member access
+on non-namespace values.
+
+This requires a new typed namespace-binding structure parallel to the existing
+`importedBindings` Set. The current Set/boolean imported-callable tracking is
+not enough to distinguish namespace instances from ordinary imported bindings.
+
+### Side-channel semantics
+
+- side-channel `apply()` runs immediately
+- it does not wait for argument resolution first
+- `ns.method(args)` immediately creates one child buffer under the namespace
+  buffer and calls the method immediately
+- shared observations are immediately added into the namespace buffer
+- the side-channel returns the resulting method/observation promise directly
+
+Caller expressions such as `var result = ns.method(args)` therefore compile to a
+namespace-side command path whose returned promise becomes the value of the
+expression in the ordinary Cascada way.
+
+### Lifetime
+
+- the side-channel is owned by the caller buffer that owns the `ns` binding
+- constructor startup does not finish the namespace buffer
+- later method calls and observations keep appending through the side-channel
+  while that caller buffer is still being applied
+- once the owning caller buffer finishes applying, no new namespace operations
+  can arrive from that scope or any of its async children
+- close the side-channel from that owner-buffer apply-complete event and finish
+  the namespace buffer there
+
+### Main work
+
+- preserve namespace-import metadata through parsing/compilation
+- extend the parser/frontend so `import ... as ns with { ... }` survives as a
+  distinct namespace-instantiation form rather than collapsing into the plain
+  extern-composition import path
+- compile namespace method calls to namespace-side commands
+- compile namespace shared observations to namespace-side commands
+- add namespace-side side-channel state
+- wire namespace lifetime to the apply-complete event of the caller buffer that
+  owns the `ns` binding
+- when that owner buffer's `waitForApplyComplete()` resolves, close the
+  side-channel and call `namespaceBuffer.markFinishedAndPatchLinks()`
+
+### Main files
+
+- parser/frontend import handling
+- imported-binding analysis and imported-callable/member-call classification
+  paths in the async compiler
+- `src/compiler/inheritance.js`
+- namespace-call / observation command paths
+- `src/runtime/command-buffer.js`
+- `src/runtime/commands.js`
+
+### Reuse
+
+- reuse composition-mode rendering as the constructor-startup entrypoint,
+  specifically the existing `rootRenderFunc(..., true)` /
+  `_renderForComposition()` path
+- reuse the existing imported-namespace/member-call classification machinery as
+  the base for identifying namespace-bound names in expressions
+- reuse existing current-buffer observation semantics for `.snapshot()`,
+  `.isError()`, and `.getError()`
+- reuse the normal parent/child command-buffer tree for per-call child buffers
+
+### Replace / extend
+
+- add a new typed namespace-binding registry parallel to the existing
+  `importedBindings` Set so namespace instances can be distinguished from
+  ordinary imports/macros and routed to the namespace-side command path
+- add the namespace side-channel object/state and wire it to the namespace
+  buffer
+- add namespace-specific command emission for method calls and shared
+  observations
+- keep the side-channel implementation intentionally thin: immediate start on
+  caller-side command apply plus close-on-owner-buffer-complete, not a second
+  dependency scheduler
+
+### Keep
+
+- plain `import` / `include` composition keeps the current extern/composition
+  behavior
+- non-namespace property access keeps the normal member-lookup path
 
 ### Tests
 
-`tests/pasync/template-extends-pre-post.js`:
-- Code before `{% extends %}` in a child template runs as pre-extends code.
-- Code after `{% extends %}` runs as post-extends code (after ancestors finish).
-- A `{% block %}` in a child overrides the parent's block as before.
-- Regression: a template with only block definitions and no pre/post code
-  behaves identically to before.
+`tests/pasync/namespace-import.js`
 
----
+- namespace import creates a usable instance object
+- shared var access works through `ns.x`
+- shared non-var observation works through `ns.name.snapshot()` and friends
+- two imports create independent instances
+
+`tests/pasync/namespace-method-calls.js`
+
+- method calls start immediately when their caller-side command applies
+- each call gets an isolated child buffer under the namespace buffer
+- side-channel apply does not wait for argument resolution before calling the
+  method
+- method return values resolve correctly
+- method-local temporary channels do not leak across calls
+- shared observations use the same immediate namespace-side path
+
+`tests/pasync/namespace-lifecycle.js`
+
+- constructor work and later method work both complete before the namespace
+  buffer is considered done
+- method calls made after constructor startup still attach correctly
+- caller-side output order remains deterministic
+- the namespace buffer does not finish before the side-channel finishes
+
+## Step 7 - Templates
+
+**Goal:** Apply the same architecture to templates.
+
+### Includes
+
+- template-side `shared` syntax
+- pre-extends and post-extends execution around `{% extends %}`
+- block-based override and `super()` behavior using the same bootstrap model
+- the same root-buffer and namespace-instance model as scripts, minus
+  constructor-return handling
+
+This step intentionally changes the behavior of extending templates: top-level
+code before and after `{% extends %}` becomes real pre-extends and post-extends
+constructor code instead of being ignored in the classic Nunjucks style.
+
+### Reuse
+
+- reuse the same bootstrap, root-buffer chaining, shared-channel, and
+  side-channel model established for scripts
+- keep block override and the existing `Context.blocks` / `getAsyncSuper()`
+  lookup model for async templates
+
+### Replace
+
+- replace the current static-extends behavior that skips top-level rendering in
+  extending templates
+- remove the current static-extends definition-only guards in
+  `compileAsyncBlock()` / `compileSyncBlock()` that check
+  `hasStaticExtends && !hasDynamicExtends` and skip top-level block rendering on
+  the new static-extends path
+- replace the static-path `needsParentCheck` / `parentPromise =
+  runtime.channelLookup("__parentTemplate", ...)` logic in async block
+  compilation; keep that `__parentTemplate`-based parent check only for the
+  dynamic path
+
+### Keep
+
+- plain templates without `extends` stay on the normal path
+- sync template extends stays on its current path in this plan
+- dynamic-extends behavior stays on its existing path until redesigned
+
+### Tests
+
+`tests/pasync/template-extends-pre-post.js`
+
+- child template code before `{% extends %}` runs as pre-extends code
+- code after `{% extends %}` runs as post-extends code
+- block overriding still works
+
+## Non-Goals
+
+- caller-side read/write analysis for namespace scheduling
+- per-channel promise maps on the caller side
+- global serialization of all namespace calls through `ns!`
+- aliasing-based replacement for per-call child buffers
 
 ## Completion Checklist
 
-After all steps:
-
-- [ ] `npm run test:quick` passes with no regressions
-- [ ] `npm test` (full suite including browser) passes
-- [ ] `docs/code/extends-next.md` Implementation Notes section updated to
-  reflect actual implementation (remove "currently" / "requires changes" notes)
-- [ ] `docs/code/namespace-method-ordering.md` cross-referenced correctly
-- [ ] `CLAUDE.md` / `AGENTS.md` updated if any new patterns or rules emerged
+- [ ] focused tests pass for each step before moving on
+- [ ] `npm run test:quick` passes at the end
+- [ ] full test suite passes before closing the feature
+- [ ] `docs/code/extends-next.md` still matches the implementation
