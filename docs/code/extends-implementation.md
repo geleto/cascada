@@ -5,12 +5,13 @@
 This plan implements the inheritance architecture described in
 `docs/code/extends-next.md`.
 
-The design has four core runtime pieces:
+The design has five core runtime pieces:
 
 1. shared root-owned channels
 2. root-buffer constructor chaining for `extends`
-3. hierarchy bootstrap before constructor execution
-4. namespace instances built from one long-lived buffer plus a side-channel
+3. inheritance state with upfront method metadata and ordered method chains
+4. explicit inherited dispatch via `this.method(...)` and `super()`
+5. namespace instances built from one long-lived buffer plus a side-channel
 
 Implement the steps in order. Each step should land with focused tests before
 moving on.
@@ -18,7 +19,8 @@ moving on.
 Scope:
 
 - static ancestry only
-- the full parent chain must be known before constructor execution starts
+- parent paths must be declared statically in source before constructor
+  execution starts; the full parent chain does not need to be loaded eagerly
 - dynamic or computed parent selection is out of scope for this plan
 - async templates are in scope for the template side of this plan
 - sync template extends stays on its current path unless a later step widens
@@ -116,7 +118,8 @@ needed by the inheritance model.
 ### Main work
 
 - record shared-channel schema on the compiled file
-- add a helper on `CommandBuffer` to declare/find shared channels on the root
+- add a declaration-time runtime helper that resolves the instance root from the
+  current buffer and binds shared declarations there
 - add `initializeIfNotSet` support for `VarCommand`
 
 ### Main files
@@ -138,6 +141,10 @@ needed by the inheritance model.
 
 - extend declaration compilation so shared declarations bind to the root-owned
   channel instead of declaring a local channel in the current buffer
+- keep this as declaration-time routing, not as a new general-purpose
+  `CommandBuffer` root-lookup API; the later command-buffer refactor should keep
+  shared handling as ordinary lane/channel structure rather than a special
+  buffer feature
 
 ### Keep
 
@@ -165,36 +172,38 @@ needed by the inheritance model.
 **Goal:** Make `extends` run parent constructors in nested child buffers under
 the most-derived root buffer.
 
-### Apply-complete contract
+### Async-boundary contract
 
-For this step, `waitForApplyComplete()` must be aggregate, not per-event:
+For this step, static script `extends` should behave like other async
+control-flow boundaries:
 
-- it must not resolve from a single iterator leave event
-- it must mean all active channels for that buffer have finished applying
-- child-buffer work attached under that buffer must also be applied before it
-  resolves
+- reserve the child buffer at the `extends` site immediately
+- wait only for parent template/script resolution and loading
+- once loaded, emit the parent constructor chain into that child buffer
+- keep emitting post-`extends` code into the current buffer without waiting for
+  the child buffer to finish applying
 
-This aggregate apply-complete wait is the barrier used by post-`extends` code.
+Constructor ordering then comes from the ordinary hierarchical command-buffer
+iterator, not from an explicit apply barrier.
 
 ### Runtime shape
 
 - C owns the root buffer
 - B runs in a child buffer created at C's `extends` site
 - A runs in a child buffer created at B's `extends` site
-- post-extends code runs only after the parent child buffer has been fully
-  applied
+- post-extends code is emitted immediately after the `extends` site into the
+  current buffer
 
 ### Main work
 
 - rewrite async `extends` compilation around child buffers at the `extends` site
-- add `waitForApplyComplete()` on `CommandBuffer`
-- `waitForApplyComplete()` returns a Promise stored on the buffer
-- resolve that Promise only when aggregate apply-complete has been reached for
-  the buffer, across all relevant channels, after child-buffer work has applied
-- at the `extends` site, await `childBuffer.waitForApplyComplete()` directly in
-  the compiled async flow before emitting post-extends code
-- use that apply-complete await for post-extends code instead of
-  `getFinishedPromise()`
+- lower static script `extends` through the same structural child-buffer
+  boundary pattern used by async `if` / loop control-flow
+- reserve the child buffer synchronously at the `extends` site before parent
+  loading resolves
+- move parent loading/wiring into that child-buffer callback
+- emit post-`extends` code normally in the current buffer after the boundary
+  call without awaiting child apply-completion
 - update async root completion so composition mode returns the root buffer
 - remove static-path inheritance payload/local-capture threading rather than
   adapting it; it is dead machinery in the new model
@@ -206,7 +215,6 @@ This aggregate apply-complete wait is the barrier used by post-`extends` code.
 - `src/compiler/inheritance.js`
 - `src/compiler/compiler-async.js`
 - `src/runtime/command-buffer.js`
-- `src/runtime/buffer-iterator.js`
 - `src/environment/context.js`
 
 ### Reuse
@@ -236,16 +244,16 @@ This aggregate apply-complete wait is the barrier used by post-`extends` code.
 - retire static-path extends-composition state that only exists to support the
   old parent-handoff model: `extendsCompositionByParent`,
   `setExtendsComposition()`, `getExtendsComposition()`, and
-  `forkForComposition()` at the static `extends` boundary; do not preserve this
-  on the new static path
-- replace the idea of a structural barrier command/channel for static `extends`
-  with a direct await on `childBuffer.waitForApplyComplete()` in the compiled
-  async control flow
+  `forkForComposition()` at the static `extends` boundary; this cleanup is part
+  of the target direction but is not fully landed yet while the current Step 3
+  implementation still reuses parts of the existing composition context path
+- replace the old static `extends` handoff with an ordinary structural
+  child-buffer boundary instead of adding a new apply-complete runtime concept
 
 ### Keep
 
 - keep `getFinishedPromise()` for scheduling-complete use cases unrelated to the
-  extends barrier
+  static script `extends` boundary
 - keep dynamic-extends machinery alive for the dynamic path until that path is
   redesigned explicitly
 - keep the existing sync path unchanged unless a later step explicitly widens
@@ -253,74 +261,191 @@ This aggregate apply-complete wait is the barrier used by post-`extends` code.
 
 ### Tests
 
-`tests/pasync/extends-root-inversion.js`
+`tests/pasync/extends.js`
 
 - constructor order is `pre-C`, `pre-B`, `A`, `post-B`, `post-C`
 - shared state written in descendant pre-extends code is visible to ancestors
-- post-extends code waits for parent application, not just scheduling
+- static script `extends` lowers through a structural child-buffer boundary
+- post-extends output stays after parent output through normal buffer-tree
+  ordering, not an explicit apply wait
+- multiple top-level script `extends` declarations are rejected clearly
 
-## Step 4 - Hierarchy Bootstrap
+## Step 4 - Inheritance State Bootstrap
 
-**Goal:** Build the hierarchy instance before constructor execution starts.
+**Goal:** Expose child-owned method metadata up front and create inheritance
+state before that child's constructor code relies on inherited dispatch.
 
 ### Bootstrap responsibilities
 
-1. resolve the static ancestry chain
-2. compile each ancestor before reading its metadata
-3. register shared-channel schema on the root buffer
-4. preload `with { }` values into shared state
-5. build the method/block dispatch table most-derived first
-6. start constructor execution
+1. compile a file before reading that file's inheritance metadata
+2. expose a `methods` map on the compiled file
+3. create inheritance state at child root start
+4. register child methods immediately in child-first chains
+5. register shared-channel schema on the root buffer
+6. preload `with { }` values into shared state for namespace-instantiation
+   cases that use `with { }`
 
 ### Main work
 
-- add a hierarchy bootstrap helper
-- emit metadata for static parent lookup, shared schema, and method signatures
-- add a context path that consumes a prebuilt dispatch table
+- emit upfront method metadata for each compiled file:
+  `{ fn, contract, ownerKey }`
+- create inheritance state on `context` for the near-term steps
+- register the child file's methods immediately at root start, before its own
+  constructor flow continues
+- parent methods are not required to be present yet; they register later when
+  the structural `extends` load boundary resolves
 - validate `with { }` keys for the new static inheritance / namespace path
   against declared shared schema, and preload only declared shared names
-- remove `beginAsyncExtendsBlockRegistration` /
-  `finishAsyncExtendsBlockRegistration` / `getAsyncBlock` usage from the
-  static-extends path only
-- keep those methods in `context.js` for the dynamic-extends path
+- keep the current structural `extends` load boundary from Step 3; this step
+  only prepares inheritance state and metadata
 
 ### Main files
 
-- new hierarchy-bootstrap helper
-- compiler metadata emission
+- compiler metadata emission for compiled files
 - `src/environment/context.js`
+- root-start inheritance bootstrap path
 
 ### Reuse
 
-- keep `template.compile()` as the way to materialize compiled metadata before
-  bootstrap reads it
-- keep the existing `Context.blocks` block-table shape and
-  `getBlock()` / `getAsyncSuper()` lookup model
-- prebuild the dispatch table in the same shape already consumed by `Context`
-  rather than inventing a second method-dispatch representation
+- keep `template.compile()` / `script.compile()` as the way to materialize
+  compiled metadata before bootstrap reads it
+- keep child-first constructor execution from Step 3
+- keep `shared` root-channel routing from Step 2
 
 ### Replace
 
-- replace incremental static-extends block registration with bootstrap-time
-  dispatch-table construction for the static path
+- replace the idea that inherited methods must be discovered implicitly from
+  ordinary script/global lookup
+- replace "winning override only" thinking with ordered per-method chains
 
 ### Keep
 
-- keep `beginAsyncExtendsBlockRegistration()` /
-  `finishAsyncExtendsBlockRegistration()` / `getAsyncBlock()` wired for the
-  dynamic-extends path
-- keep existing `super()` lookup entrypoints if the bootstrap table can feed
-  them directly
+- keep inheritance state on `context` for this step
+- keep block/method entry function signatures unchanged for this step
+- keep dynamic-extends machinery separate; this step is for the new static path
 
 ### Tests
 
 `tests/pasync/hierarchy-bootstrap.js`
 
-- methods from C are visible while A's constructor runs
+- compiled files expose `methods` metadata up front
+- child methods register before child constructor code relies on them
+- parent methods register later when the `extends` load boundary resolves
 - `with { }` preload is visible to ancestor constructor code
 - shared schema is registered before constructor work begins
 
-## Step 5 - Constructor Return Rules
+## Step 5 - Explicit Inherited Dispatch
+
+**Goal:** Implement `this.method(...)` and `super()` using deferred method
+slots backed by ordered per-method chains.
+
+### Dispatch rules
+
+- `this.method(args)` is the only inherited-dispatch syntax
+- bare `foo()` never participates in inheritance lookup
+- `this.method` without a call is invalid in the first implementation
+- `super()` uses the same deferred-slot mechanism
+- method calls may resolve immediately or later; promise transparency is normal
+  Cascada behavior, not a special inheritance exception
+
+### Runtime model
+
+- inheritance state stores `name -> [{ fn, contract, ownerKey }, ...]` in
+  child-first order
+- `this.method(...)` resolves to the first entry in that chain
+- `super()` resolves to the next entry after the current method's `ownerKey`
+- parent methods register later, when the `extends` load boundary resolves
+- if a needed method is not registered yet, only that call site waits
+
+### Main work
+
+- reserve explicit AST / transpiler support for `this.method(...)`
+- reject unsupported `this.name` non-call forms
+- compile `this.method(...)` to a runtime inherited-dispatch helper
+- compile `super()` to a runtime super-dispatch helper using current method name
+  plus current `ownerKey`
+- register parent methods into inheritance state when the `extends` load
+  boundary resolves
+- report a clear error if the chain finishes loading and an inherited method is
+  still missing
+
+### Main files
+
+- script transpiler / parser support for `this.method(...)`
+- async compiler call lowering
+- runtime inherited-dispatch helpers
+- `src/environment/context.js`
+
+### Reuse
+
+- keep the ordered structural child-buffer `extends` boundary from Step 3
+- keep the method metadata emitted in Step 4
+- keep `super()` as the user-facing syntax
+
+### Replace
+
+- replace implicit inherited-method lookup hacks on the static-extends path
+- replace single-winning-override tables with ordered method chains
+
+### Keep
+
+- keep inheritance state on `context` for this step
+- keep ordinary local/context/global call semantics for bare `foo()`
+
+### Tests
+
+`tests/pasync/inherited-dispatch.js`
+
+- `this.method(...)` can call a child-defined override before the parent chain
+  has finished loading
+- post-`extends` `this.method(...)` waits only at the call site, not by
+  stalling the whole constructor flow
+- `super()` resolves to the next method after the current `ownerKey`
+- missing inherited methods fail clearly after the chain has finished loading
+
+## Step 6 - Inheritance State Signature Cleanup
+
+**Goal:** Move inheritance state off `context` and into an explicit runtime
+argument once the semantics are stable.
+
+### Main work
+
+- introduce an explicit `inheritanceState` runtime parameter for root and
+  method/block entrypoints that need inherited dispatch
+- thread that parameter through `extends`, method dispatch, and `super()` call
+  paths
+- remove the temporary static-path inheritance-state storage from `context`
+- keep `context` focused on render/global/extern lookup rather than inheritance
+  dispatch state
+
+### Main files
+
+- root/method entry function signatures
+- compiler call-site threading for inherited dispatch
+- `src/environment/context.js`
+
+### Reuse
+
+- keep the semantics from Steps 4 and 5 exactly the same
+- keep the same inheritance-state data shape and ordered method chains
+
+### Replace
+
+- replace near-term `context`-hosted inheritance state with an explicit runtime
+  argument
+
+### Keep
+
+- keep block/method contracts and `ownerKey` semantics unchanged
+
+### Tests
+
+`tests/pasync/inherited-dispatch.js`
+
+- inherited dispatch still works after the state move
+- `super()` still resolves by ordered chain position, not by ambient context
+
+## Step 7 - Constructor Return Rules
 
 **Goal:** Implement the simplified return model.
 
@@ -370,7 +495,7 @@ This aggregate apply-complete wait is the barrier used by post-`extends` code.
 - namespace import still yields the namespace object when constructor code
   contains an explicit `return`
 
-## Step 6 - Namespace Instances
+## Step 8 - Namespace Instances
 
 **Goal:** Implement namespace instances as one long-lived namespace buffer plus
 one side-channel.
@@ -384,7 +509,8 @@ returns the resulting promise to the caller.
 
 - `import "C.script" as ns with { ... }` creates one long-lived namespace buffer
   as a child of the caller buffer
-- bootstrap builds the shared schema and dispatch table
+- bootstrap creates inheritance state, registers child-owned method metadata,
+  and builds the shared schema
 - constructor execution runs immediately into that namespace buffer
 - the caller receives a namespace object bound to `ns`
 
@@ -438,8 +564,8 @@ expression in the ordinary Cascada way.
   while that caller buffer is still being applied
 - once the owning caller buffer finishes applying, no new namespace operations
   can arrive from that scope or any of its async children
-- close the side-channel from that owner-buffer apply-complete event and finish
-  the namespace buffer there
+- close the side-channel from the owning caller buffer's normal structural
+  teardown point and finish the namespace buffer there
 
 ### Main work
 
@@ -450,9 +576,9 @@ expression in the ordinary Cascada way.
 - compile namespace method calls to namespace-side commands
 - compile namespace shared observations to namespace-side commands
 - add namespace-side side-channel state
-- wire namespace lifetime to the apply-complete event of the caller buffer that
-  owns the `ns` binding
-- when that owner buffer's `waitForApplyComplete()` resolves, close the
+- wire namespace lifetime to the normal completion/teardown of the caller
+  buffer that owns the `ns` binding
+- when that owner scope can no longer emit namespace operations, close the
   side-channel and call `namespaceBuffer.markFinishedAndPatchLinks()`
 
 ### Main files
@@ -522,7 +648,7 @@ expression in the ordinary Cascada way.
 - caller-side output order remains deterministic
 - the namespace buffer does not finish before the side-channel finishes
 
-## Step 7 - Templates
+## Step 9 - Templates
 
 **Goal:** Apply the same architecture to templates.
 

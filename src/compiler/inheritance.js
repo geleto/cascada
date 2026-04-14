@@ -13,7 +13,7 @@ const CompileBuffer = require('./buffer');
 class CompileInheritance {
   constructor(compiler) {
     this.compiler = compiler;
-	  this.emit = this.compiler.emit;
+    this.emit = this.compiler.emit;
   }
 
   _emitValueImportBinding(name, sourceVar, node) {
@@ -110,6 +110,17 @@ class CompileInheritance {
     if (explicitNamesVar) {
       this.emit.line(`const ${explicitNamesVar} = Object.keys(${explicitVarsVar});`);
     }
+  }
+
+  _emitExtendsContextSetup(node, extendsVarsVar, extendsExternContextVar, extendsExternInputNamesVar, extendsRootContextVar) {
+    this.emit.line(`const ${extendsVarsVar} = {};`);
+    this._emitImmediateExternInputs(node, extendsVarsVar);
+    // Keep two distinct composition views on purpose:
+    // externContext is the filtered input set used for extern-slot validation,
+    // while rootContext preserves the full inherited constructor context the
+    // ancestor should execute against.
+    this._emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, extendsExternInputNamesVar, !!node.withContext);
+    this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
   }
 
   _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
@@ -469,10 +480,13 @@ class CompileInheritance {
     const extendsRootContextVar = this.compiler._tmpid();
 
     this.emit.line('context.beginAsyncExtendsBlockRegistration();');
-    this.emit.line(`const ${extendsVarsVar} = {};`);
-    this._emitImmediateExternInputs(node, extendsVarsVar);
-    this._emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, extendsExternInputNamesVar, !!node.withContext);
-    this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
+    this._emitExtendsContextSetup(
+      node,
+      extendsVarsVar,
+      extendsExternContextVar,
+      extendsExternInputNamesVar,
+      extendsRootContextVar
+    );
     const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
 
     if (node.asyncStoreIn) {
@@ -498,6 +512,51 @@ class CompileInheritance {
       this.emit.line('}');
       this.emit.line('await context.finishAsyncExtendsBlockRegistration();');
     });
+  }
+
+  compileAsyncStaticRootExtends(node, scriptRootNode, rootSharedChannelNames = []) {
+    const k = this.compiler._tmpid();
+    const extendsVarsVar = this.compiler._tmpid();
+    const extendsExternInputNamesVar = this.compiler._tmpid();
+    const extendsExternContextVar = this.compiler._tmpid();
+    const extendsRootContextVar = this.compiler._tmpid();
+    const templateVar = this.compiler._tmpid();
+    const parentContextVar = this.compiler._tmpid();
+    const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
+    const prevBuffer = this.compiler.buffer.currentBuffer;
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(scriptRootNode, {
+      includeDeclaredChannelNames: rootSharedChannelNames
+    });
+
+    this._emitExtendsContextSetup(
+      node,
+      extendsVarsVar,
+      extendsExternContextVar,
+      extendsExternInputNamesVar,
+      extendsRootContextVar
+    );
+    this.emit.line('context.beginAsyncExtendsBlockRegistration();');
+    // Fire-and-forget: ordering is structural here. The child buffer is linked
+    // into the current buffer synchronously at the extends site, so later root
+    // commands stay ordered after that boundary slot without any extra waiting.
+    this.emit(`runtime.runControlFlowBoundary(${prevBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
+    this.emit.asyncClosureDepth++;
+    this.compiler.buffer.currentBuffer = 'currentBuffer';
+    this.emit.line('try {');
+    this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
+    this.emit.line(`  ${templateVar}.compile();`);
+    this.emit.line(`  runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
+    this.emit.line(`  for (let ${k} in ${templateVar}.blocks) {`);
+    this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
+    this.emit.line('  }');
+    this.emit.line(`  const ${parentContextVar} = context.forkForComposition(${templateVar}.path, ${extendsRootContextVar}, context.getRenderContextVariables(), ${extendsExternContextVar});`);
+    this.emit.line(`  ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, true, currentBuffer);`);
+    this.emit.line('} finally {');
+    this.emit.line('  await context.finishAsyncExtendsBlockRegistration();');
+    this.emit.line('}');
+    this.compiler.buffer.currentBuffer = prevBuffer;
+    this.emit.asyncClosureDepth--;
+    this.emit.line('});');
   }
 
   compileSyncExtends(node, frame) {

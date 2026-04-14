@@ -855,6 +855,9 @@ function declareSharedBufferChannel(buffer, channelName, channelType, context, i
     throw new Error(`Shared channel "${channelName}" declared without an active CommandBuffer`);
   }
 
+  // Shared declarations are routed to the instance root at declaration time.
+  // This is intentionally narrow: it avoids turning CommandBuffer into a
+  // general-purpose "find some other buffer" API just for inheritance.
   const resolvedChannelName = typeof buffer._resolveAliasedChannelName === 'function'
     ? buffer._resolveAliasedChannelName(channelName)
     : channelName;
@@ -876,6 +879,8 @@ function declareSharedBufferChannel(buffer, channelName, channelType, context, i
       `Shared channel '${resolvedChannelName}' was already declared as '${channel._channelType}', not '${channelType}'`
     );
   }
+
+  return channel;
 }
 
 module.exports = {

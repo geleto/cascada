@@ -61,7 +61,7 @@ module.exports = class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false) {`);
+        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false, parentBuffer = null) {`);
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
@@ -77,7 +77,9 @@ module.exports = class CompileEmit {
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     this.compiler.buffer.initManagedBuffer(
       this.compiler.buffer.currentBuffer,
-      (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null,
+      this.compiler.asyncMode
+        ? (name === 'root' ? '(compositionMode ? parentBuffer : null)' : 'parentBuffer')
+        : null,
       this.compiler.buffer.currentTextChannelVar,
       linkedChannels
     );
@@ -221,8 +223,17 @@ module.exports = class CompileEmit {
 
   // @todo - optimize this:
   // similar for writes we can do some optimizations
-  getLinkedChannelsArg(node) {
-    const usedChannels = Array.from(node._analysis.usedChannels || []);
+  getLinkedChannelsArg(node, options = null) {
+    const includeDeclaredChannelNames = new Set(
+      options && Array.isArray(options.includeDeclaredChannelNames)
+        ? options.includeDeclaredChannelNames
+        : []
+    );
+    const usedChannelsSet = new Set(node._analysis.usedChannels || []);
+    includeDeclaredChannelNames.forEach((name) => {
+      usedChannelsSet.add(name);
+    });
+    const usedChannels = Array.from(usedChannelsSet);
     const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
     const linkedChannels = usedChannels.filter((name) => {
       if (name === this.compiler.buffer.currentTextChannelName) {
@@ -234,7 +245,10 @@ module.exports = class CompileEmit {
       if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
         return false;
       }
-      return !declaredChannels.has(name);
+      if (declaredChannels.has(name) && !includeDeclaredChannelNames.has(name)) {
+        return false;
+      }
+      return true;
     });
     // Do not link currentWaitedChannelName here.
     // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.

@@ -1062,9 +1062,25 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`    cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
   }
 
+  _emitStaticScriptExtendsLeafResult(node) {
+    const returnVar = this._tmpid();
+    this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
+    this.emit.line(
+      `  cb(null, Promise.resolve(${returnVar}).then((value) => runtime.normalizeFinalPromise(value)));`
+    );
+  }
+
   _emitAsyncTemplateRootLeafResult() {
     this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
     this.emit.line(`    cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);
+  }
+
+  _emitStaticScriptExtendsFinalization(node) {
+    this.emit.line('if (!compositionMode) {');
+    this._emitStaticScriptExtendsLeafResult(node);
+    this.emit.line('} else {');
+    this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line('}');
   }
 
   _emitAsyncRootCompletion(node) {
@@ -1257,7 +1273,7 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
-  _compileAsyncRootBody(node) {
+  _compileAsyncRootBody(node, sharedChannelNames = null) {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
@@ -1268,11 +1284,42 @@ class CompilerAsync extends CompilerBaseAsync {
     for (const name of sequenceLocks) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
-    if (this.hasStaticExtends && !this.hasDynamicExtends) {
+    if (!this.scriptMode && this.hasStaticExtends && !this.hasDynamicExtends) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
     }
     this._emitRootExternInitialization(node);
-    this._compileChildren(node, null);
+    if (this.scriptMode && this.hasStaticExtends && !this.hasDynamicExtends) {
+      const staticExtendsIndex = node.children.findIndex((child) => child instanceof nodes.Extends);
+      if (staticExtendsIndex === -1) {
+        throw new Error('Compiler invariant: static script extends analysis found no root Extends node');
+      }
+      const extendsNode = node.children[staticExtendsIndex];
+      const preExtendsChildren = node.children.slice(0, staticExtendsIndex);
+      const postExtendsChildren = node.children.slice(staticExtendsIndex + 1);
+
+      preExtendsChildren.forEach((child) => {
+        this.compile(child, null);
+      });
+
+      this.inheritance.compileAsyncStaticRootExtends(
+        extendsNode,
+        node,
+        sharedChannelNames || []
+      );
+      postExtendsChildren.forEach((child) => {
+        this.compile(child, null);
+      });
+      this.emit.line('context.resolveExports();');
+      this._emitStaticScriptExtendsFinalization(node);
+      this.emit.line('if (compositionMode) {');
+      this.emit.line(`  return ${this.buffer.currentBuffer};`);
+      this.emit.line('}');
+      return;
+    } else {
+      // Static template extends intentionally stays on the legacy path until
+      // Step 7 widens the new constructor-chaining model to templates.
+      this._compileChildren(node, null);
+    }
     this.emit.line('context.resolveExports();');
     this._emitAsyncRootCompletion(node);
   }
@@ -1457,9 +1504,13 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('}');
   }
 
-  _compileAsyncRoot(node) {
-    this.emit.beginEntryFunction(node, 'root');
-    this._compileAsyncRootBody(node);
+  _compileAsyncRoot(node, sharedChannelNames = null) {
+    this.emit.beginEntryFunction(
+      node,
+      'root',
+      this.scriptMode ? (sharedChannelNames || []) : null
+    );
+    this._compileAsyncRootBody(node, sharedChannelNames);
     this.emit.endEntryFunction(node, true);
     this.inBlock = true;
     return this._compileAsyncBlockEntries(node);
@@ -1482,14 +1533,25 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileRoot(node) {
-    this.hasStaticExtends = node.children.some(child => child instanceof nodes.Extends);
+    const rootExtendsNodes = (node.children || []).filter((child) => child instanceof nodes.Extends);
+    if (this.scriptMode && rootExtendsNodes.length > 1) {
+      this.fail(
+        'script roots support at most one top-level extends',
+        rootExtendsNodes[1].lineno,
+        rootExtendsNodes[1].colno,
+        rootExtendsNodes[1]
+      );
+    }
+    this.hasStaticExtends = rootExtendsNodes.length > 0;
     this.hasDynamicExtends = node.children.some(child =>
       child instanceof nodes.Set &&
       child.targets[0] &&
       child.targets[0].value === '__parentTemplate'
     );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
-    const blocks = this._compileAsyncRoot(node);
+    const rootSharedSchema = this._collectSharedChannelSchema(node);
+    const rootSharedChannelNames = rootSharedSchema.map((entry) => entry.name);
+    const blocks = this._compileAsyncRoot(node, rootSharedChannelNames);
 
     this.emit.line('return {');
     blocks.forEach((block) => {
@@ -1498,7 +1560,7 @@ class CompilerAsync extends CompilerBaseAsync {
     });
     this.emit.line(`blockContracts: ${JSON.stringify(this._collectBlockContracts(node))},`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
-    this.emit.line(`sharedSchema: ${JSON.stringify(this._collectSharedChannelSchema(node))},`);
+    this.emit.line(`sharedSchema: ${JSON.stringify(rootSharedSchema)},`);
     this.emit.line('root: root\n};');
   }
 
@@ -1519,10 +1581,15 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _collectSharedChannelSchema(node) {
     const sharedSchema = [];
+    const seenNames = new Set();
     (node.children || []).forEach((child) => {
-      if (!(child instanceof nodes.ChannelDeclaration) || !child.isShared || !(child.name instanceof nodes.Symbol)) {
+      if (!(child instanceof nodes.ChannelDeclaration) ||
+        !child.isShared ||
+        !(child.name instanceof nodes.Symbol) ||
+        seenNames.has(child.name.value)) {
         return;
       }
+      seenNames.add(child.name.value);
       sharedSchema.push({
         name: child.name.value,
         type: child.channelType

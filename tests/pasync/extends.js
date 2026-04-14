@@ -7,6 +7,7 @@ let parser;
 let nodes;
 let scriptTranspiler;
 let runtime;
+let StringLoader;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -17,6 +18,7 @@ if (typeof require !== 'undefined') {
   nodes = require('../../src/nodes');
   scriptTranspiler = require('../../src/script/script-transpiler');
   runtime = require('../../src/runtime/runtime');
+  StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
@@ -25,6 +27,7 @@ if (typeof require !== 'undefined') {
   nodes = nunjucks.nodes;
   scriptTranspiler = nunjucks.scriptTranspiler;
   runtime = nunjucks.runtime;
+  StringLoader = window.util.StringLoader;
 }
 
 describe('Extends', function () {
@@ -181,6 +184,61 @@ describe('Extends', function () {
 
       const result = await rootBuffer.getChannel('theme').finalSnapshot();
       expect(result).to.be('dark');
+    });
+  });
+
+  describe('Step 3', function () {
+    it('should lower static script extends through a structural child-buffer boundary', function () {
+      const source = new Script(
+        'shared text trace\nextends "A.script"\ntrace("post|")\nreturn trace.snapshot()',
+        env,
+        'static-extends-boundary.script'
+      )._compileSource();
+
+      expect(source).to.contain('runtime.runControlFlowBoundary(');
+      expect(source).not.to.contain('waitForApplyComplete');
+    });
+
+    it('should run script constructor chaining in root-buffer source order', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")\nreturn "A"');
+      loader.addTemplate('B.script', 'shared text trace\ntrace("pre-B|")\nextends "A.script"\ntrace("post-B|")');
+      loader.addTemplate('C.script', 'shared text trace\ntrace("pre-C|")\nextends "B.script"\ntrace("post-C|")\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be('pre-C|pre-B|A|post-B|post-C|');
+    });
+
+    it('should expose descendant shared defaults to ancestor constructors', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared var theme = "light"\nshared text trace\ntrace(theme)');
+      loader.addTemplate('C.script', 'shared var theme = "dark"\nshared text trace\nextends "A.script"\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be('dark');
+    });
+
+    it('should preserve parent-before-post order through the child-buffer structure', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared text trace\ntrace(waitAndGet("A|"))');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\ntrace("post|")\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', {
+        waitAndGet: (value) => new Promise((resolve) => setTimeout(() => resolve(value), 10))
+      });
+      expect(result).to.be('A|post|');
+    });
+
+    it('should reject multiple top-level script extends declarations', function () {
+      expect(() => {
+        new Script('extends "A.script"\nextends "B.script"\nreturn 1', env, 'multi-extends.script')._compileSource();
+      }).to.throwException(/script roots support at most one top-level extends/);
     });
   });
 });

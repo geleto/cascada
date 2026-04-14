@@ -19,7 +19,8 @@ The architecture follows three rules:
 
 - shared state lives on the instance root buffer
 - constructors and namespace method calls run in child buffers
-- bootstrap finishes dispatch setup before any constructor code runs
+- child-owned inheritance metadata is available before that child's constructor
+  code relies on it
 
 Everything else follows from ordinary command-buffer tree behavior.
 
@@ -47,26 +48,38 @@ hierarchy runs and C's root buffer is the instance root.
 independent instance. The caller keeps its own output and uses `ns` to call
 methods or observe shared state.
 
-This model assumes a static parent chain. The full ancestry must be known
-before constructor execution starts.
+This model assumes a static parent chain. "Known" here means the parent paths
+are declared statically in source and are not computed dynamically. It does not
+mean the whole parent chain must already be loaded before constructor execution
+starts.
 
 ## Bootstrap
 
-Before any constructor code starts, the runtime bootstraps the hierarchy:
+Before any constructor code that depends on inherited dispatch starts, the
+runtime bootstraps the local hierarchy state:
 
 1. Resolve the static ancestry chain.
-2. Register shared-channel schema on the instance root buffer.
-3. Preload `with { }` values into shared state.
-4. Build the method/block dispatch table, most-derived first.
+2. Register the child file's method metadata immediately at root start.
+3. Register shared-channel schema on the instance root buffer.
+4. Preload `with { }` values into shared state when namespace instantiation uses
+   `with { }`.
 5. Start constructor execution.
 
-Both direct render and namespace instantiation use this same bootstrap step.
+Parent methods register later, when each `extends` load boundary resolves. The
+deferred-slot mechanism covers the window before those registrations arrive.
+
+Both direct render and namespace instantiation use this same local bootstrap
+shape.
 
 On the new static inheritance / namespace-instantiation path:
 
 - `with { }` preloads declared `shared` names only
 - unknown `with` keys are an error
 - this preload path does not target `extern`
+
+For plain direct-render `extends`, there is no `with { }` preload at the
+`extends` site. Shared defaults come from `shared` declarations plus descendant
+pre-extends initialization.
 
 `extern` remains the caller-input mechanism for ordinary composition paths such
 as plain `import`, `from import`, and `include`.
@@ -79,7 +92,9 @@ For `C extends B extends A`:
 - B runs in a child buffer created at C's `extends` site
 - A runs in a child buffer created at B's `extends` site
 - shared channels live on the instance root buffer
-- methods are registered before constructor code starts
+- each file's own methods are registered before that file's constructor code
+  relies on inherited dispatch; parent methods register later as `extends`
+  boundaries resolve
 
 Runtime nesting:
 
@@ -106,18 +121,22 @@ Execution order:
 `extends` is therefore a constructor boundary, not a deferred parent-render
 handoff.
 
-## Apply-Complete Barriers
+## Async Boundary Semantics
 
-When this architecture says post-`extends` code or namespace teardown waits for
-a buffer to finish applying, that wait is aggregate:
+Static script `extends` follows the same async-boundary model as `if` and other
+control-flow boundaries:
 
-- it is not tied to a single iterator leave event
-- it means all active channels for that buffer have finished applying
-- child-buffer work attached under that buffer has also finished applying in the
-  ordinary command-buffer tree sense
+- at the `extends` site, the current buffer immediately gets a child-buffer
+  entry reserved in source order
+- async work waits only for parent template/script resolution and loading
+- once loaded, the parent constructor chain emits into that child buffer
+- code after `extends` is still emitted immediately into the current buffer
+- ordering comes from the ordinary hierarchical command-buffer traversal, not
+  from blocking the parent on child apply-completion
 
-This aggregate apply-complete barrier is what post-`extends` code and namespace
-lifetime use.
+So post-`extends` constructor code does not need a special apply barrier. It
+stays after the parent constructor chain because the child buffer occupies that
+position in the lane structure.
 
 ## `shared`
 
@@ -138,6 +157,9 @@ Semantics:
 - `shared x = default` means initialize-if-not-set
 - `with { }` preload values win over shared defaults
 - a more-derived shared default wins over an ancestor default
+- shared declarations should be routed to the instance root at declaration time
+  from the current buffer; they should not require a general-purpose root lookup
+  API on `CommandBuffer`
 - a later plain assignment is unconditional and overwrites the current value
 
 Per channel type:
@@ -162,42 +184,69 @@ binding `extern` inputs.
 
 ## Methods, Overrides, and `super()`
 
-All methods across the hierarchy are registered before constructor code runs.
-Registration is most-derived first.
+Inherited dispatch is explicit:
 
-Consequences:
+- `this.method(args)` means "call the inherited/overridable method named
+  `method`"
+- bare `foo()` remains an ordinary local/context/global function call and never
+  participates in inheritance lookup
+- `this.method` without a call is not part of the first implementation
 
-- override lookup is most-derived wins
-- method position inside the file does not matter
-- an ancestor constructor calling a method dispatches to the most-derived
-  override
+Near-term, inheritance state lives on `context`. A later cleanup step may move
+it to a separate explicit runtime argument, but the semantics stay the same.
 
-Example:
+Each compiled file exposes its methods up front in a `methods` map. Each entry
+contains:
 
-```cascada
-// A.script
-method buildHeader()
-  return "Default header"
-endmethod
+- `fn`: the compiled method/block entry function
+- `contract`: the method signature / call contract
+- `ownerKey`: the declaring file's identity in the inheritance chain
 
-var header = buildHeader()
+The child file registers its own methods immediately at root start. Parent
+methods register later, when the `extends` load boundary resolves.
 
-// C.script
-method buildHeader()
-  return "Custom header"
-endmethod
-```
+The inheritance state therefore stores an ordered chain per method name, in
+child-first order:
 
-When A's constructor calls `buildHeader()`, it resolves to C's method.
+- `buildHeader -> [{ fn: C.buildHeader, ownerKey: C }, { fn: B.buildHeader, ownerKey: B }, { fn: A.buildHeader, ownerKey: A }]`
 
-`super()` inside a method calls the next ancestor implementation of that same
-method.
+This ordered-chain model drives both normal inherited dispatch and `super()`.
+
+### `this.method(...)`
+
+`this.method(args)` resolves through the first entry in that method's chain.
+
+- if the child already declared the method, the call can resolve immediately
+- if the method depends on a parent that has not loaded yet, the call resolves
+  through a deferred slot and waits only at that call site
+- constructor execution as a whole does not stall just because parent loading is
+  still in progress
+
+This is normal Cascada behavior: the call result may be a plain value or a
+promise, and only code that actually consumes it waits.
+
+### `super()`
+
+`super()` inside a method uses the same deferred-slot model.
+
+The current method name is statically known at compile time, and the current
+method's `ownerKey` is also statically known. So `super()` resolves to "the
+next entry in this method's chain after my owner."
+
+For example, inside `C`'s `buildHeader()`:
+
+- `super()` means "the next `buildHeader` after `ownerKey = C`"
+- if that next method has not registered yet because the parent chain is still
+  loading, only this `super()` call waits for it
+
+So the inheritance state must store ordered per-method chains, not just the
+winning override.
 
 Safety rule:
 
-> If an ancestor constructor calls a method, the override should only depend on
-> shared state that is already available from `with { }` preload or descendant
-> pre-extends initialization.
+> If an ancestor constructor calls `this.method(...)`, the override should only
+> depend on shared state that is already available from `with { }` preload or
+> descendant pre-extends initialization.
 
 ## Return Semantics
 
@@ -377,8 +426,8 @@ Required compile-time data:
 
 - static parent metadata for chain resolution
 - shared-channel schema declared by each file
-- method/block signatures
-- method override metadata for dispatch-table construction
+- upfront `methods` metadata: `{ fn, contract, ownerKey }`
+- method override metadata for ordered chain construction
 
 Not required:
 
