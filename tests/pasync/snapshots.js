@@ -7,8 +7,7 @@ let TextCommand;
 let DataCommand;
 let SinkCommand;
 let CommandBuffer;
-let createChannel;
-let createSinkChannel;
+let declareBufferChannel;
 let createPoison;
 let isPoisonError;
 
@@ -19,8 +18,7 @@ if (typeof require !== 'undefined') {
   DataCommand = require('../../src/runtime/runtime').DataCommand;
   SinkCommand = require('../../src/runtime/runtime').SinkCommand;
   CommandBuffer = require('../../src/runtime/runtime').CommandBuffer;
-  createChannel = require('../../src/runtime/runtime').createChannel;
-  createSinkChannel = require('../../src/runtime/runtime').createSinkChannel;
+  declareBufferChannel = require('../../src/runtime/runtime').declareBufferChannel;
   createPoison = require('../../src/runtime/runtime').createPoison;
   isPoisonError = require('../../src/runtime/runtime').isPoisonError;
   expectAsyncError = require('../util').expectAsyncError;
@@ -31,8 +29,7 @@ if (typeof require !== 'undefined') {
   DataCommand = nunjucks.runtime.DataCommand;
   SinkCommand = nunjucks.runtime.SinkCommand;
   CommandBuffer = nunjucks.runtime.CommandBuffer;
-  createChannel = nunjucks.runtime.createChannel;
-  createSinkChannel = nunjucks.runtime.createSinkChannel;
+  declareBufferChannel = nunjucks.runtime.declareBufferChannel;
   createPoison = nunjucks.runtime.createPoison;
   isPoisonError = nunjucks.runtime.isPoisonError;
   expectAsyncError = nunjucks.util.expectAsyncError;
@@ -76,22 +73,14 @@ describe('channel.finalSnapshot', function () {
   };
   const makeChannel = (buffer, ctx, channelName) => {
     const name = channelName || 'text';
-    return createChannel(buffer, name, ctx || null, name);
+    return declareBufferChannel(buffer, name, name, ctx || null, null);
   };
   const flatten = (buffer, ctx, channelName) => (
     makeChannel(buffer, ctx, channelName).finalSnapshot()
   );
   const flattenSink = (commands, ctx, channelName, sink) => {
     const buffer = new CommandBuffer(ctx, null);
-    const sinkChannel = createSinkChannel(buffer, channelName, ctx || null, sink);
-
-    buffer._channelTypes = Object.create(null);
-    buffer._channelTypes[channelName] = 'sink';
-    // Don't overwrite buffer._channels - it's already a Map from the constructor
-    // Just ensure the sink channel is registered (it should be from constructor)
-    if (buffer._channels instanceof Map) {
-      buffer._channels.set(channelName, sinkChannel);
-    }
+    const sinkChannel = declareBufferChannel(buffer, channelName, 'sink', ctx || null, sink);
 
     commands.forEach((entry) => buffer.add(entry, channelName));
     sinkChannel.finalSnapshot();
@@ -240,7 +229,7 @@ describe('channel.finalSnapshot', function () {
   describe('Error Handling & Edge Cases', function () {
     it('should resolve snapshot at command position before later writes', async function () {
       const buffer = new CommandBuffer(context, null);
-      const textOut = createChannel(buffer, 'text', context, 'text');
+      const textOut = declareBufferChannel(buffer, 'text', 'text', context, null);
 
       textOut('A');
       const snap = buffer.addSnapshot('text', { lineno: 0, colno: 0 });
@@ -264,7 +253,7 @@ describe('channel.finalSnapshot', function () {
 
     it('finalSnapshot should wait for owning channel completion', async function () {
       const buffer = new CommandBuffer(context, null);
-      const out = createChannel(buffer, 'text', context, 'text');
+      const out = declareBufferChannel(buffer, 'text', 'text', context, null);
       out('late');
 
       const early = await Promise.race([
@@ -280,8 +269,8 @@ describe('channel.finalSnapshot', function () {
 
     it('tracks finished state per channel', async function () {
       const buffer = new CommandBuffer(context, null);
-      const text = createChannel(buffer, 'text', context, 'text');
-      const data = createChannel(buffer, 'data', context, 'data');
+      const text = declareBufferChannel(buffer, 'text', 'text', context, null);
+      const data = declareBufferChannel(buffer, 'data', 'data', context, null);
 
       text('later');
       data.set(['ready'], 1);

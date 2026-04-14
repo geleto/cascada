@@ -224,6 +224,7 @@ class VarCommand extends ChannelCommand {
         subpath: null,
         pos: specOrValue.pos || null
       });
+      this.initializeIfNotSet = !!specOrValue.initializeIfNotSet;
       return;
     }
     super({
@@ -233,6 +234,7 @@ class VarCommand extends ChannelCommand {
       subpath: null,
       pos: null
     });
+    this.initializeIfNotSet = false;
   }
 
   apply(channel) {
@@ -243,6 +245,9 @@ class VarCommand extends ChannelCommand {
       const poisonErrors = this.extractPoisonFromArgs(args);
       if (poisonErrors.length > 0) {
         channel._setTarget(this.toPoisonValue(poisonErrors));
+        return;
+      }
+      if (this.initializeIfNotSet && channel._getTarget() !== undefined) {
         return;
       }
       if (args.length === 0) {

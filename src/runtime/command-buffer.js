@@ -589,7 +589,7 @@ class CommandBuffer {
 }
 
 function ensureChannelIterator(channel) {
-  if (!channel || typeof channel !== 'object') {
+  if (!channel || (typeof channel !== 'object' && typeof channel !== 'function')) {
     return null;
   }
 

@@ -145,12 +145,20 @@ needed by the inheritance model.
 
 ### Tests
 
-`tests/pasync/shared-channels.js`
+`tests/pasync/extends.js`
 
-- descendant shared var default beats ancestor default
-- `with { x: 99 }` beats shared defaults
-- a later plain assignment overwrites the initialized value
-- `shared sequence` supports both declaration-only and initialized forms
+- normal script compile output lowers shared declarations to
+  `declareSharedBufferChannel(...)` and shared-var defaults to
+  `initializeIfNotSet`
+- normal script compile output lowers `shared sequence` declaration-only and
+  initialized forms correctly
+- normal script rendering applies shared-var defaults and preserves
+  declaration-only shared vars until a later plain assignment
+- keep runtime-only coverage minimal here: one focused child-buffer test proves
+  descendant shared-var defaults beat ancestor defaults until Step 3/4 make the
+  full inheritance path available
+- the true preloaded-value / `with { x: 99 }` integration case lands with Step
+  4 bootstrap
 
 ## Step 3 - Root-Buffer Constructor Chaining
 

@@ -22,8 +22,7 @@ const {
   DataChannel,
   SinkChannel,
   inspectTargetForErrors,
-  createChannel,
-  createSinkChannel
+  declareBufferChannel
 } = require('../../src/runtime/channel');
 const { createCommandBuffer } = require('../../src/runtime/command-buffer');
 const { createArray } = require('../../src/runtime/resolve');
@@ -218,7 +217,7 @@ describe('channel errors', function () {
   describe('output observation commands step3', function () {
     it('does not expose observation methods on output facades', async () => {
       const buffer = createCommandBuffer(null);
-      const out = createChannel(buffer, 'out', null, 'data');
+      const out = declareBufferChannel(buffer, 'out', 'data', null, null);
 
       expect(out.snapshot).to.be(undefined);
       expect(out.isError).to.be(undefined);
@@ -234,7 +233,7 @@ describe('channel errors', function () {
       };
       const sink = { repair() { } };
 
-      const out = createSinkChannel(buffer, 'logger', null, sink);
+      const out = declareBufferChannel(buffer, 'logger', 'sink', null, sink);
       await out.repair();
 
       expect(calls).to.eql([['repair', 'logger']]);

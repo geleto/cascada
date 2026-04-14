@@ -12,7 +12,7 @@
   let parser;
   let TextCommand;
   let CommandBuffer;
-  let createChannel;
+  let declareBufferChannel;
   let scopeBoundaries;
 
   if (typeof require !== 'undefined') {
@@ -29,7 +29,7 @@
     parser = require('../../src/parser');
     TextCommand = runtime.TextCommand;
     CommandBuffer = runtime.CommandBuffer;
-    createChannel = runtime.createChannel;
+    declareBufferChannel = runtime.declareBufferChannel;
     scopeBoundaries = require('../../src/compiler/scope-boundaries');
   } else {
     expect = window.expect;
@@ -43,7 +43,7 @@
     parser = nunjucks.parser;
     TextCommand = nunjucks.runtime.TextCommand;
     CommandBuffer = nunjucks.runtime.CommandBuffer;
-    createChannel = nunjucks.runtime.createChannel;
+    declareBufferChannel = nunjucks.runtime.declareBufferChannel;
     scopeBoundaries = nunjucks.compiler.scopeBoundaries || null;
   }
 
@@ -2644,7 +2644,7 @@
     it('maps formal channel names to resolved aliases in add()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      createChannel(buffer, 'loop#4', ctx, 'text');
+      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({
@@ -2660,7 +2660,7 @@
     it('resolves addSnapshot() through channel aliases', async function () {
       const ctx = { path: 'alias-snapshot.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      createChannel(buffer, 'loop#4', ctx, 'text');
+      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.addText('A', { lineno: 1, colno: 1 }, 'loop');
@@ -2718,7 +2718,7 @@
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      createChannel(buffer, 'loop#4', ctx, 'text');
+      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.add(new TextCommand({

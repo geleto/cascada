@@ -31,10 +31,6 @@ class Channel {
     this._completionPromise = new Promise((resolve) => {
       this._resolveCompletion = resolve;
     });
-
-    if (this._buffer) {
-      this._buffer._registerChannel(this._channelName, this);
-    }
   }
 
   _enqueueCommand(command, args) {
@@ -364,11 +360,12 @@ class TextChannel extends Channel {
 }
 
 class VarChannel extends Channel {
-  constructor(buffer, channelName, context, channelType, initialValue = null) {
-    // Keep declaration-only var channels aligned with `none` semantics unless
-    // a caller provides an explicit initializer.
-    super(buffer, channelName, context, channelType, initialValue, null);
-    this._latestAssignedValue = initialValue;
+  constructor(buffer, channelName, context, channelType, initialValue) {
+    // Omitted initializers keep legacy `none`/null semantics, while an explicit
+    // `undefined` initializer preserves "unset" state for shared declaration-only vars.
+    const target = arguments.length < 5 ? null : initialValue;
+    super(buffer, channelName, context, channelType, target, null);
+    this._latestAssignedValue = target;
   }
 
   invoke(value) {
@@ -535,7 +532,7 @@ class DataChannel extends Channel {
   }
 }
 
-function _createChannel(buffer, channelName, context, channelType = null, initializer = null) {
+function _createChannel(buffer, channelName, context, channelType = null, initializer) {
   const type = channelType || channelName;
   if (type === 'text') {
     // Text channel is callable; args are appended to the text buffer.
@@ -818,7 +815,7 @@ function createSequenceChannel(buffer, channelName, context, sink) {
   return _createSequenceChannel(buffer, channelName, context, sink);
 }
 
-function declareBufferChannel(buffer, channelName, channelType, context, initializer = null) {
+function declareBufferChannel(buffer, channelName, channelType, context, initializer) {
   const targetBuffer = buffer;
   if (!targetBuffer) {
     // No implicit CommandBuffer creation here by design.
@@ -826,25 +823,59 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
     throw new Error(`Channel "${channelName}" declared without an active CommandBuffer`);
   }
 
+  const resolvedChannelName = typeof targetBuffer._resolveAliasedChannelName === 'function'
+    ? targetBuffer._resolveAliasedChannelName(channelName)
+    : channelName;
+
   targetBuffer._channelTypes = targetBuffer._channelTypes || Object.create(null);
-  targetBuffer._channelTypes[channelName] = channelType;
+  targetBuffer._channelTypes[resolvedChannelName] = channelType;
+
+  const resolvedInitializer = arguments.length < 5
+    ? null
+    : initializer;
 
   const channel = (channelType === 'sink')
-    ? _createSinkChannel(targetBuffer, channelName, context, initializer)
+    ? _createSinkChannel(targetBuffer, resolvedChannelName, context, resolvedInitializer)
     : (channelType === 'sequence')
-      ? _createSequenceChannel(targetBuffer, channelName, context, initializer)
-      : _createChannel(targetBuffer, channelName, context, channelType, initializer);
+      ? _createSequenceChannel(targetBuffer, resolvedChannelName, context, resolvedInitializer)
+      : _createChannel(targetBuffer, resolvedChannelName, context, channelType, resolvedInitializer);
 
-  channel._buffer = targetBuffer;
-
-  targetBuffer._registerChannel(channelName, channel);
+  targetBuffer._registerChannel(resolvedChannelName, channel);
 
   if (channelType === 'sink' || channelType === 'sequence') {
     targetBuffer._channelRegistry = targetBuffer._channelRegistry || Object.create(null);
-    targetBuffer._channelRegistry[channelName] = channel;
+    targetBuffer._channelRegistry[resolvedChannelName] = channel;
   }
 
   return channel;
+}
+
+function declareSharedBufferChannel(buffer, channelName, channelType, context, initializer = null) {
+  if (!buffer) {
+    throw new Error(`Shared channel "${channelName}" declared without an active CommandBuffer`);
+  }
+
+  const resolvedChannelName = typeof buffer._resolveAliasedChannelName === 'function'
+    ? buffer._resolveAliasedChannelName(channelName)
+    : channelName;
+
+  let rootBuffer = buffer;
+  while (rootBuffer && rootBuffer.parent) {
+    rootBuffer = rootBuffer.parent;
+  }
+
+  const rootInitializer = channelType === 'var' && initializer === null
+    ? undefined
+    : initializer;
+
+  let channel = rootBuffer._ownedChannels[resolvedChannelName];
+  if (!channel) {
+    channel = declareBufferChannel(rootBuffer, resolvedChannelName, channelType, context, rootInitializer);
+  } else if (channel._channelType !== channelType) {
+    throw new Error(
+      `Shared channel '${resolvedChannelName}' was already declared as '${channel._channelType}', not '${channelType}'`
+    );
+  }
 }
 
 module.exports = {
@@ -859,8 +890,10 @@ module.exports = {
   createSinkChannel,
   SequenceChannel,
   createSequenceChannel,
-  declareBufferChannel
+  declareBufferChannel,
+  declareSharedBufferChannel
 };
+
 
 function cloneSnapshotValue(value) {
   if (Array.isArray(value)) {

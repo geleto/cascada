@@ -924,6 +924,9 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeChannelDeclaration(node) {
+    // Script syntax normally rejects nested `shared` declarations earlier in the
+    // transpiler. Keep this compiler-side guard as defense-in-depth for any
+    // non-script/frontend path that can still construct shared declarations.
     if (node.isShared && !this.analysis.isRootScopeOwner(node._analysis)) {
       this.fail(
         'shared declarations are only allowed at the root scope',
@@ -935,7 +938,7 @@ class CompilerAsync extends CompilerBaseAsync {
     node.name._analysis = { declarationTarget: true };
     const name = node.name.value;
     return {
-      declares: [{ name, type: node.channelType, initializer: node.initializer || null, shared: !!node.isShared }],
+      declares: [{ name, type: node.channelType, initializer: node.initializer || null }],
       uses: [name]
     };
   }
@@ -954,9 +957,10 @@ class CompilerAsync extends CompilerBaseAsync {
       isNameSymbol: nameNode instanceof nodes.Symbol
     });
     const name = nameNode.value;
+    const declarationHelper = node.isShared ? 'declareSharedBufferChannel' : 'declareBufferChannel';
 
-    this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
-    if (channelType === 'sink' || (channelType === 'sequence' && node.initializer)) {
+    this.emit(`runtime.${declarationHelper}(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
+    if ((channelType === 'sink' || channelType === 'sequence') && node.initializer) {
       this.compile(node.initializer, null);
     } else {
       this.emit('null');
@@ -971,7 +975,8 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit(`let ${initValueId} = `);
       this.compileExpression(initNode, null, initNode);
       this.emit.line(';');
-      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+      const initIfNotSet = node.isShared ? 'true' : 'false';
+      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], initializeIfNotSet: ${initIfNotSet}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
     }
   }
 
@@ -1493,6 +1498,7 @@ class CompilerAsync extends CompilerBaseAsync {
     });
     this.emit.line(`blockContracts: ${JSON.stringify(this._collectBlockContracts(node))},`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
+    this.emit.line(`sharedSchema: ${JSON.stringify(this._collectSharedChannelSchema(node))},`);
     this.emit.line('root: root\n};');
   }
 
@@ -1509,6 +1515,20 @@ class CompilerAsync extends CompilerBaseAsync {
     });
 
     return contracts;
+  }
+
+  _collectSharedChannelSchema(node) {
+    const sharedSchema = [];
+    (node.children || []).forEach((child) => {
+      if (!(child instanceof nodes.ChannelDeclaration) || !child.isShared || !(child.name instanceof nodes.Symbol)) {
+        return;
+      }
+      sharedSchema.push({
+        name: child.name.value,
+        type: child.channelType
+      });
+    });
+    return sharedSchema;
   }
 
   _getRootDeclarations(node) {
