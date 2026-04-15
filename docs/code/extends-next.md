@@ -194,6 +194,17 @@ Inherited dispatch is explicit:
 
 Near-term, inheritance state lives on `context`. A later cleanup step may move
 it to a separate explicit runtime argument, but the semantics stay the same.
+That state may remain a plain object if it is still mostly storage plus trivial
+lookup. If it grows substantial behavior, validation, deferred-slot lifecycle,
+chain mutation, or dispatch helpers, it should become a dedicated
+`InheritanceState` class rather than leaving that logic split across `Context`,
+runtime helpers, and an unstructured object.
+Likewise, the new inheritance / extends runtime helpers should converge behind
+one dedicated module or class boundary once the runtime API stabilizes, rather
+than staying spread across `Context`, `Template`, and unrelated helpers.
+Compiler-side inheritance / extends lowering should likewise converge behind a
+dedicated compiler helper boundary rather than staying spread across unrelated
+compiler files.
 
 Each compiled file exposes its methods up front in a `methods` map. Each entry
 contains:

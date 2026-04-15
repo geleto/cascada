@@ -169,6 +169,105 @@ function validateIsolatedExternSpec(externSpec, operationName = 'import') {
   validateExternInputs(externSpec, [], [], operationName);
 }
 
+function validateSharedInputs(sharedSchema, providedInputNames, operationName = 'extends') {
+  const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
+  const providedNames = Array.isArray(providedInputNames) ? providedInputNames : [];
+  const declaredNames = new Set();
+
+  for (let i = 0; i < schema.length; i++) {
+    const entry = schema[i];
+    if (entry && entry.name) {
+      declaredNames.add(entry.name);
+    }
+  }
+
+  for (let i = 0; i < providedNames.length; i++) {
+    const name = providedNames[i];
+    if (!declaredNames.has(name)) {
+      throw new Error(`${operationName} passed '${name}' but the parent template does not declare it as shared`);
+    }
+  }
+}
+
+function preloadSharedInputs(sharedSchema, inputValues, currentBuffer, context, pos = null) {
+  const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
+  const values = inputValues && typeof inputValues === 'object' ? inputValues : {};
+  const providedNames = Object.keys(values);
+  const position = pos || { lineno: 0, colno: 0 };
+  const schemaByName = new Map();
+
+  validateSharedInputs(schema, providedNames, 'extends');
+  for (let i = 0; i < schema.length; i++) {
+    const entry = schema[i];
+    if (entry && entry.name) {
+      schemaByName.set(entry.name, entry.type);
+    }
+  }
+
+  for (let i = 0; i < providedNames.length; i++) {
+    const name = providedNames[i];
+    const type = schemaByName.get(name);
+    const value = values[name];
+
+    if (type === 'sequence') {
+      output.declareSharedBufferChannel(currentBuffer, name, type, context, value);
+      continue;
+    }
+
+    output.declareSharedBufferChannel(currentBuffer, name, type, context, null);
+    if (type === 'var') {
+      currentBuffer.add(new commands.VarCommand({
+        channelName: name,
+        args: [value],
+        initializeIfNotSet: true,
+        pos: position
+      }), name);
+      continue;
+    }
+
+    if (type === 'text') {
+      currentBuffer.add(new commands.TextCommand({
+        channelName: name,
+        command: 'set',
+        args: [value],
+        normalizeArgs: true,
+        pos: position
+      }), name);
+      continue;
+    }
+
+    if (type === 'data') {
+      currentBuffer.add(new commands.DataCommand({
+        channelName: name,
+        command: 'set',
+        args: [null, value],
+        pos: position
+      }), name);
+      continue;
+    }
+
+    throw new Error(`Unsupported shared preload channel type '${type}' for '${name}'`);
+  }
+}
+
+function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
+  const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
+  if (!currentBuffer || !currentBuffer.parent) {
+    return;
+  }
+
+  for (let i = 0; i < schema.length; i++) {
+    const entry = schema[i];
+    if (!entry || !entry.name) {
+      continue;
+    }
+    if (typeof currentBuffer.isLinkedChannel === 'function' && currentBuffer.isLinkedChannel(entry.name)) {
+      continue;
+    }
+    currentBuffer.parent.addBuffer(currentBuffer, entry.name);
+  }
+}
+
 module.exports = {
   makeMacro,
   invokeMacro,
@@ -184,6 +283,9 @@ module.exports = {
   withPath,
   validateExternInputs,
   validateIsolatedExternSpec,
+  validateSharedInputs,
+  preloadSharedInputs,
+  ensureCurrentBufferSharedLinks,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runWaitedControlFlowBoundary: asyncBoundaries.runWaitedControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,

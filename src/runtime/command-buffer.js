@@ -578,6 +578,14 @@ class CommandBuffer {
     this._finishKnownChannelIfRequested(resolvedChannelName);
   }
 
+  isLinkedChannel(channelName) {
+    if (!channelName) {
+      return false;
+    }
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    return this._linkedChannels[resolvedChannelName] === true;
+  }
+
   _finishKnownChannelIfRequested(channelName) {
     if (!channelName) {
       return;

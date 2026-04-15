@@ -326,7 +326,7 @@ state before that child's constructor code relies on inherited dispatch.
 
 ### Tests
 
-`tests/pasync/hierarchy-bootstrap.js`
+`tests/pasync/extends.js`
 
 - compiled files expose `methods` metadata up front
 - child methods register before child constructor code relies on them
@@ -417,12 +417,28 @@ argument once the semantics are stable.
 - remove the temporary static-path inheritance-state storage from `context`
 - keep `context` focused on render/global/extern lookup rather than inheritance
   dispatch state
+- keep inheritance state as a plain data object only while it remains mostly
+  storage plus trivial lookup
+- if inheritance state starts owning substantial behavior, validation,
+  deferred-slot lifecycle, chain mutation, or dispatch helpers, promote it to a
+  dedicated `InheritanceState` class in this step rather than leaving complex
+  behavior split across `Context`, runtime helpers, and an unstructured object
+- consolidate the new inheritance / extends runtime helpers behind a dedicated
+  module or class boundary in this step rather than leaving metadata shaping,
+  chain registration, deferred-slot handling, and dispatch support scattered
+  across `Context`, `Template`, and unrelated runtime helpers
+- consolidate compiler-side inheritance / extends lowering behind a dedicated
+  compiler module boundary in this step rather than leaving dispatch emission,
+  bootstrap threading, and signature plumbing scattered across unrelated
+  compiler files
 
 ### Main files
 
 - root/method entry function signatures
 - compiler call-site threading for inherited dispatch
+- compiler inheritance / extends helper module
 - `src/environment/context.js`
+- inheritance / extends runtime helper module or class
 
 ### Reuse
 

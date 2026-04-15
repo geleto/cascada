@@ -30,6 +30,7 @@ class Context extends Obj {
     this.exportChannels = Object.create(null);
     this.extendsCompositionByParent = new WeakMap();
     this.inheritanceLocalCapturesByTemplate = Object.create(null);
+    this.inheritanceState = null;
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -93,9 +94,13 @@ class Context extends Obj {
     return this;
   }
 
-  _validateBlockContractCompatibility(name, overridingBlock, parentBlock) {
-    const overridingContract = overridingBlock && overridingBlock.blockContract;
-    const parentContract = parentBlock && parentBlock.blockContract;
+  _formatCallableContract(name, contract) {
+    const args = (contract && contract.inputNames ? contract.inputNames : []).join(', ');
+    const contextSuffix = contract && contract.withContext ? ' with context' : '';
+    return `${name}(${args})${contextSuffix}`;
+  }
+
+  _validateCallableContractCompatibility(kind, name, overridingContract, parentContract) {
     if (!overridingContract || !parentContract) {
       return;
     }
@@ -109,15 +114,72 @@ class Context extends Obj {
       return;
     }
 
-    const formatContract = (contract) => {
-      const args = (contract.inputNames || []).join(', ');
-      const contextSuffix = contract.withContext ? ' with context' : '';
-      return `${name}(${args})${contextSuffix}`;
-    };
-
     throw new lib.TemplateError(
-      `block "${name}" signature mismatch: overriding block declares ${formatContract(overridingContract)} but parent declares ${formatContract(parentContract)}`
+      `${kind} "${name}" signature mismatch: overriding ${kind} declares ${this._formatCallableContract(name, overridingContract)} but parent declares ${this._formatCallableContract(name, parentContract)}`
     );
+  }
+
+  _validateMethodContractCompatibility(name, overridingMethod, parentMethod) {
+    const overridingContract = overridingMethod && overridingMethod.contract;
+    const parentContract = parentMethod && parentMethod.contract;
+    this._validateCallableContractCompatibility('method', name, overridingContract, parentContract);
+  }
+
+  ensureInheritanceState() {
+    if (!this.inheritanceState) {
+      this.inheritanceState = {
+        methods: Object.create(null)
+      };
+    }
+    return this.inheritanceState;
+  }
+
+  registerCompiledMethods(methods) {
+    const state = this.ensureInheritanceState();
+    const entries = methods && typeof methods === 'object' ? Object.keys(methods) : [];
+    entries.forEach((name) => {
+      const methodEntry = methods[name];
+      if (!methodEntry || typeof methodEntry.fn !== 'function') {
+        return;
+      }
+      const ownerKey = methodEntry.ownerKey == null ? '__anonymous__' : String(methodEntry.ownerKey);
+      const chain = state.methods[name] || (state.methods[name] = []);
+      const existing = chain.find((entry) => entry.ownerKey === ownerKey);
+      if (existing) {
+        return;
+      }
+      if (chain.length > 0) {
+        this._validateMethodContractCompatibility(name, chain[0], methodEntry);
+      }
+      chain.push({
+        fn: methodEntry.fn,
+        contract: methodEntry.contract || null,
+        ownerKey
+      });
+    });
+    return state;
+  }
+
+  getRegisteredMethodChain(name) {
+    const state = this.ensureInheritanceState();
+    return state.methods[name] || [];
+  }
+
+  registerSharedSchema(sharedSchema, ownerKey = this.path) {
+    void ownerKey;
+    // Step 4 keeps shared-schema validation/preload driven directly by the
+    // compiled file metadata. This registration hook exists to make bootstrap
+    // ordering explicit and to preserve a stable integration point for later
+    // steps without storing unused duplicate schema state on Context today.
+    return Array.isArray(sharedSchema)
+      ? sharedSchema.map((entry) => ({ name: entry.name, type: entry.type }))
+      : [];
+  }
+
+  _validateBlockContractCompatibility(name, overridingBlock, parentBlock) {
+    const overridingContract = overridingBlock && overridingBlock.blockContract;
+    const parentContract = parentBlock && parentBlock.blockContract;
+    this._validateCallableContractCompatibility('block', name, overridingContract, parentContract);
   }
 
   getBlock(name) {
@@ -149,7 +211,7 @@ class Context extends Obj {
     return this.getBlock(name);
   }
 
-  async finishAsyncExtendsBlockRegistration() {
+  finishAsyncExtendsBlockRegistration() {
     if (!this.asyncExtendsBlocksResolver) {
       return;
     }
@@ -356,6 +418,7 @@ class Context extends Obj {
     newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
     newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
     newContext.asyncExtendsBlocksPendingCount = this.asyncExtendsBlocksPendingCount;
+    newContext.inheritanceState = this.inheritanceState;
     return newContext;
   }
 

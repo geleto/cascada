@@ -112,14 +112,15 @@ class CompileInheritance {
     }
   }
 
-  _emitExtendsContextSetup(node, extendsVarsVar, extendsExternContextVar, extendsExternInputNamesVar, extendsRootContextVar) {
+  _emitExtendsContextSetup(node, extendsVarsVar, extendsInputValuesVar, extendsInputNamesVar, extendsRootContextVar) {
     this.emit.line(`const ${extendsVarsVar} = {};`);
     this._emitImmediateExternInputs(node, extendsVarsVar);
-    // Keep two distinct composition views on purpose:
-    // externContext is the filtered input set used for extern-slot validation,
-    // while rootContext preserves the full inherited constructor context the
-    // ancestor should execute against.
-    this._emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, extendsExternInputNamesVar, !!node.withContext);
+    // Keep two distinct views on purpose:
+    // inputValues is the explicit named-input set captured at the extends site
+    // (validated as externs on the legacy path, or as shared preloads on the
+    // new static script path), while rootContext preserves the full inherited
+    // constructor context the ancestor should execute against.
+    this._emitCompositionContextObject(node, extendsVarsVar, extendsInputValuesVar, extendsInputNamesVar, !!node.withContext);
     this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
   }
 
@@ -491,7 +492,7 @@ class CompileInheritance {
 
     if (node.asyncStoreIn) {
       const resolvedParentTemplateId = `${node.asyncStoreIn}_resolvedParentTemplate`;
-      this.emit.line(`let ${node.asyncStoreIn} = Promise.resolve(${parentTemplateId}).then((${resolvedParentTemplateId}) => {`);
+      this.emit.line(`let ${node.asyncStoreIn} = ${parentTemplateId}.then((${resolvedParentTemplateId}) => {`);
       this.emit.line('  if (context.asyncExtendsBlocksPromise) {');
       this.emit.line(`    return context.asyncExtendsBlocksPromise.then(() => ${resolvedParentTemplateId});`);
       this.emit.line('  }');
@@ -510,15 +511,15 @@ class CompileInheritance {
       this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
       this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
       this.emit.line('}');
-      this.emit.line('await context.finishAsyncExtendsBlockRegistration();');
+      this.emit.line('context.finishAsyncExtendsBlockRegistration();');
     });
   }
 
   compileAsyncStaticRootExtends(node, scriptRootNode, rootSharedChannelNames = []) {
     const k = this.compiler._tmpid();
     const extendsVarsVar = this.compiler._tmpid();
-    const extendsExternInputNamesVar = this.compiler._tmpid();
-    const extendsExternContextVar = this.compiler._tmpid();
+    const extendsSharedInputNamesVar = this.compiler._tmpid();
+    const extendsSharedInputValuesVar = this.compiler._tmpid();
     const extendsRootContextVar = this.compiler._tmpid();
     const templateVar = this.compiler._tmpid();
     const parentContextVar = this.compiler._tmpid();
@@ -531,11 +532,14 @@ class CompileInheritance {
     this._emitExtendsContextSetup(
       node,
       extendsVarsVar,
-      extendsExternContextVar,
-      extendsExternInputNamesVar,
+      extendsSharedInputValuesVar,
+      extendsSharedInputNamesVar,
       extendsRootContextVar
     );
     this.emit.line('context.beginAsyncExtendsBlockRegistration();');
+    this.emit.line('// Step 4 still reuses the existing composition-context setup for');
+    this.emit.line('// parent execution, but named extends inputs are now validated and');
+    this.emit.line('// preloaded through shared-schema bootstrap rather than extern slots.');
     // Fire-and-forget: ordering is structural here. The child buffer is linked
     // into the current buffer synchronously at the extends site, so later root
     // commands stay ordered after that boundary slot without any extra waiting.
@@ -545,14 +549,15 @@ class CompileInheritance {
     this.emit.line('try {');
     this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
     this.emit.line(`  ${templateVar}.compile();`);
-    this.emit.line(`  runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
+    this.emit.line(`  runtime.ensureCurrentBufferSharedLinks(${templateVar}.sharedSchema || [], currentBuffer);`);
+    this.emit.line(`  runtime.preloadSharedInputs(${templateVar}.sharedSchema || [], ${extendsSharedInputValuesVar}, currentBuffer, context, { lineno: ${node.lineno}, colno: ${node.colno} });`);
     this.emit.line(`  for (let ${k} in ${templateVar}.blocks) {`);
     this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
     this.emit.line('  }');
-    this.emit.line(`  const ${parentContextVar} = context.forkForComposition(${templateVar}.path, ${extendsRootContextVar}, context.getRenderContextVariables(), ${extendsExternContextVar});`);
+    this.emit.line(`  const ${parentContextVar} = context.forkForComposition(${templateVar}.path, ${extendsRootContextVar}, context.getRenderContextVariables(), ${extendsSharedInputValuesVar});`);
     this.emit.line(`  ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, true, currentBuffer);`);
     this.emit.line('} finally {');
-    this.emit.line('  await context.finishAsyncExtendsBlockRegistration();');
+    this.emit.line('  context.finishAsyncExtendsBlockRegistration();');
     this.emit.line('}');
     this.compiler.buffer.currentBuffer = prevBuffer;
     this.emit.asyncClosureDepth--;

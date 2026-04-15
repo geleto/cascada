@@ -283,6 +283,7 @@ class Template extends Obj {
 
     this.blockContracts = props.blockContracts || {};
     this.blocks = this._getBlocks(props);
+    this.methods = this._getMethods(props.methods);
     this.externSpec = props.externSpec || [];
     this.sharedSchema = props.sharedSchema || [];
     this.rootRenderFunc = props.root;
@@ -311,6 +312,29 @@ class Template extends Obj {
     });
 
     return blocks;
+  }
+
+  _getMethods(methods) {
+    const resolvedMethods = {};
+    const methodEntries = methods && typeof methods === 'object' ? methods : {};
+    const templatePath = this.path == null ? '__anonymous__' : String(this.path);
+
+    lib.keys(methodEntries).forEach((name) => {
+      const methodEntry = methodEntries[name];
+      if (!methodEntry || typeof methodEntry.fn !== 'function') {
+        return;
+      }
+      methodEntry.fn.blockContract = methodEntry.contract || null;
+      methodEntry.fn.templatePath = templatePath;
+      methodEntry.fn.ownerKey = methodEntry.ownerKey == null ? templatePath : String(methodEntry.ownerKey);
+      resolvedMethods[name] = {
+        fn: methodEntry.fn,
+        contract: methodEntry.contract || null,
+        ownerKey: methodEntry.fn.ownerKey
+      };
+    });
+
+    return resolvedMethods;
   }
 }
 

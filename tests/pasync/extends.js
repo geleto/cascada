@@ -8,12 +8,14 @@ let nodes;
 let scriptTranspiler;
 let runtime;
 let StringLoader;
+let Context;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
   Script = environment.Script;
+  Context = environment.Context;
   parser = require('../../src/parser');
   nodes = require('../../src/nodes');
   scriptTranspiler = require('../../src/script/script-transpiler');
@@ -23,6 +25,7 @@ if (typeof require !== 'undefined') {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   Script = nunjucks.Script;
+  Context = nunjucks.Context;
   parser = nunjucks.parser;
   nodes = nunjucks.nodes;
   scriptTranspiler = nunjucks.scriptTranspiler;
@@ -239,6 +242,95 @@ describe('Extends', function () {
       expect(() => {
         new Script('extends "A.script"\nextends "B.script"\nreturn 1', env, 'multi-extends.script')._compileSource();
       }).to.throwException(/script roots support at most one top-level extends/);
+    });
+  });
+
+  describe('Step 4', function () {
+    it('should expose compiled methods metadata up front', function () {
+      const script = new Script('method build(user)\n  user\nendmethod\nreturn null', env, 'method-metadata.script');
+      script.compile();
+
+      expect(script.methods).to.be.ok();
+      expect(script.methods.build).to.be.ok();
+      expect(typeof script.methods.build.fn).to.be('function');
+      expect(script.methods.build.contract).to.eql({
+        inputNames: ['user'],
+        withContext: false
+      });
+      expect(script.methods.build.ownerKey).to.be('method-metadata.script');
+    });
+
+    it('should preserve child-first method chains when parent methods register later', function () {
+      const childScript = new Script('method build(user)\n  user\nendmethod\nreturn null', env, 'C.script');
+      const parentScript = new Script('method build(user)\n  user\nendmethod\nreturn null', env, 'A.script');
+      childScript.compile();
+      parentScript.compile();
+
+      const context = new Context({}, {}, env, 'C.script', true);
+      context.registerCompiledMethods(childScript.methods);
+      context.registerCompiledMethods(parentScript.methods);
+
+      const chain = context.getRegisteredMethodChain('build');
+      expect(chain.map((entry) => entry.ownerKey)).to.eql(['C.script', 'A.script']);
+      expect(chain[0].contract).to.eql({
+        inputNames: ['user'],
+        withContext: false
+      });
+    });
+
+    it('should register shared schema before constructor work begins', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      const seen = [];
+      const originalRegisterSharedSchema = Context.prototype.registerSharedSchema;
+
+      Context.prototype.registerSharedSchema = function(sharedSchema, ownerKey) {
+        seen.push(`schema:${ownerKey}:${(sharedSchema || []).map((entry) => entry.name).join(',')}`);
+        return originalRegisterSharedSchema.call(this, sharedSchema, ownerKey);
+      };
+
+      try {
+        loader.addTemplate('C.script', 'shared text trace\nlog("pre-C|")\nreturn "done"');
+
+        const result = await env.renderScript('C.script', {
+          log: (value) => {
+            seen.push(value);
+            return value;
+          }
+        });
+
+        expect(result).to.be('done');
+        expect(seen[0]).to.be('schema:C.script:trace');
+        expect(seen[1]).to.be('pre-C|');
+      } finally {
+        Context.prototype.registerSharedSchema = originalRegisterSharedSchema;
+      }
+    });
+
+    it('should preload shared inputs from extends with before ancestor constructor code runs', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared var theme = "light"\nshared text trace\ntrace(theme)');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script" with theme\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', { theme: 'dark' });
+      expect(result).to.be('dark');
+    });
+
+    it('should reject extends with names that are not declared shared by the parent', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'extern theme = "light"\nreturn theme');
+      loader.addTemplate('C.script', 'extends "A.script" with theme\nreturn "done"');
+
+      try {
+        await env.renderScript('C.script', { theme: 'dark' });
+        expect().fail('Expected shared-input validation to fail');
+      } catch (error) {
+        expect(String(error)).to.contain("does not declare it as shared");
+      }
     });
   });
 });

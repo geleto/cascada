@@ -87,34 +87,6 @@ describe('Cascada Script: Variables', function () {
       }
     });
 
-    it('should configure base script externs through extends with during constructor chaining', async function () {
-      const loader = new StringLoader();
-      env = new AsyncEnvironment(loader);
-      const seen = [];
-
-      loader.addTemplate('base.script', `
-        extern theme = "light"
-        log("[" + theme + "] " + user.name + ": " + title)
-      `);
-
-      loader.addTemplate('child.script', `
-        var theme = "dark"
-        extends "base.script" with theme
-        return "done"
-      `);
-
-      const result = await env.renderScript('child.script', {
-        title: 'Q1 Report',
-        user: { name: 'Ada' },
-        log: (value) => {
-          seen.push(value);
-          return value;
-        }
-      });
-
-      expect(result).to.be('done');
-      expect(seen).to.eql(['[dark] Ada: Q1 Report']);
-    });
   });
 
   describe('Variable Declaration with var', function () {
