@@ -265,6 +265,15 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileLookupVal(node) {
+    if (this.scriptMode && this._isExplicitInheritedMethodLookup(node)) {
+      this.fail(
+        '`this.method` is only supported as a direct call; bare inherited-method references are not supported',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+
     const sequenceChannelLookup =
       node._analysis && node._analysis.sequenceChannelLookup;
     if (this.scriptMode && sequenceChannelLookup) {
@@ -405,6 +414,48 @@ class CompilerBaseAsync extends CompilerCommon {
     return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall };
   }
 
+  _isExplicitInheritedMethodLookup(node) {
+    return !!(
+      this.scriptMode &&
+      node instanceof nodes.LookupVal &&
+      node.target instanceof nodes.Symbol &&
+      node.target.value === 'this'
+    );
+  }
+
+  _getExplicitInheritedMethodCall(node) {
+    if (!this._isExplicitInheritedMethodLookup(node && node.name)) {
+      return null;
+    }
+    const nameNode = node.name.val;
+    const methodName = nameNode instanceof nodes.Symbol || nameNode instanceof nodes.Literal
+      ? nameNode.value
+      : null;
+    if (!methodName || typeof methodName !== 'string') {
+      this.fail(
+        '`this.method(...)` requires a direct method name',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+    return {
+      methodName
+    };
+  }
+
+  _emitInheritedMethodCall(node) {
+    const explicitCall = this._getExplicitInheritedMethodCall(node);
+    if (!explicitCall) {
+      return false;
+    }
+    const errorContextJson = JSON.stringify(this._createErrorContext(node));
+    this.emit(`runtime.callInheritedMethod(context, ${JSON.stringify(explicitCall.methodName)}, `);
+    this._compileAggregate(node.args, null, '[', ']', false, false);
+    this.emit(`, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson})`);
+    return true;
+  }
+
   compileFunCall(node) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
     const directMacroCall = node._analysis.directMacroCall;
@@ -413,6 +464,10 @@ class CompilerBaseAsync extends CompilerCommon {
     const importedCallableFacts = node._analysis.importedCallable;
 
     if (this._compileSpecialChannelFunCall(node)) {
+      return;
+    }
+
+    if (this._emitInheritedMethodCall(node)) {
       return;
     }
 
@@ -606,6 +661,14 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileScriptSymbolLookup(node, name) {
+    if (name === 'this') {
+      this.fail(
+        '`this` is only supported as `this.method(...)` in script inheritance',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
     const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
     if (nodeStaticPathKey) {

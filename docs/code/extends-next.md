@@ -236,6 +236,17 @@ This ordered-chain model drives both normal inherited dispatch and `super()`.
 This is normal Cascada behavior: the call result may be a plain value or a
 promise, and only code that actually consumes it waits.
 
+Inherited method dispatch is a direct runtime call emitted at the call site. It
+is not a separate buffer command or side-channel admission step. Ordering comes
+from the method invocation's per-call child command buffer and ordinary
+channel/buffer structure, so method-body writes land at the call site's source
+position.
+
+Inherited dispatch may reuse low-level argument-resolution and invocation
+helpers with ordinary function/macro calls, but it remains a separate dispatch
+path because it resolves through inheritance state rather than ordinary
+lookup.
+
 ### `super()`
 
 `super()` inside a method uses the same deferred-slot model.

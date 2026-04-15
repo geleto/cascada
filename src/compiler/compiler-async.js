@@ -883,6 +883,9 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeBlock(node) {
     const signature = this._getBlockSignature(node);
     const declares = [];
+    if (this.scriptMode) {
+      declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
+    }
     const seenBlockInputNames = new Set();
     signature.nameNodes.forEach((nameNode, index) => {
       nameNode._analysis = Object.assign({}, nameNode._analysis, {
@@ -938,7 +941,7 @@ class CompilerAsync extends CompilerBaseAsync {
     node.name._analysis = { declarationTarget: true };
     const name = node.name.value;
     return {
-      declares: [{ name, type: node.channelType, initializer: node.initializer || null }],
+      declares: [{ name, type: node.channelType, initializer: node.initializer || null, shared: !!node.isShared }],
       uses: [name]
     };
   }
@@ -1081,6 +1084,20 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.templateName == null ? '__anonymous__' : String(this.templateName);
   }
 
+  _getCompiledMethodLinkedChannels(block) {
+    const declaredBlockInputNames = this._getBlockInputNames(block);
+    const localCaptureNames = this._getBlockLocalCaptureNames(block);
+    const locallyInitializedNames = new Set(
+      localCaptureNames.concat(declaredBlockInputNames)
+    );
+    return Array.from(block.body._analysis.usedChannels || [])
+      .filter((hname) =>
+        hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL &&
+        hname !== RETURN_CHANNEL_NAME &&
+        !locallyInitializedNames.has(hname)
+      );
+  }
+
   _collectCompiledMethods(node) {
     const methods = Object.create(null);
     const blocks = node.findAll(nodes.Block);
@@ -1094,7 +1111,8 @@ class CompilerAsync extends CompilerBaseAsync {
           inputNames: signature.inputNames,
           withContext: !!block.withContext
         },
-        ownerKey
+        ownerKey,
+        linkedChannels: this._getCompiledMethodLinkedChannels(block)
       };
     });
 
@@ -1106,7 +1124,7 @@ class CompilerAsync extends CompilerBaseAsync {
     Object.keys(compiledMethods || {}).forEach((name) => {
       const method = compiledMethods[name];
       this.emit.line(
-        `${indent}  ${JSON.stringify(name)}: { fn: ${method.functionName}, contract: ${JSON.stringify(method.contract)}, ownerKey: ${JSON.stringify(method.ownerKey)} },`
+        `${indent}  ${JSON.stringify(name)}: { fn: ${method.functionName}, contract: ${JSON.stringify(method.contract)}, ownerKey: ${JSON.stringify(method.ownerKey)}, linkedChannels: ${JSON.stringify(method.linkedChannels || [])} },`
       );
     });
     this.emit.line(`${indent}}`);
@@ -1138,7 +1156,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`let ${handoffVar} = false;`);
     if (this.hasExtends) {
       const finalParentVar = this._tmpid();
-      this.emit.line(`let ${completionVar} = runtime.channelLookup("__parentTemplate", ${this.buffer.currentBuffer}).then((${finalParentVar}) => {`);
+      this.emit.line(`let ${completionVar} = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.buffer.currentBuffer})).then((${finalParentVar}) => {`);
       this.emit.line(`  if (${finalParentVar}) {`);
       const templateLocalCaptures = this._collectTemplateInheritanceCaptureNames(node);
       if (templateLocalCaptures.length > 0) {
@@ -1392,25 +1410,23 @@ class CompilerAsync extends CompilerBaseAsync {
     const declaredBlockInputNames = this._getBlockInputNames(block);
     const hasExplicitBlockContext = declaredBlockInputNames.length > 0 || !!block.withContext;
     const localCaptureNames = this._getBlockLocalCaptureNames(block);
-    const locallyInitializedNames = new Set(
-      localCaptureNames.concat(declaredBlockInputNames)
-    );
-    const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
-      .filter((hname) =>
-        hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL &&
-        !locallyInitializedNames.has(hname)
-      );
+    const blockLinkedChannels = this._getCompiledMethodLinkedChannels(block);
     this.emit.beginEntryFunction(
       block,
       `b_${name}`,
       blockLinkedChannels,
       ['blockPayload = null', 'blockRenderCtx = undefined']
     );
+    if (this.scriptMode) {
+      this.emitDeclareReturnChannel(this.buffer.currentBuffer);
+    }
     const payloadOriginalArgsVar = this._tmpid();
     const payloadLocalCapturesVar = this._tmpid();
     this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
     this.emit.line(`const ${payloadLocalCapturesVar} = blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate[${templateKey}] ? blockPayload.localsByTemplate[${templateKey}] : {};`);
-    if (hasExplicitBlockContext) {
+    if (this.scriptMode) {
+      this.emit.line(`context = context.forkForPath(${templateKey});`);
+    } else if (hasExplicitBlockContext) {
       const payloadContextVar = this._tmpid();
       this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${block.withContext ? '(blockRenderCtx || {})' : '{}'}, ${payloadLocalCapturesVar}, ${payloadOriginalArgsVar});`);
       this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);
@@ -1422,7 +1438,9 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`context = context.forkForPath(${templateKey});`);
     }
     this.emit.line(`${this.buffer.currentBuffer}._context = context;`);
-    this.emit.line(`${this.buffer.currentTextChannelVar}._context = context;`);
+    if (!this.scriptMode) {
+      this.emit.line(`${this.buffer.currentTextChannelVar}._context = context;`);
+    }
     this._emitAsyncBlockInputInitialization(block, {
       declaredBlockInputNames,
       localCaptureNames,
@@ -1436,8 +1454,14 @@ class CompilerAsync extends CompilerBaseAsync {
     } finally {
       this.currentCompilingBlock = previousCompilingBlock;
     }
-    this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
+    if (this.scriptMode) {
+      const returnVar = this._tmpid();
+      this.emitReturnChannelSnapshot(this.buffer.currentBuffer, block, returnVar);
+      this.emit.line(`return ${returnVar};`);
+    } else {
+      this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      this.emit.line(`return ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
+    }
     this.emit.endEntryFunction(block, true);
   }
 

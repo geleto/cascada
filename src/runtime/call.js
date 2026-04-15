@@ -8,6 +8,7 @@ const {
   RuntimePromise
 } = require('./errors');
 const { RESOLVE_MARKER, resolveAll } = require('./resolve');
+const { createCommandBuffer, isCommandBuffer } = require('./command-buffer');
 
 /**
  * Sync call wrapper for templates.
@@ -179,7 +180,215 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   }
 }
 
+function _hasAsyncArgs(args) {
+  return Array.isArray(args) && args.some((arg) =>
+    arg &&
+    !isPoison(arg) &&
+    (typeof arg.then === 'function' || arg[RESOLVE_MARKER])
+  );
+}
+
+function _createMethodArgMap(contract, args) {
+  const argMap = {};
+  const inputNames = contract && Array.isArray(contract.inputNames) ? contract.inputNames : [];
+  for (let i = 0; i < inputNames.length; i++) {
+    argMap[inputNames[i]] = args[i];
+  }
+  return argMap;
+}
+
+function _prepareMethodInvocation(context, methodEntry, args, currentPayload = null) {
+  const nextArgs = _createMethodArgMap(methodEntry && methodEntry.contract, args);
+  if (currentPayload) {
+    return context.createSuperInheritancePayload(currentPayload, nextArgs);
+  }
+  return context.createInheritancePayload(methodEntry && methodEntry.ownerKey, nextArgs, null);
+}
+
+function _getFallbackInvocationLinkedChannels(currentBuffer) {
+  const linkedChannels = new Set();
+  if (currentBuffer && typeof currentBuffer._collectKnownChannelNames === 'function') {
+    currentBuffer._collectKnownChannelNames()
+      .filter((name) => name && name !== '__return__')
+      .forEach((name) => linkedChannels.add(name));
+  }
+  const context = currentBuffer && currentBuffer._context;
+  if (context && typeof context.getRegisteredSharedChannelNames === 'function') {
+    context.getRegisteredSharedChannelNames()
+      .filter((name) => name && name !== '__return__')
+      .forEach((name) => linkedChannels.add(name));
+  }
+  return linkedChannels.size > 0 ? Array.from(linkedChannels) : null;
+}
+
+function _finishMethodInvocationBuffer(currentBuffer) {
+  if (!currentBuffer || !currentBuffer.parent || typeof currentBuffer.markFinishedAndPatchLinks !== 'function') {
+    return null;
+  }
+  currentBuffer.markFinishedAndPatchLinks();
+}
+
+function _createMethodInvocationParent(currentBuffer, context, linkedChannels = null) {
+  if (!isCommandBuffer(currentBuffer)) {
+    return currentBuffer;
+  }
+  const invocationLinkedChannels =
+    Array.isArray(linkedChannels)
+      ? linkedChannels
+      : _getFallbackInvocationLinkedChannels(currentBuffer);
+  return createCommandBuffer(
+    currentBuffer._context || context,
+    currentBuffer,
+    invocationLinkedChannels,
+    currentBuffer
+  );
+}
+
+function _invokeMethodEntry(methodEntry, context, args, env, runtime, cb, currentBuffer, currentPayload = null) {
+  const payload = _prepareMethodInvocation(context, methodEntry, args, currentPayload);
+  const preparedPayload = context.prepareInheritancePayloadForBlock(methodEntry.fn, payload);
+  const renderCtx = methodEntry && methodEntry.contract && methodEntry.contract.withContext
+    ? context.getRenderContextVariables()
+    : undefined;
+  return methodEntry.fn(env, context, runtime, cb, currentBuffer, preparedPayload, renderCtx);
+}
+
+function _validateInheritedMethodArgCount(methodEntry, args, name, errorContext) {
+  const contract = methodEntry && methodEntry.contract;
+  const inputNames = contract && Array.isArray(contract.inputNames) ? contract.inputNames : [];
+  if (Array.isArray(args) && args.length > inputNames.length) {
+    return createPoison(
+      new Error(`Inherited method '${name}' received too many arguments`),
+      errorContext.lineno,
+      errorContext.colno,
+      errorContext.errorContextString,
+      errorContext.path
+    );
+  }
+  return null;
+}
+
+function _mergePoisonArgs(args) {
+  const poisonedArgs = Array.isArray(args) ? args.filter(isPoison) : [];
+  if (poisonedArgs.length === 0) {
+    return null;
+  }
+  if (poisonedArgs.length === 1) {
+    return poisonedArgs[0];
+  }
+  return createPoison(poisonedArgs.flatMap((value) => value.errors));
+}
+
+async function _callInheritedMethodAsync(resolveEntry, name, context, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
+  const errors = [];
+  let resolvedArgs = args;
+
+  try {
+    try {
+      resolvedArgs = await resolveAll(args);
+    } catch (err) {
+      if (isPoisonError(err)) {
+        errors.push(...err.errors);
+      } else {
+        errors.push(handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path));
+      }
+    }
+
+    if (errors.length > 0) {
+      return createPoison(errors);
+    }
+
+    let methodEntry;
+    try {
+      methodEntry = await resolveEntry();
+    } catch (err) {
+      return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+    }
+
+    const argCountError = _validateInheritedMethodArgCount(methodEntry, resolvedArgs, name, errorContext);
+    if (argCountError) {
+      return argCountError;
+    }
+    const result = _invokeMethodEntry(methodEntry, context, resolvedArgs, env, runtime, cb, currentBuffer, currentPayload);
+    if (result && typeof result.then === 'function') {
+      return new RuntimePromise(result, errorContext);
+    }
+    return result;
+  } catch (err) {
+    return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+  } finally {
+    _finishMethodInvocationBuffer(currentBuffer);
+  }
+}
+
+function _callInheritedMethodCommon(resolveImmediateEntry, resolveEntry, name, context, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
+  const poisonedArgs = _mergePoisonArgs(args);
+  if (poisonedArgs && !_hasAsyncArgs(args)) {
+    return poisonedArgs;
+  }
+
+  const immediateEntry = resolveImmediateEntry();
+  const invocationParent = _createMethodInvocationParent(
+    currentBuffer,
+    context,
+    immediateEntry && immediateEntry.linkedChannels
+  );
+  if (immediateEntry && !_hasAsyncArgs(args)) {
+    try {
+      const argCountError = _validateInheritedMethodArgCount(immediateEntry, args, name, errorContext);
+      if (argCountError) {
+        return argCountError;
+      }
+      const result = _invokeMethodEntry(immediateEntry, context, args, env, runtime, cb, invocationParent, currentPayload);
+      if (result && typeof result.then === 'function') {
+        return new RuntimePromise(result, errorContext);
+      }
+      return result;
+    } catch (err) {
+      return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+    } finally {
+      _finishMethodInvocationBuffer(invocationParent);
+    }
+  }
+
+  return _callInheritedMethodAsync(resolveEntry, name, context, args, env, runtime, cb, invocationParent, errorContext, currentPayload);
+}
+
+function callInheritedMethod(context, name, args, env, runtime, cb, currentBuffer, errorContext) {
+  return _callInheritedMethodCommon(
+    () => context.getImmediateInheritedMethodEntry(name),
+    () => context.resolveInheritedMethodEntry(name),
+    name,
+    context,
+    args,
+    env,
+    runtime,
+    cb,
+    currentBuffer,
+    errorContext,
+    null
+  );
+}
+
+function callSuperMethod(context, name, ownerKey, args, env, runtime, cb, currentBuffer, currentPayload, errorContext) {
+  return _callInheritedMethodCommon(
+    () => context.getImmediateSuperMethodEntry(name, ownerKey),
+    () => context.resolveSuperMethodEntry(name, ownerKey),
+    name,
+    context,
+    args,
+    env,
+    runtime,
+    cb,
+    currentBuffer,
+    errorContext,
+    currentPayload
+  );
+}
+
 module.exports = {
   callWrap,
   callWrapAsync,
+  callInheritedMethod,
+  callSuperMethod
 };

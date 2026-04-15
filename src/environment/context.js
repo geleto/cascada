@@ -31,6 +31,7 @@ class Context extends Obj {
     this.extendsCompositionByParent = new WeakMap();
     this.inheritanceLocalCapturesByTemplate = Object.create(null);
     this.inheritanceState = null;
+    this.registeredSharedChannelNames = new Set();
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -154,10 +155,74 @@ class Context extends Obj {
       chain.push({
         fn: methodEntry.fn,
         contract: methodEntry.contract || null,
-        ownerKey
+        ownerKey,
+        linkedChannels: Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : []
       });
     });
     return state;
+  }
+
+  _findRegisteredMethodEntry(name, ownerKey = null) {
+    const chain = this.getRegisteredMethodChain(name);
+    if (ownerKey === null) {
+      return chain.length > 0 ? chain[0] : null;
+    }
+    const ownerKeyString = String(ownerKey);
+    const ownerIndex = chain.findIndex((entry) => entry.ownerKey === ownerKeyString);
+    if (ownerIndex === -1) {
+      return null;
+    }
+    return chain[ownerIndex + 1] || null;
+  }
+
+  getImmediateInheritedMethodEntry(name) {
+    return this._findRegisteredMethodEntry(name, null);
+  }
+
+  getImmediateSuperMethodEntry(name, ownerKey) {
+    return this._findRegisteredMethodEntry(name, ownerKey);
+  }
+
+  resolveInheritedMethodEntry(name) {
+    const immediate = this.getImmediateInheritedMethodEntry(name);
+    if (immediate) {
+      return immediate;
+    }
+    if (this.asyncExtendsBlocksPromise) {
+      // Step 5 temporarily reuses the legacy extends-registration lifecycle as
+      // the "parent chain finished loading" signal. Parent methods register
+      // before that promise resolves, so deferred inherited dispatch can wait
+      // here until the old block-registration bridge is retired.
+      return this.asyncExtendsBlocksPromise.then(() => {
+        const resolved = this.getImmediateInheritedMethodEntry(name);
+        if (resolved) {
+          return resolved;
+        }
+        throw new Error(`Inherited method '${name}' was not found in the loaded extends chain`);
+      });
+    }
+    throw new Error(`Inherited method '${name}' was not found in the loaded extends chain`);
+  }
+
+  resolveSuperMethodEntry(name, ownerKey) {
+    const immediate = this.getImmediateSuperMethodEntry(name, ownerKey);
+    if (immediate) {
+      return immediate;
+    }
+    if (this.asyncExtendsBlocksPromise) {
+      // Step 5 temporarily reuses the legacy extends-registration lifecycle as
+      // the "parent chain finished loading" signal. Parent methods register
+      // before that promise resolves, so deferred super dispatch can wait here
+      // until the old block-registration bridge is retired.
+      return this.asyncExtendsBlocksPromise.then(() => {
+        const resolved = this.getImmediateSuperMethodEntry(name, ownerKey);
+        if (resolved) {
+          return resolved;
+        }
+        throw new Error(`No super method is available for '${name}' after owner '${ownerKey}'`);
+      });
+    }
+    throw new Error(`No super method is available for '${name}' after owner '${ownerKey}'`);
   }
 
   getRegisteredMethodChain(name) {
@@ -167,13 +232,19 @@ class Context extends Obj {
 
   registerSharedSchema(sharedSchema, ownerKey = this.path) {
     void ownerKey;
-    // Step 4 keeps shared-schema validation/preload driven directly by the
-    // compiled file metadata. This registration hook exists to make bootstrap
-    // ordering explicit and to preserve a stable integration point for later
-    // steps without storing unused duplicate schema state on Context today.
-    return Array.isArray(sharedSchema)
+    const normalized = Array.isArray(sharedSchema)
       ? sharedSchema.map((entry) => ({ name: entry.name, type: entry.type }))
       : [];
+    normalized.forEach((entry) => {
+      if (entry && entry.name) {
+        this.registeredSharedChannelNames.add(entry.name);
+      }
+    });
+    return normalized;
+  }
+
+  getRegisteredSharedChannelNames() {
+    return Array.from(this.registeredSharedChannelNames || []);
   }
 
   _validateBlockContractCompatibility(name, overridingBlock, parentBlock) {
@@ -419,6 +490,7 @@ class Context extends Obj {
     newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
     newContext.asyncExtendsBlocksPendingCount = this.asyncExtendsBlocksPendingCount;
     newContext.inheritanceState = this.inheritanceState;
+    newContext.registeredSharedChannelNames = this.registeredSharedChannelNames;
     return newContext;
   }
 

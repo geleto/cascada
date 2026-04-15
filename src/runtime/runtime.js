@@ -377,6 +377,8 @@ module.exports = {
 
   callWrap: call.callWrap,
   callWrapAsync: call.callWrapAsync,
+  callInheritedMethod: call.callInheritedMethod,
+  callSuperMethod: call.callSuperMethod,
   sequentialCallWrapValue: sequential.sequentialCallWrapValue,
   handleError: errors.handleError,
 

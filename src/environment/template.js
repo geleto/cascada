@@ -327,10 +327,12 @@ class Template extends Obj {
       methodEntry.fn.blockContract = methodEntry.contract || null;
       methodEntry.fn.templatePath = templatePath;
       methodEntry.fn.ownerKey = methodEntry.ownerKey == null ? templatePath : String(methodEntry.ownerKey);
+      methodEntry.fn.linkedChannels = Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : [];
       resolvedMethods[name] = {
         fn: methodEntry.fn,
         contract: methodEntry.contract || null,
-        ownerKey: methodEntry.fn.ownerKey
+        ownerKey: methodEntry.fn.ownerKey,
+        linkedChannels: methodEntry.fn.linkedChannels
       };
     });
 

@@ -464,13 +464,7 @@ class CompileAnalysis {
     const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
     for (let i = 0; i < localMutates.length; i++) {
       const name = localMutates[i];
-      if (!name) {
-        continue;
-      }
-      if (name && name.charAt(0) === '!') {
-        continue;
-      }
-      if (name === currentTextChannel) {
+      if (!name || name.charAt(0) === '!' || name === currentTextChannel) {
         continue;
       }
       const declarationOwner = this.findDeclarationOwner(analysis, name);
@@ -480,6 +474,12 @@ class CompileAnalysis {
         continue;
       }
       if (declaration.type === 'sequential_path' || (name && name.charAt(0) === '!')) {
+        continue;
+      }
+      // Shared channels are the explicit cross-constructor/method mutation
+      // surface for static inheritance. Read-only block boundaries still apply
+      // to ordinary outer vars/channels.
+      if (declaration.shared) {
         continue;
       }
       if (!this._passesReadOnlyBoundary(scopeOwner, declarationOwner)) {

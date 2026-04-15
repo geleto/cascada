@@ -356,6 +356,9 @@ slots backed by ordered per-method chains.
 - `super()` resolves to the next entry after the current method's `ownerKey`
 - parent methods register later, when the `extends` load boundary resolves
 - if a needed method is not registered yet, only that call site waits
+- inherited method dispatch is a direct runtime call at the consumption site,
+  not a separate invocation command; ordering comes from the per-call child
+  buffer attached there
 
 ### Main work
 
@@ -427,6 +430,10 @@ argument once the semantics are stable.
   module or class boundary in this step rather than leaving metadata shaping,
   chain registration, deferred-slot handling, and dispatch support scattered
   across `Context`, `Template`, and unrelated runtime helpers
+- factor out low-level invocation pieces that can be shared between ordinary
+  function/macro calls and inherited method dispatch, while keeping inherited
+  dispatch as a separate top-level path with its own inheritance-state
+  resolution rules
 - consolidate compiler-side inheritance / extends lowering behind a dedicated
   compiler module boundary in this step rather than leaving dispatch emission,
   bootstrap threading, and signature plumbing scattered across unrelated

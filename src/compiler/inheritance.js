@@ -367,7 +367,9 @@ class CompileInheritance {
   }
 
   compileAsyncBlock(node) {
-    //var id = this._tmpid();
+    if (this.compiler.scriptMode && !this.compiler.inBlock) {
+      return;
+    }
 
     // If we are at the top level of a template (`!this.inBlock`) that has a
     // static `extends` tag, this block is a definition-only. We can safely
@@ -506,6 +508,7 @@ class CompileInheritance {
       }
       this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
       this.emit.line(`${templateVar}.compile();`);
+      this.emit.line(`context.registerCompiledMethods(${templateVar}.methods || {});`);
       this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
       this.emit.line(`context.setExtendsComposition(${templateVar}, ${extendsRootContextVar}, ${extendsExternContextVar});`);
       this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
@@ -549,6 +552,7 @@ class CompileInheritance {
     this.emit.line('try {');
     this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
     this.emit.line(`  ${templateVar}.compile();`);
+    this.emit.line(`  context.registerCompiledMethods(${templateVar}.methods || {});`);
     this.emit.line(`  runtime.ensureCurrentBufferSharedLinks(${templateVar}.sharedSchema || [], currentBuffer);`);
     this.emit.line(`  runtime.preloadSharedInputs(${templateVar}.sharedSchema || [], ${extendsSharedInputValuesVar}, currentBuffer, context, { lineno: ${node.lineno}, colno: ${node.colno} });`);
     this.emit.line(`  for (let ${k} in ${templateVar}.blocks) {`);
@@ -584,6 +588,48 @@ class CompileInheritance {
   }
 
   compileAsyncSuper(node) {
+    if (this.compiler.scriptMode) {
+      const id = node.symbol ? node.symbol.value : null;
+      const compilingBlock = this.compiler.currentCompilingBlock;
+      const blockName = compilingBlock && compilingBlock.name ? compilingBlock.name.value : null;
+      const ownerKey = this.compiler._getCompiledMethodOwnerKey();
+      if (!blockName) {
+        this.compiler.fail(
+          'super() is only valid inside a method body',
+          node.lineno,
+          node.colno,
+          node
+        );
+      }
+      const positionalArgsNode = this._getPositionalSuperArgsNode(node);
+      const args = positionalArgsNode.children;
+      const knownInputNames = this.compiler._getBlockInputNames(compilingBlock);
+      if (args.length > knownInputNames.length) {
+        this.compiler.fail(
+          `super(...) for method "${blockName}" received too many arguments`,
+          node.lineno,
+          node.colno,
+          node
+        );
+      }
+      const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+      if (!id) {
+        this.emit(`runtime.callSuperMethod(context, ${JSON.stringify(blockName)}, ${JSON.stringify(ownerKey)}, `);
+        this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+        this.emit(`, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockPayload, ${errorContextJson})`);
+        return;
+      }
+
+      const superArgsVar = this.compiler._tmpid();
+      const superCallExpr =
+        `runtime.callSuperMethod(context, ${JSON.stringify(blockName)}, ${JSON.stringify(ownerKey)}, ${superArgsVar}, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockPayload, ${errorContextJson})`;
+      this.emit(`let ${superArgsVar} = `);
+      this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+      this.emit.line(';');
+      this.emit.line(`let ${id} = ${superCallExpr};`);
+      return;
+    }
+
     const name = node.blockName.value;
     const id = node.symbol ? node.symbol.value : null;
     const positionalArgsNode = this._getPositionalSuperArgsNode(node);
@@ -601,6 +647,10 @@ class CompileInheritance {
     }
 
     if (!id) {
+      if (args.length === 0) {
+        this.emit(`runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, context.createSuperInheritancePayload(blockPayload), blockRenderCtx))`);
+        return;
+      }
       const superArgsVar = this.compiler._tmpid();
       const superArgsOverrideVar = this.compiler._tmpid();
       const superBlockPayloadVar = this.compiler._tmpid();
