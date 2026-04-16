@@ -3,6 +3,7 @@
 const lib = require('../lib');
 const { Obj } = require('../object');
 const { createPoison } = require('../runtime/errors');
+const { validateCallableContractCompatibility } = require('../callable-contract');
 
 class Context extends Obj {
   init(ctx, blocks, env, path, scriptMode = false, renderCtx, externCtx = undefined) {
@@ -30,8 +31,6 @@ class Context extends Obj {
     this.exportChannels = Object.create(null);
     this.extendsCompositionByParent = new WeakMap();
     this.inheritanceLocalCapturesByTemplate = Object.create(null);
-    this.inheritanceState = null;
-    this.registeredSharedChannelNames = new Set();
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -95,162 +94,10 @@ class Context extends Obj {
     return this;
   }
 
-  _formatCallableContract(name, contract) {
-    const args = (contract && contract.inputNames ? contract.inputNames : []).join(', ');
-    const contextSuffix = contract && contract.withContext ? ' with context' : '';
-    return `${name}(${args})${contextSuffix}`;
-  }
-
-  _validateCallableContractCompatibility(kind, name, overridingContract, parentContract) {
-    if (!overridingContract || !parentContract) {
-      return;
-    }
-
-    const overridingNames = overridingContract.inputNames || [];
-    const parentNames = parentContract.inputNames || [];
-    const sameLength = overridingNames.length === parentNames.length;
-    const sameNames = sameLength && overridingNames.every((value, index) => value === parentNames[index]);
-    const sameContextMode = !!overridingContract.withContext === !!parentContract.withContext;
-    if (sameNames && sameContextMode) {
-      return;
-    }
-
-    throw new lib.TemplateError(
-      `${kind} "${name}" signature mismatch: overriding ${kind} declares ${this._formatCallableContract(name, overridingContract)} but parent declares ${this._formatCallableContract(name, parentContract)}`
-    );
-  }
-
-  _validateMethodContractCompatibility(name, overridingMethod, parentMethod) {
-    const overridingContract = overridingMethod && overridingMethod.contract;
-    const parentContract = parentMethod && parentMethod.contract;
-    this._validateCallableContractCompatibility('method', name, overridingContract, parentContract);
-  }
-
-  ensureInheritanceState() {
-    if (!this.inheritanceState) {
-      this.inheritanceState = {
-        methods: Object.create(null)
-      };
-    }
-    return this.inheritanceState;
-  }
-
-  registerCompiledMethods(methods) {
-    const state = this.ensureInheritanceState();
-    const entries = methods && typeof methods === 'object' ? Object.keys(methods) : [];
-    entries.forEach((name) => {
-      const methodEntry = methods[name];
-      if (!methodEntry || typeof methodEntry.fn !== 'function') {
-        return;
-      }
-      const ownerKey = methodEntry.ownerKey == null ? '__anonymous__' : String(methodEntry.ownerKey);
-      const chain = state.methods[name] || (state.methods[name] = []);
-      const existing = chain.find((entry) => entry.ownerKey === ownerKey);
-      if (existing) {
-        return;
-      }
-      if (chain.length > 0) {
-        this._validateMethodContractCompatibility(name, chain[0], methodEntry);
-      }
-      chain.push({
-        fn: methodEntry.fn,
-        contract: methodEntry.contract || null,
-        ownerKey,
-        linkedChannels: Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : []
-      });
-    });
-    return state;
-  }
-
-  _findRegisteredMethodEntry(name, ownerKey = null) {
-    const chain = this.getRegisteredMethodChain(name);
-    if (ownerKey === null) {
-      return chain.length > 0 ? chain[0] : null;
-    }
-    const ownerKeyString = String(ownerKey);
-    const ownerIndex = chain.findIndex((entry) => entry.ownerKey === ownerKeyString);
-    if (ownerIndex === -1) {
-      return null;
-    }
-    return chain[ownerIndex + 1] || null;
-  }
-
-  getImmediateInheritedMethodEntry(name) {
-    return this._findRegisteredMethodEntry(name, null);
-  }
-
-  getImmediateSuperMethodEntry(name, ownerKey) {
-    return this._findRegisteredMethodEntry(name, ownerKey);
-  }
-
-  resolveInheritedMethodEntry(name) {
-    const immediate = this.getImmediateInheritedMethodEntry(name);
-    if (immediate) {
-      return immediate;
-    }
-    if (this.asyncExtendsBlocksPromise) {
-      // Step 5 temporarily reuses the legacy extends-registration lifecycle as
-      // the "parent chain finished loading" signal. Parent methods register
-      // before that promise resolves, so deferred inherited dispatch can wait
-      // here until the old block-registration bridge is retired.
-      return this.asyncExtendsBlocksPromise.then(() => {
-        const resolved = this.getImmediateInheritedMethodEntry(name);
-        if (resolved) {
-          return resolved;
-        }
-        throw new Error(`Inherited method '${name}' was not found in the loaded extends chain`);
-      });
-    }
-    throw new Error(`Inherited method '${name}' was not found in the loaded extends chain`);
-  }
-
-  resolveSuperMethodEntry(name, ownerKey) {
-    const immediate = this.getImmediateSuperMethodEntry(name, ownerKey);
-    if (immediate) {
-      return immediate;
-    }
-    if (this.asyncExtendsBlocksPromise) {
-      // Step 5 temporarily reuses the legacy extends-registration lifecycle as
-      // the "parent chain finished loading" signal. Parent methods register
-      // before that promise resolves, so deferred super dispatch can wait here
-      // until the old block-registration bridge is retired.
-      return this.asyncExtendsBlocksPromise.then(() => {
-        const resolved = this.getImmediateSuperMethodEntry(name, ownerKey);
-        if (resolved) {
-          return resolved;
-        }
-        throw new Error(`No super method is available for '${name}' after owner '${ownerKey}'`);
-      });
-    }
-    throw new Error(`No super method is available for '${name}' after owner '${ownerKey}'`);
-  }
-
-  getRegisteredMethodChain(name) {
-    const state = this.ensureInheritanceState();
-    return state.methods[name] || [];
-  }
-
-  registerSharedSchema(sharedSchema, ownerKey = this.path) {
-    void ownerKey;
-    const normalized = Array.isArray(sharedSchema)
-      ? sharedSchema.map((entry) => ({ name: entry.name, type: entry.type }))
-      : [];
-    normalized.forEach((entry) => {
-      if (entry && entry.name) {
-        this.registeredSharedChannelNames.add(entry.name);
-      }
-    });
-    return normalized;
-  }
-
-  getRegisteredSharedChannelNames() {
-    return Array.from(this.registeredSharedChannelNames || []);
-  }
-
   _validateBlockContractCompatibility(name, overridingBlock, parentBlock) {
     const overridingContract = overridingBlock && overridingBlock.blockContract;
     const parentContract = parentBlock && parentBlock.blockContract;
-    this._validateCallableContractCompatibility('block', name, overridingContract, parentContract);
+    validateCallableContractCompatibility('block', name, overridingContract, parentContract);
   }
 
   getBlock(name) {
@@ -294,7 +141,7 @@ class Context extends Obj {
     }
   }
 
-  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {
+  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, inheritanceState = null, blockPayload = null, blockRenderCtx = undefined) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
@@ -303,7 +150,7 @@ class Context extends Obj {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    return blk(env, context, runtime, cb, parentBuffer, context.prepareInheritancePayloadForBlock(blk, blockPayload), blockRenderCtx);
+    return blk(env, context, runtime, cb, parentBuffer, inheritanceState, context.prepareInheritancePayloadForBlock(blk, blockPayload), blockRenderCtx);
   }
 
   getSyncSuper(env, name, block, frame, runtime, cb) {
@@ -477,9 +324,9 @@ class Context extends Obj {
     return basePayload;
   }
 
-  // Temporary bridge until shared composition/inheritance runtime state moves
-  // into its own reusable object. At that point forks should share that object
-  // directly instead of copying this field list manually.
+  // Shared structural state that still lives on Context after Step 6. The
+  // explicit inheritance-state object now threads separately through root and
+  // block/method entrypoints instead of being copied here.
   _copySharedStructuralState(newContext) {
     newContext.blocks = this.blocks;
     newContext.exportResolveFunctions = this.exportResolveFunctions;
@@ -489,8 +336,6 @@ class Context extends Obj {
     newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
     newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
     newContext.asyncExtendsBlocksPendingCount = this.asyncExtendsBlocksPendingCount;
-    newContext.inheritanceState = this.inheritanceState;
-    newContext.registeredSharedChannelNames = this.registeredSharedChannelNames;
     return newContext;
   }
 

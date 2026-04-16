@@ -6,31 +6,40 @@
 
 The runtime model is intentionally simple:
 
-- one hierarchy instance owns one long-lived root command buffer
-- constructor code writes directly into that root buffer
-- each `extends` site creates one child buffer for the parent constructor chain
-- each namespace method call creates one child buffer under the namespace buffer
-- namespace operations are admitted immediately through a side-channel
+- one hierarchy instance owns one long-lived shared root command buffer
+- all `shared` channels for that hierarchy live on that shared root
+- each compiled file exposes upfront method metadata, including an internal
+  `__constructor__`
+- constructor admission and inherited method admission both use one runtime
+  admission model: the most-derived entry constructor starts immediately after
+  bootstrap, while parent constructors and unresolved inherited dispatch use
+  inheritance side-channel admission on the shared root through an
+  `InheritanceAdmissionCommand`
+- namespace operations are admitted immediately through the namespace
+  side-channel
 - ordinary command-buffer ordering and dependency handling do the rest
 
 ## Core Principles
 
-The architecture follows three rules:
+The architecture follows four rules:
 
-- shared state lives on the instance root buffer
-- constructors and namespace method calls run in child buffers
-- child-owned inheritance metadata is available before that child's constructor
-  code relies on it
+- shared state lives on one persistent hierarchy shared root
+- top-level constructor flow is represented as an internal `__constructor__`
+  method
+- inherited dispatch is explicit through `this.method(...)` and `super()`
+- if inheritance must finish loading before shared-visible work can continue,
+  that stall happens at side-channel apply on the shared root
 
-Everything else follows from ordinary command-buffer tree behavior.
+Everything else follows from ordinary command-buffer tree behavior plus that
+shared-root admission rule.
 
 ## OOP Mapping
 
 | JS OOP | Cascada |
 |---|---|
 | `class C extends B` | `C.script` with `extends "B.script"` |
-| Constructor body | Code outside methods/blocks |
-| `super()` in constructor | The `extends "parent.script"` line |
+| Constructor body | top-level code compiled as internal `__constructor__` |
+| `super()` in constructor | `extends "parent.script"` inside `__constructor__` |
 | Method | script `method name(args)` / template `{% block name(args) %}` |
 | Override | Same method name in a descendant file |
 | `super()` in a method | `super()` |
@@ -39,10 +48,13 @@ Everything else follows from ordinary command-buffer tree behavior.
 | `this` | The namespace object `ns` |
 | Multiple instances | `import ... as ns1`, `import ... as ns2` |
 
+`__constructor__` is internal. It should be reserved just like `__return__` and
+must not be a user-declarable method or identifier.
+
 ## Two Ways to Run a Hierarchy
 
 **Direct render**: render `C.script` or `C.njk` as the entry file. The
-hierarchy runs and C's root buffer is the instance root.
+hierarchy runs and C's shared root is the instance shared root.
 
 **Namespace instantiation**: `import "C.script" as ns with { ... }` creates an
 independent instance. The caller keeps its own output and uses `ns` to call
@@ -53,23 +65,42 @@ are declared statically in source and are not computed dynamically. It does not
 mean the whole parent chain must already be loaded before constructor execution
 starts.
 
+Shared-root ownership is single-origin:
+
+- the most-derived direct-render entry creates the hierarchy shared root once
+- namespace instantiation creates the namespace instance shared root once
+- parent files do not create replacement shared roots
+- composition/inheritance entry calls receive and reuse the already-created
+  shared root
+
 ## Bootstrap
 
-Before any constructor code that depends on inherited dispatch starts, the
-runtime bootstraps the local hierarchy state:
+Before any constructor or method code that depends on inherited dispatch starts,
+the runtime bootstraps the local hierarchy state:
 
-1. Resolve the static ancestry chain.
+1. Compile the local file before reading its inheritance metadata.
 2. Register the child file's method metadata immediately at root start.
-3. Register shared-channel schema on the instance root buffer.
+3. Register the child file's shared schema on the hierarchy shared root.
 4. Preload `with { }` values into shared state when namespace instantiation uses
    `with { }`.
-5. Start constructor execution.
+5. Start constructor execution through the internal `__constructor__`.
 
-Parent methods register later, when each `extends` load boundary resolves. The
-deferred-slot mechanism covers the window before those registrations arrive.
+Parent methods do not need to be present yet. They register later when the
+relevant parent file finishes loading. Parent shared schema also registers at
+that time, and any newly discovered shared-root lanes are created only while
+shared-root progress is stalled behind the corresponding inheritance admission.
 
 Both direct render and namespace instantiation use this same local bootstrap
 shape.
+
+So after Step 7, the compiled root function is no longer "the constructor
+body". It becomes a bootstrap preamble that:
+
+1. establishes/reuses the shared root
+2. creates or reuses `inheritanceState`
+3. registers local method metadata and local shared schema
+4. preloads namespace-instantiation shared inputs when applicable
+5. admits the local `__constructor__`
 
 On the new static inheritance / namespace-instantiation path:
 
@@ -84,64 +115,38 @@ pre-extends initialization.
 `extern` remains the caller-input mechanism for ordinary composition paths such
 as plain `import`, `from import`, and `include`.
 
-## Constructor Chain
+## Shared Root
 
-For `C extends B extends A`:
+Every hierarchy instance has one persistent shared root buffer.
 
-- C owns the instance root buffer
-- B runs in a child buffer created at C's `extends` site
-- A runs in a child buffer created at B's `extends` site
-- shared channels live on the instance root buffer
-- each file's own methods are registered before that file's constructor code
-  relies on inherited dispatch; parent methods register later as `extends`
-  boundaries resolve
+That shared root exists before local constructor execution starts.
 
-Runtime nesting:
+That shared root owns:
 
-```text
-C root buffer
-  C pre-extends code
-  extends-B child buffer
-    B pre-extends code
-    extends-A child buffer
-      A constructor body
-        A async children
-    B post-extends code
-  C post-extends code
-```
+- all hierarchy-visible `shared` channels
+- the shared-root lane structure that determines temporal correctness for
+  constructor and inherited-method work
+- the point where inheritance side-channel apply may stall shared-visible
+  progress until additional ancestry has loaded
 
-Execution order:
+Any level that declares the same shared name refers to the same shared-root
+channel.
 
-1. C pre-extends
-2. B pre-extends
-3. A constructor
-4. B post-extends
-5. C post-extends
+Private non-shared constructor-local channels are different:
 
-`extends` is therefore a constructor boundary, not a deferred parent-render
-handoff.
+- they belong to the constructor or method invocation that declared them
+- they may live in ordinary child buffers
+- they finish with that invocation
+- inherited methods do not rely on ancestor-private constructor-local state
 
-## Async Boundary Semantics
+So the architecture separates:
 
-Static script `extends` follows the same async-boundary model as `if` and other
-control-flow boundaries:
-
-- at the `extends` site, the current buffer immediately gets a child-buffer
-  entry reserved in source order
-- async work waits only for parent template/script resolution and loading
-- once loaded, the parent constructor chain emits into that child buffer
-- code after `extends` is still emitted immediately into the current buffer
-- ordering comes from the ordinary hierarchical command-buffer traversal, not
-  from blocking the parent on child apply-completion
-
-So post-`extends` constructor code does not need a special apply barrier. It
-stays after the parent constructor chain because the child buffer occupies that
-position in the lane structure.
+- hierarchy-visible `shared` state on the persistent shared root
+- private invocation-local state in temporary invocation buffers
 
 ## `shared`
 
-`shared` declares hierarchy-owned instance state. Any level that declares the
-same shared name refers to the same root-owned channel.
+`shared` declares hierarchy-owned instance state.
 
 Supported forms:
 
@@ -157,9 +162,9 @@ Semantics:
 - `shared x = default` means initialize-if-not-set
 - `with { }` preload values win over shared defaults
 - a more-derived shared default wins over an ancestor default
-- shared declarations should be routed to the instance root at declaration time
-  from the current buffer; they should not require a general-purpose root lookup
-  API on `CommandBuffer`
+- shared declarations should be routed to the hierarchy shared root at
+  declaration time from the current buffer; they should not require a
+  general-purpose root lookup API on `CommandBuffer`
 - a later plain assignment is unconditional and overwrites the current value
 
 Per channel type:
@@ -182,6 +187,41 @@ instance state. In current Cascada terms, it is the channel type used for the
 For this inheritance model, `with { }` preloads `shared` state rather than
 binding `extern` inputs.
 
+## Constructors
+
+Top-level code is the constructor body, but runtime-wise it is represented as
+one internal method named `__constructor__`.
+
+This gives constructors and inherited methods one common admission model:
+
+- they are both runtime call targets
+- they both run in invocation buffers
+- they both write shared-visible state through the shared root
+
+For `C extends B extends A`, constructor order is still:
+
+1. C pre-extends
+2. B pre-extends
+3. A constructor body
+4. B post-extends
+5. C post-extends
+
+`extends` is therefore still the constructor boundary in source order, but the
+runtime implementation uses constructor-as-method admission rather than a
+separate constructor-specific execution model.
+
+The most-derived entry file starts its own `__constructor__` immediately after
+bootstrap. An `extends` site inside that constructor admits the parent
+`__constructor__` through the inheritance side-channel when the parent must be
+loaded first.
+
+The constructor does not need a permanently special buffer. The persistent part
+is the shared root. Constructor-local non-shared state remains private to the
+constructor invocation that created it.
+
+That means non-shared constructor-local declarations conceptually move with the
+`__constructor__` invocation, not with the bootstrap root preamble.
+
 ## Methods, Overrides, and `super()`
 
 Inherited dispatch is explicit:
@@ -192,19 +232,12 @@ Inherited dispatch is explicit:
   participates in inheritance lookup
 - `this.method` without a call is not part of the first implementation
 
-Near-term, inheritance state lives on `context`. A later cleanup step may move
-it to a separate explicit runtime argument, but the semantics stay the same.
-That state may remain a plain object if it is still mostly storage plus trivial
-lookup. If it grows substantial behavior, validation, deferred-slot lifecycle,
-chain mutation, or dispatch helpers, it should become a dedicated
-`InheritanceState` class rather than leaving that logic split across `Context`,
-runtime helpers, and an unstructured object.
-Likewise, the new inheritance / extends runtime helpers should converge behind
-one dedicated module or class boundary once the runtime API stabilizes, rather
-than staying spread across `Context`, `Template`, and unrelated helpers.
-Compiler-side inheritance / extends lowering should likewise converge behind a
-dedicated compiler helper boundary rather than staying spread across unrelated
-compiler files.
+Inheritance state threads through root and block/method entrypoints as an
+explicit `inheritanceState` runtime argument rather than living on `context`.
+Because it owns contract validation, method-chain mutation, and shared-schema
+registration, it should live behind a dedicated `InheritanceState` class rather
+than leaving that logic split across `Context`, runtime helpers, and an
+unstructured object.
 
 Each compiled file exposes its methods up front in a `methods` map. Each entry
 contains:
@@ -213,8 +246,10 @@ contains:
 - `contract`: the method signature / call contract
 - `ownerKey`: the declaring file's identity in the inheritance chain
 
+That map includes the internal `__constructor__`.
+
 The child file registers its own methods immediately at root start. Parent
-methods register later, when the `extends` load boundary resolves.
+methods register later, when the parent file finishes loading.
 
 The inheritance state therefore stores an ordered chain per method name, in
 child-first order:
@@ -228,28 +263,23 @@ This ordered-chain model drives both normal inherited dispatch and `super()`.
 `this.method(args)` resolves through the first entry in that method's chain.
 
 - if the child already declared the method, the call can resolve immediately
-- if the method depends on a parent that has not loaded yet, the call resolves
-  through a deferred slot and waits only at that call site
-- constructor execution as a whole does not stall just because parent loading is
-  still in progress
+- if the method depends on a parent that has not loaded yet, resolution is
+  handled by the inheritance side-channel at apply time on the shared root
 
-This is normal Cascada behavior: the call result may be a plain value or a
-promise, and only code that actually consumes it waits.
+Inherited method dispatch is not a plain JS lookup. It is an explicit runtime
+call path emitted by the compiler.
 
-Inherited method dispatch is a direct runtime call emitted at the call site. It
-is not a separate buffer command or side-channel admission step. Ordering comes
-from the method invocation's per-call child command buffer and ordinary
-channel/buffer structure, so method-body writes land at the call site's source
-position.
+Method invocation uses a separate invocation buffer, but that buffer is attached
+under the hierarchy shared root for shared-visible ordering. Method-local
+temporary channels stay private to that invocation buffer.
 
 Inherited dispatch may reuse low-level argument-resolution and invocation
 helpers with ordinary function/macro calls, but it remains a separate dispatch
-path because it resolves through inheritance state rather than ordinary
-lookup.
+path because it resolves through inheritance state rather than ordinary lookup.
 
 ### `super()`
 
-`super()` inside a method uses the same deferred-slot model.
+`super()` inside a method uses the same ordered-chain model.
 
 The current method name is statically known at compile time, and the current
 method's `ownerKey` is also statically known. So `super()` resolves to "the
@@ -258,17 +288,78 @@ next entry in this method's chain after my owner."
 For example, inside `C`'s `buildHeader()`:
 
 - `super()` means "the next `buildHeader` after `ownerKey = C`"
-- if that next method has not registered yet because the parent chain is still
-  loading, only this `super()` call waits for it
+- if that next method has not loaded yet, the same side-channel apply stall
+  handles the wait before the actual invocation proceeds
 
 So the inheritance state must store ordered per-method chains, not just the
 winning override.
 
-Safety rule:
+### Method Visibility
 
-> If an ancestor constructor calls `this.method(...)`, the override should only
-> depend on shared state that is already available from `with { }` preload or
-> descendant pre-extends initialization.
+The clean visibility rule is:
+
+- inherited methods operate on shared state, method arguments, and method
+  payload
+- they do not depend on ancestor-private constructor-local channels
+
+That keeps private constructor-local state private while still allowing dynamic
+dispatch across the hierarchy.
+
+## Inheritance Side-Channel and Stalling
+
+Each loaded extended/imported script has an inheritance side-channel entry point
+for constructor and inherited-method admission.
+
+That side-channel is the only place where inheritance loading is allowed to
+stall shared-root progress.
+
+The concrete admission unit is an observable command on the shared root, called
+here `InheritanceAdmissionCommand`.
+
+Its job is:
+
+- carry the requested target (`__constructor__`, `this.method(...)`, or
+  `super()`)
+- decide whether the target is already available in `inheritanceState`
+- if available, create the invocation buffer with exact static links and start
+  the call immediately
+- if unavailable, stall shared-root apply, wait for the needed load, register
+  the newly loaded metadata/schema, then create the invocation buffer with
+  exact static links and start the call
+
+When side-channel `apply()` sees that the requested constructor or inherited
+method is unavailable:
+
+1. It stalls shared-root application at that point.
+2. It waits for the necessary parent load to finish.
+3. During that stalled window, it may register newly loaded methods, extend the
+   shared schema, and link any newly discovered shared lanes.
+4. Once that metadata is current, it performs the ordinary static linking and
+   invocation for the target constructor/method.
+5. Shared-root application then continues.
+
+This is intentionally stronger than "wait only at that one JS call expression."
+The important guarantee is:
+
+- no shared-visible command is allowed to apply past that stalled admission
+  point until the hierarchy metadata and shared-root topology needed there are
+  current
+
+At the same time:
+
+- JS emission does not have to stop
+- unrelated private non-shared local work may still continue in its own scopes
+- the stall is about shared-root application order, not about freezing the
+  whole runtime
+
+This model avoids:
+
+- wildcard caller-side channel linking
+- late structural parent-lane membership changes during active dependent apply
+- per-iterator id/promise side tables
+
+The only allowed topology extension is inside that stalled side-channel apply
+window, before any dependent shared-visible application is allowed to continue.
 
 ## Return Semantics
 
@@ -306,26 +397,28 @@ return concept.
 
 A namespace instance has:
 
-- one long-lived namespace buffer
+- one long-lived namespace shared root
 - one side-channel that immediately starts namespace operations when caller-side
   commands apply
 
-For a namespace instance, this long-lived namespace buffer is the instance root
-buffer for that instance.
+For a namespace instance, this long-lived namespace shared root is the hierarchy
+shared root for that instance.
 
-The side-channel is a runtime object owned by the namespace instance. It accepts
-namespace operations from caller code, immediately enqueues the corresponding
-namespace command or per-call child buffer into the namespace buffer tree, and
-returns the resulting promise to the caller. It does not do caller-side
-shared-channel dependency tracking or maintain a second scheduler. It is only a
-thin admission object. Ordinary caller-buffer application order decides when a
-namespace operation starts; after that, ordinary command-buffer ordering and
-dependency handling take over.
+The namespace side-channel is a runtime object owned by the namespace instance.
+It accepts namespace operations from caller code, immediately enqueues the
+corresponding namespace command or per-call child buffer into the namespace
+buffer tree, and returns the resulting promise to the caller. It does not do
+caller-side shared-channel dependency tracking or maintain a second scheduler.
+It is only a thin admission object. Ordinary caller-buffer application order
+decides when a namespace operation starts; after that, ordinary command-buffer
+ordering and dependency handling take over.
 
 Constructor startup:
 
-- constructor code runs with the namespace buffer as its current buffer
-- constructor commands are added there synchronously
+- constructor code runs through the same internal `__constructor__` admission
+  path
+- constructor commands therefore also use the namespace shared root as their
+  shared-visible base
 
 After constructor startup:
 
@@ -337,7 +430,7 @@ After constructor startup:
 Method calls:
 
 - `ns.method(args)` immediately creates one child buffer under the namespace
-  buffer
+  shared root
 - the method is called immediately from side-channel `apply()`
 - method-local declarations and temporary outputs live in that per-call child
   buffer
@@ -346,7 +439,7 @@ Shared observations:
 
 - namespace shared-value observations use the same side-channel path
 - the side-channel immediately adds the corresponding observation command into
-  the namespace buffer
+  the namespace shared root
 
 Once commands or per-call child buffers are attached, ordinary Cascada
 buffer/tree semantics handle dependencies and ordering.
@@ -369,7 +462,8 @@ First implementation restriction:
 
 Caller-side access rules:
 
-- `shared var x`: `ns.x` behaves like a normal value read
+- `shared var x`: `ns.x` compiles to a namespace shared-value read at the
+  caller's current position; it is not a stored JS property read
 - `shared text`, `shared data`, `shared sequence`: use explicit observation
   forms such as `ns.log.snapshot()`, `ns.state.snapshot()`, `ns.db.isError()`,
   and `ns.db.getError()`
@@ -407,12 +501,12 @@ before assigning it elsewhere.
 
 The side-channel is owned by the caller buffer that owns the `ns` binding:
 
-- constructor startup does not finish the namespace buffer
+- constructor startup does not finish the namespace shared root
 - later method calls and shared observations continue to append through the
   side-channel while that caller buffer is still being applied
 - once the owning caller buffer finishes applying, no new namespace operations
   can arrive from that scope or any of its async children
-- at that point the side-channel closes and the namespace buffer is marked
+- at that point the side-channel closes and the namespace shared root is marked
   finished
 
 ## Multiple Instances
@@ -422,17 +516,18 @@ import "Button.script" as okBtn with { label: "OK" }
 import "Button.script" as cancelBtn with { label: "Cancel" }
 ```
 
-These are fully independent instances with separate buffers, shared state,
+These are fully independent instances with separate shared roots, shared state,
 side-channels, and method calls.
 
 ## Templates
 
 Templates follow the same model:
 
-- template body code is constructor code
+- template body code is constructor code and compiles to internal
+  `__constructor__`
 - `{% block name(args) %}` is the method form
 - `{% extends "parent.njk" %}` is constructor chaining
-- async template inheritance and namespace instances use the same root-buffer,
+- async template inheritance and namespace instances use the same shared-root,
   side-channel, and per-call child-buffer model as scripts
 
 Treating code before `{% extends %}` as pre-extends code and code after it as
@@ -449,15 +544,17 @@ Required compile-time data:
 - static parent metadata for chain resolution
 - shared-channel schema declared by each file
 - upfront `methods` metadata: `{ fn, contract, ownerKey }`
+- the internal `__constructor__` entry in that same metadata
 - method override metadata for ordered chain construction
 
 Not required:
 
 - caller-side method read/write tracking for namespace scheduling
 - per-call dependency metadata attached to the caller command stream
+- wildcard parent-lane linking for unresolved inherited calls
 
-Inside namespace methods, ordinary Cascada analysis still applies for async
-blocks, local channels, and command-buffer linking.
+Inside constructors and methods, ordinary Cascada analysis still applies for
+async blocks, local channels, and command-buffer linking.
 
 ## Error and Poison Propagation
 
@@ -467,7 +564,8 @@ Constructor and method execution follow normal Cascada poison rules:
 - downstream reads and writes follow normal dataflow poisoning
 - real invariant/runtime errors still propagate as real errors
 
-This architecture changes where work is attached, not how poison semantics work.
+This architecture changes where work is attached and where shared-root apply may
+stall. It does not change poison semantics.
 
 ## Compatibility Requirements
 

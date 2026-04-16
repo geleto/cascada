@@ -1099,14 +1099,32 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _collectCompiledMethods(node) {
-    const methods = Object.create(null);
-    const blocks = node.findAll(nodes.Block);
-    const ownerKey = this._getCompiledMethodOwnerKey();
+      const methods = Object.create(null);
+      const blocks = node.findAll(nodes.Block);
+      const ownerKey = this._getCompiledMethodOwnerKey();
 
-    blocks.forEach((block) => {
-      const signature = this._getBlockSignature(block);
-      methods[block.name.value] = {
-        functionName: `b_${block.name.value}`,
+      methods.__constructor__ = {
+        functionName: 'root',
+        contract: {
+          inputNames: [],
+          withContext: false
+        },
+        ownerKey,
+        linkedChannels: []
+      };
+
+      blocks.forEach((block) => {
+        if (this.scriptMode && block.name && block.name.value === '__constructor__') {
+          this.fail(
+            'Identifier \'__constructor__\' is reserved and cannot be used as a method name',
+            block.lineno,
+            block.colno,
+            block
+          );
+        }
+        const signature = this._getBlockSignature(block);
+        methods[block.name.value] = {
+          functionName: `b_${block.name.value}`,
         contract: {
           inputNames: signature.inputNames,
           withContext: !!block.withContext
@@ -1117,6 +1135,10 @@ class CompilerAsync extends CompilerBaseAsync {
     });
 
     return methods;
+  }
+
+  _hasUserCompiledMethods(compiledMethods) {
+    return !!(compiledMethods && Object.keys(compiledMethods).some((name) => name !== '__constructor__'));
   }
 
   _emitCompiledMethodsLiteral(compiledMethods, indent = '') {
@@ -1131,21 +1153,27 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _emitRootInheritanceBootstrap(compiledMethods, rootSharedSchema) {
-    const hasCompiledMethods = compiledMethods && Object.keys(compiledMethods).length > 0;
+    const hasCompiledMethods = this._hasUserCompiledMethods(compiledMethods);
     const hasSharedSchema = Array.isArray(rootSharedSchema) && rootSharedSchema.length > 0;
     if (!hasCompiledMethods && !hasSharedSchema) {
       return;
     }
 
     if (hasCompiledMethods) {
-      this.emit.line('context.registerCompiledMethods(');
+      this.emit.line('inheritanceState.registerCompiledMethods(');
       this._emitCompiledMethodsLiteral(compiledMethods, '  ');
       this.emit.line(');');
     }
 
     if (hasSharedSchema) {
-      this.emit.line(`context.registerSharedSchema(${JSON.stringify(rootSharedSchema)}, ${JSON.stringify(this._getCompiledMethodOwnerKey())});`);
+      this.emit.line(`inheritanceState.registerSharedSchema(${JSON.stringify(rootSharedSchema)}, ${JSON.stringify(this._getCompiledMethodOwnerKey())});`);
     }
+  }
+
+  _needsRootInheritanceState(compiledMethods, rootSharedSchema) {
+    const hasCompiledMethods = this._hasUserCompiledMethods(compiledMethods);
+    const hasSharedSchema = Array.isArray(rootSharedSchema) && rootSharedSchema.length > 0;
+    return hasCompiledMethods || hasSharedSchema || this.hasExtends;
   }
 
   _emitAsyncRootCompletion(node) {
@@ -1180,7 +1208,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`      : context.forkForPath(${finalParentVar}.path);`);
       this.emit.line(`    ${handoffVar} = true;`);
       this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      this.emit.line(`    ${finalParentVar}.rootRenderFunc(env, parentContext, runtime, cb, compositionMode);`);
+      this.emit.line(`    ${finalParentVar}.rootRenderFunc(env, parentContext, runtime, cb, compositionMode, null, inheritanceState);`);
       this.emit.line('    return null;');
       this.emit.line('  }');
       if (this.scriptMode) {
@@ -1354,6 +1382,9 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRootBody(node, sharedChannelNames = null, compiledMethods = null, rootSharedSchema = null) {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    if (this._needsRootInheritanceState(compiledMethods, rootSharedSchema)) {
+      this.emit.line('inheritanceState = inheritanceState || runtime.createInheritanceState();');
+    }
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
     }

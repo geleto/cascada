@@ -187,7 +187,7 @@
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, inheritanceState = null, blockPayload = null, blockRenderCtx = undefined) {');
       expect(source).to.contain('context.createInheritancePayload("block-input-vars.njk"');
       expect(source).to.contain('blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {}');
       expect(source).to.contain('blockPayload && blockPayload.localsByTemplate');
@@ -209,7 +209,7 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, inheritanceState = null, blockPayload = null, blockRenderCtx = undefined) {');
       expect(source).to.contain('blockPayload && blockPayload.localsByTemplate');
       expect(source).to.contain('context.forkForPath("child-inherited-block-inputs.njk")');
       expect(source).to.contain('blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate["child-inherited-block-inputs.njk"]');

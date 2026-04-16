@@ -61,12 +61,12 @@ module.exports = class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false, parentBuffer = null) {`);
+        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false, parentBuffer = null, inheritanceState = null) {`);
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
           : '';
-        this.line(`function ${name}(env, context, runtime, cb, parentBuffer = null${extraParamSource}) {`);
+        this.line(`function ${name}(env, context, runtime, cb, parentBuffer = null, inheritanceState = null${extraParamSource}) {`);
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);

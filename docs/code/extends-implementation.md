@@ -7,11 +7,13 @@ This plan implements the inheritance architecture described in
 
 The design has five core runtime pieces:
 
-1. shared root-owned channels
-2. root-buffer constructor chaining for `extends`
-3. inheritance state with upfront method metadata and ordered method chains
-4. explicit inherited dispatch via `this.method(...)` and `super()`
-5. namespace instances built from one long-lived buffer plus a side-channel
+1. one persistent shared root per hierarchy instance
+2. upfront method metadata including an internal `__constructor__`
+3. explicit inheritance state with ordered method chains
+4. side-channel admission that stalls shared-root apply when inheritance must
+   finish loading before a constructor or inherited method can proceed, using
+   an `InheritanceAdmissionCommand`
+5. namespace instances built from one long-lived shared root plus a side-channel
 
 Implement the steps in order. Each step should land with focused tests before
 moving on.
@@ -106,7 +108,8 @@ needed by the inheritance model.
 
 ## Step 2 - Shared Root Channels
 
-**Goal:** Compile shared declarations as one root-owned channel per shared name.
+**Goal:** Compile shared declarations as one hierarchy-owned channel per shared
+name.
 
 ### Semantics
 
@@ -118,8 +121,8 @@ needed by the inheritance model.
 ### Main work
 
 - record shared-channel schema on the compiled file
-- add a declaration-time runtime helper that resolves the instance root from the
-  current buffer and binds shared declarations there
+- add a declaration-time runtime helper that resolves the hierarchy shared root
+  from the current buffer and binds shared declarations there
 - add `initializeIfNotSet` support for `VarCommand`
 
 ### Main files
@@ -139,8 +142,9 @@ needed by the inheritance model.
 
 ### Replace / extend
 
-- extend declaration compilation so shared declarations bind to the root-owned
-  channel instead of declaring a local channel in the current buffer
+- extend declaration compilation so shared declarations bind to the persistent
+  hierarchy shared root instead of declaring a local channel in the current
+  buffer
 - keep this as declaration-time routing, not as a new general-purpose
   `CommandBuffer` root-lookup API; the later command-buffer refactor should keep
   shared handling as ordinary lane/channel structure rather than a special
@@ -162,49 +166,41 @@ needed by the inheritance model.
 - normal script rendering applies shared-var defaults and preserves
   declaration-only shared vars until a later plain assignment
 - keep runtime-only coverage minimal here: one focused child-buffer test proves
-  descendant shared-var defaults beat ancestor defaults until Step 3/4 make the
-  full inheritance path available
+  descendant shared-var defaults beat ancestor defaults until later steps make
+  the full inheritance path available
 - the true preloaded-value / `with { x: 99 }` integration case lands with Step
   4 bootstrap
 
-## Step 3 - Root-Buffer Constructor Chaining
+## Step 3 - Structural Extends Load Boundary
 
-**Goal:** Make `extends` run parent constructors in nested child buffers under
-the most-derived root buffer.
+**Goal:** Make static script `extends` reserve a structural async boundary at
+the source site immediately, while parent loading continues later.
 
 ### Async-boundary contract
 
 For this step, static script `extends` should behave like other async
 control-flow boundaries:
 
-- reserve the child buffer at the `extends` site immediately
+- reserve the boundary position at the `extends` site immediately
 - wait only for parent template/script resolution and loading
-- once loaded, emit the parent constructor chain into that child buffer
 - keep emitting post-`extends` code into the current buffer without waiting for
-  the child buffer to finish applying
+  parent application to finish
 
-Constructor ordering then comes from the ordinary hierarchical command-buffer
-iterator, not from an explicit apply barrier.
-
-### Runtime shape
-
-- C owns the root buffer
-- B runs in a child buffer created at C's `extends` site
-- A runs in a child buffer created at B's `extends` site
-- post-extends code is emitted immediately after the `extends` site into the
-  current buffer
+Ordering then comes from the ordinary hierarchical command-buffer iterator, not
+from an explicit apply-complete wait.
 
 ### Main work
 
-- rewrite async `extends` compilation around child buffers at the `extends` site
-- lower static script `extends` through the same structural child-buffer
-  boundary pattern used by async `if` / loop control-flow
-- reserve the child buffer synchronously at the `extends` site before parent
-  loading resolves
-- move parent loading/wiring into that child-buffer callback
+- rewrite async `extends` compilation around an ordinary structural async
+  boundary at the `extends` site
+- lower static script `extends` through the same child-buffer reservation
+  pattern used by async `if` / loop control-flow
+- reserve the boundary synchronously before parent loading resolves
+- move parent loading/wiring into that boundary callback
 - emit post-`extends` code normally in the current buffer after the boundary
   call without awaiting child apply-completion
-- update async root completion so composition mode returns the root buffer
+- update async root completion so composition mode returns the current
+  structural root rather than relying on the old parent handoff
 - remove static-path inheritance payload/local-capture threading rather than
   adapting it; it is dead machinery in the new model
 - remove static-path extends-composition context threading rather than adapting
@@ -241,14 +237,6 @@ iterator, not from an explicit apply barrier.
   async template block args / local captures / `super(...)` still depend on it;
   land that deletion only together with the replacement path used by static
   async templates
-- retire static-path extends-composition state that only exists to support the
-  old parent-handoff model: `extendsCompositionByParent`,
-  `setExtendsComposition()`, `getExtendsComposition()`, and
-  `forkForComposition()` at the static `extends` boundary; this cleanup is part
-  of the target direction but is not fully landed yet while the current Step 3
-  implementation still reuses parts of the existing composition context path
-- replace the old static `extends` handoff with an ordinary structural
-  child-buffer boundary instead of adding a new apply-complete runtime concept
 
 ### Keep
 
@@ -263,37 +251,44 @@ iterator, not from an explicit apply barrier.
 
 `tests/pasync/extends.js`
 
-- constructor order is `pre-C`, `pre-B`, `A`, `post-B`, `post-C`
+- constructor order is still `pre-C`, `pre-B`, `A`, `post-B`, `post-C`
 - shared state written in descendant pre-extends code is visible to ancestors
-- static script `extends` lowers through a structural child-buffer boundary
-- post-extends output stays after parent output through normal buffer-tree
+- static script `extends` lowers through a structural async boundary
+- post-`extends` output stays after parent output through normal buffer-tree
   ordering, not an explicit apply wait
 - multiple top-level script `extends` declarations are rejected clearly
 
 ## Step 4 - Inheritance State Bootstrap
 
 **Goal:** Expose child-owned method metadata up front and create inheritance
-state before that child's constructor code relies on inherited dispatch.
+state before that child's constructor flow relies on inherited dispatch.
 
 ### Bootstrap responsibilities
 
 1. compile a file before reading that file's inheritance metadata
 2. expose a `methods` map on the compiled file
-3. create inheritance state at child root start
-4. register child methods immediately in child-first chains
-5. register shared-channel schema on the root buffer
-6. preload `with { }` values into shared state for namespace-instantiation
+3. include an internal `__constructor__` entry in that map for top-level
+   constructor code
+4. create inheritance state at child root start
+5. register child methods immediately in child-first chains
+6. register shared-channel schema on the hierarchy shared root
+7. preload `with { }` values into shared state for namespace-instantiation
    cases that use `with { }`
 
 ### Main work
 
 - emit upfront method metadata for each compiled file:
   `{ fn, contract, ownerKey }`
-- create inheritance state on `context` for the near-term steps
+- compile top-level constructor code as an internal `__constructor__` method
+- reserve `__constructor__` as a forbidden user identifier
+- create inheritance state for the near-term steps
 - register the child file's methods immediately at root start, before its own
   constructor flow continues
 - parent methods are not required to be present yet; they register later when
   the structural `extends` load boundary resolves
+- parent shared schema likewise registers later when the structural `extends`
+  load boundary resolves; any newly discovered shared lanes are still only
+  materialized once Step 7's shared-root stall-and-link admission exists
 - validate `with { }` keys for the new static inheritance / namespace path
   against declared shared schema, and preload only declared shared names
 - keep the current structural `extends` load boundary from Step 3; this step
@@ -302,26 +297,27 @@ state before that child's constructor code relies on inherited dispatch.
 ### Main files
 
 - compiler metadata emission for compiled files
-- `src/environment/context.js`
 - root-start inheritance bootstrap path
+- reserved-identifier validation
 
 ### Reuse
 
 - keep `template.compile()` / `script.compile()` as the way to materialize
   compiled metadata before bootstrap reads it
-- keep child-first constructor execution from Step 3
+- keep child-first constructor execution order from Step 3
 - keep `shared` root-channel routing from Step 2
 
 ### Replace
 
 - replace the idea that inherited methods must be discovered implicitly from
   ordinary script/global lookup
+- replace ad-hoc constructor handling with the same metadata pipeline used by
+  methods
 - replace "winning override only" thinking with ordered per-method chains
 
 ### Keep
 
-- keep inheritance state on `context` for this step
-- keep block/method entry function signatures unchanged for this step
+- keep inheritance state on `context` for the near-term steps
 - keep dynamic-extends machinery separate; this step is for the new static path
 
 ### Tests
@@ -329,36 +325,30 @@ state before that child's constructor code relies on inherited dispatch.
 `tests/pasync/extends.js`
 
 - compiled files expose `methods` metadata up front
-- child methods register before child constructor code relies on them
+- compiled files expose `__constructor__` in the methods map with the expected
+  internal metadata shape
+- `__constructor__` is a forbidden user identifier and cannot be declared by
+  user code
+- child methods register before child constructor flow relies on them
 - parent methods register later when the `extends` load boundary resolves
+- parent methods become reachable through inherited dispatch after the `extends`
+  load boundary resolves, not only through direct unit calls to
+  `registerCompiledMethods(...)`
 - `with { }` preload is visible to ancestor constructor code
 - shared schema is registered before constructor work begins
 
-## Step 5 - Explicit Inherited Dispatch
+## Step 5 - Explicit Inherited Dispatch Syntax
 
-**Goal:** Implement `this.method(...)` and `super()` using deferred method
-slots backed by ordered per-method chains.
+**Goal:** Implement `this.method(...)` and `super()` syntax on top of ordered
+method chains.
 
 ### Dispatch rules
 
 - `this.method(args)` is the only inherited-dispatch syntax
 - bare `foo()` never participates in inheritance lookup
 - `this.method` without a call is invalid in the first implementation
-- `super()` uses the same deferred-slot mechanism
-- method calls may resolve immediately or later; promise transparency is normal
-  Cascada behavior, not a special inheritance exception
-
-### Runtime model
-
-- inheritance state stores `name -> [{ fn, contract, ownerKey }, ...]` in
-  child-first order
-- `this.method(...)` resolves to the first entry in that chain
-- `super()` resolves to the next entry after the current method's `ownerKey`
-- parent methods register later, when the `extends` load boundary resolves
-- if a needed method is not registered yet, only that call site waits
-- inherited method dispatch is a direct runtime call at the consumption site,
-  not a separate invocation command; ordering comes from the per-call child
-  buffer attached there
+- `super()` resolves by ordered chain position using current method name plus
+  current `ownerKey`
 
 ### Main work
 
@@ -369,19 +359,20 @@ slots backed by ordered per-method chains.
   plus current `ownerKey`
 - register parent methods into inheritance state when the `extends` load
   boundary resolves
-- report a clear error if the chain finishes loading and an inherited method is
-  still missing
+- keep unresolved inherited-call stalling and shared-root admission for Step 7;
+  this step only establishes syntax, ordered lookup, and the already-registered
+  fast path
 
 ### Main files
 
 - script transpiler / parser support for `this.method(...)`
 - async compiler call lowering
 - runtime inherited-dispatch helpers
-- `src/environment/context.js`
+- inheritance-state lookup helpers
 
 ### Reuse
 
-- keep the ordered structural child-buffer `extends` boundary from Step 3
+- keep the ordered structural `extends` load boundary from Step 3
 - keep the method metadata emitted in Step 4
 - keep `super()` as the user-facing syntax
 
@@ -399,17 +390,16 @@ slots backed by ordered per-method chains.
 
 `tests/pasync/inherited-dispatch.js`
 
-- `this.method(...)` can call a child-defined override before the parent chain
-  has finished loading
-- post-`extends` `this.method(...)` waits only at the call site, not by
-  stalling the whole constructor flow
+- `this.method(...)` resolves immediately when the needed method entry is
+  already registered
 - `super()` resolves to the next method after the current `ownerKey`
-- missing inherited methods fail clearly after the chain has finished loading
+- unsupported `this.name` non-call forms fail clearly
+- missing inherited methods still fail clearly once the chain is known complete
 
-## Step 6 - Inheritance State Signature Cleanup
+## Step 6 - Inheritance State Plumbing Cleanup
 
-**Goal:** Move inheritance state off `context` and into an explicit runtime
-argument once the semantics are stable.
+**Goal:** Keep the current semantics but move inheritance plumbing behind an
+explicit runtime argument and dedicated helper boundaries.
 
 ### Main work
 
@@ -417,27 +407,18 @@ argument once the semantics are stable.
   method/block entrypoints that need inherited dispatch
 - thread that parameter through `extends`, method dispatch, and `super()` call
   paths
-- remove the temporary static-path inheritance-state storage from `context`
+- remove temporary inheritance-state storage from `context`
 - keep `context` focused on render/global/extern lookup rather than inheritance
   dispatch state
-- keep inheritance state as a plain data object only while it remains mostly
-  storage plus trivial lookup
-- if inheritance state starts owning substantial behavior, validation,
-  deferred-slot lifecycle, chain mutation, or dispatch helpers, promote it to a
-  dedicated `InheritanceState` class in this step rather than leaving complex
-  behavior split across `Context`, runtime helpers, and an unstructured object
-- consolidate the new inheritance / extends runtime helpers behind a dedicated
-  module or class boundary in this step rather than leaving metadata shaping,
-  chain registration, deferred-slot handling, and dispatch support scattered
-  across `Context`, `Template`, and unrelated runtime helpers
+- move the state behind a dedicated `InheritanceState` class
+- consolidate inheritance / extends runtime helpers behind a dedicated module or
+  class boundary
+- consolidate compiler-side inheritance / extends lowering behind a dedicated
+  compiler module boundary
 - factor out low-level invocation pieces that can be shared between ordinary
   function/macro calls and inherited method dispatch, while keeping inherited
   dispatch as a separate top-level path with its own inheritance-state
   resolution rules
-- consolidate compiler-side inheritance / extends lowering behind a dedicated
-  compiler module boundary in this step rather than leaving dispatch emission,
-  bootstrap threading, and signature plumbing scattered across unrelated
-  compiler files
 
 ### Main files
 
@@ -445,6 +426,7 @@ argument once the semantics are stable.
 - compiler call-site threading for inherited dispatch
 - compiler inheritance / extends helper module
 - `src/environment/context.js`
+- `src/runtime/inheritance-state.js`
 - inheritance / extends runtime helper module or class
 
 ### Reuse
@@ -468,7 +450,131 @@ argument once the semantics are stable.
 - inherited dispatch still works after the state move
 - `super()` still resolves by ordered chain position, not by ambient context
 
-## Step 7 - Constructor Return Rules
+`tests/pasync/extends.js`
+
+- parent composition/extends paths reuse the existing `inheritanceState`
+  instead of creating a second one in the `inheritanceState = inheritanceState || ...`
+  branch
+
+## Step 7 - Shared Root Constructors and Load-Stalled Dispatch
+
+**Goal:** Replace the remaining transitional dispatch model with one persistent
+shared root, constructor-as-method execution, and side-channel apply stalling
+when inheritance must finish loading before shared-visible work can proceed.
+
+### Runtime model
+
+- one hierarchy instance owns one persistent shared root buffer for all `shared`
+  channels
+- that shared root exists before local constructor execution starts
+- the most-derived entry creates that shared root once and passes it downward;
+  parent files reuse it instead of creating replacement shared roots
+- each compiled file exposes an internal `__constructor__` method alongside its
+  ordinary methods
+- the most-derived entry `__constructor__` starts immediately after bootstrap
+- parent constructor invocation uses the same runtime admission path as
+  inherited method calls
+- non-shared constructor-local channels remain private to that constructor
+  invocation and end with it
+- methods and constructors access shared state through the shared root; they do
+  not depend on ancestor-private constructor state
+- each loaded extended/imported script owns one inheritance side-channel entry
+  point for constructor and inherited-method admission
+
+### Stalling rule
+
+- the concrete shared-root admission unit is an observable
+  `InheritanceAdmissionCommand`
+- when side-channel `apply()` sees that the requested constructor or inherited
+  method is not available yet, it stalls shared-root application there
+- while stalled, it waits for the needed inheritance load to finish
+- during that stalled window it may register newly loaded methods, extend the
+  shared schema, and link newly discovered shared lanes because no dependent
+  shared-visible apply has been allowed to pass that point yet
+- after the stall resolves, it performs the ordinary static linking and
+  invocation for the now-known target method
+- later shared-visible commands therefore run only after the shared-root
+  topology and method table are current
+
+### Main work
+
+- refactor the compiled root function into a bootstrap preamble that:
+  - establishes/reuses the shared root
+  - creates or reuses `inheritanceState`
+  - registers local methods and local shared schema
+  - preloads namespace-instantiation shared inputs when applicable
+  - admits local `__constructor__`
+- compile top-level constructor flow to the internal `__constructor__` method
+  all the way through the runtime path
+- move non-shared constructor-local declarations/return-channel setup from the
+  bootstrap preamble into `__constructor__` invocation setup
+- add the inheritance side-channel entry point used by constructor and inherited
+  method admission
+- add the `InheritanceAdmissionCommand` used by that side-channel
+- move unresolved inherited calls off the current deferred/wildcard bridge and
+  onto side-channel apply stalling
+- link shared lanes only through the shared root, never through wildcard
+  caller-side channel linking
+- ensure newly loaded shared channels are created/linked only while the
+  side-channel stall is holding shared-root progression
+- keep known-method invocations on the ordinary fast path once metadata is
+  available
+
+### Main files
+
+- `src/compiler/inheritance.js`
+- `src/compiler/compiler-async.js`
+- `src/runtime/call.js`
+- `src/runtime/command-buffer.js`
+- `src/runtime/inheritance-state.js`
+
+### Reuse
+
+- keep the explicit `inheritanceState` plumbing from Step 6
+- keep ordered method chains and `ownerKey`-based `super()` lookup
+- keep the shared-channel schema emitted in Step 2 and registered in Step 4
+
+### Replace
+
+- replace any remaining constructor-specific runtime path separate from method
+  admission
+- replace unresolved inherited-call deferred-slot behavior with side-channel
+  apply stalling on the shared root
+- replace wildcard/dynamic caller-side channel linking with the shared-root
+  stall-and-link model
+
+### Keep
+
+- keep ordinary local/context/global call semantics for bare `foo()`
+- keep non-shared local channels private to the invocation that declared them
+
+### Tests
+
+`tests/pasync/extends.js`
+
+- `__constructor__` is reserved and cannot be user-declared
+- constructor order remains `pre-C`, `pre-B`, `A`, `post-B`, `post-C`
+- the hierarchy shared root is created once at the most-derived entry and
+  reused by loaded parents
+- non-shared constructor-local channels do not leak out of `__constructor__`
+- the entry `__constructor__` starts from bootstrap admission, not through the
+  old root-body execution path
+- newly loaded ancestor shared channels become available only through the shared
+  root after the stalled side-channel apply resumes
+
+`tests/pasync/inherited-dispatch.js`
+
+- unresolved inherited calls stall shared-root apply at the admission point,
+  not JS emission
+- later known-method calls do not outrun a pending load that may still extend
+  the shared-root topology
+- two unresolved inherited admissions from the same flow resume in source order
+- once loading completes, ordinary static linking / fast-path invocation is used
+  for the actual call instead of repeated stalled admission
+- `super()` still resolves to the next owner correctly through the stalled
+  admission path
+
+## Step 8 - Constructor Return Rules
 
 **Goal:** Implement the simplified return model.
 
@@ -481,11 +587,9 @@ argument once the semantics are stable.
 
 ### Main work
 
-- most of the runtime effect of this step should fall out of Step 3, because
-  removing the static parent handoff also removes the old path by which an
-  ancestor constructor became the outer final result
 - keep explicit return handling rooted in the entry render only
-- make ancestor constructor returns non-final in composition/inheritance mode
+- make ancestor `__constructor__` returns non-final in composition/inheritance
+  mode
 - ensure namespace import always yields the namespace object
 
 ### Main files
@@ -501,8 +605,6 @@ argument once the semantics are stable.
 ### Replace / simplify
 
 - do not introduce a hierarchy-wide return-slot or ancestor-priority system
-- after Step 3, verify whether any remaining ancestor-return finalization logic
-  still exists; only patch the leftover cases
 
 ### Keep
 
@@ -515,13 +617,19 @@ argument once the semantics are stable.
 
 - if C returns explicitly, that value is the direct-render result
 - if only A returns explicitly and C does not, A's return is ignored
+- if the entry file has no explicit `return`, the normal fallback result still
+  works
+- an ancestor `__constructor__` explicit return is ignored even when it
+  resolves later than child work
 - namespace import still yields the namespace object when constructor code
   contains an explicit `return`
+- namespace instantiation ignores constructor return even when the constructor
+  performs async work
 
-## Step 8 - Namespace Instances
+## Step 9 - Namespace Instances
 
-**Goal:** Implement namespace instances as one long-lived namespace buffer plus
-one side-channel.
+**Goal:** Implement namespace instances as one long-lived shared root plus one
+side-channel.
 
 The side-channel is a runtime object owned by the namespace instance. It accepts
 namespace operations from caller code, immediately enqueues the corresponding
@@ -530,17 +638,18 @@ returns the resulting promise to the caller.
 
 ### Creation
 
-- `import "C.script" as ns with { ... }` creates one long-lived namespace buffer
-  as a child of the caller buffer
+- `import "C.script" as ns with { ... }` creates one long-lived namespace
+  shared root as a child of the caller buffer
 - bootstrap creates inheritance state, registers child-owned method metadata,
   and builds the shared schema
-- constructor execution runs immediately into that namespace buffer
+- constructor execution runs through the same `__constructor__` admission path
 - the caller receives a namespace object bound to `ns`
 
 ### Namespace object semantics
 
 - `ns.method(args)` compiles to a namespace-side call path
-- `shared var` reads compile as namespace shared-value reads
+- `shared var` reads compile as namespace shared-value reads at the caller's
+  current position, not as stored JS property reads
 - `shared text`, `shared data`, and `shared sequence` observations compile as
   namespace-side observation commands
 - `.snapshot()`, `.isError()`, and `.getError()` remain current-buffer
@@ -571,8 +680,12 @@ First implementation restriction:
 - side-channel `apply()` runs immediately
 - it does not wait for argument resolution first
 - `ns.method(args)` immediately creates one child buffer under the namespace
-  buffer and calls the method immediately
-- shared observations are immediately added into the namespace buffer
+  shared root and calls the method immediately when the target is already
+  available
+- if that target still depends on unfinished ancestry loading, the same
+  Step 7 inheritance admission path stalls shared-root apply there before the
+  actual invocation starts
+- shared observations are immediately added into the namespace shared root
 - the side-channel returns the resulting method/observation promise directly
 
 Caller expressions such as `var result = ns.method(args)` therefore compile to a
@@ -582,13 +695,13 @@ expression in the ordinary Cascada way.
 ### Lifetime
 
 - the side-channel is owned by the caller buffer that owns the `ns` binding
-- constructor startup does not finish the namespace buffer
+- constructor startup does not finish the namespace shared root
 - later method calls and observations keep appending through the side-channel
   while that caller buffer is still being applied
 - once the owning caller buffer finishes applying, no new namespace operations
   can arrive from that scope or any of its async children
 - close the side-channel from the owning caller buffer's normal structural
-  teardown point and finish the namespace buffer there
+  teardown point and finish the namespace shared root there
 
 ### Main work
 
@@ -617,8 +730,8 @@ expression in the ordinary Cascada way.
 ### Reuse
 
 - reuse composition-mode rendering as the constructor-startup entrypoint,
-  specifically the existing `rootRenderFunc(..., true)` /
-  `_renderForComposition()` path
+  specifically the existing `rootRenderFunc(..., true)` / `_renderForComposition()`
+  path
 - reuse the existing imported-namespace/member-call classification machinery as
   the base for identifying namespace-bound names in expressions
 - reuse existing current-buffer observation semantics for `.snapshot()`,
@@ -631,7 +744,7 @@ expression in the ordinary Cascada way.
   `importedBindings` Set so namespace instances can be distinguished from
   ordinary imports/macros and routed to the namespace-side command path
 - add the namespace side-channel object/state and wire it to the namespace
-  buffer
+  shared root
 - add namespace-specific command emission for method calls and shared
   observations
 - keep the side-channel implementation intentionally thin: immediate start on
@@ -650,15 +763,19 @@ expression in the ordinary Cascada way.
 
 - namespace import creates a usable instance object
 - shared var access works through `ns.x`
+- `ns.x` shared-var reads occur at the caller's current position rather than as
+  eager JS property reads
 - shared non-var observation works through `ns.name.snapshot()` and friends
 - two imports create independent instances
 
 `tests/pasync/namespace-method-calls.js`
 
 - method calls start immediately when their caller-side command applies
-- each call gets an isolated child buffer under the namespace buffer
+- each call gets an isolated child buffer under the namespace shared root
 - side-channel apply does not wait for argument resolution before calling the
   method
+- a namespace method call can pass through unresolved inherited admission and
+  still preserve caller-visible ordering
 - method return values resolve correctly
 - method-local temporary channels do not leak across calls
 - shared observations use the same immediate namespace-side path
@@ -666,12 +783,16 @@ expression in the ordinary Cascada way.
 `tests/pasync/namespace-lifecycle.js`
 
 - constructor work and later method work both complete before the namespace
-  buffer is considered done
+  shared root is considered done
 - method calls made after constructor startup still attach correctly
 - caller-side output order remains deterministic
-- the namespace buffer does not finish before the side-channel finishes
+- the namespace shared root does not finish before the side-channel finishes
+- no new namespace operations can start after owner-scope teardown closes the
+  side-channel
+- two namespace instances sharing the same parent chain stay isolated even when
+  ancestry loads asynchronously
 
-## Step 9 - Templates
+## Step 10 - Templates
 
 **Goal:** Apply the same architecture to templates.
 
@@ -680,8 +801,8 @@ expression in the ordinary Cascada way.
 - template-side `shared` syntax
 - pre-extends and post-extends execution around `{% extends %}`
 - block-based override and `super()` behavior using the same bootstrap model
-- the same root-buffer and namespace-instance model as scripts, minus
-  constructor-return handling
+- the same shared-root, constructor-as-`__constructor__`, and side-channel
+  model as scripts, minus constructor-return handling
 
 This step intentionally changes the behavior of extending templates: top-level
 code before and after `{% extends %}` becomes real pre-extends and post-extends
@@ -692,7 +813,7 @@ the old Nunjucks-style behavior for static `extends`.
 
 ### Reuse
 
-- reuse the same bootstrap, root-buffer chaining, shared-channel, and
+- reuse the same bootstrap, shared-root, constructor/method admission, and
   side-channel model established for scripts
 - keep block override and the existing `Context.blocks` / `getAsyncSuper()`
   lookup model for async templates
@@ -723,6 +844,13 @@ the old Nunjucks-style behavior for static `extends`.
 - child template code before `{% extends %}` runs as pre-extends code
 - code after `{% extends %}` runs as post-extends code
 - block overriding still works
+- `super()` still resolves correctly when parent block metadata arrives later
+- shared state stays consistent across top-level template constructor code and
+  block bodies
+- async ordering around parent loading remains correct for pre-extends and
+  post-extends template code
+- legacy static-extends tests are updated or explicitly gated so the behavior
+  change is intentional
 
 ## Non-Goals
 

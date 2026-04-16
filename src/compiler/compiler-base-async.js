@@ -450,7 +450,7 @@ class CompilerBaseAsync extends CompilerCommon {
       return false;
     }
     const errorContextJson = JSON.stringify(this._createErrorContext(node));
-    this.emit(`runtime.callInheritedMethod(context, ${JSON.stringify(explicitCall.methodName)}, `);
+    this.emit(`runtime.callInheritedMethod(context, inheritanceState, ${JSON.stringify(explicitCall.methodName)}, `);
     this._compileAggregate(node.args, null, '[', ']', false, false);
     this.emit(`, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson})`);
     return true;

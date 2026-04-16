@@ -8,14 +8,11 @@ let nodes;
 let scriptTranspiler;
 let runtime;
 let StringLoader;
-let Context;
-
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
   Script = environment.Script;
-  Context = environment.Context;
   parser = require('../../src/parser');
   nodes = require('../../src/nodes');
   scriptTranspiler = require('../../src/script/script-transpiler');
@@ -25,7 +22,6 @@ if (typeof require !== 'undefined') {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   Script = nunjucks.Script;
-  Context = nunjucks.Context;
   parser = nunjucks.parser;
   nodes = nunjucks.nodes;
   scriptTranspiler = nunjucks.scriptTranspiler;
@@ -260,17 +256,37 @@ describe('Extends', function () {
       expect(script.methods.build.ownerKey).to.be('method-metadata.script');
     });
 
+    it('should expose __constructor__ in the compiled methods map with internal metadata', function () {
+      const script = new Script('shared text trace\ntrace("x")\nreturn null', env, 'constructor-metadata.script');
+      script.compile();
+
+      expect(script.methods).to.be.ok();
+      expect(script.methods.__constructor__).to.be.ok();
+      expect(typeof script.methods.__constructor__.fn).to.be('function');
+      expect(script.methods.__constructor__.contract).to.eql({
+        inputNames: [],
+        withContext: false
+      });
+      expect(script.methods.__constructor__.ownerKey).to.be('constructor-metadata.script');
+    });
+
+    it('should reject __constructor__ as a user-declared method name', function () {
+      expect(() => {
+        new Script('method __constructor__()\n  return null\nendmethod\nreturn null', env, 'reserved-constructor.script')._compileSource();
+      }).to.throwException(/Identifier '__constructor__' is reserved/);
+    });
+
     it('should preserve child-first method chains when parent methods register later', function () {
       const childScript = new Script('method build(user)\n  user\nendmethod\nreturn null', env, 'C.script');
       const parentScript = new Script('method build(user)\n  user\nendmethod\nreturn null', env, 'A.script');
       childScript.compile();
       parentScript.compile();
 
-      const context = new Context({}, {}, env, 'C.script', true);
-      context.registerCompiledMethods(childScript.methods);
-      context.registerCompiledMethods(parentScript.methods);
+      const inheritanceState = runtime.createInheritanceState();
+      inheritanceState.registerCompiledMethods(childScript.methods);
+      inheritanceState.registerCompiledMethods(parentScript.methods);
 
-      const chain = context.getRegisteredMethodChain('build');
+      const chain = inheritanceState.getRegisteredMethodChain('build');
       expect(chain.map((entry) => entry.ownerKey)).to.eql(['C.script', 'A.script']);
       expect(chain[0].contract).to.eql({
         inputNames: ['user'],
@@ -282,11 +298,16 @@ describe('Extends', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
       const seen = [];
-      const originalRegisterSharedSchema = Context.prototype.registerSharedSchema;
+      const originalCreateInheritanceState = runtime.createInheritanceState;
 
-      Context.prototype.registerSharedSchema = function(sharedSchema, ownerKey) {
-        seen.push(`schema:${ownerKey}:${(sharedSchema || []).map((entry) => entry.name).join(',')}`);
-        return originalRegisterSharedSchema.call(this, sharedSchema, ownerKey);
+      runtime.createInheritanceState = function() {
+        const inheritanceState = originalCreateInheritanceState();
+        const originalRegisterSharedSchema = inheritanceState.registerSharedSchema;
+        inheritanceState.registerSharedSchema = function(sharedSchema, ownerKey) {
+          seen.push(`schema:${ownerKey}:${(sharedSchema || []).map((entry) => entry.name).join(',')}`);
+          return originalRegisterSharedSchema.call(this, sharedSchema, ownerKey);
+        };
+        return inheritanceState;
       };
 
       try {
@@ -303,8 +324,19 @@ describe('Extends', function () {
         expect(seen[0]).to.be('schema:C.script:trace');
         expect(seen[1]).to.be('pre-C|');
       } finally {
-        Context.prototype.registerSharedSchema = originalRegisterSharedSchema;
+        runtime.createInheritanceState = originalCreateInheritanceState;
       }
+    });
+
+    it('should make parent methods reachable after the extends load boundary resolves', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'method build(name)\n  return "parent:" + name\nendmethod');
+      loader.addTemplate('C.script', 'extends "A.script"\nreturn this.build("Ada")');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be('parent:Ada');
     });
 
     it('should preload shared inputs from extends with before ancestor constructor code runs', async function () {
@@ -330,6 +362,42 @@ describe('Extends', function () {
         expect().fail('Expected shared-input validation to fail');
       } catch (error) {
         expect(String(error)).to.contain("does not declare it as shared");
+      }
+    });
+  });
+
+  describe('Step 6', function () {
+    it('should only create inheritance state for roots that need inheritance features', function () {
+      const plainScript = new Script('var x = 1\nreturn x', env, 'plain.script');
+      const methodScript = new Script('method build(name)\n  return name\nendmethod\nreturn this.build("Ada")', env, 'method.script');
+
+      const plainSource = plainScript._compileSource();
+      const methodSource = methodScript._compileSource();
+
+      expect(plainSource).to.not.contain('runtime.createInheritanceState()');
+      expect(methodSource).to.contain('runtime.createInheritanceState()');
+    });
+
+    it('should reuse the existing inheritance state when a parent root renders for composition', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      let createCount = 0;
+      const originalCreateInheritanceState = runtime.createInheritanceState;
+
+      runtime.createInheritanceState = function() {
+        createCount++;
+        return originalCreateInheritanceState();
+      };
+
+      try {
+        loader.addTemplate('A.script', 'method build(name)\n  return "A:" + name\nendmethod');
+        loader.addTemplate('C.script', 'extends "A.script"\nreturn this.build("Ada")');
+
+        const result = await env.renderScript('C.script', {});
+        expect(result).to.be('A:Ada');
+        expect(createCount).to.be(1);
+      } finally {
+        runtime.createInheritanceState = originalCreateInheritanceState;
       }
     });
   });

@@ -15,6 +15,7 @@ const outputValue = require('./safe-output');
 const commands = require('./commands');
 const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
+const inheritanceState = require('./inheritance-state');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -358,6 +359,7 @@ module.exports = {
 
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
+  createInheritanceState: inheritanceState.createInheritanceState,
 
   guard,
 

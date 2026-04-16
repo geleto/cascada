@@ -419,10 +419,10 @@ class CompileInheritance {
           this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
           this.emit.line(`${id} = parentPromise.then((parent) => {`);
           this.emit.line('  if (parent) return "";');
-          this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
+          this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
           this.emit.line('});');
         } else {
-          this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
+          this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
         }
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
       }
@@ -508,7 +508,10 @@ class CompileInheritance {
       }
       this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
       this.emit.line(`${templateVar}.compile();`);
-      this.emit.line(`context.registerCompiledMethods(${templateVar}.methods || {});`);
+      if (this.compiler.scriptMode) {
+        this.emit.line(`inheritanceState.registerCompiledMethods(${templateVar}.methods || {});`);
+        this.emit.line(`inheritanceState.registerSharedSchema(${templateVar}.sharedSchema || [], ${templateVar}.path);`);
+      }
       this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
       this.emit.line(`context.setExtendsComposition(${templateVar}, ${extendsRootContextVar}, ${extendsExternContextVar});`);
       this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
@@ -552,14 +555,15 @@ class CompileInheritance {
     this.emit.line('try {');
     this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
     this.emit.line(`  ${templateVar}.compile();`);
-    this.emit.line(`  context.registerCompiledMethods(${templateVar}.methods || {});`);
+    this.emit.line(`  inheritanceState.registerCompiledMethods(${templateVar}.methods || {});`);
+    this.emit.line(`  inheritanceState.registerSharedSchema(${templateVar}.sharedSchema || [], ${templateVar}.path);`);
     this.emit.line(`  runtime.ensureCurrentBufferSharedLinks(${templateVar}.sharedSchema || [], currentBuffer);`);
     this.emit.line(`  runtime.preloadSharedInputs(${templateVar}.sharedSchema || [], ${extendsSharedInputValuesVar}, currentBuffer, context, { lineno: ${node.lineno}, colno: ${node.colno} });`);
     this.emit.line(`  for (let ${k} in ${templateVar}.blocks) {`);
     this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
     this.emit.line('  }');
     this.emit.line(`  const ${parentContextVar} = context.forkForComposition(${templateVar}.path, ${extendsRootContextVar}, context.getRenderContextVariables(), ${extendsSharedInputValuesVar});`);
-    this.emit.line(`  ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, true, currentBuffer);`);
+    this.emit.line(`  ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, true, currentBuffer, inheritanceState);`);
     this.emit.line('} finally {');
     this.emit.line('  context.finishAsyncExtendsBlockRegistration();');
     this.emit.line('}');
@@ -614,7 +618,7 @@ class CompileInheritance {
       }
       const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
       if (!id) {
-        this.emit(`runtime.callSuperMethod(context, ${JSON.stringify(blockName)}, ${JSON.stringify(ownerKey)}, `);
+        this.emit(`runtime.callSuperMethod(context, inheritanceState, ${JSON.stringify(blockName)}, ${JSON.stringify(ownerKey)}, `);
         this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
         this.emit(`, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockPayload, ${errorContextJson})`);
         return;
@@ -622,7 +626,7 @@ class CompileInheritance {
 
       const superArgsVar = this.compiler._tmpid();
       const superCallExpr =
-        `runtime.callSuperMethod(context, ${JSON.stringify(blockName)}, ${JSON.stringify(ownerKey)}, ${superArgsVar}, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockPayload, ${errorContextJson})`;
+        `runtime.callSuperMethod(context, inheritanceState, ${JSON.stringify(blockName)}, ${JSON.stringify(ownerKey)}, ${superArgsVar}, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, blockPayload, ${errorContextJson})`;
       this.emit(`let ${superArgsVar} = `);
       this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
       this.emit.line(';');
@@ -648,7 +652,7 @@ class CompileInheritance {
 
     if (!id) {
       if (args.length === 0) {
-        this.emit(`runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, context.createSuperInheritancePayload(blockPayload), blockRenderCtx))`);
+        this.emit(`runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.createSuperInheritancePayload(blockPayload), blockRenderCtx))`);
         return;
       }
       const superArgsVar = this.compiler._tmpid();
@@ -663,7 +667,7 @@ class CompileInheritance {
         this.emit.line(`${superArgsOverrideVar}[${JSON.stringify(inputName)}] = ${superArgsVar}[${idx}];`);
       });
       this.emit.line(`const ${superBlockPayloadVar} = context.createSuperInheritancePayload(blockPayload, ${superArgsOverrideVar});`);
-      this.emit(`return runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${superBlockPayloadVar}, blockRenderCtx));`);
+      this.emit(`return runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, ${superBlockPayloadVar}, blockRenderCtx));`);
       this.emit('})()');
       return;
     }
@@ -679,9 +683,9 @@ class CompileInheritance {
         this.emit.line(`${superArgsOverrideVar}[${JSON.stringify(inputName)}] = ${superArgsVar}[${idx}];`);
       });
       this.emit.line(`const ${superBlockPayloadVar} = context.createSuperInheritancePayload(blockPayload, ${superArgsOverrideVar});`);
-      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${superBlockPayloadVar}, blockRenderCtx);`);
+      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, ${superBlockPayloadVar}, blockRenderCtx);`);
     } else {
-      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, context.createSuperInheritancePayload(blockPayload), blockRenderCtx);`);
+      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.createSuperInheritancePayload(blockPayload), blockRenderCtx);`);
     }
     this.emit.line(`${id} = runtime.markSafe(${id});`);
   }
