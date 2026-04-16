@@ -686,6 +686,10 @@ surface out of the generic files in one cleanup pass.
   works
 - an ancestor `__constructor__` explicit return is ignored even when it
   resolves later than child work
+
+Namespace-return cases are validated when the namespace runtime lands in Step 9,
+not in Step 8 itself:
+
 - namespace import still yields the namespace object when constructor code
   contains an explicit `return`
 - namespace instantiation ignores constructor return even when the constructor
