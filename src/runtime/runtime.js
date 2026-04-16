@@ -16,6 +16,7 @@ const commands = require('./commands');
 const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
 const inheritanceState = require('./inheritance-state');
+const namespaceRuntime = require('./namespace');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -185,19 +186,19 @@ function validateSharedInputs(sharedSchema, providedInputNames, operationName = 
   for (let i = 0; i < providedNames.length; i++) {
     const name = providedNames[i];
     if (!declaredNames.has(name)) {
-      throw new Error(`${operationName} passed '${name}' but the parent template does not declare it as shared`);
+      throw new Error(`${operationName} passed '${name}' but the target does not declare it as shared`);
     }
   }
 }
 
-function preloadSharedInputs(sharedSchema, inputValues, currentBuffer, context, pos = null) {
+function preloadSharedInputs(sharedSchema, inputValues, currentBuffer, context, pos = null, operationName = 'extends') {
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
   const values = inputValues && typeof inputValues === 'object' ? inputValues : {};
   const providedNames = Object.keys(values);
   const position = pos || { lineno: 0, colno: 0 };
   const schemaByName = new Map();
 
-  validateSharedInputs(schema, providedNames, 'extends');
+  validateSharedInputs(schema, providedNames, operationName);
   for (let i = 0; i < schema.length; i++) {
     const entry = schema[i];
     if (entry && entry.name) {
@@ -292,7 +293,10 @@ function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
       continue;
     }
     let cursor = currentBuffer;
-    while (cursor && cursor.parent) {
+    // Shared-link installation follows the same hierarchy boundary as shared
+    // declarations: namespace/shared roots do not leak their lanes upward into
+    // the caller buffer tree.
+    while (cursor && cursor.parent && !cursor._sharedRootBoundary) {
       if (!(typeof cursor.isLinkedChannel === 'function' && cursor.isLinkedChannel(entry.name))) {
         cursor.parent.addBuffer(cursor, entry.name);
       }
@@ -394,6 +398,10 @@ module.exports = {
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
   createInheritanceState: inheritanceState.createInheritanceState,
+  createNamespaceInstance: namespaceRuntime.createNamespaceInstance,
+  NamespaceMethodCallCommand: namespaceRuntime.NamespaceMethodCallCommand,
+  NamespaceObserveCommand: namespaceRuntime.NamespaceObserveCommand,
+  NamespaceCloseCommand: namespaceRuntime.NamespaceCloseCommand,
 
   guard,
 

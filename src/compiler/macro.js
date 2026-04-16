@@ -37,7 +37,7 @@ class CompileMacro {
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
     compiler.emit.line(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerUsedChannels || null);`);
-    compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
+    compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishCompletePromise();`);
     compiler.emit.line(`${bufferId}.add(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     compiler.emit.line(`let ${invocationResultId} = Promise.resolve(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.markFinishedAndPatchLinks());`);
     compiler.emit.line(`${bufferId}.add(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationResultId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
@@ -215,7 +215,7 @@ class CompileMacro {
     compiler.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
     compiler.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
     compiler.emit(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerUsedChannels || null);`);
-    compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
+    compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishCompletePromise();`);
     compiler.emit(`${bufferId}.add(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${lineno}, colno: ${colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     // __caller__ timing is owned only by caller invocation code. Track both:
     // 1. when this invocation child buffer stops receiving commands

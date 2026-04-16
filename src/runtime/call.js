@@ -255,16 +255,7 @@ function _enqueueDeferredMethodAdmission(currentBuffer, context, inheritanceStat
 }
 
 function _unwrapAdmissionValue(admission) {
-  if (!admission || typeof admission.then !== 'function') {
-    return admission && Object.prototype.hasOwnProperty.call(admission, 'value')
-      ? admission.value
-      : admission;
-  }
-  return admission.then((admissionResult) =>
-    admissionResult && Object.prototype.hasOwnProperty.call(admissionResult, 'value')
-      ? admissionResult.value
-      : admissionResult
-  );
+  return Promise.resolve(admission).then((resolvedAdmission) => resolvedAdmission.value);
 }
 
 function _contextualizeRuntimeFatalError(err, errorContext) {
@@ -320,7 +311,36 @@ function _createSettledMethodAdmission(value) {
   };
 }
 
-function _invokeMethodEntry(methodEntry, context, inheritanceState, resolvedArgs, env, runtime, cb, invocationBuffer, errorContext, currentPayload = null) {
+function _createMethodCompletion(invocationBuffer) {
+  return invocationBuffer && typeof invocationBuffer.getFinishCompletePromise === 'function'
+    ? invocationBuffer.getFinishCompletePromise()
+    : Promise.resolve();
+}
+
+function _awaitMethodAdmissionResult(admission) {
+  return Promise.resolve(admission).then((resolvedAdmission) => {
+    const valueResult = resolvedAdmission.value && typeof resolvedAdmission.value.then === 'function'
+      ? resolvedAdmission.value
+      : Promise.resolve(resolvedAdmission.value);
+    const completionResult = resolvedAdmission.completion && typeof resolvedAdmission.completion.then === 'function'
+      ? resolvedAdmission.completion
+      : null;
+
+    if (!completionResult) {
+      return valueResult;
+    }
+
+    return valueResult.then(
+      (value) => completionResult.then(() => value),
+      (err) => completionResult.then(
+        () => { throw err; },
+        () => { throw err; }
+      )
+    );
+  });
+}
+
+function _invokeMethodEntry(methodEntry, context, inheritanceState, resolvedArgs, env, runtime, cb, invocationBuffer, errorContext, currentPayload = null, autoFinishInvocationBuffer = true) {
   let result;
   try {
     const argMap = {};
@@ -339,7 +359,9 @@ function _invokeMethodEntry(methodEntry, context, inheritanceState, resolvedArgs
       : undefined;
     result = methodEntry.fn(env, context, runtime, cb, invocationBuffer, inheritanceState, preparedPayload, renderCtx);
   } finally {
-    _finishInvocationBuffer(invocationBuffer);
+    if (autoFinishInvocationBuffer) {
+      _finishInvocationBuffer(invocationBuffer);
+    }
   }
   return result && typeof result.then === 'function'
     ? new RuntimePromise(result, errorContext)
@@ -399,49 +421,61 @@ function _admitKnownMethodWithTrackedCompletion(methodEntry, name, context, inhe
     resolveCompletion = resolve;
     rejectCompletion = reject;
   });
+  const finishAfterRegistration = (registrationPromise) => {
+    if (!registrationPromise || typeof registrationPromise.then !== 'function') {
+      _finishInvocationBuffer(invocationBuffer);
+      resolveCompletion(undefined);
+      return;
+    }
+    resolveCompletion(registrationPromise.then(
+      () => {
+        _finishInvocationBuffer(invocationBuffer);
+      },
+      (err) => {
+        _finishInvocationBuffer(invocationBuffer);
+        throw err;
+      }
+    ));
+  };
   const finishEarly = (result) => {
-    resolveCompletion(undefined);
     _finishInvocationBuffer(invocationBuffer);
+    resolveCompletion(undefined);
     return result;
   };
-  const value = _resolveDispatchedValue(resolveAll(args), errorContext)
-    .then((resolvedArgsResult) => {
-      const resolvedArgs = resolvedArgsResult.value;
-      if (isPoison(resolvedArgs)) {
-        return finishEarly(resolvedArgs);
-      }
+  const value = Promise.resolve().then(() => {
+    const argCountError = _validateMethodArgCount(methodEntry, args, name, errorContext);
+    if (argCountError) {
+      return finishEarly(argCountError);
+    }
 
-      const argCountError = _validateMethodArgCount(methodEntry, resolvedArgs, name, errorContext);
-      if (argCountError) {
-        return finishEarly(argCountError);
-      }
+    const result = _invokeMethodEntry(
+      methodEntry,
+      context,
+      inheritanceState,
+      args,
+      env,
+      runtime,
+      cb,
+      invocationBuffer,
+      errorContext,
+      currentPayload,
+      false
+    );
 
-      const result = _invokeMethodEntry(
-        methodEntry,
-        context,
-        inheritanceState,
-        resolvedArgs,
-        env,
-        runtime,
-        cb,
-        invocationBuffer,
-        errorContext,
-        currentPayload
-      );
-
-      // The compiled constructor/method body installs any nested extends
-      // boundary synchronously while it is executing, so reading the legacy
-      // registration promise/count immediately after the invocation is enough
-      // to detect whether this admission started new registration work.
-      const nextRegistration = readRegistrationState();
-      const startedOwnRegistration = !!nextRegistration.promise && (
-        nextRegistration.promise !== priorRegistration.promise ||
-        nextRegistration.count > priorRegistration.count
-      );
-      resolveCompletion(startedOwnRegistration ? nextRegistration.promise : undefined);
-      return result;
-    })
+    // The compiled constructor/method body installs any nested extends
+    // boundary synchronously while it is executing, so reading the legacy
+    // registration promise/count immediately after the invocation is enough
+    // to detect whether this admission started new registration work.
+    const nextRegistration = readRegistrationState();
+    const startedOwnRegistration = !!nextRegistration.promise && (
+      nextRegistration.promise !== priorRegistration.promise ||
+      nextRegistration.count > priorRegistration.count
+    );
+    finishAfterRegistration(startedOwnRegistration ? nextRegistration.promise : null);
+    return result;
+  })
     .catch((err) => {
+      _finishInvocationBuffer(invocationBuffer);
       rejectCompletion(err);
       throw err;
     });
@@ -453,46 +487,93 @@ function _admitKnownMethodWithTrackedCompletion(methodEntry, name, context, inhe
 }
 
 function _admitKnownMethodValue(methodEntry, name, context, inheritanceState, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
-  return _resolveDispatchedValue(resolveAll(args), errorContext)
-    .then((resolvedArgsResult) => {
-      const resolvedArgs = resolvedArgsResult.value;
-      if (isPoison(resolvedArgs)) {
-        return resolvedArgs;
-      }
+  const argCountError = _validateMethodArgCount(methodEntry, args, name, errorContext);
+  if (argCountError) {
+    return argCountError;
+  }
 
-      const argCountError = _validateMethodArgCount(methodEntry, resolvedArgs, name, errorContext);
-      if (argCountError) {
-        return argCountError;
-      }
+  return _invokeMethodEntry(
+    methodEntry,
+    context,
+    inheritanceState,
+    args,
+    env,
+    runtime,
+    cb,
+    _createMethodInvocationBuffer(
+      currentBuffer,
+      context,
+      methodEntry && methodEntry.linkedChannels
+    ),
+    errorContext,
+    currentPayload
+  );
+}
 
-      return _invokeMethodEntry(
+function _admitKnownMethodWithBufferCompletion(methodEntry, name, context, inheritanceState, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
+  const invocationBuffer = _createMethodInvocationBuffer(
+    currentBuffer,
+    context,
+    methodEntry && methodEntry.linkedChannels
+  );
+  const finishEarly = (value) => {
+    _finishInvocationBuffer(invocationBuffer);
+    return _createSettledMethodAdmission(value);
+  };
+
+  if (!_hasAsyncMethodArgs(args)) {
+    const argCountError = _validateMethodArgCount(methodEntry, args, name, errorContext);
+    if (argCountError) {
+      return finishEarly(argCountError);
+    }
+    return {
+      value: _invokeMethodEntry(
         methodEntry,
         context,
         inheritanceState,
-        resolvedArgs,
+        args,
         env,
         runtime,
         cb,
-        _createMethodInvocationBuffer(
-          currentBuffer,
-          context,
-          methodEntry && methodEntry.linkedChannels
-        ),
+        invocationBuffer,
         errorContext,
         currentPayload
-      );
-    });
+      ),
+      completion: _createMethodCompletion(invocationBuffer)
+    };
+  }
+
+  const argCountError = _validateMethodArgCount(methodEntry, args, name, errorContext);
+  if (argCountError) {
+    return finishEarly(argCountError);
+  }
+
+  return {
+    value: Promise.resolve().then(() =>
+      _invokeMethodEntry(
+        methodEntry,
+        context,
+        inheritanceState,
+        args,
+        env,
+        runtime,
+        cb,
+        invocationBuffer,
+        errorContext,
+        currentPayload
+      )
+    )
+      .catch((err) => {
+        _finishInvocationBuffer(invocationBuffer);
+        throw err;
+      }),
+    completion: _createMethodCompletion(invocationBuffer)
+  };
 }
 
 async function _admitDeferredMethodEntry(resolveEntry, name, context, inheritanceState, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null, invocationBufferOverride = null) {
   const overrideInvocationBuffer = invocationBufferOverride || null;
   try {
-    const resolvedArgs = (await _resolveDispatchedValue(resolveAll(args), errorContext)).value;
-    if (isPoison(resolvedArgs)) {
-      _finishInvocationBuffer(overrideInvocationBuffer);
-      return _createSettledMethodAdmission(resolvedArgs);
-    }
-
     const methodEntry = (await _resolveDispatchedValue((() => {
       try {
         return resolveEntry();
@@ -508,7 +589,7 @@ async function _admitDeferredMethodEntry(resolveEntry, name, context, inheritanc
       return _createSettledMethodAdmission(methodEntry);
     }
 
-    const argCountError = _validateMethodArgCount(methodEntry, resolvedArgs, name, errorContext);
+    const argCountError = _validateMethodArgCount(methodEntry, args, name, errorContext);
     if (argCountError) {
       _finishInvocationBuffer(overrideInvocationBuffer);
       return _createSettledMethodAdmission(argCountError);
@@ -524,7 +605,7 @@ async function _admitDeferredMethodEntry(resolveEntry, name, context, inheritanc
         methodEntry,
         context,
         inheritanceState,
-        resolvedArgs,
+        args,
         env,
         runtime,
         cb,
@@ -532,8 +613,8 @@ async function _admitDeferredMethodEntry(resolveEntry, name, context, inheritanc
         errorContext,
         currentPayload
       ),
-      completion: activeInvocationBuffer && typeof activeInvocationBuffer.getFinishedPromise === 'function'
-        ? activeInvocationBuffer.getFinishedPromise()
+      completion: activeInvocationBuffer && typeof activeInvocationBuffer.getFinishCompletePromise === 'function'
+        ? activeInvocationBuffer.getFinishCompletePromise()
         : Promise.resolve()
     };
   } catch (err) {
@@ -603,21 +684,6 @@ function _dispatchMethodCall(getImmediateMethodEntry, resolveMethodEntry, name, 
 }
 
 function _admitDirectMethod(methodEntry, name, context, inheritanceState, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
-  if (!_hasAsyncMethodArgs(args)) {
-    return _invokeImmediateMethodEntry(
-      methodEntry,
-      name,
-      context,
-      inheritanceState,
-      args,
-      env,
-      runtime,
-      cb,
-      currentBuffer,
-      errorContext,
-      currentPayload
-    );
-  }
   return _admitKnownMethodValue(
     methodEntry,
     name,
@@ -671,6 +737,44 @@ function callInheritedMethod(context, inheritanceState, name, args, env, runtime
   );
 }
 
+function callInheritedMethodDetailed(context, inheritanceState, name, args, env, runtime, cb, currentBuffer, errorContext) {
+  const poisonedArgs = _mergePoisonedArgs(args);
+  if (poisonedArgs && !_hasAsyncMethodArgs(args)) {
+    return Promise.resolve(poisonedArgs);
+  }
+
+  const immediateMethodEntry = inheritanceState && typeof inheritanceState.getImmediateInheritedMethodEntry === 'function'
+    ? inheritanceState.getImmediateInheritedMethodEntry(name)
+    : null;
+  if (immediateMethodEntry) {
+    return _awaitMethodAdmissionResult(_admitKnownMethodWithBufferCompletion(
+      immediateMethodEntry,
+      name,
+      context,
+      inheritanceState,
+      args,
+      env,
+      runtime,
+      cb,
+      currentBuffer,
+      errorContext
+    ));
+  }
+
+  return _awaitMethodAdmissionResult(_admitDeferredMethodEntry(
+    () => inheritanceState.resolveInheritedMethodEntry(context, name),
+    name,
+    context,
+    inheritanceState,
+    args,
+    env,
+    runtime,
+    cb,
+    currentBuffer,
+    errorContext
+  ));
+}
+
 function callSuperMethod(context, inheritanceState, name, ownerKey, args, env, runtime, cb, currentBuffer, currentPayload, errorContext) {
   return _dispatchMethodCall(
     () => inheritanceState && typeof inheritanceState.getImmediateSuperMethodEntry === 'function'
@@ -691,7 +795,7 @@ function callSuperMethod(context, inheritanceState, name, ownerKey, args, env, r
 }
 
 function admitMethodEntry(context, inheritanceState, methodEntry, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
-  return _admitDirectMethod(
+  return _admitDirectMethodWithCompletion(
     methodEntry,
     '__constructor__',
     context,
@@ -703,7 +807,7 @@ function admitMethodEntry(context, inheritanceState, methodEntry, args, env, run
     currentBuffer,
     errorContext,
     currentPayload
-  );
+  ).value;
 }
 
 function admitMethodEntryWithCompletion(context, inheritanceState, methodEntry, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
@@ -730,5 +834,6 @@ module.exports = {
   admitMethodEntry,
   admitMethodEntryWithCompletion,
   callInheritedMethod,
+  callInheritedMethodDetailed,
   callSuperMethod
 };

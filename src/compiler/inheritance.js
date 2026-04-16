@@ -141,6 +141,9 @@ class CompileInheritance {
   }
 
   _compileAsyncImport(node) {
+    if (this.compiler.scriptMode) {
+      return this._compileAsyncNamespaceImport(node);
+    }
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     if (!node.withContext && withVars.length === 0) {
       const target = node.target.value;
@@ -427,6 +430,34 @@ class CompileInheritance {
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
       }
     );
+  }
+
+  _compileAsyncNamespaceImport(node) {
+    if (node.withContext) {
+      this.compiler.fail(
+        'script namespace import does not support "with context"; pass explicit shared values instead',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+
+    const target = node.target.value;
+    const importId = this._compileAsyncGetTemplateOrScript(node, false, false);
+    const namespaceId = this.compiler._tmpid();
+    const importVarsVar = this.compiler._tmpid();
+    const lifecycleChannelName = `__namespace_root__${target}`;
+    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+
+    this.emit.line(`let ${importVarsVar} = {};`);
+    this._emitExplicitExternInputs(node, importVarsVar);
+    this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${lifecycleChannelName}", "var", context, null);`);
+    this.emit.line(`let ${namespaceId} = runtime.createNamespaceInstance(` +
+      `${importId}, ${importVarsVar}, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, "${target}", "${lifecycleChannelName}", ` +
+      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${errorContextJson}, path: context.path }` +
+      ');');
+    this.compiler.buffer.emitOwnWaitedConcurrencyResolve(namespaceId, node);
+    this._emitValueImportBinding(target, namespaceId, node);
   }
 
   compileSyncBlock(node, frame) {

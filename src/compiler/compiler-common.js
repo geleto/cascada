@@ -37,6 +37,7 @@ class CompilerCommon extends Obj {
     this.scriptMode = options.scriptMode || false;
     this.guardDepth = 0;
     this.importedBindings = new Set();
+    this.namespaceBindings = new Set();
     this.templateName = typeof options.templateName === 'string' ? options.templateName : undefined;
     this.hasExtends = false;
     this.inBlock = false;

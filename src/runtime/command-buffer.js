@@ -21,6 +21,73 @@ const {
 const { checkFinishedBuffer } = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
 
+class FinishStartedSignal {
+  constructor() {
+    this._resolved = false;
+    this._listeners = [];
+  }
+
+  resolve() {
+    if (this._resolved) {
+      return;
+    }
+    this._resolved = true;
+    const listeners = this._listeners.slice();
+    this._listeners.length = 0;
+    for (let i = 0; i < listeners.length; i++) {
+      listeners[i]();
+    }
+  }
+
+  then(onFulfilled, onRejected) {
+    const runHandler = () => {
+      if (typeof onFulfilled !== 'function') {
+        return undefined;
+      }
+      return onFulfilled();
+    };
+
+    if (this._resolved) {
+      try {
+        return Promise.resolve(runHandler());
+      } catch (err) {
+        return typeof onRejected === 'function'
+          ? Promise.resolve(onRejected(err))
+          : Promise.reject(err);
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      this._listeners.push(() => {
+        try {
+          resolve(runHandler());
+        } catch (err) {
+          if (typeof onRejected === 'function') {
+            try {
+              resolve(onRejected(err));
+            } catch (rejectedErr) {
+              reject(rejectedErr);
+            }
+            return;
+          }
+          reject(err);
+        }
+      });
+    });
+  }
+
+  catch(onRejected) {
+    return this.then(undefined, onRejected);
+  }
+
+  finally(onFinally) {
+    return this.then(
+      (value) => Promise.resolve(typeof onFinally === 'function' ? onFinally() : undefined).then(() => value),
+      (err) => Promise.resolve(typeof onFinally === 'function' ? onFinally() : undefined).then(() => { throw err; })
+    );
+  }
+}
+
 class CommandBuffer {
   constructor(context, parent = null) {
     this._context = context;
@@ -44,6 +111,7 @@ class CommandBuffer {
     // Shared registry of Channel objects for this buffer hierarchy.
     // @todo - only usedChannels
     this._channels = parent ? parent._channels : new Map();
+    this._finishStartedSignal = null;
     this._finishedPromise = null;
     this._finishedResolver = null;
 
@@ -75,7 +143,26 @@ class CommandBuffer {
     }
   }
 
-  getFinishedPromise() {
+  // Resolves when this buffer begins teardown (that is, when
+  // markFinishedAndPatchLinks() is first called), before all lanes have fully
+  // drained. Use this for ordered shutdown work that still needs to enqueue
+  // final commands into the buffer tree. This is intentionally a synchronous
+  // thenable signal rather than a native Promise so teardown callbacks can run
+  // in the same turn that finish starts, before lane-finish requests fan out.
+  getFinishStartedPromise() {
+    if (!this._finishStartedSignal) {
+      this._finishStartedSignal = new FinishStartedSignal();
+    }
+    if (this._finishAllChannelsRequested || this.finished) {
+      this._finishStartedSignal.resolve();
+    }
+    return this._finishStartedSignal;
+  }
+
+  // Resolves only after the whole buffer has fully finished across all lanes.
+  // Use this for waiting on lifecycle completion, not for scheduling more work
+  // into the buffer.
+  getFinishCompletePromise() {
     if (this.finished) {
       return Promise.resolve();
     }
@@ -87,8 +174,15 @@ class CommandBuffer {
     return this._finishedPromise;
   }
 
+  getFinishedPromise() {
+    return this.getFinishCompletePromise();
+  }
+
   //@todo - rename this, maybe to finishBufferAndLetIteratorsExit
   markFinishedAndPatchLinks() {
+    if (!this._finishAllChannelsRequested && this._finishStartedSignal) {
+      this._finishStartedSignal.resolve();
+    }
     this._finishAllChannelsRequested = true;
     const channelNames = this._collectKnownChannelNames();
     for (let i = 0; i < channelNames.length; i++) {
@@ -197,6 +291,13 @@ class CommandBuffer {
 
     this._notifyCommandOrBufferAdded(resolvedChannelName);
     return slot;
+  }
+
+  addFinishListener(listener) {
+    if (typeof listener !== 'function') {
+      return;
+    }
+    this.getFinishStartedPromise().then(listener);
   }
 
   // Temporary Step C bridge for `extends ... with ...`.

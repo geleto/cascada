@@ -166,8 +166,8 @@ name.
 - normal script rendering applies shared-var defaults and preserves
   declaration-only shared vars until a later plain assignment
 - keep runtime-only coverage minimal here: one focused child-buffer test proves
-  descendant shared-var defaults beat ancestor defaults until later steps make
-  the full inheritance path available
+  descendant shared-var defaults beat ancestor defaults until Step 4 makes the
+  full inheritance path available
 - the true preloaded-value / `with { x: 99 }` integration case lands with Step
   4 bootstrap
 
@@ -235,8 +235,8 @@ from an explicit apply-complete wait.
   only for the dynamic path
 - do not remove static-path inheritance payload/local-capture plumbing yet if
   async template block args / local captures / `super(...)` still depend on it;
-  land that deletion only together with the replacement path used by static
-  async templates
+  land that deletion in Step 10 together with the replacement path used by
+  static async templates
 
 ### Keep
 
@@ -552,10 +552,12 @@ when inheritance must finish loading before shared-visible work can proceed.
 - keep ordinary local/context/global call semantics for bare `foo()`
 - keep non-shared local channels private to the invocation that declared them
 - postpone constructor-vs-method linked-channel-analysis unification to a later
-  cleanup step after Step 7+ constructor behavior has stabilized
+  cleanup step after Step 10, once script and template constructor behavior has
+  both stabilized
 - keep Step 7 extends-specific bootstrap/admission helpers in the generic
   compiler/runtime files for now, but treat that as temporary organization
-  rather than a long-term layering decision
+  rather than a long-term layering decision; move them in the post-Step-10
+  extraction pass described below
 
 ### Later cleanup
 
@@ -574,11 +576,14 @@ structural simplifications with behavior-changing post-Step-7 work.
 - keep compatibility aliases such as `callWrap` / `callWrapAsync` temporarily,
   but do not add new internal callers to those legacy names
 
-#### After Step 8
+#### Post-Step-9 cleanup, before Step 10
 
 - remove the remaining `asyncExtendsBlocksPromise` bridge from unresolved
-  inherited lookup once constructor return/finalization behavior no longer
-  depends on the old registration lifecycle
+  inherited lookup and shared-channel-type resolution once script and namespace
+  constructor return/finalization behavior no longer depends on the old
+  registration lifecycle
+  - this should happen after Step 9, while the work is still script/namespace
+    only, and before Step 10 adds template-extends behavior on top
 - re-evaluate whether constructor admission still needs a separate
   `value + completion` shape, or whether root completion can collapse onto a
   simpler single admission contract
@@ -826,6 +831,35 @@ expression in the ordinary Cascada way.
   behavior
 - non-namespace property access keeps the normal member-lookup path
 
+### Step 9 cleanup follow-up
+
+The first Step 9 landing may keep some implementation duplication while the
+runtime/compiler behavior settles.
+
+Completed cleanup from the initial Step 9 landing:
+
+- the namespace-facing inherited-dispatch helper now stays on a plain
+  final-value contract; namespace runtime does not understand or unwrap
+  internal `{ value, completion }` admission objects
+- shared runtime helpers are reused for method/schema bootstrap and
+  shared-input preload; namespace-local copies of that logic are removed
+- compiler-side namespace operation emission already goes through one reusable
+  helper so `ns.method(...)`, `ns.x`, and
+  `ns.channel.snapshot()/isError()/getError()` share one command-emission path
+- binding-channel resolution already stays on one helper path for method calls,
+  observations, and close/teardown
+
+Deferred cleanup for a post-Step-10 cleanup sweep:
+
+- collapse namespace method/observation command plumbing toward one generic
+  namespace-operation command shape instead of parallel near-duplicate command
+  classes
+- keep shrinking `src/runtime/namespace.js` toward the actual namespace model:
+  explicit side-channel object/state, bootstrap, and lifetime management,
+  without extra command/result-settling ceremony
+- keep the side-channel object itself explicit; do not let namespace behavior
+  spread into ad-hoc command-buffer helpers or generic buffer-skipping APIs
+
 ### Tests
 
 `tests/pasync/namespace-import.js`
@@ -836,6 +870,10 @@ expression in the ordinary Cascada way.
   eager JS property reads
 - shared non-var observation works through `ns.name.snapshot()` and friends
 - two imports create independent instances
+- invalid namespace shared-input names fail with the namespace-import-specific
+  validation message
+- namespace bootstrap failure (for example missing imported script/template)
+  rejects cleanly instead of hanging the caller
 
 `tests/pasync/namespace-method-calls.js`
 
@@ -848,6 +886,8 @@ expression in the ordinary Cascada way.
 - method return values resolve correctly
 - method-local temporary channels do not leak across calls
 - shared observations use the same immediate namespace-side path
+- fatal namespace method argument resolution rejects cleanly instead of leaving
+  the namespace root open
 
 `tests/pasync/namespace-lifecycle.js`
 

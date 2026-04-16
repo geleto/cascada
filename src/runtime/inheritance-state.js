@@ -7,6 +7,7 @@ class InheritanceState {
   constructor() {
     this.methods = Object.create(null);
     this.registeredSharedChannelNames = new Set();
+    this.registeredSharedChannelTypes = new Map();
   }
 
   registerCompiledMethods(methods) {
@@ -64,8 +65,9 @@ class InheritanceState {
     if (context && context.asyncExtendsBlocksPromise) {
       // The legacy extends-block registration promise is still the bridge for
       // unresolved method lookup here. Step 7 added shared-root admission
-      // stalling, but lookup still waits on this promise until a later step
-      // removes the old registration lifecycle entirely.
+      // stalling, but lookup still waits on this promise until the planned
+      // post-Step-9 cleanup removes the old registration lifecycle entirely
+      // before Step 10 widens static extends to full template behavior.
       return context.asyncExtendsBlocksPromise.then(() => {
         const resolved = this.getImmediateInheritedMethodEntry(name);
         if (resolved) {
@@ -85,8 +87,9 @@ class InheritanceState {
     if (context && context.asyncExtendsBlocksPromise) {
       // The legacy extends-block registration promise is still the bridge for
       // unresolved super lookup here. Step 7 added shared-root admission
-      // stalling, but lookup still waits on this promise until a later step
-      // removes the old registration lifecycle entirely.
+      // stalling, but lookup still waits on this promise until the planned
+      // post-Step-9 cleanup removes the old registration lifecycle entirely
+      // before Step 10 widens static extends to full template behavior.
       return context.asyncExtendsBlocksPromise.then(() => {
         const resolved = this.getImmediateSuperMethodEntry(name, ownerKey);
         if (resolved) {
@@ -112,6 +115,9 @@ class InheritanceState {
     normalized.forEach((entry) => {
       if (entry && entry.name) {
         this.registeredSharedChannelNames.add(entry.name);
+        if (entry.type) {
+          this.registeredSharedChannelTypes.set(entry.name, entry.type);
+        }
       }
     });
     return normalized;
@@ -119,6 +125,29 @@ class InheritanceState {
 
   getRegisteredSharedChannelNames() {
     return Array.from(this.registeredSharedChannelNames);
+  }
+
+  getImmediateSharedChannelType(name) {
+    return this.registeredSharedChannelTypes.has(name)
+      ? this.registeredSharedChannelTypes.get(name)
+      : null;
+  }
+
+  resolveSharedChannelType(context, name) {
+    const immediate = this.getImmediateSharedChannelType(name);
+    if (immediate) {
+      return immediate;
+    }
+    if (context && context.asyncExtendsBlocksPromise) {
+      return context.asyncExtendsBlocksPromise.then(() => {
+        const resolved = this.getImmediateSharedChannelType(name);
+        if (resolved) {
+          return resolved;
+        }
+        throw new RuntimeFatalError(`Shared channel '${name}' was not found in the loaded extends chain`);
+      });
+    }
+    throw new RuntimeFatalError(`Shared channel '${name}' was not found in the loaded extends chain`);
   }
 }
 

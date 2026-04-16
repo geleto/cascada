@@ -856,9 +856,19 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeImport(node) {
     node.target._analysis = { declarationTarget: true };
-    this.importedBindings.add(node.target.value);
+    if (this.scriptMode) {
+      this.namespaceBindings.add(node.target.value);
+    } else {
+      this.importedBindings.add(node.target.value);
+    }
     return {
-      declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }]
+      declares: [{
+        name: node.target.value,
+        type: 'var',
+        initializer: null,
+        imported: !this.scriptMode,
+        namespaceBinding: !!this.scriptMode
+      }]
     };
   }
 
@@ -1047,13 +1057,15 @@ class CompilerAsync extends CompilerBaseAsync {
     );
   }
 
-  emitReturnChannelSnapshot(bufferExpr, positionNode, resultVar) {
+  emitReturnChannelSnapshot(bufferExpr, positionNode, resultVar, markFinished = true) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
     this.emit.line(
       `const ${resultVar}_snapshot = ${bufferExpr}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${lineno}, colno: ${colno}});`
     );
-    this.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
+    if (markFinished) {
+      this.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
+    }
     this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? undefined : value);`);
   }
 
@@ -1092,16 +1104,20 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _getCompiledMethodLinkedChannels(block) {
     const declaredBlockInputNames = this._getBlockInputNames(block);
-    const localCaptureNames = this._getBlockLocalCaptureNames(block);
-    const locallyInitializedNames = new Set(
-      localCaptureNames.concat(declaredBlockInputNames)
-    );
     return Array.from(block.body._analysis.usedChannels || [])
-      .filter((hname) =>
-        hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL &&
-        hname !== RETURN_CHANNEL_NAME &&
-        !locallyInitializedNames.has(hname)
-      );
+      .filter((name) => {
+        if (name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL ||
+          name === RETURN_CHANNEL_NAME ||
+          declaredBlockInputNames.includes(name)) {
+          return false;
+        }
+
+        const declaration = this.analysis.findDeclaration(block.body._analysis, name);
+        // Method invocation buffers should only inherit shared hierarchy lanes.
+        // Non-shared outer vars are constructor/local invocation state and must
+        // not leak into later inherited/namespace method calls.
+        return !!(declaration && declaration.shared);
+      });
   }
 
   _getCompiledConstructorLinkedChannels(node, sharedChannelNames = []) {
@@ -1531,7 +1547,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
       this.emit.line('context.resolveExports();');
       const returnVar = this._tmpid();
-      this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
+      this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar, !this.hasStaticExtends);
       if (this.hasStaticExtends) {
         const finalizedReturnVar = this._tmpid();
         this.emit.line(`const ${finalizedReturnVar} = context.asyncExtendsBlocksPromise`);
@@ -1732,9 +1748,13 @@ class CompilerAsync extends CompilerBaseAsync {
     const declaredBlockInputNames = Array.isArray(options.declaredBlockInputNames)
       ? options.declaredBlockInputNames
       : blockSignature.inputNames;
-    const compositionLocalChannelNames = Array.isArray(options.localCaptureNames)
+    const compositionLocalChannelNames = (Array.isArray(options.localCaptureNames)
       ? options.localCaptureNames
-      : this._getBlockLocalCaptureNames(block);
+      : this._getBlockLocalCaptureNames(block))
+      .filter((name) => {
+        const declaration = this.analysis.findDeclaration(block.body._analysis, name);
+        return !(declaration && declaration.shared);
+      });
     const staticLocalNames = Array.from(new Set(
       compositionLocalChannelNames.concat(declaredBlockInputNames)
     ));
