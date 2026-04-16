@@ -15,7 +15,7 @@ The runtime model is intentionally simple:
   bootstrap, while parent constructors and unresolved inherited dispatch use
   inheritance side-channel admission on the shared root through an
   `InheritanceAdmissionCommand`
-- namespace operations are admitted immediately through the namespace
+- component operations are admitted immediately through the component
   side-channel
 - ordinary command-buffer ordering and dependency handling do the rest
 
@@ -45,7 +45,7 @@ shared-root admission rule.
 | `super()` in a method | `super()` |
 | Instance variable | `shared var x`, `shared text t`, `shared data d`, `shared sequence s` |
 | `new X({...})` | `import "X.script" as ns with { ... }` |
-| `this` | The namespace object `ns` |
+| `this` | The component object `ns` |
 | Multiple instances | `import ... as ns1`, `import ... as ns2` |
 
 `__constructor__` is internal. It should be reserved just like `__return__` and
@@ -56,7 +56,7 @@ must not be a user-declarable method or identifier.
 **Direct render**: render `C.script` or `C.njk` as the entry file. The
 hierarchy runs and C's shared root is the instance shared root.
 
-**Namespace instantiation**: `import "C.script" as ns with { ... }` creates an
+**Component instantiation**: `import "C.script" as ns with { ... }` creates an
 independent instance. The caller keeps its own output and uses `ns` to call
 methods or observe shared state.
 
@@ -68,7 +68,7 @@ starts.
 Shared-root ownership is single-origin:
 
 - the most-derived direct-render entry creates the hierarchy shared root once
-- namespace instantiation creates the namespace instance shared root once
+- component instantiation creates the component instance shared root once
 - parent files do not create replacement shared roots
 - composition/inheritance entry calls receive and reuse the already-created
   shared root
@@ -81,7 +81,7 @@ the runtime bootstraps the local hierarchy state:
 1. Compile the local file before reading its inheritance metadata.
 2. Register the child file's method metadata immediately at root start.
 3. Register the child file's shared schema on the hierarchy shared root.
-4. Preload `with { }` values into shared state when namespace instantiation uses
+4. Preload `with { }` values into shared state when component instantiation uses
    `with { }`.
 5. Start constructor execution through the internal `__constructor__`.
 
@@ -90,7 +90,7 @@ relevant parent file finishes loading. Parent shared schema also registers at
 that time, and any newly discovered shared-root lanes are created only while
 shared-root progress is stalled behind the corresponding inheritance admission.
 
-Both direct render and namespace instantiation use this same local bootstrap
+Both direct render and component instantiation use this same local bootstrap
 shape.
 
 So after Step 7, the compiled root function is no longer "the constructor
@@ -99,14 +99,14 @@ body". It becomes a bootstrap preamble that:
 1. establishes/reuses the shared root
 2. creates or reuses `inheritanceState`
 3. registers local method metadata and local shared schema
-4. preloads namespace-instantiation shared inputs when applicable
+4. preloads component-instantiation shared inputs when applicable
 5. admits the local `__constructor__`
 
 During the implementation steps, some of that constructor bootstrap/admission
 machinery may temporarily live in generic compiler/runtime files such as
 `compiler-async.js`, `runtime.js`, and `call.js`. That is an implementation
 staging choice, not part of the intended long-term layering. Once the
-constructor/root contract has stabilized across script, namespace, and template
+constructor/root contract has stabilized across script, component, and template
 inheritance, those extends-specific helpers should move into dedicated
 extends-focused compiler/runtime modules in one cleanup pass. That later cleanup
 should also split ordinary callable invocation (`invokeCallable*`) away from
@@ -123,9 +123,9 @@ game during the intermediate steps:
 But do not use those intermediate cleanups to silently change the Step 7
 contract itself. Behavioral cleanup such as removing the legacy
 `asyncExtendsBlocksPromise` bridge belongs only after the later constructor /
-namespace / template steps settle.
+component / template steps settle.
 
-On the new static inheritance / namespace-instantiation path:
+On the new static inheritance / component-instantiation path:
 
 - `with { }` preloads declared `shared` names only
 - unknown `with` keys are an error
@@ -410,58 +410,58 @@ Mode-specific fallback means:
 - template mode: final rendered text output
 - script mode: the script's normal result when there is no explicit `return`
 
-For namespace instantiation:
+For component instantiation:
 
 - constructor return is ignored
-- `import "Component.script" as ns with { ... }` always yields the namespace
+- `import "Component.script" as ns with { ... }` always yields the component
   object
 
-Namespace method return is separate from constructor return. Calling
+Component method return is separate from constructor return. Calling
 `ns.method(args)` resolves to that method invocation's return value when its
 per-call child buffer has finished applying.
 
 Template inheritance follows the same model. Templates have no constructor-
 return concept.
 
-## Namespace Instances
+## Component Instances
 
-### Namespace Runtime
+### Component Runtime
 
-A namespace instance has:
+A component instance has:
 
-- one long-lived namespace shared root
-- one side-channel that immediately starts namespace operations when caller-side
+- one long-lived component shared root
+- one side-channel that immediately starts component operations when caller-side
   commands apply
 
-For a namespace instance, this long-lived namespace shared root is the hierarchy
+For a component instance, this long-lived component shared root is the hierarchy
 shared root for that instance.
 
-The namespace side-channel is a runtime object owned by the namespace instance.
-It accepts namespace operations from caller code, immediately enqueues the
-corresponding namespace command or per-call child buffer into the namespace
+The component side-channel is a runtime object owned by the component instance.
+It accepts component operations from caller code, immediately enqueues the
+corresponding component command or per-call child buffer into the component
 buffer tree, and returns the resulting promise to the caller. It does not do
 caller-side shared-channel dependency tracking or maintain a second scheduler.
 It is only a thin admission object. Ordinary caller-buffer application order
-decides when a namespace operation starts; after that, ordinary command-buffer
+decides when a component operation starts; after that, ordinary command-buffer
 ordering and dependency handling take over.
 
 Constructor startup:
 
 - constructor code runs through the same internal `__constructor__` admission
   path
-- constructor commands therefore also use the namespace shared root as their
+- constructor commands therefore also use the component shared root as their
   shared-visible base
 
 After constructor startup:
 
-- each namespace operation starts immediately when its caller-side command
+- each component operation starts immediately when its caller-side command
   applies
 - the side-channel does not wait for argument resolution first
 - unresolved arguments flow through as ordinary Cascada values
 
 Method calls:
 
-- `ns.method(args)` immediately creates one child buffer under the namespace
+- `ns.method(args)` immediately creates one child buffer under the component
   shared root
 - the method is called immediately from side-channel `apply()`
 - method-local declarations and temporary outputs live in that per-call child
@@ -469,32 +469,32 @@ Method calls:
 
 Shared observations:
 
-- namespace shared-value observations use the same side-channel path
+- component shared-value observations use the same side-channel path
 - the side-channel immediately adds the corresponding observation command into
-  the namespace shared root
+  the component shared root
 
 Once commands or per-call child buffers are attached, ordinary Cascada
 buffer/tree semantics handle dependencies and ordering.
 
-### Namespace Object
+### Component Object
 
 `ns` exposes:
 
 - all methods from the hierarchy
-- shared channels through namespace properties
+- shared channels through component properties
 - no ambient caller-side variables
 
 First implementation restriction:
 
-- namespace semantics apply only to the direct binding introduced by
+- component semantics apply only to the direct binding introduced by
   `import ... as ns`
-- aliasing, passing, or returning that namespace value is out of scope
+- aliasing, passing, or returning that component value is out of scope
 - only direct syntactic uses such as `ns.method()`, `ns.x`, and
-  `ns.log.snapshot()` participate in namespace dispatch
+  `ns.log.snapshot()` participate in component dispatch
 
 Caller-side access rules:
 
-- `shared var x`: `ns.x` compiles to a namespace shared-value read at the
+- `shared var x`: `ns.x` compiles to a component shared-value read at the
   caller's current position; it is not a stored JS property read
 - `shared text`, `shared data`, `shared sequence`: use explicit observation
   forms such as `ns.log.snapshot()`, `ns.state.snapshot()`, `ns.db.isError()`,
@@ -504,7 +504,7 @@ These observation forms are still current-buffer operations:
 
 - `.snapshot()`, `.isError()`, and `.getError()` operate on the caller's
   current buffer position
-- they observe the namespace's shared channel from that position
+- they observe the component's shared channel from that position
 - they are not JS methods on a stored channel object
 
 Example:
@@ -533,12 +533,12 @@ before assigning it elsewhere.
 
 The side-channel is owned by the caller buffer that owns the `ns` binding:
 
-- constructor startup does not finish the namespace shared root
+- constructor startup does not finish the component shared root
 - later method calls and shared observations continue to append through the
   side-channel while that caller buffer is still being applied
-- once the owning caller buffer finishes applying, no new namespace operations
+- once the owning caller buffer finishes applying, no new component operations
   can arrive from that scope or any of its async children
-- at that point the side-channel closes and the namespace shared root is marked
+- at that point the side-channel closes and the component shared root is marked
   finished
 
 ## Multiple Instances
@@ -559,7 +559,7 @@ Templates follow the same model:
   `__constructor__`
 - `{% block name(args) %}` is the method form
 - `{% extends "parent.njk" %}` is constructor chaining
-- async template inheritance and namespace instances use the same shared-root,
+- async template inheritance and component instances use the same shared-root,
   side-channel, and per-call child-buffer model as scripts
 
 Treating code before `{% extends %}` as pre-extends code and code after it as
@@ -581,7 +581,7 @@ Required compile-time data:
 
 Not required:
 
-- caller-side method read/write tracking for namespace scheduling
+- caller-side method read/write tracking for component scheduling
 - per-call dependency metadata attached to the caller command stream
 - wildcard parent-lane linking for unresolved inherited calls
 
@@ -615,4 +615,4 @@ Must enable:
 - JS-style dynamic dispatch from ancestor constructors
 - independent instances via `import ... as`
 - `with { }` values overriding shared defaults
-- namespace method calls that return values without exposing internal buffers
+- component method calls that return values without exposing internal buffers

@@ -857,7 +857,7 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeImport(node) {
     node.target._analysis = { declarationTarget: true };
     if (this.scriptMode) {
-      this.namespaceBindings.add(node.target.value);
+      this.componentBindings.add(node.target.value);
     } else {
       this.importedBindings.add(node.target.value);
     }
@@ -867,7 +867,7 @@ class CompilerAsync extends CompilerBaseAsync {
         type: 'var',
         initializer: null,
         imported: !this.scriptMode,
-        namespaceBinding: !!this.scriptMode
+        componentBinding: !!this.scriptMode
       }]
     };
   }
@@ -1115,7 +1115,7 @@ class CompilerAsync extends CompilerBaseAsync {
         const declaration = this.analysis.findDeclaration(block.body._analysis, name);
         // Method invocation buffers should only inherit shared hierarchy lanes.
         // Non-shared outer vars are constructor/local invocation state and must
-        // not leak into later inherited/namespace method calls.
+        // not leak into later inherited/component method calls.
         return !!(declaration && declaration.shared);
       });
   }

@@ -54,12 +54,12 @@ class CompilerBaseAsync extends CompilerCommon {
       this.emit(name);
       return;
     }
-    const namespaceBinding = this.scriptMode
+    const componentBinding = this.scriptMode
       ? this.analysis.findDeclaration(node._analysis, name)
       : null;
-    if (namespaceBinding && namespaceBinding.namespaceBinding) {
+    if (componentBinding && componentBinding.componentBinding) {
       this.fail(
-        'Namespace bindings may only be used via direct ns.method(...), ns.x, or ns.channel.snapshot()/isError()/getError() syntax',
+        'Component bindings may only be used via direct ns.method(...), ns.x, or ns.channel.snapshot()/isError()/getError() syntax',
         node.lineno,
         node.colno,
         node
@@ -239,7 +239,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const uses = [];
     const mutates = [];
     let sequenceChannelLookup = null;
-    let namespaceLookup = null;
+    let componentLookup = null;
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
     node._analysis.sequenceLockLookup = sequenceLockLookup;
     if (sequenceLockLookup) {
@@ -250,10 +250,10 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     if (this.scriptMode) {
-      const namespaceFacts = this._getNamespaceBindingFacts(node, analysisPass);
-      if (namespaceFacts) {
-        uses.push(namespaceFacts.bindingName);
-        namespaceLookup = namespaceFacts;
+      const componentFacts = this._getComponentBindingFacts(node, analysisPass);
+      if (componentFacts) {
+        uses.push(componentFacts.bindingName);
+        componentLookup = componentFacts;
       }
       const sequencePath = this.sequential._extractStaticPath(node);
       const lookupFacts =
@@ -278,21 +278,21 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    return { uses, mutates, sequenceChannelLookup, namespaceLookup };
+    return { uses, mutates, sequenceChannelLookup, componentLookup };
   }
 
   compileLookupVal(node) {
-    const namespaceLookup = node._analysis && node._analysis.namespaceLookup;
-    if (namespaceLookup) {
-      if (namespaceLookup.segments.length !== 1) {
+    const componentLookup = node._analysis && node._analysis.componentLookup;
+    if (componentLookup) {
+      if (componentLookup.segments.length !== 1) {
         this.fail(
-          'Namespace member access only supports direct shared-var reads or channel observation calls',
+          'Component member access only supports direct shared-var reads or channel observation calls',
           node.lineno,
           node.colno,
           node
         );
       }
-      this._emitNamespaceSharedRead(namespaceLookup.bindingName, namespaceLookup.segments[0], node);
+      this._emitComponentSharedRead(componentLookup.bindingName, componentLookup.segments[0], node);
       return;
     }
     if (this.scriptMode && this._isExplicitInheritedMethodLookup(node)) {
@@ -350,7 +350,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const mutates = [];
     let specialChannelCall = null;
     let importedCallable = null;
-    let namespaceCall = null;
+    let componentCall = null;
     let directCallerCall = false;
     let directMacroCall = null;
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
@@ -385,11 +385,11 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    const namespaceFacts = this._getNamespaceBindingFacts(node && node.name, analysisPass);
-    if (namespaceFacts) {
-      uses.push(namespaceFacts.bindingName);
-      namespaceCall = namespaceFacts;
-      return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall, namespaceCall };
+    const componentFacts = this._getComponentBindingFacts(node && node.name, analysisPass);
+    if (componentFacts) {
+      uses.push(componentFacts.bindingName);
+      componentCall = componentFacts;
+      return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall, componentCall };
     }
 
     if (node?.name && analysisPass.findDeclaration) {
@@ -449,10 +449,10 @@ class CompilerBaseAsync extends CompilerCommon {
       specialChannelCall = callFacts;
     }
 
-    return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall, namespaceCall };
+    return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall, componentCall };
   }
 
-  _getNamespaceBindingFacts(pathNode, analysisPass = this.analysis) {
+  _getComponentBindingFacts(pathNode, analysisPass = this.analysis) {
     if (!this.scriptMode || !pathNode || !analysisPass || !analysisPass.findDeclaration) {
       return null;
     }
@@ -462,11 +462,11 @@ class CompilerBaseAsync extends CompilerCommon {
     }
     const bindingName = staticPath[0];
     const bindingDecl = analysisPass.findDeclaration(pathNode._analysis, bindingName);
-    const isNamespaceBinding = !!(
-      (bindingDecl && bindingDecl.namespaceBinding) ||
-      (!bindingDecl && this.namespaceBindings && this.namespaceBindings.has(bindingName))
+    const isComponentBinding = !!(
+      (bindingDecl && bindingDecl.componentBinding) ||
+      (!bindingDecl && this.componentBindings && this.componentBindings.has(bindingName))
     );
-    if (!isNamespaceBinding) {
+    if (!isComponentBinding) {
       return null;
     }
     return {
@@ -517,28 +517,28 @@ class CompilerBaseAsync extends CompilerCommon {
     return true;
   }
 
-  _emitNamespaceSharedRead(bindingName, sharedName, node) {
-    this._emitNamespaceCommandPromise(
-      'NamespaceObserveCommand',
+  _emitComponentSharedRead(bindingName, sharedName, node) {
+    this._emitComponentCommandPromise(
+      'ComponentObserveCommand',
       bindingName,
       node,
       () => this.emit(`sharedName: ${JSON.stringify(sharedName)}, observation: "value"`)
     );
   }
 
-  _emitNamespaceObservationCall(bindingName, sharedName, observation, node) {
-    this._emitNamespaceCommandPromise(
-      'NamespaceObserveCommand',
+  _emitComponentObservationCall(bindingName, sharedName, observation, node) {
+    this._emitComponentCommandPromise(
+      'ComponentObserveCommand',
       bindingName,
       node,
       () => this.emit(`sharedName: ${JSON.stringify(sharedName)}, observation: ${JSON.stringify(observation)}`)
     );
   }
 
-  _emitNamespaceMethodCall(bindingName, methodName, node) {
+  _emitComponentMethodCall(bindingName, methodName, node) {
     const errorContextJson = JSON.stringify(this._createErrorContext(node));
-    this._emitNamespaceCommandPromise(
-      'NamespaceMethodCallCommand',
+    this._emitComponentCommandPromise(
+      'ComponentMethodCallCommand',
       bindingName,
       node,
       () => {
@@ -550,7 +550,7 @@ class CompilerBaseAsync extends CompilerCommon {
     );
   }
 
-  _emitNamespaceCommandPromise(commandClassName, bindingName, node, emitFields, includePos = true) {
+  _emitComponentCommandPromise(commandClassName, bindingName, node, emitFields, includePos = true) {
     const posLiteral = `{lineno: ${node.lineno}, colno: ${node.colno}}`;
     this.emit('(() => {');
     const cmdVar = this._tmpid();
@@ -565,25 +565,25 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(' })()');
   }
 
-  _emitNamespaceCall(node) {
-    const namespaceCall = node._analysis && node._analysis.namespaceCall;
-    if (!namespaceCall) {
+  _emitComponentCall(node) {
+    const componentCall = node._analysis && node._analysis.componentCall;
+    if (!componentCall) {
       return false;
     }
-    const segments = namespaceCall.segments;
+    const segments = componentCall.segments;
     if (segments.length === 1) {
-      this._emitNamespaceMethodCall(namespaceCall.bindingName, segments[0], node);
+      this._emitComponentMethodCall(componentCall.bindingName, segments[0], node);
       return true;
     }
     if (segments.length === 2) {
       const observation = segments[1];
       if (observation === 'snapshot' || observation === 'isError' || observation === 'getError') {
-        this._emitNamespaceObservationCall(namespaceCall.bindingName, segments[0], observation, node);
+        this._emitComponentObservationCall(componentCall.bindingName, segments[0], observation, node);
         return true;
       }
     }
     this.fail(
-      'Namespace operations only support direct ns.method(...), ns.x, or ns.channel.snapshot()/isError()/getError() syntax',
+      'Component operations only support direct ns.method(...), ns.x, or ns.channel.snapshot()/isError()/getError() syntax',
       node.lineno,
       node.colno,
       node
@@ -601,7 +601,7 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    if (this._emitNamespaceCall(node)) {
+    if (this._emitComponentCall(node)) {
       return;
     }
 

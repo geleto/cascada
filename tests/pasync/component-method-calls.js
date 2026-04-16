@@ -18,8 +18,8 @@ if (typeof require !== 'undefined') {
   runtimeModule = nunjucks.runtime;
 }
 
-describe('Namespace Method Calls', function () {
-  it('should resolve namespace method return values correctly', async function () {
+describe('Component Method Calls', function () {
+  it('should resolve component method return values correctly', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -56,7 +56,7 @@ describe('Namespace Method Calls', function () {
     expect(result).to.eql(['local-A', 'local-B']);
   });
 
-  it('should route namespace method calls through inherited dispatch', async function () {
+  it('should route component method calls through inherited dispatch', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -80,7 +80,7 @@ describe('Namespace Method Calls', function () {
     expect(result).to.be('C-Ada');
   });
 
-  it('should preserve caller-visible ordering when a namespace call waits for inherited method registration', async function () {
+  it('should preserve caller-visible ordering when a component call waits for inherited method registration', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -108,7 +108,7 @@ describe('Namespace Method Calls', function () {
     expect(result).to.eql(['A-Ada', 'ctor|build|Ada|']);
   });
 
-  it('should start namespace method admission before argument resolution completes', async function () {
+  it('should start component method admission before argument resolution completes', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
     const events = [];
@@ -144,7 +144,7 @@ describe('Namespace Method Calls', function () {
     expect(events).to.eql(['method-start', 'arg-resolved']);
   });
 
-  it('should dispatch shared observations through the same immediate namespace-side path', async function () {
+  it('should dispatch shared observations through the same immediate component-side path', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
     const events = [];
@@ -181,12 +181,12 @@ describe('Namespace Method Calls', function () {
     expect(events).to.eql(['method-start', 'arg-resolved']);
   });
 
-  it('should reject instead of hanging when namespace method argument resolution fails fatally', async function () {
+  it('should reject instead of hanging when component method argument resolution fails fatally', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
     env.addGlobal('fatalArg', () => Promise.reject(
-      new runtimeModule.RuntimeFatalError('fatal namespace arg', 1, 1, 'fatalArg()', 'Main.script')
+      new runtimeModule.RuntimeFatalError('fatal component arg', 1, 1, 'fatalArg()', 'Main.script')
     ));
 
     loader.addTemplate('Component.script', [
@@ -209,6 +209,6 @@ describe('Namespace Method Calls', function () {
 
     expect(outcome.type).to.be('error');
     expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
-    expect(outcome.error.message).to.contain('fatal namespace arg');
+    expect(outcome.error.message).to.contain('fatal component arg');
   });
 });

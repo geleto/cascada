@@ -13,7 +13,7 @@ The design has five core runtime pieces:
 4. side-channel admission that stalls shared-root apply when inheritance must
    finish loading before a constructor or inherited method can proceed, using
    an `InheritanceAdmissionCommand`
-5. namespace instances built from one long-lived shared root plus a side-channel
+5. component instances built from one long-lived shared root plus a side-channel
 
 Implement the steps in order. Each step should land with focused tests before
 moving on.
@@ -27,19 +27,19 @@ Scope:
 - async templates are in scope for the template side of this plan
 - sync template extends stays on its current path unless a later step widens
   scope explicitly
-- on the new static inheritance / namespace-instantiation path, `with { }`
+- on the new static inheritance / component-instantiation path, `with { }`
   preloads declared `shared` names only
 - unknown `with` keys on that new path are an error
 - `extern` remains the mechanism for ordinary composition paths, not the new
   static inheritance path
-- namespace semantics apply only to the direct binding introduced by
+- component semantics apply only to the direct binding introduced by
   `import ... as ns`; aliasing/passing/returning that value is out of scope for
   the first implementation
 
 Implementation rule for every step:
 
 - say what existing machinery is reused
-- say what static-extends / namespace path replaces
+- say what static-extends / component path replaces
 - say what stays in place for legacy or dynamic paths
 
 ## Step 1 - Script Syntax
@@ -272,7 +272,7 @@ state before that child's constructor flow relies on inherited dispatch.
 4. create inheritance state at child root start
 5. register child methods immediately in child-first chains
 6. register shared-channel schema on the hierarchy shared root
-7. preload `with { }` values into shared state for namespace-instantiation
+7. preload `with { }` values into shared state for component-instantiation
    cases that use `with { }`
 
 ### Main work
@@ -289,7 +289,7 @@ state before that child's constructor flow relies on inherited dispatch.
 - parent shared schema likewise registers later when the structural `extends`
   load boundary resolves; any newly discovered shared lanes are still only
   materialized once Step 7's shared-root stall-and-link admission exists
-- validate `with { }` keys for the new static inheritance / namespace path
+- validate `with { }` keys for the new static inheritance / component path
   against declared shared schema, and preload only declared shared names
 - keep the current structural `extends` load boundary from Step 3; this step
   only prepares inheritance state and metadata
@@ -502,7 +502,7 @@ when inheritance must finish loading before shared-visible work can proceed.
   - establishes/reuses the shared root
   - creates or reuses `inheritanceState`
   - registers local methods and local shared schema
-  - preloads namespace-instantiation shared inputs when applicable
+  - preloads component-instantiation shared inputs when applicable
   - admits local `__constructor__`
 - compile top-level constructor flow to the internal `__constructor__` method
   all the way through the runtime path
@@ -579,10 +579,10 @@ structural simplifications with behavior-changing post-Step-7 work.
 #### Post-Step-9 cleanup, before Step 10
 
 - remove the remaining `asyncExtendsBlocksPromise` bridge from unresolved
-  inherited lookup and shared-channel-type resolution once script and namespace
+  inherited lookup and shared-channel-type resolution once script and component
   constructor return/finalization behavior no longer depends on the old
   registration lifecycle
-  - this should happen after Step 9, while the work is still script/namespace
+  - this should happen after Step 9, while the work is still script/component
     only, and before Step 10 adds template-extends behavior on top
 - re-evaluate whether constructor admission still needs a separate
   `value + completion` shape, or whether root completion can collapse onto a
@@ -615,7 +615,7 @@ the obvious `compileAsyncStaticRootExtends(...)` path. Current examples include:
   - the underlying inheritance-admission helpers in `src/runtime/call.js`
 
 Do not do this extraction during Step 7 itself. First let Steps 8-10 settle the
-final constructor/namespace/template behavior, then move the stable extends-only
+final constructor/component/template behavior, then move the stable extends-only
 surface out of the generic files in one cleanup pass.
 
 ### Tests
@@ -652,7 +652,7 @@ surface out of the generic files in one cleanup pass.
 
 - only the entry file's explicit `return` counts in direct render
 - ancestor constructor returns are ignored
-- namespace import ignores constructor return
+- component import ignores constructor return
 - async templates follow the same inheritance model without constructor returns
 
 ### Main work
@@ -660,7 +660,7 @@ surface out of the generic files in one cleanup pass.
 - keep explicit return handling rooted in the entry render only
 - make ancestor `__constructor__` returns non-final in composition/inheritance
   mode
-- ensure namespace import always yields the namespace object
+- ensure component import always yields the component object
 
 ### Main files
 
@@ -678,7 +678,7 @@ surface out of the generic files in one cleanup pass.
 
 ### Keep
 
-- namespace import still produces the namespace object
+- component import still produces the component object
 - template renders stay on their normal text-result path
 
 ### Tests
@@ -692,104 +692,104 @@ surface out of the generic files in one cleanup pass.
 - an ancestor `__constructor__` explicit return is ignored even when it
   resolves later than child work
 
-Namespace-return cases are validated when the namespace runtime lands in Step 9,
+Component-return cases are validated when the component runtime lands in Step 9,
 not in Step 8 itself:
 
-- namespace import still yields the namespace object when constructor code
+- component import still yields the component object when constructor code
   contains an explicit `return`
-- namespace instantiation ignores constructor return even when the constructor
+- component instantiation ignores constructor return even when the constructor
   performs async work
 
-## Step 9 - Namespace Instances
+## Step 9 - Component Instances
 
-**Goal:** Implement namespace instances as one long-lived shared root plus one
+**Goal:** Implement component instances as one long-lived shared root plus one
 side-channel.
 
-The side-channel is a runtime object owned by the namespace instance. It accepts
-namespace operations from caller code, immediately enqueues the corresponding
-namespace command or per-call child buffer into the namespace buffer tree, and
+The side-channel is a runtime object owned by the component instance. It accepts
+component operations from caller code, immediately enqueues the corresponding
+component command or per-call child buffer into the component buffer tree, and
 returns the resulting promise to the caller.
 
 ### Creation
 
-- `import "C.script" as ns with { ... }` creates one long-lived namespace
+- `import "C.script" as ns with { ... }` creates one long-lived component
   shared root as a child of the caller buffer
 - bootstrap creates inheritance state, registers child-owned method metadata,
   and builds the shared schema
 - constructor execution runs through the same `__constructor__` admission path
-- the caller receives a namespace object bound to `ns`
+- the caller receives a component object bound to `ns`
 
-### Namespace object semantics
+### Component Object Semantics
 
-- `ns.method(args)` compiles to a namespace-side call path
-- `shared var` reads compile as namespace shared-value reads at the caller's
+- `ns.method(args)` compiles to a component-side call path
+- `shared var` reads compile as component shared-value reads at the caller's
   current position, not as stored JS property reads
 - `shared text`, `shared data`, and `shared sequence` observations compile as
-  namespace-side observation commands
+  component-side observation commands
 - `.snapshot()`, `.isError()`, and `.getError()` remain current-buffer
   observations, not JS method calls on stored objects
 
-Shared-var reads therefore use the same namespace-side operation path as other
-namespace operations, not a plain JS object field read.
+Shared-var reads therefore use the same component-side operation path as other
+component operations, not a plain JS object field read.
 
-The compiler therefore needs explicit namespace-binding tracking so it can
+The compiler therefore needs explicit component-binding tracking so it can
 distinguish `ns.method()` and `ns.state.snapshot()` from ordinary member access
-on non-namespace values.
+on non-component values.
 
-This requires a new typed namespace-binding structure parallel to the existing
+This requires a new typed component-binding structure parallel to the existing
 `importedBindings` Set. The current Set/boolean imported-callable tracking is
-not enough to distinguish namespace instances from ordinary imported bindings.
+not enough to distinguish component instances from ordinary imported bindings.
 
 First implementation restriction:
 
-- namespace semantics apply only to the direct binding introduced by
+- component semantics apply only to the direct binding introduced by
   `import ... as ns`
 - aliasing, passing, or returning that binding is out of scope
 - compile only direct syntactic uses such as `ns.method()`, `ns.x`,
   `ns.log.snapshot()`, `ns.db.isError()`, and `ns.db.getError()` to the
-  namespace-side path
+  component-side path
 
 ### Side-channel semantics
 
 - side-channel `apply()` runs immediately
 - it does not wait for argument resolution first
-- `ns.method(args)` immediately creates one child buffer under the namespace
+- `ns.method(args)` immediately creates one child buffer under the component
   shared root and calls the method immediately when the target is already
   available
 - if that target still depends on unfinished ancestry loading, the same
   Step 7 inheritance admission path stalls shared-root apply there before the
   actual invocation starts
-- shared observations are immediately added into the namespace shared root
+- shared observations are immediately added into the component shared root
 - the side-channel returns the resulting method/observation promise directly
 
 Caller expressions such as `var result = ns.method(args)` therefore compile to a
-namespace-side command path whose returned promise becomes the value of the
+component-side command path whose returned promise becomes the value of the
 expression in the ordinary Cascada way.
 
 ### Lifetime
 
 - the side-channel is owned by the caller buffer that owns the `ns` binding
-- constructor startup does not finish the namespace shared root
+- constructor startup does not finish the component shared root
 - later method calls and observations keep appending through the side-channel
   while that caller buffer is still being applied
-- once the owning caller buffer finishes applying, no new namespace operations
+- once the owning caller buffer finishes applying, no new component operations
   can arrive from that scope or any of its async children
 - close the side-channel from the owning caller buffer's normal structural
-  teardown point and finish the namespace shared root there
+  teardown point and finish the component shared root there
 
 ### Main work
 
-- preserve namespace-import metadata through parsing/compilation
+- preserve component-import metadata through parsing/compilation
 - extend the parser/frontend so `import ... as ns with { ... }` survives as a
-  distinct namespace-instantiation form rather than collapsing into the plain
+  distinct component-instantiation form rather than collapsing into the plain
   extern-composition import path
-- compile namespace method calls to namespace-side commands
-- compile namespace shared observations to namespace-side commands
-- add namespace-side side-channel state
-- wire namespace lifetime to the normal completion/teardown of the caller
+- compile component method calls to component-side commands
+- compile component shared observations to component-side commands
+- add component-side side-channel state
+- wire component lifetime to the normal completion/teardown of the caller
   buffer that owns the `ns` binding
-- when that owner scope can no longer emit namespace operations, close the
-  side-channel and call `namespaceBuffer.markFinishedAndPatchLinks()`
+- when that owner scope can no longer emit component operations, close the
+  side-channel and call `componentBuffer.markFinishedAndPatchLinks()`
 
 ### Main files
 
@@ -797,7 +797,7 @@ expression in the ordinary Cascada way.
 - imported-binding analysis and imported-callable/member-call classification
   paths in the async compiler
 - `src/compiler/inheritance.js`
-- namespace-call / observation command paths
+- component-call / observation command paths
 - `src/runtime/command-buffer.js`
 - `src/runtime/commands.js`
 
@@ -806,20 +806,20 @@ expression in the ordinary Cascada way.
 - reuse composition-mode rendering as the constructor-startup entrypoint,
   specifically the existing `rootRenderFunc(..., true)` / `_renderForComposition()`
   path
-- reuse the existing imported-namespace/member-call classification machinery as
-  the base for identifying namespace-bound names in expressions
+- reuse the existing imported-component/member-call classification machinery as
+  the base for identifying component-bound names in expressions
 - reuse existing current-buffer observation semantics for `.snapshot()`,
   `.isError()`, and `.getError()`
 - reuse the normal parent/child command-buffer tree for per-call child buffers
 
 ### Replace / extend
 
-- add a new typed namespace-binding registry parallel to the existing
-  `importedBindings` Set so namespace instances can be distinguished from
-  ordinary imports/macros and routed to the namespace-side command path
-- add the namespace side-channel object/state and wire it to the namespace
+- add a new typed component-binding registry parallel to the existing
+  `importedBindings` Set so component instances can be distinguished from
+  ordinary imports/macros and routed to the component-side command path
+- add the component side-channel object/state and wire it to the component
   shared root
-- add namespace-specific command emission for method calls and shared
+- add component-specific command emission for method calls and shared
   observations
 - keep the side-channel implementation intentionally thin: immediate start on
   caller-side command apply plus close-on-owner-buffer-complete, not a second
@@ -829,7 +829,7 @@ expression in the ordinary Cascada way.
 
 - plain `import` / `include` composition keeps the current extern/composition
   behavior
-- non-namespace property access keeps the normal member-lookup path
+- non-component property access keeps the normal member-lookup path
 
 ### Step 9 cleanup follow-up
 
@@ -838,12 +838,12 @@ runtime/compiler behavior settles.
 
 Completed cleanup from the initial Step 9 landing:
 
-- the namespace-facing inherited-dispatch helper now stays on a plain
-  final-value contract; namespace runtime does not understand or unwrap
+- the component-facing inherited-dispatch helper now stays on a plain
+  final-value contract; component runtime does not understand or unwrap
   internal `{ value, completion }` admission objects
 - shared runtime helpers are reused for method/schema bootstrap and
-  shared-input preload; namespace-local copies of that logic are removed
-- compiler-side namespace operation emission already goes through one reusable
+  shared-input preload; component-local copies of that logic are removed
+- compiler-side component operation emission already goes through one reusable
   helper so `ns.method(...)`, `ns.x`, and
   `ns.channel.snapshot()/isError()/getError()` share one command-emission path
 - binding-channel resolution already stays on one helper path for method calls,
@@ -851,54 +851,54 @@ Completed cleanup from the initial Step 9 landing:
 
 Deferred cleanup for a post-Step-10 cleanup sweep:
 
-- collapse namespace method/observation command plumbing toward one generic
-  namespace-operation command shape instead of parallel near-duplicate command
+- collapse component method/observation command plumbing toward one generic
+  component-operation command shape instead of parallel near-duplicate command
   classes
-- keep shrinking `src/runtime/namespace.js` toward the actual namespace model:
+- keep shrinking `src/runtime/component.js` toward the actual component model:
   explicit side-channel object/state, bootstrap, and lifetime management,
   without extra command/result-settling ceremony
-- keep the side-channel object itself explicit; do not let namespace behavior
+- keep the side-channel object itself explicit; do not let component behavior
   spread into ad-hoc command-buffer helpers or generic buffer-skipping APIs
 
 ### Tests
 
-`tests/pasync/namespace-import.js`
+`tests/pasync/component-import.js`
 
-- namespace import creates a usable instance object
+- component import creates a usable instance object
 - shared var access works through `ns.x`
 - `ns.x` shared-var reads occur at the caller's current position rather than as
   eager JS property reads
 - shared non-var observation works through `ns.name.snapshot()` and friends
 - two imports create independent instances
-- invalid namespace shared-input names fail with the namespace-import-specific
+- invalid component shared-input names fail with the component-import-specific
   validation message
-- namespace bootstrap failure (for example missing imported script/template)
+- component bootstrap failure (for example missing imported script/template)
   rejects cleanly instead of hanging the caller
 
-`tests/pasync/namespace-method-calls.js`
+`tests/pasync/component-method-calls.js`
 
 - method calls start immediately when their caller-side command applies
-- each call gets an isolated child buffer under the namespace shared root
+- each call gets an isolated child buffer under the component shared root
 - side-channel apply does not wait for argument resolution before calling the
   method
-- a namespace method call can pass through unresolved inherited admission and
+- a component method call can pass through unresolved inherited admission and
   still preserve caller-visible ordering
 - method return values resolve correctly
 - method-local temporary channels do not leak across calls
-- shared observations use the same immediate namespace-side path
-- fatal namespace method argument resolution rejects cleanly instead of leaving
-  the namespace root open
+- shared observations use the same immediate component-side path
+- fatal component method argument resolution rejects cleanly instead of leaving
+  the component root open
 
-`tests/pasync/namespace-lifecycle.js`
+`tests/pasync/component-lifecycle.js`
 
-- constructor work and later method work both complete before the namespace
+- constructor work and later method work both complete before the component
   shared root is considered done
 - method calls made after constructor startup still attach correctly
 - caller-side output order remains deterministic
-- the namespace shared root does not finish before the side-channel finishes
-- no new namespace operations can start after owner-scope teardown closes the
+- the component shared root does not finish before the side-channel finishes
+- no new component operations can start after owner-scope teardown closes the
   side-channel
-- two namespace instances sharing the same parent chain stay isolated even when
+- two component instances sharing the same parent chain stay isolated even when
   ancestry loads asynchronously
 
 ## Step 10 - Templates
@@ -963,9 +963,9 @@ the old Nunjucks-style behavior for static `extends`.
 
 ## Non-Goals
 
-- caller-side read/write analysis for namespace scheduling
+- caller-side read/write analysis for component scheduling
 - per-channel promise maps on the caller side
-- global serialization of all namespace calls through `ns!`
+- global serialization of all component calls through `ns!`
 - aliasing-based replacement for per-call child buffers
 
 ## Completion Checklist

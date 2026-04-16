@@ -890,7 +890,7 @@ function declareSharedBufferChannel(buffer, channelName, channelType, context, i
 
   let rootBuffer = buffer;
   // Namespace/shared-root boundaries terminate the upward walk here so
-  // namespace instances keep their own shared root instead of reusing the
+  // component instances keep their own shared root instead of reusing the
   // caller's hierarchy root.
   while (rootBuffer && rootBuffer.parent && !rootBuffer._sharedRootBoundary) {
     rootBuffer = rootBuffer.parent;

@@ -8,7 +8,7 @@ const { resolveSingle } = require('./resolve');
 const { createPoison, isPoisonError, RuntimeFatalError, handleError } = require('./errors');
 const call = require('./call');
 
-class NamespaceCommand {
+class ComponentCommand {
   constructor({ channelName, pos = null }) {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
@@ -39,7 +39,7 @@ class NamespaceCommand {
   }
 }
 
-function _normalizeNamespaceOperationFailure(err, pos, path) {
+function _normalizeComponentOperationFailure(err, pos, path) {
   if (err instanceof RuntimeFatalError) {
     throw err;
   }
@@ -49,27 +49,27 @@ function _normalizeNamespaceOperationFailure(err, pos, path) {
   return createPoison(handleError(err, pos.lineno, pos.colno, null, path));
 }
 
-function _normalizeNamespaceBootstrapFailure(err, pos, path) {
+function _normalizeComponentBootstrapFailure(err, pos, path) {
   if (err instanceof RuntimeFatalError) {
     throw err;
   }
   throw new RuntimeFatalError(err, pos.lineno, pos.colno, null, path);
 }
 
-function _resolveNamespaceInstance(value, pos, path) {
+function _resolveComponentInstance(value, pos, path) {
   try {
     const resolved = resolveSingle(value);
     if (!resolved || typeof resolved.then !== 'function') {
-      if (!resolved || !resolved.__isNamespaceInstance) {
-        throw new RuntimeFatalError('Namespace binding is not a namespace instance', pos.lineno, pos.colno, null, path);
+      if (!resolved || !resolved.__isComponentInstance) {
+        throw new RuntimeFatalError('Component binding is not a component instance', pos.lineno, pos.colno, null, path);
       }
       return resolved;
     }
-    return resolved.then((namespaceInstance) => {
-      if (!namespaceInstance || !namespaceInstance.__isNamespaceInstance) {
-        throw new RuntimeFatalError('Namespace binding is not a namespace instance', pos.lineno, pos.colno, null, path);
+    return resolved.then((componentInstance) => {
+      if (!componentInstance || !componentInstance.__isComponentInstance) {
+        throw new RuntimeFatalError('Component binding is not a component instance', pos.lineno, pos.colno, null, path);
       }
-      return namespaceInstance;
+      return componentInstance;
     });
   } catch (err) {
     if (err instanceof RuntimeFatalError) {
@@ -79,7 +79,7 @@ function _resolveNamespaceInstance(value, pos, path) {
   }
 }
 
-function _settleNamespaceCommandResult(result, pos, path, command) {
+function _settleComponentCommandResult(result, pos, path, command) {
   if (!result || typeof result.then !== 'function') {
     command.resolveResult(result);
     return result;
@@ -91,7 +91,7 @@ function _settleNamespaceCommandResult(result, pos, path, command) {
     },
     (err) => {
       try {
-        const normalized = _normalizeNamespaceOperationFailure(err, pos, path);
+        const normalized = _normalizeComponentOperationFailure(err, pos, path);
         command.resolveResult(normalized);
         return normalized;
       } catch (fatalErr) {
@@ -102,9 +102,9 @@ function _settleNamespaceCommandResult(result, pos, path, command) {
   );
 }
 
-function _settleNamespaceOperationFailure(err, pos, path, command) {
+function _settleComponentOperationFailure(err, pos, path, command) {
   try {
-    const normalized = _normalizeNamespaceOperationFailure(err, pos, path);
+    const normalized = _normalizeComponentOperationFailure(err, pos, path);
     command.resolveResult(normalized);
     return normalized;
   } catch (fatalErr) {
@@ -113,36 +113,36 @@ function _settleNamespaceOperationFailure(err, pos, path, command) {
   }
 }
 
-function _resolveNamespaceBinding(bindingChannel, pos) {
+function _resolveComponentBinding(bindingChannel, pos) {
   const bindingValue = bindingChannel && typeof bindingChannel._getTarget === 'function'
     ? bindingChannel._getTarget()
     : undefined;
   const path = bindingChannel && bindingChannel._context ? bindingChannel._context.path : null;
   return {
     path,
-    namespaceInstance: _resolveNamespaceInstance(bindingValue, pos, path)
+    componentInstance: _resolveComponentInstance(bindingValue, pos, path)
   };
 }
 
-function _runNamespaceBindingOperation(bindingChannel, pos, start, command) {
-  const { path, namespaceInstance } = _resolveNamespaceBinding(bindingChannel, pos);
+function _runComponentBindingOperation(bindingChannel, pos, start, command) {
+  const { path, componentInstance } = _resolveComponentBinding(bindingChannel, pos);
   try {
-    if (!namespaceInstance || typeof namespaceInstance.then !== 'function') {
-      return _settleNamespaceCommandResult(start(namespaceInstance), pos, path, command);
+    if (!componentInstance || typeof componentInstance.then !== 'function') {
+      return _settleComponentCommandResult(start(componentInstance), pos, path, command);
     }
-    return namespaceInstance
-      .then((resolvedNamespaceInstance) =>
-        _settleNamespaceCommandResult(start(resolvedNamespaceInstance), pos, path, command)
+    return componentInstance
+      .then((resolvedComponentInstance) =>
+        _settleComponentCommandResult(start(resolvedComponentInstance), pos, path, command)
       )
-      .catch((err) => _settleNamespaceOperationFailure(err, pos, path, command));
+      .catch((err) => _settleComponentOperationFailure(err, pos, path, command));
   } catch (err) {
-    return _settleNamespaceOperationFailure(err, pos, path, command);
+    return _settleComponentOperationFailure(err, pos, path, command);
   }
 }
 
-class NamespaceInstance {
+class ComponentInstance {
   constructor({ context, rootBuffer, inheritanceState, template, ownerBuffer, ownerChannelName }) {
-    this.__isNamespaceInstance = true;
+    this.__isComponentInstance = true;
     this.context = context;
     this.rootBuffer = rootBuffer;
     this.inheritanceState = inheritanceState;
@@ -167,7 +167,7 @@ class NamespaceInstance {
       return;
     }
     throw new RuntimeFatalError(
-      'Namespace instance is closed and cannot accept new operations',
+      'Component instance is closed and cannot accept new operations',
       pos.lineno,
       pos.colno,
       null,
@@ -195,11 +195,11 @@ class NamespaceInstance {
     const path = this.context && this.context.path ? this.context.path : null;
     const runObservation = (channelType) => {
       if (!channelType) {
-        throw new RuntimeFatalError(`Shared channel '${name}' was not found on the namespace instance`, pos.lineno, pos.colno, null, path);
+        throw new RuntimeFatalError(`Shared channel '${name}' was not found on the component instance`, pos.lineno, pos.colno, null, path);
       }
       if (observation === 'value' && channelType !== 'var') {
         throw new RuntimeFatalError(
-          `Namespace member '${name}' is a shared ${channelType} channel; use ns.${name}.snapshot(), .isError(), or .getError()`,
+          `Component member '${name}' is a shared ${channelType} channel; use ns.${name}.snapshot(), .isError(), or .getError()`,
           pos.lineno,
           pos.colno,
           null,
@@ -215,7 +215,7 @@ class NamespaceInstance {
       if (observation === 'getError') {
         return this.rootBuffer.addGetError(name, pos);
       }
-      throw new RuntimeFatalError(`Unsupported namespace observation '${observation}'`, pos.lineno, pos.colno, null, path);
+      throw new RuntimeFatalError(`Unsupported component observation '${observation}'`, pos.lineno, pos.colno, null, path);
     };
 
     const immediateType = this.inheritanceState.getImmediateSharedChannelType(name);
@@ -230,7 +230,7 @@ class NamespaceInstance {
   }
 }
 
-class NamespaceMethodCallCommand extends NamespaceCommand {
+class ComponentMethodCallCommand extends ComponentCommand {
   constructor({ channelName, methodName, args = null, env, runtime, cb, errorContext }) {
     super({ channelName, pos: errorContext });
     this.isObservable = false;
@@ -243,7 +243,7 @@ class NamespaceMethodCallCommand extends NamespaceCommand {
   }
 
   apply(bindingChannel) {
-    const start = (namespaceInstance) => namespaceInstance.callMethod(
+    const start = (componentInstance) => componentInstance.callMethod(
       this.methodName,
       this.arguments,
       this.env,
@@ -251,7 +251,7 @@ class NamespaceMethodCallCommand extends NamespaceCommand {
       this.cb,
       this.errorContext
     );
-    return _runNamespaceBindingOperation(
+    return _runComponentBindingOperation(
       bindingChannel,
       this.errorContext,
       start,
@@ -260,7 +260,7 @@ class NamespaceMethodCallCommand extends NamespaceCommand {
   }
 }
 
-class NamespaceObserveCommand extends NamespaceCommand {
+class ComponentObserveCommand extends ComponentCommand {
   constructor({ channelName, sharedName, observation, pos = null }) {
     super({ channelName, pos });
     this.sharedName = sharedName;
@@ -268,12 +268,12 @@ class NamespaceObserveCommand extends NamespaceCommand {
   }
 
   apply(bindingChannel) {
-    const start = (namespaceInstance) => namespaceInstance.observeChannel(
+    const start = (componentInstance) => componentInstance.observeChannel(
       this.sharedName,
       this.observation,
       this.pos
     );
-    return _runNamespaceBindingOperation(
+    return _runComponentBindingOperation(
       bindingChannel,
       this.pos,
       start,
@@ -282,7 +282,7 @@ class NamespaceObserveCommand extends NamespaceCommand {
   }
 }
 
-class NamespaceCloseCommand {
+class ComponentCloseCommand {
   constructor({ channelName, pos = null }) {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
@@ -291,14 +291,14 @@ class NamespaceCloseCommand {
 
   apply(bindingChannel) {
     try {
-      const { namespaceInstance } = _resolveNamespaceBinding(bindingChannel, this.pos);
-      if (!namespaceInstance || typeof namespaceInstance.then !== 'function') {
-        namespaceInstance.close();
+      const { componentInstance } = _resolveComponentBinding(bindingChannel, this.pos);
+      if (!componentInstance || typeof componentInstance.then !== 'function') {
+        componentInstance.close();
         return;
       }
-      return namespaceInstance.then((resolvedNamespaceInstance) => {
-        if (resolvedNamespaceInstance && typeof resolvedNamespaceInstance.close === 'function') {
-          resolvedNamespaceInstance.close();
+      return componentInstance.then((resolvedComponentInstance) => {
+        if (resolvedComponentInstance && typeof resolvedComponentInstance.close === 'function') {
+          resolvedComponentInstance.close();
         }
       }, () => undefined);
     } catch (err) {
@@ -308,49 +308,49 @@ class NamespaceCloseCommand {
   }
 }
 
-function createNamespaceInstance(templateValue, inputValues, context, env, runtime, cb, ownerBuffer, bindingChannelName, ownerChannelName, errorContext) {
+function createComponentInstance(templateValue, inputValues, context, env, runtime, cb, ownerBuffer, bindingChannelName, ownerChannelName, errorContext) {
   const pos = errorContext || { lineno: 0, colno: 0, path: context && context.path ? context.path : null };
-  const namespaceContext = context.forkForComposition(null, {}, {}, {});
-  const namespaceRoot = isCommandBuffer(ownerBuffer)
-    ? createCommandBuffer(namespaceContext, ownerBuffer, [ownerChannelName], ownerBuffer)
-    : createCommandBuffer(namespaceContext, null, null, null);
-  // Shared-channel declarations stop their upward root walk at namespace
-  // boundaries so one namespace instance keeps its own shared root rather than
+  const componentContext = context.forkForComposition(null, {}, {}, {});
+  const componentRoot = isCommandBuffer(ownerBuffer)
+    ? createCommandBuffer(componentContext, ownerBuffer, [ownerChannelName], ownerBuffer)
+    : createCommandBuffer(componentContext, null, null, null);
+  // Shared-channel declarations stop their upward root walk at component
+  // boundaries so one component instance keeps its own shared root rather than
   // merging into the caller hierarchy.
-  namespaceRoot._sharedRootBoundary = true;
+  componentRoot._sharedRootBoundary = true;
   const inheritanceState = createInheritanceState();
-  const namespaceInstance = new NamespaceInstance({
-    context: namespaceContext,
-    rootBuffer: namespaceRoot,
+  const componentInstance = new ComponentInstance({
+    context: componentContext,
+    rootBuffer: componentRoot,
     inheritanceState,
     template: null,
-    ownerBuffer,
-    ownerChannelName
+      ownerBuffer,
+      ownerChannelName
   });
 
   if (isCommandBuffer(ownerBuffer) && typeof ownerBuffer.getFinishStartedPromise === 'function') {
     ownerBuffer.getFinishStartedPromise().then(() => {
-      ownerBuffer.add(new NamespaceCloseCommand({
+      ownerBuffer.add(new ComponentCloseCommand({
         channelName: bindingChannelName,
         pos
       }), bindingChannelName);
     });
   }
 
-  const bootstrapChannelName = '__namespace_bootstrap__';
-  declareBufferChannel(namespaceRoot, bootstrapChannelName, 'var', namespaceContext, null);
+  const bootstrapChannelName = '__component_bootstrap__';
+  declareBufferChannel(componentRoot, bootstrapChannelName, 'var', componentContext, null);
 
   const bootstrap = (resolvedTemplate) => {
     if (!resolvedTemplate || typeof resolvedTemplate.compile !== 'function') {
-      throw new RuntimeFatalError('Namespace import requires a resolved script/template object', pos.lineno, pos.colno, null, pos.path);
+      throw new RuntimeFatalError('Component import requires a resolved script/template object', pos.lineno, pos.colno, null, pos.path);
     }
-    if (namespaceInstance.closed) {
-      return namespaceInstance;
+    if (componentInstance.closed) {
+      return componentInstance;
     }
 
     resolvedTemplate.compile();
-    namespaceContext.path = resolvedTemplate.path;
-    namespaceInstance.template = resolvedTemplate;
+    componentContext.path = resolvedTemplate.path;
+    componentInstance.template = resolvedTemplate;
 
     try {
       runtime.bootstrapInheritanceMetadata(
@@ -358,11 +358,11 @@ function createNamespaceInstance(templateValue, inputValues, context, env, runti
         resolvedTemplate.methods || {},
         resolvedTemplate.sharedSchema || [],
         resolvedTemplate.path,
-        namespaceRoot,
-        namespaceContext
+        componentRoot,
+        componentContext
       );
     } catch (err) {
-      _normalizeNamespaceBootstrapFailure(err, pos, namespaceContext.path || pos.path);
+      _normalizeComponentBootstrapFailure(err, pos, componentContext.path || pos.path);
     }
 
     if (inputValues && typeof inputValues === 'object' && Object.keys(inputValues).length > 0) {
@@ -370,32 +370,32 @@ function createNamespaceInstance(templateValue, inputValues, context, env, runti
         runtime.preloadSharedInputs(
           resolvedTemplate.sharedSchema || [],
           inputValues,
-          namespaceRoot,
-          namespaceContext,
+          componentRoot,
+          componentContext,
           pos,
-          'namespace import'
+          'component import'
         );
       } catch (err) {
-        _normalizeNamespaceBootstrapFailure(err, pos, namespaceContext.path || pos.path);
+        _normalizeComponentBootstrapFailure(err, pos, componentContext.path || pos.path);
       }
     }
 
     const constructorEntry = (resolvedTemplate.methods || {}).__constructor__;
     if (constructorEntry) {
       const admission = call.admitMethodEntryWithCompletion(
-        namespaceContext,
+        componentContext,
         inheritanceState,
         constructorEntry,
         [],
         env,
         runtime,
         cb,
-        namespaceRoot,
+        componentRoot,
         pos
       );
       if (admission && admission.completion && typeof admission.completion.then === 'function') {
         admission.completion.catch((err) => {
-          // Namespace constructors ignore their own return value. Non-fatal
+          // Component constructors ignore their own return value. Non-fatal
           // failures remain visible through poisoned shared channel state; only
           // fatal completion failures need explicit cb() routing here.
           if (err instanceof RuntimeFatalError) {
@@ -405,7 +405,7 @@ function createNamespaceInstance(templateValue, inputValues, context, env, runti
       }
     }
 
-    return namespaceInstance;
+    return componentInstance;
   };
 
   try {
@@ -414,7 +414,7 @@ function createNamespaceInstance(templateValue, inputValues, context, env, runti
       return bootstrap(resolvedTemplate);
     }
     const bootstrapPromise = resolvedTemplate.then(bootstrap);
-    namespaceRoot.add(new WaitResolveCommand({
+    componentRoot.add(new WaitResolveCommand({
       channelName: bootstrapChannelName,
       args: [bootstrapPromise],
       pos
@@ -429,9 +429,9 @@ function createNamespaceInstance(templateValue, inputValues, context, env, runti
 }
 
 module.exports = {
-  NamespaceInstance,
-  NamespaceMethodCallCommand,
-  NamespaceObserveCommand,
-  NamespaceCloseCommand,
-  createNamespaceInstance
+  ComponentInstance,
+  ComponentMethodCallCommand,
+  ComponentObserveCommand,
+  ComponentCloseCommand,
+  createComponentInstance
 };

@@ -18,8 +18,8 @@ if (typeof require !== 'undefined') {
   runtimeModule = nunjucks.runtime;
 }
 
-describe('Namespace Import', function () {
-  it('should create a usable namespace instance and read shared vars through ns.x', async function () {
+describe('Component Import', function () {
+  it('should create a usable component instance and read shared vars through ns.x', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -52,7 +52,7 @@ describe('Namespace Import', function () {
     expect(result).to.eql(['dark', 'light']);
   });
 
-  it('should observe shared non-var channels through namespace observation calls', async function () {
+  it('should observe shared non-var channels through component observation calls', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -73,7 +73,7 @@ describe('Namespace Import', function () {
     expect(result).to.be('boot|call|');
   });
 
-  it('should observe shared var poison through namespace isError() and getError()', async function () {
+  it('should observe shared var poison through component isError() and getError()', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -98,7 +98,7 @@ describe('Namespace Import', function () {
     expect(result[1]).to.contain('bad status');
   });
 
-  it('should keep two namespace imports isolated', async function () {
+  it('should keep two component imports isolated', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -115,17 +115,17 @@ describe('Namespace Import', function () {
     expect(result).to.eql(['dark', 'light']);
   });
 
-  it('should report invalid namespace shared-input names with a neutral target message', function () {
+  it('should report invalid component shared-input names with a neutral target message', function () {
     expect(() => runtimeModule.validateSharedInputs(
       [{ name: 'theme', type: 'var' }],
       ['wrong'],
-      'namespace import'
+      'component import'
     )).to.throwException((err) => {
-      expect(err.message).to.contain("namespace import passed 'wrong' but the target does not declare it as shared");
+      expect(err.message).to.contain("component import passed 'wrong' but the target does not declare it as shared");
     });
   });
 
-  it('should reject instead of hanging when a namespace binding resolves asynchronously to a non-instance', async function () {
+  it('should reject instead of hanging when a component binding resolves asynchronously to a non-instance', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -152,10 +152,10 @@ describe('Namespace Import', function () {
 
     expect(outcome.type).to.be('error');
     expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
-    expect(outcome.error.message).to.contain('Namespace binding is not a namespace instance');
+    expect(outcome.error.message).to.contain('Component binding is not a component instance');
   });
 
-  it('should reject instead of hanging when namespace bootstrap fails to load the imported script', async function () {
+  it('should reject instead of hanging when component bootstrap fails to load the imported script', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 

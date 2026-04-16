@@ -16,7 +16,7 @@ const commands = require('./commands');
 const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
 const inheritanceState = require('./inheritance-state');
-const namespaceRuntime = require('./namespace');
+const componentRuntime = require('./component');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -294,7 +294,7 @@ function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
     }
     let cursor = currentBuffer;
     // Shared-link installation follows the same hierarchy boundary as shared
-    // declarations: namespace/shared roots do not leak their lanes upward into
+    // declarations: component/shared roots do not leak their lanes upward into
     // the caller buffer tree.
     while (cursor && cursor.parent && !cursor._sharedRootBoundary) {
       if (!(typeof cursor.isLinkedChannel === 'function' && cursor.isLinkedChannel(entry.name))) {
@@ -398,10 +398,10 @@ module.exports = {
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
   createInheritanceState: inheritanceState.createInheritanceState,
-  createNamespaceInstance: namespaceRuntime.createNamespaceInstance,
-  NamespaceMethodCallCommand: namespaceRuntime.NamespaceMethodCallCommand,
-  NamespaceObserveCommand: namespaceRuntime.NamespaceObserveCommand,
-  NamespaceCloseCommand: namespaceRuntime.NamespaceCloseCommand,
+  createComponentInstance: componentRuntime.createComponentInstance,
+  ComponentMethodCallCommand: componentRuntime.ComponentMethodCallCommand,
+  ComponentObserveCommand: componentRuntime.ComponentObserveCommand,
+  ComponentCloseCommand: componentRuntime.ComponentCloseCommand,
 
   guard,
 

@@ -4,7 +4,7 @@ let expect;
 let AsyncEnvironment;
 let StringLoader;
 let runtimeModule;
-let NamespaceInstance;
+let ComponentInstance;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -12,17 +12,17 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = environment.AsyncEnvironment;
   StringLoader = require('../util').StringLoader;
   runtimeModule = require('../../src/runtime/runtime');
-  NamespaceInstance = require('../../src/runtime/namespace').NamespaceInstance;
+  ComponentInstance = require('../../src/runtime/component').ComponentInstance;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   StringLoader = window.util.StringLoader;
   runtimeModule = nunjucks.runtime;
-  NamespaceInstance = null;
+  ComponentInstance = null;
 }
 
-describe('Namespace Lifecycle', function () {
-  it('should keep constructor work and later method work on the same long-lived namespace root', async function () {
+describe('Component Lifecycle', function () {
+  it('should keep constructor work and later method work on the same long-lived component root', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -44,7 +44,7 @@ describe('Namespace Lifecycle', function () {
     expect(result).to.be('ctor|one|two|');
   });
 
-  it('should keep the namespace shared root open until slow side-channel work finishes', async function () {
+  it('should keep the component shared root open until slow side-channel work finishes', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -66,7 +66,7 @@ describe('Namespace Lifecycle', function () {
     expect(result).to.be('late|');
   });
 
-  it('should keep async-ancestry namespace instances isolated when they share the same parent chain', async function () {
+  it('should keep async-ancestry component instances isolated when they share the same parent chain', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -97,7 +97,7 @@ describe('Namespace Lifecycle', function () {
     expect(result).to.eql(['left|', 'right|', 'left', 'right']);
   });
 
-  it('should keep caller-visible output order deterministic when namespace calls are interleaved with local output', async function () {
+  it('should keep caller-visible output order deterministic when component calls are interleaved with local output', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -123,7 +123,7 @@ describe('Namespace Lifecycle', function () {
     expect(result).to.be('before|one|between|two|after|');
   });
 
-  it('should auto-close a namespace instance when the owner buffer finishes', async function () {
+  it('should auto-close a component instance when the owner buffer finishes', async function () {
     const makeContext = (path) => ({
       path,
       forkForComposition(nextPath) {
@@ -135,7 +135,7 @@ describe('Namespace Lifecycle', function () {
     const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
-    const namespaceInstance = await runtimeModule.createNamespaceInstance(
+    const componentInstance = await runtimeModule.createComponentInstance(
       {
         compile() {},
         methods: {},
@@ -149,13 +149,13 @@ describe('Namespace Lifecycle', function () {
       () => {},
       ownerBuffer,
       'nsBinding',
-      '__namespace_root__nsBinding',
+      '__component_root__nsBinding',
       { lineno: 1, colno: 1, path: 'Main.script' }
     );
 
     ownerBuffer.add(new runtimeModule.VarCommand({
       channelName: 'nsBinding',
-      args: [namespaceInstance],
+      args: [componentInstance],
       pos: { lineno: 1, colno: 1 }
     }), 'nsBinding');
 
@@ -164,7 +164,7 @@ describe('Namespace Lifecycle', function () {
     await bindingSnapshot;
     await ownerBuffer.getFinishCompletePromise();
 
-    expect(() => namespaceInstance.callMethod(
+    expect(() => componentInstance.callMethod(
       'build',
       [],
       {},
@@ -177,13 +177,13 @@ describe('Namespace Lifecycle', function () {
     });
   });
 
-  it('should reject new namespace operations after the instance is closed', function () {
-    if (!NamespaceInstance) {
+  it('should reject new component operations after the instance is closed', function () {
+    if (!ComponentInstance) {
       this.skip();
       return;
     }
 
-    const namespaceInstance = new NamespaceInstance({
+    const componentInstance = new ComponentInstance({
       context: { path: 'Component.script' },
       rootBuffer: { markFinishedAndPatchLinks() {} },
       inheritanceState: {},
@@ -192,9 +192,9 @@ describe('Namespace Lifecycle', function () {
       ownerChannelName: null
     });
 
-    namespaceInstance.close();
+    componentInstance.close();
 
-    expect(() => namespaceInstance.callMethod(
+    expect(() => componentInstance.callMethod(
       'build',
       [],
       null,
