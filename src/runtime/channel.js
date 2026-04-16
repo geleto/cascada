@@ -9,7 +9,7 @@ const {
 const { RESOLVE_MARKER } = require('./resolve');
 const DataChannelTarget = require('../script/data-channel');
 const { BufferIterator } = require('./buffer-iterator');
-const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
+const { PoisonError, RuntimeFatalError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
 
 class Channel {
   constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
@@ -22,10 +22,11 @@ class Channel {
 
     this._iterator = new BufferIterator(this);
     this._stateVersion = 0;
+    this._fatalError = null;
     this._inspectionCache = {
       version: -1,
       hasError: false,
-      poisonError: null
+      error: null
     };
     this._completionResolved = false;
     this._completionPromise = new Promise((resolve) => {
@@ -83,7 +84,7 @@ class Channel {
     this._inspectionCache = {
       version: -1,
       hasError: false,
-      poisonError: null
+      error: null
     };
   }
 
@@ -101,25 +102,37 @@ class Channel {
     if (this._inspectionCache.version === this._stateVersion) {
       return {
         hasError: this._inspectionCache.hasError,
-        error: this._inspectionCache.poisonError
+        error: this._inspectionCache.error
+      };
+    }
+
+    if (this._fatalError) {
+      this._inspectionCache = {
+        version: this._stateVersion,
+        hasError: true,
+        error: this._fatalError
+      };
+      return {
+        hasError: true,
+        error: this._fatalError
       };
     }
 
     const inspection = await this._inspectTargetForErrors(this._getTarget());
     const hasError = !!(inspection && inspection.hasError);
-    const poisonError = hasError && inspection && inspection.error && Array.isArray(inspection.error.errors)
+    const error = hasError && inspection && inspection.error && Array.isArray(inspection.error.errors)
       ? new PoisonError(inspection.error.errors.slice())
       : null;
 
     this._inspectionCache = {
       version: this._stateVersion,
       hasError,
-      poisonError
+      error
     };
 
     return {
       hasError: this._inspectionCache.hasError,
-      error: this._inspectionCache.poisonError
+      error: this._inspectionCache.error
     };
   }
 
@@ -127,8 +140,20 @@ class Channel {
     throw new Error(`Channel type '${this._channelType}' must implement _getCurrentResult()`);
   }
 
+  _setFatalError(err, cmd = null) {
+    const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
+    const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
+    const path = this._context && this._context.path ? this._context.path : null;
+    this._fatalError = handleError(err, lineno, colno, null, path);
+    this._markStateChanged();
+  }
+
   _recordError(err, cmd = null) {
     if (!err) return;
+    if (err instanceof RuntimeFatalError) {
+      this._setFatalError(err, cmd);
+      return;
+    }
     const errors = isPoisonError(err) && Array.isArray(err.errors)
       ? err.errors
       : [err];
@@ -237,6 +262,7 @@ const CHANNEL_API_PROPS = new Set([
   '_buffer',
   '_iterator',
   '_stateVersion',
+  '_fatalError',
   '_inspectionCache',
   '_completionResolved'
 ]);

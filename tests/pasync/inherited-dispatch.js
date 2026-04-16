@@ -4,6 +4,7 @@ let expect;
 let AsyncEnvironment;
 let Script;
 let StringLoader;
+let isPoisonError;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -11,11 +12,13 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = environment.AsyncEnvironment;
   Script = environment.Script;
   StringLoader = require('../util').StringLoader;
+  isPoisonError = require('../../src/runtime/runtime').isPoisonError;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   Script = nunjucks.Script;
   StringLoader = window.util.StringLoader;
+  isPoisonError = nunjucks.runtime.isPoisonError;
 }
 
 describe('Inherited Dispatch', function () {
@@ -86,6 +89,20 @@ describe('Inherited Dispatch', function () {
     expect(result).to.be('before|method|Ada|after|done:Ada');
   });
 
+  it('should resume multiple unresolved inherited admissions in source order', async function () {
+    const loader = new StringLoader();
+    env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('A.script', 'method first()\n  return waitAndGet("first|", 20)\nendmethod\nmethod second()\n  return waitAndGet("second|", 0)\nendmethod');
+    loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\ntrace(this.first())\ntrace(this.second())\nreturn trace.snapshot()');
+
+    const result = await env.renderScript('C.script', {
+      waitAndGet: (value, delay) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
+    });
+
+    expect(result).to.be('first|second|');
+  });
+
   it('should fail clearly when an inherited method is still missing after the chain loads', async function () {
     const loader = new StringLoader();
     env = new AsyncEnvironment(loader);
@@ -97,6 +114,10 @@ describe('Inherited Dispatch', function () {
       await env.renderScript('C.script', {});
       expect().fail('Expected missing inherited method failure');
     } catch (error) {
+      expect(isPoisonError(error)).to.be(false);
+      expect(error.name).to.be('RuntimeFatalError');
+      expect(error.lineno).to.be(2);
+      expect(error.colno).to.be.greaterThan(0);
       expect(String(error)).to.contain("Inherited method 'missing' was not found");
     }
   });
@@ -114,6 +135,10 @@ describe('Inherited Dispatch', function () {
       });
       expect().fail('Expected deferred missing inherited method failure');
     } catch (error) {
+      expect(isPoisonError(error)).to.be(false);
+      expect(error.name).to.be('RuntimeFatalError');
+      expect(error.lineno).to.be(3);
+      expect(error.colno).to.be.greaterThan(0);
       expect(String(error)).to.contain("Inherited method 'missing' was not found");
     }
   });

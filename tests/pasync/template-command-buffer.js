@@ -285,7 +285,7 @@
       const source = tmpl._compileSource();
 
       expect(source).to.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("m"');
-      expect(source).to.contain('runtime.callWrapAsync(');
+      expect(source).to.contain('runtime.invokeCallableAsync(');
     });
 
     it('should not link unrelated locals into an imported namespace call boundary', function () {

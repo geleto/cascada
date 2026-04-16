@@ -251,9 +251,38 @@ function preloadSharedInputs(sharedSchema, inputValues, currentBuffer, context, 
   }
 }
 
+function ensureSharedSchemaChannels(sharedSchema, currentBuffer, context) {
+  const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
+  for (let i = 0; i < schema.length; i++) {
+    const entry = schema[i];
+    if (!entry || !entry.name || !entry.type) {
+      continue;
+    }
+    output.declareSharedBufferChannel(currentBuffer, entry.name, entry.type, context, null);
+  }
+}
+
+function bootstrapInheritanceMetadata(inheritanceState, methods, sharedSchema, ownerKey, currentBuffer, context) {
+  if (!inheritanceState) {
+    return;
+  }
+
+  const compiledMethods = methods && typeof methods === 'object' ? methods : null;
+  const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
+
+  if (compiledMethods && Object.keys(compiledMethods).length > 0) {
+    inheritanceState.registerCompiledMethods(compiledMethods);
+  }
+
+  if (schema.length > 0) {
+    inheritanceState.registerSharedSchema(schema, ownerKey == null ? null : ownerKey);
+    ensureSharedSchemaChannels(schema, currentBuffer, context);
+  }
+}
+
 function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
-  if (!currentBuffer || !currentBuffer.parent) {
+  if (!currentBuffer) {
     return;
   }
 
@@ -262,10 +291,13 @@ function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
     if (!entry || !entry.name) {
       continue;
     }
-    if (typeof currentBuffer.isLinkedChannel === 'function' && currentBuffer.isLinkedChannel(entry.name)) {
-      continue;
+    let cursor = currentBuffer;
+    while (cursor && cursor.parent) {
+      if (!(typeof cursor.isLinkedChannel === 'function' && cursor.isLinkedChannel(entry.name))) {
+        cursor.parent.addBuffer(cursor, entry.name);
+      }
+      cursor = cursor.parent;
     }
-    currentBuffer.parent.addBuffer(currentBuffer, entry.name);
   }
 }
 
@@ -286,6 +318,8 @@ module.exports = {
   validateIsolatedExternSpec,
   validateSharedInputs,
   preloadSharedInputs,
+  ensureSharedSchemaChannels,
+  bootstrapInheritanceMetadata,
   ensureCurrentBufferSharedLinks,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runWaitedControlFlowBoundary: asyncBoundaries.runWaitedControlFlowBoundary,
@@ -377,8 +411,12 @@ module.exports = {
   keys: lib.keys,
   inOperator: lib.inOperator,
 
-  callWrap: call.callWrap,
-  callWrapAsync: call.callWrapAsync,
+  invokeCallable: call.invokeCallable,
+  invokeCallableAsync: call.invokeCallableAsync,
+  callWrap: call.invokeCallable,
+  callWrapAsync: call.invokeCallableAsync,
+  admitMethodEntry: call.admitMethodEntry,
+  admitMethodEntryWithCompletion: call.admitMethodEntryWithCompletion,
   callInheritedMethod: call.callInheritedMethod,
   callSuperMethod: call.callSuperMethod,
   sequentialCallWrapValue: sequential.sequentialCallWrapValue,

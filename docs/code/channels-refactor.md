@@ -607,7 +607,7 @@ Migrate from simplest to most complex to catch regressions early:
 17. ✅ **Audit other deferred call paths for late structural child-buffer creation**.
    - Result: no second caller-like path was found.
    - Checked:
-     - dynamic/runtime-resolved macro calls through `callWrapAsync(...)` / `_callWrapAsyncComplex(...)`
+     - dynamic/runtime-resolved macro calls through `invokeCallableAsync(...)` / `_invokeCallableAsyncComplex(...)`
      - include composition prelinking
      - block/super composition prelinking
    - Conclusion:
@@ -729,7 +729,7 @@ Migrate from simplest to most complex to catch regressions early:
      - `compileOutput(...)` is the primary remaining caller-sensitive site:
        - expressions such as `caller()` still evaluate inside a deferred structural text boundary
        - caller invocation then starts from within that boundary, which can happen late enough that macro finalization races it if `waitAllClosures()` is removed
-       - after the `asyncBlockValue(...)` layer is removed, the next remaining late-start path is deferred macro/caller dispatch through `resolve...().then(callWrapAsync(...))`
+       - after the `asyncBlockValue(...)` layer is removed, the next remaining late-start path is deferred macro/caller dispatch through `resolve...().then(invokeCallableAsync(...))`
      - `compileCapture(...)` is still relevant because capture/set-block bodies can contain the same macro/caller composition patterns inside a capture-owned boundary
      - The other `compileTextBoundary(...)` call sites are not the current macro blocker:
        - old callback-style extension output is not part of the failing caller path
@@ -1017,7 +1017,7 @@ That means the remaining issue is not generic async expression timing inside the
 The template-side direct `caller()` output path now goes through a caller-specific dispatch helper in `macro.js` instead of an ad hoc branch embedded in `compileFunCall(...)`. The important pattern for future command-emitting call sites is still the same:
 - compile raw promise-valued args once
 - do direct structural dispatch in the current buffer for the boundary case
-- keep normal `callWrapAsync(...)` fallback for non-boundary callees
+- keep normal `invokeCallableAsync(...)` fallback for non-boundary callees
 
 On the expression side, command-emitting async `compileInlineIf` and async `_compileBinOpShortCircuit` (`and` / `or`) now also use control-flow child buffers. Pure value-only cases still use the lighter expression `.then(...)` lowering for now.
 

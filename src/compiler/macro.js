@@ -43,7 +43,7 @@ class CompileMacro {
     compiler.emit.line(`${bufferId}.add(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationResultId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     compiler.emit.line(`return ${invocationResultId};`);
     compiler.emit.line('}');
-    compiler.emit.line(`return runtime.callWrapAsync(${activeContext.rawCallerVar}, "caller", context, ${argsId}, ${errorContextJson}, ${bufferId});`);
+    compiler.emit.line(`return runtime.invokeCallableAsync(${activeContext.rawCallerVar}, "caller", context, ${argsId}, ${errorContextJson}, ${bufferId});`);
     compiler.emit('})()');
   }
 

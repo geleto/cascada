@@ -4,7 +4,7 @@ const {
   memberLookupAsync,
   memberLookupScript
 } = require('./lookup');
-const { callWrapAsync } = require('./call');
+const { invokeCallableAsync } = require('./call');
 const { ensureSequentialPathChannel } = require('./checks');
 
 function withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair, isWrite, operation) {
@@ -22,7 +22,7 @@ function withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair,
 
 function sequentialCallWrapValue(func, funcName, context, args, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair, true, () =>
-    callWrapAsync(func, funcName, context, args, errorContext)
+    invokeCallableAsync(func, funcName, context, args, errorContext)
   );
 }
 

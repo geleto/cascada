@@ -1,6 +1,7 @@
 'use strict';
 
 const { validateCallableContractCompatibility } = require('../callable-contract');
+const { RuntimeFatalError } = require('./errors');
 
 class InheritanceState {
   constructor() {
@@ -61,20 +62,19 @@ class InheritanceState {
       return immediate;
     }
     if (context && context.asyncExtendsBlocksPromise) {
-      // Step 6 keeps the Step 5 bridge temporarily: unresolved inherited
-      // dispatch still waits on the legacy extends-block registration promise
-      // because parent methods register before that promise resolves. Step 7
-      // replaces this with shared-root admission stalling instead of method
-      // lookup waiting directly here.
+      // The legacy extends-block registration promise is still the bridge for
+      // unresolved method lookup here. Step 7 added shared-root admission
+      // stalling, but lookup still waits on this promise until a later step
+      // removes the old registration lifecycle entirely.
       return context.asyncExtendsBlocksPromise.then(() => {
         const resolved = this.getImmediateInheritedMethodEntry(name);
         if (resolved) {
           return resolved;
         }
-        throw new Error(`Inherited method '${name}' was not found in the loaded extends chain`);
+        throw new RuntimeFatalError(`Inherited method '${name}' was not found in the loaded extends chain`);
       });
     }
-    throw new Error(`Inherited method '${name}' was not found in the loaded extends chain`);
+    throw new RuntimeFatalError(`Inherited method '${name}' was not found in the loaded extends chain`);
   }
 
   resolveSuperMethodEntry(context, name, ownerKey) {
@@ -83,20 +83,19 @@ class InheritanceState {
       return immediate;
     }
     if (context && context.asyncExtendsBlocksPromise) {
-      // Step 6 keeps the Step 5 bridge temporarily: unresolved super dispatch
-      // still waits on the legacy extends-block registration promise because
-      // parent methods register before that promise resolves. Step 7 replaces
-      // this with shared-root admission stalling instead of super lookup
-      // waiting directly here.
+      // The legacy extends-block registration promise is still the bridge for
+      // unresolved super lookup here. Step 7 added shared-root admission
+      // stalling, but lookup still waits on this promise until a later step
+      // removes the old registration lifecycle entirely.
       return context.asyncExtendsBlocksPromise.then(() => {
         const resolved = this.getImmediateSuperMethodEntry(name, ownerKey);
         if (resolved) {
           return resolved;
         }
-        throw new Error(`No super method is available for '${name}' after owner '${ownerKey}'`);
+        throw new RuntimeFatalError(`No super method is available for '${name}' after owner '${ownerKey}'`);
       });
     }
-    throw new Error(`No super method is available for '${name}' after owner '${ownerKey}'`);
+    throw new RuntimeFatalError(`No super method is available for '${name}' after owner '${ownerKey}'`);
   }
 
   getRegisteredMethodChain(name) {

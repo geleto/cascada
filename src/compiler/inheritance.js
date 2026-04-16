@@ -509,8 +509,7 @@ class CompileInheritance {
       this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
       this.emit.line(`${templateVar}.compile();`);
       if (this.compiler.scriptMode) {
-        this.emit.line(`inheritanceState.registerCompiledMethods(${templateVar}.methods || {});`);
-        this.emit.line(`inheritanceState.registerSharedSchema(${templateVar}.sharedSchema || [], ${templateVar}.path);`);
+        this.emit.line(`runtime.bootstrapInheritanceMetadata(inheritanceState, ${templateVar}.methods || {}, ${templateVar}.sharedSchema || [], ${templateVar}.path, ${this.compiler.buffer.currentBuffer}, context);`);
       }
       this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
       this.emit.line(`context.setExtendsComposition(${templateVar}, ${extendsRootContextVar}, ${extendsExternContextVar});`);
@@ -555,15 +554,14 @@ class CompileInheritance {
     this.emit.line('try {');
     this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
     this.emit.line(`  ${templateVar}.compile();`);
-    this.emit.line(`  inheritanceState.registerCompiledMethods(${templateVar}.methods || {});`);
-    this.emit.line(`  inheritanceState.registerSharedSchema(${templateVar}.sharedSchema || [], ${templateVar}.path);`);
+    this.emit.line(`  runtime.bootstrapInheritanceMetadata(inheritanceState, ${templateVar}.methods || {}, ${templateVar}.sharedSchema || [], ${templateVar}.path, currentBuffer, context);`);
     this.emit.line(`  runtime.ensureCurrentBufferSharedLinks(${templateVar}.sharedSchema || [], currentBuffer);`);
     this.emit.line(`  runtime.preloadSharedInputs(${templateVar}.sharedSchema || [], ${extendsSharedInputValuesVar}, currentBuffer, context, { lineno: ${node.lineno}, colno: ${node.colno} });`);
     this.emit.line(`  for (let ${k} in ${templateVar}.blocks) {`);
     this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
     this.emit.line('  }');
     this.emit.line(`  const ${parentContextVar} = context.forkForComposition(${templateVar}.path, ${extendsRootContextVar}, context.getRenderContextVariables(), ${extendsSharedInputValuesVar});`);
-    this.emit.line(`  ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, true, currentBuffer, inheritanceState);`);
+    this.emit.line(`  runtime.admitMethodEntry(${parentContextVar}, inheritanceState, (${templateVar}.methods || {}).__constructor__, [], env, runtime, cb, currentBuffer, { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node))}, path: ${parentContextVar}.path });`);
     this.emit.line('} finally {');
     this.emit.line('  context.finishAsyncExtendsBlockRegistration();');
     this.emit.line('}');

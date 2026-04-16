@@ -59,7 +59,7 @@
 
   describe('Call and Suppression Function Poison Handling', () => {
 
-    describe('callWrap - Sync Function (original behavior)', () => {
+    describe('invokeCallable - Sync Function (original behavior)', () => {
       let mockContext;
 
       beforeEach(() => {
@@ -71,19 +71,19 @@
 
       it('should throw for undefined function', () => {
         expect(() => {
-          runtime.callWrap(undefined, 'missing', mockContext, []);
+          runtime.invokeCallable(undefined, 'missing', mockContext, []);
         }).to.throwError(/undefined or falsey/);
       });
 
       it('should throw for non-function value', () => {
         expect(() => {
-          runtime.callWrap('not a function', 'notFunc', mockContext, []);
+          runtime.invokeCallable('not a function', 'notFunc', mockContext, []);
         }).to.throwError(/not a function/);
       });
 
       it('should throw when function throws', () => {
         expect(() => {
-          runtime.callWrap(
+          runtime.invokeCallable(
             () => { throw new Error('Function error'); },
             'throwingFunc',
             mockContext,
@@ -93,7 +93,7 @@
       });
 
       it('should successfully call valid function', () => {
-        const result = runtime.callWrap(
+        const result = runtime.invokeCallable(
           (x, y) => x + y,
           'add',
           mockContext,
@@ -104,7 +104,7 @@
       });
     });
 
-    describe('callWrapAsync - Async Function (returns poison)', () => {
+    describe('invokeCallableAsync - Async Function (returns poison)', () => {
       let mockContext;
 
       beforeEach(() => {
@@ -118,7 +118,7 @@
         const err = new Error('Poisoned argument');
         const poison = createPoison(err);
 
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           (x) => x * 2,
           'double',
           mockContext,
@@ -137,7 +137,7 @@
         const poison1 = createPoison(err1);
         const poison2 = createPoison(err2);
 
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           (x, y) => x + y,
           'add',
           mockContext,
@@ -155,7 +155,7 @@
         const err = new Error('Poisoned function');
         const poison = createPoison(err);
 
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           poison,
           'poisonedFunc',
           mockContext,
@@ -168,7 +168,7 @@
       });
 
       it('should convert thrown errors to poison', () => {
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           () => { throw new Error('Function error'); },
           'throwingFunc',
           mockContext,
@@ -181,7 +181,7 @@
       });
 
       it('should return poison for undefined function', () => {
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           undefined,
           'missing',
           mockContext,
@@ -194,7 +194,7 @@
       });
 
       it('should return poison for non-function value', () => {
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           'not a function',
           'notFunc',
           mockContext,
@@ -207,7 +207,7 @@
       });
 
       it('should successfully call valid function with valid args', () => {
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           (x, y) => x + y,
           'add',
           mockContext,
@@ -223,7 +223,7 @@
         const err = new Error('Poisoned arg');
         const poison = createPoison(err);
 
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           (x, y, z) => x + y + z,
           'addThree',
           mockContext,
@@ -247,7 +247,7 @@
           }
         };
 
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           macro,
           'macro',
           mockContext,
@@ -273,7 +273,7 @@
           }
         };
 
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           macro,
           'macro',
           mockContext,
@@ -296,7 +296,7 @@
           }
         };
 
-        const result = await runtime.callWrapAsync(
+        const result = await runtime.invokeCallableAsync(
           Promise.resolve(macro),
           'macro',
           mockContext,
@@ -308,7 +308,7 @@
       });
     });
 
-    describe('callWrapAsync - Never Miss Any Error Principle', () => {
+    describe('invokeCallableAsync - Never Miss Any Error Principle', () => {
       let mockContext;
 
       beforeEach(() => {
@@ -322,10 +322,10 @@
         const funcPoison = createPoison(new Error('Func error'));
         const argPromise = Promise.reject(new Error('Arg error'));
 
-        // callWrapAsync returns a promise when args contain promises
+        // invokeCallableAsync returns a promise when args contain promises
         // When awaited, poison values trigger thenable protocol and throw PoisonError
         try {
-          await runtime.callWrapAsync(
+          await runtime.invokeCallableAsync(
             funcPoison,
             'func',
             mockContext,
@@ -346,7 +346,7 @@
         const err1 = new Error('Arg1 error');
         const err2 = new Error('Arg2 error');
 
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           createPoison(funcErr),
           'add',
           mockContext,
@@ -375,7 +375,7 @@
           return args.reduce((a, b) => a + b, 0);
         };
 
-        const result = await runtime.callWrapAsync(func, 'sum', mockContext, [1, slowPromise, 3]);
+        const result = await runtime.invokeCallableAsync(func, 'sum', mockContext, [1, slowPromise, 3]);
 
         expect(callOrder).to.eql(['promise-resolved', 'function-called']);
         expect(result).to.equal(9);
@@ -394,7 +394,7 @@
           }, 10);
         });
 
-        const result = await runtime.callWrapAsync(slowFuncPromise, 'sum', mockContext, [1, 2, 3]);
+        const result = await runtime.invokeCallableAsync(slowFuncPromise, 'sum', mockContext, [1, 2, 3]);
 
         expect(callOrder).to.eql(['func-resolved', 'function-called']);
         expect(result).to.equal(6);
@@ -406,7 +406,7 @@
         const argPromise2 = Promise.reject(new Error('Arg2 promise error'));
 
         try {
-          await runtime.callWrapAsync(
+          await runtime.invokeCallableAsync(
             funcPromise,
             'func',
             mockContext,
@@ -429,7 +429,7 @@
         const rejectingArg = Promise.reject(new Error('Arg2 promise error'));
 
         try {
-          await runtime.callWrapAsync(
+          await runtime.invokeCallableAsync(
             poisonFunc,
             'func',
             mockContext,
@@ -450,7 +450,7 @@
         const argPromise = Promise.resolve(createPoison(new Error('Resolved to poison')));
 
         try {
-          await runtime.callWrapAsync(
+          await runtime.invokeCallableAsync(
             (x) => x * 2,
             'double',
             mockContext,
@@ -1024,7 +1024,7 @@
         originalError.stack = 'Error: Original error\n    at test (test.js:1:1)';
 
         const poison = createPoison(originalError);
-        const result = runtime.callWrapAsync(poison, 'test', { env: { globals: {} }, ctx: {} }, [], mockErrorContext);
+        const result = runtime.invokeCallableAsync(poison, 'test', { env: { globals: {} }, ctx: {} }, [], mockErrorContext);
 
         expect(isPoison(result)).to.be(true);
         expect(result.errors[0]).to.equal(originalError);
@@ -1040,7 +1040,7 @@
           ctx: {}
         };
 
-        const result = runtime.callWrapAsync(
+        const result = runtime.invokeCallableAsync(
           (x) => x * 2,
           'double',
           mockContext,

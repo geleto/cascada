@@ -39,10 +39,10 @@
     });
 
     // ============================================================================
-    // TEST GROUP 1: Function Calls (_callWrapAsyncComplex)
+    // TEST GROUP 1: Function Calls (_invokeCallableAsyncComplex)
     // ============================================================================
 
-    describe('Issue #1: Function calls returning promises (_callWrapAsyncComplex)', () => {
+    describe('Issue #1: Function calls returning promises (_invokeCallableAsyncComplex)', () => {
 
       it('should preserve context when user function returns rejecting promise', async () => {
         // User function returns a promise that rejects asynchronously

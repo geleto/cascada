@@ -46,7 +46,7 @@ For stability and backward compatibility, the error handling for non-async templ
 *   **Mechanism:** It uses a "global" variable hack. The compiler injects code that updates `lineno` and `colno` variables just before an operation.
     ```javascript
     // Compiled Sync Code
-    output += runtime.callWrap(
+    output += runtime.invokeCallable(
       (lineno = 10, colno = 5, frame.lookup("myFunc")), // The hack in action
       ...
     );
@@ -72,18 +72,18 @@ Async operations introduce complexities (like parallel execution and decoupled c
 
 This is the **preferred strategy** for errors that we explicitly check for in our own runtime code.
 
-*   **Problem:** A runtime function like `callWrapAsync` needs to report an error if it's asked to call a non-function. How does it know the `lineno` of that call?
+*   **Problem:** A runtime function like `invokeCallableAsync` needs to report an error if it's asked to call a non-function. How does it know the `lineno` of that call?
 *   **Solution:** We pass the context directly to the function.
     1.  **The Compiler** creates a context object from the current node's position.
     2.  **The Runtime Function** signature is updated to accept this object.
     3.  When the runtime function needs to create an error, it uses the context it was given.
 
-*   **Example: `callWrapAsync`**
+*   **Example: `invokeCallableAsync`**
 
     **Before:**
     ```javascript
     // runtime.js
-    function callWrapAsync(obj, name, context, args) {
+    function invokeCallableAsync(obj, name, context, args) {
       if (typeof obj !== 'function') {
         // No lineno/colno available!
         return createPoison(new Error('...'), null, null, null, context.path);
@@ -91,13 +91,13 @@ This is the **preferred strategy** for errors that we explicitly check for in ou
       // ...
     }
     // compiler.js
-    this.emit(`runtime.callWrapAsync(...)`);
+    this.emit(`runtime.invokeCallableAsync(...)`);
     ```
 
     **After:**
     ```javascript
     // runtime.js
-    function callWrapAsync(obj, name, context, args, errorContext) {
+    function invokeCallableAsync(obj, name, context, args, errorContext) {
       if (typeof obj !== 'function') {
         // Full context is available!
         return createPoison(new Error('...'), errorContext.lineno, errorContext.colno, ...);
@@ -106,7 +106,7 @@ This is the **preferred strategy** for errors that we explicitly check for in ou
     }
     // compiler.js
     const errorContext = this._createErrorContext(node); // Create the context object
-    this.emit(`runtime.callWrapAsync(..., ${JSON.stringify(errorContext)})`);
+    this.emit(`runtime.invokeCallableAsync(..., ${JSON.stringify(errorContext)})`);
     ```
 
 #### Strategy B: "Let it Throw & Catch" (For Native JS Errors on Hot Paths)

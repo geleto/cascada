@@ -533,6 +533,10 @@ when inheritance must finish loading before shared-visible work can proceed.
 - keep the explicit `inheritanceState` plumbing from Step 6
 - keep ordered method chains and `ownerKey`-based `super()` lookup
 - keep the shared-channel schema emitted in Step 2 and registered in Step 4
+- keep constructor linked-channel analysis separate from ordinary method
+  linked-channel analysis for now; although both flow through method metadata,
+  the constructor still owns top-level-flow-specific concerns and should not be
+  force-merged into the ordinary method collector yet
 
 ### Replace
 
@@ -547,6 +551,67 @@ when inheritance must finish loading before shared-visible work can proceed.
 
 - keep ordinary local/context/global call semantics for bare `foo()`
 - keep non-shared local channels private to the invocation that declared them
+- postpone constructor-vs-method linked-channel-analysis unification to a later
+  cleanup step after Step 7+ constructor behavior has stabilized
+- keep Step 7 extends-specific bootstrap/admission helpers in the generic
+  compiler/runtime files for now, but treat that as temporary organization
+  rather than a long-term layering decision
+
+### Later cleanup
+
+Treat the remaining cleanup in three layers so we do not mix harmless
+structural simplifications with behavior-changing post-Step-7 work.
+
+#### Safe now
+
+- reduce compiler-instance staging state where possible without changing the
+  Step 7 runtime contract
+  - prefer scoped helper wrappers over repeated manual save/restore around
+    `_currentRootExportBufferVar`
+- reduce thin internal wrapper layers in Step 7 admission/runtime code when the
+  wrappers do not encode a separate semantic concept
+  - keep the public runtime surface stable, but simplify private helper flow
+- keep compatibility aliases such as `callWrap` / `callWrapAsync` temporarily,
+  but do not add new internal callers to those legacy names
+
+#### After Step 8
+
+- remove the remaining `asyncExtendsBlocksPromise` bridge from unresolved
+  inherited lookup once constructor return/finalization behavior no longer
+  depends on the old registration lifecycle
+- re-evaluate whether constructor admission still needs a separate
+  `value + completion` shape, or whether root completion can collapse onto a
+  simpler single admission contract
+
+#### After Step 10
+
+After Steps 8-10 stabilize the constructor/root contract, extract the
+extends-specific helpers that currently live in generic files into dedicated
+extends compiler/runtime modules.
+
+This later extraction should cover the non-obvious Step 7 helpers too, not just
+the obvious `compileAsyncStaticRootExtends(...)` path. Current examples include:
+
+- compiler-side constructor bootstrap/finalization helpers in
+  `src/compiler/compiler-async.js`, such as:
+  - `_compileAsyncScriptConstructorEntry(...)`
+  - `_emitRootConstructorAdmission(...)`
+  - `_emitAsyncScriptConstructorRootCompletion(...)`
+  - `_emitRootInheritanceBootstrap(...)`
+- runtime-side admission/bootstrap helpers currently living in broad files,
+  such as:
+  - `runtime.bootstrapInheritanceMetadata(...)` in `src/runtime/runtime.js`
+  - `runtime.admitMethodEntry(...)` /
+    `runtime.admitMethodEntryWithCompletion(...)` in `src/runtime/call.js`
+  - ordinary callable invocation and inheritance admission currently sharing
+    `src/runtime/call.js`; once the Step 7-10 behavior settles, split that file
+    into a normal callable-invocation surface (`invokeCallable*`) and an
+    extends/inheritance-dispatch surface
+  - the underlying inheritance-admission helpers in `src/runtime/call.js`
+
+Do not do this extraction during Step 7 itself. First let Steps 8-10 settle the
+final constructor/namespace/template behavior, then move the stable extends-only
+surface out of the generic files in one cleanup pass.
 
 ### Tests
 

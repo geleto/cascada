@@ -115,7 +115,7 @@ class CompilerBaseSync extends CompilerCommon {
   compileFunCall(node, frame) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
     this.emit('(lineno = ' + node.lineno + ', colno = ' + node.colno + ', ');
-    this.emit('runtime.callWrap(');
+    this.emit('runtime.invokeCallable(');
     this.compile(node.name, frame);
     this.emit(', "' + funcName + '", context, ');
     this._compileAggregate(node.args, frame, '[', ']', false, false);

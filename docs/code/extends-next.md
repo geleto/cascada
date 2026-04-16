@@ -102,6 +102,29 @@ body". It becomes a bootstrap preamble that:
 4. preloads namespace-instantiation shared inputs when applicable
 5. admits the local `__constructor__`
 
+During the implementation steps, some of that constructor bootstrap/admission
+machinery may temporarily live in generic compiler/runtime files such as
+`compiler-async.js`, `runtime.js`, and `call.js`. That is an implementation
+staging choice, not part of the intended long-term layering. Once the
+constructor/root contract has stabilized across script, namespace, and template
+inheritance, those extends-specific helpers should move into dedicated
+extends-focused compiler/runtime modules in one cleanup pass. That later cleanup
+should also split ordinary callable invocation (`invokeCallable*`) away from
+extends/inheritance admission and dispatch helpers that currently share
+`src/runtime/call.js`.
+
+Before that larger extraction, small structural simplifications are still fair
+game during the intermediate steps:
+
+- reduce compiler-local staging state when a scoped helper can express the same
+  behavior more clearly
+- remove private wrapper layers that do not carry a distinct semantic role
+
+But do not use those intermediate cleanups to silently change the Step 7
+contract itself. Behavioral cleanup such as removing the legacy
+`asyncExtendsBlocksPromise` bridge belongs only after the later constructor /
+namespace / template steps settle.
+
 On the new static inheritance / namespace-instantiation path:
 
 - `with { }` preloads declared `shared` names only
@@ -221,6 +244,15 @@ constructor invocation that created it.
 
 That means non-shared constructor-local declarations conceptually move with the
 `__constructor__` invocation, not with the bootstrap root preamble.
+
+Constructor admission and ordinary method admission therefore share one runtime
+model, but they do not yet have to share one compile-time linked-channel
+analysis pass. For now, constructor linked-channel collection may stay
+separate from ordinary method linked-channel collection because constructor
+compilation still owns top-level flow concerns such as bootstrap-adjacent
+setup, pre/post-`extends` ordering, and constructor-local non-shared channels.
+That unification is cleanup work for a later step after constructor semantics
+have settled; it is not part of the current architecture contract.
 
 ## Methods, Overrides, and `super()`
 

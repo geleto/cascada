@@ -401,4 +401,55 @@ describe('Extends', function () {
       }
     });
   });
+
+  describe('Step 7', function () {
+    it('should route shared declarations from the whole hierarchy to the same shared root buffer', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      const originalDeclareSharedBufferChannel = runtime.declareSharedBufferChannel;
+      const themeBuffers = [];
+
+      runtime.declareSharedBufferChannel = function(buffer, channelName, channelType, context, initializer) {
+        const channel = originalDeclareSharedBufferChannel(buffer, channelName, channelType, context, initializer);
+        if (channelName === 'theme') {
+          themeBuffers.push(channel._buffer);
+        }
+        return channel;
+      };
+
+      try {
+        loader.addTemplate('A.script', 'shared var theme = "light"\nreturn "A"');
+        loader.addTemplate('C.script', 'shared var theme = "dark"\nextends "A.script"\nreturn "C"');
+
+        const result = await env.renderScript('C.script', {});
+
+        expect(result).to.be('C');
+        expect(themeBuffers.length).to.be.greaterThan(1);
+        themeBuffers.forEach((buffer) => {
+          expect(buffer).to.be(themeBuffers[0]);
+        });
+      } finally {
+        runtime.declareSharedBufferChannel = originalDeclareSharedBufferChannel;
+      }
+    });
+
+    it('should keep constructor-local non-shared vars out of later method invocation scope', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'var secret = "A"\nmethod readSecret()\n  return secret\nendmethod');
+      loader.addTemplate('C.script', 'extends "A.script"\nreturn this.readSecret()');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be(undefined);
+    });
+
+    it('should finish the constructor-local buffer before propagating static-extends registration failures', function () {
+      const script = new Script('extends "A.script"\nreturn "C"', env, 'C.script');
+      const source = script._compileSource();
+
+      expect(source).to.contain('context.asyncExtendsBlocksPromise.then(() => { output.markFinishedAndPatchLinks(); return');
+      expect(source).to.contain('}, (err) => { output.markFinishedAndPatchLinks(); throw err; })');
+    });
+  });
 });

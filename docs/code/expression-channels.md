@@ -78,7 +78,7 @@ This means the remaining audit target is semantic:
 
 ### Deferred Dynamic Macro/Caller Dispatch
 
-Any path that still reaches macro or caller dispatch only through a later `.then(... callWrapAsync(...))` has the same structural problem class:
+Any path that still reaches macro or caller dispatch only through a later `.then(... invokeCallableAsync(...))` has the same structural problem class:
 
 - the enclosing boundary is already established
 - the real command-emitting dispatch happens later
@@ -128,9 +128,9 @@ This also handles poison the same way as statement-level control-flow boundaries
      - shadowed locals now stay on the normal call path even if the same name is imported elsewhere
 
 2. `Done` Remove remaining deferred macro/caller dispatch from non-control-flow expression paths.
-   - Do not route command-emitting macro/caller dispatch through `.then(... callWrapAsync(...))`.
+   - Do not route command-emitting macro/caller dispatch through `.then(... invokeCallableAsync(...))`.
    - Macro arguments must remain raw on that path.
-   - `callWrapAsync(...)` now resolves the callee/args inside the runtime wrapper instead of deferring command-emitting dispatch through a later `.then(...)`.
+   - `invokeCallableAsync(...)` now resolves the callee/args inside the runtime wrapper instead of deferring command-emitting dispatch through a later `.then(...)`.
    - direct `caller()` and direct macro dispatch already stay on their dedicated current-boundary paths.
 
 3. `Done` Keep the removal probe findings as design constraints.

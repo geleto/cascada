@@ -74,7 +74,7 @@ async function processItems(items) {
 
 **1. Always Await ALL Promises Before Deciding:**
 ```javascript
-async function callWrapAsync(obj, name, context, args) {
+async function invokeCallableAsync(obj, name, context, args) {
   // Even if obj is poison, MUST await all arg promises
   const errors = [];
 
@@ -128,7 +128,7 @@ for (const item of items) {
 
 #### The Contract
 
-When you see `collectErrors()`, `callWrapAsync()`, or `deepResolveArray()`:
+When you see `collectErrors()`, `invokeCallableAsync()`, or `deepResolveArray()`:
 - **Contract:** They will find and collect EVERY error in their inputs
 - **Guarantee:** No promise will be ignored, no error will be lost
 - **Behavior:** ALL async operations complete before returning
@@ -218,10 +218,10 @@ try {
 **Pattern 1: Pure Synchronous Functions**
 - Never declared with `async`
 - Can return PoisonedValue directly
-- Example: `callWrap()`, `memberLookup()`
+- Example: `invokeCallable()`, `memberLookup()`
 
 ```javascript
-function callWrap(obj, name, context, args) {
+function invokeCallable(obj, name, context, args) {
   if (isPoison(obj)) {
     return obj; // Returns PoisonedValue directly
   }
@@ -678,10 +678,10 @@ Rule of thumb:
 You can check `isPoison()` and return PoisonedValue when:
 - Function is NOT declared with `async`
 - Function returns immediately without await
-- Example: `callWrap()`, `memberLookup()`
+- Example: `invokeCallable()`, `memberLookup()`
 
 ```javascript
-function callWrap(obj, name, context, args) {
+function invokeCallable(obj, name, context, args) {
   if (isPoison(obj)) {
     return obj; // Direct return of PoisonedValue
   }
@@ -701,7 +701,7 @@ You can return values OR poison values synchronously when:
 - Function is NOT declared with `async`
 - You check for simple cases first
 - Delegate complex cases to async helper
-- Example: `suppressValueAsync()`, `ensureDefinedAsync()`, `callWrapAsync()`
+- Example: `suppressValueAsync()`, `ensureDefinedAsync()`, `invokeCallableAsync()`
 
 ```javascript
 function suppressValueAsync(val, autoescape) {
@@ -828,7 +828,7 @@ async function _hybridAsyncComplex(value, options) {
 When you need to collect errors from multiple sources before proceeding:
 
 ```javascript
-function callWrapAsync(obj, name, context, args) {
+function invokeCallableAsync(obj, name, context, args) {
   // NOT declared with async!
 
   // Check if ANY input requires async processing
@@ -837,7 +837,7 @@ function callWrapAsync(obj, name, context, args) {
 
   if (objIsPromise || hasArgPromises) {
     // Delegate to async helper
-    return _callWrapAsyncComplex(obj, name, context, args);
+    return _invokeCallableAsyncComplex(obj, name, context, args);
   }
 
   // Sync path: Collect ALL errors from all sources
@@ -865,7 +865,7 @@ function callWrapAsync(obj, name, context, args) {
   return obj.apply(context, args);
 }
 
-async function _callWrapAsyncComplex(obj, name, context, args) {
+async function _invokeCallableAsyncComplex(obj, name, context, args) {
   // Collect ALL errors from ALL sources (never miss any error principle)
   const errors = [];
 
@@ -1132,14 +1132,14 @@ async function deepResolveArray(arr) {
 Pattern 1: Pure Sync
 ├─ NOT declared with async
 ├─ Can return PoisonedValue directly
-├─ Example: callWrap(), memberLookup()
+├─ Example: invokeCallable(), memberLookup()
 └─ Usage: if (isPoison(val)) return val;
 
 Pattern 2: Sync-First Hybrid
 ├─ NOT declared with async
 ├─ Returns: literal values OR poison values (thenables) OR delegated promises
 ├─ Fast path for 30-40% of calls
-├─ Example: suppressValueAsync(), ensureDefinedAsync(), callWrapAsync()
+├─ Example: suppressValueAsync(), ensureDefinedAsync(), invokeCallableAsync()
 └─ Usage:
     if (isPoison(val)) return val;  // Thenable protocol handles conversion
     if (literal) return processedValue;
