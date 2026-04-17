@@ -16,7 +16,7 @@ Cascada inverts the traditional async model:
 
 * ⚡ **Parallel by default**  -  Independent operations execute concurrently without `async`, `await`, or promise management.
 * 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
-* ➡️ **Explicit sequencing only when needed**  -  A simple marker (`!`) is used to enforce strict ordering for side-effectful operations, without reducing overall parallelism.
+* ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs — the rest of the script stays parallel.
 * 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
 * ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated parallel work to continue safely.
 
@@ -85,32 +85,48 @@ Every construct above runs exactly as you'd read it — the engine orchestrates 
 
 ## Quick Start
 
- Install Cascada (package name will change):
-  ```bash
-  npm install cascada-engine
-  ```
+```bash
+npm install cascada-engine
+```
 
-Here's a simple example of executing a script.
+### The script
+
+Write plain, familiar logic. Cascada runs independent operations in parallel automatically:
+
+```javascript
+const script = `
+  var user  = fetchUser(userId)
+  var posts = fetchPosts(userId)
+
+  return {
+    name:      user.name,
+    postCount: posts.length
+  }
+`;
+```
+
+No `async`, no `await`. `fetchUser` and `fetchPosts` run in parallel — Cascada handles it.
+
+### Running a script
+
+Pass the script and a context object to `renderScriptString`. Any value in the context can be a promise or an async function:
 
 ```javascript
 import { AsyncEnvironment } from 'cascada-engine';
 
 const env = new AsyncEnvironment();
-const script = `
-  // The 'user' promise resolves automatically
-  return "Hello, " + user.name
-`;
-const context = {
-  // Pass in an async function or a promise
-  user: fetchUser(123)
-};
 
-const result = await env.renderScriptString(script, context);
-// 'Hello, Alice'
+const result = await env.renderScriptString(script, {
+  userId:    123,
+  fetchUser: (id) => db.users.findById(id),
+  fetchPosts: (id) => db.posts.findByUser(id)
+});
+
 console.log(result);
+// { name: 'Alice', postCount: 5 }
 ```
 
-The syntax is familiar, but the execution is fundamentally different. To understand how Cascada achieves effortless concurrency, read the next section on Cascada's execution model.
+To understand how Cascada achieves effortless concurrency, read the next section.
 
 
 ## Cascada's Execution Model
@@ -128,7 +144,7 @@ Forget await. Forget .then(). Forget manually tracking which variables are promi
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
 #### ➡️ Implicitly Parallel, Explicitly Sequential
-While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the script.**.
+While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical — they sequence only what they touch, without affecting the parallelism of the rest of the script.
 
 #### 📋 Execution is chaotic, but the result is orderly
 While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
@@ -181,7 +197,7 @@ Everything above is the language you already know. Cascada adds a small set of s
 | `sequence` channel | `sequence name = obj` | Sequential reads and calls on an external object |
 | Sequential operator | `obj!.method()`, `obj!.prop` | Enforce strict execution order on a context object path |
 | Guard | `guard [targets] / recover [err] / endguard` | Transaction-like block: auto-restores channel/sequence state on error |
-| Dataflow error propagation | `value is error`, `value#message` | Failures flow as values that poison  thrown exceptions; inspect with `#` |
+| Dataflow error poisoning | `value is error`, `value#message` | Failures propagate as error values through the dataflow; unrelated operations continue unaffected. Detect with `is error`, inspect with `#` |
 
 ### Core Syntax and Expressions
 
