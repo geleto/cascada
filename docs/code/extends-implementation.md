@@ -2216,6 +2216,18 @@ Current code still creates the admission/invocation buffer before the target
 method entry is fully known and approximates unresolved linkage from currently
 registered shared channels.
 
+The structural change required here is explicit:
+
+- unresolved admission must stop calling `_createAdmissionBuffer(...)` during
+  command construction
+- instead, `InheritanceAdmissionCommand.apply()` remains the shared-root stall
+  point, waits for `resolveMethodEntry()` when needed, and only then creates
+  the invocation child buffer with exact `linkedChannels`
+- this does **not** require a second blocking mechanism; the existing stalled
+  `apply()` path is the barrier
+- `admitConstructorEntry(...)` is already on the known-entry path and therefore
+  is not the target of this deferred-linkage change
+
 Work:
 
 - begin by adding or tightening the regression tests that demonstrate the
@@ -2236,6 +2248,9 @@ components must obey the same contract:
 
 - begin by adding the component-side regression tests that reveal the current
   gap before changing the runtime shape
+- 14B is primarily parity verification plus component-side regression coverage;
+  do not assume it requires a second independent runtime redesign if 14A fixes
+  the shared admission path correctly
 - `ns.method(args)` may admit immediately at the caller-visible position
 - but if the method target depends on ancestry that is not loaded yet, the
   per-call child buffer must not be created/linked until exact metadata is
@@ -2254,8 +2269,10 @@ Work:
 - begin by adding or tightening focused tests that would fail if shared-root
   topology extension happened after dependent shared-visible apply had already
   continued
-- audit where shared-schema registration and shared-link installation can occur
-  during unresolved admission
+- audit specifically whether any shared-schema registration or shared-link
+  installation can still occur **outside** the
+  `beginInheritanceResolution(...)` / `finishInheritanceResolution(...)`
+  window that unresolved admission already waits through
 - ensure the runtime does not extend shared-root topology after dependent
   shared-visible apply has already been allowed to continue
 - if the implementation currently depends on a broader "best available links
