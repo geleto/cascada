@@ -217,23 +217,6 @@ class InheritanceAdmissionCommand extends Command {
     }
     this._applyStarted = false;
     this._applyPromise = null;
-    this._settled = false;
-    this._settledRejected = false;
-    this._settledValue = undefined;
-  }
-
-  resolveResult(value) {
-    this._settled = true;
-    this._settledRejected = false;
-    this._settledValue = value;
-    super.resolveResult(value);
-  }
-
-  rejectResult(err) {
-    this._settled = true;
-    this._settledRejected = true;
-    this._settledValue = undefined;
-    super.rejectResult(err);
   }
 
   getError() {
@@ -243,15 +226,9 @@ class InheritanceAdmissionCommand extends Command {
       : null;
   }
 
-  getValueResult() {
-    return this._settled && !this._settledRejected
-      ? this._settledValue
-      : this.promise;
-  }
-
   apply() {
     if (this._applyStarted) {
-      return this._applyPromise;
+      return this._applyPromise || this.promise;
     }
     this._applyStarted = true;
 
@@ -260,6 +237,7 @@ class InheritanceAdmissionCommand extends Command {
       if (poisonedArgs && !_hasAsyncMethodArgs(this.arguments)) {
         _finishInvocationBuffer(this.admissionBuffer);
         this.resolveResult(poisonedArgs);
+        this._applyPromise = this.promise;
         return poisonedArgs;
       }
 
@@ -284,6 +262,7 @@ class InheritanceAdmissionCommand extends Command {
     if (isPoison(methodEntry)) {
       _finishInvocationBuffer(this.admissionBuffer);
       this.resolveResult(methodEntry);
+      this._applyPromise = this.promise;
       return methodEntry;
     }
 
@@ -291,6 +270,7 @@ class InheritanceAdmissionCommand extends Command {
     if (argCountError) {
       _finishInvocationBuffer(this.admissionBuffer);
       this.resolveResult(argCountError);
+      this._applyPromise = this.promise;
       return argCountError;
     }
 
@@ -318,6 +298,7 @@ class InheritanceAdmissionCommand extends Command {
         return this._applyPromise;
       }
       this.resolveResult(result);
+      this._applyPromise = this.promise;
       return result;
     } catch (err) {
       return this._rejectAndRethrow(err);
@@ -326,6 +307,7 @@ class InheritanceAdmissionCommand extends Command {
 
   _rejectAndRethrow(err) {
     _finishInvocationBuffer(this.admissionBuffer);
+    this._applyPromise = this._applyPromise || this.promise;
     this.rejectResult(err);
     throw err;
   }
@@ -334,48 +316,6 @@ class InheritanceAdmissionCommand extends Command {
 function _enqueueAdmissionCommand(command) {
   command.admissionBuffer.add(command, INHERITANCE_ADMISSION_CHANNEL);
   return command;
-}
-
-function _admitKnownMethodCommand(methodEntry, name, context, inheritanceState, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
-  const admissionBuffer = _createAdmissionBuffer(
-    currentBuffer,
-    context,
-    methodEntry && methodEntry.linkedChannels
-  );
-  return _enqueueAdmissionCommand(new InheritanceAdmissionCommand({
-    name,
-    resolveMethodEntry: () => methodEntry,
-    args,
-    context,
-    inheritanceState,
-    env,
-    runtime,
-    cb,
-    admissionBuffer,
-    errorContext,
-    currentPayload
-  }));
-}
-
-function _admitDeferredMethodCommand(resolveEntry, name, context, inheritanceState, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
-  const admissionBuffer = _createAdmissionBuffer(
-    currentBuffer,
-    context,
-    _getDeferredAdmissionLinkedChannels(currentBuffer, inheritanceState)
-  );
-  return _enqueueAdmissionCommand(new InheritanceAdmissionCommand({
-    name,
-    resolveMethodEntry: resolveEntry,
-    args,
-    context,
-    inheritanceState,
-    env,
-    runtime,
-    cb,
-    admissionBuffer,
-    errorContext,
-    currentPayload
-  }));
 }
 
 function _admitMethodCommand({
@@ -392,33 +332,27 @@ function _admitMethodCommand({
   errorContext,
   currentPayload = null
 }) {
-  return immediateMethodEntry
-    ? _admitKnownMethodCommand(
-      immediateMethodEntry,
-      name,
-      context,
-      inheritanceState,
-      args,
-      env,
-      runtime,
-      cb,
-      currentBuffer,
-      errorContext,
-      currentPayload
-    )
-    : _admitDeferredMethodCommand(
-      resolveMethodEntry,
-      name,
-      context,
-      inheritanceState,
-      args,
-      env,
-      runtime,
-      cb,
-      currentBuffer,
-      errorContext,
-      currentPayload
-    );
+  const knownMethod = !!immediateMethodEntry;
+  const admissionBuffer = _createAdmissionBuffer(
+    currentBuffer,
+    context,
+    knownMethod
+      ? immediateMethodEntry && immediateMethodEntry.linkedChannels
+      : _getDeferredAdmissionLinkedChannels(currentBuffer, inheritanceState)
+  );
+  return _enqueueAdmissionCommand(new InheritanceAdmissionCommand({
+    name,
+    resolveMethodEntry: knownMethod ? () => immediateMethodEntry : resolveMethodEntry,
+    args,
+    context,
+    inheritanceState,
+    env,
+    runtime,
+    cb,
+    admissionBuffer,
+    errorContext,
+    currentPayload
+  }));
 }
 
 function admitInheritedMethod(context, inheritanceState, name, args, env, runtime, cb, currentBuffer, errorContext) {
@@ -427,7 +361,7 @@ function admitInheritedMethod(context, inheritanceState, name, args, env, runtim
     : null;
   return _admitMethodCommand({
     immediateMethodEntry,
-    resolveMethodEntry: () => inheritanceState.resolveInheritedMethodEntry(context, name),
+    resolveMethodEntry: () => inheritanceState.resolveInheritedMethodEntry(name),
     name,
     context,
     inheritanceState,
@@ -440,12 +374,8 @@ function admitInheritedMethod(context, inheritanceState, name, args, env, runtim
   });
 }
 
-function _getAdmissionValueResult(admissionCommand) {
-  return admissionCommand.getValueResult();
-}
-
 function callInheritedMethod(context, inheritanceState, name, args, env, runtime, cb, currentBuffer, errorContext) {
-  return _getAdmissionValueResult(admitInheritedMethod(
+  return admitInheritedMethod(
     context,
     inheritanceState,
     name,
@@ -455,7 +385,7 @@ function callInheritedMethod(context, inheritanceState, name, args, env, runtime
     cb,
     currentBuffer,
     errorContext
-  ));
+  ).promise;
 }
 
 function callSuperMethod(context, inheritanceState, name, ownerKey, args, env, runtime, cb, currentBuffer, currentPayload, errorContext) {
@@ -464,7 +394,7 @@ function callSuperMethod(context, inheritanceState, name, ownerKey, args, env, r
     : null;
   const admissionCommand = _admitMethodCommand({
     immediateMethodEntry,
-    resolveMethodEntry: () => inheritanceState.resolveSuperMethodEntry(context, name, ownerKey),
+    resolveMethodEntry: () => inheritanceState.resolveSuperMethodEntry(name, ownerKey),
     name,
     context,
     inheritanceState,
@@ -476,7 +406,7 @@ function callSuperMethod(context, inheritanceState, name, ownerKey, args, env, r
     errorContext,
     currentPayload
   });
-  return _getAdmissionValueResult(admissionCommand);
+  return admissionCommand.promise;
 }
 
 function admitConstructorEntry(context, inheritanceState, methodEntry, args, env, runtime, cb, currentBuffer, errorContext, currentPayload = null) {
@@ -496,28 +426,25 @@ function admitConstructorEntry(context, inheritanceState, methodEntry, args, env
   });
 }
 
-function startParentConstructor(parentTemplate, registrationContext, parentContext, inheritanceState, env, runtime, cb, currentBuffer, errorContext, options = null) {
-  const opts = options || {};
-  const shouldAwaitCompletion = !!opts.awaitCompletion;
-
-  if (parentTemplate && parentTemplate.hasDynamicExtends) {
-    const compositionBuffer = parentTemplate.rootRenderFunc(
-      env,
-      parentContext,
-      runtime,
-      cb,
-      true,
-      currentBuffer,
-      inheritanceState
-    );
-    if (!shouldAwaitCompletion) {
-      return null;
-    }
-    return compositionBuffer && typeof compositionBuffer.getFinishedPromise === 'function'
-      ? compositionBuffer.getFinishedPromise()
-      : null;
+function _startDynamicParentConstructor(parentTemplate, parentContext, inheritanceState, env, runtime, cb, currentBuffer, shouldAwaitCompletion) {
+  const compositionBuffer = parentTemplate.rootRenderFunc(
+    env,
+    parentContext,
+    runtime,
+    cb,
+    true,
+    currentBuffer,
+    inheritanceState
+  );
+  if (!shouldAwaitCompletion) {
+    return null;
   }
+  return compositionBuffer && typeof compositionBuffer.getFinishedPromise === 'function'
+    ? compositionBuffer.getFinishedPromise()
+    : null;
+}
 
+function _startStaticParentConstructor(parentTemplate, registrationContext, parentContext, inheritanceState, env, runtime, cb, currentBuffer, errorContext, shouldAwaitCompletion) {
   inheritanceBootstrap.bootstrapInheritanceMetadata(
     inheritanceState,
     parentTemplate && parentTemplate.methods ? parentTemplate.methods : {},
@@ -544,6 +471,37 @@ function startParentConstructor(parentTemplate, registrationContext, parentConte
   return shouldAwaitCompletion && admission && admission.completion && typeof admission.completion.then === 'function'
     ? admission.completion
     : null;
+}
+
+function startParentConstructor(parentTemplate, registrationContext, parentContext, inheritanceState, env, runtime, cb, currentBuffer, errorContext, options = null) {
+  const opts = options || {};
+  const shouldAwaitCompletion = !!opts.awaitCompletion;
+
+  if (parentTemplate && parentTemplate.hasDynamicExtends) {
+    return _startDynamicParentConstructor(
+      parentTemplate,
+      parentContext,
+      inheritanceState,
+      env,
+      runtime,
+      cb,
+      currentBuffer,
+      shouldAwaitCompletion
+    );
+  }
+
+  return _startStaticParentConstructor(
+    parentTemplate,
+    registrationContext,
+    parentContext,
+    inheritanceState,
+    env,
+    runtime,
+    cb,
+    currentBuffer,
+    errorContext,
+    shouldAwaitCompletion
+  );
 }
 
 module.exports = {

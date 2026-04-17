@@ -108,52 +108,6 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
-  beginInheritanceResolution() {
-    if (!this.inheritanceResolutionPromise) {
-      this.inheritanceResolutionPendingCount = 0;
-      this.inheritanceResolutionPromise = new Promise((resolve) => {
-        this.inheritanceResolutionResolver = resolve;
-      }).then(() => {
-        delete this.inheritanceResolutionPromise;
-        delete this.inheritanceResolutionResolver;
-        delete this.inheritanceResolutionPendingCount;
-      });
-    }
-    this.inheritanceResolutionPendingCount = (this.inheritanceResolutionPendingCount || 0) + 1;
-  }
-
-  awaitInheritanceResolution() {
-    return this.inheritanceResolutionPromise || null;
-  }
-
-  resolveAfterInheritanceResolution(value) {
-    const registrationWait = this.awaitInheritanceResolution();
-    if (!registrationWait) {
-      return value;
-    }
-    return registrationWait.then(() => value);
-  }
-
-  async getAsyncBlock(name) {
-    const registrationWait = this.awaitInheritanceResolution();
-    if (registrationWait && typeof registrationWait.then === 'function') {
-      await registrationWait;
-    }
-    return this.getBlock(name);
-  }
-
-  finishInheritanceResolution() {
-    if (!this.inheritanceResolutionResolver) {
-      return;
-    }
-    if (this.inheritanceResolutionPendingCount > 0) {
-      this.inheritanceResolutionPendingCount -= 1;
-    }
-    if (this.inheritanceResolutionPendingCount === 0) {
-      this.inheritanceResolutionResolver();
-    }
-  }
-
   getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, inheritanceState = null, blockPayload = null, blockRenderCtx = undefined) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];

@@ -56,21 +56,6 @@ class CompileInheritance {
     });
   }
 
-  _emitImmediateExternInputs(node, targetVarsVar) {
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    withVars.forEach((nameNode) => {
-      const externName = this.compiler.analysis.getBaseChannelName(nameNode.value);
-      const helperName = this.compiler.scriptMode
-        ? 'captureCompositionScriptValue'
-        : 'captureCompositionValue';
-      this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = runtime.${helperName}(context, ${JSON.stringify(externName)}, ${this.compiler.buffer.currentBuffer}`);
-      if (this.compiler.scriptMode) {
-        this.emit(`, { lineno: ${nameNode.lineno}, colno: ${nameNode.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, nameNode))}, path: context.path }`);
-      }
-      this.emit.line(');');
-    });
-  }
-
   _emitNamedInputBindings(nameNodes, targetVarsVar) {
     nameNodes.forEach((nameNode) => {
       const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
@@ -110,18 +95,6 @@ class CompileInheritance {
     if (explicitNamesVar) {
       this.emit.line(`const ${explicitNamesVar} = Object.keys(${explicitVarsVar});`);
     }
-  }
-
-  _emitExtendsContextSetup(node, extendsVarsVar, extendsInputValuesVar, extendsInputNamesVar, extendsRootContextVar) {
-    this.emit.line(`const ${extendsVarsVar} = {};`);
-    this._emitImmediateExternInputs(node, extendsVarsVar);
-    // Keep two distinct views on purpose:
-    // inputValues is the explicit named-input set captured at the extends site
-    // (validated as externs on the legacy path, or as shared preloads on the
-    // new static script path), while rootContext preserves the full inherited
-    // constructor context the ancestor should execute against.
-    this._emitCompositionContextObject(node, extendsVarsVar, extendsInputValuesVar, extendsInputNamesVar, !!node.withContext);
-    this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
   }
 
   _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
@@ -428,7 +401,7 @@ class CompileInheritance {
             blockRenderCtxExpr
           );
         } else {
-          this.emit.line(`${id} = runtime.getRegisteredAsyncBlock(context, "${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
+          this.emit.line(`${id} = runtime.getRegisteredAsyncBlock(inheritanceState, context, "${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
         }
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
       }
@@ -479,10 +452,6 @@ class CompileInheritance {
 
     this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
     this.emit.addScopeLevel();
-  }
-
-  compileAsyncExtends(node) {
-    return this.compiler.extendsCompiler.compileAsyncDynamicTemplateExtends(node);
   }
 
   compileSyncExtends(node, frame) {

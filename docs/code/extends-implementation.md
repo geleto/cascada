@@ -1908,6 +1908,18 @@ Work:
 - preserve the same temporal guarantees: no inherited block/method/shared lookup
   may observe partially registered ancestry
 
+Recommended landing split for this step:
+
+- **13B1:** move the bookkeeping and lifecycle methods onto
+  `InheritanceState`, and let `inheritance-bootstrap.js` wrappers accept
+  either `inheritanceState` (new path) or `context` (compatibility path)
+- **13B2:** update compiler/runtime call sites to pass `inheritanceState`
+  explicitly, then verify compiled output only references the stable public
+  helper surface
+- **13B3:** remove the compatibility path from
+  `inheritance-bootstrap.js` and delete the old `Context`
+  `inheritanceResolution*` fields/methods once no caller depends on them
+
 Ownership boundary after this step:
 
 - **`InheritanceState`** owns timing: `beginInheritanceResolution`,
@@ -1945,6 +1957,10 @@ the broad compiler/runtime facades.
   stored, and the comment acknowledging this ("keep for visibility") is itself
   evidence the parameter serves no purpose; remove it from the method signature
   and from the call site in `inheritance-bootstrap.js`
+- remove the now-dead `context` parameter from `InheritanceState`
+  `resolveInheritedMethodEntry`, `resolveSuperMethodEntry`, and
+  `resolveSharedChannelType` after 13B moves registration timing fully onto the
+  state object
 - document that manual `indent` string threading (`const indent = opts.indent || ''`)
   is the accepted pattern for generated-code indentation control in
   `compiler-extends.js`; six methods already use it consistently; record this
@@ -2186,6 +2202,218 @@ Work:
   a representative extends template, call `template._compileSource()`, and
   confirm that every `runtime.*` call in the output matches the stable public
   surface; this catches signature drift before it reaches production
+
+## Step 14 - Architecture-Readability Cleanup
+
+Step 13 closes the remaining behavioral cleanup that was still in scope after
+Step 12. It does **not** guarantee that the implementation is as readable as
+the agreed architecture.
+
+Step 14 is the explicit follow-up pass for that problem:
+
+- preserve the Step 7-13 behavior contract
+- preserve Cascada temporal concurrency guarantees
+- preserve the current Option B / Option A split from Step 13
+- reduce structural/orchestration complexity until the code reads like the
+  architecture we intended
+
+This is not a "micro-optimization" step and not a hidden redesign step. The
+goal is to remove or reshape code that is semantically correct but still harder
+to understand than the underlying model.
+
+### Step 14 Success Criteria
+
+Success for Step 14 means:
+
+- a developer can explain root startup, parent constructor startup, inherited
+  method admission, and component dispatch by reading one small owner module
+  for each concern
+- `compiler-extends.js` is no longer a broad "understand the whole file"
+  orchestration hub
+- `inheritance-call.js` owns inherited admission/dispatch only; it does not
+  also own parent-startup orchestration
+- `InheritanceState` presents method registry, shared-channel registry, and
+  registration-resolution lifecycle as explicit subdomains rather than one
+  mixed bag of fields/methods
+- root finalization code is organized around a few concrete root forms, not a
+  generic mini-framework that saves lines at the cost of readability
+
+### Step 14A - Split `compiler-extends.js` by root family
+
+`src/compiler/compiler-extends.js` still owns too many concepts at once:
+
+- root inheritance bootstrap
+- constructor-entry generation
+- dynamic-parent startup/finalization
+- root/composition finalization
+- inherited-call emission
+- compiled-method literal emission
+- inheritance-local capture wiring
+
+That file is now behaviorally much cleaner than before, but it still reads like
+an orchestration hub rather than a small set of concrete compilation paths.
+
+Work:
+
+- reorganize the extends compiler around **root families**, not around helper
+  reuse
+- the target mental model is one linear owner per major root form:
+  - dynamic template root
+  - static template constructor/root path
+  - script constructor/root path
+  - inherited-call / block-dispatch emission
+- shared helpers may stay shared, but only when they remain obviously smaller
+  than the concrete path they support
+- if a helper exists mainly to avoid duplicating 5-15 lines of code while
+  forcing readers to jump between distant sections, inline the logic instead
+
+This step is successful when a developer can open the relevant root-family
+section and understand the whole path top-to-bottom without tracing through a
+large helper lattice.
+
+### Step 14B - Replace generic root-finalization plumbing with explicit root endings
+
+`compiler-extends.js` currently expresses root finalization through a generic
+outcome layer:
+
+- `_emitRootOutcome`
+- `_emitRootModeSplit`
+- `_emitDirectValueFinalization`
+- `_emitDirectTextFinalization`
+- `_emitReturnCurrentBufferAfterCompletionGate`
+- `_emitConstructorEntryOutcome`
+
+This is semantically correct, but it is still more abstract than the actual set
+of root endings we support.
+
+Work:
+
+- replace the generic root-outcome/finalization mini-framework with a few
+  explicit end-to-end emitters for the real concrete shapes
+- each remaining emitter should correspond to a human-readable root ending such
+  as:
+  - render script root returning a value
+  - render template root returning text
+  - composition root returning the current buffer
+  - constructor entry finishing with `null` or return-channel snapshot
+- prefer a small amount of duplication over a shared abstraction that obscures
+  timing or completion-gate behavior
+- keep compiled-output behavior identical unless a dedicated later step chooses
+  otherwise
+
+The success criterion is that a reader no longer has to mentally simulate a
+generic `kind` dispatcher to understand how a given root completes.
+
+### Step 14C - Move parent-startup orchestration out of `inheritance-call.js`
+
+`src/runtime/inheritance-call.js` now contains two distinct concerns:
+
+- inherited/constructor admission and dispatch
+- parent constructor startup orchestration for static vs dynamic parents
+
+That split is behaviorally valid but architecturally muddy. The admission owner
+should not also own "how parent constructor startup is selected."
+
+Work:
+
+- move `startParentConstructor` and its static/dynamic branch helpers out of
+  `inheritance-call.js`
+- the target owner is either `inheritance-bootstrap.js` or a new dedicated
+  runtime module such as `inheritance-startup.js`
+- after the move, `inheritance-call.js` should own only:
+  - admission buffer creation
+  - `InheritanceAdmissionCommand`
+  - inherited method dispatch
+  - `super()` dispatch
+  - constructor admission as a dispatch concern, not startup orchestration
+- bootstrap/startup ownership should then cover:
+  - metadata/schema registration
+  - shared-link installation
+  - parent constructor startup selection
+
+This step is successful when the runtime ownership map is honest: startup is
+owned by startup/bootstrap, and dispatch is owned by dispatch.
+
+### Step 14D - Refactor `InheritanceState` into explicit subdomains
+
+`src/runtime/inheritance-state.js` is substantially cleaner after Step 13B, but
+it still presents one mixed class for three distinct responsibilities:
+
+- method chain registry
+- shared-channel schema registry
+- inheritance-registration resolution lifecycle
+
+That increases the cognitive cost of every read because developers must hold
+all three domains in mind at once.
+
+Work:
+
+- keep one public `InheritanceState` runtime object if that remains the best
+  external shape
+- inside that object, make the domains explicit:
+  - `methods`
+  - `shared`
+  - `resolution`
+- the API can be nested (`state.methods.resolveInherited(...)`) or implemented
+  through clearly separated private helper objects/sections, but the
+  separation must be visible in the code structure, not just implied by method
+  names
+- do not combine this with a behavior redesign; this is a presentation and
+  maintainability refactor
+
+This step is successful when developers can explain the state model as three
+small domains rather than one class with a mixed field list.
+
+### Step 14E - Introduce one explicit extends-composition payload shape
+
+Compiler/runtime/context code currently passes several closely related values
+around extends startup:
+
+- explicit named inputs
+- root composition context
+- extern/render-visible context
+- explicit input-name lists
+
+Those values are correct, but their relationship is still implicit in local
+variable naming and helper call order.
+
+Work:
+
+- define one explicit conceptual payload for extends composition/startup
+- use stable field names for the distinct views we intentionally preserve
+  (for example explicit inputs vs root context vs render/extern context)
+- update compiler/runtime/context handoff code to talk in terms of that named
+  payload rather than a loose group of locals
+- if the best implementation is "one plain object assembled once and threaded
+  through startup," prefer that over re-deriving the same related views in
+  multiple helpers
+- do not collapse intentionally distinct views into one merged bag if that
+  would hide semantics
+
+This step is successful when "what context is being passed here, and why?" has
+one explicit answer rather than several inferred ones.
+
+### Step 14 Tests
+
+- rerun focused extends / inherited-dispatch / component-lifecycle suites after
+  each sub-step
+- for 14A and 14B, compile representative script and template extends inputs
+  and inspect `_compileSource()` output to confirm the emitted root shapes are
+  still behaviorally identical
+- for 14C, add or keep focused coverage that parent constructor startup still
+  preserves:
+  - static vs dynamic startup selection
+  - constructor timing
+  - shared-link installation timing
+  - root-completion timing
+- for 14D, keep the Step 13B registration-wait timing assertions intact while
+  refactoring the state presentation
+- for 14E, add a focused assertion around `extends ... with ...` and parent
+  composition startup so the named payload shape stays honest
+- keep `npm run test:quick` green before closing each sub-step
+- keep the compiled-output stability assertion from Step 13 in force for any
+  Step 14 sub-step that changes runtime helper signatures or compiler-emitted
+  helper calls
 
 ## Non-Goals
 

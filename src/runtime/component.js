@@ -3,45 +3,17 @@
 const { createCommandBuffer, isCommandBuffer } = require('./command-buffer');
 const { createInheritanceState } = require('./inheritance-state');
 const { declareBufferChannel } = require('./channel');
-const { WaitResolveCommand } = require('./commands');
+const { Command, WaitResolveCommand } = require('./commands');
 const { resolveSingle } = require('./resolve');
 const { createPoison, isPoisonError, RuntimeFatalError, handleError } = require('./errors');
 const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceCall = require('./inheritance-call');
 
-class ComponentCommand {
+class ComponentCommand extends Command {
   constructor({ channelName, pos = null, withDeferredResult = true }) {
+    super({ withDeferredResult });
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = true;
-    this.promise = null;
-    this.resolve = null;
-    this.reject = null;
-    if (withDeferredResult) {
-      this.promise = new Promise((resolve, reject) => {
-        this.resolve = resolve;
-        this.reject = reject;
-      });
-      this.promise.catch(() => {});
-    }
-  }
-
-  resolveResult(value) {
-    if (!this.resolve) {
-      return;
-    }
-    this.resolve(value);
-    this.resolve = null;
-    this.reject = null;
-  }
-
-  rejectResult(err) {
-    if (!this.reject) {
-      return;
-    }
-    this.reject(err);
-    this.resolve = null;
-    this.reject = null;
   }
 }
 
@@ -198,17 +170,13 @@ class ComponentInstance {
       this.rootBuffer,
       errorContext
     );
-    const valueResult = admission.getValueResult();
+    const valueResult = admission.promise;
     const completion = admission && admission.completion && typeof admission.completion.then === 'function'
       ? admission.completion
       : null;
 
     if (!completion) {
       return valueResult;
-    }
-
-    if (!valueResult || typeof valueResult.then !== 'function') {
-      return completion.then(() => valueResult);
     }
 
     return valueResult.then(
@@ -253,7 +221,7 @@ class ComponentInstance {
       return runObservation(immediateType);
     }
 
-    const resolvedType = this.inheritanceState.resolveSharedChannelType(this.context, name);
+    const resolvedType = this.inheritanceState.resolveSharedChannelType(name);
     return resolvedType && typeof resolvedType.then === 'function'
       ? resolvedType.then(runObservation)
       : runObservation(resolvedType);

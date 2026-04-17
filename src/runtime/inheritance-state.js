@@ -2,13 +2,15 @@
 
 const { validateCallableContractCompatibility } = require('../callable-contract');
 const { RuntimeFatalError } = require('./errors');
-const inheritanceBootstrap = require('./inheritance-bootstrap');
 
 class InheritanceState {
   constructor() {
     this.methods = Object.create(null);
     this.registeredSharedChannelNames = new Set();
     this.registeredSharedChannelTypes = new Map();
+    this.inheritanceResolutionPromise = null;
+    this.inheritanceResolutionResolver = null;
+    this.inheritanceResolutionPendingCount = 0;
   }
 
   registerCompiledMethods(methods) {
@@ -63,12 +65,42 @@ class InheritanceState {
     return this._findRegisteredMethodEntry(name, ownerKey);
   }
 
-  _resolveWithInheritanceResolution(context, readImmediate, getNotFoundMessage) {
+  beginInheritanceResolution() {
+    if (!this.inheritanceResolutionPromise) {
+      this.inheritanceResolutionPendingCount = 0;
+      this.inheritanceResolutionPromise = new Promise((resolve) => {
+        this.inheritanceResolutionResolver = resolve;
+      }).then(() => {
+        this.inheritanceResolutionPromise = null;
+        this.inheritanceResolutionResolver = null;
+        this.inheritanceResolutionPendingCount = 0;
+      });
+    }
+    this.inheritanceResolutionPendingCount += 1;
+  }
+
+  awaitInheritanceResolution() {
+    return this.inheritanceResolutionPromise || null;
+  }
+
+  finishInheritanceResolution() {
+    if (!this.inheritanceResolutionResolver) {
+      return;
+    }
+    if (this.inheritanceResolutionPendingCount > 0) {
+      this.inheritanceResolutionPendingCount -= 1;
+    }
+    if (this.inheritanceResolutionPendingCount === 0) {
+      this.inheritanceResolutionResolver();
+    }
+  }
+
+  _resolveWithInheritanceResolution(readImmediate, getNotFoundMessage) {
     const immediate = readImmediate();
     if (immediate) {
       return immediate;
     }
-    const registrationWait = inheritanceBootstrap.awaitInheritanceResolution(context);
+    const registrationWait = this.awaitInheritanceResolution();
     if (registrationWait && typeof registrationWait.then === 'function') {
       return registrationWait.then(() => {
         const resolved = readImmediate();
@@ -81,17 +113,15 @@ class InheritanceState {
     throw new RuntimeFatalError(getNotFoundMessage());
   }
 
-  resolveInheritedMethodEntry(context, name) {
+  resolveInheritedMethodEntry(name) {
     return this._resolveWithInheritanceResolution(
-      context,
       () => this.getImmediateInheritedMethodEntry(name),
       () => `Inherited method '${name}' was not found in the loaded extends chain`
     );
   }
 
-  resolveSuperMethodEntry(context, name, ownerKey) {
+  resolveSuperMethodEntry(name, ownerKey) {
     return this._resolveWithInheritanceResolution(
-      context,
       () => this.getImmediateSuperMethodEntry(name, ownerKey),
       () => `No super method is available for '${name}' after owner '${ownerKey}'`
     );
@@ -101,10 +131,7 @@ class InheritanceState {
     return this.methods[name] || [];
   }
 
-  registerSharedSchema(sharedSchema, ownerKey = null) {
-    // Keep ownerKey in the API for parity with method registration and for
-    // callers/tests that need visibility into which file registered the schema,
-    // even though schema storage is hierarchy-wide today.
+  registerSharedSchema(sharedSchema) {
     const normalized = Array.isArray(sharedSchema)
       ? sharedSchema.map((entry) => ({ name: entry.name, type: entry.type }))
       : [];
@@ -129,9 +156,8 @@ class InheritanceState {
       : null;
   }
 
-  resolveSharedChannelType(context, name) {
+  resolveSharedChannelType(name) {
     return this._resolveWithInheritanceResolution(
-      context,
       () => this.getImmediateSharedChannelType(name),
       () => `Shared channel '${name}' was not found in the loaded extends chain`
     );

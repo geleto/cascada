@@ -5,6 +5,7 @@ let AsyncEnvironment;
 let StringLoader;
 let runtimeModule;
 let ComponentInstance;
+let ComponentOperationCommand;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -13,12 +14,14 @@ if (typeof require !== 'undefined') {
   StringLoader = require('../util').StringLoader;
   runtimeModule = require('../../src/runtime/runtime');
   ComponentInstance = require('../../src/runtime/component').ComponentInstance;
+  ComponentOperationCommand = require('../../src/runtime/component').ComponentOperationCommand;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   StringLoader = window.util.StringLoader;
   runtimeModule = nunjucks.runtime;
   ComponentInstance = null;
+  ComponentOperationCommand = null;
 }
 
 describe('Component Lifecycle', function () {
@@ -205,5 +208,30 @@ describe('Component Lifecycle', function () {
       expect(err).to.be.a(runtimeModule.RuntimeFatalError);
       expect(err.message).to.contain('cannot accept new operations');
     });
+  });
+
+  it('should use Command deferred-result plumbing only for non-close component operations', function () {
+    if (!ComponentOperationCommand) {
+      this.skip();
+      return;
+    }
+
+    const closeCommand = new ComponentOperationCommand({
+      channelName: 'nsBinding',
+      operation: 'close',
+      pos: { lineno: 1, colno: 1, path: 'Main.script' }
+    });
+    const methodCommand = new ComponentOperationCommand({
+      channelName: 'nsBinding',
+      operation: 'method',
+      methodName: 'build',
+      env: {},
+      runtime: runtimeModule,
+      cb: () => {},
+      errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+    });
+
+    expect(closeCommand.promise).to.be(null);
+    expect(methodCommand.promise && typeof methodCommand.promise.then).to.be('function');
   });
 });

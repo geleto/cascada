@@ -2,30 +2,42 @@
 
 let expect;
 let AsyncEnvironment;
+let AsyncTemplate;
 let Script;
+let Context;
 let parser;
 let nodes;
 let scriptTranspiler;
 let runtime;
+let inheritanceBootstrap;
+let inheritanceCall;
 let StringLoader;
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
+  AsyncTemplate = environment.AsyncTemplate;
   Script = environment.Script;
+  Context = require('../../src/environment/context').Context;
   parser = require('../../src/parser');
   nodes = require('../../src/nodes');
   scriptTranspiler = require('../../src/script/script-transpiler');
   runtime = require('../../src/runtime/runtime');
+  inheritanceBootstrap = require('../../src/runtime/inheritance-bootstrap');
+  inheritanceCall = require('../../src/runtime/inheritance-call');
   StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
+  AsyncTemplate = nunjucks.AsyncTemplate;
   Script = nunjucks.Script;
+  Context = null;
   parser = nunjucks.parser;
   nodes = nunjucks.nodes;
   scriptTranspiler = nunjucks.scriptTranspiler;
   runtime = nunjucks.runtime;
+  inheritanceBootstrap = null;
+  inheritanceCall = null;
   StringLoader = window.util.StringLoader;
 }
 
@@ -313,9 +325,9 @@ describe('Extends', function () {
       runtime.createInheritanceState = function() {
         const inheritanceState = originalCreateInheritanceState();
         const originalRegisterSharedSchema = inheritanceState.registerSharedSchema;
-        inheritanceState.registerSharedSchema = function(sharedSchema, ownerKey) {
-          seen.push(`schema:${ownerKey}:${(sharedSchema || []).map((entry) => entry.name).join(',')}`);
-          return originalRegisterSharedSchema.call(this, sharedSchema, ownerKey);
+        inheritanceState.registerSharedSchema = function(sharedSchema) {
+          seen.push(`schema:${(sharedSchema || []).map((entry) => entry.name).join(',')}`);
+          return originalRegisterSharedSchema.call(this, sharedSchema);
         };
         return inheritanceState;
       };
@@ -331,7 +343,7 @@ describe('Extends', function () {
         });
 
         expect(result).to.be('done');
-        expect(seen[0]).to.be('schema:C.script:trace');
+        expect(seen[0]).to.be('schema:trace');
         expect(seen[1]).to.be('pre-C|');
       } finally {
         runtime.createInheritanceState = originalCreateInheritanceState;
@@ -460,6 +472,190 @@ describe('Extends', function () {
 
       expect(source).to.contain('output.markFinishedAndPatchLinks();');
       expect(source).to.not.contain('context.asyncExtendsBlocksPromise');
+    });
+  });
+
+  describe('Step 13A', function () {
+    it('should route dynamic parent startup through composition mode only', async function () {
+      if (!inheritanceCall) {
+        this.skip();
+        return;
+      }
+
+      const currentBuffer = runtime.createCommandBuffer({ path: 'Child.script' });
+      const inheritanceState = runtime.createInheritanceState();
+      const calls = [];
+      const expectedCompletion = Promise.resolve('dynamic-finished');
+      const parentTemplate = {
+        hasDynamicExtends: true,
+        rootRenderFunc(envArg, contextArg, runtimeArg, cbArg, compositionMode, parentBufferArg, inheritanceStateArg) {
+          calls.push({
+            envArg,
+            contextArg,
+            runtimeArg,
+            cbArg,
+            compositionMode,
+            parentBufferArg,
+            inheritanceStateArg
+          });
+          return {
+            getFinishedPromise() {
+              return expectedCompletion;
+            }
+          };
+        }
+      };
+
+      const completion = inheritanceCall.startParentConstructor(
+        parentTemplate,
+        { path: 'registration' },
+        { path: 'parent' },
+        inheritanceState,
+        { envName: 'env' },
+        runtime,
+        () => {},
+        currentBuffer,
+        { lineno: 1, colno: 1, path: 'Child.script' },
+        { awaitCompletion: true }
+      );
+
+      expect(calls).to.have.length(1);
+      expect(calls[0].compositionMode).to.be(true);
+      expect(calls[0].parentBufferArg).to.be(currentBuffer);
+      expect(calls[0].inheritanceStateArg).to.be(inheritanceState);
+      expect(completion).to.be(expectedCompletion);
+      expect(await completion).to.be('dynamic-finished');
+    });
+
+    it('should route static parent startup through bootstrap and shared-link installation', function () {
+      if (!inheritanceCall || !inheritanceBootstrap) {
+        this.skip();
+        return;
+      }
+
+      const currentBuffer = runtime.createCommandBuffer({ path: 'Child.script' });
+      const inheritanceState = runtime.createInheritanceState();
+      const parentTemplate = {
+        hasDynamicExtends: false,
+        path: 'Parent.script',
+        methods: {
+          __constructor__: {
+            fn() {
+              return null;
+            },
+            kind: 'method',
+            contract: { inputNames: [], withContext: false },
+            ownerKey: 'Parent.script',
+            linkedChannels: []
+          }
+        },
+        sharedSchema: [{ name: 'theme', type: 'var' }],
+        rootRenderFunc() {
+          throw new Error('dynamic parent startup should not run for static parents');
+        }
+      };
+      const originalBootstrap = inheritanceBootstrap.bootstrapInheritanceMetadata;
+      const originalEnsureLinks = inheritanceBootstrap.ensureCurrentBufferSharedLinks;
+      const seen = [];
+
+      inheritanceBootstrap.bootstrapInheritanceMetadata = function(inheritanceStateArg, methodsArg, sharedSchemaArg, ownerKeyArg, bufferArg, contextArg) {
+        seen.push({
+          kind: 'bootstrap',
+          inheritanceStateArg,
+          methodsArg,
+          sharedSchemaArg,
+          ownerKeyArg,
+          bufferArg,
+          contextArg
+        });
+        return originalBootstrap.apply(this, arguments);
+      };
+      inheritanceBootstrap.ensureCurrentBufferSharedLinks = function(sharedSchemaArg, bufferArg) {
+        seen.push({
+          kind: 'links',
+          sharedSchemaArg,
+          bufferArg
+        });
+        return originalEnsureLinks.apply(this, arguments);
+      };
+
+      try {
+        const completion = inheritanceCall.startParentConstructor(
+          parentTemplate,
+          { path: 'registration' },
+          { path: 'parent' },
+          inheritanceState,
+          { envName: 'env' },
+          runtime,
+          () => {},
+          currentBuffer,
+          { lineno: 1, colno: 1, path: 'Child.script' },
+          { awaitCompletion: false }
+        );
+
+        expect(completion).to.be(null);
+        expect(seen.map((entry) => entry.kind)).to.eql(['bootstrap', 'links']);
+        expect(seen[0].inheritanceStateArg).to.be(inheritanceState);
+        expect(seen[0].ownerKeyArg).to.be('Parent.script');
+        expect(seen[0].bufferArg).to.be(currentBuffer);
+        expect(seen[1].bufferArg).to.be(currentBuffer);
+      } finally {
+        inheritanceBootstrap.bootstrapInheritanceMetadata = originalBootstrap;
+        inheritanceBootstrap.ensureCurrentBufferSharedLinks = originalEnsureLinks;
+      }
+    });
+  });
+
+  describe('Step 13B', function () {
+    it('should keep inheritance-resolution lifecycle state on InheritanceState', async function () {
+      const inheritanceState = runtime.createInheritanceState();
+
+      expect(inheritanceState.awaitInheritanceResolution()).to.be(null);
+
+      inheritanceState.beginInheritanceResolution();
+      inheritanceState.beginInheritanceResolution();
+
+      const registrationWait = inheritanceState.awaitInheritanceResolution();
+      expect(registrationWait && typeof registrationWait.then).to.be('function');
+
+      let settled = false;
+      registrationWait.then(() => {
+        settled = true;
+      });
+
+      inheritanceState.finishInheritanceResolution();
+      await Promise.resolve();
+      expect(settled).to.be(false);
+
+      inheritanceState.finishInheritanceResolution();
+      await registrationWait;
+
+      expect(settled).to.be(true);
+      expect(inheritanceState.awaitInheritanceResolution()).to.be(null);
+    });
+
+    it('should remove inheritance-resolution bookkeeping from Context', function () {
+      if (!Context) {
+        this.skip();
+        return;
+      }
+
+      expect(Context.prototype.beginInheritanceResolution).to.be(undefined);
+      expect(Context.prototype.awaitInheritanceResolution).to.be(undefined);
+      expect(Context.prototype.finishInheritanceResolution).to.be(undefined);
+    });
+
+    it('should compile dynamic extends against the inheritanceState runtime lifecycle surface', function () {
+      const source = new AsyncTemplate(
+        '{% if useParent %}{% extends parent %}{% endif %}{% block body %}x{% endblock %}',
+        env,
+        'dynamic-child.njk'
+      )._compileSource();
+
+      expect(source).to.contain('runtime.beginInheritanceResolution(inheritanceState);');
+      expect(source).to.contain('runtime.finishInheritanceResolution(inheritanceState);');
+      expect(source).to.contain('runtime.bridgeDynamicParentTemplate(inheritanceState,');
+      expect(source).to.contain('runtime.renderDynamicTopLevelBlock(');
     });
   });
 });

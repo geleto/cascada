@@ -104,6 +104,9 @@ function bootstrapInheritanceMetadata(inheritanceState, methods, sharedSchema, o
     return;
   }
 
+  // Compiled output still passes ownerKey directly to this helper; keep the
+  // argument for runtime ABI stability even though registration no longer needs
+  // it here.
   const compiledMethods = methods && typeof methods === 'object' ? methods : null;
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
 
@@ -112,7 +115,7 @@ function bootstrapInheritanceMetadata(inheritanceState, methods, sharedSchema, o
   }
 
   if (schema.length > 0) {
-    inheritanceState.registerSharedSchema(schema, ownerKey == null ? null : ownerKey);
+    inheritanceState.registerSharedSchema(schema);
     ensureSharedSchemaChannels(schema, currentBuffer, context);
   }
 }
@@ -141,34 +144,34 @@ function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
   }
 }
 
-function beginInheritanceResolution(context) {
-  if (context && typeof context.beginInheritanceResolution === 'function') {
-    context.beginInheritanceResolution();
+function beginInheritanceResolution(inheritanceState) {
+  if (inheritanceState && typeof inheritanceState.beginInheritanceResolution === 'function') {
+    inheritanceState.beginInheritanceResolution();
   }
 }
 
-function awaitInheritanceResolution(context) {
-  return context && typeof context.awaitInheritanceResolution === 'function'
-    ? context.awaitInheritanceResolution()
+function awaitInheritanceResolution(inheritanceState) {
+  return inheritanceState && typeof inheritanceState.awaitInheritanceResolution === 'function'
+    ? inheritanceState.awaitInheritanceResolution()
     : null;
 }
 
-function deferUntilInheritanceResolution(context, value) {
-  const registrationWait = awaitInheritanceResolution(context);
+function deferUntilInheritanceResolution(inheritanceState, value) {
+  const registrationWait = awaitInheritanceResolution(inheritanceState);
   if (!registrationWait || typeof registrationWait.then !== 'function') {
     return value;
   }
   return registrationWait.then(() => value);
 }
 
-function finishInheritanceResolution(context) {
-  if (context && typeof context.finishInheritanceResolution === 'function') {
-    context.finishInheritanceResolution();
+function finishInheritanceResolution(inheritanceState) {
+  if (inheritanceState && typeof inheritanceState.finishInheritanceResolution === 'function') {
+    inheritanceState.finishInheritanceResolution();
   }
 }
 
-function getRegisteredAsyncBlock(context, name) {
-  const registrationWait = awaitInheritanceResolution(context);
+function getRegisteredAsyncBlock(inheritanceState, context, name) {
+  const registrationWait = awaitInheritanceResolution(inheritanceState);
   if (registrationWait && typeof registrationWait.then === 'function') {
     return registrationWait.then(() => context.getBlock(name));
   }
@@ -178,9 +181,9 @@ function getRegisteredAsyncBlock(context, name) {
 // Explicit dynamic-extends bridge: the parent template may resolve inside an
 // async child boundary, but top-level block/parent startup must only observe it
 // after the current inheritance registration wave has settled.
-function bridgeDynamicParentTemplate(context, parentTemplateValue) {
+function bridgeDynamicParentTemplate(inheritanceState, parentTemplateValue) {
   return Promise.resolve(parentTemplateValue).then((resolvedParentTemplate) =>
-    deferUntilInheritanceResolution(context, resolvedParentTemplate)
+    deferUntilInheritanceResolution(inheritanceState, resolvedParentTemplate)
   );
 }
 
@@ -189,7 +192,7 @@ function renderDynamicTopLevelBlock(name, context, currentBuffer, env, runtime, 
     if (parentTemplate) {
       return '';
     }
-    return getRegisteredAsyncBlock(context, name).then((blockFunc) =>
+    return getRegisteredAsyncBlock(inheritanceState, context, name).then((blockFunc) =>
       blockFunc(
         env,
         context,

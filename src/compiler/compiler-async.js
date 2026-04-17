@@ -1048,7 +1048,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileExtends(node) {
-    this.inheritance.compileAsyncExtends(node);
+    this.extendsCompiler.compileAsyncExtends(node);
   }
 
   analyzeInclude(node) {
