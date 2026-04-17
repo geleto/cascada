@@ -1434,7 +1434,8 @@ current implementation that means 12A may end with a smaller compatibility
 surface still alive for unresolved inherited/shared lookup; 12B is responsible
 for deleting that last seam once the admission command exists.
 
-Step 12A was not landed before Step 12 closed. Carried forward to **Step 13F**.
+Step 12A is landed: `asyncExtendsBlocksPromise` and all its companion bridge
+reads have been removed in the staged changes.
 
 ### Step 12B - Collapse the admission surface
 
@@ -1521,7 +1522,11 @@ Work:
 12C builds on 12B's single admission command; do not attempt before 12B
 lands.
 
-Step 12C was not landed before Step 12 closed. Carried forward to **Step 13F**.
+Step 12C is landed: the dual-shape wrapper helpers (`_unwrapAdmissionValue`,
+`_awaitMethodAdmissionResult`, etc.) have been removed. The
+`InheritanceAdmissionCommand` object carries `.promise` and `.completion`
+directly; constructor admission callers use those fields without a synthetic
+wrapper.
 
 ### Step 12D - Unify script/template codegen and collapse the root-body branches
 
@@ -1797,6 +1802,45 @@ Do not reopen Step 12 for these. Anything here either trims the remaining
 adapter seam further without changing behavior, or replaces that seam with a
 new architecture under an explicit new step.
 
+### Target ownership map
+
+The goal for the end of Step 13 Track A is one clear ownership contract per
+module:
+
+- **`compiler-extends.js`** — owns all extends codegen (static and dynamic),
+  constructor-entry emission, root-body emission, and root finalization shapes
+- **`inheritance.js`** — owns shared composition helpers only (template
+  loading, include, import, fromimport, block, super, extern); no method that
+  only delegates to `compileExtends`
+- **`inheritance-bootstrap.js`** — owns bootstrap and registration bridging;
+  the only place where `InheritanceState` timing meets `Context` block storage
+- **`inheritance-call.js`** — owns admission/dispatch; one public surface per
+  operation (inherited, super, constructor, component method)
+- **`inheritance-state.js`** — owns inheritance data (methods, shared schema,
+  channel types) **and** registration timing
+- **`Context`** — owns block stacks and super/block lookup only; no
+  inheritance-registration bookkeeping
+
+This map is the success criterion for the entire Track A. Each substep
+should move code in the direction of this map, not away from it.
+
+### Compiled-output stability rule
+
+Do not rename or re-signature any `runtime.*` helper that compiled output
+calls directly without an explicit two-phase plan:
+
+1. add the new name/signature while keeping the old one
+2. update the compiler to emit the new form
+3. confirm compiled-template tests pass
+4. remove the old name/signature
+
+The helpers most at risk are those in `inheritance-bootstrap.js` and
+`inheritance-call.js` that compiled output reaches through the `runtime`
+object. Changing their parameter order or type constitutes a breaking change
+for any pre-compiled template and requires at least a compatibility shim until
+all callers are regenerated. Mark any such planned change explicitly in the
+substep description before landing it.
+
 Land Step 13 in two tracks:
 
 - **Track A --- safe Option B cleanup.** Keep the current dynamic-extends
@@ -1812,9 +1856,18 @@ Start by auditing whether any part of it is now only historical layering rather
 than a real behavior boundary.
 
 - inventory every remaining read/write of `__parentTemplate`
-- confirm whether compiler-owned root-completion lookup is still the narrowest
-  correct owner, or whether a single runtime helper can own that lookup without
-  reintroducing dual-shape completion or hidden timing changes
+- split `startParentConstructor` in `src/runtime/inheritance-call.js` on its
+  behavioral boundary: the `hasDynamicExtends` branch at the top does
+  structurally different things — the static path bootstraps metadata, ensures
+  shared links, and admits a constructor entry; the dynamic path calls
+  `rootRenderFunc` in composition mode and extracts a buffer finish promise.
+  Note that `hasDynamicExtends` is a property of the *parent* template object
+  resolved at runtime, not a compile-time constant of the child; the compiler
+  cannot make this split. The correct approach is to keep one public
+  `startParentConstructor` (preserving the "runtime owns parent-constructor
+  startup" boundary) and split into two private helpers internally:
+  `_startStaticParentConstructor` and `_startDynamicParentConstructor`, with
+  the public function dispatching based on `parentTemplate.hasDynamicExtends`
 - remove stale comments, names, and helper boundaries that still describe the
   pre-Step-12 bridge model
 - keep the dynamic parent handoff explicit; do not spread new reads/writes of
@@ -1824,26 +1877,48 @@ Success for 13A is not "eliminate `__parentTemplate` at all costs." Success is
 that the seam is either reduced further or documented as the minimal stable
 Option B boundary.
 
-### Step 13B - Tighten inheritance-resolution ownership
+### Step 13B - Move inheritance-resolution lifecycle to `InheritanceState`
 
 Step 12 centralized inheritance-resolution waits behind runtime helpers, but
-the underlying bookkeeping still lives on `Context`. Step 13 should evaluate
-whether that is now the correct long-term ownership boundary or merely an
-intermediate hosting location.
+the underlying bookkeeping (`inheritanceResolutionPromise`,
+`inheritanceResolutionPendingCount`, `inheritanceResolutionResolver`) still
+lives on `Context`. That is the wrong long-term home: `Context` is a general
+execution context, not an inheritance registry. `InheritanceState` already owns
+methods, shared schema, and channel types; the registration lifecycle belongs
+there too. `InheritanceState` is only non-null when inheritance is active,
+which is exactly when the lifecycle is needed.
 
-- review `beginInheritanceResolution`, `finishInheritanceResolution`,
-  `awaitInheritanceResolution`, and registered-block lookup as one lifecycle
-- decide whether the lifecycle should stay as `Context` primitives wrapped by
-  runtime helpers, or move behind a more explicit inheritance-state/registration
-  owner
-- if the ownership stays on `Context`, simplify naming and comments so it reads
-  as a deliberate inheritance-registration surface rather than legacy async
-  extends bookkeeping
-- if the ownership moves, preserve the same temporal guarantees: no inherited
-  block/method/shared lookup may observe partially registered ancestry
+Work:
 
-This step is about ownership clarity, not behavior change. Do not split the
-registration lifecycle across multiple owners again.
+- move `beginInheritanceResolution`, `finishInheritanceResolution`,
+  `awaitInheritanceResolution`, and the pending-count bookkeeping from `Context`
+  into `InheritanceState`
+- update the `inheritance-bootstrap.js` wrapper functions to accept
+  `inheritanceState` instead of `context`; **this is a compiled-output
+  compatibility break**: the compiler currently emits
+  `runtime.beginInheritanceResolution(context)` (see `compiler-extends.js`);
+  changing the wrapper signature requires the four-phase plan from the
+  "Compiled-output stability rule" above — add the new `inheritanceState`
+  signature alongside the old one, update the compiler to emit the new form,
+  verify compiled-template tests pass, then remove the `context` overload
+- null-guard the bootstrap wrappers on `inheritanceState` the same way they
+  currently null-guard on `context`
+- remove the three `inheritanceResolution*` properties from `Context` once no
+  caller reads them there
+- preserve the same temporal guarantees: no inherited block/method/shared lookup
+  may observe partially registered ancestry
+
+Ownership boundary after this step:
+
+- **`InheritanceState`** owns timing: `beginInheritanceResolution`,
+  `finishInheritanceResolution`, `awaitInheritanceResolution`, and the
+  pending-count bookkeeping
+- **`Context`** owns block stacks and super/block lookup; no
+  inheritance-registration bookkeeping remains on it
+- **`inheritance-bootstrap.js`** is the only join point where `InheritanceState`
+  timing meets `Context` block storage; keep it that way
+
+This is a behavior-preserving ownership transfer.
 
 ### Step 13C - Finish the broad-file cleanup pass
 
@@ -1853,12 +1928,28 @@ the broad compiler/runtime facades.
 
 - re-audit `src/compiler/compiler-async.js`,
   `src/compiler/compiler-base-async.js`, `src/compiler/inheritance.js`,
-  `src/runtime/runtime.js`, and `src/runtime/call.js`
+  `src/compiler/compiler-component.js`, `src/runtime/runtime.js`, and
+  `src/runtime/call.js`
 - remove thin delegates, comments, and helper branches that no longer carry a
   distinct non-extends role
 - keep one-way ownership: broad facades may export the extends-specific helpers,
   but extends-specific modules must remain the semantic owners
 - prefer deleting dead wrapper shape over inventing a new abstraction layer
+- `compiler-component.js` calls `this.compiler.inheritance.*` for three shared
+  utilities (`_compileAsyncGetTemplateOrScript`, `_emitExplicitExternInputs`,
+  `_emitValueImportBinding`); these are acceptable cross-calls to genuinely
+  shared helpers, not extends-specific violations; confirm no extends-specific
+  helpers have leaked in
+- remove the dead `ownerKey` parameter from
+  `InheritanceState.registerSharedSchema`: the parameter is accepted but never
+  stored, and the comment acknowledging this ("keep for visibility") is itself
+  evidence the parameter serves no purpose; remove it from the method signature
+  and from the call site in `inheritance-bootstrap.js`
+- document that manual `indent` string threading (`const indent = opts.indent || ''`)
+  is the accepted pattern for generated-code indentation control in
+  `compiler-extends.js`; six methods already use it consistently; record this
+  decision explicitly (e.g., a one-line comment at the top of the file) so
+  future methods do not introduce an inconsistent approach
 
 This is the right place for any final "why is this still here?" cleanup we find
 after the Step 12 landing.
@@ -1902,50 +1993,36 @@ them before landing them:
 Do not rebuild a mixed "misc cleanup" bucket. Keep the distinction between
 safe cleanup and architectural change explicit.
 
-### Step 13F — Carry forward: admission bridge, surface collapse, dual-shape retirement
+### Sub-step ordering for 13F–13K
 
-Steps 12A, 12B (admission-surface collapse beyond command materialization), and
-12C were not landed before Step 12 closed. Land them in the same order as
-originally planned — bridge first, collapse second, dual-shape third — so each
-substep builds a stable base for the next.
+- **13F** (admission collapse) should land before **13G** (root-body cleanup)
+  for a cleaner runtime base; **13G** then sets a stable constructor-entry
+  shape for **13I** (options bag)
+- **13H** (compiler class ownership) can land in any order relative to the
+  runtime chain; coordinate with **13G** if the extends dispatch boundary in
+  `inheritance.js` moves at the same time
+- **13J** (`ComponentCommand`) and **13K** (settlement tracking) are fully
+  independent of each other and of the compiler chain; **13K** depends on
+  Step 12C which is already done, so it can proceed immediately
+- **13F** and **13K** touch the same command fast path: 13F collapses the
+  admission helper dispatcher and 13K removes redundant settlement tracking
+  from `InheritanceAdmissionCommand`; evaluate them together to avoid
+  optimizing a structure that 13K is about to simplify
 
-**13F1 — Remove `asyncExtendsBlocksPromise` bridge (Step 12A)**
+### Step 13F — Collapse the admission helper family (Step 12B, remaining)
 
-Follow the Step 12A work specification:
-
-- collapse compiler and runtime reads of the bridge to one explicit
-  compatibility seam per owner; only then remove the seam itself
-- remove compiler-side static-constructor completion reads; those now flow
-  through invocation-buffer completion only
-- delete `_admitKnownMethodWithTrackedCompletion` if any caller still depends
-  on it
-- leave any unresolved dynamic-extends bridge slice for 13A/13J rather than
-  half-removing the bridge and stranding the dynamic path between two
-  half-models
-
-**13F2 — Collapse the admission helper family (Step 12B, remaining)**
+Steps 12A and 12C are landed. The one remaining item from Step 12B is the
+internal dispatcher structure in `src/runtime/inheritance-call.js`.
 
 `InheritanceAdmissionCommand` is already materialized. The remaining collapse:
 
 - merge `_admitKnownMethodCommand`, `_admitDeferredMethodCommand`, and
   `_admitMethodCommand` into one internal function: one calling convention,
   two internal paths (known vs deferred), no dispatcher layer above them
-- delete `callWrap`/`callWrapAsync` compatibility aliases in `call.js` if any
-  survive
+- delete any remaining `callWrap`/`callWrapAsync` compatibility aliases in
+  `call.js`
 - perf sanity-check: known-method fast path must not regress; run the extends
   microbench or add one if it does not exist
-
-**13F3 — Retire `{ value, completion }` dual shape (Step 12C)**
-
-- fold completion tracking onto `InheritanceAdmissionCommand.completion` as a
-  first-class command field; constructor admission callers use the command
-  object directly rather than a `{ value, completion }` wrapper
-- remove `_unwrapAdmissionValue`, `_awaitMethodAdmissionResult`,
-  `_createSettledMethodAdmission`, and `_createMethodCompletion` once no
-  caller needs them
-- add explicit regression coverage for constructor completion timing — the
-  scenarios the dual shape guarded (value-ready vs child-buffer-finished) must
-  still hold on the collapsed contract
 
 ### Step 13G — Carry forward: collapse root-body branching (Step 12D, remaining)
 
@@ -1964,36 +2041,44 @@ landed in Step 12D. The remaining work:
 ### Step 13H — Resolve compiler class cross-ownership
 
 `CompileExtends` (`compiler-extends.js`) and `CompileInheritance`
-(`inheritance.js`) call into each other for extends-related helpers:
+(`inheritance.js`) call into each other across their ownership boundary:
 
-- `compiler-extends.js` calls `this.compiler.inheritance._emitExtendsContextSetup()`
-  and `this.compiler.inheritance._compileAsyncGetTemplateOrScript()` — both
-  are extends-path helpers living in the wrong class
-- `inheritance.js` calls `this.compiler.extendsCompiler.emitDynamicTopLevelBlockResolution()`
-  and `this.compiler.extendsCompiler.compileAsyncDynamicTemplateExtends()` —
-  both reached across the class boundary from a non-extends dispatch site
+- `compiler-extends.js` calls
+  `this.compiler.inheritance._emitExtendsContextSetup()` — an extends-specific
+  helper in the wrong class. It also calls
+  `this.compiler.inheritance._compileAsyncGetTemplateOrScript()`, which is a
+  **shared** template-loading utility used by include, import, fromimport, and
+  component paths as well; that call is acceptable and stays.
+- `inheritance.js:compileAsyncExtends` is a one-liner that immediately
+  delegates to `this.compiler.extendsCompiler.compileAsyncDynamicTemplateExtends()`
+  — making `CompileInheritance` a pass-through dispatcher for `CompileExtends`
+  rather than an owner.
 
-Neither class is the authority for the extends path. This is the structural
-consequence of Step 11D landing the move without settling shared-helper
-ownership.
+`CompileComponent` (`compiler-component.js`) also calls
+`this.compiler.inheritance._compileAsyncGetTemplateOrScript`,
+`_emitExplicitExternInputs`, and `_emitValueImportBinding`. Those are genuinely
+shared utilities; those calls are acceptable and do not need to change.
 
 Work:
 
-- move `_emitExtendsContextSetup` and `_compileAsyncGetTemplateOrScript` from
-  `CompileInheritance` into `CompileExtends`; update all call sites in
-  `compiler-extends.js` to use `this.*` directly
-- `CompileInheritance` retains only non-extends template composition: include,
-  import, fromimport, block, super, extern helpers
-- the two reverse calls from `inheritance.js` into `extendsCompiler`
-  (`emitDynamicTopLevelBlockResolution`, `compileAsyncDynamicTemplateExtends`)
-  should move to caller-side sites in `compiler-extends.js` or the dispatch
-  site in `compiler-async.js` that triggers them; evaluate after Step 13G
-  lands whether the dynamic-extends boundary in `inheritance.js` can be
-  eliminated entirely
+- move `_emitExtendsContextSetup` and its private helper
+  `_emitImmediateExternInputs` from `CompileInheritance` into `CompileExtends`;
+  `_emitImmediateExternInputs` is only called from `_emitExtendsContextSetup`
+  and is extends-specific; update the call sites in `compiler-extends.js` to
+  use `this.*` directly
+- move `compileAsyncExtends` from `CompileInheritance` into `CompileExtends`
+  and update `compiler-async.js` to call `this.extendsCompiler.compileAsyncExtends`
+  instead of `this.inheritance.compileAsyncExtends`; this eliminates the
+  reverse delegation and makes `CompileExtends` the single public entry point
+  for all extends dispatch
+- `CompileInheritance` retains: template loading, include, import, fromimport,
+  block, super, extern helpers — none of which are extends-specific
 
 **Success criterion:** no method on `CompileExtends` calls
-`this.compiler.inheritance.*` for an extends-specific helper, and no method
-on `CompileInheritance` calls `this.compiler.extendsCompiler.*`.
+`this.compiler.inheritance.*` for an extends-**specific** helper (calls to
+genuinely shared utilities such as `_compileAsyncGetTemplateOrScript` are
+permitted), and `CompileInheritance` contains no method that delegates
+immediately to `extendsCompiler` without doing any work of its own.
 
 ### Step 13I — Replace `_compileAsyncConstructorEntry` options bag with explicit functions
 
@@ -2010,41 +2095,24 @@ Work:
 - identify the shared body (~25 lines: `_withRootExportBufferScope` wrapper,
   sequence-lock declarations, extern initialization, pre/post-extends child
   split loop, outcome emission)
-- delete `_compileAsyncConstructorEntry`; copy those shared lines into each
-  concrete function directly
-- if the pre/post-extends loop logic is byte-for-byte identical, extract it as
-  one small private utility with no callback arguments; otherwise duplicate
-  and keep each path readable in isolation
-- no function callbacks in the resulting concrete functions
+- delete `_compileAsyncConstructorEntry`; move the shared body into a small
+  private scaffold utility that accepts **plain data arguments** — no callbacks,
+  no options bag; the scaffold produces the structural frame (buffer scope,
+  locks, extern init) and the two callers fill in what varies inline around it
+- if any fragment of the shared body varies between the two callers only by a
+  single scalar value (e.g., a flag or a string), pass that value as a plain
+  argument to the scaffold; do not use a callback to inject behavior that is
+  really just a data difference
+- if a fragment genuinely performs different operations in each path (not just
+  different data), keep it inline in each concrete function rather than trying
+  to abstract it
+- the resulting concrete entry functions are linear: one reads top to bottom
+  without jumping through an options bag or a base implementation
 
 **Success criterion:** `_compileAsyncConstructorEntry` no longer exists. Each
 concrete entry function is a linear function with no callback arguments.
 
-### Step 13J — Split `startParentConstructor` on its behavioral boundary
-
-`startParentConstructor` in `src/runtime/inheritance-call.js` branches at the
-top on `parentTemplate.hasDynamicExtends`. The two branches do structurally
-different things:
-
-- **static path:** bootstrap metadata, ensure shared links, admit constructor
-  entry
-- **dynamic path:** call `rootRenderFunc` in composition mode, extract buffer
-  finish promise
-
-The compiler already knows which path to take at compile time. The runtime
-function should not branch on a compile-time decision.
-
-Work:
-
-- split into `_startStaticParentConstructor` and
-  `_startDynamicParentConstructor` (or equivalent names expressing the intent)
-- update the compiler call sites so each emits a call to the appropriate
-  function directly
-- if `startParentConstructor` is a public runtime surface referenced by
-  compiled output, keep the name as a thin dispatch shell until compiled output
-  is regenerated; the shell itself is then trivial and documents the split
-
-### Step 13K — Make `ComponentCommand` extend `Command`
+### Step 13J — Make `ComponentCommand` extend `Command`
 
 `ComponentCommand` in `src/runtime/component.js` manually manages its own
 promise lifecycle (`this.promise = new Promise(...)`, `this.resolve`,
@@ -2062,11 +2130,10 @@ Work:
 - `ComponentOperationCommand extends ComponentCommand` inherits through; verify
   it does not re-add manual promise plumbing
 
-### Step 13L — Remove redundant settlement tracking in `InheritanceAdmissionCommand`
+### Step 13K — Remove redundant settlement tracking in `InheritanceAdmissionCommand`
 
-This step depends on **13F3** (dual-shape retirement). Once no caller forces a
-synchronous settled-value shortcut, the five internal settlement fields can be
-removed.
+Step 12C is done: callers access `.promise` and `.completion` directly on the
+command object. This step can proceed now.
 
 `_applyStarted`, `_applyPromise`, `_settled`, `_settledRejected`,
 `_settledValue`, and `getValueResult()` exist to return a synchronous value
@@ -2078,8 +2145,17 @@ Work:
 
 - remove `_settled`, `_settledRejected`, `_settledValue`, and
   `getValueResult()` from `InheritanceAdmissionCommand`
-- callers that previously used `getValueResult()` switch to `this.promise`
-  (already resolved at that point; settles on the next microtask)
+- migrate the two known `getValueResult()` call sites before removing the
+  method:
+  - `src/runtime/component.js` line ~201: `ComponentInstance.callMethod` uses
+    `admission.getValueResult()` — switch to `admission.promise`
+  - `src/runtime/inheritance-call.js` line ~444: the inner dispatcher uses
+    `getValueResult()` — switch to `admission.promise`
+  - verify no other caller exists (`grep -r getValueResult src/`) before
+    deleting the method
+- callers that switch to `.promise` get the already-resolved value on the next
+  microtask; this is acceptable because these call sites are already inside
+  async callbacks
 - evaluate whether `_applyStarted` / `_applyPromise` are still needed for
   idempotent `apply()` protection, or whether the `Command` base class already
   guards this; remove what is not needed
@@ -2090,54 +2166,26 @@ Work:
 ### Step 13 Tests
 
 - rerun focused inheritance/component/template suites after each sub-step
-- add targeted regression coverage for any ownership move in inheritance
-  registration bookkeeping
-- if 13A changes the `__parentTemplate` seam, add coverage for dynamic parent
-  resolution, top-level dynamic block dispatch, and constructor completion
-  timing on that seam
-- if 13D is attempted, treat it like a fresh inheritance redesign and rerun the
+- **13A:** if `startParentConstructor` is split, add coverage for both static
+  and dynamic parent constructor startup; verify the thin dispatch shell (if
+  kept) routes correctly to the right implementation
+- **13B:** verify that inherited method, shared-channel, and block lookups
+  cannot fire before registration is complete, using the moved
+  `InheritanceState` lifecycle; the same timing assertions that existed against
+  `Context` must hold after the move
+- **13F:** perf sanity-check for the known-method admission fast path; add a
+  microbench if one does not exist
+- **13D:** if attempted, treat as a fresh inheritance redesign and rerun the
   full Step 7-12 parity coverage before considering the change stable
-- keep `npm run test:quick` green before closing each Step 13 sub-step
-
-### Reuse
-
-- reuse the file layout and ownership boundaries established by Step 11
-- reuse the final user-visible behavior from Steps 7-10
-
-### Replace
-
-- replace the N-variant admission surface with one admission command plus
-  two internal paths
-- replace the `{ value, completion }` paired return type with a single
-  completion promise
-- replace parallel script/template codegen with parameterized helpers
-- replace the dynamic-extends parallel implementation per 12H decision
-
-### Keep
-
-- no new user-facing inheritance behavior
-- no semantic redesign of constructor return, block dispatch, or component
-  lifetime rules
-- test suites from Steps 7-10 must stay green after each sub-step
-
-### Tests
-
-- rerun the focused inheritance/component/template suites from Steps 7-10
-  after each sub-step
-- **12B:** add a targeted test that proves `InheritanceAdmissionCommand`
-  is a real observable command on the shared root (apply/getError
-  contract, buffer-iterator visit), not just an implicit code path
-- **12C:** add explicit regression coverage for constructor completion
-  timing — the scenarios the dual shape guarded (value-ready vs
-  child-buffer-finished) must still hold on the collapsed single-promise
-  contract
-- **12E:** if component command classes merge, add coverage confirming
-  poison propagation, close-on-owner-buffer-complete, and per-call child
-  buffer isolation still hold under the merged shape
-- **12F:** verify block/method analysis produces identical linked-channel
-  emission for script and template paths
-- **12H:** behavior-parity tests for whichever option is chosen
+- if 13A or 13D changes the `__parentTemplate` seam, add coverage for dynamic
+  parent resolution, top-level dynamic block dispatch, and constructor
+  completion timing
 - keep `npm run test:quick` green before closing each sub-step
+- **compiled-output stability assertion:** after any step that touches
+  `inheritance-bootstrap.js` or `inheritance-call.js` runtime helpers, compile
+  a representative extends template, call `template._compileSource()`, and
+  confirm that every `runtime.*` call in the output matches the stable public
+  surface; this catches signature drift before it reaches production
 
 ## Non-Goals
 
