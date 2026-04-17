@@ -1,8 +1,8 @@
 'use strict';
 
 const nodes = require('../nodes');
+const { RETURN_CHANNEL_NAME } = require('../inheritance-constants');
 
-const RETURN_CHANNEL_NAME = '__return__';
 const CALLER_SCHED_CHANNEL_NAME = '__caller__';
 
 class CompileMacro {

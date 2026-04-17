@@ -12,8 +12,10 @@ const { createCommandBuffer, isCommandBuffer } = require('./command-buffer');
 const { declareBufferChannel } = require('./channel');
 const { Command } = require('./commands');
 const inheritanceBootstrap = require('./inheritance-bootstrap');
+const inheritanceConstants = require('../inheritance-constants');
 
 const INHERITANCE_ADMISSION_CHANNEL = '__inheritance_admission__';
+const { RETURN_CHANNEL_NAME } = inheritanceConstants;
 
 function _hasAsyncMethodArgs(args) {
   return Array.isArray(args) && args.some((arg) =>
@@ -95,6 +97,47 @@ function _finishInvocationBuffer(invocationBuffer) {
   }
 }
 
+function _registerPendingAdmissionBarrier(currentBuffer, barrierBuffer) {
+  if (!isCommandBuffer(currentBuffer) || !isCommandBuffer(barrierBuffer)) {
+    return false;
+  }
+  if (typeof currentBuffer.registerPendingSharedAdmissionBarrier !== 'function') {
+    return false;
+  }
+  // While unresolved admission is stalled, newly registered shared lanes must
+  // still pick up this barrier before shared-visible apply continues.
+  currentBuffer.registerPendingSharedAdmissionBarrier(barrierBuffer);
+  return true;
+}
+
+function _unregisterPendingAdmissionBarrier(command) {
+  if (!command || !command._pendingBarrierTopologyWindow) {
+    return;
+  }
+  if (
+    isCommandBuffer(command.currentBuffer) &&
+    isCommandBuffer(command.barrierBuffer) &&
+    typeof command.currentBuffer.unregisterPendingSharedAdmissionBarrier === 'function'
+  ) {
+    command.currentBuffer.unregisterPendingSharedAdmissionBarrier(command.barrierBuffer);
+  }
+  command._pendingBarrierTopologyWindow = false;
+}
+
+function _finishAdmissionBuffers(command) {
+  if (!command) {
+    return;
+  }
+  _unregisterPendingAdmissionBarrier(command);
+  // The invocation child must close before the barrier releases, otherwise the
+  // barrier lane could yield upstream before the admitted body has finished
+  // publishing its writes.
+  _finishInvocationBuffer(command.invocationBuffer);
+  if (command.barrierBuffer && command.barrierBuffer !== command.invocationBuffer) {
+    _finishInvocationBuffer(command.barrierBuffer);
+  }
+}
+
 function _invokeMethodEntry(methodEntry, context, inheritanceState, resolvedArgs, env, runtime, cb, invocationBuffer, errorContext, currentPayload = null, autoFinishInvocationBuffer = true) {
   let result;
   try {
@@ -142,35 +185,106 @@ function _resolveMethodEntryForAdmission(resolveEntry, errorContext) {
   }
 }
 
-function _getDeferredAdmissionLinkedChannels(currentBuffer, inheritanceState) {
-  const admissionChannelNames = new Set();
-  if (isCommandBuffer(currentBuffer) && inheritanceState && typeof inheritanceState.getRegisteredSharedChannelNames === 'function') {
-    inheritanceState.getRegisteredSharedChannelNames().forEach((name) => {
-      if (!name || name === '__return__') {
-        return;
+function _computeBarrierLinkedChannels(currentBuffer, inheritanceState, linkedChannels = null) {
+  const barrierLinkedChannels = new Set();
+  const seedChannels = Array.isArray(linkedChannels)
+    ? linkedChannels
+    : (
+        isCommandBuffer(currentBuffer) &&
+        inheritanceState &&
+        typeof inheritanceState.getRegisteredSharedChannelNames === 'function'
+          ? inheritanceState.getRegisteredSharedChannelNames()
+          : []
+      );
+
+  for (let i = 0; i < seedChannels.length; i++) {
+    const channelName = seedChannels[i];
+    if (!channelName || channelName === RETURN_CHANNEL_NAME) {
+      continue;
+    }
+    if (!Array.isArray(linkedChannels)) {
+      if (typeof currentBuffer.isLinkedChannel === 'function' && currentBuffer.isLinkedChannel(channelName)) {
+        barrierLinkedChannels.add(channelName);
+        continue;
       }
-      if (typeof currentBuffer.isLinkedChannel === 'function' && currentBuffer.isLinkedChannel(name)) {
-        admissionChannelNames.add(name);
-        return;
+      if (!(typeof currentBuffer.getOwnChannel === 'function' && currentBuffer.getOwnChannel(channelName))) {
+        continue;
       }
-      if (typeof currentBuffer.getOwnChannel === 'function' && currentBuffer.getOwnChannel(name)) {
-        admissionChannelNames.add(name);
-      }
-    });
+    }
+    barrierLinkedChannels.add(channelName);
   }
-  return Array.from(admissionChannelNames);
+
+  if (barrierLinkedChannels.size === 0) {
+    barrierLinkedChannels.add(INHERITANCE_ADMISSION_CHANNEL);
+  }
+  return Array.from(barrierLinkedChannels);
 }
 
-function _createAdmissionBuffer(currentBuffer, context, linkedChannels = null) {
+function _ensureAdmissionChannel(buffer, context) {
+  if (!buffer || typeof buffer.getOwnChannel !== 'function') {
+    return;
+  }
+  if (!buffer.getOwnChannel(INHERITANCE_ADMISSION_CHANNEL)) {
+    declareBufferChannel(buffer, INHERITANCE_ADMISSION_CHANNEL, 'var', context, null);
+  }
+}
+
+function _createBarrierBuffer(currentBuffer, context, linkedChannels = null) {
   const parentBuffer = isCommandBuffer(currentBuffer) ? currentBuffer : null;
-  const admissionBuffer = createCommandBuffer(
+  const barrierLinkedChannels = _computeBarrierLinkedChannels(currentBuffer, null, linkedChannels);
+  if (parentBuffer && barrierLinkedChannels.indexOf(INHERITANCE_ADMISSION_CHANNEL) !== -1) {
+    _ensureAdmissionChannel(parentBuffer, parentBuffer._context || context);
+  }
+  // The barrier is the shared-root stall point. It is intentionally separate
+  // from the later invocation buffer on unresolved admission.
+  const barrierBuffer = createCommandBuffer(
     parentBuffer ? (parentBuffer._context || context) : context,
     parentBuffer,
-    Array.isArray(linkedChannels) && linkedChannels.length > 0 ? linkedChannels : null,
+    barrierLinkedChannels,
     parentBuffer
   );
-  declareBufferChannel(admissionBuffer, INHERITANCE_ADMISSION_CHANNEL, 'var', context, null);
-  return admissionBuffer;
+  _ensureAdmissionChannel(barrierBuffer, context);
+  return barrierBuffer;
+}
+
+function _createInvocationBuffer(parentBuffer, context, linkedChannels = null) {
+  const invocationParent = isCommandBuffer(parentBuffer) ? parentBuffer : null;
+  // The invocation buffer runs the admitted body. It shares the same structural
+  // parent pattern as the barrier, but it does not own the admission lane.
+  return createCommandBuffer(
+    invocationParent ? (invocationParent._context || context) : context,
+    invocationParent,
+    Array.isArray(linkedChannels) && linkedChannels.length > 0 ? linkedChannels : null,
+    invocationParent
+  );
+}
+
+function _canAttachBarrierLane(parentBuffer, childBuffer, channelName) {
+  if (!isCommandBuffer(parentBuffer) || !isCommandBuffer(childBuffer) || !channelName) {
+    return false;
+  }
+  const resolvedChannelName = typeof parentBuffer._resolveAliasedChannelName === 'function'
+    ? parentBuffer._resolveAliasedChannelName(channelName)
+    : channelName;
+  if (typeof childBuffer.isLinkedChannel === 'function' && childBuffer.isLinkedChannel(resolvedChannelName)) {
+    return false;
+  }
+  return typeof parentBuffer.canAddChannelBuffer === 'function'
+    ? parentBuffer.canAddChannelBuffer(resolvedChannelName)
+    : false;
+}
+
+function _ensureBufferLinkedChannels(parentBuffer, childBuffer, linkedChannels) {
+  if (!Array.isArray(linkedChannels)) {
+    return;
+  }
+  for (let i = 0; i < linkedChannels.length; i++) {
+    const channelName = linkedChannels[i];
+    if (!_canAttachBarrierLane(parentBuffer, childBuffer, channelName)) {
+      continue;
+    }
+    parentBuffer.addBuffer(childBuffer, channelName);
+  }
 }
 
 // Real observable command for constructor/inherited-method admission.
@@ -192,9 +306,11 @@ class InheritanceAdmissionCommand extends Command {
     env,
     runtime,
     cb,
-    admissionBuffer,
+    barrierBuffer,
+    invocationBuffer,
     errorContext,
-    currentPayload = null
+    currentPayload = null,
+    currentBuffer = null
   }) {
     super({ withDeferredResult: true });
     this.isObservable = true;
@@ -206,17 +322,24 @@ class InheritanceAdmissionCommand extends Command {
     this.env = env;
     this.runtime = runtime;
     this.cb = cb;
-    this.admissionBuffer = admissionBuffer;
+    this.barrierBuffer = barrierBuffer;
+    this.invocationBuffer = invocationBuffer;
+    this.currentBuffer = currentBuffer;
     this.errorContext = errorContext || { lineno: 0, colno: 0, errorContextString: null, path: null };
     this.currentPayload = currentPayload;
-    this.completion = admissionBuffer && typeof admissionBuffer.getFinishCompletePromise === 'function'
-      ? admissionBuffer.getFinishCompletePromise()
+    // On the deferred path the invocation buffer does not exist yet. Because it
+    // is later created as a child of the barrier, the barrier's finish-complete
+    // promise still covers the full lifecycle from stall through admitted body.
+    const completionBuffer = this.barrierBuffer;
+    this.completion = completionBuffer && typeof completionBuffer.getFinishCompletePromise === 'function'
+      ? completionBuffer.getFinishCompletePromise()
       : Promise.resolve();
     if (this.completion && typeof this.completion.catch === 'function') {
       this.completion.catch(() => {});
     }
     this._applyStarted = false;
     this._applyPromise = null;
+    this._pendingBarrierTopologyWindow = false;
   }
 
   getError() {
@@ -235,7 +358,7 @@ class InheritanceAdmissionCommand extends Command {
     try {
       const poisonedArgs = _mergePoisonedArgs(this.arguments);
       if (poisonedArgs && !_hasAsyncMethodArgs(this.arguments)) {
-        _finishInvocationBuffer(this.admissionBuffer);
+        _finishAdmissionBuffers(this);
         this.resolveResult(poisonedArgs);
         this._applyPromise = this.promise;
         return poisonedArgs;
@@ -260,7 +383,7 @@ class InheritanceAdmissionCommand extends Command {
 
   _invokeResolvedMethodEntry(methodEntry) {
     if (isPoison(methodEntry)) {
-      _finishInvocationBuffer(this.admissionBuffer);
+      _finishAdmissionBuffers(this);
       this.resolveResult(methodEntry);
       this._applyPromise = this.promise;
       return methodEntry;
@@ -268,13 +391,14 @@ class InheritanceAdmissionCommand extends Command {
 
     const argCountError = _validateMethodArgCount(methodEntry, this.arguments, this.name, this.errorContext);
     if (argCountError) {
-      _finishInvocationBuffer(this.admissionBuffer);
+      _finishAdmissionBuffers(this);
       this.resolveResult(argCountError);
       this._applyPromise = this.promise;
       return argCountError;
     }
 
     try {
+      const invocationBuffer = this._ensureInvocationBuffer(methodEntry);
       const result = _invokeMethodEntry(
         methodEntry,
         this.context,
@@ -283,13 +407,15 @@ class InheritanceAdmissionCommand extends Command {
         this.env,
         this.runtime,
         this.cb,
-        this.admissionBuffer,
+        invocationBuffer,
         this.errorContext,
-        this.currentPayload
+        this.currentPayload,
+        false
       );
       if (result && typeof result.then === 'function') {
         this._applyPromise = result.then(
           (value) => {
+            _finishAdmissionBuffers(this);
             this.resolveResult(value);
             return value;
           },
@@ -297,6 +423,7 @@ class InheritanceAdmissionCommand extends Command {
         );
         return this._applyPromise;
       }
+      _finishAdmissionBuffers(this);
       this.resolveResult(result);
       this._applyPromise = this.promise;
       return result;
@@ -305,8 +432,26 @@ class InheritanceAdmissionCommand extends Command {
     }
   }
 
+  _ensureInvocationBuffer(methodEntry) {
+    if (this.invocationBuffer) {
+      return this.invocationBuffer;
+    }
+
+    _unregisterPendingAdmissionBarrier(this);
+    const exactLinkedChannels = Array.isArray(methodEntry && methodEntry.linkedChannels)
+      ? methodEntry.linkedChannels
+      : [];
+    _ensureBufferLinkedChannels(this.currentBuffer, this.barrierBuffer, exactLinkedChannels);
+    this.invocationBuffer = _createInvocationBuffer(
+      this.barrierBuffer,
+      this.context,
+      exactLinkedChannels
+    );
+    return this.invocationBuffer;
+  }
+
   _rejectAndRethrow(err) {
-    _finishInvocationBuffer(this.admissionBuffer);
+    _finishAdmissionBuffers(this);
     this._applyPromise = this._applyPromise || this.promise;
     this.rejectResult(err);
     throw err;
@@ -314,7 +459,10 @@ class InheritanceAdmissionCommand extends Command {
 }
 
 function _enqueueAdmissionCommand(command) {
-  command.admissionBuffer.add(command, INHERITANCE_ADMISSION_CHANNEL);
+  if (!command || !command.barrierBuffer) {
+    throw new Error('InheritanceAdmissionCommand requires a barrier buffer');
+  }
+  command.barrierBuffer.add(command, INHERITANCE_ADMISSION_CHANNEL);
   return command;
 }
 
@@ -333,14 +481,15 @@ function _admitMethodCommand({
   currentPayload = null
 }) {
   const knownMethod = !!immediateMethodEntry;
-  const admissionBuffer = _createAdmissionBuffer(
+  const barrierBuffer = _createBarrierBuffer(
     currentBuffer,
     context,
     knownMethod
       ? immediateMethodEntry && immediateMethodEntry.linkedChannels
-      : _getDeferredAdmissionLinkedChannels(currentBuffer, inheritanceState)
+      : _computeBarrierLinkedChannels(currentBuffer, inheritanceState)
   );
-  return _enqueueAdmissionCommand(new InheritanceAdmissionCommand({
+  const invocationBuffer = knownMethod ? barrierBuffer : null;
+  const admissionCommand = new InheritanceAdmissionCommand({
     name,
     resolveMethodEntry: knownMethod ? () => immediateMethodEntry : resolveMethodEntry,
     args,
@@ -349,10 +498,16 @@ function _admitMethodCommand({
     env,
     runtime,
     cb,
-    admissionBuffer,
+    barrierBuffer,
+    invocationBuffer,
     errorContext,
-    currentPayload
-  }));
+    currentPayload,
+    currentBuffer
+  });
+  if (!knownMethod) {
+    admissionCommand._pendingBarrierTopologyWindow = _registerPendingAdmissionBarrier(currentBuffer, barrierBuffer);
+  }
+  return _enqueueAdmissionCommand(admissionCommand);
 }
 
 function admitInheritedMethod(context, inheritanceState, name, args, env, runtime, cb, currentBuffer, errorContext) {

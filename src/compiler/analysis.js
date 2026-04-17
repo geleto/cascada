@@ -1,6 +1,7 @@
 'use strict';
 
 const nodes = require('../nodes');
+const { RETURN_CHANNEL_NAME } = require('../inheritance-constants');
 
 /**
  * Channel analysis pre-pass.
@@ -743,7 +744,7 @@ class CompileAnalysis {
 
     usedChannels.forEach((name) => {
       if (!name ||
-        name === '__return__' ||
+        name === RETURN_CHANNEL_NAME ||
         excludedNames.has(name)) {
         return;
       }

@@ -2273,6 +2273,11 @@ Work:
   installation can still occur **outside** the
   `beginInheritanceResolution(...)` / `finishInheritanceResolution(...)`
   window that unresolved admission already waits through
+- audit structural async-boundary registration paths as well: if a stalled
+  parent registration callback is running in a child buffer whose lexical
+  `parent` is `null`, shared-root routing must still follow the structural
+  linked-parent path back to the real hierarchy shared root rather than
+  materializing new shared lanes on the transient boundary buffer
 - ensure the runtime does not extend shared-root topology after dependent
   shared-visible apply has already been allowed to continue
 - if the implementation currently depends on a broader "best available links
@@ -2287,6 +2292,24 @@ Once 14A-14C land:
 - if any detail of the current `extends-next.md` wording is stronger than the
   behavior we can safely preserve, tighten the wording explicitly rather than
   leaving an accidental gap
+
+### Step 14E - Narrow post-parity cleanup
+
+After 14A-14D land, Step 14 may absorb only the cleanup that is now clearly
+made redundant by the exact-link-after-load model. Keep this narrow and
+architecture-driven:
+
+- remove dead lookup-time dynamic channel linking support now that shared-root
+  stall-and-link and exact-link-after-load admission are the required model
+- delete the disabled feature-flag branch and helper state used only by that
+  lookup-time dynamic linking path
+- rename inheritance-admission helpers only where the old name still suggests
+  the pre-Step-14 "best available unresolved linkage" model; prefer names that
+  reflect today's barrier-seeding role
+- do **not** widen Step 14 into generic command-buffer API renames,
+  readability-only extraction, or a broader ownership redesign
+- do **not** remove late barrier/topology extension itself; only remove the
+  superseded approximation paths around it
 
 ### Step 14 Tests
 
@@ -2314,6 +2337,13 @@ Once 14A-14C land:
 - add a topology-window **integration** regression test proving newly
   discovered shared lanes are linked during the stalled admission window,
   before dependent shared-visible apply continues, and not later
+- keep at least one **integration** regression on the parent-constructor /
+  component-startup path where a shared lane discovered during startup must
+  still link back through a structural linked-parent boundary before a later
+  exported/shared-visible observation reads it
+- if 14E lands, rerun the relevant lookup/inheritance/component suites to prove
+  that removing dead dynamic-linking code did not change read ordering or
+  shared-root visibility behavior
 - unit-level probes are allowed as debugging aids, but they are not sufficient
   to close Step 14 on their own
 - keep these Step 14 regression tests as permanent guards; Step 15 and Step 16
@@ -2337,6 +2367,8 @@ Step 15 is the explicit follow-up pass for that problem:
 - preserve the current Option B / Option A split
 - assume Step 14's exact-link-after-load admission contract is already landed
   and do not reopen it here
+- treat Step 14E's removal of dead lookup-time dynamic channel linking as
+  closed; Step 15 should not reintroduce or re-evaluate that fallback model
 - reduce structural/orchestration complexity until the code reads like the
   architecture we intended
 
@@ -2357,6 +2389,9 @@ Success for Step 15 means:
   orchestration hub
 - `inheritance-call.js` owns inherited admission/dispatch only; it does not
   also own parent-startup orchestration
+- parent-startup/composition entry points use explicit parameters or explicit
+  dedicated functions rather than a generic options bag that hides the real
+  startup choices
 - `InheritanceState` presents method registry, shared-channel registry, and
   registration-resolution lifecycle as explicit subdomains rather than one
   mixed bag of fields/methods
@@ -2445,6 +2480,9 @@ Work:
   `inheritance-call.js`
 - the target owner is either `inheritance-bootstrap.js` or a new dedicated
   runtime module such as `inheritance-startup.js`
+- while doing that move, remove the generic startup `options` bag if it still
+  only carries `awaitCompletion`; prefer either explicit startup functions or a
+  plain boolean parameter whose meaning is obvious at the call site
 - after the move, `inheritance-call.js` should own only:
   - admission buffer creation
   - `InheritanceAdmissionCommand`
@@ -2484,6 +2522,8 @@ Work:
   through clearly separated private helper objects/sections, but the
   separation must be visible in the code structure, not just implied by method
   names
+- if call sites become clearer by using nested/domain-qualified names directly,
+  prefer that over preserving a flatter facade purely for historical shape
 - do not combine this with a behavior redesign; this is a presentation and
   maintainability refactor
 
@@ -2513,6 +2553,9 @@ Work:
 - if the best implementation is "one plain object assembled once and threaded
   through startup," prefer that over re-deriving the same related views in
   multiple helpers
+- cover both parent-startup and composition/bootstrap handoff with that same
+  explicit payload terminology so a reader can trace "which context is this?"
+  without re-deriving it from local variable names
 - do not collapse intentionally distinct views into one merged bag if that
   would hide semantics
 
@@ -2526,6 +2569,8 @@ one explicit answer rather than several inferred ones.
 - keep the Step 14 unresolved-admission parity tests in place; any Step 15
   refactor that touches admission/linking or startup boundaries must continue
   to satisfy them unchanged
+- keep the Step 14E assumption in force: no Step 15 refactor should
+  reintroduce lookup-time dynamic channel linking as a fallback behavior
 - for 15A and 15B, compile representative script and template extends inputs
   and inspect `_compileSource()` output to confirm the emitted root shapes are
   still behaviorally identical

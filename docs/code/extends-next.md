@@ -89,6 +89,9 @@ Parent methods do not need to be present yet. They register later when the
 relevant parent file finishes loading. Parent shared schema also registers at
 that time, and any newly discovered shared-root lanes are created only while
 shared-root progress is stalled behind the corresponding inheritance admission.
+When that registration runs inside a structural async child buffer, shared-root
+routing must still follow the structural linked-parent path back to the real
+hierarchy shared root; it must not stop at the transient boundary buffer.
 
 Both direct render and component instantiation use this same local bootstrap
 shape.
@@ -437,6 +440,10 @@ This model avoids:
 
 The only allowed topology extension is inside that stalled side-channel apply
 window, before any dependent shared-visible application is allowed to continue.
+That includes stalled registration/loading work that is currently executing
+inside a structural async child buffer: any newly discovered shared lanes must
+still be materialized and linked onto the real shared root, not onto the
+transient boundary buffer that happened to perform the registration callback.
 
 ## Return Semantics
 
@@ -506,9 +513,15 @@ After constructor startup:
 
 Method calls:
 
-- `ns.method(args)` immediately creates one child buffer under the component
-  shared root
-- the method is called immediately from side-channel `apply()`
+- `ns.method(args)` immediately admits one component-side operation at the
+  caller-visible source position
+- if the target method entry is already current, side-channel `apply()`
+  immediately creates the per-call child buffer with that method's exact static
+  links and starts the call
+- if the target method still depends on ancestry that has not loaded yet,
+  side-channel `apply()` becomes the shared-root stall point, waits for
+  registration/topology updates, and only then creates/links the per-call child
+  buffer and starts the call
 - method-local declarations and temporary outputs live in that per-call child
   buffer
 

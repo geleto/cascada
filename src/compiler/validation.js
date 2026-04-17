@@ -1,6 +1,8 @@
 'use strict';
 
-const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', '__return__', '__constructor__']);
+const { RETURN_CHANNEL_NAME } = require('../inheritance-constants');
+
+const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', RETURN_CHANNEL_NAME, '__constructor__']);
 const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
 
 /**

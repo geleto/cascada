@@ -135,11 +135,15 @@ function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
     // Shared-link installation follows the same hierarchy boundary as shared
     // declarations: component/shared roots do not leak their lanes upward into
     // the caller buffer tree.
-    while (cursor && cursor.parent && !cursor._sharedRootBoundary) {
-      if (!(typeof cursor.isLinkedChannel === 'function' && cursor.isLinkedChannel(entry.name))) {
-        cursor.parent.addBuffer(cursor, entry.name);
+    while (cursor && !cursor._sharedRootBoundary) {
+      const nextBuffer = output.getSharedHierarchyParentBuffer(cursor);
+      if (!nextBuffer) {
+        break;
       }
-      cursor = cursor.parent;
+      if (!(typeof cursor.isLinkedChannel === 'function' && cursor.isLinkedChannel(entry.name))) {
+        nextBuffer.addBuffer(cursor, entry.name);
+      }
+      cursor = nextBuffer;
     }
   }
 }

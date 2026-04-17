@@ -92,6 +92,7 @@ class CommandBuffer {
   constructor(context, parent = null) {
     this._context = context;
     this.parent = parent;
+    this._linkedParent = null;
     this.finished = false;
     this._finishedChannels = Object.create(null);
     // Per-channel close requests. A requested channel may finish immediately if
@@ -114,6 +115,10 @@ class CommandBuffer {
     this._finishStartedSignal = null;
     this._finishedPromise = null;
     this._finishedResolver = null;
+    // Step 14 admission barriers may temporarily register here so newly
+    // discovered shared lanes attach to the stalled barrier before the lane
+    // auto-finishes during shared-root teardown.
+    this._pendingSharedAdmissionBarriers = null;
 
     // Iterators currently visiting this buffer keyed by channel name.
     // Multiple iterators may legitimately traverse the same lane at once:
@@ -138,6 +143,7 @@ class CommandBuffer {
     }
     this._channels.set(resolvedChannelName, channel);
     this._ownedChannels[resolvedChannelName] = channel;
+    this._linkPendingSharedAdmissionBarriers(resolvedChannelName);
     this._finishKnownChannelIfRequested(resolvedChannelName);
 
     const iterator = ensureChannelIterator(channel);
@@ -217,6 +223,37 @@ class CommandBuffer {
     }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     return this._finishedChannels[resolvedChannelName] === true;
+  }
+
+  canAddChannelBuffer(channelName) {
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    if (!resolvedChannelName || this.finished) {
+      return false;
+    }
+    if (this._finishAllChannelsRequested) {
+      return false;
+    }
+    return this._finishRequestedChannels[resolvedChannelName] !== true;
+  }
+
+  registerPendingSharedAdmissionBarrier(barrierBuffer) {
+    if (!isCommandBuffer(barrierBuffer) || barrierBuffer.finished) {
+      return;
+    }
+    if (!this._pendingSharedAdmissionBarriers) {
+      this._pendingSharedAdmissionBarriers = new Set();
+    }
+    this._pendingSharedAdmissionBarriers.add(barrierBuffer);
+  }
+
+  unregisterPendingSharedAdmissionBarrier(barrierBuffer) {
+    if (!this._pendingSharedAdmissionBarriers || !isCommandBuffer(barrierBuffer)) {
+      return;
+    }
+    this._pendingSharedAdmissionBarriers.delete(barrierBuffer);
+    if (this._pendingSharedAdmissionBarriers.size === 0) {
+      this._pendingSharedAdmissionBarriers = null;
+    }
   }
 
   onEnterBuffer(iterator, channelName) {
@@ -694,6 +731,7 @@ class CommandBuffer {
     }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     this._linkedChannels[resolvedChannelName] = true;
+    this._linkPendingSharedAdmissionBarriers(resolvedChannelName);
     this._finishKnownChannelIfRequested(resolvedChannelName);
   }
 
@@ -711,6 +749,25 @@ class CommandBuffer {
     }
     if (this._finishAllChannelsRequested || this._finishRequestedChannels[channelName]) {
       this._markChannelFinished(channelName);
+    }
+  }
+
+  _linkPendingSharedAdmissionBarriers(channelName) {
+    if (!channelName || !this._pendingSharedAdmissionBarriers || this._pendingSharedAdmissionBarriers.size === 0) {
+      return;
+    }
+
+    for (const barrierBuffer of this._pendingSharedAdmissionBarriers) {
+      if (!isCommandBuffer(barrierBuffer) || barrierBuffer.finished) {
+        continue;
+      }
+      if (typeof barrierBuffer.isLinkedChannel === 'function' && barrierBuffer.isLinkedChannel(channelName)) {
+        continue;
+      }
+      // Keep the stalled admission barrier present on any shared lane that is
+      // discovered during the resolution window, before dependent apply can
+      // observe that lane.
+      this.addBuffer(barrierBuffer, channelName);
     }
   }
 }
@@ -732,6 +789,7 @@ function ensureChannelIterator(channel) {
 function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null) {
   const buffer = new CommandBuffer(context, parent);
   const linkTarget = linkedParent || parent;
+  buffer._linkedParent = linkTarget || null;
   if (linkTarget && Array.isArray(linkedChannels)) {
     for (let i = 0; i < linkedChannels.length; i++) {
       linkTarget.addBuffer(buffer, linkedChannels[i]);

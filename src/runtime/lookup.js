@@ -9,7 +9,6 @@ const {
   RuntimePromise,
   collectErrors,
 } = require('./errors');
-const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 
 const {
   resolveDuo
@@ -260,12 +259,6 @@ function channelLookup(name, currentBuffer) {
   const ownerInAncestry = isBufferInAncestry(currentBuffer, channel._buffer);
   if (ownerInAncestry &&
     isChannelLinkedThroughAncestry(currentBuffer, channel._buffer, name)) {
-    // Optional dynamic mode: lazily link current read buffer into the channel lane.
-    // This is intentionally flag-guarded so structural prelinking remains the default model,
-    // but dynamic compositions can opt in without changing compiler wiring.
-    if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
-      ensureReadChannelLink(currentBuffer, channel, name);
-    }
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
   if (ownerInAncestry && !channelAllowsCrossTemplateRead(channel)) {
@@ -349,21 +342,6 @@ function channelAllowsCrossTemplateRead(channel) {
     typeof channel.allowsCrossTemplateRead === 'function' &&
     channel.allowsCrossTemplateRead()
   );
-}
-
-// Dynamically links the current read buffer into the target channel lane once.
-// This is used only when LOOKUP_DYNAMIC_CHANNEL_LINKING is enabled.
-function ensureReadChannelLink(currentBuffer, channel, channelName) {
-  if (channel._buffer === currentBuffer) {
-    return;
-  }
-  const parent = currentBuffer.parent;
-  currentBuffer._readChannelLinks = currentBuffer._readChannelLinks || Object.create(null);
-  if (currentBuffer._readChannelLinks[channelName]) {
-    return;
-  }
-  parent.addBuffer(currentBuffer, channelName);
-  currentBuffer._readChannelLinks[channelName] = true;
 }
 
 // Returns true when `ancestor` is on the parent chain of `buffer`.

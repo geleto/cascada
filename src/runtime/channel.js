@@ -885,6 +885,13 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
+function getSharedHierarchyParentBuffer(buffer) {
+  if (!buffer || buffer._sharedRootBoundary) {
+    return null;
+  }
+  return buffer.parent || buffer._linkedParent || null;
+}
+
 function declareSharedBufferChannel(buffer, channelName, channelType, context, initializer = null) {
   if (!buffer) {
     throw new Error(`Shared channel "${channelName}" declared without an active CommandBuffer`);
@@ -901,8 +908,12 @@ function declareSharedBufferChannel(buffer, channelName, channelType, context, i
   // Namespace/shared-root boundaries terminate the upward walk here so
   // component instances keep their own shared root instead of reusing the
   // caller's hierarchy root.
-  while (rootBuffer && rootBuffer.parent && !rootBuffer._sharedRootBoundary) {
-    rootBuffer = rootBuffer.parent;
+  while (rootBuffer && !rootBuffer._sharedRootBoundary) {
+    const nextBuffer = getSharedHierarchyParentBuffer(rootBuffer);
+    if (!nextBuffer) {
+      break;
+    }
+    rootBuffer = nextBuffer;
   }
 
   const rootInitializer = channelType === 'var' && initializer === null
@@ -940,7 +951,8 @@ module.exports = {
   SequenceChannel,
   createSequenceChannel,
   declareBufferChannel,
-  declareSharedBufferChannel
+  declareSharedBufferChannel,
+  getSharedHierarchyParentBuffer
 };
 
 

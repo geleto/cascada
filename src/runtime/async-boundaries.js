@@ -6,6 +6,9 @@ const buffer = require('./command-buffer');
 function _createChildBoundary(parentBuffer, usedChannels, isolatedContext = null) {
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
+  // Structural async boundaries are linked into the parent's lanes without
+  // becoming lexical children. That is why `parent` stays null here while
+  // `linkedParent` points back to the real shared/root ancestry owner.
   const childBuffer = buffer.createCommandBuffer(bufferContext, null, linkedChannels, parentBuffer || null);
   return { childBuffer };
 }

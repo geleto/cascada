@@ -8,8 +8,7 @@ const {
 const CompilerBaseAsync = require('./compiler-base-async');
 const CompileBuffer = require('./buffer');
 const CompileExtends = require('./compiler-extends');
-
-const RETURN_CHANNEL_NAME = '__return__';
+const { RETURN_CHANNEL_NAME } = require('../inheritance-constants');
 
 class CompilerAsync extends CompilerBaseAsync {
   init(templateName, options) {
@@ -1180,8 +1179,8 @@ class CompilerAsync extends CompilerBaseAsync {
     // "jump to some other buffer" APIs encourages non-current-buffer access in
     // places where Cascada's temporal ordering guarantees rely on staying local.
     this.emit.line(`let ${rootExportBufferVar} = ${this.buffer.currentBuffer};`);
-    this.emit.line(`while (${rootExportBufferVar} && ${rootExportBufferVar}.parent) {`);
-    this.emit.line(`  ${rootExportBufferVar} = ${rootExportBufferVar}.parent;`);
+    this.emit.line(`while (${rootExportBufferVar} && !${rootExportBufferVar}._sharedRootBoundary && (${rootExportBufferVar}.parent || ${rootExportBufferVar}._linkedParent)) {`);
+    this.emit.line(`  ${rootExportBufferVar} = ${rootExportBufferVar}.parent || ${rootExportBufferVar}._linkedParent;`);
     this.emit.line('}');
     return rootExportBufferVar;
   }

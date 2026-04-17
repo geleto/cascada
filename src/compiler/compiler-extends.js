@@ -4,8 +4,7 @@ const nodes = require('../nodes');
 const inheritanceConstants = require('../inheritance-constants');
 const CompileBuffer = require('./buffer');
 
-const RETURN_CHANNEL_NAME = '__return__';
-const { DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME } = inheritanceConstants;
+const { DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME, RETURN_CHANNEL_NAME } = inheritanceConstants;
 
 // Generated-code indentation in this file is controlled by explicit `indent`
 // string threading. Keep new helpers on that pattern for consistency.

@@ -4,6 +4,7 @@ let expect;
 let AsyncEnvironment;
 let StringLoader;
 let runtimeModule;
+let InheritanceState;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -11,11 +12,13 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = environment.AsyncEnvironment;
   StringLoader = require('../util').StringLoader;
   runtimeModule = require('../../src/runtime/runtime');
+  InheritanceState = require('../../src/runtime/inheritance-state').InheritanceState;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   StringLoader = window.util.StringLoader;
   runtimeModule = nunjucks.runtime;
+  InheritanceState = null;
 }
 
 describe('Component Method Calls', function () {
@@ -235,5 +238,160 @@ describe('Component Method Calls', function () {
     expect(outcome.type).to.be('error');
     expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
     expect(outcome.error.message).to.contain('fatal component arg');
+  });
+
+  describe('Step 14B', function () {
+    it('should defer unresolved component invocation-buffer creation until the target method entry is current', async function () {
+      if (!InheritanceState) {
+        this.skip();
+        return;
+      }
+
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      const events = [];
+      const originalRegisterCompiledMethods = InheritanceState.prototype.registerCompiledMethods;
+      const originalEnsureInvocationBuffer = runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+      let buildInvocationCreatedAt = -1;
+
+      runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+        if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
+          buildInvocationCreatedAt = events.length;
+          events.push({ type: 'build-invocation-buffer-created' });
+        }
+        return originalEnsureInvocationBuffer.apply(this, arguments);
+      };
+
+      InheritanceState.prototype.registerCompiledMethods = function(methods) {
+        if (methods && methods.build && methods.build.ownerKey === 'A.script') {
+          events.push({ type: 'parent-build-registered' });
+        }
+        return originalRegisterCompiledMethods.apply(this, arguments);
+      };
+
+      loader.addTemplate('A.script', [
+        'method build()',
+        '  return "done"',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'extends "A.script"'
+      ].join('\n'));
+      loader.addTemplate('Main.script', [
+        'import "C.script" as ns',
+        'return ns.build()'
+      ].join('\n'));
+
+      try {
+        const result = await env.renderScript('Main.script', {});
+
+        expect(result).to.be('done');
+        const parentRegisteredAt = events.findIndex((event) => event.type === 'parent-build-registered');
+        expect(parentRegisteredAt).to.be.greaterThan(-1);
+        expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
+      } finally {
+        InheritanceState.prototype.registerCompiledMethods = originalRegisterCompiledMethods;
+        runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+      }
+    });
+
+    it('should create unresolved component invocation buffers with the resolved method entry linkedChannels', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      let seenLinkedChannels = null;
+      const originalEnsureInvocationBuffer = runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+
+      runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+        const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
+        if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
+          seenLinkedChannels = {
+            methodLinkedChannels: Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : [],
+            late: invocationBuffer.isLinkedChannel('late'),
+            trace: invocationBuffer.isLinkedChannel('trace')
+          };
+        }
+        return invocationBuffer;
+      };
+
+      loader.addTemplate('A.script', [
+        'shared text trace',
+        'shared var late = "parent-default"',
+        'method build()',
+        '  trace("method|")',
+        '  late = "from-parent"',
+        '  return "done"',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'shared text trace',
+        'extends "A.script"'
+      ].join('\n'));
+      loader.addTemplate('Main.script', [
+        'import "C.script" as ns',
+        'return ns.build()'
+      ].join('\n'));
+
+      try {
+        const result = await env.renderScript('Main.script', {});
+        expect(result).to.be('done');
+        expect(seenLinkedChannels).to.be.ok();
+        expect(seenLinkedChannels.methodLinkedChannels).to.contain('trace');
+        expect(seenLinkedChannels.methodLinkedChannels).to.contain('late');
+        expect(seenLinkedChannels.trace).to.be(true);
+        expect(seenLinkedChannels.late).to.be(true);
+      } finally {
+        runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+      }
+    });
+
+  });
+
+  describe('Step 14C', function () {
+    it('should link newly discovered component shared lanes before later shared-visible observation continues', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      env.addGlobal('waitAndGet', (value, ms) => new Promise((resolve) => setTimeout(() => resolve(value), ms)));
+
+      loader.addTemplate('A.script', [
+        'shared var late = "parent-default"',
+        'method build()',
+        '  late = waitAndGet("from-parent", 10)',
+        '  return "done"',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'extends "A.script"'
+      ].join('\n'));
+      loader.addTemplate('Main.script', [
+        'import "C.script" as ns',
+        'var result = ns.build()',
+        'var lateValue = ns.late',
+        'return [result, lateValue]'
+      ].join('\n'));
+
+      const result = await env.renderScript('Main.script', {});
+      expect(result).to.eql(['done', 'from-parent']);
+    });
+
+    it('should link parent-constructor shared lanes through structural boundaries before exported observation', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', [
+        'shared var late = "parent-default"',
+        'late = "from-parent-ctor"'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'extends "A.script"'
+      ].join('\n'));
+      loader.addTemplate('Main.script', [
+        'import "C.script" as ns',
+        'return ns.late'
+      ].join('\n'));
+
+      const result = await env.renderScript('Main.script', {});
+      expect(result).to.be('from-parent-ctor');
+    });
   });
 });
