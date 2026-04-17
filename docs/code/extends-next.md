@@ -131,12 +131,15 @@ as Step 13 rather than appended back onto Step 12:
 
 - Step 13A-13C: safe Option B cleanup on the explicit seam and remaining
   ownership residue
-- Step 13D: explicit Option A redesign if we choose to replace the adapter seam
-  with late-resolved static extends
-- Step 14: architecture-readability cleanup after Step 13 closes behavior work;
-  preserve the Step 13 contract, but reorganize compiler/runtime/state code so
-  root startup, parent startup, admission/dispatch, and composition payload
-  handoff each have a small, obvious owner
+- Step 14: architecture-parity omissions after Step 13 closes; preserve the
+  current Option B behavior contract, but land the missing exact-link-after-load
+  side-channel admission guarantee from this architecture
+- Step 15: architecture-readability cleanup after Step 14 restores parity;
+  reorganize compiler/runtime/state code so root startup, parent startup,
+  admission/dispatch, and composition payload handoff each have a small,
+  obvious owner
+- Step 16 optional: explicit Option A redesign if we choose to replace the
+  adapter seam with late-resolved static extends
 
 Step 11 should begin with an explicit inventory pass before moving code:
 confirm which helpers belong to compiler bootstrap/completion ownership, which

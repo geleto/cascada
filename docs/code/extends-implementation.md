@@ -1970,44 +1970,18 @@ the broad compiler/runtime facades.
 This is the right place for any final "why is this still here?" cleanup we find
 after the Step 12 landing.
 
-### Step 13D - Option A redesign decision and landing plan
+### Step 13D / 13E Status
 
-If we want a bigger simplification than Track A can provide, treat it as a new
-architectural change rather than incremental cleanup.
+Step 13D and 13E are no longer active execution targets inside Step 13.
 
-Option A means dynamic extends stops being a separate compile/runtime shape and
-becomes "late-resolved static extends":
+- the old **13D** Option A redesign is moved to **Step 16** so it no longer
+  sits before mandatory architecture-parity and readability work
+- the old **13E** cleanup bucket is split by intent:
+  - non-redesign cleanup now belongs in **Step 15**
+  - redesign-adjacent contract cleanup belongs in **Step 16** or a later
+    dedicated redesign step
 
-- when the parent template resolves, runtime registers the parent into the same
-  inheritance admission path used by static extends
-- dynamic parent constructor startup uses the same admission lifecycle as static
-  extends
-- top-level block dispatch no longer depends on a separate dynamic adapter seam
-
-This is the largest remaining simplification opportunity, but it carries real
-risk:
-
-- root-completion timing may shift
-- inherited lookup timing may shift
-- constructor/block dispatch interactions must still respect Cascada temporal
-  concurrency guarantees
-
-Do not land 13D as a hidden cleanup. Treat it as a design choice with explicit
-behavior-parity verification.
-
-### Step 13E - Contract cleanup discovered during 13A-13D
-
-If new cleanup opportunities appear while working the steps above, classify
-them before landing them:
-
-- if the change preserves the current Option B behavior contract and only
-  reduces seam complexity, it belongs in 13A-13C
-- if the change alters the dynamic-extends execution model, inheritance
-  admission timing, or root-completion timing, it belongs in 13D or a later
-  dedicated step
-
-Do not rebuild a mixed "misc cleanup" bucket. Keep the distinction between
-safe cleanup and architectural change explicit.
+Do not reopen Step 13 by appending redesign or mixed cleanup work back onto it.
 
 ### Sub-step ordering for 13F–13K
 
@@ -2048,7 +2022,7 @@ landed in Step 12D. The remaining work:
 - collapse the remaining branches in `_compileAsyncRootBody` around one
   explicit "dynamic-parent handoff" guard versus one normal
   constructor-admission path; only the dynamic-parent guard stays conditional
-  until Step 13D/Option A
+  until Step 16/Option A
 - unify root finalization by end state (`return value`, `return text`,
   `return current buffer`) rather than by script-vs-template branching; each
   surviving emitter helper should correspond to one of those end states, not
@@ -2191,11 +2165,6 @@ Work:
   `Context` must hold after the move
 - **13F:** perf sanity-check for the known-method admission fast path; add a
   microbench if one does not exist
-- **13D:** if attempted, treat as a fresh inheritance redesign and rerun the
-  full Step 7-12 parity coverage before considering the change stable
-- if 13A or 13D changes the `__parentTemplate` seam, add coverage for dynamic
-  parent resolution, top-level dynamic block dispatch, and constructor
-  completion timing
 - keep `npm run test:quick` green before closing each sub-step
 - **compiled-output stability assertion:** after any step that touches
   `inheritance-bootstrap.js` or `inheritance-call.js` runtime helpers, compile
@@ -2203,17 +2172,154 @@ Work:
   confirm that every `runtime.*` call in the output matches the stable public
   surface; this catches signature drift before it reaches production
 
-## Step 14 - Architecture-Readability Cleanup
+## Step 14 - Architecture-Parity Omissions
 
-Step 13 closes the remaining behavioral cleanup that was still in scope after
-Step 12. It does **not** guarantee that the implementation is as readable as
+Step 13 closes the intended post-Step-12 cleanup work, but one important part
+of the base `extends-next.md` architecture is still not fully realized in the
+implementation:
+
+- when inherited/component admission reaches a target that is not loaded yet,
+  shared-root apply must stall
+- load/registration must finish
+- newly discovered metadata/schema/topology updates may occur during that
+  stalled window
+- only once the target metadata is current may runtime create/link the
+  invocation child buffer with **exact static links** and continue
+
+This is not a readability issue and not an Option A redesign. It is a missing
+piece of the current architecture contract. Land it before the readability pass
+so later restructuring operates on the correct behavior model.
+
+### Step 14 Success Criteria
+
+Success for Step 14 means:
+
+- unresolved inherited dispatch does not create/link its invocation child
+  buffer until the target method entry is known
+- unresolved component method dispatch follows that same exact-link-after-load
+  rule
+- any newly discovered shared-root lanes are only linked during the stalled
+  admission window before dependent shared-visible apply continues
+- the implementation now matches the stronger side-channel/stall contract
+  already described in `extends-next.md`
+
+### Step 14A - Exact-link-after-load inherited admission
+
+`extends-next.md` already says that `InheritanceAdmissionCommand` should:
+
+- stall shared-root apply when the target is unavailable
+- wait for the needed load/registration
+- then create the invocation buffer with exact static links
+- then start the call
+
+Current code still creates the admission/invocation buffer before the target
+method entry is fully known and approximates unresolved linkage from currently
+registered shared channels.
+
+Work:
+
+- begin by adding or tightening the regression tests that demonstrate the
+  current omission; the implementation work for 14A should be driven by tests
+  that fail or are unrepresentable before the fix
+- change unresolved inherited admission so the admission barrier may exist
+  immediately, but invocation child-buffer creation/linking does not happen
+  until the target method entry is current
+- once the method entry resolves, use that method's exact `linkedChannels`
+  rather than a best-available unresolved approximation
+- keep the known-method fast path immediate
+- preserve source-order admission and the shared-root apply stall guarantee
+
+### Step 14B - Component parity for exact-link-after-load admission
+
+Component method dispatch currently reuses inherited admission. Once 14A lands,
+components must obey the same contract:
+
+- begin by adding the component-side regression tests that reveal the current
+  gap before changing the runtime shape
+- `ns.method(args)` may admit immediately at the caller-visible position
+- but if the method target depends on ancestry that is not loaded yet, the
+  per-call child buffer must not be created/linked until exact metadata is
+  current
+- component constructor admission and later method admission must keep their
+  current timing distinction
+
+### Step 14C - Shared-root topology update window audit
+
+The architecture is explicit that topology extension is only allowed inside the
+stalled side-channel apply window before dependent shared-visible application
+continues.
+
+Work:
+
+- begin by adding or tightening focused tests that would fail if shared-root
+  topology extension happened after dependent shared-visible apply had already
+  continued
+- audit where shared-schema registration and shared-link installation can occur
+  during unresolved admission
+- ensure the runtime does not extend shared-root topology after dependent
+  shared-visible apply has already been allowed to continue
+- if the implementation currently depends on a broader "best available links
+  now, fix later" shape, remove that behavior
+
+### Step 14D - Doc/implementation parity closure
+
+Once 14A-14C land:
+
+- update the implementation doc to say this side-channel exact-link-after-load
+  contract is now implemented
+- if any detail of the current `extends-next.md` wording is stronger than the
+  behavior we can safely preserve, tighten the wording explicitly rather than
+  leaving an accidental gap
+
+### Step 14 Tests
+
+- Step 14 should start with regression tests that either fail on the pre-Step-14
+  implementation or cannot be expressed without new observability hooks; do not
+  treat the parity fix as complete if the tests only prove the post-fix shape
+- the primary Step 14 regression coverage should be **integration tests**, not
+  isolated unit tests; these omissions are about the end-to-end interaction
+  between compilation, shared-root admission, topology extension, and
+  caller-visible ordering
+- rerun focused extends / inherited-dispatch / component-lifecycle suites after
+  each sub-step
+- add focused **integration** tests for unresolved inherited admission proving:
+  - the admission barrier appears in source order
+  - dependent shared-visible apply does not pass the stalled point
+  - the invocation child buffer is created/linked only after the target method
+    entry is current
+- add at least one **integration** regression test where a later
+  shared-visible command would be wrong if unresolved inherited admission used
+  only currently registered shared lanes instead of the resolved method's exact
+  `linkedChannels`
+- add the equivalent unresolved component-method **integration** coverage,
+  including at least one case where the method's needed shared lane is only
+  known after ancestry registration finishes
+- add a topology-window **integration** regression test proving newly
+  discovered shared lanes are linked during the stalled admission window,
+  before dependent shared-visible apply continues, and not later
+- unit-level probes are allowed as debugging aids, but they are not sufficient
+  to close Step 14 on their own
+- keep these Step 14 regression tests as permanent guards; Step 15 and Step 16
+  work must continue to satisfy them unchanged unless the architecture docs are
+  explicitly revised first
+- keep `npm run test:quick` green before closing each sub-step
+- keep the compiled-output stability assertion from Step 13 in force for any
+  Step 14 sub-step that changes runtime helper signatures or compiler-emitted
+  helper calls
+
+## Step 15 - Architecture-Readability Cleanup
+
+Steps 13 and 14 close the remaining intended behavior/parity work after Step
+12. That still does **not** guarantee that the implementation is as readable as
 the agreed architecture.
 
-Step 14 is the explicit follow-up pass for that problem:
+Step 15 is the explicit follow-up pass for that problem:
 
-- preserve the Step 7-13 behavior contract
+- preserve the Step 7-14 behavior contract
 - preserve Cascada temporal concurrency guarantees
-- preserve the current Option B / Option A split from Step 13
+- preserve the current Option B / Option A split
+- assume Step 14's exact-link-after-load admission contract is already landed
+  and do not reopen it here
 - reduce structural/orchestration complexity until the code reads like the
   architecture we intended
 
@@ -2221,13 +2327,15 @@ This is not a "micro-optimization" step and not a hidden redesign step. The
 goal is to remove or reshape code that is semantically correct but still harder
 to understand than the underlying model.
 
-### Step 14 Success Criteria
+### Step 15 Success Criteria
 
-Success for Step 14 means:
+Success for Step 15 means:
 
 - a developer can explain root startup, parent constructor startup, inherited
   method admission, and component dispatch by reading one small owner module
   for each concern
+- Step 14's side-channel stall / exact-link-after-load behavior remains intact
+  while ownership and readability improve
 - `compiler-extends.js` is no longer a broad "understand the whole file"
   orchestration hub
 - `inheritance-call.js` owns inherited admission/dispatch only; it does not
@@ -2238,7 +2346,7 @@ Success for Step 14 means:
 - root finalization code is organized around a few concrete root forms, not a
   generic mini-framework that saves lines at the cost of readability
 
-### Step 14A - Split `compiler-extends.js` by root family
+### Step 15A - Split `compiler-extends.js` by root family
 
 `src/compiler/compiler-extends.js` still owns too many concepts at once:
 
@@ -2271,7 +2379,7 @@ This step is successful when a developer can open the relevant root-family
 section and understand the whole path top-to-bottom without tracing through a
 large helper lattice.
 
-### Step 14B - Replace generic root-finalization plumbing with explicit root endings
+### Step 15B - Replace generic root-finalization plumbing with explicit root endings
 
 `compiler-extends.js` currently expresses root finalization through a generic
 outcome layer:
@@ -2304,7 +2412,7 @@ Work:
 The success criterion is that a reader no longer has to mentally simulate a
 generic `kind` dispatcher to understand how a given root completes.
 
-### Step 14C - Move parent-startup orchestration out of `inheritance-call.js`
+### Step 15C - Move parent-startup orchestration out of `inheritance-call.js`
 
 `src/runtime/inheritance-call.js` now contains two distinct concerns:
 
@@ -2332,9 +2440,10 @@ Work:
   - parent constructor startup selection
 
 This step is successful when the runtime ownership map is honest: startup is
-owned by startup/bootstrap, and dispatch is owned by dispatch.
+owned by startup/bootstrap, dispatch is owned by dispatch, and the Step 14
+admission/linking contract is preserved.
 
-### Step 14D - Refactor `InheritanceState` into explicit subdomains
+### Step 15D - Refactor `InheritanceState` into explicit subdomains
 
 `src/runtime/inheritance-state.js` is substantially cleaner after Step 13B, but
 it still presents one mixed class for three distinct responsibilities:
@@ -2364,7 +2473,7 @@ Work:
 This step is successful when developers can explain the state model as three
 small domains rather than one class with a mixed field list.
 
-### Step 14E - Introduce one explicit extends-composition payload shape
+### Step 15E - Introduce one explicit extends-composition payload shape
 
 Compiler/runtime/context code currently passes several closely related values
 around extends startup:
@@ -2393,27 +2502,74 @@ Work:
 This step is successful when "what context is being passed here, and why?" has
 one explicit answer rather than several inferred ones.
 
-### Step 14 Tests
+### Step 15 Tests
 
 - rerun focused extends / inherited-dispatch / component-lifecycle suites after
   each sub-step
-- for 14A and 14B, compile representative script and template extends inputs
+- keep the Step 14 unresolved-admission parity tests in place; any Step 15
+  refactor that touches admission/linking or startup boundaries must continue
+  to satisfy them unchanged
+- for 15A and 15B, compile representative script and template extends inputs
   and inspect `_compileSource()` output to confirm the emitted root shapes are
   still behaviorally identical
-- for 14C, add or keep focused coverage that parent constructor startup still
+- for 15C, add or keep focused coverage that parent constructor startup still
   preserves:
   - static vs dynamic startup selection
   - constructor timing
   - shared-link installation timing
   - root-completion timing
-- for 14D, keep the Step 13B registration-wait timing assertions intact while
+- for 15D, keep the Step 13B registration-wait timing assertions intact while
   refactoring the state presentation
-- for 14E, add a focused assertion around `extends ... with ...` and parent
+- for 15E, add a focused assertion around `extends ... with ...` and parent
   composition startup so the named payload shape stays honest
 - keep `npm run test:quick` green before closing each sub-step
 - keep the compiled-output stability assertion from Step 13 in force for any
-  Step 14 sub-step that changes runtime helper signatures or compiler-emitted
+  Step 15 sub-step that changes runtime helper signatures or compiler-emitted
   helper calls
+
+## Step 16 - Optional Option A Redesign
+
+If we want a bigger simplification than the landed Option B path can provide,
+treat it as a new architectural change rather than incremental cleanup.
+
+Option A means dynamic extends stops being a separate compile/runtime shape and
+becomes "late-resolved static extends":
+
+- when the parent template resolves, runtime registers the parent into the same
+  inheritance admission path used by static extends
+- dynamic parent constructor startup uses the same admission lifecycle as static
+  extends
+- top-level block dispatch no longer depends on a separate dynamic adapter seam
+
+Even after Step 14 restores architecture parity and Step 15 improves
+readability, this remains a redesign step and still carries real risk:
+
+- root-completion timing may shift
+- inherited lookup timing may shift
+- constructor/block dispatch interactions must still respect Cascada temporal
+  concurrency guarantees
+
+Do not land Step 16 as hidden cleanup. Treat it as a design choice with
+explicit behavior-parity verification.
+
+### Step 16A - Option A redesign decision and landing plan
+
+Evaluate whether the simplification is worth the execution-model risk. Do not
+attempt this casually just because the surrounding code is cleaner.
+
+### Step 16B - Redesign-adjacent contract cleanup
+
+If cleanup opportunities appear while working Step 16, classify them before
+landing them:
+
+- if the change preserves the current landed behavior contract and only reduces
+  structural complexity, it belongs in Step 15
+- if the change alters the dynamic-extends execution model, inheritance
+  admission timing, or root-completion timing, it belongs in Step 16 or a
+  later dedicated redesign step
+
+Do not rebuild a mixed "misc cleanup" bucket. Keep the distinction between
+cleanup and redesign explicit.
 
 ## Non-Goals
 
