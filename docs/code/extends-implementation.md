@@ -2422,6 +2422,13 @@ Work:
   - static template constructor/root path
   - script constructor/root path
   - inherited-call / block-dispatch emission
+- make the extraction granularity explicit rather than leaving "split by root
+  family" ambiguous:
+  - the dynamic-template-root family should move to its own file because it is
+    already the most self-contained and behaviorally distinct path
+  - the remaining families may begin as clearly bounded sections if that keeps
+    the step smaller, but the section boundaries must be named and intentional
+    rather than one mixed helper lattice
 - shared helpers may stay shared, but only when they remain obviously smaller
   than the concrete path they support
 - if a helper exists mainly to avoid duplicating 5-15 lines of code while
@@ -2478,11 +2485,21 @@ Work:
 
 - move `startParentConstructor` and its static/dynamic branch helpers out of
   `inheritance-call.js`
-- the target owner is either `inheritance-bootstrap.js` or a new dedicated
-  runtime module such as `inheritance-startup.js`
-- while doing that move, remove the generic startup `options` bag if it still
-  only carries `awaitCompletion`; prefer either explicit startup functions or a
-  plain boolean parameter whose meaning is obvious at the call site
+- the target owner is a new dedicated runtime module
+  `src/runtime/inheritance-startup.js`
+- keep `inheritance-bootstrap.js` focused on metadata/schema/shared-link
+  helpers; startup selection belongs to the startup owner that calls those
+  helpers, not to bootstrap itself
+- while doing that move, replace the generic startup `options` bag with one
+  concrete trailing parameter `shouldAwaitCompletion = false`
+- keep the public runtime export name `startParentConstructor` stable unless a
+  later step explicitly changes the compiled-output contract; Step 15C is about
+  ownership and signature cleanup, not about renaming the compiler-emitted
+  helper surface
+- fold in the narrow cleanup that Step 14 made obvious inside
+  `inheritance-call.js`: remove `_invokeMethodEntry(...)`'s dead
+  `autoFinishInvocationBuffer` parameter and its now-vestigial `finally` block
+  so buffer cleanup responsibility lives only in `_finishAdmissionBuffers(...)`
 - after the move, `inheritance-call.js` should own only:
   - admission buffer creation
   - `InheritanceAdmissionCommand`
@@ -2509,6 +2526,11 @@ it still presents one mixed class for three distinct responsibilities:
 
 That increases the cognitive cost of every read because developers must hold
 all three domains in mind at once.
+
+This step should land **after** 15C. The startup-owner extraction should happen
+first so the new `inheritance-startup.js` module is written once against the
+new state presentation rather than landing on the flat API and immediately
+changing again.
 
 Work:
 
@@ -2556,6 +2578,10 @@ Work:
 - cover both parent-startup and composition/bootstrap handoff with that same
   explicit payload terminology so a reader can trace "which context is this?"
   without re-deriving it from local variable names
+- apply that payload terminology to the runtime startup contract as well, not
+  just compiler-local assembly; after 15C the parameter list into
+  `inheritance-startup.js` should express the same named payload shape rather
+  than a long positional argument list with implicit relationships
 - do not collapse intentionally distinct views into one merged bag if that
   would hide semantics
 
@@ -2580,10 +2606,14 @@ one explicit answer rather than several inferred ones.
   - constructor timing
   - shared-link installation timing
   - root-completion timing
+- for 15C, keep a focused regression around inherited admission cleanup so the
+  `_finishAdmissionBuffers(...)`-owns-cleanup model remains explicit after
+  removing `_invokeMethodEntry(...)`'s dead auto-finish path
 - for 15D, keep the Step 13B registration-wait timing assertions intact while
   refactoring the state presentation
 - for 15E, add a focused assertion around `extends ... with ...` and parent
-  composition startup so the named payload shape stays honest
+  composition startup so the named payload shape stays honest on both the
+  compiler side and the runtime startup handoff
 - keep `npm run test:quick` green before closing each sub-step
 - keep the compiled-output stability assertion from Step 13 in force for any
   Step 15 sub-step that changes runtime helper signatures or compiler-emitted
