@@ -29,6 +29,34 @@ Cascada Script is particularly well suited for:
 
 In short, Cascada lets developers **write clear, linear logic** while the engine handles **parallel execution, ordering guarantees, and error propagation** automatically.
 
+**What makes Cascada Script remarkable is how unremarkable it looks.** Despite executing concurrently by default, it uses the same familiar constructs found in Python and JavaScript — no `async`, no `await`, no callbacks, no promise chains. Here's what a real concurrent workflow looks like:
+
+```javascript
+var user  = fetchUser(userId)   // ┐ start immediately,
+var posts = fetchPosts(userId)  // ┘ run in parallel
+
+// evaluates as soon as 'user' resolves — posts may still be fetching
+var role = "admin" if user.isAdmin else "member"
+
+// for loop — every iteration runs concurrently
+data result  // channel: writes are concurrent, output is in source order
+for post in posts
+  var enriched = enrichPost(post)
+  result.posts.push({
+    title:  enriched.title | title,
+    status: "published" if enriched.isLive else "draft"
+  })
+endfor
+
+// ! makes these sequential with each other, without breaking concurrency with the rest
+db!.log("report", userId)
+db!.updateLastSeen(userId)
+
+return { name: user.name, role: role, posts: result.snapshot() }  // snapshot waits for all writes
+```
+
+Every construct above runs exactly as you'd read it — the engine orchestrates all the async concurrency.
+
 ## Read First
 
 **Articles:**
