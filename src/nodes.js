@@ -230,10 +230,10 @@ class TemplateRef extends Node {
 
 class Extends extends TemplateRef {
   get typename() { return 'Extends'; }
-  get fields() { return ['template', 'withContext', 'withVars', 'asyncStoreIn']; }
+  get fields() { return ['template', 'withContext', 'withVars', 'dynamicParentStoreVar']; }
 
-  init(lineno, colno, template, withContext, withVars, asyncStoreIn) {
-    super.init(lineno, colno, template, withContext, withVars || new NodeList(), asyncStoreIn);
+  init(lineno, colno, template, withContext, withVars, dynamicParentStoreVar) {
+    super.init(lineno, colno, template, withContext, withVars || new NodeList(), dynamicParentStoreVar);
   }
 }
 

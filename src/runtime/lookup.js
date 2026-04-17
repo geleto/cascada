@@ -245,7 +245,12 @@ function channelLookup(name, currentBuffer) {
   }
   const currentPath = currentBuffer && currentBuffer._context ? currentBuffer._context.path : null;
   const channelPath = channel && channel._context ? channel._context.path : null;
-  const isCrossTemplateSharedRead = !!(channel._isShared && currentPath && channelPath && channelPath !== currentPath);
+  const isCrossTemplateSharedRead = !!(
+    channelAllowsCrossTemplateRead(channel) &&
+    currentPath &&
+    channelPath &&
+    channelPath !== currentPath
+  );
   if (isBlockedCrossTemplateChannelRead(currentBuffer, channel)) {
     return undefined;
   }
@@ -263,7 +268,7 @@ function channelLookup(name, currentBuffer) {
     }
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
-  if (ownerInAncestry && !channel._isShared) {
+  if (ownerInAncestry && !channelAllowsCrossTemplateRead(channel)) {
     throw new RuntimeFatalError(
       `Channel '${name}' is owned by an ancestor buffer but is not linked through the current buffer ancestry`
     );
@@ -330,12 +335,20 @@ function isBlockedCrossTemplateChannelRead(currentBuffer, channel) {
   if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
     return false;
   }
-  if (channel._isShared) {
+  if (channelAllowsCrossTemplateRead(channel)) {
     return false;
   }
   const currentPath = currentBuffer._context ? currentBuffer._context.path : null;
   const channelPath = channel._context ? channel._context.path : null;
   return !!(currentPath && channelPath !== currentPath);
+}
+
+function channelAllowsCrossTemplateRead(channel) {
+  return !!(
+    channel &&
+    typeof channel.allowsCrossTemplateRead === 'function' &&
+    channel.allowsCrossTemplateRead()
+  );
 }
 
 // Dynamically links the current read buffer into the target channel lane once.

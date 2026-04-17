@@ -117,6 +117,23 @@ responsible for inheritance bootstrap/state setup and one runtime owner is
 responsible for inheritance admission/dispatch, with any remaining
 dynamic-extends compatibility bridge isolated behind one explicit seam rather
 than spread across multiple generic files.
+That explicit seam now includes the async inheritance-registration wait surface:
+compiler-emitted dynamic-extends registration waits should flow through runtime
+inheritance helpers rather than direct `Context` bookkeeping calls from
+multiple compiler/runtime sites.
+Under the current Option B adapter, the remaining compiler-side dynamic seam is
+intentionally narrow: the compiler stores the late parent template on the
+explicit `__parentTemplate` channel and the root-completion path reads that
+channel, while registration waits, top-level dynamic block dispatch, and parent
+constructor startup flow through runtime inheritance helpers.
+Treat that as the closed Step 12 end state. Any further work should be planned
+as Step 13 rather than appended back onto Step 12:
+
+- Step 13A-13C: safe Option B cleanup on the explicit seam and remaining
+  ownership residue
+- Step 13D: explicit Option A redesign if we choose to replace the adapter seam
+  with late-resolved static extends
+
 Step 11 should begin with an explicit inventory pass before moving code:
 confirm which helpers belong to compiler bootstrap/completion ownership, which
 belong to runtime inheritance bootstrap ownership, and which belong to runtime
@@ -271,8 +288,9 @@ analysis pass. For now, constructor linked-channel collection may stay
 separate from ordinary method linked-channel collection because constructor
 compilation still owns top-level flow concerns such as bootstrap-adjacent
 setup, pre/post-`extends` ordering, and constructor-local non-shared channels.
-That unification is cleanup work for Step 11 after constructor semantics have
-settled; it is not part of the current architecture contract.
+That unification is cleanup work for Step 12 after constructor semantics and
+the Step 11 extraction settle; it is not part of the current architecture
+contract.
 
 ## Methods, Overrides, and `super()`
 

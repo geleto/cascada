@@ -159,6 +159,8 @@
           new nodes.Extern(0, 0, [new nodes.Symbol(0, 0, 'a')], new nodes.Symbol(0, 0, 'b')),
           new nodes.Extern(0, 0, [new nodes.Symbol(0, 0, 'b')], new nodes.Symbol(0, 0, 'a'))
         ]);
+        ast.children[0]._analysis = { fallbackDependencies: ['b'] };
+        ast.children[1]._analysis = { fallbackDependencies: ['a'] };
 
         expect(() => compiler._validateRootExternCycles(ast)).to.throwException((err) => {
           expect(err.message).to.contain('extern cycle detected: a -> b -> a');

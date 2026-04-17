@@ -2,6 +2,7 @@
 
 const { validateCallableContractCompatibility } = require('../callable-contract');
 const { RuntimeFatalError } = require('./errors');
+const inheritanceBootstrap = require('./inheritance-bootstrap');
 
 class InheritanceState {
   constructor() {
@@ -62,48 +63,38 @@ class InheritanceState {
     return this._findRegisteredMethodEntry(name, ownerKey);
   }
 
-  resolveInheritedMethodEntry(context, name) {
-    const immediate = this.getImmediateInheritedMethodEntry(name);
+  _resolveWithInheritanceResolution(context, readImmediate, getNotFoundMessage) {
+    const immediate = readImmediate();
     if (immediate) {
       return immediate;
     }
-    if (context && context.asyncExtendsBlocksPromise) {
-      // The legacy extends-block registration promise is still the bridge for
-      // unresolved method lookup here. Step 7 added shared-root admission
-      // stalling, but lookup still waits on this promise until the planned
-      // post-Step-9 cleanup removes the old registration lifecycle entirely
-      // before Step 10 widens static extends to full template behavior.
-      return context.asyncExtendsBlocksPromise.then(() => {
-        const resolved = this.getImmediateInheritedMethodEntry(name);
+    const registrationWait = inheritanceBootstrap.awaitInheritanceResolution(context);
+    if (registrationWait && typeof registrationWait.then === 'function') {
+      return registrationWait.then(() => {
+        const resolved = readImmediate();
         if (resolved) {
           return resolved;
         }
-        throw new RuntimeFatalError(`Inherited method '${name}' was not found in the loaded extends chain`);
+        throw new RuntimeFatalError(getNotFoundMessage());
       });
     }
-    throw new RuntimeFatalError(`Inherited method '${name}' was not found in the loaded extends chain`);
+    throw new RuntimeFatalError(getNotFoundMessage());
+  }
+
+  resolveInheritedMethodEntry(context, name) {
+    return this._resolveWithInheritanceResolution(
+      context,
+      () => this.getImmediateInheritedMethodEntry(name),
+      () => `Inherited method '${name}' was not found in the loaded extends chain`
+    );
   }
 
   resolveSuperMethodEntry(context, name, ownerKey) {
-    const immediate = this.getImmediateSuperMethodEntry(name, ownerKey);
-    if (immediate) {
-      return immediate;
-    }
-    if (context && context.asyncExtendsBlocksPromise) {
-      // The legacy extends-block registration promise is still the bridge for
-      // unresolved super lookup here. Step 7 added shared-root admission
-      // stalling, but lookup still waits on this promise until the planned
-      // post-Step-9 cleanup removes the old registration lifecycle entirely
-      // before Step 10 widens static extends to full template behavior.
-      return context.asyncExtendsBlocksPromise.then(() => {
-        const resolved = this.getImmediateSuperMethodEntry(name, ownerKey);
-        if (resolved) {
-          return resolved;
-        }
-        throw new RuntimeFatalError(`No super method is available for '${name}' after owner '${ownerKey}'`);
-      });
-    }
-    throw new RuntimeFatalError(`No super method is available for '${name}' after owner '${ownerKey}'`);
+    return this._resolveWithInheritanceResolution(
+      context,
+      () => this.getImmediateSuperMethodEntry(name, ownerKey),
+      () => `No super method is available for '${name}' after owner '${ownerKey}'`
+    );
   }
 
   getRegisteredMethodChain(name) {
@@ -139,20 +130,11 @@ class InheritanceState {
   }
 
   resolveSharedChannelType(context, name) {
-    const immediate = this.getImmediateSharedChannelType(name);
-    if (immediate) {
-      return immediate;
-    }
-    if (context && context.asyncExtendsBlocksPromise) {
-      return context.asyncExtendsBlocksPromise.then(() => {
-        const resolved = this.getImmediateSharedChannelType(name);
-        if (resolved) {
-          return resolved;
-        }
-        throw new RuntimeFatalError(`Shared channel '${name}' was not found in the loaded extends chain`);
-      });
-    }
-    throw new RuntimeFatalError(`Shared channel '${name}' was not found in the loaded extends chain`);
+    return this._resolveWithInheritanceResolution(
+      context,
+      () => this.getImmediateSharedChannelType(name),
+      () => `Shared channel '${name}' was not found in the loaded extends chain`
+    );
   }
 }
 

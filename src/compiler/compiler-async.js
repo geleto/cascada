@@ -194,6 +194,21 @@ class CompilerAsync extends CompilerBaseAsync {
     return { declares };
   }
 
+  postAnalyzeExtern(node) {
+    if (!node || !node.value) {
+      return null;
+    }
+
+    const fallbackDependencies = Array.from(
+      new Set(
+        Array.from((node.value._analysis && node.value._analysis.referencedSymbols) || [])
+          .filter(Boolean)
+      )
+    );
+
+    return { fallbackDependencies };
+  }
+
   compileExtern(node) {
     // Root externs are initialized centrally in the async root entry.
     // The declaration node itself does not emit body code.
@@ -936,6 +951,12 @@ class CompilerAsync extends CompilerBaseAsync {
     return { createScope: true, scopeBoundary: false, parentReadOnly: true };
   }
 
+  postAnalyzeBlock(node) {
+    return {
+      localCaptureNames: this._collectBlockLocalCaptureNames(node)
+    };
+  }
+
   compileBlock(node) {
     this.inheritance.compileAsyncBlock(node);
   }
@@ -1021,10 +1042,9 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeExtends(node) {
-    return {
-      uses: ['__parentTemplate'],
-      mutates: ['__parentTemplate']
-    };
+    return this.extendsCompiler.usesDynamicParentTemplateBridge(node)
+      ? this.extendsCompiler.getDynamicExtendsChannelAnalysis()
+      : {};
   }
 
   compileExtends(node) {
@@ -1047,6 +1067,10 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   finalizeAnalyzeRoot(node) {
+    return null;
+  }
+
+  postAnalyzeRoot(node) {
     const externSpec = this._collectRootExternSpec(node);
     this._validateRootExternFallbackOrder(node, externSpec);
     this._validateRootExternCycles(node);
@@ -1071,78 +1095,8 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? undefined : value);`);
   }
 
-  _emitScriptRootLeafResultPromise(node, resultVar) {
-    const returnVar = this._tmpid();
-    this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
-    this.emit.line(`const ${resultVar} = ${returnVar}.then((value) => runtime.normalizeFinalPromise(value));`);
-  }
-
-  _emitStaticScriptExtendsLeafResult(node) {
-    const returnVar = this._tmpid();
-    const finalValueVar = this._tmpid();
-    const completionVar = this._tmpid();
-    this.emitReturnChannelSnapshot(this.buffer.currentBuffer, node, returnVar);
-    this.emit.line(`let ${finalValueVar} = ${returnVar}.then((value) => runtime.normalizeFinalPromise(value));`);
-    this.emit.line(`let ${completionVar} = context.asyncExtendsBlocksPromise ? context.asyncExtendsBlocksPromise.then(() => ${finalValueVar}) : ${finalValueVar};`);
-    this.emit.line(`  ${completionVar}.then((value) => cb(null, value)).catch((err) => cb(err));`);
-  }
-
-  _emitAsyncTemplateRootLeafResultPromise(resultVar) {
-    this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line(`const ${resultVar} = ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
-  }
-
-  _emitStaticScriptExtendsFinalization(node) {
-    this.emit.line('if (!compositionMode) {');
-    this._emitStaticScriptExtendsLeafResult(node);
-    this.emit.line('} else {');
-    this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line('}');
-  }
-
   _getCompiledMethodOwnerKey() {
     return this.templateName == null ? '__anonymous__' : String(this.templateName);
-  }
-
-  _getCompiledMethodLinkedChannels(block) {
-    const declaredBlockInputNames = this._getBlockInputNames(block);
-    return Array.from(block.body._analysis.usedChannels || [])
-      .filter((name) => {
-        if (name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL ||
-          name === RETURN_CHANNEL_NAME ||
-          declaredBlockInputNames.includes(name) ||
-          !name ||
-          name.indexOf('!') === 0) {
-          return false;
-        }
-
-        const declaration = this.analysis.findDeclaration(block.body._analysis, name);
-        // Method invocation buffers should only inherit shared hierarchy lanes.
-        // Non-shared outer vars are constructor/local invocation state and must
-        // not leak into later inherited/component method calls.
-        return !!(declaration && declaration.shared);
-      });
-  }
-
-  _getCompiledConstructorLinkedChannels(node, sharedChannelNames = []) {
-    const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
-    const sharedChannelNameSet = new Set(sharedChannelNames || []);
-    const linkedChannels = new Set(sharedChannelNames || []);
-    if (!this.scriptMode) {
-      linkedChannels.add(CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL);
-    }
-    Array.from(node._analysis.usedChannels || []).forEach((name) => {
-      if (!name ||
-        name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL ||
-        name === RETURN_CHANNEL_NAME ||
-        name.indexOf('!') === 0) {
-        return;
-      }
-      if (!declaredChannels.has(name) || sharedChannelNameSet.has(name)) {
-        linkedChannels.add(name);
-      }
-    });
-    return Array.from(linkedChannels);
   }
 
   _collectCompiledMethods(node, rootSharedChannelNames = []) {
@@ -1158,7 +1112,11 @@ class CompilerAsync extends CompilerBaseAsync {
         withContext: false
       },
       ownerKey,
-      linkedChannels: this._getCompiledConstructorLinkedChannels(node, rootSharedChannelNames)
+      linkedChannels: this.analysis.getLinkedChannels(node, {
+        seedChannels: rootSharedChannelNames,
+        includeDefaultTemplateTextChannel: true,
+        excludeSequentialChannels: true
+      })
     };
 
     blocks.forEach((block) => {
@@ -1179,7 +1137,11 @@ class CompilerAsync extends CompilerBaseAsync {
           withContext: !!block.withContext
         },
         ownerKey,
-        linkedChannels: this._getCompiledMethodLinkedChannels(block)
+        linkedChannels: this.analysis.getLinkedChannels(block.body, {
+          excludeNames: this._getBlockInputNames(block),
+          sharedOnly: true,
+          excludeSequentialChannels: true
+        })
       };
     });
 
@@ -1190,34 +1152,10 @@ class CompilerAsync extends CompilerBaseAsync {
     return !!(compiledMethods && Object.keys(compiledMethods).some((name) => name !== '__constructor__'));
   }
 
-  _emitCompiledMethodsLiteral(compiledMethods, indent = '') {
-    return this.extendsCompiler.emitCompiledMethodsLiteral(compiledMethods, indent);
-  }
-
-  _emitCompiledMethodEntryValue(method) {
-    return this.extendsCompiler.emitCompiledMethodEntryValue(method);
-  }
-
-  _emitRootConstructorAdmission(node, constructorMethod) {
-    return this.extendsCompiler._emitRootConstructorAdmission(node, constructorMethod);
-  }
-
-  _emitRootInheritanceBootstrap(compiledMethods, rootSharedSchema) {
-    return this.extendsCompiler._emitRootInheritanceBootstrap(compiledMethods, rootSharedSchema);
-  }
-
   _needsRootInheritanceState(compiledMethods, rootSharedSchema) {
     const hasCompiledMethods = this._hasUserCompiledMethods(compiledMethods);
     const hasSharedSchema = Array.isArray(rootSharedSchema) && rootSharedSchema.length > 0;
     return hasCompiledMethods || hasSharedSchema || this.hasExtends;
-  }
-
-  _emitAsyncConstructorRootCompletion(node, options = null) {
-    return this.extendsCompiler._emitAsyncConstructorRootCompletion(node, options);
-  }
-
-  _emitInheritanceLocalCaptureSnapshot(node, options = null) {
-    return this.extendsCompiler.emitInheritanceLocalCaptureSnapshot(node, options);
   }
 
   _emitRootSequenceLockDeclarations(node) {
@@ -1258,10 +1196,6 @@ class CompilerAsync extends CompilerBaseAsync {
     }
   }
 
-  _emitAsyncRootCompletion(node) {
-    return this.extendsCompiler.emitAsyncRootCompletion(node);
-  }
-
   _getRootExternNodes(node) {
     return (node.children || []).filter((child) => child instanceof nodes.Extern);
   }
@@ -1272,6 +1206,16 @@ class CompilerAsync extends CompilerBaseAsync {
       required: !externNode.value,
       hasFallback: !!externNode.value
     }));
+  }
+
+  _getExternFallbackDependencies(externNode) {
+    const fallbackDependencies = (externNode && externNode._analysis && externNode._analysis.fallbackDependencies) ||
+      (externNode && externNode.value && externNode.value._analysis && externNode.value._analysis.referencedSymbols) ||
+      [];
+
+    return Array.from(new Set(
+      Array.from(fallbackDependencies).filter(Boolean)
+    ));
   }
 
   _validateRootExternFallbackOrder(node, externSpec) {
@@ -1289,12 +1233,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
       const currentName = externNode.targets[0].value;
       const currentIndex = externIndexByName.get(currentName);
-      const referencedSymbolNodes = (externNode.value instanceof nodes.Symbol)
-        ? [externNode.value]
-        : externNode.value.findAll(nodes.Symbol);
-      const referencedSymbols = referencedSymbolNodes
-        .filter((symbolNode) => !(symbolNode._analysis && symbolNode._analysis.declarationTarget))
-        .map((symbolNode) => symbolNode.value);
+      const referencedSymbols = this._getExternFallbackDependencies(externNode);
 
       referencedSymbols.forEach((name) => {
         if (!externIndexByName.has(name)) {
@@ -1323,12 +1262,7 @@ class CompilerAsync extends CompilerBaseAsync {
         return;
       }
       const currentName = externNode.targets[0].value;
-      const referencedSymbolNodes = (externNode.value instanceof nodes.Symbol)
-        ? [externNode.value]
-        : externNode.value.findAll(nodes.Symbol);
-      const referencedNames = referencedSymbolNodes
-        .filter((symbolNode) => !(symbolNode._analysis && symbolNode._analysis.declarationTarget))
-        .map((symbolNode) => symbolNode.value);
+      const referencedNames = this._getExternFallbackDependencies(externNode);
       externNames.add(currentName);
       dependencyGraph.set(currentName, referencedNames);
     });
@@ -1405,30 +1339,24 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
-  _compileAsyncScriptConstructorEntry(node, sharedChannelNames = [], constructorLinkedChannels = []) {
-    return this.extendsCompiler._compileAsyncScriptConstructorEntry(node, sharedChannelNames, constructorLinkedChannels);
-  }
-
-  _compileAsyncTemplateConstructorEntry(node, constructorLinkedChannels = []) {
-    return this.extendsCompiler._compileAsyncTemplateConstructorEntry(node, constructorLinkedChannels);
-  }
-
-  _compileAsyncRootBody(node, sharedChannelNames = null, compiledMethods = null, rootSharedSchema = null) {
-    return this.extendsCompiler._compileAsyncRootBody(node, sharedChannelNames, compiledMethods, rootSharedSchema);
-  }
-
   _compileAsyncBlockEntry(block) {
     this._withRootExportBufferScope(() => {
       const name = block.name.value;
       const templateKey = JSON.stringify(this.templateName == null ? '__anonymous__' : String(this.templateName));
       const declaredBlockInputNames = this._getBlockInputNames(block);
       const hasExplicitBlockContext = declaredBlockInputNames.length > 0 || !!block.withContext;
-      const localCaptureNames = this._getBlockLocalCaptureNames(block);
-      const blockLinkedChannels = this._getCompiledMethodLinkedChannels(block);
+      const localCaptureNames = Array.isArray(block && block._analysis && block._analysis.localCaptureNames)
+        ? block._analysis.localCaptureNames
+        : [];
+      const blockLinkedChannels = this.analysis.getLinkedChannels(block.body, {
+        excludeNames: declaredBlockInputNames,
+        sharedOnly: true,
+        excludeSequentialChannels: true
+      });
       this.emit.beginEntryFunction(
         block,
         `b_${name}`,
-        blockLinkedChannels,
+        this.emit.linkedChannelsLiteral(blockLinkedChannels),
         ['blockPayload = null', 'blockRenderCtx = undefined']
       );
       if (this.scriptMode) {
@@ -1505,16 +1433,11 @@ class CompilerAsync extends CompilerBaseAsync {
     return this._getBlockSignature(block).nameNodes;
   }
 
-  _getBlockLocalCaptureNames(block) {
+  _collectBlockLocalCaptureNames(block) {
     const blockInputNames = new Set(this._getBlockInputNames(block));
     const candidateNames = new Set(
       Array.from((block && block.body && block.body._analysis && block.body._analysis.usedChannels) || [])
     );
-    block.body.findAll(nodes.Symbol)
-      .filter((symbolNode) => symbolNode._analysis && !symbolNode._analysis.declarationTarget)
-      .forEach((symbolNode) => {
-        candidateNames.add(symbolNode.value);
-      });
     const captureNames = [];
     const seenCaptureNames = new Set();
 
@@ -1556,7 +1479,10 @@ class CompilerAsync extends CompilerBaseAsync {
     const blocks = node.findAll(nodes.Block);
 
     blocks.forEach((block) => {
-      this._getBlockLocalCaptureNames(block).forEach((name) => {
+      const localCaptureNames = Array.isArray(block && block._analysis && block._analysis.localCaptureNames)
+        ? block._analysis.localCaptureNames
+        : [];
+      localCaptureNames.forEach((name) => {
         if (seenCaptureNames.has(name)) {
           return;
         }
@@ -1589,7 +1515,9 @@ class CompilerAsync extends CompilerBaseAsync {
       : blockSignature.inputNames;
     const compositionLocalChannelNames = (Array.isArray(options.localCaptureNames)
       ? options.localCaptureNames
-      : this._getBlockLocalCaptureNames(block))
+      : ((block && block._analysis && Array.isArray(block._analysis.localCaptureNames))
+        ? block._analysis.localCaptureNames
+        : []))
       .filter((name) => {
         const declaration = this.analysis.findDeclaration(block.body._analysis, name);
         return !(declaration && declaration.shared);
@@ -1621,10 +1549,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('}');
   }
 
-  _compileAsyncRoot(node, sharedChannelNames = null, compiledMethods = null, rootSharedSchema = null) {
-    return this.extendsCompiler._compileAsyncRoot(node, sharedChannelNames, compiledMethods, rootSharedSchema);
-  }
-
   analyzeRoot(node) {
     const declares = this._getRootDeclarations(node);
     const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
@@ -1652,28 +1576,24 @@ class CompilerAsync extends CompilerBaseAsync {
       );
     }
     this.hasStaticExtends = rootExtendsNodes.length > 0;
-    this.hasDynamicExtends = node.children.some(child =>
-      child instanceof nodes.Set &&
-      child.targets[0] &&
-      child.targets[0].value === '__parentTemplate'
-    );
+    this.hasDynamicExtends = node.children.some((child) => this.extendsCompiler.isDynamicParentTemplateBinding(child));
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
     const rootSharedSchema = this._collectSharedChannelSchema(node);
     const rootSharedChannelNames = rootSharedSchema.map((entry) => entry.name);
     const compiledMethods = this._collectCompiledMethods(node, rootSharedChannelNames);
     if (this.scriptMode) {
-      this._compileAsyncScriptConstructorEntry(
+      this.extendsCompiler._compileAsyncScriptConstructorEntry(
         node,
         rootSharedChannelNames,
         (compiledMethods.__constructor__ && compiledMethods.__constructor__.linkedChannels) || []
       );
     } else {
-      this._compileAsyncTemplateConstructorEntry(
+      this.extendsCompiler._compileAsyncTemplateConstructorEntry(
         node,
         (compiledMethods.__constructor__ && compiledMethods.__constructor__.linkedChannels) || []
       );
     }
-    const blocks = this._compileAsyncRoot(node, rootSharedChannelNames, compiledMethods, rootSharedSchema);
+    const blocks = this.extendsCompiler._compileAsyncRoot(node, rootSharedChannelNames, compiledMethods, rootSharedSchema);
 
     this.emit.line('return {');
     blocks.forEach((block) => {
@@ -1681,7 +1601,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`${blockName}: ${blockName},`);
     });
     this.emit.line('methods: (');
-    this._emitCompiledMethodsLiteral(compiledMethods, '  ');
+    this.extendsCompiler.emitCompiledMethodsLiteral(compiledMethods, '  ');
     this.emit.line('),');
     this.emit.line(`blockContracts: ${JSON.stringify(this.extendsCompiler.collectBlockContracts(node))},`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
@@ -1716,18 +1636,6 @@ class CompilerAsync extends CompilerBaseAsync {
       declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
     } else {
       declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
-    }
-
-    const hasExtendsNode = node.children.some((child) => child instanceof nodes.Extends);
-    const hasParentTemplateDeclaration = node.children.some((child) =>
-      child instanceof nodes.Set &&
-      child.varType === 'declaration' &&
-      child.targets &&
-      child.targets[0] &&
-      child.targets[0].value === '__parentTemplate'
-    );
-    if (hasExtendsNode && !hasParentTemplateDeclaration) {
-      declares.push({ name: '__parentTemplate', type: 'var', initializer: null, internal: true });
     }
 
     return declares;

@@ -27,6 +27,8 @@ class CompileAnalysis {
     this._walk(rootNode, null, null);
     this._finalizeDeclarations(rootNode);
     this._finalizeOutputUsage(rootNode);
+    this._finalizeReferencedSymbols(rootNode);
+    this._finalizeDerivedMetadata(rootNode);
     return null;
   }
 
@@ -94,6 +96,8 @@ class CompileAnalysis {
       declaresInParent: [],
       uses: [],
       mutates: [],
+      symbolLookupName: null,
+      referencedSymbols: null,
       declaredChannels: null,
       usedChannels: null,
       mutatedChannels: null,
@@ -117,6 +121,17 @@ class CompileAnalysis {
 
   _finalizeNode(node) {
     const analyzerName = `finalizeAnalyze${node.typename}`;
+    const analyzer = this.compiler && this.compiler[analyzerName];
+    if (typeof analyzer === 'function') {
+      const returned = analyzer.call(this.compiler, node, this);
+      if (returned && typeof returned === 'object' && returned !== node._analysis) {
+        node._analysis = Object.assign(node._analysis || {}, returned);
+      }
+    }
+  }
+
+  _postFinalizeNode(node) {
+    const analyzerName = `postAnalyze${node.typename}`;
     const analyzer = this.compiler && this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
       const returned = analyzer.call(this.compiler, node, this);
@@ -653,6 +668,41 @@ class CompileAnalysis {
     };
   }
 
+  _finalizeReferencedSymbols(node) {
+    if (!node) {
+      return new Set();
+    }
+    if (Array.isArray(node)) {
+      const aggregate = new Set();
+      node.forEach((child) => {
+        this._finalizeReferencedSymbols(child).forEach((name) => aggregate.add(name));
+      });
+      return aggregate;
+    }
+    if (!(node instanceof nodes.Node)) {
+      return new Set();
+    }
+
+    const analysis = node._analysis || {};
+    const referencedSymbols = new Set();
+
+    if (analysis.symbolLookupName) {
+      referencedSymbols.add(analysis.symbolLookupName);
+    }
+
+    node.fields.forEach((field) => {
+      this._finalizeReferencedSymbols(node[field]).forEach((name) => referencedSymbols.add(name));
+    });
+
+    analysis.referencedSymbols = referencedSymbols.size > 0 ? referencedSymbols : null;
+
+    if (analysis.scopeBoundary) {
+      return new Set();
+    }
+
+    return referencedSymbols;
+  }
+
   getCurrentTextChannel(analysis) {
     let current = analysis;
     while (current) {
@@ -662,6 +712,137 @@ class CompileAnalysis {
       current = current.parent;
     }
     return null;
+  }
+
+  _getAnalysisNode(analysisOrNode) {
+    if (!analysisOrNode) {
+      return null;
+    }
+    return analysisOrNode._analysis || analysisOrNode;
+  }
+
+  getLinkedChannels(analysisOrNode, options = null) {
+    const analysis = this._getAnalysisNode(analysisOrNode);
+    if (!analysis) {
+      return [];
+    }
+
+    const opts = options || {};
+    const usedChannels = Array.from(analysis.usedChannels || []);
+    const declaredChannels = new Set(
+      ((analysis.declaredChannels || new Map()).keys())
+    );
+    const excludedNames = new Set(opts.excludeNames || []);
+    const includeDeclaredChannelNames = new Set(opts.includeDeclaredChannelNames || []);
+    const alwaysIncludeNames = new Set(opts.alwaysIncludeNames || []);
+    const linkedChannels = new Set(opts.seedChannels || []);
+
+    if (opts.includeDefaultTemplateTextChannel && !this.compiler.scriptMode) {
+      linkedChannels.add('__text__');
+    }
+
+    usedChannels.forEach((name) => {
+      if (!name ||
+        name === '__return__' ||
+        excludedNames.has(name)) {
+        return;
+      }
+
+      if (opts.excludeSequentialChannels && name.indexOf('!') === 0) {
+        return;
+      }
+
+      if (opts.sharedOnly) {
+        const declaration = this.findDeclaration(analysis, name);
+        if (declaration && declaration.shared) {
+          linkedChannels.add(name);
+        }
+        return;
+      }
+
+      if (alwaysIncludeNames.has(name)) {
+        linkedChannels.add(name);
+        return;
+      }
+
+      if (!declaredChannels.has(name) || includeDeclaredChannelNames.has(name)) {
+        linkedChannels.add(name);
+      }
+    });
+
+    return Array.from(linkedChannels);
+  }
+
+  getImportedCallableLinkedChannels(funCallNode, importedChannelName = null) {
+    const analysis = this._getAnalysisNode(funCallNode);
+    if (!analysis) {
+      return importedChannelName ? [importedChannelName] : [];
+    }
+
+    const boundaryChannelNames = new Set();
+    if (importedChannelName) {
+      boundaryChannelNames.add(importedChannelName);
+    }
+
+    const textChannel = this.getCurrentTextChannel(analysis);
+    if (textChannel) {
+      boundaryChannelNames.add(textChannel);
+    }
+
+    const collectUsedChannels = (valueNode) => {
+      const valueAnalysis = this._getAnalysisNode(valueNode);
+      const usedChannels = valueAnalysis && valueAnalysis.usedChannels;
+      if (!usedChannels) {
+        return;
+      }
+      Array.from(usedChannels).forEach((name) => {
+        if (!name || name.charAt(0) === '!') {
+          return;
+        }
+        boundaryChannelNames.add(name);
+      });
+    };
+
+    const topLevelArgs = funCallNode && funCallNode.args && Array.isArray(funCallNode.args.children)
+      ? funCallNode.args.children
+      : [];
+    topLevelArgs.forEach((argNode) => {
+      if (argNode instanceof nodes.KeywordArgs) {
+        argNode.children.forEach((pairNode) => {
+          if (pairNode instanceof nodes.Pair &&
+            pairNode.key instanceof nodes.Symbol &&
+            pairNode.key.value === 'caller') {
+            return;
+          }
+          collectUsedChannels(pairNode instanceof nodes.Pair ? pairNode.value : pairNode);
+        });
+        return;
+      }
+      collectUsedChannels(argNode);
+    });
+
+    return Array.from(boundaryChannelNames);
+  }
+
+  _finalizeDerivedMetadata(node) {
+    if (!node) {
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        this._finalizeDerivedMetadata(node[i]);
+      }
+      return;
+    }
+    if (!(node instanceof nodes.Node)) {
+      return;
+    }
+
+    node.fields.forEach((field) => {
+      this._finalizeDerivedMetadata(node[field]);
+    });
+
+    this._postFinalizeNode(node);
   }
 
 }

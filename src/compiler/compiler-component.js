@@ -31,30 +31,27 @@ class CompileComponent {
 
   emitComponentSharedRead(bindingName, sharedName, node) {
     this.emitComponentCommandPromise(
-      'ComponentObserveCommand',
       bindingName,
       node,
-      () => this.emit(`sharedName: ${JSON.stringify(sharedName)}, observation: "value"`)
+      () => this.emit(`operation: "observe", sharedName: ${JSON.stringify(sharedName)}, observation: "value"`)
     );
   }
 
   emitComponentObservationCall(bindingName, sharedName, observation, node) {
     this.emitComponentCommandPromise(
-      'ComponentObserveCommand',
       bindingName,
       node,
-      () => this.emit(`sharedName: ${JSON.stringify(sharedName)}, observation: ${JSON.stringify(observation)}`)
+      () => this.emit(`operation: "observe", sharedName: ${JSON.stringify(sharedName)}, observation: ${JSON.stringify(observation)}`)
     );
   }
 
   emitComponentMethodCall(bindingName, methodName, node) {
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
     this.emitComponentCommandPromise(
-      'ComponentMethodCallCommand',
       bindingName,
       node,
       () => {
-        this.emit(`methodName: ${JSON.stringify(methodName)}, args: `);
+        this.emit(`operation: "method", methodName: ${JSON.stringify(methodName)}, args: `);
         this.compiler._compileAggregate(node.args, null, '[', ']', false, false);
         this.emit(`, env, runtime, cb, errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${errorContextJson}, path: context.path }`);
       },
@@ -62,11 +59,11 @@ class CompileComponent {
     );
   }
 
-  emitComponentCommandPromise(commandClassName, bindingName, node, emitFields, includePos = true) {
+  emitComponentCommandPromise(bindingName, node, emitFields, includePos = true) {
     const posLiteral = `{lineno: ${node.lineno}, colno: ${node.colno}}`;
     this.emit('(() => {');
     const cmdVar = this.compiler._tmpid();
-    this.emit(` const ${cmdVar} = new runtime.${commandClassName}({ channelName: "${bindingName}", `);
+    this.emit(` const ${cmdVar} = new runtime.ComponentOperationCommand({ channelName: "${bindingName}", `);
     emitFields.call(this);
     if (includePos) {
       this.emit(`, pos: ${posLiteral}`);

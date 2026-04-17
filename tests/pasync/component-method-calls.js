@@ -181,6 +181,31 @@ describe('Component Method Calls', function () {
     expect(events).to.eql(['method-start', 'arg-resolved']);
   });
 
+  it('should propagate soft poison through merged component method operations', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    env.addGlobal('softFail', () => Promise.reject(new Error('soft component failure')));
+
+    loader.addTemplate('Component.script', [
+      'method build()',
+      '  return softFail()',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'import "Component.script" as ns',
+      'return ns.build()'
+    ].join('\n'));
+
+    try {
+      await env.renderScript('Main.script', {});
+      expect().fail('Expected renderScript to reject');
+    } catch (err) {
+      expect(runtimeModule.isPoisonError(err)).to.be(true);
+      expect(err.message).to.contain('soft component failure');
+    }
+  });
+
   it('should reject instead of hanging when component method argument resolution fails fatally', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);

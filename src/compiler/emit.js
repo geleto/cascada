@@ -50,14 +50,29 @@ module.exports = class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  beginEntryFunction(node, name, linkedChannels = null, extraParams = [], options = null) {
+  linkedChannelsLiteral(channelNames) {
+    if (!Array.isArray(channelNames) || channelNames.length === 0) {
+      return 'null';
+    }
+    return JSON.stringify(channelNames);
+  }
+
+  getLinkedChannels(node, options = null) {
+    return this.compiler.analysis.getLinkedChannels(node, Object.assign({}, options, {
+      alwaysIncludeNames: this.compiler.buffer.currentTextChannelName
+        ? [this.compiler.buffer.currentTextChannelName]
+        : []
+    }));
+  }
+
+  beginEntryFunction(node, name, linkedChannelsArg = null, extraParams = [], options = null) {
     const rootTextChannelName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
       : DEFAULT_TEMPLATE_TEXT_CHANNEL;
     const ownTextChannel = !this.compiler.scriptMode && (!options || options.ownTextChannel !== false);
-    const effectiveLinkedChannels = (!this.compiler.scriptMode && name === 'root' && !linkedChannels)
-      ? [rootTextChannelName]
-      : linkedChannels;
+    const effectiveLinkedChannelsArg = (!this.compiler.scriptMode && name === 'root' && !linkedChannelsArg)
+      ? this.linkedChannelsLiteral([rootTextChannelName])
+      : linkedChannelsArg;
     this.compiler.buffer.currentBuffer = 'output';
     this.compiler.buffer.currentTextChannelVar = 'output_textChannelVar';
     this.compiler.buffer.currentTextChannelName = this.compiler.scriptMode ? null : rootTextChannelName;
@@ -85,7 +100,7 @@ module.exports = class CompileEmit {
         ? (name === 'root' ? '(compositionMode ? parentBuffer : null)' : 'parentBuffer')
         : null,
       ownTextChannel ? this.compiler.buffer.currentTextChannelVar : null,
-      effectiveLinkedChannels
+      effectiveLinkedChannelsArg
     );
     this.line('try {');
   }
@@ -145,7 +160,7 @@ module.exports = class CompileEmit {
     let bufferId = null;
     let prevBuffer = null;
     let prevTextChannelVar = null;
-    let linkedChannels = null;
+    let linkedChannelsArg = null;
     if (createScopeRootBuffer) {
       parentBufferId = parentBufferOverride !== undefined
         ? parentBufferOverride
@@ -154,20 +169,13 @@ module.exports = class CompileEmit {
         // For locally-created scope-root buffers, structural parent-visible lanes
         // should be attached at buffer creation time rather than in a later
         // runtime prelink step.
-        const used = Array.from(analysisNode._analysis.usedChannels || []);
-        const declared = new Set((analysisNode._analysis.declaredChannels || new Map()).keys());
-        linkedChannels = used.filter((name) => {
-          if (name === this.compiler.buffer.currentTextChannelName) {
-            return false;
-          }
-          const decl = this.compiler.analysis && this.compiler.analysis.findDeclaration
-            ? this.compiler.analysis.findDeclaration(analysisNode._analysis, name)
-            : null;
-          if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
-            return false;
-          }
-          return !declared.has(name);
-        });
+        linkedChannelsArg = this.linkedChannelsLiteral(
+          this.compiler.analysis.getLinkedChannels(analysisNode, {
+            excludeNames: this.compiler.buffer.currentTextChannelName
+              ? [this.compiler.buffer.currentTextChannelName]
+              : []
+          })
+        );
       }
       bufferId = this.compiler._tmpid();
       prevBuffer = this.compiler.buffer.currentBuffer;
@@ -178,7 +186,7 @@ module.exports = class CompileEmit {
         bufferId,
         parentBufferId,
         `${bufferId}_textOutputVar`,
-        linkedChannels
+        linkedChannelsArg
       );
     }
 
@@ -228,36 +236,11 @@ module.exports = class CompileEmit {
   // @todo - optimize this:
   // similar for writes we can do some optimizations
   getLinkedChannelsArg(node, options = null) {
-    const includeDeclaredChannelNames = new Set(
-      options && Array.isArray(options.includeDeclaredChannelNames)
-        ? options.includeDeclaredChannelNames
-        : []
-    );
-    const usedChannelsSet = new Set(node._analysis.usedChannels || []);
-    includeDeclaredChannelNames.forEach((name) => {
-      usedChannelsSet.add(name);
-    });
-    const usedChannels = Array.from(usedChannelsSet);
-    const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
-    const linkedChannels = usedChannels.filter((name) => {
-      if (name === this.compiler.buffer.currentTextChannelName) {
-        return true;
-      }
-      const decl = this.compiler.analysis && this.compiler.analysis.findDeclaration
-        ? this.compiler.analysis.findDeclaration(node._analysis, name)
-        : null;
-      if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
-        return false;
-      }
-      if (declaredChannels.has(name) && !includeDeclaredChannelNames.has(name)) {
-        return false;
-      }
-      return true;
-    });
+    const linkedChannels = this.getLinkedChannels(node, options);
     // Do not link currentWaitedChannelName here.
     // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
     // Nested control-flow buffers are applied through their own channels/iterators.
-    return linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
+    return this.linkedChannelsLiteral(linkedChannels);
   }
 
 };

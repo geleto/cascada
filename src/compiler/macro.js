@@ -106,7 +106,6 @@ class CompileMacro {
     const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node)
       .filter((name) => callerCaptureNames.indexOf(name) === -1);
     const callerCaptureVar = callerCaptureNames.length > 0 ? this.compiler._tmpid() : null;
-    const previousCallerCaptureInfo = this.currentCallerCaptureInfo;
 
     if (callerCaptureVar) {
       this.compiler.emit.line(`const ${callerCaptureVar} = {};`);
@@ -116,16 +115,12 @@ class CompileMacro {
       });
     }
 
-    this.currentCallerCaptureInfo = callerCaptureVar
+    const callerCaptureInfo = callerCaptureVar
       ? { captureVar: callerCaptureVar, captureNames: callerCaptureNames }
       : null;
-    try {
-      const funcId = this._compileAsyncMacro(node);
-      this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
-      return funcId;
-    } finally {
-      this.currentCallerCaptureInfo = previousCallerCaptureInfo;
-    }
+    const funcId = this._compileAsyncMacro(node, { callerCaptureInfo });
+    this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
+    return funcId;
   }
 
   compileSyncCaller(node, frame) {
@@ -460,8 +455,9 @@ class CompileMacro {
     return `new runtime.SafeString(${bufferId})`;
   }
 
-  _compileAsyncMacro(node) {
+  _compileAsyncMacro(node, options = null) {
     const compiler = this.compiler;
+    const callerCaptureInfo = options && options.callerCaptureInfo ? options.callerCaptureInfo : null;
     const funcId = node._analysis.compiledMacroFuncId;
     const {
       args,
@@ -507,7 +503,6 @@ class CompileMacro {
       const prevBuffer = compiler.buffer.currentBuffer;
       const prevTextChannelVar = compiler.buffer.currentTextChannelVar;
       const callerTextChannelVar = !compiler.scriptMode ? compiler._tmpid() : null;
-      const callerCaptureInfo = this.currentCallerCaptureInfo;
       if (!compiler.scriptMode) {
         compiler.emit.line(`let ${callerTextChannelVar} = runtime.declareBufferChannel(macroParentBuffer, "${compiler.buffer.currentTextChannelName}", "text", context, null);`);
       }

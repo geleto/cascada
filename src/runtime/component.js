@@ -10,15 +10,20 @@ const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceCall = require('./inheritance-call');
 
 class ComponentCommand {
-  constructor({ channelName, pos = null }) {
+  constructor({ channelName, pos = null, withDeferredResult = true }) {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
-    this.promise = new Promise((resolve, reject) => {
-      this.resolve = resolve;
-      this.reject = reject;
-    });
-    this.promise.catch(() => {});
+    this.promise = null;
+    this.resolve = null;
+    this.reject = null;
+    if (withDeferredResult) {
+      this.promise = new Promise((resolve, reject) => {
+        this.resolve = resolve;
+        this.reject = reject;
+      });
+      this.promise.catch(() => {});
+    }
   }
 
   resolveResult(value) {
@@ -39,6 +44,10 @@ class ComponentCommand {
     this.reject = null;
   }
 }
+
+const COMPONENT_OPERATION_METHOD = 'method';
+const COMPONENT_OPERATION_OBSERVE = 'observe';
+const COMPONENT_OPERATION_CLOSE = 'close';
 
 function _normalizeComponentOperationFailure(err, pos, path) {
   if (err instanceof RuntimeFatalError) {
@@ -178,7 +187,7 @@ class ComponentInstance {
 
   callMethod(name, args, env, runtime, cb, errorContext) {
     this._assertOpen(errorContext || { lineno: 0, colno: 0 });
-    return inheritanceCall.callInheritedMethodDetailed(
+    const admission = inheritanceCall.admitInheritedMethod(
       this.context,
       this.inheritanceState,
       name,
@@ -188,6 +197,26 @@ class ComponentInstance {
       cb,
       this.rootBuffer,
       errorContext
+    );
+    const valueResult = admission.getValueResult();
+    const completion = admission && admission.completion && typeof admission.completion.then === 'function'
+      ? admission.completion
+      : null;
+
+    if (!completion) {
+      return valueResult;
+    }
+
+    if (!valueResult || typeof valueResult.then !== 'function') {
+      return completion.then(() => valueResult);
+    }
+
+    return valueResult.then(
+      (value) => completion.then(() => value),
+      (err) => completion.then(
+        () => { throw err; },
+        () => { throw err; }
+      )
     );
   }
 
@@ -231,66 +260,72 @@ class ComponentInstance {
   }
 }
 
-class ComponentMethodCallCommand extends ComponentCommand {
-  constructor({ channelName, methodName, args = null, env, runtime, cb, errorContext }) {
-    super({ channelName, pos: errorContext });
-    this.isObservable = false;
-    this.methodName = methodName;
+class ComponentOperationCommand extends ComponentCommand {
+  constructor({
+    channelName,
+    operation,
+    methodName,
+    args = null,
+    sharedName,
+    observation,
+    env,
+    runtime,
+    cb,
+    errorContext,
+    pos = null
+  }) {
+    const normalizedPos = errorContext || pos;
+    super({
+      channelName,
+      pos: normalizedPos,
+      withDeferredResult: operation !== COMPONENT_OPERATION_CLOSE
+    });
+    this.operation = operation;
+    this.methodName = methodName || null;
     this.arguments = Array.isArray(args) ? args : [];
+    this.sharedName = sharedName || null;
+    this.observation = observation || null;
     this.env = env;
     this.runtime = runtime;
     this.cb = cb;
-    this.errorContext = errorContext || { lineno: 0, colno: 0, path: null };
+    this.errorContext = errorContext || normalizedPos || { lineno: 0, colno: 0, path: null };
+    this.isObservable = operation === COMPONENT_OPERATION_OBSERVE;
   }
 
   apply(bindingChannel) {
-    const start = (componentInstance) => componentInstance.callMethod(
-      this.methodName,
-      this.arguments,
-      this.env,
-      this.runtime,
-      this.cb,
-      this.errorContext
-    );
+    if (this.operation === COMPONENT_OPERATION_CLOSE) {
+      return this._applyClose(bindingChannel);
+    }
     return _runComponentBindingOperation(
       bindingChannel,
       this.errorContext,
-      start,
+      this._createOperationStart(),
       this
     );
   }
-}
 
-class ComponentObserveCommand extends ComponentCommand {
-  constructor({ channelName, sharedName, observation, pos = null }) {
-    super({ channelName, pos });
-    this.sharedName = sharedName;
-    this.observation = observation;
+  _createOperationStart() {
+    if (this.operation === COMPONENT_OPERATION_METHOD) {
+      return (componentInstance) => componentInstance.callMethod(
+        this.methodName,
+        this.arguments,
+        this.env,
+        this.runtime,
+        this.cb,
+        this.errorContext
+      );
+    }
+    if (this.operation === COMPONENT_OPERATION_OBSERVE) {
+      return (componentInstance) => componentInstance.observeChannel(
+        this.sharedName,
+        this.observation,
+        this.pos
+      );
+    }
+    throw new Error(`Unsupported component operation '${this.operation}'`);
   }
 
-  apply(bindingChannel) {
-    const start = (componentInstance) => componentInstance.observeChannel(
-      this.sharedName,
-      this.observation,
-      this.pos
-    );
-    return _runComponentBindingOperation(
-      bindingChannel,
-      this.pos,
-      start,
-      this
-    );
-  }
-}
-
-class ComponentCloseCommand {
-  constructor({ channelName, pos = null }) {
-    this.channelName = channelName;
-    this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = false;
-  }
-
-  apply(bindingChannel) {
+  _applyClose(bindingChannel) {
     try {
       const { componentInstance } = _resolveComponentBinding(bindingChannel, this.pos);
       if (!componentInstance || typeof componentInstance.then !== 'function') {
@@ -331,8 +366,9 @@ function createComponentInstance(templateValue, inputValues, context, env, runti
 
   if (isCommandBuffer(ownerBuffer) && typeof ownerBuffer.getFinishStartedPromise === 'function') {
     ownerBuffer.getFinishStartedPromise().then(() => {
-      ownerBuffer.add(new ComponentCloseCommand({
+      ownerBuffer.add(new ComponentOperationCommand({
         channelName: bindingChannelName,
+        operation: COMPONENT_OPERATION_CLOSE,
         pos
       }), bindingChannelName);
     });
@@ -383,7 +419,7 @@ function createComponentInstance(templateValue, inputValues, context, env, runti
 
     const constructorEntry = (resolvedTemplate.methods || {}).__constructor__;
     if (constructorEntry) {
-      const admission = inheritanceCall.admitMethodEntryWithCompletion(
+      const admission = inheritanceCall.admitConstructorEntry(
         componentContext,
         inheritanceState,
         constructorEntry,
@@ -431,8 +467,6 @@ function createComponentInstance(templateValue, inputValues, context, env, runti
 
 module.exports = {
   ComponentInstance,
-  ComponentMethodCallCommand,
-  ComponentObserveCommand,
-  ComponentCloseCommand,
+  ComponentOperationCommand,
   createComponentInstance
 };

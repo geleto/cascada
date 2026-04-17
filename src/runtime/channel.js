@@ -19,6 +19,7 @@ class Channel {
     this._buffer = buffer;
     this._target = target;
     this._base = base;
+    this._allowCrossTemplateRead = false;
 
     this._iterator = new BufferIterator(this);
     this._stateVersion = 0;
@@ -32,6 +33,14 @@ class Channel {
     this._completionPromise = new Promise((resolve) => {
       this._resolveCompletion = resolve;
     });
+  }
+
+  enableCrossTemplateRead() {
+    this._allowCrossTemplateRead = true;
+  }
+
+  allowsCrossTemplateRead() {
+    return this._allowCrossTemplateRead;
   }
 
   _enqueueCommand(command, args) {
@@ -909,10 +918,11 @@ function declareSharedBufferChannel(buffer, channelName, channelType, context, i
     );
   }
 
-  // Shared-channel lookup and cross-template read rules rely on this marker.
-  // Keep it on the channel instance so lookup can distinguish shared lanes
-  // from ordinary template-local channels without walking declaration state.
-  channel._isShared = true;
+  // Shared channels carry explicit lookup metadata so cross-template read
+  // behavior does not depend on ad hoc runtime-only flags.
+  if (typeof channel.enableCrossTemplateRead === 'function') {
+    channel.enableCrossTemplateRead();
+  }
 
   return channel;
 }

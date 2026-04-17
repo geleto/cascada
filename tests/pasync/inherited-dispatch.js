@@ -5,6 +5,8 @@ let AsyncEnvironment;
 let Script;
 let StringLoader;
 let isPoisonError;
+let runtimeModule;
+let Context;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -12,13 +14,17 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = environment.AsyncEnvironment;
   Script = environment.Script;
   StringLoader = require('../util').StringLoader;
-  isPoisonError = require('../../src/runtime/runtime').isPoisonError;
+  runtimeModule = require('../../src/runtime/runtime');
+  isPoisonError = runtimeModule.isPoisonError;
+  Context = require('../../src/environment/context').Context;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   Script = nunjucks.Script;
   StringLoader = window.util.StringLoader;
+  runtimeModule = nunjucks.runtime;
   isPoisonError = nunjucks.runtime.isPoisonError;
+  Context = nunjucks.Context;
 }
 
 describe('Inherited Dispatch', function () {
@@ -176,5 +182,70 @@ describe('Inherited Dispatch', function () {
     expect(() => {
       new Script('method build()\n  return "x"\nendmethod\nreturn this.build', env, 'bare-this-method.script')._compileSource();
     }).to.throwException(/bare inherited-method references are not supported/);
+  });
+
+  it('should use InheritanceAdmissionCommand as a real observable command barrier', async function () {
+    env = new AsyncEnvironment();
+    const context = new Context({}, {}, env, 'Main.script', true, {}, {});
+    const inheritanceState = runtimeModule.createInheritanceState();
+    const rootBuffer = runtimeModule.createCommandBuffer(context);
+    runtimeModule.declareBufferChannel(rootBuffer, 'trace', 'var', context, null);
+
+    let seenCommand = null;
+    let applyCount = 0;
+    const originalApply = runtimeModule.InheritanceAdmissionCommand.prototype.apply;
+    runtimeModule.InheritanceAdmissionCommand.prototype.apply = function(output) {
+      seenCommand = this;
+      applyCount++;
+      return originalApply.call(this, output);
+    };
+
+    try {
+      const traceSnapshot = rootBuffer.getChannel('trace').finalSnapshot();
+      const admission = runtimeModule.admitConstructorEntry(
+        context,
+        inheritanceState,
+        {
+          fn(envArg, contextArg, runtimeArg, cbArg, output) {
+            void envArg;
+            void contextArg;
+            void cbArg;
+            output.add(new runtimeArg.VarCommand({
+              channelName: 'trace',
+              args: ['done'],
+              pos: { lineno: 1, colno: 1 }
+            }), 'trace');
+            output.markFinishedAndPatchLinks();
+            return 'result';
+          },
+          contract: { inputNames: [], withContext: false },
+          ownerKey: 'Main.script',
+          linkedChannels: ['trace']
+        },
+        [],
+        env,
+        runtimeModule,
+        () => {},
+        rootBuffer,
+        { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
+      );
+
+      rootBuffer.markFinishedAndPatchLinks();
+
+      const value = await admission.promise;
+      await admission.completion;
+      const trace = await traceSnapshot;
+
+      expect(value).to.be('result');
+      expect(trace).to.be('done');
+      expect(applyCount).to.be(1);
+      expect(seenCommand).to.be.a(runtimeModule.InheritanceAdmissionCommand);
+      expect(seenCommand.isObservable).to.be(true);
+      expect(seenCommand.getError()).to.be(null);
+      expect(admission.promise).to.be(seenCommand.promise);
+      expect(admission.completion).to.be(seenCommand.completion);
+    } finally {
+      runtimeModule.InheritanceAdmissionCommand.prototype.apply = originalApply;
+    }
   });
 });

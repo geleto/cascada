@@ -108,36 +108,49 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
-  beginAsyncExtendsBlockRegistration() {
-    if (!this.asyncExtendsBlocksPromise) {
-      this.asyncExtendsBlocksPendingCount = 0;
-      this.asyncExtendsBlocksPromise = new Promise((resolve) => {
-        this.asyncExtendsBlocksResolver = resolve;
+  beginInheritanceResolution() {
+    if (!this.inheritanceResolutionPromise) {
+      this.inheritanceResolutionPendingCount = 0;
+      this.inheritanceResolutionPromise = new Promise((resolve) => {
+        this.inheritanceResolutionResolver = resolve;
       }).then(() => {
-        delete this.asyncExtendsBlocksPromise;
-        delete this.asyncExtendsBlocksResolver;
-        delete this.asyncExtendsBlocksPendingCount;
+        delete this.inheritanceResolutionPromise;
+        delete this.inheritanceResolutionResolver;
+        delete this.inheritanceResolutionPendingCount;
       });
     }
-    this.asyncExtendsBlocksPendingCount = (this.asyncExtendsBlocksPendingCount || 0) + 1;
+    this.inheritanceResolutionPendingCount = (this.inheritanceResolutionPendingCount || 0) + 1;
+  }
+
+  awaitInheritanceResolution() {
+    return this.inheritanceResolutionPromise || null;
+  }
+
+  resolveAfterInheritanceResolution(value) {
+    const registrationWait = this.awaitInheritanceResolution();
+    if (!registrationWait) {
+      return value;
+    }
+    return registrationWait.then(() => value);
   }
 
   async getAsyncBlock(name) {
-    if (this.asyncExtendsBlocksPromise) {
-      await this.asyncExtendsBlocksPromise;
+    const registrationWait = this.awaitInheritanceResolution();
+    if (registrationWait && typeof registrationWait.then === 'function') {
+      await registrationWait;
     }
     return this.getBlock(name);
   }
 
-  finishAsyncExtendsBlockRegistration() {
-    if (!this.asyncExtendsBlocksResolver) {
+  finishInheritanceResolution() {
+    if (!this.inheritanceResolutionResolver) {
       return;
     }
-    if (this.asyncExtendsBlocksPendingCount > 0) {
-      this.asyncExtendsBlocksPendingCount -= 1;
+    if (this.inheritanceResolutionPendingCount > 0) {
+      this.inheritanceResolutionPendingCount -= 1;
     }
-    if (this.asyncExtendsBlocksPendingCount === 0) {
-      this.asyncExtendsBlocksResolver();
+    if (this.inheritanceResolutionPendingCount === 0) {
+      this.inheritanceResolutionResolver();
     }
   }
 
@@ -332,9 +345,9 @@ class Context extends Obj {
     newContext.exportChannels = this.exportChannels;
     newContext.extendsCompositionByParent = this.extendsCompositionByParent;
     newContext.inheritanceLocalCapturesByTemplate = this.inheritanceLocalCapturesByTemplate;
-    newContext.asyncExtendsBlocksPromise = this.asyncExtendsBlocksPromise;
-    newContext.asyncExtendsBlocksResolver = this.asyncExtendsBlocksResolver;
-    newContext.asyncExtendsBlocksPendingCount = this.asyncExtendsBlocksPendingCount;
+    newContext.inheritanceResolutionPromise = this.inheritanceResolutionPromise;
+    newContext.inheritanceResolutionResolver = this.inheritanceResolutionResolver;
+    newContext.inheritanceResolutionPendingCount = this.inheritanceResolutionPendingCount;
     return newContext;
   }
 

@@ -2,7 +2,9 @@
 
 var nodes = require('./nodes');
 var lib = require('./lib');
+var inheritanceConstants = require('./inheritance-constants');
 var scopeBoundaries = require('./compiler/scope-boundaries');
+var DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME = inheritanceConstants.DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME;
 
 var sym = 0;
 function gensym() {
@@ -402,28 +404,15 @@ function addDynamicExtendsSetup(ast, opts) {
   }
 
   // 1. Inject the initial parent-template binding.
-  const target = new nodes.Symbol(0, 0, '__parentTemplate');
+  const target = new nodes.Symbol(0, 0, DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME);
   const value = new nodes.Literal(0, 0, null);
   const declarationNode = new nodes.Set(0, 0, [target], value, null, 'declaration', null);
   ast.children.unshift(declarationNode);
 
-  // 2. Rewrite every dynamic `Extends` node into a `NodeList` of [Extends, Set].
+  // 2. Mark every nested dynamic `Extends` node with its bridge store variable.
   return walk(ast, (node) => {
     if (node instanceof nodes.Extends && lib.indexOf(ast.children, node) === -1) {
-      const tempVar = gensym();
-
-      // A. Modify the original Extends node to store its result in the temp var.
-      node.asyncStoreIn = tempVar;
-
-      // B. Create the new Set node to assign from the temp var to the frame var.
-      const setTarget = new nodes.Symbol(node.lineno, node.colno, '__parentTemplate');
-      const setValue = new nodes.Symbol(node.lineno, node.colno, tempVar);
-      setValue.isCompilerInternal = true; // This is the crucial link!
-
-      const setNode = new nodes.Set(node.lineno, node.colno, [setTarget], setValue, null, 'assignment', null);
-
-      // C. Replace the original Extends node with a list of the two new nodes.
-      return new nodes.NodeList(node.lineno, node.colno, [node, setNode]);
+      node.dynamicParentStoreVar = gensym();
     }
     return undefined;
   });

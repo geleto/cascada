@@ -217,25 +217,33 @@ class Template extends Obj {
     return this._bindExportedValuesWithContext(exported, macroContext);
   }
 
+  _copyBoundMacroMetadata(sourceMacro, boundMacro) {
+    if (Object.prototype.hasOwnProperty.call(sourceMacro, '__callerUsedChannels')) {
+      boundMacro.__callerUsedChannels = sourceMacro.__callerUsedChannels;
+    }
+    return boundMacro;
+  }
+
+  _bindExportedMacro(item, macroContext) {
+    const boundMacro = function macro(...macroArgs) {
+      return item._invoke(macroContext, macroArgs, null);
+    };
+    boundMacro.isMacro = true;
+    boundMacro._invoke = function(_executionContext, macroArgs, currentBuffer) {
+      // Imported/exported macros stay bound to the import-source context;
+      // caller-provided executionContext must not override that binding.
+      return item._invoke(macroContext, macroArgs, currentBuffer);
+    };
+    return this._copyBoundMacroMetadata(item, boundMacro);
+  }
+
   _bindExportedValuesWithContext(exported, macroContext) {
     const boundExported = {};
 
     for (const name in exported) {
       const item = exported[name];
       if (typeof item === 'function' && item.isMacro) {
-        const boundMacro = function macro(...macroArgs) {
-          return item._invoke(macroContext, macroArgs, null);
-        };
-        boundMacro.isMacro = true;
-        boundMacro._invoke = function(_executionContext, macroArgs, currentBuffer) {
-          // Imported/exported macros stay bound to the import-source context;
-          // caller-provided executionContext must not override that binding.
-          return item._invoke(macroContext, macroArgs, currentBuffer);
-        };
-        if (Object.prototype.hasOwnProperty.call(item, '__callerUsedChannels')) {
-          boundMacro.__callerUsedChannels = item.__callerUsedChannels;
-        }
-        boundExported[name] = boundMacro;
+        boundExported[name] = this._bindExportedMacro(item, macroContext);
         continue;
       }
       boundExported[name] = item;

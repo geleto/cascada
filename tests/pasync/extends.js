@@ -184,6 +184,16 @@ describe('Extends', function () {
       const result = await rootBuffer.getChannel('theme').finalSnapshot();
       expect(result).to.be('dark');
     });
+
+    it('should mark shared channels as explicitly readable across template boundaries', function () {
+      const rootBuffer = runtime.createCommandBuffer(null);
+      const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
+      const sharedChannel = runtime.declareSharedBufferChannel(childBuffer, 'theme', 'var', null, null);
+
+      expect(typeof sharedChannel.allowsCrossTemplateRead).to.be('function');
+      expect(sharedChannel.allowsCrossTemplateRead()).to.be(true);
+      expect(rootBuffer.getChannel('theme').allowsCrossTemplateRead()).to.be(true);
+    });
   });
 
   describe('Step 3', function () {
@@ -444,12 +454,12 @@ describe('Extends', function () {
       expect(result).to.be(undefined);
     });
 
-    it('should finish the constructor-local buffer before propagating static-extends registration failures', function () {
+    it('should finish the constructor-local buffer without legacy static-extends promise gating', function () {
       const script = new Script('extends "A.script"\nreturn "C"', env, 'C.script');
       const source = script._compileSource();
 
-      expect(source).to.contain('context.asyncExtendsBlocksPromise.then(() => { output.markFinishedAndPatchLinks(); return');
-      expect(source).to.contain('}, (err) => { output.markFinishedAndPatchLinks(); throw err; })');
+      expect(source).to.contain('output.markFinishedAndPatchLinks();');
+      expect(source).to.not.contain('context.asyncExtendsBlocksPromise');
     });
   });
 });

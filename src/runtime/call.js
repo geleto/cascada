@@ -182,11 +182,8 @@ function _getCallableExecutionContext(obj, name, context) {
 module.exports = {
   invokeCallable,
   invokeCallableAsync,
-  callWrap: invokeCallable,
-  callWrapAsync: invokeCallableAsync,
-  admitMethodEntry: inheritanceCall.admitMethodEntry,
-  admitMethodEntryWithCompletion: inheritanceCall.admitMethodEntryWithCompletion,
+  admitConstructorEntry: inheritanceCall.admitConstructorEntry,
+  startParentConstructor: inheritanceCall.startParentConstructor,
   callInheritedMethod: inheritanceCall.callInheritedMethod,
-  callInheritedMethodDetailed: inheritanceCall.callInheritedMethodDetailed,
   callSuperMethod: inheritanceCall.callSuperMethod
 };

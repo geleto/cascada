@@ -124,18 +124,6 @@ class CompileInheritance {
     this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
   }
 
-  _emitResolvedParentContinuation(node, templateVar, parentContextVar, rootContextVar, externContextVar, currentBufferExpr, options = null) {
-    return this.compiler.extendsCompiler._emitResolvedParentContinuation(
-      node,
-      templateVar,
-      parentContextVar,
-      rootContextVar,
-      externContextVar,
-      currentBufferExpr,
-      options
-    );
-  }
-
   _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
     const templateId = this.compiler._tmpid();
     const parentName = JSON.stringify(this.compiler.templateName);
@@ -390,7 +378,7 @@ class CompileInheritance {
     // static `extends` tag, this block is a definition-only. We can safely
     // skip compiling any rendering code for it, as the parent template is
     // responsible for its execution. The dynamic extends case is handled later
-    // with a runtime check using the __parentTemplate variable.
+    // through the extends-owned dynamic parent-resolution helper.
     if (!this.compiler.inBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends) {
       return;
     }
@@ -402,7 +390,9 @@ class CompileInheritance {
         this.emit.line(`let ${id};`);
         const templateKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
         const explicitInputNameNodes = this.compiler._getBlockInputNameNodes(node);
-        const localCaptureNames = this.compiler._getBlockLocalCaptureNames(node);
+        const localCaptureNames = Array.isArray(node && node._analysis && node._analysis.localCaptureNames)
+          ? node._analysis.localCaptureNames
+          : [];
         const hasLocalCaptures = localCaptureNames.length > 0;
         const hasInheritancePayload = !!node.withContext || explicitInputNameNodes.length > 0 || localCaptureNames.length > 0;
         const blockVarsVar = explicitInputNameNodes.length > 0 ? this.compiler._tmpid() : null;
@@ -431,13 +421,14 @@ class CompileInheritance {
         }
         const needsParentCheck = !this.compiler.inBlock && this.compiler.hasDynamicExtends;
         if (needsParentCheck) {
-          this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
-          this.emit.line(`${id} = parentPromise.then((parent) => {`);
-          this.emit.line('  if (parent) return "";');
-          this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
-          this.emit.line('});');
+          this.compiler.extendsCompiler.emitDynamicTopLevelBlockResolution(
+            node,
+            id,
+            hasInheritancePayload ? blockPayloadVar : 'null',
+            blockRenderCtxExpr
+          );
         } else {
-          this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
+          this.emit.line(`${id} = runtime.getRegisteredAsyncBlock(context, "${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
         }
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
       }
@@ -460,7 +451,7 @@ class CompileInheritance {
     // static `extends` tag, this block is a definition-only. We can safely
     // skip compiling any rendering code for it, as the parent template is
     // responsible for its execution. The dynamic extends case is handled later
-    // with a runtime check using the __parentTemplate variable.
+    // through the extends-owned dynamic parent-resolution helper.
     if (!this.compiler.inBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends) {
       return;
     }
@@ -491,56 +482,7 @@ class CompileInheritance {
   }
 
   compileAsyncExtends(node) {
-    var k = this.compiler._tmpid();
-    const extendsVarsVar = this.compiler._tmpid();
-    const extendsExternInputNamesVar = this.compiler._tmpid();
-    const extendsExternContextVar = this.compiler._tmpid();
-    const extendsRootContextVar = this.compiler._tmpid();
-
-    this.emit.line('context.beginAsyncExtendsBlockRegistration();');
-    this._emitExtendsContextSetup(
-      node,
-      extendsVarsVar,
-      extendsExternContextVar,
-      extendsExternInputNamesVar,
-      extendsRootContextVar
-    );
-    const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
-
-    if (node.asyncStoreIn) {
-      const resolvedParentTemplateId = `${node.asyncStoreIn}_resolvedParentTemplate`;
-      this.emit.line(`let ${node.asyncStoreIn} = ${parentTemplateId}.then((${resolvedParentTemplateId}) => {`);
-      this.emit.line('  if (context.asyncExtendsBlocksPromise) {');
-      this.emit.line(`    return context.asyncExtendsBlocksPromise.then(() => ${resolvedParentTemplateId});`);
-      this.emit.line('  }');
-      this.emit.line(`  return ${resolvedParentTemplateId};`);
-      this.emit.line('});');
-    }
-    this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
-      const templateVar = this.compiler._tmpid();
-      if (!node.asyncStoreIn) {
-        this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${parentTemplateId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
-      }
-      this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
-      this.emit.line(`${templateVar}.compile();`);
-      if (this.compiler.scriptMode) {
-        this.emit.line(`runtime.bootstrapInheritanceMetadata(inheritanceState, ${templateVar}.methods || {}, ${templateVar}.sharedSchema || [], ${templateVar}.path, ${this.compiler.buffer.currentBuffer}, context);`);
-      }
-      this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
-      this.emit.line(`context.setExtendsComposition(${templateVar}, ${extendsRootContextVar}, ${extendsExternContextVar});`);
-      this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
-      this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
-      this.emit.line('}');
-      this.emit.line('context.finishAsyncExtendsBlockRegistration();');
-    });
-  }
-
-  compileAsyncStaticRootExtends(node, scriptRootNode, rootSharedChannelNames = []) {
-    return this.compiler.extendsCompiler.compileAsyncStaticRootExtends(node, scriptRootNode, rootSharedChannelNames);
-  }
-
-  compileAsyncStaticTemplateExtends(node) {
-    return this.compiler.extendsCompiler.compileAsyncStaticTemplateExtends(node);
+    return this.compiler.extendsCompiler.compileAsyncDynamicTemplateExtends(node);
   }
 
   compileSyncExtends(node, frame) {

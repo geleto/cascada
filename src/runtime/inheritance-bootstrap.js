@@ -1,7 +1,11 @@
 'use strict';
 
+const inheritanceConstants = require('../inheritance-constants');
 const output = require('./channel');
 const commands = require('./commands');
+const lookup = require('./lookup');
+const resolve = require('./resolve');
+const { DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME } = inheritanceConstants;
 
 function validateSharedInputs(sharedSchema, providedInputNames, operationName = 'extends') {
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
@@ -137,10 +141,85 @@ function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
   }
 }
 
+function beginInheritanceResolution(context) {
+  if (context && typeof context.beginInheritanceResolution === 'function') {
+    context.beginInheritanceResolution();
+  }
+}
+
+function awaitInheritanceResolution(context) {
+  return context && typeof context.awaitInheritanceResolution === 'function'
+    ? context.awaitInheritanceResolution()
+    : null;
+}
+
+function deferUntilInheritanceResolution(context, value) {
+  const registrationWait = awaitInheritanceResolution(context);
+  if (!registrationWait || typeof registrationWait.then !== 'function') {
+    return value;
+  }
+  return registrationWait.then(() => value);
+}
+
+function finishInheritanceResolution(context) {
+  if (context && typeof context.finishInheritanceResolution === 'function') {
+    context.finishInheritanceResolution();
+  }
+}
+
+function getRegisteredAsyncBlock(context, name) {
+  const registrationWait = awaitInheritanceResolution(context);
+  if (registrationWait && typeof registrationWait.then === 'function') {
+    return registrationWait.then(() => context.getBlock(name));
+  }
+  return Promise.resolve(context.getBlock(name));
+}
+
+// Explicit dynamic-extends bridge: the parent template may resolve inside an
+// async child boundary, but top-level block/parent startup must only observe it
+// after the current inheritance registration wave has settled.
+function bridgeDynamicParentTemplate(context, parentTemplateValue) {
+  return Promise.resolve(parentTemplateValue).then((resolvedParentTemplate) =>
+    deferUntilInheritanceResolution(context, resolvedParentTemplate)
+  );
+}
+
+function renderDynamicTopLevelBlock(name, context, currentBuffer, env, runtime, cb, inheritanceState, blockPayload = null, blockRenderCtx = undefined) {
+  return resolveDynamicParentTemplate(currentBuffer).then((parentTemplate) => {
+    if (parentTemplate) {
+      return '';
+    }
+    return getRegisteredAsyncBlock(context, name).then((blockFunc) =>
+      blockFunc(
+        env,
+        context,
+        runtime,
+        cb,
+        currentBuffer,
+        inheritanceState,
+        context.prepareInheritancePayloadForBlock(blockFunc, blockPayload),
+        blockRenderCtx
+      )
+    );
+  });
+}
+
+function resolveDynamicParentTemplate(currentBuffer) {
+  return resolve.resolveSingle(lookup.channelLookup(DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME, currentBuffer));
+}
+
 module.exports = {
   validateSharedInputs,
   preloadSharedInputs,
   ensureSharedSchemaChannels,
   bootstrapInheritanceMetadata,
-  ensureCurrentBufferSharedLinks
+  ensureCurrentBufferSharedLinks,
+  beginInheritanceResolution,
+  awaitInheritanceResolution,
+  deferUntilInheritanceResolution,
+  finishInheritanceResolution,
+  getRegisteredAsyncBlock,
+  bridgeDynamicParentTemplate,
+  renderDynamicTopLevelBlock,
+  resolveDynamicParentTemplate
 };
