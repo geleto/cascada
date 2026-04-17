@@ -112,6 +112,11 @@ extends-focused compiler/runtime modules in one cleanup pass. In the numbered
 implementation plan, that cleanup pass is Step 11. Step 11 should also split
 ordinary callable invocation (`invokeCallable*`) away from extends/inheritance
 admission and dispatch helpers that currently share `src/runtime/call.js`.
+After that extraction, the intended shape is that one runtime owner is
+responsible for inheritance bootstrap/state setup and one runtime owner is
+responsible for inheritance admission/dispatch, with any remaining
+dynamic-extends compatibility bridge isolated behind one explicit seam rather
+than spread across multiple generic files.
 Step 11 should begin with an explicit inventory pass before moving code:
 confirm which helpers belong to compiler bootstrap/completion ownership, which
 belong to runtime inheritance bootstrap ownership, and which belong to runtime
@@ -120,13 +125,13 @@ inheritance dispatch ownership. The likely target files are
 and `src/runtime/inheritance-call.js`, but that split should be treated as the
 default direction rather than a hard promise until the analysis pass confirms
 it.
-That same cleanup step should make analysis authoritative enough to remove the
-remaining compiler-side compensation for block-local capture discovery and
-imported-call boundary linked-channel narrowing, and should revisit macro
-caller-capture threading so it no longer depends on class-level staging state.
-It should also fold the remaining duplicated async-extends compilation shape
-into shared helpers and formalize compiler-side linked-channel emission so
-helpers do not rely on a silent string-or-array contract.
+Step 11 is extraction-only. Analysis-authoritative cleanup, imported-call
+boundary metadata cleanup, macro caller-capture threading cleanup, duplicated
+async-extends compilation collapse, and the linked-channel contract cleanup all
+belong to Step 12 after the new ownership boundaries are in place.
+The extraction also preserves one-way ownership: broad facades may delegate into
+the new inheritance modules, but the new inheritance modules must not depend
+back on those broad facades as owners.
 
 Before that larger extraction, small structural simplifications are still fair
 game during the intermediate steps:
