@@ -125,21 +125,15 @@ class CompileInheritance {
   }
 
   _emitResolvedParentContinuation(node, templateVar, parentContextVar, rootContextVar, externContextVar, currentBufferExpr, options = null) {
-    const indent = options && options.indent ? options.indent : '';
-    const allowDynamicRoot = !!(options && options.allowDynamicRoot);
-    const errorContextJson = JSON.stringify(this.compiler._generateErrorContext(node));
-    const innerIndent = allowDynamicRoot ? `${indent}  ` : indent;
-
-    this.emit.line(`${indent}const ${parentContextVar} = context.forkForComposition(${templateVar}.path, ${rootContextVar}, context.getRenderContextVariables(), ${externContextVar});`);
-    if (allowDynamicRoot) {
-      this.emit.line(`${indent}if (${templateVar}.hasDynamicExtends) {`);
-      this.emit.line(`${indent}  ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, true, ${currentBufferExpr}, inheritanceState);`);
-      this.emit.line(`${indent}} else {`);
-    }
-    this.emit.line(`${innerIndent}runtime.admitMethodEntry(${parentContextVar}, inheritanceState, (${templateVar}.methods || {}).__constructor__, [], env, runtime, cb, ${currentBufferExpr}, { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${errorContextJson}, path: ${parentContextVar}.path });`);
-    if (allowDynamicRoot) {
-      this.emit.line(`${indent}}`);
-    }
+    return this.compiler.extendsCompiler._emitResolvedParentContinuation(
+      node,
+      templateVar,
+      parentContextVar,
+      rootContextVar,
+      externContextVar,
+      currentBufferExpr,
+      options
+    );
   }
 
   _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
@@ -160,7 +154,7 @@ class CompileInheritance {
 
   _compileAsyncImport(node) {
     if (this.compiler.scriptMode) {
-      return this._compileAsyncNamespaceImport(node);
+      return this.compiler.componentCompiler.compileAsyncComponentImport(node);
     }
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     if (!node.withContext && withVars.length === 0) {
@@ -450,34 +444,6 @@ class CompileInheritance {
     );
   }
 
-  _compileAsyncNamespaceImport(node) {
-    if (node.withContext) {
-      this.compiler.fail(
-        'script component import does not support "with context"; pass explicit shared values instead',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-
-    const target = node.target.value;
-    const importId = this._compileAsyncGetTemplateOrScript(node, false, false);
-    const componentId = this.compiler._tmpid();
-    const importVarsVar = this.compiler._tmpid();
-    const lifecycleChannelName = `__component_root__${target}`;
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-
-    this.emit.line(`let ${importVarsVar} = {};`);
-    this._emitExplicitExternInputs(node, importVarsVar);
-    this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${lifecycleChannelName}", "var", context, null);`);
-    this.emit.line(`let ${componentId} = runtime.createComponentInstance(` +
-      `${importId}, ${importVarsVar}, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, "${target}", "${lifecycleChannelName}", ` +
-      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${errorContextJson}, path: context.path }` +
-      ');');
-    this.compiler.buffer.emitOwnWaitedConcurrencyResolve(componentId, node);
-    this._emitValueImportBinding(target, componentId, node);
-  }
-
   compileSyncBlock(node, frame) {
     const args = node.args && node.args.children ? node.args.children : [];
     if (args.length > 0 || node.withContext !== null) {
@@ -570,108 +536,11 @@ class CompileInheritance {
   }
 
   compileAsyncStaticRootExtends(node, scriptRootNode, rootSharedChannelNames = []) {
-    const k = this.compiler._tmpid();
-    const extendsVarsVar = this.compiler._tmpid();
-    const extendsSharedInputNamesVar = this.compiler._tmpid();
-    const extendsSharedInputValuesVar = this.compiler._tmpid();
-    const extendsRootContextVar = this.compiler._tmpid();
-    const templateVar = this.compiler._tmpid();
-    const parentContextVar = this.compiler._tmpid();
-    const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
-    const prevBuffer = this.compiler.buffer.currentBuffer;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(scriptRootNode, {
-      includeDeclaredChannelNames: rootSharedChannelNames
-    });
-
-    this._emitExtendsContextSetup(
-      node,
-      extendsVarsVar,
-      extendsSharedInputValuesVar,
-      extendsSharedInputNamesVar,
-      extendsRootContextVar
-    );
-    this.emit.line('context.beginAsyncExtendsBlockRegistration();');
-    this.emit.line('// Step 4 still reuses the existing composition-context setup for');
-    this.emit.line('// parent execution, but named extends inputs are now validated and');
-    this.emit.line('// preloaded through shared-schema bootstrap rather than extern slots.');
-    // Fire-and-forget: ordering is structural here. The child buffer is linked
-    // into the current buffer synchronously at the extends site, so later root
-    // commands stay ordered after that boundary slot without any extra waiting.
-    this.emit(`runtime.runControlFlowBoundary(${prevBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
-    this.emit.asyncClosureDepth++;
-    this.compiler.buffer.currentBuffer = 'currentBuffer';
-    this.emit.line('try {');
-    this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
-    this.emit.line(`  ${templateVar}.compile();`);
-    this.emit.line(`  runtime.bootstrapInheritanceMetadata(inheritanceState, ${templateVar}.methods || {}, ${templateVar}.sharedSchema || [], ${templateVar}.path, currentBuffer, context);`);
-    this.emit.line(`  runtime.ensureCurrentBufferSharedLinks(${templateVar}.sharedSchema || [], currentBuffer);`);
-    this.emit.line(`  runtime.preloadSharedInputs(${templateVar}.sharedSchema || [], ${extendsSharedInputValuesVar}, currentBuffer, context, { lineno: ${node.lineno}, colno: ${node.colno} });`);
-    this.emit.line(`  for (let ${k} in ${templateVar}.blocks) {`);
-    this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
-    this.emit.line('  }');
-    this._emitResolvedParentContinuation(
-      node,
-      templateVar,
-      parentContextVar,
-      extendsRootContextVar,
-      extendsSharedInputValuesVar,
-      'currentBuffer',
-      { indent: '  ' }
-    );
-    this.emit.line('} finally {');
-    this.emit.line('  context.finishAsyncExtendsBlockRegistration();');
-    this.emit.line('}');
-    this.compiler.buffer.currentBuffer = prevBuffer;
-    this.emit.asyncClosureDepth--;
-    this.emit.line('});');
+    return this.compiler.extendsCompiler.compileAsyncStaticRootExtends(node, scriptRootNode, rootSharedChannelNames);
   }
 
   compileAsyncStaticTemplateExtends(node) {
-    const k = this.compiler._tmpid();
-    const extendsVarsVar = this.compiler._tmpid();
-    const extendsExternInputNamesVar = this.compiler._tmpid();
-    const extendsExternContextVar = this.compiler._tmpid();
-    const extendsRootContextVar = this.compiler._tmpid();
-    const templateVar = this.compiler._tmpid();
-    const parentContextVar = this.compiler._tmpid();
-    const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
-    const prevBuffer = this.compiler.buffer.currentBuffer;
-
-    this._emitExtendsContextSetup(
-      node,
-      extendsVarsVar,
-      extendsExternContextVar,
-      extendsExternInputNamesVar,
-      extendsRootContextVar
-    );
-    this.emit.line('context.beginAsyncExtendsBlockRegistration();');
-    this.emit(`runtime.runControlFlowBoundary(${prevBuffer}, ["${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL}"], context, cb, async (currentBuffer) => {`);
-    this.emit.asyncClosureDepth++;
-    this.compiler.buffer.currentBuffer = 'currentBuffer';
-    this.emit.line('try {');
-    this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
-    this.emit.line(`  ${templateVar}.compile();`);
-    this.emit.line(`  runtime.bootstrapInheritanceMetadata(inheritanceState, ${templateVar}.methods || {}, ${templateVar}.sharedSchema || [], ${templateVar}.path, currentBuffer, context);`);
-    this.emit.line(`  runtime.ensureCurrentBufferSharedLinks(${templateVar}.sharedSchema || [], currentBuffer);`);
-    this.emit.line(`  runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
-    this.emit.line(`  for (let ${k} in ${templateVar}.blocks) {`);
-    this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
-    this.emit.line('  }');
-    this._emitResolvedParentContinuation(
-      node,
-      templateVar,
-      parentContextVar,
-      extendsRootContextVar,
-      extendsExternContextVar,
-      'currentBuffer',
-      { indent: '  ', allowDynamicRoot: true }
-    );
-    this.emit.line('} finally {');
-    this.emit.line('  context.finishAsyncExtendsBlockRegistration();');
-    this.emit.line('}');
-    this.compiler.buffer.currentBuffer = prevBuffer;
-    this.emit.asyncClosureDepth--;
-    this.emit.line('});');
+    return this.compiler.extendsCompiler.compileAsyncStaticTemplateExtends(node);
   }
 
   compileSyncExtends(node, frame) {

@@ -1182,7 +1182,7 @@ composition family — `compileAsyncImport`, `compileSyncImport`,
 `compileAsyncFromImport`, `compileSyncFromImport`, `compileAsyncInclude`,
 `compileSyncInclude`, `compileAsyncBlock`, `compileSyncBlock`,
 `compileAsyncExtends`, `compileSyncExtends`, `compileAsyncSuper`,
-`compileSyncSuper`, `_compileAsyncNamespaceImport`, plus the
+`compileSyncSuper`, plus the
 composition-only helpers (`_emitCompositionContextObject`,
 `_emitExtendsContextSetup`, `_emitValueImportBinding`,
 `_compileAsyncGetTemplateOrScript`, `_emitExplicitExternInputs`,
@@ -1210,8 +1210,10 @@ then calls into `compiler-extends.js` for them.
 - `src/compiler/compiler-async.js` — keeps generic node dispatch and calls
   into `compiler-extends.js` for root/constructor work. Keeps
   `_withRootExportBufferScope`, `_currentRootExportBufferVar`,
-  `_emitRootSequenceLockDeclarations`, `_emitRootExternInitialization`, and
-  `_emitAsyncRootCompletion` (dynamic-extends legacy path until Step 12D).
+  `_emitRootSequenceLockDeclarations`, and `_emitRootExternInitialization`.
+  It keeps only thin delegators for extends-specific root finalization and
+  compiled-method metadata, and a thin delegator for the dynamic-extends
+  legacy root-completion path until Step 12D.
 - `src/compiler/compiler-base-async.js` — keeps the component-binding
   emission helpers (`_getComponentBindingFacts`, `_emitComponentCall`,
   `_emitComponentMethodCall`, `_emitComponentObservationCall`,
@@ -1221,6 +1223,24 @@ then calls into `compiler-extends.js` for them.
 - `src/compiler/macro.js` — keeps caller-capture plumbing in place; Step
   12E removes the `currentCallerCaptureInfo` class-level staging state by
   parameter-threading, but the macro-compilation ownership stays here.
+
+Clarification after the extraction landed:
+
+- `compiler-base-async.js` now delegates component-boundary emission to
+  `compiler-component.js`; the new file is the implementation owner for
+  component-binding detection, component command emission, and script-side
+  component import compilation
+- `compiler-async.js` now keeps only thin delegators for extends-specific root
+  finalization and compiled-method metadata; `compiler-extends.js` is the
+  implementation owner for that surface
+
+Extraction update:
+
+- component-binding detection, component command emission, and script-side
+  component import compilation now live in `src/compiler/compiler-component.js`
+- extends-specific root finalization and compiled-method metadata ownership now
+  live in `src/compiler/compiler-extends.js`; `compiler-async.js` keeps only
+  thin delegators for that surface
 
 ### No renames during extraction
 

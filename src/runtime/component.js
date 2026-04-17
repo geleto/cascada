@@ -6,7 +6,8 @@ const { declareBufferChannel } = require('./channel');
 const { WaitResolveCommand } = require('./commands');
 const { resolveSingle } = require('./resolve');
 const { createPoison, isPoisonError, RuntimeFatalError, handleError } = require('./errors');
-const call = require('./call');
+const inheritanceBootstrap = require('./inheritance-bootstrap');
+const inheritanceCall = require('./inheritance-call');
 
 class ComponentCommand {
   constructor({ channelName, pos = null }) {
@@ -177,7 +178,7 @@ class ComponentInstance {
 
   callMethod(name, args, env, runtime, cb, errorContext) {
     this._assertOpen(errorContext || { lineno: 0, colno: 0 });
-    return call.callInheritedMethodDetailed(
+    return inheritanceCall.callInheritedMethodDetailed(
       this.context,
       this.inheritanceState,
       name,
@@ -324,8 +325,8 @@ function createComponentInstance(templateValue, inputValues, context, env, runti
     rootBuffer: componentRoot,
     inheritanceState,
     template: null,
-      ownerBuffer,
-      ownerChannelName
+    ownerBuffer,
+    ownerChannelName
   });
 
   if (isCommandBuffer(ownerBuffer) && typeof ownerBuffer.getFinishStartedPromise === 'function') {
@@ -353,7 +354,7 @@ function createComponentInstance(templateValue, inputValues, context, env, runti
     componentInstance.template = resolvedTemplate;
 
     try {
-      runtime.bootstrapInheritanceMetadata(
+      inheritanceBootstrap.bootstrapInheritanceMetadata(
         inheritanceState,
         resolvedTemplate.methods || {},
         resolvedTemplate.sharedSchema || [],
@@ -367,7 +368,7 @@ function createComponentInstance(templateValue, inputValues, context, env, runti
 
     if (inputValues && typeof inputValues === 'object' && Object.keys(inputValues).length > 0) {
       try {
-        runtime.preloadSharedInputs(
+        inheritanceBootstrap.preloadSharedInputs(
           resolvedTemplate.sharedSchema || [],
           inputValues,
           componentRoot,
@@ -382,7 +383,7 @@ function createComponentInstance(templateValue, inputValues, context, env, runti
 
     const constructorEntry = (resolvedTemplate.methods || {}).__constructor__;
     if (constructorEntry) {
-      const admission = call.admitMethodEntryWithCompletion(
+      const admission = inheritanceCall.admitMethodEntryWithCompletion(
         componentContext,
         inheritanceState,
         constructorEntry,

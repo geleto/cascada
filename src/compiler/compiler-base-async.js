@@ -250,7 +250,7 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     if (this.scriptMode) {
-      const componentFacts = this._getComponentBindingFacts(node, analysisPass);
+      const componentFacts = this.componentCompiler.getComponentBindingFacts(node, analysisPass);
       if (componentFacts) {
         uses.push(componentFacts.bindingName);
         componentLookup = componentFacts;
@@ -292,10 +292,10 @@ class CompilerBaseAsync extends CompilerCommon {
           node
         );
       }
-      this._emitComponentSharedRead(componentLookup.bindingName, componentLookup.segments[0], node);
+      this.componentCompiler.emitComponentSharedRead(componentLookup.bindingName, componentLookup.segments[0], node);
       return;
     }
-    if (this.scriptMode && this._isExplicitInheritedMethodLookup(node)) {
+    if (this.scriptMode && this.extendsCompiler.isExplicitInheritedMethodLookup(node)) {
       this.fail(
         '`this.method` is only supported as a direct call; bare inherited-method references are not supported',
         node.lineno,
@@ -385,7 +385,7 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    const componentFacts = this._getComponentBindingFacts(node && node.name, analysisPass);
+    const componentFacts = this.componentCompiler.getComponentBindingFacts(node && node.name, analysisPass);
     if (componentFacts) {
       uses.push(componentFacts.bindingName);
       componentCall = componentFacts;
@@ -452,144 +452,6 @@ class CompilerBaseAsync extends CompilerCommon {
     return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall, componentCall };
   }
 
-  _getComponentBindingFacts(pathNode, analysisPass = this.analysis) {
-    if (!this.scriptMode || !pathNode || !analysisPass || !analysisPass.findDeclaration) {
-      return null;
-    }
-    const staticPath = this.sequential._extractStaticPath(pathNode);
-    if (!staticPath || staticPath.length < 2) {
-      return null;
-    }
-    const bindingName = staticPath[0];
-    const bindingDecl = analysisPass.findDeclaration(pathNode._analysis, bindingName);
-    const isComponentBinding = !!(
-      (bindingDecl && bindingDecl.componentBinding) ||
-      (!bindingDecl && this.componentBindings && this.componentBindings.has(bindingName))
-    );
-    if (!isComponentBinding) {
-      return null;
-    }
-    return {
-      bindingName,
-      segments: staticPath.slice(1)
-    };
-  }
-
-  _isExplicitInheritedMethodLookup(node) {
-    return !!(
-      this.scriptMode &&
-      node instanceof nodes.LookupVal &&
-      node.target instanceof nodes.Symbol &&
-      node.target.value === 'this'
-    );
-  }
-
-  _getExplicitInheritedMethodCall(node) {
-    if (!this._isExplicitInheritedMethodLookup(node && node.name)) {
-      return null;
-    }
-    const nameNode = node.name.val;
-    const methodName = nameNode instanceof nodes.Symbol || nameNode instanceof nodes.Literal
-      ? nameNode.value
-      : null;
-    if (!methodName || typeof methodName !== 'string') {
-      this.fail(
-        '`this.method(...)` requires a direct method name',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-    return {
-      methodName
-    };
-  }
-
-  _emitInheritedMethodCall(node) {
-    const explicitCall = this._getExplicitInheritedMethodCall(node);
-    if (!explicitCall) {
-      return false;
-    }
-    const errorContextJson = JSON.stringify(this._createErrorContext(node));
-    this.emit(`runtime.callInheritedMethod(context, inheritanceState, ${JSON.stringify(explicitCall.methodName)}, `);
-    this._compileAggregate(node.args, null, '[', ']', false, false);
-    this.emit(`, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson})`);
-    return true;
-  }
-
-  _emitComponentSharedRead(bindingName, sharedName, node) {
-    this._emitComponentCommandPromise(
-      'ComponentObserveCommand',
-      bindingName,
-      node,
-      () => this.emit(`sharedName: ${JSON.stringify(sharedName)}, observation: "value"`)
-    );
-  }
-
-  _emitComponentObservationCall(bindingName, sharedName, observation, node) {
-    this._emitComponentCommandPromise(
-      'ComponentObserveCommand',
-      bindingName,
-      node,
-      () => this.emit(`sharedName: ${JSON.stringify(sharedName)}, observation: ${JSON.stringify(observation)}`)
-    );
-  }
-
-  _emitComponentMethodCall(bindingName, methodName, node) {
-    const errorContextJson = JSON.stringify(this._createErrorContext(node));
-    this._emitComponentCommandPromise(
-      'ComponentMethodCallCommand',
-      bindingName,
-      node,
-      () => {
-        this.emit(`methodName: ${JSON.stringify(methodName)}, args: `);
-        this._compileAggregate(node.args, null, '[', ']', false, false);
-        this.emit(`, env, runtime, cb, errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${errorContextJson}, path: context.path }`);
-      },
-      false
-    );
-  }
-
-  _emitComponentCommandPromise(commandClassName, bindingName, node, emitFields, includePos = true) {
-    const posLiteral = `{lineno: ${node.lineno}, colno: ${node.colno}}`;
-    this.emit('(() => {');
-    const cmdVar = this._tmpid();
-    this.emit(` const ${cmdVar} = new runtime.${commandClassName}({ channelName: "${bindingName}", `);
-    emitFields.call(this);
-    if (includePos) {
-      this.emit(`, pos: ${posLiteral}`);
-    }
-    this.emit(' });');
-    this.emit(` ${this.buffer.currentBuffer}.add(${cmdVar}, "${bindingName}");`);
-    this.emit(` return ${cmdVar}.promise;`);
-    this.emit(' })()');
-  }
-
-  _emitComponentCall(node) {
-    const componentCall = node._analysis && node._analysis.componentCall;
-    if (!componentCall) {
-      return false;
-    }
-    const segments = componentCall.segments;
-    if (segments.length === 1) {
-      this._emitComponentMethodCall(componentCall.bindingName, segments[0], node);
-      return true;
-    }
-    if (segments.length === 2) {
-      const observation = segments[1];
-      if (observation === 'snapshot' || observation === 'isError' || observation === 'getError') {
-        this._emitComponentObservationCall(componentCall.bindingName, segments[0], observation, node);
-        return true;
-      }
-    }
-    this.fail(
-      'Component operations only support direct ns.method(...), ns.x, or ns.channel.snapshot()/isError()/getError() syntax',
-      node.lineno,
-      node.colno,
-      node
-    );
-  }
-
   compileFunCall(node) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
     const directMacroCall = node._analysis.directMacroCall;
@@ -601,11 +463,11 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    if (this._emitComponentCall(node)) {
+    if (this.componentCompiler.emitComponentCall(node)) {
       return;
     }
 
-    if (this._emitInheritedMethodCall(node)) {
+    if (this.extendsCompiler.emitInheritedMethodCall(node)) {
       return;
     }
 
