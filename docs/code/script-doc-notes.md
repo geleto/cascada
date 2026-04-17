@@ -11,15 +11,15 @@ Update streaming and link it from
 Roadmap - handle push, etc.. as data handles this??? Maybe replace var with data?
 
 script.md
-- Ordinary stressed at the start with simple example or features. Move it from Features at a glance: What makes Cascada Script remarkable is how unremarkable it looks.
-- explicit sequencing only when needed - not just !, also sequential
-- mention dataflow poisoning
++ Ordinary stressed at the start with simple example or features. Move it from Features at a glance: What makes Cascada Script remarkable is how unremarkable it looks.
++ explicit sequencing only when needed - not just !, also sequential
++ mention dataflow poisoning
 - read first - the linked docs are outdated. 
-- quick start - separate script and running a script - more readable, good example script must look very familiar 
-- Parallel by default - mention loops, calls, … 
-- Data-Driven Flow - mention if, expression depending on values that are not ready yet
-- Implicitly Parallel, Explicitly Sequential
- - while, each, !, sequential
++ quick start - separate script and running a script - make it more readable, good example script must look very familiar, yet be short. We already have script example, this one shows mostly the API
++ Parallel by default - mention loops, calls, … 
++ Data-Driven Flow - mention if, expression depending on values that are not ready yet
++ Implicitly Parallel, Explicitly Sequential
+ + while, each, !, sequential
 - Dataflow Poisoning - if condition - poison both branches
 - Features at a Glance - NO: Re-assign declared vars; supports +=, -=, *=, etc.
  - Parallel loop - for item in array / also show for property in object , for element in iterator
