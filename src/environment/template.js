@@ -213,15 +213,34 @@ class Template extends Obj {
   }
 
   _bindExportedValues(exported) {
-    const boundExported = {};
     const macroContext = this._createContext({});
+    return this._bindExportedValuesWithContext(exported, macroContext);
+  }
+
+  _bindExportedValuesWithContext(exported, macroContext) {
+    const boundExported = {};
 
     for (const name in exported) {
       const item = exported[name];
-      boundExported[name] = (typeof item === 'function' && item.isMacro)
-        ? item.bind(macroContext)
-        : item;
+      if (typeof item === 'function' && item.isMacro) {
+        const boundMacro = function macro(...macroArgs) {
+          return item._invoke(macroContext, macroArgs, null);
+        };
+        boundMacro.isMacro = true;
+        boundMacro._invoke = function(_executionContext, macroArgs, currentBuffer) {
+          // Imported/exported macros stay bound to the import-source context;
+          // caller-provided executionContext must not override that binding.
+          return item._invoke(macroContext, macroArgs, currentBuffer);
+        };
+        if (Object.prototype.hasOwnProperty.call(item, '__callerUsedChannels')) {
+          boundMacro.__callerUsedChannels = item.__callerUsedChannels;
+        }
+        boundExported[name] = boundMacro;
+        continue;
+      }
+      boundExported[name] = item;
     }
+
     return boundExported;
   }
 
@@ -286,6 +305,8 @@ class Template extends Obj {
     this.methods = this._getMethods(props.methods);
     this.externSpec = props.externSpec || [];
     this.sharedSchema = props.sharedSchema || [];
+    this.hasStaticExtends = !!props.hasStaticExtends;
+    this.hasDynamicExtends = !!props.hasDynamicExtends;
     this.rootRenderFunc = props.root;
     this.compiled = true;
   }
@@ -330,6 +351,7 @@ class Template extends Obj {
       methodEntry.fn.linkedChannels = Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : [];
       resolvedMethods[name] = {
         fn: methodEntry.fn,
+        kind: methodEntry.kind || 'method',
         contract: methodEntry.contract || null,
         ownerKey: methodEntry.fn.ownerKey,
         linkedChannels: methodEntry.fn.linkedChannels
@@ -384,22 +406,22 @@ class AsyncTemplate extends Template {
     this.compile();
 
     const context = this._createContext(ctx, renderCtx);
-    this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+    const finalizeExported = (exported) => this._bindExportedValuesWithContext(exported, context);
 
-    const exported = context.getExported();
-    const boundExported = {};
-    const macroContext = context;
-
-    for (const name in exported) {
-      const item = exported[name];
-      if (typeof item === 'function' && item.isMacro) {
-        boundExported[name] = item.bind(macroContext);
-      } else {
-        boundExported[name] = item;
+    const readExported = () => {
+      const exported = context.getExported();
+      const resolvedExported = globalRuntime.resolveObjectProperties(exported);
+      if (resolvedExported && typeof resolvedExported.then === 'function') {
+        return resolvedExported.then(finalizeExported);
       }
-    }
+      return finalizeExported(resolvedExported);
+    };
 
-    return boundExported;
+    const rendered = this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+    if (rendered && typeof rendered.getFinishedPromise === 'function') {
+      return rendered.getFinishedPromise().then(readExported);
+    }
+    return readExported();
   }
 
   /**

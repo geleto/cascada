@@ -316,8 +316,7 @@ class Context extends Obj {
       };
     if (storedLocals) {
       basePayload.localsByTemplate[templatePath] = lib.extend(
-        {},
-        storedLocals,
+        lib.extend({}, storedLocals),
         basePayload.localsByTemplate[templatePath] || {}
       );
     }

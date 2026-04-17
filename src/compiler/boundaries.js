@@ -49,9 +49,11 @@ class CompileBoundaries {
     this.compiler.emit('})');
   }
 
-  compileValueBoundary(bufferCompiler, node, emitValue, positionNode = node) {
+  compileValueBoundary(bufferCompiler, node, emitValue, positionNode = node, linkedChannelsArgOverride = null) {
     const parentBufferArg = bufferCompiler.currentBuffer || 'null';
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const linkedChannelsArg = linkedChannelsArgOverride == null
+      ? this.compiler.emit.getLinkedChannelsArg(node)
+      : linkedChannelsArgOverride;
     const resultId = this.compiler._tmpid();
 
     this.compiler.emit.line(

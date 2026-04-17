@@ -108,10 +108,25 @@ machinery may temporarily live in generic compiler/runtime files such as
 staging choice, not part of the intended long-term layering. Once the
 constructor/root contract has stabilized across script, component, and template
 inheritance, those extends-specific helpers should move into dedicated
-extends-focused compiler/runtime modules in one cleanup pass. That later cleanup
-should also split ordinary callable invocation (`invokeCallable*`) away from
-extends/inheritance admission and dispatch helpers that currently share
-`src/runtime/call.js`.
+extends-focused compiler/runtime modules in one cleanup pass. In the numbered
+implementation plan, that cleanup pass is Step 11. Step 11 should also split
+ordinary callable invocation (`invokeCallable*`) away from extends/inheritance
+admission and dispatch helpers that currently share `src/runtime/call.js`.
+Step 11 should begin with an explicit inventory pass before moving code:
+confirm which helpers belong to compiler bootstrap/completion ownership, which
+belong to runtime inheritance bootstrap ownership, and which belong to runtime
+inheritance dispatch ownership. The likely target files are
+`src/compiler/compiler-extends.js`, `src/runtime/inheritance-bootstrap.js`,
+and `src/runtime/inheritance-call.js`, but that split should be treated as the
+default direction rather than a hard promise until the analysis pass confirms
+it.
+That same cleanup step should make analysis authoritative enough to remove the
+remaining compiler-side compensation for block-local capture discovery and
+imported-call boundary linked-channel narrowing, and should revisit macro
+caller-capture threading so it no longer depends on class-level staging state.
+It should also fold the remaining duplicated async-extends compilation shape
+into shared helpers and formalize compiler-side linked-channel emission so
+helpers do not rely on a silent string-or-array contract.
 
 Before that larger extraction, small structural simplifications are still fair
 game during the intermediate steps:
@@ -251,8 +266,8 @@ analysis pass. For now, constructor linked-channel collection may stay
 separate from ordinary method linked-channel collection because constructor
 compilation still owns top-level flow concerns such as bootstrap-adjacent
 setup, pre/post-`extends` ordering, and constructor-local non-shared channels.
-That unification is cleanup work for a later step after constructor semantics
-have settled; it is not part of the current architecture contract.
+That unification is cleanup work for Step 11 after constructor semantics have
+settled; it is not part of the current architecture contract.
 
 ## Methods, Overrides, and `super()`
 

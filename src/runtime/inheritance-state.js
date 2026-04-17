@@ -24,10 +24,15 @@ class InheritanceState {
         return;
       }
       if (chain.length > 0) {
-        validateCallableContractCompatibility('method', name, chain[0].contract || null, methodEntry.contract || null);
+        // Constructors use the same compatibility rules as methods today:
+        // they are internal callables with method-style override semantics,
+        // while blocks remain the only separate callable contract kind here.
+        const callableKind = methodEntry.kind === 'block' ? 'block' : 'method';
+        validateCallableContractCompatibility(callableKind, name, chain[0].contract || null, methodEntry.contract || null);
       }
       chain.push({
         fn: methodEntry.fn,
+        kind: methodEntry.kind || 'method',
         contract: methodEntry.contract || null,
         ownerKey,
         linkedChannels: Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : []

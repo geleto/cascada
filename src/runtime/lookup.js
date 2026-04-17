@@ -5,6 +5,7 @@ const {
   isPoison,
   isPoisonError,
   handleError,
+  RuntimeFatalError,
   RuntimePromise,
   collectErrors,
 } = require('./errors');
@@ -242,10 +243,18 @@ function channelLookup(name, currentBuffer) {
   if (!channel) {
     return undefined;
   }
+  const currentPath = currentBuffer && currentBuffer._context ? currentBuffer._context.path : null;
+  const channelPath = channel && channel._context ? channel._context.path : null;
+  const isCrossTemplateSharedRead = !!(channel._isShared && currentPath && channelPath && channelPath !== currentPath);
   if (isBlockedCrossTemplateChannelRead(currentBuffer, channel)) {
     return undefined;
   }
-  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
+  if (isCrossTemplateSharedRead) {
+    return channel._buffer.addSnapshot(channel._channelName, { lineno: 0, colno: 0 });
+  }
+  const ownerInAncestry = isBufferInAncestry(currentBuffer, channel._buffer);
+  if (ownerInAncestry &&
+    isChannelLinkedThroughAncestry(currentBuffer, channel._buffer, name)) {
     // Optional dynamic mode: lazily link current read buffer into the channel lane.
     // This is intentionally flag-guarded so structural prelinking remains the default model,
     // but dynamic compositions can opt in without changing compiler wiring.
@@ -254,6 +263,14 @@ function channelLookup(name, currentBuffer) {
     }
     return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
+  if (ownerInAncestry && !channel._isShared) {
+    throw new RuntimeFatalError(
+      `Channel '${name}' is owned by an ancestor buffer but is not linked through the current buffer ancestry`
+    );
+  }
+  // Shared-root channels may be observed from descendant buffers even when
+  // some private intermediate buffers do not project that lane. In that case
+  // the ordered read must happen on the shared owner channel itself.
   return channel._buffer.addSnapshot(channel._channelName, { lineno: 0, colno: 0 });
 }
 
@@ -279,10 +296,9 @@ function captureCompositionScriptValue(context, name, currentBuffer, errorContex
 
 const COMPOSITION_CAPTURE_UNAVAILABLE = Symbol('COMPOSITION_CAPTURE_UNAVAILABLE');
 
-// Temporary Step C bridge for `extends ... with ...`.
-// Revisit or remove this once later inheritance payload work decides whether
-// composition capture remains a narrow runtime primitive or is fully subsumed
-// by explicit payload construction.
+// Explicit composition capture bridge for inheritance payload construction.
+// This stays intentionally narrow: it snapshots the current assigned value when
+// available, but does not replace ordered channel observation in general.
 function captureCompositionValueImpl(name, currentBuffer, fallbackLookup) {
   const channel = currentBuffer.findChannel(name);
   if (channel) {
@@ -294,9 +310,9 @@ function captureCompositionValueImpl(name, currentBuffer, fallbackLookup) {
   return fallbackLookup();
 }
 
-// Temporary Step C bridge for `extends ... with ...`.
-// This is intentionally separate from ordered channel reads and must not be
-// treated as a general replacement for snapshot-based observation.
+// Composition capture reads the latest assigned value directly from the owning
+// channel when the inheritance payload needs an immediate value snapshot.
+// This is intentionally separate from ordered snapshot-based observation.
 function getCurrentCompositionChannelValue(channel) {
   if (!channel) {
     return COMPOSITION_CAPTURE_UNAVAILABLE;
@@ -307,10 +323,14 @@ function getCurrentCompositionChannelValue(channel) {
   return COMPOSITION_CAPTURE_UNAVAILABLE;
 }
 
-// Temporary Step C fence until later payload work removes the need for linked
-// buffers to act as a source of ordinary bare-name lookup across templates.
+// Cross-template bare-name lookup remains blocked for non-shared channels.
+// Shared channels are the only lanes that may be observed across template
+// boundaries without going through an explicit payload.
 function isBlockedCrossTemplateChannelRead(currentBuffer, channel) {
   if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
+    return false;
+  }
+  if (channel._isShared) {
     return false;
   }
   const currentPath = currentBuffer._context ? currentBuffer._context.path : null;
@@ -344,6 +364,17 @@ function isBufferInAncestry(buffer, ancestor) {
     current = current.parent;
   }
   return false;
+}
+
+function isChannelLinkedThroughAncestry(buffer, ancestor, channelName) {
+  let current = buffer;
+  while (current && current !== ancestor) {
+    if (!(typeof current.isLinkedChannel === 'function' && current.isLinkedChannel(channelName))) {
+      return false;
+    }
+    current = current.parent;
+  }
+  return current === ancestor;
 }
 
 module.exports = {

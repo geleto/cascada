@@ -50,10 +50,14 @@ module.exports = class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  beginEntryFunction(node, name, linkedChannels = null, extraParams = []) {
+  beginEntryFunction(node, name, linkedChannels = null, extraParams = [], options = null) {
     const rootTextChannelName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
       : DEFAULT_TEMPLATE_TEXT_CHANNEL;
+    const ownTextChannel = !this.compiler.scriptMode && (!options || options.ownTextChannel !== false);
+    const effectiveLinkedChannels = (!this.compiler.scriptMode && name === 'root' && !linkedChannels)
+      ? [rootTextChannelName]
+      : linkedChannels;
     this.compiler.buffer.currentBuffer = 'output';
     this.compiler.buffer.currentTextChannelVar = 'output_textChannelVar';
     this.compiler.buffer.currentTextChannelName = this.compiler.scriptMode ? null : rootTextChannelName;
@@ -80,8 +84,8 @@ module.exports = class CompileEmit {
       this.compiler.asyncMode
         ? (name === 'root' ? '(compositionMode ? parentBuffer : null)' : 'parentBuffer')
         : null,
-      this.compiler.buffer.currentTextChannelVar,
-      linkedChannels
+      ownTextChannel ? this.compiler.buffer.currentTextChannelVar : null,
+      effectiveLinkedChannels
     );
     this.line('try {');
   }

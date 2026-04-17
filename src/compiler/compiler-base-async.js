@@ -649,9 +649,15 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
     if (importedCallableFacts) {
+      const linkedChannelsArg = this._getImportedCallableBoundaryLinkedChannelsArg(node);
+      // Imported callable execution is value-producing here; linking the
+      // boundary to every nested read channel over-constrains ordering and can
+      // create cycles when caller blocks snapshot otherwise-unrelated vars. We
+      // only link the imported binding itself plus the direct argument channels
+      // that this value boundary snapshots while preparing the call.
       this.boundaries.compileValueBoundary(this.buffer, node, (n) => {
         this._emitAsyncDynamicCall(n, 'currentBuffer');
-      });
+      }, node, linkedChannelsArg);
       return;
     }
     this._emitAsyncDynamicCall(node, this.buffer.currentBuffer);
@@ -938,6 +944,58 @@ class CompilerBaseAsync extends CompilerCommon {
       this.emit(';');
     });
     return true;
+  }
+
+  _getImportedCallableBoundaryLinkedChannelsArg(node) {
+    const importedRoot = this.sequential._extractStaticPathRoot(node.name);
+    const importedDecl = importedRoot ? this.analysis.findDeclaration(node._analysis, importedRoot) : null;
+    const boundaryChannelNames = new Set();
+    const importedChannelName = importedDecl && (importedDecl.runtimeName || importedRoot);
+    if (importedChannelName) {
+      boundaryChannelNames.add(importedChannelName);
+    }
+
+    const textChannel = this.analysis && typeof this.analysis.getCurrentTextChannel === 'function'
+      ? this.analysis.getCurrentTextChannel(node._analysis)
+      : null;
+    if (textChannel) {
+      boundaryChannelNames.add(textChannel);
+    }
+
+    const collectUsedChannels = (valueNode) => {
+      const usedChannels = valueNode && valueNode._analysis && valueNode._analysis.usedChannels;
+      if (!usedChannels) {
+        return;
+      }
+      Array.from(usedChannels).forEach((name) => {
+        if (!name || name.charAt(0) === '!') {
+          return;
+        }
+        boundaryChannelNames.add(name);
+      });
+    };
+
+    const topLevelArgs = node.args && Array.isArray(node.args.children)
+      ? node.args.children
+      : [];
+    topLevelArgs.forEach((argNode) => {
+      if (argNode instanceof nodes.KeywordArgs) {
+        argNode.children.forEach((pairNode) => {
+          if (pairNode instanceof nodes.Pair &&
+            pairNode.key instanceof nodes.Symbol &&
+            pairNode.key.value === 'caller') {
+            return;
+          }
+          collectUsedChannels(pairNode instanceof nodes.Pair ? pairNode.value : pairNode);
+        });
+        return;
+      }
+      collectUsedChannels(argNode);
+    });
+
+    return boundaryChannelNames.size > 0
+      ? JSON.stringify(Array.from(boundaryChannelNames))
+      : 'null';
   }
 
   _emitAsyncDynamicCall(node, currentBufferExpr) {

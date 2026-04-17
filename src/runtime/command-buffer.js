@@ -116,6 +116,9 @@ class CommandBuffer {
     this._finishedResolver = null;
 
     // Iterators currently visiting this buffer keyed by channel name.
+    // Multiple iterators may legitimately traverse the same lane at once:
+    // for example a local channel's own iterator and an ancestor buffer's
+    // iterator walking nested child buffers on that same channel.
     this._visitingIterators = new Map();
     if (parent && parent._channelAliases) {
       // Propagate explicit channel-binding aliases down the buffer tree so
@@ -221,7 +224,12 @@ class CommandBuffer {
       return;
     }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    this._visitingIterators.set(resolvedChannelName, iterator);
+    let iterators = this._visitingIterators.get(resolvedChannelName);
+    if (!iterators) {
+      iterators = new Set();
+      this._visitingIterators.set(resolvedChannelName, iterators);
+    }
+    iterators.add(iterator);
   }
 
   onLeaveBuffer(iterator, channelName) {
@@ -229,8 +237,12 @@ class CommandBuffer {
       return;
     }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    const current = this._visitingIterators.get(resolvedChannelName);
-    if (current === iterator) {
+    const iterators = this._visitingIterators.get(resolvedChannelName);
+    if (!iterators) {
+      return;
+    }
+    iterators.delete(iterator);
+    if (iterators.size === 0) {
       this._visitingIterators.delete(resolvedChannelName);
     }
   }
@@ -498,8 +510,11 @@ class CommandBuffer {
   }
 
   _notifyCommandOrBufferAdded(channelName) {
-    const iterator = this._visitingIterators.get(channelName);
-    if (iterator) {
+    const iterators = this._visitingIterators.get(channelName);
+    if (!iterators || iterators.size === 0) {
+      return;
+    }
+    for (const iterator of iterators) {
       iterator.onCommandOrBufferAdded(this);
     }
   }
@@ -526,8 +541,11 @@ class CommandBuffer {
   }
 
   _notifyChannelFinished(channelName) {
-    const iterator = this._visitingIterators.get(channelName);
-    if (iterator) {
+    const iterators = this._visitingIterators.get(channelName);
+    if (!iterators || iterators.size === 0) {
+      return;
+    }
+    for (const iterator of iterators) {
       iterator.onBufferFinished(this, channelName);
     }
   }

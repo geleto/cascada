@@ -909,6 +909,11 @@ function declareSharedBufferChannel(buffer, channelName, channelType, context, i
     );
   }
 
+  // Shared-channel lookup and cross-template read rules rely on this marker.
+  // Keep it on the channel instance so lookup can distinguish shared lanes
+  // from ordinary template-local channels without walking declaration state.
+  channel._isShared = true;
+
   return channel;
 }
 

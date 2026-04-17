@@ -588,20 +588,21 @@ structural simplifications with behavior-changing post-Step-7 work.
   `value + completion` shape, or whether root completion can collapse onto a
   simpler single admission contract
 
-#### After Step 10
+#### Step 11
 
-After Steps 8-10 stabilize the constructor/root contract, extract the
-extends-specific helpers that currently live in generic files into dedicated
-extends compiler/runtime modules.
+After Steps 8-10 stabilize the constructor/root contract, do one explicit
+cleanup/extraction step that moves the stable extends-specific helpers out of
+generic files into dedicated extends compiler/runtime modules.
 
-This later extraction should cover the non-obvious Step 7 helpers too, not just
-the obvious `compileAsyncStaticRootExtends(...)` path. Current examples include:
+This Step 11 extraction should cover the non-obvious Step 7 helpers too, not
+just the obvious `compileAsyncStaticRootExtends(...)` path. Current examples
+include:
 
 - compiler-side constructor bootstrap/finalization helpers in
   `src/compiler/compiler-async.js`, such as:
   - `_compileAsyncScriptConstructorEntry(...)`
   - `_emitRootConstructorAdmission(...)`
-  - `_emitAsyncScriptConstructorRootCompletion(...)`
+  - `_emitAsyncConstructorRootCompletion(...)`
   - `_emitRootInheritanceBootstrap(...)`
 - runtime-side admission/bootstrap helpers currently living in broad files,
   such as:
@@ -615,8 +616,8 @@ the obvious `compileAsyncStaticRootExtends(...)` path. Current examples include:
   - the underlying inheritance-admission helpers in `src/runtime/call.js`
 
 Do not do this extraction during Step 7 itself. First let Steps 8-10 settle the
-final constructor/component/template behavior, then move the stable extends-only
-surface out of the generic files in one cleanup pass.
+final constructor/component/template behavior, then use Step 11 to move the
+stable extends-only surface out of the generic files in one cleanup pass.
 
 ### Tests
 
@@ -849,7 +850,7 @@ Completed cleanup from the initial Step 9 landing:
 - binding-channel resolution already stays on one helper path for method calls,
   observations, and close/teardown
 
-Deferred cleanup for a post-Step-10 cleanup sweep:
+Deferred cleanup for Step 11:
 
 - collapse component method/observation command plumbing toward one generic
   component-operation command shape instead of parallel near-duplicate command
@@ -942,7 +943,9 @@ the old Nunjucks-style behavior for static `extends`.
 
 ### Keep
 
-- plain templates without `extends` stay on the normal path
+- plain templates without `extends` keep their normal user-visible behavior,
+  even though the async compiler now routes them through the same internal
+  constructor-admission root path for consistency
 - sync template extends stays on its current path in this plan
 - dynamic-extends behavior stays on its existing path until redesigned
 
@@ -956,10 +959,129 @@ the old Nunjucks-style behavior for static `extends`.
 - `super()` still resolves correctly when parent block metadata arrives later
 - shared state stays consistent across top-level template constructor code and
   block bodies
+- pre/post ordering stays correct through multi-level static extends chains
+- post-extends shared mutations remain visible to overriding block reads
 - async ordering around parent loading remains correct for pre-extends and
   post-extends template code
+- a static child extending a dynamically-extending parent still continues
+  through the parent constructor/root path correctly
+- parent-template load failures on the static extends path fail cleanly rather
+  than hanging the render
 - legacy static-extends tests are updated or explicitly gated so the behavior
   change is intentional
+
+## Step 11 - Extraction And Consolidation
+
+**Goal:** Make the final inheritance architecture easier to own by moving the
+stable extends/component/template machinery out of generic files and reducing
+the remaining structural duplication left after Steps 7-10.
+
+### Includes
+
+- start Step 11 with one explicit extraction analysis pass that inventories the
+  remaining extends/component/template helpers in generic files, groups them by
+  stable responsibility, and confirms the target file split before moving code
+- extract stable extends-specific compiler helpers from broad files such as
+  `src/compiler/compiler-async.js` and `src/compiler/inheritance.js` into
+  dedicated extends-focused compiler modules
+- extract stable inheritance/component runtime helpers from broad files such as
+  `src/runtime/call.js` and `src/runtime/runtime.js` into dedicated
+  extends-focused runtime modules
+- reduce the remaining duplicated constructor/root-completion and
+  parent-continuation plumbing where the behavior is already settled
+- formalize shared-channel cross-template read metadata so lookup does not rely
+  on ad-hoc private flags as an implicit multi-file contract
+- keep exported-macro rebinding centralized so macro metadata does not get
+  copied piecemeal across multiple wrapper sites
+- make async analysis authoritative enough that inheritance/template code can
+  stop compensating in the compiler with raw AST symbol scans for block-local
+  capture names
+- move imported-call boundary linked-channel narrowing onto analysis or other
+  explicit metadata so compiler emission no longer reconstructs it ad hoc from
+  argument trees
+- revisit macro caller-capture threading so `CompileMacro` does not need
+  class-level staging state such as `currentCallerCaptureInfo`
+- keep generic command-buffer invariant fixes, such as iterator-visit
+  bookkeeping cleanup, separate from inheritance-specific ownership cleanup
+- extract the remaining duplicated async-extends compilation structure shared by
+  `compileAsyncExtends(...)` and `compileAsyncStaticTemplateExtends(...)`
+- formalize the compiler-side `linkedChannels` emission contract so helpers do
+  not accept a silent string-or-array dual type
+
+### Target File Split
+
+The exact split should be confirmed by the Step 11 analysis pass, but the
+intended direction is:
+
+- `src/compiler/compiler-extends.js`
+  - root bootstrap/admission helpers now living in `compiler-async.js`
+  - constructor-root completion and parent-handoff helpers
+  - inheritance local-capture helpers that exist only for extends/component
+    flow
+- `src/compiler/inheritance.js`
+  - may remain as the statement-level entry file for `extends` node
+    compilation, or may become a thinner facade if the analysis pass shows the
+    current responsibilities should collapse into `compiler-extends.js`
+- `src/runtime/inheritance-call.js`
+  - extends-specific admission/dispatch helpers currently living in `call.js`
+  - inherited dispatch, super dispatch, direct method admission, and the
+    detailed completion-tracking variants
+- `src/runtime/inheritance-bootstrap.js`
+  - shared-schema bootstrap helpers currently living in `runtime.js`
+  - shared-input validation/preload helpers
+  - current-buffer shared-link setup used by script/template/component
+    inheritance bootstrap
+- `src/runtime/inheritance-state.js`
+  - keep as the focused runtime state holder unless the analysis pass finds a
+    clearer ownership boundary
+
+The analysis pass should also explicitly decide what stays in broad files:
+
+- keep generic callable invocation in `src/runtime/call.js` unless the moved
+  inheritance dispatch surface is the only remaining user of a helper
+- keep generic command-buffer and channel mechanics in `src/runtime/command-buffer.js`
+  and `src/runtime/channel.js`
+- keep generic compiler node dispatch in `src/compiler/compiler-async.js`,
+  delegating extends/component/template inheritance work outward rather than
+  moving the whole compiler surface
+
+### Step 11 Order
+
+- Step 11A: analysis/inventory pass, with the target file split written down
+  before moving code
+- Step 11B: extract compiler-side extends/template/component helpers
+- Step 11C: extract runtime-side inheritance bootstrap helpers
+- Step 11D: extract runtime-side inheritance dispatch/admission helpers and
+  leave generic callable invocation behind
+- Step 11E: close the remaining structural cleanup items that depend on the new
+  ownership boundaries, such as analysis-authoritative metadata and the
+  `linkedChannels` contract cleanup
+
+### Reuse
+
+- reuse the final behavior established in Steps 7-10 without changing user
+  semantics
+- keep the explicit shared-root / constructor / inheritance-state model exactly
+  as stabilized by the earlier steps
+
+### Replace
+
+- replace "post-Step-10 cleanup" as an informal bucket with one explicit step
+- replace broad-file ownership of stable extends-specific helpers with narrower,
+  dedicated module ownership
+
+### Keep
+
+- no new user-facing inheritance behavior
+- no semantic redesign of constructor return, block dispatch, or component
+  lifetime rules
+- only structural cleanup and ownership consolidation unless a bug is found
+
+### Tests
+
+- rerun the focused inheritance/component/template suites from Steps 7-10 after
+  each extraction slice
+- keep `npm run test:quick` green before closing the cleanup step
 
 ## Non-Goals
 
@@ -974,3 +1096,4 @@ the old Nunjucks-style behavior for static `extends`.
 - [ ] `npm run test:quick` passes at the end
 - [ ] full test suite passes before closing the feature
 - [ ] `docs/code/extends-next.md` still matches the implementation
+

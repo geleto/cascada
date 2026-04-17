@@ -102,10 +102,30 @@ class CompileMacro {
   }
 
   _compileAsyncCaller(node) {
-    const funcId = this._compileAsyncMacro(node);
-    const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
-    this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
-    return funcId;
+    const callerCaptureNames = this._getCallerCapturedValueChannels(node);
+    const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node)
+      .filter((name) => callerCaptureNames.indexOf(name) === -1);
+    const callerCaptureVar = callerCaptureNames.length > 0 ? this.compiler._tmpid() : null;
+    const previousCallerCaptureInfo = this.currentCallerCaptureInfo;
+
+    if (callerCaptureVar) {
+      this.compiler.emit.line(`const ${callerCaptureVar} = {};`);
+      callerCaptureNames.forEach((name) => {
+        this.compiler.emit(`${callerCaptureVar}[${JSON.stringify(name)}] = runtime.captureCompositionValue(context, ${JSON.stringify(name)}, ${this.compiler.buffer.currentBuffer}`);
+        this.compiler.emit.line(');');
+      });
+    }
+
+    this.currentCallerCaptureInfo = callerCaptureVar
+      ? { captureVar: callerCaptureVar, captureNames: callerCaptureNames }
+      : null;
+    try {
+      const funcId = this._compileAsyncMacro(node);
+      this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
+      return funcId;
+    } finally {
+      this.currentCallerCaptureInfo = previousCallerCaptureInfo;
+    }
   }
 
   compileSyncCaller(node, frame) {
@@ -195,6 +215,20 @@ class CompileMacro {
       emittedArgNames: signature.positionalNames.map((name) => `"${name}"`),
       emittedKwargNames: signature.keywordNames.map((name) => `"${name}"`),
       emittedParamNames: signature.positionalNames.map((name) => `l_${name}`).concat('kwargs')
+    });
+  }
+
+  _getCallerCapturedValueChannels(node) {
+    const compiler = this.compiler;
+    const parentVisible = this._getCallerParentVisibleUsedChannels(node);
+    return parentVisible.filter((name) => {
+      const decl = compiler.analysis && compiler.analysis.findDeclaration
+        ? compiler.analysis.findDeclaration(node._analysis, name)
+        : null;
+      return !!(decl &&
+        decl.type === 'var' &&
+        !decl.shared &&
+        !decl.internal);
     });
   }
 
@@ -473,11 +507,18 @@ class CompileMacro {
       const prevBuffer = compiler.buffer.currentBuffer;
       const prevTextChannelVar = compiler.buffer.currentTextChannelVar;
       const callerTextChannelVar = !compiler.scriptMode ? compiler._tmpid() : null;
+      const callerCaptureInfo = this.currentCallerCaptureInfo;
       if (!compiler.scriptMode) {
         compiler.emit.line(`let ${callerTextChannelVar} = runtime.declareBufferChannel(macroParentBuffer, "${compiler.buffer.currentTextChannelName}", "text", context, null);`);
       }
       compiler.buffer.currentBuffer = 'macroParentBuffer';
       compiler.buffer.currentTextChannelVar = callerTextChannelVar;
+      if (callerCaptureInfo && callerCaptureInfo.captureVar && Array.isArray(callerCaptureInfo.captureNames)) {
+        callerCaptureInfo.captureNames.forEach((name) => {
+          compiler.emit.line(`runtime.declareBufferChannel(macroParentBuffer, ${JSON.stringify(name)}, "var", context, null);`);
+          compiler.emit.line(`macroParentBuffer.add(new runtime.VarCommand({ channelName: ${JSON.stringify(name)}, args: [${callerCaptureInfo.captureVar}[${JSON.stringify(name)}]], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), ${JSON.stringify(name)});`);
+        });
+      }
       returnStatement = this._emitCompiledAsyncMacroBody({
         node,
         managedFrame: null,
