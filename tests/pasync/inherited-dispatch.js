@@ -8,6 +8,7 @@ let isPoisonError;
 let runtimeModule;
 let Context;
 let InheritanceState;
+let InheritanceMethodRegistry;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -18,7 +19,9 @@ if (typeof require !== 'undefined') {
   runtimeModule = require('../../src/runtime/runtime');
   isPoisonError = runtimeModule.isPoisonError;
   Context = require('../../src/environment/context').Context;
-  InheritanceState = require('../../src/runtime/inheritance-state').InheritanceState;
+  const inheritanceStateModule = require('../../src/runtime/inheritance-state');
+  InheritanceState = inheritanceStateModule.InheritanceState;
+  InheritanceMethodRegistry = inheritanceStateModule.InheritanceMethodRegistry;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
@@ -28,6 +31,7 @@ if (typeof require !== 'undefined') {
   isPoisonError = nunjucks.runtime.isPoisonError;
   Context = nunjucks.Context;
   InheritanceState = null;
+  InheritanceMethodRegistry = null;
 }
 
 describe('Inherited Dispatch', function () {
@@ -252,6 +256,63 @@ describe('Inherited Dispatch', function () {
     }
   });
 
+  it('should let _finishAdmissionBuffers own sync admission-buffer cleanup', async function () {
+    const fakeBuffer = {
+      finishCount: 0,
+      markFinishedAndPatchLinks() {
+        this.finishCount += 1;
+      },
+      getFinishCompletePromise() {
+        return Promise.resolve();
+      }
+    };
+    const context = {
+      createInheritancePayload(ownerKey, argMap) {
+        return { ownerKey, argMap };
+      },
+      createSuperInheritancePayload(currentPayload, argMap) {
+        return { currentPayload, argMap };
+      },
+      prepareInheritancePayloadForBlock(fn, payload) {
+        void fn;
+        return payload;
+      },
+      getRenderContextVariables() {
+        return {};
+      }
+    };
+    const command = new runtimeModule.InheritanceAdmissionCommand({
+      name: '__constructor__',
+      resolveMethodEntry: () => ({
+        fn() {
+          return 'done';
+        },
+        contract: { inputNames: [], withContext: false },
+        ownerKey: 'Parent.script',
+        linkedChannels: []
+      }),
+      args: [],
+      context,
+      inheritanceState: {},
+      env: {},
+      runtime: runtimeModule,
+      cb: () => {},
+      barrierBuffer: fakeBuffer,
+      invocationBuffer: fakeBuffer,
+      currentBuffer: fakeBuffer,
+      errorContext: { lineno: 1, colno: 1, errorContextString: null, path: 'Parent.script' }
+    });
+
+    const applied = command.apply();
+    const value = applied && typeof applied.then === 'function' ? await applied : applied;
+    const promised = await command.promise;
+    await command.completion;
+
+    expect(value).to.be('done');
+    expect(promised).to.be('done');
+    expect(fakeBuffer.finishCount).to.be(1);
+  });
+
   describe('Step 14A', function () {
     it('should defer unresolved inherited invocation-buffer creation until the target method entry is current', async function () {
       if (!InheritanceState) {
@@ -262,7 +323,7 @@ describe('Inherited Dispatch', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
       const events = [];
-      const originalRegisterCompiledMethods = InheritanceState.prototype.registerCompiledMethods;
+      const originalRegisterCompiledMethods = InheritanceMethodRegistry.prototype.registerCompiled;
       const originalEnsureInvocationBuffer = runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
       let buildInvocationCreatedAt = -1;
 
@@ -274,7 +335,7 @@ describe('Inherited Dispatch', function () {
         return originalEnsureInvocationBuffer.apply(this, arguments);
       };
 
-      InheritanceState.prototype.registerCompiledMethods = function(methods) {
+      InheritanceMethodRegistry.prototype.registerCompiled = function(methods) {
         if (methods && methods.build && methods.build.ownerKey === 'A.script') {
           events.push({ type: 'parent-build-registered' });
         }
@@ -307,7 +368,7 @@ describe('Inherited Dispatch', function () {
         expect(buildInvocationCreatedAt).to.be.greaterThan(-1);
         expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
       } finally {
-        InheritanceState.prototype.registerCompiledMethods = originalRegisterCompiledMethods;
+        InheritanceMethodRegistry.prototype.registerCompiled = originalRegisterCompiledMethods;
         runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
       }
     });

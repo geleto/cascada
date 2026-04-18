@@ -2425,7 +2425,8 @@ Work:
 - make the extraction granularity explicit rather than leaving "split by root
   family" ambiguous:
   - the dynamic-template-root family should move to its own file because it is
-    already the most self-contained and behaviorally distinct path
+    already the most self-contained and behaviorally distinct path; the landed
+    file name for that owner is `src/compiler/compiler-extends-dynamic-root.js`
   - the remaining families may begin as clearly bounded sections if that keeps
     the step smaller, but the section boundaries must be named and intentional
     rather than one mixed helper lattice
@@ -2570,6 +2571,9 @@ Work:
 - define one explicit conceptual payload for extends composition/startup
 - use stable field names for the distinct views we intentionally preserve
   (for example explicit inputs vs root context vs render/extern context)
+  - the landed field names for that payload are:
+    `explicitInputValues`, `explicitInputNames`, `rootContext`,
+    and `externContext`
 - update compiler/runtime/context handoff code to talk in terms of that named
   payload rather than a loose group of locals
 - if the best implementation is "one plain object assembled once and threaded

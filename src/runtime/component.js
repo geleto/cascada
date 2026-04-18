@@ -216,12 +216,12 @@ class ComponentInstance {
       throw new RuntimeFatalError(`Unsupported component observation '${observation}'`, pos.lineno, pos.colno, null, path);
     };
 
-    const immediateType = this.inheritanceState.getImmediateSharedChannelType(name);
+    const immediateType = this.inheritanceState.shared.getImmediateType(name);
     if (immediateType) {
       return runObservation(immediateType);
     }
 
-    const resolvedType = this.inheritanceState.resolveSharedChannelType(name);
+    const resolvedType = this.inheritanceState.shared.resolveType(name);
     return resolvedType && typeof resolvedType.then === 'function'
       ? resolvedType.then(runObservation)
       : runObservation(resolvedType);

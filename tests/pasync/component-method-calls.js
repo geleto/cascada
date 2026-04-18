@@ -5,6 +5,7 @@ let AsyncEnvironment;
 let StringLoader;
 let runtimeModule;
 let InheritanceState;
+let InheritanceMethodRegistry;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -12,13 +13,16 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = environment.AsyncEnvironment;
   StringLoader = require('../util').StringLoader;
   runtimeModule = require('../../src/runtime/runtime');
-  InheritanceState = require('../../src/runtime/inheritance-state').InheritanceState;
+  const inheritanceStateModule = require('../../src/runtime/inheritance-state');
+  InheritanceState = inheritanceStateModule.InheritanceState;
+  InheritanceMethodRegistry = inheritanceStateModule.InheritanceMethodRegistry;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   StringLoader = window.util.StringLoader;
   runtimeModule = nunjucks.runtime;
   InheritanceState = null;
+  InheritanceMethodRegistry = null;
 }
 
 describe('Component Method Calls', function () {
@@ -250,7 +254,7 @@ describe('Component Method Calls', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       const events = [];
-      const originalRegisterCompiledMethods = InheritanceState.prototype.registerCompiledMethods;
+      const originalRegisterCompiledMethods = InheritanceMethodRegistry.prototype.registerCompiled;
       const originalEnsureInvocationBuffer = runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
       let buildInvocationCreatedAt = -1;
 
@@ -262,7 +266,7 @@ describe('Component Method Calls', function () {
         return originalEnsureInvocationBuffer.apply(this, arguments);
       };
 
-      InheritanceState.prototype.registerCompiledMethods = function(methods) {
+      InheritanceMethodRegistry.prototype.registerCompiled = function(methods) {
         if (methods && methods.build && methods.build.ownerKey === 'A.script') {
           events.push({ type: 'parent-build-registered' });
         }
@@ -290,7 +294,7 @@ describe('Component Method Calls', function () {
         expect(parentRegisteredAt).to.be.greaterThan(-1);
         expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
       } finally {
-        InheritanceState.prototype.registerCompiledMethods = originalRegisterCompiledMethods;
+        InheritanceMethodRegistry.prototype.registerCompiled = originalRegisterCompiledMethods;
         runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
       }
     });

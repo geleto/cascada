@@ -11,7 +11,6 @@ const { RESOLVE_MARKER } = require('./resolve');
 const { createCommandBuffer, isCommandBuffer } = require('./command-buffer');
 const { declareBufferChannel } = require('./channel');
 const { Command } = require('./commands');
-const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceConstants = require('../inheritance-constants');
 
 const INHERITANCE_ADMISSION_CHANNEL = '__inheritance_admission__';
@@ -138,29 +137,22 @@ function _finishAdmissionBuffers(command) {
   }
 }
 
-function _invokeMethodEntry(methodEntry, context, inheritanceState, resolvedArgs, env, runtime, cb, invocationBuffer, errorContext, currentPayload = null, autoFinishInvocationBuffer = true) {
-  let result;
-  try {
-    const argMap = {};
-    const inputNames = methodEntry && methodEntry.contract && Array.isArray(methodEntry.contract.inputNames)
-      ? methodEntry.contract.inputNames
-      : [];
-    for (let i = 0; i < inputNames.length; i++) {
-      argMap[inputNames[i]] = resolvedArgs[i];
-    }
-    const payload = currentPayload
-      ? context.createSuperInheritancePayload(currentPayload, argMap)
-      : context.createInheritancePayload(methodEntry && methodEntry.ownerKey, argMap, null);
-    const preparedPayload = context.prepareInheritancePayloadForBlock(methodEntry.fn, payload);
-    const renderCtx = methodEntry && methodEntry.contract && methodEntry.contract.withContext
-      ? context.getRenderContextVariables()
-      : undefined;
-    result = methodEntry.fn(env, context, runtime, cb, invocationBuffer, inheritanceState, preparedPayload, renderCtx);
-  } finally {
-    if (autoFinishInvocationBuffer) {
-      _finishInvocationBuffer(invocationBuffer);
-    }
+function _invokeMethodEntry(methodEntry, context, inheritanceState, resolvedArgs, env, runtime, cb, invocationBuffer, errorContext, currentPayload = null) {
+  const argMap = {};
+  const inputNames = methodEntry && methodEntry.contract && Array.isArray(methodEntry.contract.inputNames)
+    ? methodEntry.contract.inputNames
+    : [];
+  for (let i = 0; i < inputNames.length; i++) {
+    argMap[inputNames[i]] = resolvedArgs[i];
   }
+  const payload = currentPayload
+    ? context.createSuperInheritancePayload(currentPayload, argMap)
+    : context.createInheritancePayload(methodEntry && methodEntry.ownerKey, argMap, null);
+  const preparedPayload = context.prepareInheritancePayloadForBlock(methodEntry.fn, payload);
+  const renderCtx = methodEntry && methodEntry.contract && methodEntry.contract.withContext
+    ? context.getRenderContextVariables()
+    : undefined;
+  const result = methodEntry.fn(env, context, runtime, cb, invocationBuffer, inheritanceState, preparedPayload, renderCtx);
   return result && typeof result.then === 'function'
     ? new RuntimePromise(result, errorContext)
     : result;
@@ -191,9 +183,8 @@ function _computeBarrierLinkedChannels(currentBuffer, inheritanceState, linkedCh
     ? linkedChannels
     : (
         isCommandBuffer(currentBuffer) &&
-        inheritanceState &&
-        typeof inheritanceState.getRegisteredSharedChannelNames === 'function'
-          ? inheritanceState.getRegisteredSharedChannelNames()
+        inheritanceState
+          ? inheritanceState.shared.getNames()
           : []
       );
 
@@ -409,8 +400,7 @@ class InheritanceAdmissionCommand extends Command {
         this.cb,
         invocationBuffer,
         this.errorContext,
-        this.currentPayload,
-        false
+        this.currentPayload
       );
       if (result && typeof result.then === 'function') {
         this._applyPromise = result.then(
@@ -511,12 +501,12 @@ function _admitMethodCommand({
 }
 
 function admitInheritedMethod(context, inheritanceState, name, args, env, runtime, cb, currentBuffer, errorContext) {
-  const immediateMethodEntry = inheritanceState && typeof inheritanceState.getImmediateInheritedMethodEntry === 'function'
-    ? inheritanceState.getImmediateInheritedMethodEntry(name)
+  const immediateMethodEntry = inheritanceState
+    ? inheritanceState.methods.getImmediateInherited(name)
     : null;
   return _admitMethodCommand({
     immediateMethodEntry,
-    resolveMethodEntry: () => inheritanceState.resolveInheritedMethodEntry(name),
+    resolveMethodEntry: () => inheritanceState.methods.resolveInherited(name),
     name,
     context,
     inheritanceState,
@@ -544,12 +534,12 @@ function callInheritedMethod(context, inheritanceState, name, args, env, runtime
 }
 
 function callSuperMethod(context, inheritanceState, name, ownerKey, args, env, runtime, cb, currentBuffer, currentPayload, errorContext) {
-  const immediateMethodEntry = inheritanceState && typeof inheritanceState.getImmediateSuperMethodEntry === 'function'
-    ? inheritanceState.getImmediateSuperMethodEntry(name, ownerKey)
+  const immediateMethodEntry = inheritanceState
+    ? inheritanceState.methods.getImmediateSuper(name, ownerKey)
     : null;
   const admissionCommand = _admitMethodCommand({
     immediateMethodEntry,
-    resolveMethodEntry: () => inheritanceState.resolveSuperMethodEntry(name, ownerKey),
+    resolveMethodEntry: () => inheritanceState.methods.resolveSuper(name, ownerKey),
     name,
     context,
     inheritanceState,
@@ -581,88 +571,9 @@ function admitConstructorEntry(context, inheritanceState, methodEntry, args, env
   });
 }
 
-function _startDynamicParentConstructor(parentTemplate, parentContext, inheritanceState, env, runtime, cb, currentBuffer, shouldAwaitCompletion) {
-  const compositionBuffer = parentTemplate.rootRenderFunc(
-    env,
-    parentContext,
-    runtime,
-    cb,
-    true,
-    currentBuffer,
-    inheritanceState
-  );
-  if (!shouldAwaitCompletion) {
-    return null;
-  }
-  return compositionBuffer && typeof compositionBuffer.getFinishedPromise === 'function'
-    ? compositionBuffer.getFinishedPromise()
-    : null;
-}
-
-function _startStaticParentConstructor(parentTemplate, registrationContext, parentContext, inheritanceState, env, runtime, cb, currentBuffer, errorContext, shouldAwaitCompletion) {
-  inheritanceBootstrap.bootstrapInheritanceMetadata(
-    inheritanceState,
-    parentTemplate && parentTemplate.methods ? parentTemplate.methods : {},
-    parentTemplate && parentTemplate.sharedSchema ? parentTemplate.sharedSchema : [],
-    parentTemplate ? parentTemplate.path : null,
-    currentBuffer,
-    registrationContext
-  );
-  inheritanceBootstrap.ensureCurrentBufferSharedLinks(
-    parentTemplate && parentTemplate.sharedSchema ? parentTemplate.sharedSchema : [],
-    currentBuffer
-  );
-  const admission = admitConstructorEntry(
-    parentContext,
-    inheritanceState,
-    parentTemplate && parentTemplate.methods ? parentTemplate.methods.__constructor__ : null,
-    [],
-    env,
-    runtime,
-    cb,
-    currentBuffer,
-    errorContext
-  );
-  return shouldAwaitCompletion && admission && admission.completion && typeof admission.completion.then === 'function'
-    ? admission.completion
-    : null;
-}
-
-function startParentConstructor(parentTemplate, registrationContext, parentContext, inheritanceState, env, runtime, cb, currentBuffer, errorContext, options = null) {
-  const opts = options || {};
-  const shouldAwaitCompletion = !!opts.awaitCompletion;
-
-  if (parentTemplate && parentTemplate.hasDynamicExtends) {
-    return _startDynamicParentConstructor(
-      parentTemplate,
-      parentContext,
-      inheritanceState,
-      env,
-      runtime,
-      cb,
-      currentBuffer,
-      shouldAwaitCompletion
-    );
-  }
-
-  return _startStaticParentConstructor(
-    parentTemplate,
-    registrationContext,
-    parentContext,
-    inheritanceState,
-    env,
-    runtime,
-    cb,
-    currentBuffer,
-    errorContext,
-    shouldAwaitCompletion
-  );
-}
-
 module.exports = {
   InheritanceAdmissionCommand,
   admitConstructorEntry,
-  startParentConstructor,
   admitInheritedMethod,
   callInheritedMethod,
   callSuperMethod

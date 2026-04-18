@@ -187,16 +187,33 @@ class Context extends Obj {
     return templateName == null ? '__anonymous__' : String(templateName);
   }
 
-  setExtendsComposition(templateObject, rootContext, externContext) {
+  createExtendsCompositionPayload(explicitInputValues, explicitInputNames, rootContext, externContext) {
+    const normalizedExplicitInputValues = lib.extend({}, explicitInputValues || {});
+    return {
+      explicitInputValues: normalizedExplicitInputValues,
+      explicitInputNames: Array.isArray(explicitInputNames)
+        ? explicitInputNames.slice()
+        : Object.keys(normalizedExplicitInputValues),
+      rootContext: rootContext || {},
+      externContext: externContext || {}
+    };
+  }
+
+  setExtendsComposition(templateObject, compositionPayload) {
     if (!templateObject || typeof templateObject !== 'object') {
       throw new Error('Extends composition requires a resolved parent template/script object');
     }
-    this.extendsCompositionByParent.set(templateObject, {
-      // forkForComposition() copies these again into the new child Context, so
-      // keep only a single stored snapshot here.
-      rootContext: rootContext || {},
-      externContext: externContext || {}
-    });
+    // forkForComposition() copies these again into the new child Context, so
+    // keep only a single stored snapshot here.
+    this.extendsCompositionByParent.set(
+      templateObject,
+      this.createExtendsCompositionPayload(
+        compositionPayload && compositionPayload.explicitInputValues,
+        compositionPayload && compositionPayload.explicitInputNames,
+        compositionPayload && compositionPayload.rootContext,
+        compositionPayload && compositionPayload.externContext
+      )
+    );
   }
 
   getExtendsComposition(templateObject) {

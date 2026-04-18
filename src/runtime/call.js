@@ -9,6 +9,7 @@ const {
 } = require('./errors');
 const { RESOLVE_MARKER, resolveAll } = require('./resolve');
 const inheritanceCall = require('./inheritance-call');
+const inheritanceStartup = require('./inheritance-startup');
 
 // Ordinary callable invocation
 
@@ -183,7 +184,7 @@ module.exports = {
   invokeCallable,
   invokeCallableAsync,
   admitConstructorEntry: inheritanceCall.admitConstructorEntry,
-  startParentConstructor: inheritanceCall.startParentConstructor,
+  startParentConstructor: inheritanceStartup.startParentConstructor,
   callInheritedMethod: inheritanceCall.callInheritedMethod,
   callSuperMethod: inheritanceCall.callSuperMethod
 };

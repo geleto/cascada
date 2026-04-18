@@ -10,7 +10,9 @@ let nodes;
 let scriptTranspiler;
 let runtime;
 let inheritanceBootstrap;
-let inheritanceCall;
+let inheritanceStartup;
+let inheritanceMethodRegistry;
+let inheritanceSharedRegistry;
 let StringLoader;
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -24,7 +26,10 @@ if (typeof require !== 'undefined') {
   scriptTranspiler = require('../../src/script/script-transpiler');
   runtime = require('../../src/runtime/runtime');
   inheritanceBootstrap = require('../../src/runtime/inheritance-bootstrap');
-  inheritanceCall = require('../../src/runtime/inheritance-call');
+  inheritanceStartup = require('../../src/runtime/inheritance-startup');
+  const inheritanceStateModule = require('../../src/runtime/inheritance-state');
+  inheritanceMethodRegistry = inheritanceStateModule.InheritanceMethodRegistry;
+  inheritanceSharedRegistry = inheritanceStateModule.InheritanceSharedRegistry;
   StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
@@ -37,7 +42,9 @@ if (typeof require !== 'undefined') {
   scriptTranspiler = nunjucks.scriptTranspiler;
   runtime = nunjucks.runtime;
   inheritanceBootstrap = null;
-  inheritanceCall = null;
+  inheritanceStartup = null;
+  inheritanceMethodRegistry = null;
+  inheritanceSharedRegistry = null;
   StringLoader = window.util.StringLoader;
 }
 
@@ -305,10 +312,10 @@ describe('Extends', function () {
       parentScript.compile();
 
       const inheritanceState = runtime.createInheritanceState();
-      inheritanceState.registerCompiledMethods(childScript.methods);
-      inheritanceState.registerCompiledMethods(parentScript.methods);
+      inheritanceState.methods.registerCompiled(childScript.methods);
+      inheritanceState.methods.registerCompiled(parentScript.methods);
 
-      const chain = inheritanceState.getRegisteredMethodChain('build');
+      const chain = inheritanceState.methods.getChain('build');
       expect(chain.map((entry) => entry.ownerKey)).to.eql(['C.script', 'A.script']);
       expect(chain[0].contract).to.eql({
         inputNames: ['user'],
@@ -324,8 +331,8 @@ describe('Extends', function () {
 
       runtime.createInheritanceState = function() {
         const inheritanceState = originalCreateInheritanceState();
-        const originalRegisterSharedSchema = inheritanceState.registerSharedSchema;
-        inheritanceState.registerSharedSchema = function(sharedSchema) {
+        const originalRegisterSharedSchema = inheritanceState.shared.registerSchema;
+        inheritanceState.shared.registerSchema = function(sharedSchema) {
           seen.push(`schema:${(sharedSchema || []).map((entry) => entry.name).join(',')}`);
           return originalRegisterSharedSchema.call(this, sharedSchema);
         };
@@ -477,16 +484,35 @@ describe('Extends', function () {
 
   describe('Step 13A', function () {
     it('should route dynamic parent startup through composition mode only', async function () {
-      if (!inheritanceCall) {
+      if (!inheritanceStartup) {
         this.skip();
         return;
       }
 
       const currentBuffer = runtime.createCommandBuffer({ path: 'Child.script' });
       const inheritanceState = runtime.createInheritanceState();
+      const registrationContext = {
+        path: 'Child.script',
+        getRenderContextVariables() {
+          return { siteName: 'Example' };
+        },
+        forkForComposition(nextPath, ctx, renderCtx, externCtx) {
+          return { path: nextPath, ctx, renderCtx, externCtx };
+        },
+        forkForPath(nextPath) {
+          return { path: nextPath };
+        }
+      };
+      const compositionPayload = {
+        explicitInputValues: { theme: 'dark' },
+        explicitInputNames: ['theme'],
+        rootContext: { theme: 'dark', siteName: 'Example' },
+        externContext: { theme: 'dark' }
+      };
       const calls = [];
       const expectedCompletion = Promise.resolve('dynamic-finished');
       const parentTemplate = {
+        path: 'Parent.script',
         hasDynamicExtends: true,
         rootRenderFunc(envArg, contextArg, runtimeArg, cbArg, compositionMode, parentBufferArg, inheritanceStateArg) {
           calls.push({
@@ -506,35 +532,53 @@ describe('Extends', function () {
         }
       };
 
-      const completion = inheritanceCall.startParentConstructor(
+      const completion = inheritanceStartup.startParentConstructor(
         parentTemplate,
-        { path: 'registration' },
-        { path: 'parent' },
+        registrationContext,
+        compositionPayload,
         inheritanceState,
         { envName: 'env' },
         runtime,
         () => {},
         currentBuffer,
         { lineno: 1, colno: 1, path: 'Child.script' },
-        { awaitCompletion: true }
+        true
       );
 
       expect(calls).to.have.length(1);
       expect(calls[0].compositionMode).to.be(true);
       expect(calls[0].parentBufferArg).to.be(currentBuffer);
       expect(calls[0].inheritanceStateArg).to.be(inheritanceState);
+      expect(calls[0].contextArg).to.eql({
+        path: 'Parent.script',
+        ctx: compositionPayload.rootContext,
+        renderCtx: { siteName: 'Example' },
+        externCtx: compositionPayload.externContext
+      });
       expect(completion).to.be(expectedCompletion);
       expect(await completion).to.be('dynamic-finished');
     });
 
     it('should route static parent startup through bootstrap and shared-link installation', function () {
-      if (!inheritanceCall || !inheritanceBootstrap) {
+      if (!inheritanceStartup || !inheritanceBootstrap) {
         this.skip();
         return;
       }
 
       const currentBuffer = runtime.createCommandBuffer({ path: 'Child.script' });
       const inheritanceState = runtime.createInheritanceState();
+      const registrationContext = {
+        path: 'Child.script',
+        getRenderContextVariables() {
+          return {};
+        },
+        forkForComposition(nextPath, ctx, renderCtx, externCtx) {
+          return { path: nextPath, ctx, renderCtx, externCtx };
+        },
+        forkForPath(nextPath) {
+          return { path: nextPath };
+        }
+      };
       const parentTemplate = {
         hasDynamicExtends: false,
         path: 'Parent.script',
@@ -580,17 +624,17 @@ describe('Extends', function () {
       };
 
       try {
-        const completion = inheritanceCall.startParentConstructor(
+        const completion = inheritanceStartup.startParentConstructor(
           parentTemplate,
-          { path: 'registration' },
-          { path: 'parent' },
+          registrationContext,
+          null,
           inheritanceState,
           { envName: 'env' },
           runtime,
           () => {},
           currentBuffer,
           { lineno: 1, colno: 1, path: 'Child.script' },
-          { awaitCompletion: false }
+          false
         );
 
         expect(completion).to.be(null);
@@ -604,18 +648,116 @@ describe('Extends', function () {
         inheritanceBootstrap.ensureCurrentBufferSharedLinks = originalEnsureLinks;
       }
     });
+
+    it('should return static parent constructor completion only after bootstrap, link installation, and admission', async function () {
+      if (!inheritanceStartup || !inheritanceBootstrap) {
+        this.skip();
+        return;
+      }
+
+      const inheritanceCall = require('../../src/runtime/inheritance-call');
+      const currentBuffer = runtime.createCommandBuffer({ path: 'Child.script' });
+      const inheritanceState = runtime.createInheritanceState();
+      const registrationContext = {
+        path: 'Child.script',
+        getRenderContextVariables() {
+          return { siteName: 'Example' };
+        },
+        forkForComposition(nextPath, ctx, renderCtx, externCtx) {
+          return { path: nextPath, ctx, renderCtx, externCtx };
+        },
+        forkForPath(nextPath) {
+          return { path: nextPath };
+        }
+      };
+      const compositionPayload = {
+        explicitInputValues: { theme: 'dark' },
+        explicitInputNames: ['theme'],
+        rootContext: { theme: 'dark', siteName: 'Example' },
+        externContext: { theme: 'dark' }
+      };
+      const parentTemplate = {
+        hasDynamicExtends: false,
+        path: 'Parent.script',
+        methods: {
+          __constructor__: {
+            fn() {
+              return null;
+            },
+            kind: 'method',
+            contract: { inputNames: [], withContext: false },
+            ownerKey: 'Parent.script',
+            linkedChannels: []
+          }
+        },
+        sharedSchema: [{ name: 'theme', type: 'var' }]
+      };
+      const expectedCompletion = Promise.resolve('static-finished');
+      const originalBootstrap = inheritanceBootstrap.bootstrapInheritanceMetadata;
+      const originalEnsureLinks = inheritanceBootstrap.ensureCurrentBufferSharedLinks;
+      const originalAdmitConstructorEntry = inheritanceCall.admitConstructorEntry;
+      const seen = [];
+
+      inheritanceBootstrap.bootstrapInheritanceMetadata = function() {
+        seen.push('bootstrap');
+        return originalBootstrap.apply(this, arguments);
+      };
+      inheritanceBootstrap.ensureCurrentBufferSharedLinks = function() {
+        seen.push('links');
+        return originalEnsureLinks.apply(this, arguments);
+      };
+      inheritanceCall.admitConstructorEntry = function(parentContext) {
+        seen.push('admit');
+        expect(parentContext).to.eql({
+          path: 'Parent.script',
+          ctx: compositionPayload.rootContext,
+          renderCtx: { siteName: 'Example' },
+          externCtx: compositionPayload.externContext
+        });
+        return {
+          promise: Promise.resolve(null),
+          completion: expectedCompletion
+        };
+      };
+
+      try {
+        const completion = inheritanceStartup.startParentConstructor(
+          parentTemplate,
+          registrationContext,
+          compositionPayload,
+          inheritanceState,
+          { envName: 'env' },
+          runtime,
+          () => {},
+          currentBuffer,
+          { lineno: 1, colno: 1, path: 'Child.script' },
+          true
+        );
+
+        expect(seen).to.eql(['bootstrap', 'links', 'admit']);
+        expect(completion).to.be(expectedCompletion);
+        expect(await completion).to.be('static-finished');
+      } finally {
+        inheritanceBootstrap.bootstrapInheritanceMetadata = originalBootstrap;
+        inheritanceBootstrap.ensureCurrentBufferSharedLinks = originalEnsureLinks;
+        inheritanceCall.admitConstructorEntry = originalAdmitConstructorEntry;
+      }
+    });
   });
 
   describe('Step 13B', function () {
     it('should keep inheritance-resolution lifecycle state on InheritanceState', async function () {
       const inheritanceState = runtime.createInheritanceState();
 
-      expect(inheritanceState.awaitInheritanceResolution()).to.be(null);
+      expect(inheritanceState.methods).to.be.an(inheritanceMethodRegistry);
+      expect(inheritanceState.shared).to.be.an(inheritanceSharedRegistry);
+      expect(inheritanceState.resolution).to.be.ok();
+      expect(inheritanceState.resolution.await()).to.be(null);
 
-      inheritanceState.beginInheritanceResolution();
-      inheritanceState.beginInheritanceResolution();
+      inheritanceState.resolution.begin();
+      inheritanceState.resolution.begin();
 
-      const registrationWait = inheritanceState.awaitInheritanceResolution();
+      const registrationWait = inheritanceState.resolution.await();
       expect(registrationWait && typeof registrationWait.then).to.be('function');
 
       let settled = false;
@@ -623,15 +765,15 @@ describe('Extends', function () {
         settled = true;
       });
 
-      inheritanceState.finishInheritanceResolution();
+      inheritanceState.resolution.finish();
       await Promise.resolve();
       expect(settled).to.be(false);
 
-      inheritanceState.finishInheritanceResolution();
+      inheritanceState.resolution.finish();
       await registrationWait;
 
       expect(settled).to.be(true);
-      expect(inheritanceState.awaitInheritanceResolution()).to.be(null);
+      expect(inheritanceState.resolution.await()).to.be(null);
     });
 
     it('should remove inheritance-resolution bookkeeping from Context', function () {
@@ -656,6 +798,28 @@ describe('Extends', function () {
       expect(source).to.contain('runtime.finishInheritanceResolution(inheritanceState);');
       expect(source).to.contain('runtime.bridgeDynamicParentTemplate(inheritanceState,');
       expect(source).to.contain('runtime.renderDynamicTopLevelBlock(');
+    });
+  });
+
+  describe('Step 15E', function () {
+    it('should compile extends-with startup around one explicit composition payload shape', function () {
+      const scriptSource = new Script(
+        'var theme = "dark"\nextends "A.script" with theme\nreturn null',
+        env,
+        'payload-shape.script'
+      )._compileSource();
+      const dynamicTemplateSource = new AsyncTemplate(
+        '{% set theme = "dark" %}{% if useParent %}{% extends parent with theme %}{% endif %}{% block body %}x{% endblock %}',
+        env,
+        'payload-shape.njk'
+      )._compileSource();
+
+      expect(scriptSource).to.contain('context.createExtendsCompositionPayload(');
+      expect(scriptSource).to.contain('.explicitInputValues');
+      expect(scriptSource).to.contain('runtime.startParentConstructor(');
+      expect(dynamicTemplateSource).to.contain('context.createExtendsCompositionPayload(');
+      expect(dynamicTemplateSource).to.contain('context.setExtendsComposition(');
+      expect(dynamicTemplateSource).to.contain('.explicitInputNames');
     });
   });
 });

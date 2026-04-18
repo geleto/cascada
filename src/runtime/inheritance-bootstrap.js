@@ -111,11 +111,11 @@ function bootstrapInheritanceMetadata(inheritanceState, methods, sharedSchema, o
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
 
   if (compiledMethods && Object.keys(compiledMethods).length > 0) {
-    inheritanceState.registerCompiledMethods(compiledMethods);
+    inheritanceState.methods.registerCompiled(compiledMethods);
   }
 
   if (schema.length > 0) {
-    inheritanceState.registerSharedSchema(schema);
+    inheritanceState.shared.registerSchema(schema);
     ensureSharedSchemaChannels(schema, currentBuffer, context);
   }
 }
@@ -149,14 +149,14 @@ function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
 }
 
 function beginInheritanceResolution(inheritanceState) {
-  if (inheritanceState && typeof inheritanceState.beginInheritanceResolution === 'function') {
-    inheritanceState.beginInheritanceResolution();
+  if (inheritanceState) {
+    inheritanceState.resolution.begin();
   }
 }
 
 function awaitInheritanceResolution(inheritanceState) {
-  return inheritanceState && typeof inheritanceState.awaitInheritanceResolution === 'function'
-    ? inheritanceState.awaitInheritanceResolution()
+  return inheritanceState
+    ? inheritanceState.resolution.await()
     : null;
 }
 
@@ -169,8 +169,8 @@ function deferUntilInheritanceResolution(inheritanceState, value) {
 }
 
 function finishInheritanceResolution(inheritanceState) {
-  if (inheritanceState && typeof inheritanceState.finishInheritanceResolution === 'function') {
-    inheritanceState.finishInheritanceResolution();
+  if (inheritanceState) {
+    inheritanceState.resolution.finish();
   }
 }
 

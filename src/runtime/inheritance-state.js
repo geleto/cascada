@@ -3,17 +3,69 @@
 const { validateCallableContractCompatibility } = require('../callable-contract');
 const { RuntimeFatalError } = require('./errors');
 
-class InheritanceState {
+class InheritanceResolutionState {
   constructor() {
-    this.methods = Object.create(null);
-    this.registeredSharedChannelNames = new Set();
-    this.registeredSharedChannelTypes = new Map();
-    this.inheritanceResolutionPromise = null;
-    this.inheritanceResolutionResolver = null;
-    this.inheritanceResolutionPendingCount = 0;
+    this.promise = null;
+    this.resolver = null;
+    this.pendingCount = 0;
   }
 
-  registerCompiledMethods(methods) {
+  begin() {
+    if (!this.promise) {
+      this.pendingCount = 0;
+      this.promise = new Promise((resolve) => {
+        this.resolver = resolve;
+      }).then(() => {
+        this.promise = null;
+        this.resolver = null;
+        this.pendingCount = 0;
+      });
+    }
+    this.pendingCount += 1;
+  }
+
+  await() {
+    return this.promise || null;
+  }
+
+  finish() {
+    if (!this.resolver) {
+      return;
+    }
+    if (this.pendingCount > 0) {
+      this.pendingCount -= 1;
+    }
+    if (this.pendingCount === 0) {
+      this.resolver();
+    }
+  }
+
+  resolveWhenCurrent(readImmediate, getNotFoundMessage) {
+    const immediate = readImmediate();
+    if (immediate) {
+      return immediate;
+    }
+    const registrationWait = this.await();
+    if (registrationWait && typeof registrationWait.then === 'function') {
+      return registrationWait.then(() => {
+        const resolved = readImmediate();
+        if (resolved) {
+          return resolved;
+        }
+        throw new RuntimeFatalError(getNotFoundMessage());
+      });
+    }
+    throw new RuntimeFatalError(getNotFoundMessage());
+  }
+}
+
+class InheritanceMethodRegistry {
+  constructor(resolution) {
+    this.resolution = resolution;
+    this.chains = Object.create(null);
+  }
+
+  registerCompiled(methods) {
     const entries = methods && typeof methods === 'object' ? Object.keys(methods) : [];
     entries.forEach((name) => {
       const methodEntry = methods[name];
@@ -21,7 +73,7 @@ class InheritanceState {
         return;
       }
       const ownerKey = methodEntry.ownerKey == null ? '__anonymous__' : String(methodEntry.ownerKey);
-      const chain = this.methods[name] || (this.methods[name] = []);
+      const chain = this.chains[name] || (this.chains[name] = []);
       const existing = chain.find((entry) => entry.ownerKey === ownerKey);
       if (existing) {
         return;
@@ -44,8 +96,12 @@ class InheritanceState {
     return this;
   }
 
-  _findRegisteredMethodEntry(name, ownerKey = null) {
-    const chain = this.getRegisteredMethodChain(name);
+  getChain(name) {
+    return this.chains[name] || [];
+  }
+
+  _findRegisteredEntry(name, ownerKey = null) {
+    const chain = this.getChain(name);
     if (ownerKey === null) {
       return chain.length > 0 ? chain[0] : null;
     }
@@ -57,110 +113,128 @@ class InheritanceState {
     return chain[ownerIndex + 1] || null;
   }
 
-  getImmediateInheritedMethodEntry(name) {
-    return this._findRegisteredMethodEntry(name, null);
+  getImmediateInherited(name) {
+    return this._findRegisteredEntry(name, null);
   }
 
-  getImmediateSuperMethodEntry(name, ownerKey) {
-    return this._findRegisteredMethodEntry(name, ownerKey);
+  getImmediateSuper(name, ownerKey) {
+    return this._findRegisteredEntry(name, ownerKey);
   }
 
-  beginInheritanceResolution() {
-    if (!this.inheritanceResolutionPromise) {
-      this.inheritanceResolutionPendingCount = 0;
-      this.inheritanceResolutionPromise = new Promise((resolve) => {
-        this.inheritanceResolutionResolver = resolve;
-      }).then(() => {
-        this.inheritanceResolutionPromise = null;
-        this.inheritanceResolutionResolver = null;
-        this.inheritanceResolutionPendingCount = 0;
-      });
-    }
-    this.inheritanceResolutionPendingCount += 1;
-  }
-
-  awaitInheritanceResolution() {
-    return this.inheritanceResolutionPromise || null;
-  }
-
-  finishInheritanceResolution() {
-    if (!this.inheritanceResolutionResolver) {
-      return;
-    }
-    if (this.inheritanceResolutionPendingCount > 0) {
-      this.inheritanceResolutionPendingCount -= 1;
-    }
-    if (this.inheritanceResolutionPendingCount === 0) {
-      this.inheritanceResolutionResolver();
-    }
-  }
-
-  _resolveWithInheritanceResolution(readImmediate, getNotFoundMessage) {
-    const immediate = readImmediate();
-    if (immediate) {
-      return immediate;
-    }
-    const registrationWait = this.awaitInheritanceResolution();
-    if (registrationWait && typeof registrationWait.then === 'function') {
-      return registrationWait.then(() => {
-        const resolved = readImmediate();
-        if (resolved) {
-          return resolved;
-        }
-        throw new RuntimeFatalError(getNotFoundMessage());
-      });
-    }
-    throw new RuntimeFatalError(getNotFoundMessage());
-  }
-
-  resolveInheritedMethodEntry(name) {
-    return this._resolveWithInheritanceResolution(
-      () => this.getImmediateInheritedMethodEntry(name),
+  resolveInherited(name) {
+    return this.resolution.resolveWhenCurrent(
+      () => this.getImmediateInherited(name),
       () => `Inherited method '${name}' was not found in the loaded extends chain`
     );
   }
 
-  resolveSuperMethodEntry(name, ownerKey) {
-    return this._resolveWithInheritanceResolution(
-      () => this.getImmediateSuperMethodEntry(name, ownerKey),
+  resolveSuper(name, ownerKey) {
+    return this.resolution.resolveWhenCurrent(
+      () => this.getImmediateSuper(name, ownerKey),
       () => `No super method is available for '${name}' after owner '${ownerKey}'`
     );
   }
+}
 
-  getRegisteredMethodChain(name) {
-    return this.methods[name] || [];
+class InheritanceSharedRegistry {
+  constructor(resolution) {
+    this.resolution = resolution;
+    this.names = new Set();
+    this.types = new Map();
   }
 
-  registerSharedSchema(sharedSchema) {
+  registerSchema(sharedSchema) {
     const normalized = Array.isArray(sharedSchema)
       ? sharedSchema.map((entry) => ({ name: entry.name, type: entry.type }))
       : [];
     normalized.forEach((entry) => {
       if (entry && entry.name) {
-        this.registeredSharedChannelNames.add(entry.name);
+        this.names.add(entry.name);
         if (entry.type) {
-          this.registeredSharedChannelTypes.set(entry.name, entry.type);
+          this.types.set(entry.name, entry.type);
         }
       }
     });
     return normalized;
   }
 
-  getRegisteredSharedChannelNames() {
-    return Array.from(this.registeredSharedChannelNames);
+  getNames() {
+    return Array.from(this.names);
   }
 
-  getImmediateSharedChannelType(name) {
-    return this.registeredSharedChannelTypes.has(name)
-      ? this.registeredSharedChannelTypes.get(name)
+  getImmediateType(name) {
+    return this.types.has(name)
+      ? this.types.get(name)
       : null;
   }
 
-  resolveSharedChannelType(name) {
-    return this._resolveWithInheritanceResolution(
-      () => this.getImmediateSharedChannelType(name),
+  resolveType(name) {
+    return this.resolution.resolveWhenCurrent(
+      () => this.getImmediateType(name),
       () => `Shared channel '${name}' was not found in the loaded extends chain`
     );
+  }
+}
+
+class InheritanceState {
+  constructor() {
+    this.resolution = new InheritanceResolutionState();
+    this.methods = new InheritanceMethodRegistry(this.resolution);
+    this.shared = new InheritanceSharedRegistry(this.resolution);
+  }
+
+  // Thin compatibility delegates keep older tests/helpers stable while the
+  // runtime owners move to the explicit domain presentation.
+  registerCompiledMethods(methods) {
+    return this.methods.registerCompiled(methods);
+  }
+
+  getRegisteredMethodChain(name) {
+    return this.methods.getChain(name);
+  }
+
+  getImmediateInheritedMethodEntry(name) {
+    return this.methods.getImmediateInherited(name);
+  }
+
+  getImmediateSuperMethodEntry(name, ownerKey) {
+    return this.methods.getImmediateSuper(name, ownerKey);
+  }
+
+  resolveInheritedMethodEntry(name) {
+    return this.methods.resolveInherited(name);
+  }
+
+  resolveSuperMethodEntry(name, ownerKey) {
+    return this.methods.resolveSuper(name, ownerKey);
+  }
+
+  registerSharedSchema(sharedSchema) {
+    return this.shared.registerSchema(sharedSchema);
+  }
+
+  getRegisteredSharedChannelNames() {
+    return this.shared.getNames();
+  }
+
+  getImmediateSharedChannelType(name) {
+    return this.shared.getImmediateType(name);
+  }
+
+  resolveSharedChannelType(name) {
+    return this.shared.resolveType(name);
+  }
+
+  beginInheritanceResolution() {
+    this.resolution.begin();
+  }
+
+  awaitInheritanceResolution() {
+    return this.resolution.await();
+  }
+
+  finishInheritanceResolution() {
+    this.resolution.finish();
   }
 }
 
@@ -169,6 +243,9 @@ function createInheritanceState() {
 }
 
 module.exports = {
+  InheritanceMethodRegistry,
+  InheritanceResolutionState,
+  InheritanceSharedRegistry,
   InheritanceState,
   createInheritanceState
 };

@@ -18,6 +18,7 @@ const markers = require('./markers');
 const inheritanceState = require('./inheritance-state');
 const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceCall = require('./inheritance-call');
+const inheritanceStartup = require('./inheritance-startup');
 const componentRuntime = require('./component');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
@@ -297,7 +298,7 @@ module.exports = {
   invokeCallable: call.invokeCallable,
   invokeCallableAsync: call.invokeCallableAsync,
   admitConstructorEntry: inheritanceCall.admitConstructorEntry,
-  startParentConstructor: inheritanceCall.startParentConstructor,
+  startParentConstructor: inheritanceStartup.startParentConstructor,
   callInheritedMethod: inheritanceCall.callInheritedMethod,
   callSuperMethod: inheritanceCall.callSuperMethod,
   sequentialCallWrapValue: sequential.sequentialCallWrapValue,
