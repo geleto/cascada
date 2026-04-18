@@ -73,6 +73,10 @@ Templates follow the same model:
 - code before `extends` is pre-extends code
 - code after `extends` is post-extends code
 
+Because only `shared` declarations are allowed before `extends`, there is no
+template-local-capture mechanism in this architecture for arbitrary
+pre-`extends` variables.
+
 ## Shared Metadata Objects
 
 ### Method Entries
@@ -297,7 +301,8 @@ property through the same helper model, or through a dedicated helper that
 behaves the same way.
 
 Each method call should still create its own child invocation buffer after the
-target metadata is current. Exact linking is done for that call buffer at that
+target metadata is current. That child invocation buffer lives inside the
+shared command-buffer tree. Exact linking is done for that call buffer at that
 point.
 
 ## Helper Model and Late Linking
@@ -313,6 +318,11 @@ metadata object. Instead, use a helper that:
 The promise returned by that helper is the actual barrier used by side-channel
 apply. The barrier is not "get the metadata object", but "resolve the effective
 method data, including merged super-channel data".
+
+There are two kinds of side-channel commands:
+
+- method-call commands
+- shared-channel-lookup commands
 
 The helper described above is the exact-link-after-load mechanism. It is
 awaited by `apply()` before linking, and it does not resolve until the
@@ -372,6 +382,10 @@ Any other operation should fail dynamically with a good fatal error if the
 channel does not support that access pattern. For non-`var` channels, method
 calls should be used instead.
 
+Method-call side-channel commands await helper-resolved used/mutated channel
+metadata. Shared-channel-lookup side-channel commands await helper-resolved
+shared-channel metadata.
+
 Shared-channel observation remains a current-buffer operation. The caller does
 not receive a stored JS channel object; instead, the corresponding command is
 added against the hierarchy/component shared root from the caller's current
@@ -387,6 +401,8 @@ Component use should have explicit syntax. Use a `component` keyword instead of
 overloading `import`, so the compiler has a clear compile-time signal to emit
 component-specific code such as instance creation, side-channel operations, and
 lifecycle handling.
+
+`component` is therefore an intentionally reserved keyword on this new path.
 
 Regular import and component import remain distinct:
 
@@ -503,4 +519,5 @@ The redesign should still enable:
 
 Dynamic `extends` means the parent target is an expression rather than a
 literal path. It should work through the same composition model rather than a
-separate architecture.
+separate architecture, and remains deferred until the static model is stable.
+Dynamic `extends` waits for parent-name resolution and loading.

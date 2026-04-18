@@ -54,6 +54,9 @@ This is the proposed direction, with only minimal edits for clarity.
 12. The promise returned by that helper is the actual barrier used by
     side-channel apply. The barrier is not "get the metadata object", but
     "resolve the effective method data, including merged super-channel data".
+    There are two kinds of side-channel commands:
+    - method-call commands
+    - shared-channel-lookup commands
 13. Shared channel metadata should follow the same model as method metadata.
     The shared schema is a key-value object where the key is the channel name.
     A known channel is stored as its resolved metadata, including at least the
@@ -251,6 +254,9 @@ This is the proposed direction, with only minimal edits for clarity.
 - Any other operation should fail dynamically with a good fatal error if the
   channel does not support that access pattern. For non-`var` channels, method
   calls should be used instead.
+- Method-call side-channel commands await helper-resolved used/mutated channel
+  metadata. Shared-channel-lookup side-channel commands await helper-resolved
+  shared-channel metadata.
 - Constructor dispatch should not be a special runtime model. It is compiled as
   an imported call to `__constructor__`, and then resolved and linked exactly
   like any other method call.
@@ -294,7 +300,8 @@ This is the proposed direction, with only minimal edits for clarity.
   effective method target and merges channel metadata across the relevant
   `super` chain when needed.
 - Each method call should still create its own child invocation buffer after
-  the target metadata is current. Exact linking is done for that call buffer at
+  the target metadata is current. That child invocation buffer lives inside
+  the shared command-buffer tree. Exact linking is done for that call buffer at
   that point.
 - A separate dynamic-extends adapter is not an architectural requirement if the
   same helper/barrier model covers parent arrival and late linking. It may
@@ -307,6 +314,7 @@ This is the proposed direction, with only minimal edits for clarity.
   of overloading `import`, so the compiler has a clear compile-time signal to
   emit component-specific code such as instance creation, side-channel
   operations, and lifecycle handling.
+- `component` is therefore an intentionally reserved keyword on this new path.
 - Component semantics apply only to the direct binding introduced by
   `component ... as ns` in the first implementation. Aliasing, passing, or
   returning that component value is out of scope.
@@ -342,6 +350,9 @@ This is the proposed direction, with only minimal edits for clarity.
   - blocks are the method form
   - code before `extends` is pre-extends code
   - code after `extends` is post-extends code
+- Because only `shared` declarations are allowed before `extends`, there is no
+  template-local-capture mechanism in this architecture for arbitrary
+  pre-`extends` variables.
 - Static analysis requirements stay narrow:
   - shared schema declared by each file
   - upfront method metadata including internal `__constructor__`
@@ -368,7 +379,8 @@ This is the proposed direction, with only minimal edits for clarity.
   - component method calls that return values without exposing internal buffers
 - Dynamic `extends` means the parent target is an expression rather than a
   literal path. It should work through the same composition model rather than
-  a separate architecture.
+  a separate architecture, and remains deferred until the static model is
+  stable. Dynamic `extends` waits for parent-name resolution and loading.
 - This proposal is intentionally high level.
 - It assumes a more radical reorganization than `extends-implementation-2.md`.
 - Open questions, missing pieces, and compatibility constraints will be added

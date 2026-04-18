@@ -19,6 +19,10 @@ architecture documents ever appear to diverge.
 - prefer deleting/adapting less and reusing less, unless some current code fits
   the new architecture directly
 - keep generic fixes that are valid independently of the new inheritance model
+- a "generic fix" qualifies only if it:
+  - does not depend on the old inheritance architecture
+  - improves parser/compiler/runtime behavior that remains valid on the restart
+  - can be carried forward without dragging old inheritance machinery with it
 
 ## Phase 0 - Baseline
 
@@ -30,6 +34,10 @@ Goal:
 Deliverables:
 
 - architecture docs in place
+- baseline inventory from `016801d694a82068a3c8102231ae0636a68a6c42`:
+  - what `extends` syntax already exists in scripts/templates
+  - what channel behavior already exists
+  - what generic fixes should be cherry-picked before new inheritance work
 - initial test inventory:
   - parser/transpiler coverage
   - generic channel behavior
@@ -44,6 +52,8 @@ Goal:
 
 Scope:
 
+- verify the baseline `extends` syntax already present at
+  `016801d694a82068a3c8102231ae0636a68a6c42`
 - script `method ... endmethod`
 - script `shared` declarations
 - explicit inherited dispatch syntax:
@@ -53,9 +63,14 @@ Scope:
   - `component "X" as ns`
   - `component "X" as ns with theme, id`
   - `component "X" as ns with { ... }`
+- `component` reserved as a keyword on this new path
 - `extends` source-order restriction:
   - only `shared` declarations are allowed before `extends`
-  - arbitrary executable pre-`extends` code is rejected
+  - all other statements before `extends` are rejected
+- enforce the pre-`extends` restriction in the AST/compiler path wherever that
+  is simplest, with earlier frontend rejection used when it falls out naturally
+- evaluate/handle `component` as a new keyword so the compatibility risk is
+  explicit before it is reserved
 
 Tests:
 
@@ -73,6 +88,9 @@ Goal:
 
 - land the generic channel/runtime behavior that the new architecture depends
   on, independent of inheritance
+
+Before adding anything, inventory what the baseline already provides so this
+phase only lands the missing generic behavior.
 
 Scope:
 
@@ -96,16 +114,19 @@ Scope:
 
 - compile `methods` object up front
 - include internal `__constructor__`
+- emit `usedChannels` / `mutatedChannels` as plain arrays of channel names
 - compile shared schema metadata with:
   - channel type
   - local default value
-- compile unresolved method/shared entries as pending promise structs where
-  needed
+- emit code that creates unresolved method/shared entries as pending promise
+  structs at runtime startup where needed
 
 Tests:
 
 - compiled-output assertions
 - method/shared metadata shape assertions
+- this phase is structural only: inspect emitted metadata/code shape rather
+  than trying to run inheritance scenarios before startup/dispatch exist
 
 ## Phase 4 - Root Startup and Registration
 
@@ -115,10 +136,13 @@ Goal:
 
 Scope:
 
-- establish/reuse the shared metadata object
+- establish/reuse the shared metadata object:
+  - the most-derived entry creates it once per render/instance
+  - parents receive that same object and enrich it
 - shared-channel register / resolve / reject
 - method register / resolve / reject
-- `super` register / resolve / reject
+- `super` wiring during method register / resolve / reject when the current
+  level defines the same method name needed by a child `super()`
 - root rejection of any still-pending entries
 
 Tests:
@@ -127,6 +151,8 @@ Tests:
 - child-overrides-parent behavior
 - shared default precedence
 - conflicting shared channel types
+- tests in this phase are structural/startup tests, not full end-to-end
+  invocation behavior
 
 ## Phase 5 - Constructor Model
 
@@ -142,12 +168,16 @@ Scope:
 - `extends` creates the async boundary
 - code after `extends` runs in a later command buffer
 - no executable pre-`extends` constructor code path
+- direct-render constructor return behavior:
+  - only the most-derived entry file's explicit `return` counts
+  - ancestor constructor returns are ignored
 
 Tests:
 
 - constructor ordering
-- pre-extends/post-extends ordering
+- emitted/source-order constructor structure
 - root vs non-root empty constructor behavior
+- full parent-constructor ordering tests land after invocation/linking exists
 
 ## Phase 6 - Helper/Barrier Resolution
 
@@ -162,12 +192,17 @@ Scope:
 - helper-awaited exact-link-after-load behavior
 - helper memoization of merged metadata
 - no helper-driven entry replacement
+- side-channel command split:
+  - method-call commands await helper-resolved used/mutated channel metadata
+  - shared-channel-lookup commands await helper-resolved shared-channel
+    metadata
 
 Tests:
 
-- unresolved inherited call waits correctly
-- unresolved shared-channel access waits correctly
+- direct helper/resolution tests only
 - helper memoization coverage
+- end-to-end call/observation wait behavior lands in Phase 7 when invocation
+  exists
 
 ## Phase 7 - Invocation and Linking
 
@@ -179,10 +214,15 @@ Goal:
 Scope:
 
 - per-call child buffers
+- those call buffers live inside the shared command-buffer tree
 - exact linking at call time
 - inherited `this.method(...)`
 - `super()`
 - shared-channel current-buffer commands
+- method return-value flow back to the caller expression
+- invocation context/execution model consistent with the architecture:
+  methods run in child buffers on top of the shared command-buffer/execution
+  context, rather than creating a second inheritance-specific context model
 - sequential `!` paths inside inherited methods are intentionally deferred
   until the main model is stable
 
@@ -191,6 +231,8 @@ Tests:
 - inherited dispatch
 - `super()` dispatch
 - exact linking after ancestry resolution
+- method return values flowing into caller expressions
+- end-to-end unresolved call/channel wait behavior
 
 ## Phase 8 - Components
 
@@ -203,10 +245,18 @@ Scope:
 
 - `component ... as ns`
 - `compositionPayload`
+- unchanged `compositionPayload` propagation for plain `extends` chains using
+  the same shared metadata object
 - direct-binding-only first implementation
 - method calls through component binding
 - shared-channel observations through component binding
 - per-instance isolation
+- component lifecycle:
+  - the component shared root stays open while the owning caller buffer is
+    alive
+  - it closes when no new component operations can arrive from that owner
+- `ns.x` for `shared var` as a current-buffer observation operation, not a
+  stored JS property
 
 Tests:
 
@@ -214,6 +264,7 @@ Tests:
 - component shared observations
 - multiple independent instances
 - shorthand/object `with` payload behavior
+- component lifecycle and closure timing
 
 ## Phase 9 - Templates
 
@@ -226,11 +277,19 @@ Scope:
 - template body as `__constructor__`
 - blocks as methods
 - template pre/post-`extends` ordering
+- no template-local captures for arbitrary pre-`extends` variables, because the
+  architecture only allows `shared` declarations before `extends`
+- block `withContext` behavior following the enclosing template/script model
+- block argument passing on the new explicit `()` call model
 
 Tests:
 
-- async template inheritance integration tests
-- behavior parity with the new architecture
+- basic async template extends
+- `super()` in template blocks
+- multi-level template hierarchies
+- block override/source-order behavior
+- block argument passing
+- `withContext` coverage
 
 ## Phase 10 - Compatibility and Cleanup
 
@@ -241,13 +300,16 @@ Goal:
 Scope:
 
 - plain scripts/templates without `extends`
-- plain `import`, `from import`, `include`
+- plain `import`, `from import`, `include` remain on the ordinary composition
+  path unless optional code-sharing is useful
 - `caller()` in macros
 - sync template inheritance untouched for Nunjucks compatibility
 - sequential `!` paths, including inherited-method support once that deferred
   work is taken up
-- dynamic `extends` through the same composition model rather than a separate
-  architecture
+- dynamic `extends` uses normal compiler expression compilation when the parent
+  is an expression and literal compilation when static
+- dynamic `extends` waits for parent-name resolution and loading, but detailed
+  dynamic work remains deferred until the main static model is stable
 
 Tests:
 
