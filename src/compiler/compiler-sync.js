@@ -380,11 +380,11 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   compileImport(node, frame) {
-    this.inheritance.compileSyncImport(node, frame);
+    this.composition.compileSyncImport(node, frame);
   }
 
   compileFromImport(node, frame) {
-    this.inheritance.compileSyncFromImport(node, frame);
+    this.composition.compileSyncFromImport(node, frame);
   }
 
   compileBlock(node, frame) {
@@ -400,11 +400,11 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   compileInclude(node, frame) {
-    this.inheritance.compileSyncInclude(node, frame);
+    this.composition.compileSyncInclude(node, frame);
   }
 
   compileIncludeSync(node, frame) {
-    this.inheritance.compileSyncInclude(node, frame);
+    this.composition.compileSyncInclude(node, frame);
   }
 
   compileDo(node, frame) {
