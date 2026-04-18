@@ -83,17 +83,6 @@ class CompileInheritance {
     return new nodes.NodeList(node.lineno, node.colno, allArgs);
   }
 
-  _emitCompositionContextObject(node, explicitVarsVar, compositionCtxVar, explicitNamesVar = null, includeRenderContext = !!node.withContext) {
-    this.emit.line(`const ${compositionCtxVar} = {};`);
-    if (includeRenderContext) {
-      this.emit.line(`Object.assign(${compositionCtxVar}, context.getRenderContextVariables());`);
-    }
-    this.emit.line(`Object.assign(${compositionCtxVar}, ${explicitVarsVar});`);
-    if (explicitNamesVar) {
-      this.emit.line(`const ${explicitNamesVar} = Object.keys(${explicitVarsVar});`);
-    }
-  }
-
   _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
     const templateId = this.compiler._tmpid();
     const parentName = JSON.stringify(this.compiler.templateName);
@@ -137,7 +126,12 @@ class CompileInheritance {
     const importContextVar = this.compiler._tmpid();
     this.emit.line(`let ${importVarsVar} = {};`);
     this._emitExplicitExternInputs(node, importVarsVar);
-    this._emitCompositionContextObject(node, importVarsVar, importContextVar, importInputNamesVar);
+    this.compiler.composition.emitCompositionContextObject({
+      targetVar: importContextVar,
+      explicitVarsVar: importVarsVar,
+      explicitNamesVar: importInputNamesVar,
+      includeRenderContext: !!node.withContext
+    });
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  runtime.validateExternInputs(resolvedTemplate.externSpec || [], ${importInputNamesVar}, Object.keys(${importContextVar}), "import");`);
@@ -230,7 +224,12 @@ class CompileInheritance {
     const importContextVar = this.compiler._tmpid();
     this.emit.line(`let ${importVarsVar} = {};`);
     this._emitExplicitExternInputs(node, importVarsVar);
-    this._emitCompositionContextObject(node, importVarsVar, importContextVar, importInputNamesVar);
+    this.compiler.composition.emitCompositionContextObject({
+      targetVar: importContextVar,
+      explicitVarsVar: importVarsVar,
+      explicitNamesVar: importInputNamesVar,
+      includeRenderContext: !!node.withContext
+    });
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  runtime.validateExternInputs(resolvedTemplate.externSpec || [], ${importInputNamesVar}, Object.keys(${importContextVar}), "from-import");`);
@@ -619,7 +618,12 @@ class CompileInheritance {
       // Async include passes only explicit extern inputs to the child.
       this.emit.line(`let ${includeVarsVar} = {};`);
       this._emitExplicitExternInputs(node, includeVarsVar);
-      this._emitCompositionContextObject(node, includeVarsVar, includeContextVar, includeInputNamesVar);
+      this.compiler.composition.emitCompositionContextObject({
+        targetVar: includeContextVar,
+        explicitVarsVar: includeVarsVar,
+        explicitNamesVar: includeInputNamesVar,
+        includeRenderContext: !!node.withContext
+      });
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);

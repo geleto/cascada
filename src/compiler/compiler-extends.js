@@ -192,17 +192,6 @@ class CompileExtends {
     });
   }
 
-  _emitCompositionContextObject(node, explicitVarsVar, compositionCtxVar, explicitNamesVar = null, includeRenderContext = !!node.withContext) {
-    this.emit.line(`const ${compositionCtxVar} = {};`);
-    if (includeRenderContext) {
-      this.emit.line(`Object.assign(${compositionCtxVar}, context.getRenderContextVariables());`);
-    }
-    this.emit.line(`Object.assign(${compositionCtxVar}, ${explicitVarsVar});`);
-    if (explicitNamesVar) {
-      this.emit.line(`const ${explicitNamesVar} = Object.keys(${explicitVarsVar});`);
-    }
-  }
-
   _emitExtendsCompositionPayloadSetup(node, explicitInputVarsVar, compositionPayloadVar) {
     const explicitInputValuesVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
@@ -214,8 +203,16 @@ class CompileExtends {
     // (validated as externs on the legacy path, or as shared preloads on the
     // new static script path), while rootContext preserves the full inherited
     // constructor context the ancestor should execute against.
-    this._emitCompositionContextObject(node, explicitInputVarsVar, explicitInputValuesVar, null, !!node.withContext);
-    this._emitCompositionContextObject(node, explicitInputVarsVar, rootContextVar, null, true);
+    this.compiler.composition.emitCompositionContextObject({
+      targetVar: explicitInputValuesVar,
+      explicitVarsVar: explicitInputVarsVar,
+      includeRenderContext: !!node.withContext
+    });
+    this.compiler.composition.emitCompositionContextObject({
+      targetVar: rootContextVar,
+      explicitVarsVar: explicitInputVarsVar,
+      includeRenderContext: true
+    });
     this.emit.line(
       `const ${compositionPayloadVar} = context.createExtendsCompositionPayload(` +
       `${explicitInputValuesVar}, Object.keys(${explicitInputVarsVar}), ${rootContextVar}, ${explicitInputValuesVar});`
@@ -282,19 +279,6 @@ class CompileExtends {
     };
   }
 
-  _emitResolvedParentContinuation(node, templateVar, compositionPayloadExpr, currentBufferExpr, options = null) {
-    const indent = options && options.indent ? options.indent : '';
-    const allowDynamicRoot = !!(options && options.allowDynamicRoot);
-
-    this._emitParentConstructorHandoff(
-      node,
-      templateVar,
-      compositionPayloadExpr,
-      currentBufferExpr,
-      { indent, dynamicRootMode: allowDynamicRoot ? 'fire_and_forget' : 'none' }
-    );
-  }
-
   _emitParentConstructorHandoff(node, templateExpr, compositionPayloadExpr, currentBufferExpr, options = null) {
     const opts = options || {};
     const indent = opts.indent || '';
@@ -350,12 +334,12 @@ class CompileExtends {
     this.emit.line(`  for (let ${k} in ${templateVar}.blocks) {`);
     this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
     this.emit.line('  }');
-    this._emitResolvedParentContinuation(
+    this._emitParentConstructorHandoff(
       node,
       templateVar,
       compositionPayloadVar,
       'currentBuffer',
-      { indent: '  ', allowDynamicRoot: !!opts.allowDynamicRoot }
+      { indent: '  ', dynamicRootMode: opts.allowDynamicRoot ? 'fire_and_forget' : 'none' }
     );
     this.emit.line('} finally {');
     this.emit.line('  runtime.finishInheritanceResolution(inheritanceState);');
@@ -555,27 +539,50 @@ class CompileExtends {
     this.emit.endEntryFunction(node, true);
   }
 
+  _compileConstructorEntryChildren(node, invariantLabel, options = null) {
+    const opts = options || {};
+    const beforeExtends = opts.beforeExtends || null;
+    const afterExtends = opts.afterExtends || null;
+    const afterNoExtends = opts.afterNoExtends || null;
+    const emitStaticExtends = opts.emitStaticExtends;
+    const extendsSplit = this._getStaticConstructorExtendsSplit(node, invariantLabel);
+
+    if (extendsSplit) {
+      extendsSplit.preExtendsChildren.forEach((child) => {
+        this.compiler.compile(child, null);
+      });
+      if (typeof beforeExtends === 'function') {
+        beforeExtends(extendsSplit);
+      }
+      emitStaticExtends(extendsSplit.extendsNode);
+      extendsSplit.postExtendsChildren.forEach((child) => {
+        this.compiler.compile(child, null);
+      });
+      if (typeof afterExtends === 'function') {
+        afterExtends(extendsSplit);
+      }
+      return;
+    }
+
+    this.compiler._compileChildren(node, null);
+    if (typeof afterNoExtends === 'function') {
+      afterNoExtends();
+    }
+  }
+
   _compileAsyncScriptConstructorEntry(node, sharedChannelNames = [], constructorLinkedChannels = []) {
     this.compiler._withRootExportBufferScope(() => {
       this._beginAsyncConstructorEntry(node, constructorLinkedChannels);
       this.compiler.emitDeclareReturnChannel(this.compiler.buffer.currentBuffer);
-
-      const extendsSplit = this._getStaticConstructorExtendsSplit(node, 'script');
-      if (extendsSplit) {
-        extendsSplit.preExtendsChildren.forEach((child) => {
-          this.compiler.compile(child, null);
-        });
-        this.compileAsyncStaticRootExtends(
-          extendsSplit.extendsNode,
-          node,
-          sharedChannelNames || []
-        );
-        extendsSplit.postExtendsChildren.forEach((child) => {
-          this.compiler.compile(child, null);
-        });
-      } else {
-        this.compiler._compileChildren(node, null);
-      }
+      this._compileConstructorEntryChildren(node, 'script', {
+        emitStaticExtends: (extendsNode) => {
+          this.compileAsyncStaticRootExtends(
+            extendsNode,
+            node,
+            sharedChannelNames || []
+          );
+        }
+      });
 
       this._finishAsyncConstructorEntry(node, true);
     });
@@ -588,22 +595,20 @@ class CompileExtends {
         constructorLinkedChannels,
         { ownTextChannel: false }
       );
-
-      const extendsSplit = this._getStaticConstructorExtendsSplit(node, 'template');
-      if (extendsSplit) {
-        extendsSplit.preExtendsChildren.forEach((child) => {
-          this.compiler.compile(child, null);
-        });
-        this.emitInheritanceLocalCaptureSnapshot(node);
-        this.compileAsyncStaticTemplateExtends(extendsSplit.extendsNode);
-        extendsSplit.postExtendsChildren.forEach((child) => {
-          this.compiler.compile(child, null);
-        });
-        this.emitInheritanceLocalCaptureSnapshot(node);
-      } else {
-        this.compiler._compileChildren(node, null);
-        this.emitInheritanceLocalCaptureSnapshot(node);
-      }
+      this._compileConstructorEntryChildren(node, 'template', {
+        beforeExtends: () => {
+          this.emitInheritanceLocalCaptureSnapshot(node);
+        },
+        emitStaticExtends: (extendsNode) => {
+          this.compileAsyncStaticTemplateExtends(extendsNode);
+        },
+        afterExtends: () => {
+          this.emitInheritanceLocalCaptureSnapshot(node);
+        },
+        afterNoExtends: () => {
+          this.emitInheritanceLocalCaptureSnapshot(node);
+        }
+      });
 
       this._finishAsyncConstructorEntry(node, false);
     });
