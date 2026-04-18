@@ -5,7 +5,6 @@
 // hierarchy, but not parent startup orchestration or method-call admission.
 
 const output = require('./channel');
-const commands = require('./commands');
 
 function validateSharedInputs(sharedSchema, providedInputNames, operationName = 'extends') {
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
@@ -31,7 +30,6 @@ function preloadSharedInputs(sharedSchema, inputValues, currentBuffer, context, 
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
   const values = inputValues && typeof inputValues === 'object' ? inputValues : {};
   const providedNames = Object.keys(values);
-  const position = pos || { lineno: 0, colno: 0 };
   const schemaByName = new Map();
 
   validateSharedInputs(schema, providedNames, operationName);
@@ -46,45 +44,7 @@ function preloadSharedInputs(sharedSchema, inputValues, currentBuffer, context, 
     const name = providedNames[i];
     const type = schemaByName.get(name);
     const value = values[name];
-
-    if (type === 'sequence') {
-      output.declareSharedBufferChannel(currentBuffer, name, type, context, value);
-      continue;
-    }
-
-    output.declareSharedBufferChannel(currentBuffer, name, type, context, null);
-    if (type === 'var') {
-      currentBuffer.add(new commands.VarCommand({
-        channelName: name,
-        args: [value],
-        initializeIfNotSet: true,
-        pos: position
-      }), name);
-      continue;
-    }
-
-    if (type === 'text') {
-      currentBuffer.add(new commands.TextCommand({
-        channelName: name,
-        command: 'set',
-        args: [value],
-        normalizeArgs: true,
-        pos: position
-      }), name);
-      continue;
-    }
-
-    if (type === 'data') {
-      currentBuffer.add(new commands.DataCommand({
-        channelName: name,
-        command: 'set',
-        args: [null, value],
-        pos: position
-      }), name);
-      continue;
-    }
-
-    throw new Error(`Unsupported shared preload channel type '${type}' for '${name}'`);
+    output.preloadSharedBufferChannel(currentBuffer, name, type, context, value, pos);
   }
 }
 

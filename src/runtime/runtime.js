@@ -227,6 +227,7 @@ module.exports = {
   createSequenceChannel: output.createSequenceChannel,
   declareBufferChannel: output.declareBufferChannel,
   declareSharedBufferChannel: output.declareSharedBufferChannel,
+  preloadSharedBufferChannel: output.preloadSharedBufferChannel,
   ChannelCommand: commands.ChannelCommand,
   TextCommand: commands.TextCommand,
   VarCommand: commands.VarCommand,

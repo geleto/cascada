@@ -938,6 +938,49 @@ function declareSharedBufferChannel(buffer, channelName, channelType, context, i
   return channel;
 }
 
+function preloadSharedBufferChannel(buffer, channelName, channelType, context, value, pos = null) {
+  const position = normalizeCommandPos(pos);
+
+  if (channelType === 'sink' || channelType === 'sequence') {
+    return declareSharedBufferChannel(buffer, channelName, channelType, context, value);
+  }
+
+  declareSharedBufferChannel(buffer, channelName, channelType, context, null);
+
+  if (channelType === 'var') {
+    buffer.add(new VarCommand({
+      channelName,
+      args: [value],
+      initializeIfNotSet: true,
+      pos: position
+    }), channelName);
+    return;
+  }
+
+  if (channelType === 'text') {
+    buffer.add(new TextCommand({
+      channelName,
+      command: 'set',
+      args: [value],
+      normalizeArgs: true,
+      pos: position
+    }), channelName);
+    return;
+  }
+
+  if (channelType === 'data') {
+    buffer.add(new DataCommand({
+      channelName,
+      command: 'set',
+      args: [null, value],
+      pos: position
+    }), channelName);
+    return;
+  }
+
+  throw new Error(`Unsupported shared preload channel type '${channelType}' for '${channelName}'`);
+}
+
 module.exports = {
   Channel,
   DataChannel,
@@ -952,6 +995,7 @@ module.exports = {
   createSequenceChannel,
   declareBufferChannel,
   declareSharedBufferChannel,
+  preloadSharedBufferChannel,
   getSharedHierarchyParentBuffer
 };
 
