@@ -1768,28 +1768,44 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should throw when data outputs have initializers', async () => {
+    it('should allow data outputs with initializers', async () => {
       const script = `
-        data myData = 1
+        data myData = { x: 1 }
+        return myData.snapshot()
       `;
-      try {
-        await render(script);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('cannot have initializers');
-      }
+      const result = await render(script);
+      expect(result).to.eql({ x: 1 });
     });
 
-    it('should throw when text outputs have initializers', async () => {
+    it('should allow text outputs with initializers', async () => {
       const script = `
         text textOut = "hi"
+        return textOut.snapshot()
       `;
-      try {
-        await render(script);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('cannot have initializers');
-      }
+      const result = await render(script);
+      expect(result).to.be('hi');
+    });
+
+    it('should resolve async data output initializers', async () => {
+      const script = `
+        data myData = delayed({ x: 1 }, 10)
+        return myData.snapshot()
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.eql({ x: 1 });
+    });
+
+    it('should resolve async text output initializers', async () => {
+      const script = `
+        text textOut = delayed("hi", 10)
+        return textOut.snapshot()
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.be('hi');
     });
 
     it('should overwrite text outputs when assigning with =', async () => {

@@ -75,6 +75,34 @@ class CompileChannel {
       this.emit.line(';');
       const initIfNotSet = node.isShared ? 'true' : 'false';
       this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], initializeIfNotSet: ${initIfNotSet}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+      return;
+    }
+
+    if ((channelType === 'text' || channelType === 'data') && node.initializer) {
+      const initNode = node.initializer;
+      const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
+      const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
+      const initValueId = this.compiler._tmpid();
+      this.emit(`let ${initValueId} = `);
+      this.compiler.compileExpression(initNode, null, initNode);
+      this.emit.line(';');
+
+      if (channelType === 'text') {
+        this.emit.line(
+          `${this.compiler.buffer.currentBuffer}.add(` +
+          `new runtime.TextCommand({ channelName: '${name}', command: 'set', args: [${initValueId}], normalizeArgs: true, pos: {lineno: ${lineno}, colno: ${colno}} }), ` +
+          `'${name}'` +
+          ');'
+        );
+        return;
+      }
+
+      this.emit.line(
+        `${this.compiler.buffer.currentBuffer}.add(` +
+        `new runtime.DataCommand({ channelName: '${name}', command: 'set', args: [null, ${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), ` +
+        `'${name}'` +
+        ');'
+      );
     }
   }
 
