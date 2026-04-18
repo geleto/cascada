@@ -15,6 +15,11 @@ architecture documents ever appear to diverge.
 - start from `016801d694a82068a3c8102231ae0636a68a6c42` on a fresh branch
 - treat the current implementation mainly as a source of tests and regression
   cases, not as architecture to preserve
+- preserve the current tests as much as possible during the restart
+- use temporary `.skip()` only for tests that cover slices not implemented yet,
+  and remove those skips as the corresponding phases land
+- allow small spec-aligned test updates where syntax or surface behavior has
+  intentionally changed, such as `import` vs `component`
 - re-implement the new model in small vertical slices
 - prefer deleting/adapting less and reusing less, unless some current code fits
   the new architecture directly
@@ -43,6 +48,12 @@ Deliverables:
   - generic channel behavior
   - inheritance/extends integration tests
   - component integration tests
+- restart test policy:
+  - existing tests are carried forward by default
+  - small test edits are allowed when needed to match intentional spec changes
+    such as `import` vs `component`
+  - tests for not-yet-implemented slices may be marked `.skip()`
+  - test deletion is avoided unless the old test is invalid under the new spec
 
 ## Phase 1 - Frontend Syntax
 
@@ -324,3 +335,7 @@ Tests:
 - if architecture and implementation diverge, update docs before continuing
 - do not silently reintroduce the old chain/ownerKey/admission-command model
 - do not overload plain `import` with component semantics
+- preserve existing tests wherever possible; prefer temporary `.skip()` over
+  deleting regression coverage during the rebuild
+- when the new spec intentionally changes syntax or surface API, update the
+  affected tests minimally instead of forcing legacy behavior
