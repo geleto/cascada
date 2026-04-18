@@ -164,32 +164,15 @@ class CompileExtends {
     const templateKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
     const templateLocalCapturesVar = this.compiler._tmpid();
     this.emit.line(`${indent}const ${templateLocalCapturesVar} = {};`);
-    templateLocalCaptures.forEach((name) => {
-      const helperName = this.compiler.scriptMode
-        ? 'captureCompositionScriptValue'
-        : 'captureCompositionValue';
-      this.emit(`${indent}${templateLocalCapturesVar}[${JSON.stringify(name)}] = runtime.${helperName}(${contextExpr}, ${JSON.stringify(name)}, ${bufferExpr}`);
-      if (this.compiler.scriptMode) {
-        this.emit(`, { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node))}, path: ${contextExpr}.path }`);
-      }
-      this.emit.line(');');
+    this.compiler.composition.emitCapturedNameAssignments({
+      targetVar: templateLocalCapturesVar,
+      names: templateLocalCaptures,
+      ownerNode: node,
+      contextExpr,
+      bufferExpr,
+      indent
     });
     this.emit.line(`${indent}${contextExpr}.setTemplateLocalCaptures(${templateKey}, ${templateLocalCapturesVar});`);
-  }
-
-  _emitImmediateExternInputs(node, targetVarsVar) {
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    withVars.forEach((nameNode) => {
-      const externName = this.compiler.analysis.getBaseChannelName(nameNode.value);
-      const helperName = this.compiler.scriptMode
-        ? 'captureCompositionScriptValue'
-        : 'captureCompositionValue';
-      this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = runtime.${helperName}(context, ${JSON.stringify(externName)}, ${this.compiler.buffer.currentBuffer}`);
-      if (this.compiler.scriptMode) {
-        this.emit(`, { lineno: ${nameNode.lineno}, colno: ${nameNode.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, nameNode))}, path: context.path }`);
-      }
-      this.emit.line(');');
-    });
   }
 
   _emitExtendsCompositionPayloadSetup(node, explicitInputVarsVar, compositionPayloadVar) {
@@ -197,7 +180,13 @@ class CompileExtends {
     const rootContextVar = this.compiler._tmpid();
 
     this.emit.line(`const ${explicitInputVarsVar} = {};`);
-    this._emitImmediateExternInputs(node, explicitInputVarsVar);
+    this.compiler.composition.emitCapturedNameNodeAssignments({
+      targetVar: explicitInputVarsVar,
+      nameNodes: node.withVars && node.withVars.children ? node.withVars.children : [],
+      ownerNode: node,
+      contextExpr: 'context',
+      bufferExpr: this.compiler.buffer.currentBuffer
+    });
     // Keep two distinct views on purpose:
     // explicitInputValues is the named-input set captured at the extends site
     // (validated as externs on the legacy path, or as shared preloads on the
@@ -372,7 +361,13 @@ class CompileExtends {
       linkedChannels: [CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL],
       allowDynamicRoot: true,
       emitInputSetup: ({ templateVar, compositionPayloadExpr }) => {
-        this.emit.line(`  runtime.validateExternInputs(${templateVar}.externSpec || [], ${compositionPayloadExpr}.explicitInputNames, Object.keys(${compositionPayloadExpr}.explicitInputValues), "extends");`);
+        this.compiler.composition.emitExternValidation({
+          externSpecExpr: `${templateVar}.externSpec || []`,
+          explicitInputNamesExpr: `${compositionPayloadExpr}.explicitInputNames`,
+          availableValueNamesExpr: `Object.keys(${compositionPayloadExpr}.explicitInputValues)`,
+          operationName: 'extends',
+          indent: '  '
+        });
       }
     });
   }

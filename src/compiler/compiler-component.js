@@ -198,7 +198,10 @@ class CompileComponent {
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
 
     this.emit.line(`let ${importVarsVar} = {};`);
-    this.compiler.inheritance._emitExplicitExternInputs(node, importVarsVar);
+    this.compiler.composition.emitResolvedNameNodeAssignments({
+      targetVar: importVarsVar,
+      nameNodes: node.withVars && node.withVars.children ? node.withVars.children : []
+    });
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${lifecycleChannelName}", "var", context, null);`);
     this.emit.line(`let ${componentId} = runtime.createComponentInstance(` +
       `${importId}, ${importVarsVar}, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, "${target}", "${lifecycleChannelName}", ` +

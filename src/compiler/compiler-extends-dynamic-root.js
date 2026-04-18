@@ -141,7 +141,13 @@ class CompileExtendsDynamicRoot {
       if (this.compiler.scriptMode) {
         this.emit.line(`  runtime.bootstrapInheritanceMetadata(inheritanceState, ${templateVar}.methods || {}, ${templateVar}.sharedSchema || [], ${templateVar}.path, ${this.compiler.buffer.currentBuffer}, context);`);
       }
-      this.emit.line(`  runtime.validateExternInputs(${templateVar}.externSpec || [], ${compositionPayloadVar}.explicitInputNames, Object.keys(${compositionPayloadVar}.explicitInputValues), "extends");`);
+      this.compiler.composition.emitExternValidation({
+        externSpecExpr: `${templateVar}.externSpec || []`,
+        explicitInputNamesExpr: `${compositionPayloadVar}.explicitInputNames`,
+        availableValueNamesExpr: `Object.keys(${compositionPayloadVar}.explicitInputValues)`,
+        operationName: 'extends',
+        indent: '  '
+      });
       this.emit.line(`  context.setExtendsComposition(${templateVar}, ${compositionPayloadVar});`);
       this.emit.line(`  for(let ${k} in ${templateVar}.blocks) {`);
         this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
