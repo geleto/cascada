@@ -2,8 +2,8 @@
 
 const nodes = require('../nodes');
 const CompileAnalysis = require('./analysis');
+const CompileLinkedChannels = require('./linked-channels');
 const CompileRename = require('./rename');
-const { validateSinkSnapshotInGuard } = require('./validation');
 const CompilerCommon = require('./compiler-common');
 
 const compareOps = {
@@ -21,6 +21,7 @@ class CompilerBaseAsync extends CompilerCommon {
   init(options) {
     super.init(Object.assign({}, options, { asyncMode: true }));
     this.analysis = new CompileAnalysis(this);
+    this.linkedChannels = new CompileLinkedChannels(this);
     this.rename = new CompileRename(this);
   }
 
@@ -54,17 +55,7 @@ class CompilerBaseAsync extends CompilerCommon {
       this.emit(name);
       return;
     }
-    const componentBinding = this.scriptMode
-      ? this.analysis.findDeclaration(node._analysis, name)
-      : null;
-    if (componentBinding && componentBinding.componentBinding) {
-      this.fail(
-        'Component bindings may only be used via direct ns.method(...), ns.x, or ns.channel.snapshot()/isError()/getError() syntax',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
+    this.componentCompiler.assertNotBareComponentBindingSymbol(node, this.analysis);
     const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
     if (declaredOutput) {
       if (node.sequential || node.sequentialRepair) {
@@ -250,10 +241,10 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     if (this.scriptMode) {
-      const componentFacts = this.componentCompiler.getComponentBindingFacts(node, analysisPass);
-      if (componentFacts) {
-        uses.push(componentFacts.bindingName);
-        componentLookup = componentFacts;
+      const componentAnalysis = this.componentCompiler.analyzeComponentLookup(node, analysisPass);
+      if (componentAnalysis) {
+        uses.push(...componentAnalysis.uses);
+        componentLookup = componentAnalysis.componentLookup;
       }
       const sequencePath = this.sequential._extractStaticPath(node);
       const lookupFacts =
@@ -282,17 +273,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileLookupVal(node) {
-    const componentLookup = node._analysis && node._analysis.componentLookup;
-    if (componentLookup) {
-      if (componentLookup.segments.length !== 1) {
-        this.fail(
-          'Component member access only supports direct shared-var reads or channel observation calls',
-          node.lineno,
-          node.colno,
-          node
-        );
-      }
-      this.componentCompiler.emitComponentSharedRead(componentLookup.bindingName, componentLookup.segments[0], node);
+    if (this.componentCompiler.compileComponentLookup(node)) {
       return;
     }
     if (this.scriptMode && this.extendsCompiler.isExplicitInheritedMethodLookup(node)) {
@@ -350,7 +331,6 @@ class CompilerBaseAsync extends CompilerCommon {
     const mutates = [];
     let specialChannelCall = null;
     let importedCallable = null;
-    let componentCall = null;
     let directCallerCall = false;
     let directMacroCall = null;
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
@@ -385,11 +365,10 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    const componentFacts = this.componentCompiler.getComponentBindingFacts(node && node.name, analysisPass);
-    if (componentFacts) {
-      uses.push(componentFacts.bindingName);
-      componentCall = componentFacts;
-      return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall, componentCall };
+    const componentAnalysis = this.componentCompiler.analyzeComponentCall(node, analysisPass);
+    if (componentAnalysis) {
+      uses.push(...componentAnalysis.uses);
+      return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall, componentCall: componentAnalysis.componentCall };
     }
 
     if (node?.name && analysisPass.findDeclaration) {
@@ -453,7 +432,7 @@ class CompilerBaseAsync extends CompilerCommon {
       specialChannelCall = callFacts;
     }
 
-    return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall, componentCall };
+    return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall };
   }
 
   postAnalyzeFunCall(node, analysisPass) {
@@ -463,7 +442,7 @@ class CompilerBaseAsync extends CompilerCommon {
     }
     return {
       importedCallable: Object.assign({}, importedCallable, {
-        linkedChannels: analysisPass.getImportedCallableLinkedChannels(
+        linkedChannels: this.linkedChannels.getImportedCallableLinkedChannels(
           node,
           importedCallable.importedChannelName || null
         )
@@ -478,7 +457,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const isDirectMacroCall = !!directMacroCall;
     const importedCallableFacts = node._analysis.importedCallable;
 
-    if (this._compileSpecialChannelFunCall(node)) {
+    if (this.channelCompiler.compileSpecialChannelFunCall(node)) {
       return;
     }
 
@@ -766,65 +745,6 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('})');
   }
 
-
-  _compileSpecialChannelFunCall(node) {
-    if (!this.scriptMode) {
-      return false;
-    }
-    const specialChannelCall = node._analysis && node._analysis.specialChannelCall;
-    if (!specialChannelCall) {
-      return false;
-    }
-    if (specialChannelCall.channelType === 'var') {
-      return false;
-    }
-    if (this._compileChannelObservationFunCall(node, specialChannelCall)) {
-      return true;
-    }
-    return this._compileSequenceChannelFunCall(node, specialChannelCall);
-  }
-
-  _compileChannelObservationFunCall(node, specialChannelCall) {
-    if (specialChannelCall.subpath.length !== 0) {
-      return false;
-    }
-    validateSinkSnapshotInGuard(this, {
-      node,
-      command: specialChannelCall.methodName,
-      channelType: specialChannelCall.channelType
-    });
-    if (specialChannelCall.methodName === 'snapshot') {
-      this.buffer.emitAddSnapshot(specialChannelCall.channelName, node);
-      return true;
-    }
-    if (specialChannelCall.methodName === 'isError') {
-      this.buffer.emitAddIsError(specialChannelCall.channelName, node);
-      return true;
-    }
-    if (specialChannelCall.methodName === 'getError') {
-      this.buffer.emitAddGetError(specialChannelCall.channelName, node);
-      return true;
-    }
-    return false;
-  }
-
-  _compileSequenceChannelFunCall(node, specialChannelCall) {
-    if (specialChannelCall.channelType !== 'sequence' || specialChannelCall.methodName === 'snapshot') {
-      return false;
-    }
-    this._compileAggregate(node.args, null, '[', ']', false, false, function (resolvedArgs) {
-      this.emit('return ');
-      this.buffer.emitAddSequenceCall(
-        specialChannelCall.channelName,
-        specialChannelCall.methodName,
-        specialChannelCall.subpath,
-        resolvedArgs,
-        node
-      );
-      this.emit(';');
-    });
-    return true;
-  }
 
   _emitAsyncDynamicCall(node, currentBufferExpr) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');

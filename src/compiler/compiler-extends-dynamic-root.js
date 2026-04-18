@@ -1,5 +1,9 @@
 'use strict';
 
+// Dynamic extends root specialization.
+// Owns the dynamic-parent-template root family: storing/resolving the dynamic
+// parent, finishing dynamic root startup, and handing off into parent startup.
+
 class CompileExtendsDynamicRoot {
   constructor(extendsCompiler) {
     this.extendsCompiler = extendsCompiler;

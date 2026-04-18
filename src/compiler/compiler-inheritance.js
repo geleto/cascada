@@ -1,14 +1,11 @@
 'use strict';
 
+// Inheritance/compiler helper for shared inheritance operations.
+// Owns import/include/block/super compilation and other hierarchy operations
+// that are used within an established extends/inheritance chain.
+
 const nodes = require('../nodes');
 const CompileBuffer = require('./buffer');
-
-/**
- * CompileInheritance - Handles template inheritance operations
- *
- * This module contains all the compiler methods related to template inheritance,
- * including extends, include, import, fromimport, and block operations.
- */
 
 class CompileInheritance {
   constructor(compiler) {
@@ -478,7 +475,7 @@ class CompileInheritance {
       const id = node.symbol ? node.symbol.value : null;
       const compilingBlock = this.compiler.currentCompilingBlock;
       const blockName = compilingBlock && compilingBlock.name ? compilingBlock.name.value : null;
-      const ownerKey = this.compiler._getCompiledMethodOwnerKey();
+      const ownerKey = this.compiler.extendsCompiler.getCompiledMethodOwnerKey();
       if (!blockName) {
         this.compiler.fail(
           'super() is only valid inside a method body',

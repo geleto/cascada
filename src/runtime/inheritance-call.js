@@ -1,5 +1,9 @@
 'use strict';
 
+// Inheritance admission and dispatch runtime.
+// Owns inherited/super/component call admission, unresolved wait behavior, and
+// invocation-buffer linking once a target method entry becomes current.
+
 const {
   createPoison,
   isPoison,

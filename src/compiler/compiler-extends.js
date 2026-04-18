@@ -1,5 +1,9 @@
 'use strict';
 
+// Extends root compiler helper.
+// Owns root-level extends startup/finalization, compiled method metadata, and
+// parent constructor handoff shared by static and dynamic extends flows.
+
 const nodes = require('../nodes');
 const inheritanceConstants = require('../inheritance-constants');
 const CompileBuffer = require('./buffer');
@@ -84,6 +88,69 @@ class CompileExtends {
     });
 
     return contracts;
+  }
+
+  getCompiledMethodOwnerKey() {
+    return this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName);
+  }
+
+  collectCompiledMethods(node, rootSharedChannelNames = []) {
+    const methods = Object.create(null);
+    const blocks = node.findAll(nodes.Block);
+    const ownerKey = this.getCompiledMethodOwnerKey();
+
+    methods.__constructor__ = {
+      functionName: 'm___constructor__',
+      kind: 'constructor',
+      contract: {
+        inputNames: [],
+        withContext: false
+      },
+      ownerKey,
+      linkedChannels: this.compiler.linkedChannels.getLinkedChannels(node, {
+        seedChannels: rootSharedChannelNames,
+        includeDefaultTemplateTextChannel: true,
+        excludeSequentialChannels: true
+      })
+    };
+
+    blocks.forEach((block) => {
+      if (this.compiler.scriptMode && block.name && block.name.value === '__constructor__') {
+        this.compiler.fail(
+          'Identifier \'__constructor__\' is reserved and cannot be used as a method name',
+          block.lineno,
+          block.colno,
+          block
+        );
+      }
+      const signature = this.compiler._getBlockSignature(block);
+      methods[block.name.value] = {
+        functionName: `b_${block.name.value}`,
+        kind: this.compiler.scriptMode ? 'method' : 'block',
+        contract: {
+          inputNames: signature.inputNames,
+          withContext: !!block.withContext
+        },
+        ownerKey,
+        linkedChannels: this.compiler.linkedChannels.getLinkedChannels(block.body, {
+          excludeNames: this.compiler._getBlockInputNames(block),
+          sharedOnly: true,
+          excludeSequentialChannels: true
+        })
+      };
+    });
+
+    return methods;
+  }
+
+  hasUserCompiledMethods(compiledMethods) {
+    return !!(compiledMethods && Object.keys(compiledMethods).some((name) => name !== '__constructor__'));
+  }
+
+  needsRootInheritanceState(compiledMethods, rootSharedSchema) {
+    const hasCompiledMethods = this.hasUserCompiledMethods(compiledMethods);
+    const hasSharedSchema = Array.isArray(rootSharedSchema) && rootSharedSchema.length > 0;
+    return hasCompiledMethods || hasSharedSchema || this.compiler.hasExtends;
   }
 
   emitInheritanceLocalCaptureSnapshot(node, options = null) {
@@ -331,7 +398,7 @@ class CompileExtends {
   }
 
   _emitRootInheritanceBootstrap(compiledMethods, rootSharedSchema) {
-    const hasCompiledMethods = this.compiler._hasUserCompiledMethods(compiledMethods);
+    const hasCompiledMethods = this.hasUserCompiledMethods(compiledMethods);
     const hasSharedSchema = Array.isArray(rootSharedSchema) && rootSharedSchema.length > 0;
     if (!hasCompiledMethods && !hasSharedSchema) {
       return;
@@ -342,7 +409,7 @@ class CompileExtends {
     } else {
       this.emit('{}');
     }
-    this.emit(`, ${JSON.stringify(rootSharedSchema || [])}, ${JSON.stringify(this.compiler._getCompiledMethodOwnerKey())}, ${this.compiler.buffer.currentBuffer}, context);`);
+    this.emit(`, ${JSON.stringify(rootSharedSchema || [])}, ${JSON.stringify(this.getCompiledMethodOwnerKey())}, ${this.compiler.buffer.currentBuffer}, context);`);
     this.emit.line();
   }
 
@@ -570,7 +637,7 @@ class CompileExtends {
   }
 
   _compileAsyncRootBody(node, sharedChannelNames = null, compiledMethods = null, rootSharedSchema = null) {
-    const needsRootInheritanceState = this.compiler._needsRootInheritanceState(compiledMethods, rootSharedSchema);
+    const needsRootInheritanceState = this.needsRootInheritanceState(compiledMethods, rootSharedSchema);
     const isDynamicTemplateRoot = !this.compiler.scriptMode && this.compiler.hasDynamicExtends;
 
     this.emit.line(`runtime.markChannelBufferScope(${this.compiler.buffer.currentBuffer});`);

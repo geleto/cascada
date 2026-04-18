@@ -1,5 +1,9 @@
 'use strict';
 
+// Inheritance runtime state model.
+// Owns the data structures for method registration, shared-schema metadata, and
+// inheritance-resolution timing used by extends and inheritance dispatch.
+
 const { validateCallableContractCompatibility } = require('../callable-contract');
 const { RuntimeFatalError } = require('./errors');
 
@@ -238,11 +242,32 @@ class InheritanceState {
   }
 }
 
+function beginInheritanceResolution(inheritanceState) {
+  if (inheritanceState) {
+    inheritanceState.resolution.begin();
+  }
+}
+
+function awaitInheritanceResolution(inheritanceState) {
+  return inheritanceState
+    ? inheritanceState.resolution.await()
+    : null;
+}
+
+function finishInheritanceResolution(inheritanceState) {
+  if (inheritanceState) {
+    inheritanceState.resolution.finish();
+  }
+}
+
 function createInheritanceState() {
   return new InheritanceState();
 }
 
 module.exports = {
+  awaitInheritanceResolution,
+  beginInheritanceResolution,
+  finishInheritanceResolution,
   InheritanceMethodRegistry,
   InheritanceResolutionState,
   InheritanceSharedRegistry,

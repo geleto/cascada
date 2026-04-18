@@ -1,11 +1,11 @@
 'use strict';
 
-const inheritanceConstants = require('../inheritance-constants');
+// Inheritance bootstrap helpers.
+// Owns metadata/schema/shared-link setup used while establishing an inheritance
+// hierarchy, but not parent startup orchestration or method-call admission.
+
 const output = require('./channel');
 const commands = require('./commands');
-const lookup = require('./lookup');
-const resolve = require('./resolve');
-const { DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME } = inheritanceConstants;
 
 function validateSharedInputs(sharedSchema, providedInputNames, operationName = 'extends') {
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
@@ -148,85 +148,10 @@ function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
   }
 }
 
-function beginInheritanceResolution(inheritanceState) {
-  if (inheritanceState) {
-    inheritanceState.resolution.begin();
-  }
-}
-
-function awaitInheritanceResolution(inheritanceState) {
-  return inheritanceState
-    ? inheritanceState.resolution.await()
-    : null;
-}
-
-function deferUntilInheritanceResolution(inheritanceState, value) {
-  const registrationWait = awaitInheritanceResolution(inheritanceState);
-  if (!registrationWait || typeof registrationWait.then !== 'function') {
-    return value;
-  }
-  return registrationWait.then(() => value);
-}
-
-function finishInheritanceResolution(inheritanceState) {
-  if (inheritanceState) {
-    inheritanceState.resolution.finish();
-  }
-}
-
-function getRegisteredAsyncBlock(inheritanceState, context, name) {
-  const registrationWait = awaitInheritanceResolution(inheritanceState);
-  if (registrationWait && typeof registrationWait.then === 'function') {
-    return registrationWait.then(() => context.getBlock(name));
-  }
-  return Promise.resolve(context.getBlock(name));
-}
-
-// Explicit dynamic-extends bridge: the parent template may resolve inside an
-// async child boundary, but top-level block/parent startup must only observe it
-// after the current inheritance registration wave has settled.
-function bridgeDynamicParentTemplate(inheritanceState, parentTemplateValue) {
-  return Promise.resolve(parentTemplateValue).then((resolvedParentTemplate) =>
-    deferUntilInheritanceResolution(inheritanceState, resolvedParentTemplate)
-  );
-}
-
-function renderDynamicTopLevelBlock(name, context, currentBuffer, env, runtime, cb, inheritanceState, blockPayload = null, blockRenderCtx = undefined) {
-  return resolveDynamicParentTemplate(currentBuffer).then((parentTemplate) => {
-    if (parentTemplate) {
-      return '';
-    }
-    return getRegisteredAsyncBlock(inheritanceState, context, name).then((blockFunc) =>
-      blockFunc(
-        env,
-        context,
-        runtime,
-        cb,
-        currentBuffer,
-        inheritanceState,
-        context.prepareInheritancePayloadForBlock(blockFunc, blockPayload),
-        blockRenderCtx
-      )
-    );
-  });
-}
-
-function resolveDynamicParentTemplate(currentBuffer) {
-  return resolve.resolveSingle(lookup.channelLookup(DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME, currentBuffer));
-}
-
 module.exports = {
   validateSharedInputs,
   preloadSharedInputs,
   ensureSharedSchemaChannels,
   bootstrapInheritanceMetadata,
-  ensureCurrentBufferSharedLinks,
-  beginInheritanceResolution,
-  awaitInheritanceResolution,
-  deferUntilInheritanceResolution,
-  finishInheritanceResolution,
-  getRegisteredAsyncBlock,
-  bridgeDynamicParentTemplate,
-  renderDynamicTopLevelBlock,
-  resolveDynamicParentTemplate
+  ensureCurrentBufferSharedLinks
 };

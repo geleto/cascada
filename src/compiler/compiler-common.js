@@ -7,12 +7,13 @@ const { Obj } = require('../object');
 const { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES } = require('./validation');
 const CompileSequential = require('./sequential');
 const CompileEmit = require('./emit');
-const CompileInheritance = require('./inheritance');
+const CompileInheritance = require('./compiler-inheritance');
 const CompileLoop = require('./loop');
 const CompileBuffer = require('./buffer');
 const CompileMacro = require('./macro');
 const CompileBoundaries = require('./boundaries');
 const CompileComponent = require('./compiler-component');
+const CompileChannel = require('./compiler-channel');
 
 /**
  * CompilerCommon - Common base class for compiler functionality
@@ -52,6 +53,7 @@ class CompilerCommon extends Obj {
     this.macro = new CompileMacro(this);
     this.boundaries = new CompileBoundaries(this);
     this.componentCompiler = new CompileComponent(this);
+    this.channelCompiler = new CompileChannel(this);
   }
 
   compile(node, frame) {

@@ -17,6 +17,7 @@ const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
 const inheritanceState = require('./inheritance-state');
 const inheritanceBootstrap = require('./inheritance-bootstrap');
+const inheritanceResolution = require('./inheritance-resolution');
 const inheritanceCall = require('./inheritance-call');
 const inheritanceStartup = require('./inheritance-startup');
 const componentRuntime = require('./component');
@@ -194,14 +195,14 @@ module.exports = {
   ensureSharedSchemaChannels: inheritanceBootstrap.ensureSharedSchemaChannels,
   bootstrapInheritanceMetadata: inheritanceBootstrap.bootstrapInheritanceMetadata,
   ensureCurrentBufferSharedLinks: inheritanceBootstrap.ensureCurrentBufferSharedLinks,
-  beginInheritanceResolution: inheritanceBootstrap.beginInheritanceResolution,
-  awaitInheritanceResolution: inheritanceBootstrap.awaitInheritanceResolution,
-  deferUntilInheritanceResolution: inheritanceBootstrap.deferUntilInheritanceResolution,
-  finishInheritanceResolution: inheritanceBootstrap.finishInheritanceResolution,
-  getRegisteredAsyncBlock: inheritanceBootstrap.getRegisteredAsyncBlock,
-  bridgeDynamicParentTemplate: inheritanceBootstrap.bridgeDynamicParentTemplate,
-  renderDynamicTopLevelBlock: inheritanceBootstrap.renderDynamicTopLevelBlock,
-  resolveDynamicParentTemplate: inheritanceBootstrap.resolveDynamicParentTemplate,
+  beginInheritanceResolution: inheritanceState.beginInheritanceResolution,
+  awaitInheritanceResolution: inheritanceState.awaitInheritanceResolution,
+  deferUntilInheritanceResolution: inheritanceResolution.deferUntilInheritanceResolution,
+  finishInheritanceResolution: inheritanceState.finishInheritanceResolution,
+  getRegisteredAsyncBlock: inheritanceResolution.getRegisteredAsyncBlock,
+  bridgeDynamicParentTemplate: inheritanceResolution.bridgeDynamicParentTemplate,
+  renderDynamicTopLevelBlock: inheritanceResolution.renderDynamicTopLevelBlock,
+  resolveDynamicParentTemplate: inheritanceResolution.resolveDynamicParentTemplate,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runWaitedControlFlowBoundary: asyncBoundaries.runWaitedControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,

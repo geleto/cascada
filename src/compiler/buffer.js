@@ -5,17 +5,6 @@
  * Manages buffer stacks, async buffer operations, and channel command compilation.
  */
 
-const nodes = require('../nodes');
-const {
-  validateChannelObservationCall
-} = require('./validation');
-const CHANNEL_COMMAND_CLASS = {
-  data: 'DataCommand',
-  sink: 'SinkCommand',
-  sequence: 'SequenceCallCommand',
-  text: 'TextCommand',
-  var: 'VarCommand'
-};
 const DEFAULT_TEMPLATE_TEXT_CHANNEL = '__text__';
 
 class CompileBuffer {
@@ -113,116 +102,6 @@ class CompileBuffer {
     return textPromiseId;
   }
 
-  _compileCommandConstruction(node) {
-    const isCallNode = node.call instanceof nodes.FunCall;
-    const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
-    if (!staticPath || staticPath.length === 0) {
-      this.compiler.fail(
-        'Invalid command syntax. Expected format is channel(...) or channel.command(...) or channel.subpath.command(...).',
-        node.lineno, node.colno, node
-      );
-    }
-
-    const channelName = staticPath[0];
-    const channelDecl = this.compiler.analysis.findDeclaration(node._analysis, channelName);
-    const channelType = node.channelType || (channelDecl ? channelDecl.type : null);
-    const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
-    const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
-    const isObservationCall = isCallNode &&
-      !subpath &&
-      (command === 'snapshot' || command === 'isError' || command === 'getError');
-
-    if (isObservationCall) {
-      validateChannelObservationCall(this.compiler, { node, command, channelName, channelType });
-      if (command === 'snapshot') {
-        this.compiler.emit(`new runtime.SnapshotCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
-        return;
-      }
-      if (command === 'isError') {
-        this.compiler.emit(`new runtime.IsErrorCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
-        return;
-      }
-      this.compiler.emit(`new runtime.GetErrorCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
-      return;
-    }
-
-    if (channelType === 'sequence') {
-      if (isCallNode) {
-        if (!command) {
-          this.compiler.fail('Invalid sequence command syntax: expected sequenceChannel.method(...)', node.lineno, node.colno, node);
-        }
-        this.compiler.emit(`new runtime.SequenceCallCommand({ channelName: '${channelName}', command: '${command}', `);
-        if (subpath && subpath.length > 0) {
-          this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
-        }
-        this.compiler.emit('args: ');
-        this.compiler._compileAggregate(node.call.args, null, '[', ']', false, true);
-        this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
-        return;
-      }
-
-      if (!command) {
-        this.compiler.fail('Invalid sequence read syntax: expected sequenceChannel.path', node.lineno, node.colno, node);
-      }
-      this.compiler.emit(`new runtime.SequenceGetCommand({ channelName: '${channelName}', command: '${command}', `);
-      if (subpath && subpath.length > 0) {
-        this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
-      }
-      this.compiler.emit(`pos: ${this._emitPositionLiteral(node)} })`);
-      return;
-    }
-
-    const commandClass = CHANNEL_COMMAND_CLASS[channelType];
-    if (!commandClass) {
-      this.compiler.fail(
-        `Compiler error: analysis did not resolve a declared channel target for '${channelName}'.`,
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-    this.compiler.emit(`new runtime.${commandClass}({ channelName: '${channelName}', `);
-    if (command) {
-      this.compiler.emit(`command: '${command}', `);
-    }
-    if (channelType === 'text') {
-      this.compiler.emit('normalizeArgs: true, ');
-    }
-    if (channelType === 'sink' && subpath && subpath.length > 0) {
-      this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
-    }
-    let argList = node.call.args;
-    if (channelType === 'data') {
-      // For data channels, we create a new "virtual" AST for the arguments,
-      // where the first argument is a path like "user.posts[0].title" that
-      // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
-      const originalArgs = node.call.args.children;
-      if (originalArgs.length === 0) {
-        this.compiler.fail(`data command '${command}' requires at least a path argument.`, node.lineno, node.colno, node);
-      }
-
-      const pathArg = originalArgs[0];
-
-      // Convert the path argument into a flat array of segments (Literal/Symbol)
-      // @todo - move this to the transformer phase?
-      // expected by the runtime data handlers.
-      const pathNodeList = this.compiler._flattenPathToNodeList(pathArg);
-      const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
-      dataPathNode.mustResolve = true;
-
-      // Our array node at the front.
-      const newArgs = [dataPathNode, ...originalArgs.slice(1)];
-
-      argList = new nodes.NodeList(node.call.args.lineno, node.call.args.colno, newArgs);
-    }
-
-    this.compiler.emit('args: ');
-    // Channel commands are constructed with unresolved args; resolution/normalization
-    // happens once in runtime right before command.apply().
-    this.compiler._compileAggregate(argList, null, '[', ']', false, true);
-    this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
-  }
-
   emitAddCommand(channelName, valueExpr, positionNode = null, emitTextCommand = false) {
     if (emitTextCommand) {
       this.compiler.emit.line(
@@ -296,21 +175,6 @@ class CompileBuffer {
    * @returns {Set<string>} Set of channel names (template text channel, data, etc.)
    */
   // === OUTPUT COMMAND COMPILATION ===
-
-  /**
-   * Compile channel command: channel.method(args)
-   * Handles declared channels (data/text/value/sink) and custom sinks
-   */
-  compileChannelCommand(node) {
-    // Preserve channel routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
-    const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
-    const channelName = this.compiler.sequential._extractStaticPathRoot(pathNode);
-
-    this.asyncAddValueToBuffer((resultVar) => {
-      this.compiler.emit(`${resultVar} = `);
-      this._compileCommandConstruction(node);
-    }, node, channelName);
-  }
 
   // === BUFFER EMISSION ===
 

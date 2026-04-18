@@ -1,13 +1,16 @@
 'use strict';
 
+// Component runtime wrapper.
+// Owns component-instance lifecycle and maps component operations onto the
+// shared inheritance bootstrap/startup/call machinery underneath.
+
 const { createCommandBuffer, isCommandBuffer } = require('./command-buffer');
 const { createInheritanceState } = require('./inheritance-state');
-const { declareBufferChannel } = require('./channel');
-const { Command, WaitResolveCommand } = require('./commands');
+const { Command } = require('./commands');
 const { resolveSingle } = require('./resolve');
 const { createPoison, isPoisonError, RuntimeFatalError, handleError } = require('./errors');
-const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceCall = require('./inheritance-call');
+const componentBootstrap = require('./component-bootstrap');
 
 class ComponentCommand extends Command {
   constructor({ channelName, pos = null, withDeferredResult = true }) {
@@ -29,13 +32,6 @@ function _normalizeComponentOperationFailure(err, pos, path) {
     return createPoison(err.errors);
   }
   return createPoison(handleError(err, pos.lineno, pos.colno, null, path));
-}
-
-function _normalizeComponentBootstrapFailure(err, pos, path) {
-  if (err instanceof RuntimeFatalError) {
-    throw err;
-  }
-  throw new RuntimeFatalError(err, pos.lineno, pos.colno, null, path);
 }
 
 function _resolveComponentInstance(value, pos, path) {
@@ -342,95 +338,18 @@ function createComponentInstance(templateValue, inputValues, context, env, runti
     });
   }
 
-  const bootstrapChannelName = '__component_bootstrap__';
-  declareBufferChannel(componentRoot, bootstrapChannelName, 'var', componentContext, null);
-
-  const bootstrap = (resolvedTemplate) => {
-    if (!resolvedTemplate || typeof resolvedTemplate.compile !== 'function') {
-      throw new RuntimeFatalError('Component import requires a resolved script/template object', pos.lineno, pos.colno, null, pos.path);
-    }
-    if (componentInstance.closed) {
-      return componentInstance;
-    }
-
-    resolvedTemplate.compile();
-    componentContext.path = resolvedTemplate.path;
-    componentInstance.template = resolvedTemplate;
-
-    try {
-      inheritanceBootstrap.bootstrapInheritanceMetadata(
-        inheritanceState,
-        resolvedTemplate.methods || {},
-        resolvedTemplate.sharedSchema || [],
-        resolvedTemplate.path,
-        componentRoot,
-        componentContext
-      );
-    } catch (err) {
-      _normalizeComponentBootstrapFailure(err, pos, componentContext.path || pos.path);
-    }
-
-    if (inputValues && typeof inputValues === 'object' && Object.keys(inputValues).length > 0) {
-      try {
-        inheritanceBootstrap.preloadSharedInputs(
-          resolvedTemplate.sharedSchema || [],
-          inputValues,
-          componentRoot,
-          componentContext,
-          pos,
-          'component import'
-        );
-      } catch (err) {
-        _normalizeComponentBootstrapFailure(err, pos, componentContext.path || pos.path);
-      }
-    }
-
-    const constructorEntry = (resolvedTemplate.methods || {}).__constructor__;
-    if (constructorEntry) {
-      const admission = inheritanceCall.admitConstructorEntry(
-        componentContext,
-        inheritanceState,
-        constructorEntry,
-        [],
-        env,
-        runtime,
-        cb,
-        componentRoot,
-        pos
-      );
-      if (admission && admission.completion && typeof admission.completion.then === 'function') {
-        admission.completion.catch((err) => {
-          // Component constructors ignore their own return value. Non-fatal
-          // failures remain visible through poisoned shared channel state; only
-          // fatal completion failures need explicit cb() routing here.
-          if (err instanceof RuntimeFatalError) {
-            cb(err);
-          }
-        });
-      }
-    }
-
-    return componentInstance;
-  };
-
-  try {
-    const resolvedTemplate = resolveSingle(templateValue);
-    if (!resolvedTemplate || typeof resolvedTemplate.then !== 'function') {
-      return bootstrap(resolvedTemplate);
-    }
-    const bootstrapPromise = resolvedTemplate.then(bootstrap);
-    componentRoot.add(new WaitResolveCommand({
-      channelName: bootstrapChannelName,
-      args: [bootstrapPromise],
-      pos
-    }), bootstrapChannelName);
-    return bootstrapPromise;
-  } catch (err) {
-    if (err instanceof RuntimeFatalError) {
-      throw err;
-    }
-    throw new RuntimeFatalError(err, pos.lineno, pos.colno, null, pos.path);
-  }
+  return componentBootstrap.startComponentBootstrap({
+    templateValue,
+    inputValues,
+    componentContext,
+    componentRoot,
+    componentInstance,
+    inheritanceState,
+    env,
+    runtime,
+    cb,
+    pos
+  });
 }
 
 module.exports = {

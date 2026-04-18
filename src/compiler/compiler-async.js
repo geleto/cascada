@@ -2,8 +2,7 @@
 
 const nodes = require('../nodes');
 const {
-  validateGuardVariablesDeclared,
-  validateChannelDeclarationNode
+  validateGuardVariablesDeclared
 } = require('./validation');
 const CompilerBaseAsync = require('./compiler-base-async');
 const CompileBuffer = require('./buffer');
@@ -871,19 +870,17 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeImport(node) {
-    node.target._analysis = { declarationTarget: true };
     if (this.scriptMode) {
-      this.componentBindings.add(node.target.value);
-    } else {
-      this.importedBindings.add(node.target.value);
+      return this.componentCompiler.analyzeComponentImport(node);
     }
+    node.target._analysis = { declarationTarget: true };
+    this.importedBindings.add(node.target.value);
     return {
       declares: [{
         name: node.target.value,
         type: 'var',
         initializer: null,
-        imported: !this.scriptMode,
-        componentBinding: !!this.scriptMode
+        imported: true
       }]
     };
   }
@@ -965,79 +962,19 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeChannelDeclaration(node) {
-    // Script syntax normally rejects nested `shared` declarations earlier in the
-    // transpiler. Keep this compiler-side guard as defense-in-depth for any
-    // non-script/frontend path that can still construct shared declarations.
-    if (node.isShared && !this.analysis.isRootScopeOwner(node._analysis)) {
-      this.fail(
-        'shared declarations are only allowed at the root scope',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-    node.name._analysis = { declarationTarget: true };
-    const name = node.name.value;
-    return {
-      declares: [{ name, type: node.channelType, initializer: node.initializer || null, shared: !!node.isShared }],
-      uses: [name]
-    };
+    return this.channelCompiler.analyzeChannelDeclaration(node);
   }
 
   compileChannelDeclaration(node) {
-    const channelType = node.channelType;
-    const nameNode = node.name;
-    validateChannelDeclarationNode(this, {
-      node,
-      nameNode,
-      channelType,
-      hasInitializer: !!node.initializer,
-      isShared: !!node.isShared,
-      asyncMode: this.asyncMode,
-      scriptMode: this.scriptMode,
-      isNameSymbol: nameNode instanceof nodes.Symbol
-    });
-    const name = nameNode.value;
-    const declarationHelper = node.isShared ? 'declareSharedBufferChannel' : 'declareBufferChannel';
-
-    this.emit(`runtime.${declarationHelper}(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
-    if ((channelType === 'sink' || channelType === 'sequence') && node.initializer) {
-      this.compile(node.initializer, null);
-    } else {
-      this.emit('null');
-    }
-    this.emit.line(');');
-
-    if (channelType === 'var' && node.initializer) {
-      const initNode = node.initializer;
-      const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
-      const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
-      const initValueId = this._tmpid();
-      this.emit(`let ${initValueId} = `);
-      this.compileExpression(initNode, null, initNode);
-      this.emit.line(';');
-      const initIfNotSet = node.isShared ? 'true' : 'false';
-      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], initializeIfNotSet: ${initIfNotSet}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
-    }
+    this.channelCompiler.compileChannelDeclaration(node);
   }
 
   analyzeChannelCommand(node) {
-    const callNode = node.call instanceof nodes.FunCall ? node.call : null;
-    const path = this.sequential._extractStaticPath(callNode ? callNode.name : node.call);
-    if (!path || path.length === 0) {
-      return {};
-    }
-    const channelName = path[0];
-    const channelDecl = channelName ? this.analysis.findDeclaration(node._analysis, channelName) : null;
-    const isSequenceGet = !callNode && channelDecl && channelDecl.type === 'sequence';
-    const isObservation = isSequenceGet ||
-      (callNode && path.length === 2 &&
-       (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError'));
-    return isObservation ? { uses: [channelName] } : { uses: [channelName], mutates: [channelName] };
+    return this.channelCompiler.analyzeChannelCommand(node);
   }
 
   compileChannelCommand(node) {
-    this.buffer.compileChannelCommand(node);
+    this.channelCompiler.compileChannelCommand(node);
   }
 
   analyzeExtends(node) {
@@ -1077,84 +1014,11 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   emitDeclareReturnChannel(bufferExpr) {
-    this.emit.line(
-      `runtime.declareBufferChannel(${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
-    );
+    this.channelCompiler.emitDeclareReturnChannel(bufferExpr);
   }
 
   emitReturnChannelSnapshot(bufferExpr, positionNode, resultVar, markFinished = true) {
-    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
-    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    this.emit.line(
-      `const ${resultVar}_snapshot = ${bufferExpr}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${lineno}, colno: ${colno}});`
-    );
-    if (markFinished) {
-      this.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
-    }
-    this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? undefined : value);`);
-  }
-
-  _getCompiledMethodOwnerKey() {
-    return this.templateName == null ? '__anonymous__' : String(this.templateName);
-  }
-
-  _collectCompiledMethods(node, rootSharedChannelNames = []) {
-    const methods = Object.create(null);
-    const blocks = node.findAll(nodes.Block);
-    const ownerKey = this._getCompiledMethodOwnerKey();
-
-    methods.__constructor__ = {
-      functionName: 'm___constructor__',
-      kind: 'constructor',
-      contract: {
-        inputNames: [],
-        withContext: false
-      },
-      ownerKey,
-      linkedChannels: this.analysis.getLinkedChannels(node, {
-        seedChannels: rootSharedChannelNames,
-        includeDefaultTemplateTextChannel: true,
-        excludeSequentialChannels: true
-      })
-    };
-
-    blocks.forEach((block) => {
-      if (this.scriptMode && block.name && block.name.value === '__constructor__') {
-        this.fail(
-          'Identifier \'__constructor__\' is reserved and cannot be used as a method name',
-          block.lineno,
-          block.colno,
-          block
-        );
-      }
-      const signature = this._getBlockSignature(block);
-      methods[block.name.value] = {
-        functionName: `b_${block.name.value}`,
-        kind: this.scriptMode ? 'method' : 'block',
-        contract: {
-          inputNames: signature.inputNames,
-          withContext: !!block.withContext
-        },
-        ownerKey,
-        linkedChannels: this.analysis.getLinkedChannels(block.body, {
-          excludeNames: this._getBlockInputNames(block),
-          sharedOnly: true,
-          excludeSequentialChannels: true
-        })
-      };
-    });
-
-    return methods;
-  }
-
-  _hasUserCompiledMethods(compiledMethods) {
-    return !!(compiledMethods && Object.keys(compiledMethods).some((name) => name !== '__constructor__'));
-  }
-
-  _needsRootInheritanceState(compiledMethods, rootSharedSchema) {
-    const hasCompiledMethods = this._hasUserCompiledMethods(compiledMethods);
-    const hasSharedSchema = Array.isArray(rootSharedSchema) && rootSharedSchema.length > 0;
-    return hasCompiledMethods || hasSharedSchema || this.hasExtends;
+    this.channelCompiler.emitReturnChannelSnapshot(bufferExpr, positionNode, resultVar, markFinished);
   }
 
   _emitRootSequenceLockDeclarations(node) {
@@ -1347,7 +1211,7 @@ class CompilerAsync extends CompilerBaseAsync {
       const localCaptureNames = Array.isArray(block && block._analysis && block._analysis.localCaptureNames)
         ? block._analysis.localCaptureNames
         : [];
-      const blockLinkedChannels = this.analysis.getLinkedChannels(block.body, {
+      const blockLinkedChannels = this.linkedChannels.getLinkedChannels(block.body, {
         excludeNames: declaredBlockInputNames,
         sharedOnly: true,
         excludeSequentialChannels: true
@@ -1577,9 +1441,9 @@ class CompilerAsync extends CompilerBaseAsync {
     this.hasStaticExtends = rootExtendsNodes.length > 0;
     this.hasDynamicExtends = node.children.some((child) => this.extendsCompiler.isDynamicParentTemplateBinding(child));
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
-    const rootSharedSchema = this._collectSharedChannelSchema(node);
+    const rootSharedSchema = this.channelCompiler.collectSharedChannelSchema(node);
     const rootSharedChannelNames = rootSharedSchema.map((entry) => entry.name);
-    const compiledMethods = this._collectCompiledMethods(node, rootSharedChannelNames);
+    const compiledMethods = this.extendsCompiler.collectCompiledMethods(node, rootSharedChannelNames);
     if (this.scriptMode) {
       this.extendsCompiler._compileAsyncScriptConstructorEntry(
         node,
@@ -1608,25 +1472,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`hasStaticExtends: ${JSON.stringify(!!this.hasStaticExtends)},`);
     this.emit.line(`hasDynamicExtends: ${JSON.stringify(!!this.hasDynamicExtends)},`);
     this.emit.line('root: root\n};');
-  }
-
-  _collectSharedChannelSchema(node) {
-    const sharedSchema = [];
-    const seenNames = new Set();
-    (node.children || []).forEach((child) => {
-      if (!(child instanceof nodes.ChannelDeclaration) ||
-        !child.isShared ||
-        !(child.name instanceof nodes.Symbol) ||
-        seenNames.has(child.name.value)) {
-        return;
-      }
-      seenNames.add(child.name.value);
-      sharedSchema.push({
-        name: child.name.value,
-        type: child.channelType
-      });
-    });
-    return sharedSchema;
   }
 
   _getRootDeclarations(node) {

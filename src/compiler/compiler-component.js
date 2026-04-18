@@ -1,9 +1,51 @@
 'use strict';
 
+// Component compiler helper.
+// Owns script component imports plus caller-side component binding usage such
+// as ns.method(...), ns.shared, and observation calls on component channels.
+
 class CompileComponent {
   constructor(compiler) {
     this.compiler = compiler;
     this.emit = compiler.emit;
+  }
+
+  _getComponentBindingDeclaration(node, bindingName, analysisPass = this.compiler.analysis) {
+    if (!this.compiler.scriptMode || !bindingName || !analysisPass || !analysisPass.findDeclaration) {
+      return null;
+    }
+    return analysisPass.findDeclaration(node && node._analysis, bindingName);
+  }
+
+  analyzeComponentImport(node) {
+    if (!node || !node.target || !node.target.value) {
+      return null;
+    }
+    node.target._analysis = { declarationTarget: true };
+    this.compiler.componentBindings.add(node.target.value);
+    return {
+      declares: [{
+        name: node.target.value,
+        type: 'var',
+        initializer: null,
+        componentBinding: true
+      }]
+    };
+  }
+
+  assertNotBareComponentBindingSymbol(node, analysisPass = this.compiler.analysis) {
+    if (!this.compiler.scriptMode || !node || !node.value) {
+      return;
+    }
+    const bindingDecl = this._getComponentBindingDeclaration(node, node.value, analysisPass);
+    if (bindingDecl && bindingDecl.componentBinding) {
+      this.compiler.fail(
+        'Component bindings may only be used via direct ns.method(...), ns.x, or ns.channel.snapshot()/isError()/getError() syntax',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
   }
 
   getComponentBindingFacts(pathNode, analysisPass = this.compiler.analysis) {
@@ -26,6 +68,45 @@ class CompileComponent {
     return {
       bindingName,
       segments: staticPath.slice(1)
+    };
+  }
+
+  analyzeComponentLookup(node, analysisPass = this.compiler.analysis) {
+    const componentLookup = this.getComponentBindingFacts(node, analysisPass);
+    if (!componentLookup) {
+      return null;
+    }
+    return {
+      uses: [componentLookup.bindingName],
+      componentLookup
+    };
+  }
+
+  compileComponentLookup(node) {
+    const componentLookup = node && node._analysis ? node._analysis.componentLookup : null;
+    if (!componentLookup) {
+      return false;
+    }
+    if (componentLookup.segments.length !== 1) {
+      this.compiler.fail(
+        'Component member access only supports direct shared-var reads or channel observation calls',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+    this.emitComponentSharedRead(componentLookup.bindingName, componentLookup.segments[0], node);
+    return true;
+  }
+
+  analyzeComponentCall(node, analysisPass = this.compiler.analysis) {
+    const componentCall = this.getComponentBindingFacts(node && node.name, analysisPass);
+    if (!componentCall) {
+      return null;
+    }
+    return {
+      uses: [componentCall.bindingName],
+      componentCall
     };
   }
 

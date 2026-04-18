@@ -1,5 +1,9 @@
 'use strict';
 
+// Inheritance startup orchestration.
+// Owns parent constructor startup, context forking, and completion timing for
+// entering an already-bootstrapped parent hierarchy.
+
 const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceCall = require('./inheritance-call');
 

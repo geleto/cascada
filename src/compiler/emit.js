@@ -58,7 +58,7 @@ module.exports = class CompileEmit {
   }
 
   getLinkedChannels(node, options = null) {
-    return this.compiler.analysis.getLinkedChannels(node, Object.assign({}, options, {
+    return this.compiler.linkedChannels.getLinkedChannels(node, Object.assign({}, options, {
       alwaysIncludeNames: this.compiler.buffer.currentTextChannelName
         ? [this.compiler.buffer.currentTextChannelName]
         : []
@@ -170,7 +170,7 @@ module.exports = class CompileEmit {
         // should be attached at buffer creation time rather than in a later
         // runtime prelink step.
         linkedChannelsArg = this.linkedChannelsLiteral(
-          this.compiler.analysis.getLinkedChannels(analysisNode, {
+          this.compiler.linkedChannels.getLinkedChannels(analysisNode, {
             excludeNames: this.compiler.buffer.currentTextChannelName
               ? [this.compiler.buffer.currentTextChannelName]
               : []
