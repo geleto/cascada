@@ -35,7 +35,7 @@ class CompileExtendsDynamicRoot {
   _emitParentCompositionPayload(parentTemplateVar, compositionPayloadVar, options = null) {
     const indent = options && options.indent ? options.indent : '';
     const contextExpr = options && options.contextExpr ? options.contextExpr : 'context';
-    this.emit.line(`${indent}const ${compositionPayloadVar} = ${contextExpr}.getExtendsComposition(${parentTemplateVar});`);
+    this.emit.line(`${indent}const ${compositionPayloadVar} = runtime.getExtendsComposition(inheritanceState, ${parentTemplateVar});`);
   }
 
   _emitDynamicRootStartupCompletion(node, options = null) {
@@ -82,7 +82,7 @@ class CompileExtendsDynamicRoot {
       indent,
       captureInheritanceLocals: true
     });
-    this.extendsCompiler._emitRenderTemplateRootReturn(node, completionVar, indent);
+    this.extendsCompiler.rootFinalization.emitRenderTemplateRootReturn(node, completionVar, indent);
   }
 
   _emitCompositionDynamicTemplateRootCompletion(node, indent = '') {
@@ -90,7 +90,7 @@ class CompileExtendsDynamicRoot {
       indent,
       captureInheritanceLocals: false
     });
-    this.extendsCompiler._emitCompositionRootReturn(node, completionVar, indent);
+    this.extendsCompiler.rootFinalization.emitCompositionRootReturn(node, completionVar, indent);
   }
 
   _emitDynamicParentRootFinalization(node) {
@@ -125,7 +125,7 @@ class CompileExtendsDynamicRoot {
       explicitInputVarsVar,
       compositionPayloadVar
     );
-    const parentTemplateId = this.compiler.inheritance._compileAsyncGetTemplateOrScript(node, true, false);
+    const parentTemplateId = this.compiler.composition._compileAsyncGetTemplateOrScript(node, true, false);
 
     if (node.dynamicParentStoreVar) {
       this.emitDynamicParentTemplateStoreWait(node.dynamicParentStoreVar, parentTemplateId);
@@ -139,7 +139,7 @@ class CompileExtendsDynamicRoot {
       this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
       this.emit.line(`  ${templateVar}.compile();`);
       if (this.compiler.scriptMode) {
-        this.emit.line(`  runtime.bootstrapInheritanceMetadata(inheritanceState, ${templateVar}.methods || {}, ${templateVar}.sharedSchema || [], ${templateVar}.path, ${this.compiler.buffer.currentBuffer}, context);`);
+        this.emit.line(`  runtime.bootstrapInheritanceMetadata(inheritanceState, ${templateVar}.methods || {}, ${templateVar}.sharedSchema || [], ${this.compiler.buffer.currentBuffer}, context);`);
       }
       this.compiler.composition.emitExternValidation({
         externSpecExpr: `${templateVar}.externSpec || []`,
@@ -148,7 +148,7 @@ class CompileExtendsDynamicRoot {
         operationName: 'extends',
         indent: '  '
       });
-      this.emit.line(`  context.setExtendsComposition(${templateVar}, ${compositionPayloadVar});`);
+      this.emit.line(`  runtime.setExtendsComposition(inheritanceState, ${templateVar}, ${compositionPayloadVar});`);
       this.emit.line(`  for(let ${k} in ${templateVar}.blocks) {`);
         this.emit.line(`    context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
       this.emit.line('  }');

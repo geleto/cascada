@@ -267,16 +267,6 @@ describe('Inherited Dispatch', function () {
       }
     };
     const context = {
-      createInheritancePayload(ownerKey, argMap) {
-        return { ownerKey, argMap };
-      },
-      createSuperInheritancePayload(currentPayload, argMap) {
-        return { currentPayload, argMap };
-      },
-      prepareInheritancePayloadForBlock(fn, payload) {
-        void fn;
-        return payload;
-      },
       getRenderContextVariables() {
         return {};
       }
@@ -293,7 +283,7 @@ describe('Inherited Dispatch', function () {
       }),
       args: [],
       context,
-      inheritanceState: {},
+      inheritanceState: runtimeModule.createInheritanceState(),
       env: {},
       runtime: runtimeModule,
       cb: () => {},

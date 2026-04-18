@@ -191,7 +191,7 @@ class CompileComponent {
     }
 
     const target = node.target.value;
-    const importId = this.compiler.inheritance._compileAsyncGetTemplateOrScript(node, false, false);
+    const importId = this.compiler.composition._compileAsyncGetTemplateOrScript(node, false, false);
     const componentId = this.compiler._tmpid();
     const importVarsVar = this.compiler._tmpid();
     const lifecycleChannelName = `__component_root__${target}`;
@@ -208,7 +208,7 @@ class CompileComponent {
       `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${errorContextJson}, path: context.path }` +
       ');');
     this.compiler.buffer.emitOwnWaitedConcurrencyResolve(componentId, node);
-    this.compiler.inheritance._emitValueImportBinding(target, componentId, node);
+    this.compiler.composition.emitValueImportBinding(target, componentId, node);
   }
 }
 

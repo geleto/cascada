@@ -59,14 +59,10 @@ function ensureSharedSchemaChannels(sharedSchema, currentBuffer, context) {
   }
 }
 
-function bootstrapInheritanceMetadata(inheritanceState, methods, sharedSchema, ownerKey, currentBuffer, context) {
+function bootstrapInheritanceMetadata(inheritanceState, methods, sharedSchema, currentBuffer, context) {
   if (!inheritanceState) {
     return;
   }
-
-  // Compiled output still passes ownerKey directly to this helper; keep the
-  // argument for runtime ABI stability even though registration no longer needs
-  // it here.
   const compiledMethods = methods && typeof methods === 'object' ? methods : null;
   const schema = Array.isArray(sharedSchema) ? sharedSchema : [];
 

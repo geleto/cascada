@@ -1225,23 +1225,13 @@ class CompilerAsync extends CompilerBaseAsync {
       if (this.scriptMode) {
         this.emitDeclareReturnChannel(this.buffer.currentBuffer);
       }
+      const blockEntryStateVar = this._tmpid();
       const payloadOriginalArgsVar = this._tmpid();
       const payloadLocalCapturesVar = this._tmpid();
-      this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
-      this.emit.line(`const ${payloadLocalCapturesVar} = blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate[${templateKey}] ? blockPayload.localsByTemplate[${templateKey}] : {};`);
-      if (this.scriptMode) {
-        this.emit.line(`context = context.forkForPath(${templateKey});`);
-      } else if (hasExplicitBlockContext) {
-        const payloadContextVar = this._tmpid();
-        this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${block.withContext ? '(blockRenderCtx || {})' : '{}'}, ${payloadLocalCapturesVar}, ${payloadOriginalArgsVar});`);
-        this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);
-        this.emit.line(`  context = context.forkForComposition(${templateKey}, ${payloadContextVar}, blockRenderCtx);`);
-        this.emit.line('} else {');
-        this.emit.line(`  context = context.forkForPath(${templateKey});`);
-        this.emit.line('}');
-      } else {
-        this.emit.line(`context = context.forkForPath(${templateKey});`);
-      }
+      this.emit.line(`const ${blockEntryStateVar} = runtime.prepareBlockEntryContext(context, ${templateKey}, blockPayload, blockRenderCtx, ${JSON.stringify(!this.scriptMode && hasExplicitBlockContext)}, ${JSON.stringify(!this.scriptMode && !!block.withContext)});`);
+      this.emit.line(`const ${payloadOriginalArgsVar} = ${blockEntryStateVar}.originalArgs;`);
+      this.emit.line(`const ${payloadLocalCapturesVar} = ${blockEntryStateVar}.localCaptures;`);
+      this.emit.line(`context = ${blockEntryStateVar}.context;`);
       this.emit.line(`${this.buffer.currentBuffer}._context = context;`);
       if (!this.scriptMode) {
         this.emit.line(`${this.buffer.currentTextChannelVar}._context = context;`);
@@ -1443,7 +1433,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
     const rootSharedSchema = this.channelCompiler.collectSharedChannelSchema(node);
     const rootSharedChannelNames = rootSharedSchema.map((entry) => entry.name);
-    const compiledMethods = this.extendsCompiler.collectCompiledMethods(node, rootSharedChannelNames);
+    const compiledMethods = this.extendsCompiler.metadata.collectCompiledMethods(node, rootSharedChannelNames);
     if (this.scriptMode) {
       this.extendsCompiler._compileAsyncScriptConstructorEntry(
         node,
@@ -1464,9 +1454,9 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`${blockName}: ${blockName},`);
     });
     this.emit.line('methods: (');
-    this.extendsCompiler.emitCompiledMethodsLiteral(compiledMethods, '  ');
+    this.extendsCompiler.metadata.emitCompiledMethodsLiteral(compiledMethods, '  ');
     this.emit.line('),');
-    this.emit.line(`blockContracts: ${JSON.stringify(this.extendsCompiler.collectBlockContracts(node))},`);
+    this.emit.line(`blockContracts: ${JSON.stringify(this.extendsCompiler.metadata.collectBlockContracts(node))},`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line(`sharedSchema: ${JSON.stringify(rootSharedSchema)},`);
     this.emit.line(`hasStaticExtends: ${JSON.stringify(!!this.hasStaticExtends)},`);

@@ -5,6 +5,74 @@
 This document is a cleanup and simplification plan for the current
 `extends` / inheritance / component implementation.
 
+## Status Update
+
+Most of the structural simplification described here has now landed.
+
+### Completed or effectively completed
+
+- Step 0:
+  - dead inheritance-resolution fields were removed from `Context`
+  - the dead `ownerKey` bootstrap parameter was removed
+  - focused late-linking/shared-root tests were kept green during the cleanup
+- Step 1:
+  - extends-composition payload storage moved into `InheritanceState`
+  - template-local inheritance captures moved into `InheritanceState`
+  - `Context` no longer owns inheritance-specific payload storage
+- Step 2:
+  - parent startup and component startup now reuse the same shared bootstrap
+    lifecycle shape
+  - direct root startup still keeps its separate render/composition finalization
+- Step 3:
+  - payload constructors/normalizers now live with the runtime inheritance
+    state owner
+  - payload merge logic moved out of `Context`
+- Step 4:
+  - the dynamic adapter is now visibly concentrated in
+    `compiler-extends-dynamic-root.js` and `inheritance-resolution.js`
+  - static owners no longer own dynamic-top-level block branching directly
+- Step 5:
+  - method metadata moved out of `compiler-extends.js` into a dedicated helper
+  - root finalization moved out of `compiler-extends.js` into a dedicated helper
+  - generic template/script lookup and import-binding helpers moved out of
+    `compiler-inheritance.js` into `compiler-composition.js`
+  - inheritance now owns inheritance-specific block/super/extends concerns
+    again
+- Step 6:
+  - block entry context assembly moved behind a runtime helper
+    (`prepareBlockEntryContext(...)`)
+  - emitted block-entry setup is shorter and no longer open-codes payload
+    extraction/forking logic
+- Step 7:
+  - `runtime/call.js` no longer re-exports inheritance entry points
+  - runtime ownership boundaries are now much clearer
+
+### Still worth doing
+
+- Step 8 documentation/explanation pass:
+  - update `extends-next.md` ownership notes to match the landed structure
+  - add a short trace for one inherited call
+  - add a short trace for component startup reuse
+  - document the remaining dynamic adapter seam explicitly
+
+### Current practical status
+
+The implementation is now much closer to the intended target shape:
+
+- `InheritanceState` is the explicit per-hierarchy runtime owner
+- `Context` is no longer the overflow container for inheritance internals
+- compiler ownership is split more honestly between:
+  - root/bootstrap coordination
+  - method metadata
+  - root finalization
+  - inheritance call/block/super emission
+  - generic composition/import/include lookup helpers
+- the dynamic adapter remains, but it is much narrower and easier to ignore
+  when reading the static path
+
+What remains is mostly documentation, explanation, and broader verification
+rather than another major architectural simplification step.
+
 It is intentionally not a return to the original early design that assumed the
 full parent chain could be fully prepared before constructor execution started.
 

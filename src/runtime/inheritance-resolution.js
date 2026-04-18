@@ -4,13 +4,13 @@
 // Owns resolution-lifecycle reads plus dynamic extends/block-resolution helpers
 // that must wait for the current inheritance registration wave to settle.
 
-const inheritanceState = require('./inheritance-state');
+const inheritanceStateRuntime = require('./inheritance-state');
 const lookup = require('./lookup');
 const resolve = require('./resolve');
 const { DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME } = require('../inheritance-constants');
 
 function getRegisteredAsyncBlock(currentInheritanceState, context, name) {
-  const registrationWait = inheritanceState.awaitInheritanceResolution(currentInheritanceState);
+  const registrationWait = inheritanceStateRuntime.awaitInheritanceResolution(currentInheritanceState);
   if (registrationWait && typeof registrationWait.then === 'function') {
     return registrationWait.then(() => context.getBlock(name));
   }
@@ -18,7 +18,7 @@ function getRegisteredAsyncBlock(currentInheritanceState, context, name) {
 }
 
 function deferUntilInheritanceResolution(currentInheritanceState, value) {
-  const registrationWait = inheritanceState.awaitInheritanceResolution(currentInheritanceState);
+  const registrationWait = inheritanceStateRuntime.awaitInheritanceResolution(currentInheritanceState);
   if (!registrationWait || typeof registrationWait.then !== 'function') {
     return value;
   }
@@ -51,7 +51,12 @@ function renderDynamicTopLevelBlock(name, context, currentBuffer, env, runtime, 
         cb,
         currentBuffer,
         currentInheritanceState,
-        context.prepareInheritancePayloadForBlock(blockFunc, blockPayload),
+        inheritanceStateRuntime.prepareInheritancePayloadForBlock(
+          currentInheritanceState,
+          blockFunc,
+          context && context.path ? context.path : null,
+          blockPayload
+        ),
         blockRenderCtx
       )
     );

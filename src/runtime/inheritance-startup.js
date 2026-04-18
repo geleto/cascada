@@ -42,24 +42,45 @@ function _startDynamicParentConstructor(parentTemplate, registrationContext, com
     : null;
 }
 
-function _startStaticParentConstructor(parentTemplate, registrationContext, compositionPayload, inheritanceState, env, runtime, cb, currentBuffer, errorContext, shouldAwaitCompletion = false) {
-  const parentContext = _forkContextForParent(parentTemplate, registrationContext, compositionPayload);
+function bootstrapResolvedHierarchyTarget({
+  targetTemplate,
+  registrationContext,
+  constructorContext = registrationContext,
+  inputValues = null,
+  inputOperationName = 'extends',
+  inheritanceState,
+  env,
+  runtime,
+  cb,
+  currentBuffer,
+  errorContext,
+  shouldAwaitCompletion = false
+}) {
   inheritanceBootstrap.bootstrapInheritanceMetadata(
     inheritanceState,
-    parentTemplate && parentTemplate.methods ? parentTemplate.methods : {},
-    parentTemplate && parentTemplate.sharedSchema ? parentTemplate.sharedSchema : [],
-    parentTemplate ? parentTemplate.path : null,
+    targetTemplate && targetTemplate.methods ? targetTemplate.methods : {},
+    targetTemplate && targetTemplate.sharedSchema ? targetTemplate.sharedSchema : [],
     currentBuffer,
     registrationContext
   );
+  if (inputValues && typeof inputValues === 'object' && Object.keys(inputValues).length > 0) {
+    inheritanceBootstrap.preloadSharedInputs(
+      targetTemplate && targetTemplate.sharedSchema ? targetTemplate.sharedSchema : [],
+      inputValues,
+      currentBuffer,
+      registrationContext,
+      errorContext,
+      inputOperationName
+    );
+  }
   inheritanceBootstrap.ensureCurrentBufferSharedLinks(
-    parentTemplate && parentTemplate.sharedSchema ? parentTemplate.sharedSchema : [],
+    targetTemplate && targetTemplate.sharedSchema ? targetTemplate.sharedSchema : [],
     currentBuffer
   );
   const admission = inheritanceCall.admitConstructorEntry(
-    parentContext,
+    constructorContext,
     inheritanceState,
-    parentTemplate && parentTemplate.methods ? parentTemplate.methods.__constructor__ : null,
+    targetTemplate && targetTemplate.methods ? targetTemplate.methods.__constructor__ : null,
     [],
     env,
     runtime,
@@ -70,6 +91,22 @@ function _startStaticParentConstructor(parentTemplate, registrationContext, comp
   return shouldAwaitCompletion && admission && admission.completion && typeof admission.completion.then === 'function'
     ? admission.completion
     : null;
+}
+
+function _startStaticParentConstructor(parentTemplate, registrationContext, compositionPayload, inheritanceState, env, runtime, cb, currentBuffer, errorContext, shouldAwaitCompletion = false) {
+  const parentContext = _forkContextForParent(parentTemplate, registrationContext, compositionPayload);
+  return bootstrapResolvedHierarchyTarget({
+    targetTemplate: parentTemplate,
+    registrationContext,
+    constructorContext: parentContext,
+    inheritanceState,
+    env,
+    runtime,
+    cb,
+    currentBuffer,
+    errorContext,
+    shouldAwaitCompletion
+  });
 }
 
 function startParentConstructor(parentTemplate, registrationContext, compositionPayload, inheritanceState, env, runtime, cb, currentBuffer, errorContext, shouldAwaitCompletion = false) {
@@ -102,5 +139,6 @@ function startParentConstructor(parentTemplate, registrationContext, composition
 }
 
 module.exports = {
+  bootstrapResolvedHierarchyTarget,
   startParentConstructor
 };

@@ -8,8 +8,7 @@ const { declareBufferChannel } = require('./channel');
 const { WaitResolveCommand } = require('./commands');
 const { resolveSingle } = require('./resolve');
 const { RuntimeFatalError } = require('./errors');
-const inheritanceBootstrap = require('./inheritance-bootstrap');
-const inheritanceCall = require('./inheritance-call');
+const inheritanceStartup = require('./inheritance-startup');
 
 function _normalizeComponentBootstrapFailure(err, pos, path) {
   if (err instanceof RuntimeFatalError) {
@@ -42,48 +41,22 @@ function _bootstrapResolvedTemplate({
   componentInstance.template = resolvedTemplate;
 
   try {
-    inheritanceBootstrap.bootstrapInheritanceMetadata(
+    const completion = inheritanceStartup.bootstrapResolvedHierarchyTarget({
+      targetTemplate: resolvedTemplate,
+      registrationContext: componentContext,
+      constructorContext: componentContext,
+      inputValues,
+      inputOperationName: 'component import',
       inheritanceState,
-      resolvedTemplate.methods || {},
-      resolvedTemplate.sharedSchema || [],
-      resolvedTemplate.path,
-      componentRoot,
-      componentContext
-    );
-  } catch (err) {
-    _normalizeComponentBootstrapFailure(err, pos, componentContext.path || pos.path);
-  }
-
-  if (inputValues && typeof inputValues === 'object' && Object.keys(inputValues).length > 0) {
-    try {
-      inheritanceBootstrap.preloadSharedInputs(
-        resolvedTemplate.sharedSchema || [],
-        inputValues,
-        componentRoot,
-        componentContext,
-        pos,
-        'component import'
-      );
-    } catch (err) {
-      _normalizeComponentBootstrapFailure(err, pos, componentContext.path || pos.path);
-    }
-  }
-
-  const constructorEntry = (resolvedTemplate.methods || {}).__constructor__;
-  if (constructorEntry) {
-    const admission = inheritanceCall.admitConstructorEntry(
-      componentContext,
-      inheritanceState,
-      constructorEntry,
-      [],
       env,
       runtime,
       cb,
-      componentRoot,
-      pos
-    );
-    if (admission && admission.completion && typeof admission.completion.then === 'function') {
-      admission.completion.catch((err) => {
+      currentBuffer: componentRoot,
+      errorContext: pos,
+      shouldAwaitCompletion: true
+    });
+    if (completion && typeof completion.then === 'function') {
+      completion.catch((err) => {
         // Component constructors ignore their own return value. Non-fatal
         // failures remain visible through poisoned shared channel state; only
         // fatal completion failures need explicit cb() routing here.
@@ -92,6 +65,8 @@ function _bootstrapResolvedTemplate({
         }
       });
     }
+  } catch (err) {
+    _normalizeComponentBootstrapFailure(err, pos, componentContext.path || pos.path);
   }
 
   return componentInstance;

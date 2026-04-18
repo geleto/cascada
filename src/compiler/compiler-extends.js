@@ -1,13 +1,15 @@
 'use strict';
 
 // Extends root compiler helper.
-// Owns root-level extends startup/finalization, compiled method metadata, and
-// parent constructor handoff shared by static and dynamic extends flows.
+// Owns root-level extends startup/bootstrap coordination and parent constructor
+// handoff shared by static and dynamic extends flows.
 
 const nodes = require('../nodes');
 const inheritanceConstants = require('../inheritance-constants');
 const CompileBuffer = require('./buffer');
 const CompileExtendsDynamicRoot = require('./compiler-extends-dynamic-root');
+const CompileMethodMetadata = require('./compiler-method-metadata');
+const CompileRootFinalization = require('./compiler-root-finalization');
 
 const { DYNAMIC_PARENT_TEMPLATE_CHANNEL_NAME, RETURN_CHANNEL_NAME } = inheritanceConstants;
 
@@ -17,7 +19,9 @@ class CompileExtends {
   constructor(compiler) {
     this.compiler = compiler;
     this.emit = compiler.emit;
+    this.metadata = new CompileMethodMetadata(compiler);
     this.dynamicTemplateRoot = new CompileExtendsDynamicRoot(this);
+    this.rootFinalization = new CompileRootFinalization(this);
   }
 
   getDynamicParentTemplateChannelName() {
@@ -60,99 +64,6 @@ class CompileExtends {
     return rootNode.children.some((child) => this.isDynamicParentTemplateBinding(child, 'declaration'));
   }
 
-  emitCompiledMethodEntryValue(method) {
-    this.emit(`{ fn: ${method.functionName}, kind: ${JSON.stringify(method.kind || 'method')}, contract: ${JSON.stringify(method.contract)}, ownerKey: ${JSON.stringify(method.ownerKey)}, linkedChannels: ${JSON.stringify(method.linkedChannels || [])} }`);
-  }
-
-  emitCompiledMethodsLiteral(compiledMethods, indent = '') {
-    this.emit.line(`${indent}{`);
-    Object.keys(compiledMethods || {}).forEach((name) => {
-      const method = compiledMethods[name];
-      this.emit(`${indent}  ${JSON.stringify(name)}: `);
-      this.emitCompiledMethodEntryValue(method);
-      this.emit.line(',');
-    });
-    this.emit.line(`${indent}}`);
-  }
-
-  collectBlockContracts(node) {
-    const contracts = {};
-    const blocks = node.findAll(nodes.Block);
-
-    blocks.forEach((block) => {
-      const signature = this.compiler._getBlockSignature(block);
-      contracts[block.name.value] = {
-        inputNames: signature.inputNames,
-        withContext: !!block.withContext
-      };
-    });
-
-    return contracts;
-  }
-
-  getCompiledMethodOwnerKey() {
-    return this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName);
-  }
-
-  collectCompiledMethods(node, rootSharedChannelNames = []) {
-    const methods = Object.create(null);
-    const blocks = node.findAll(nodes.Block);
-    const ownerKey = this.getCompiledMethodOwnerKey();
-
-    methods.__constructor__ = {
-      functionName: 'm___constructor__',
-      kind: 'constructor',
-      contract: {
-        inputNames: [],
-        withContext: false
-      },
-      ownerKey,
-      linkedChannels: this.compiler.linkedChannels.getLinkedChannels(node, {
-        seedChannels: rootSharedChannelNames,
-        includeDefaultTemplateTextChannel: true,
-        excludeSequentialChannels: true
-      })
-    };
-
-    blocks.forEach((block) => {
-      if (this.compiler.scriptMode && block.name && block.name.value === '__constructor__') {
-        this.compiler.fail(
-          'Identifier \'__constructor__\' is reserved and cannot be used as a method name',
-          block.lineno,
-          block.colno,
-          block
-        );
-      }
-      const signature = this.compiler._getBlockSignature(block);
-      methods[block.name.value] = {
-        functionName: `b_${block.name.value}`,
-        kind: this.compiler.scriptMode ? 'method' : 'block',
-        contract: {
-          inputNames: signature.inputNames,
-          withContext: !!block.withContext
-        },
-        ownerKey,
-        linkedChannels: this.compiler.linkedChannels.getLinkedChannels(block.body, {
-          excludeNames: this.compiler._getBlockInputNames(block),
-          sharedOnly: true,
-          excludeSequentialChannels: true
-        })
-      };
-    });
-
-    return methods;
-  }
-
-  hasUserCompiledMethods(compiledMethods) {
-    return !!(compiledMethods && Object.keys(compiledMethods).some((name) => name !== '__constructor__'));
-  }
-
-  needsRootInheritanceState(compiledMethods, rootSharedSchema) {
-    const hasCompiledMethods = this.hasUserCompiledMethods(compiledMethods);
-    const hasSharedSchema = Array.isArray(rootSharedSchema) && rootSharedSchema.length > 0;
-    return hasCompiledMethods || hasSharedSchema || this.compiler.hasExtends;
-  }
-
   emitInheritanceLocalCaptureSnapshot(node, options = null) {
     const indent = options && options.indent ? options.indent : '';
     const contextExpr = options && options.contextExpr ? options.contextExpr : 'context';
@@ -172,7 +83,7 @@ class CompileExtends {
       bufferExpr,
       indent
     });
-    this.emit.line(`${indent}${contextExpr}.setTemplateLocalCaptures(${templateKey}, ${templateLocalCapturesVar});`);
+    this.emit.line(`${indent}runtime.setTemplateLocalCaptures(inheritanceState, ${templateKey}, ${templateLocalCapturesVar});`);
   }
 
   _emitExtendsCompositionPayloadSetup(node, explicitInputVarsVar, compositionPayloadVar) {
@@ -203,26 +114,32 @@ class CompileExtends {
       includeRenderContext: true
     });
     this.emit.line(
-      `const ${compositionPayloadVar} = context.createExtendsCompositionPayload(` +
+      `const ${compositionPayloadVar} = runtime.createExtendsCompositionPayload(` +
       `${explicitInputValuesVar}, Object.keys(${explicitInputVarsVar}), ${rootContextVar}, ${explicitInputValuesVar});`
     );
   }
 
-  emitDynamicParentTemplateStore(node, parentTemplateExpr, bufferExpr = null, indent = '') {
-    return this.dynamicTemplateRoot.emitDynamicParentTemplateStore(node, parentTemplateExpr, bufferExpr, indent);
+  shouldSkipTopLevelBlockRender() {
+    return !this.compiler.inBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends;
   }
 
-  emitDynamicParentTemplateStoreWait(storeVar, parentTemplateExpr, indent = '') {
-    return this.dynamicTemplateRoot.emitDynamicParentTemplateStoreWait(storeVar, parentTemplateExpr, indent);
-  }
+  emitTopLevelBlockResolution(node, resultVar, blockPayloadExpr, blockRenderCtxExpr, indent = '') {
+    if (!this.compiler.inBlock && this.compiler.hasDynamicExtends) {
+      this.dynamicTemplateRoot.emitDynamicTopLevelBlockResolution(
+        node,
+        resultVar,
+        blockPayloadExpr,
+        blockRenderCtxExpr,
+        indent
+      );
+      return;
+    }
 
-  emitDynamicTopLevelBlockResolution(node, resultVar, blockPayloadExpr, blockRenderCtxExpr, indent = '') {
-    return this.dynamicTemplateRoot.emitDynamicTopLevelBlockResolution(
-      node,
-      resultVar,
-      blockPayloadExpr,
-      blockRenderCtxExpr,
-      indent
+    this.emit.line(
+      `${indent}${resultVar} = runtime.getRegisteredAsyncBlock(inheritanceState, context, "${node.name.value}")` +
+      `.then((blockFunc) => blockFunc(` +
+      `env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, ` +
+      `runtime.prepareInheritancePayloadForBlock(inheritanceState, blockFunc, context.path, ${blockPayloadExpr}), ${blockRenderCtxExpr}));`
     );
   }
 
@@ -292,7 +209,7 @@ class CompileExtends {
     const explicitInputVarsVar = this.compiler._tmpid();
     const compositionPayloadVar = this.compiler._tmpid();
     const templateVar = this.compiler._tmpid();
-    const parentTemplateId = this.compiler.inheritance._compileAsyncGetTemplateOrScript(node, true, false);
+    const parentTemplateId = this.compiler.composition._compileAsyncGetTemplateOrScript(node, true, false);
     const prevBuffer = this.compiler.buffer.currentBuffer;
 
     this._emitExtendsCompositionPayloadSetup(
@@ -377,123 +294,19 @@ class CompileExtends {
   }
 
   _emitRootInheritanceBootstrap(compiledMethods, rootSharedSchema) {
-    const hasCompiledMethods = this.hasUserCompiledMethods(compiledMethods);
+    const hasCompiledMethods = this.metadata.hasUserCompiledMethods(compiledMethods);
     const hasSharedSchema = Array.isArray(rootSharedSchema) && rootSharedSchema.length > 0;
     if (!hasCompiledMethods && !hasSharedSchema) {
       return;
     }
     this.emit(`runtime.bootstrapInheritanceMetadata(inheritanceState, `);
     if (hasCompiledMethods) {
-      this.emitCompiledMethodsLiteral(compiledMethods, '');
+      this.metadata.emitCompiledMethodsLiteral(compiledMethods, '');
     } else {
       this.emit('{}');
     }
-    this.emit(`, ${JSON.stringify(rootSharedSchema || [])}, ${JSON.stringify(this.getCompiledMethodOwnerKey())}, ${this.compiler.buffer.currentBuffer}, context);`);
-    this.emit.line();
-  }
-
-  _emitFinalizationErrorCallback(node, errorExpr = 'err', indent = '') {
-    const errorVar = this.compiler._tmpid();
-    this.emit.line(`${indent}const ${errorVar} = runtime.isPoisonError(${errorExpr}) ? ${errorExpr} : runtime.handleError(${errorExpr}, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
-    this.emit.line(`${indent}cb(${errorVar});`);
-  }
-
-  _emitRenderScriptRootReturn(node, resultVar, completionGateVar = null, indent = '') {
-    const finishVar = this.compiler._tmpid();
-    const deliverVar = this.compiler._tmpid();
-    const gatedResultVar = this.compiler._tmpid();
-    const normalizedVar = this.compiler._tmpid();
-    const effectiveCompletionGateVar = completionGateVar || resultVar;
-
-    this.emit.line(`${indent}const ${finishVar} = () => (${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks(), ${resultVar});`);
-    this.emit.line(`${indent}const ${deliverVar} = (value) => {`);
-    this.emit.line(`${indent}  const ${normalizedVar} = runtime.normalizeFinalPromise(value);`);
-    this.emit.line(`${indent}  if (${normalizedVar} && typeof ${normalizedVar}.then === "function") {`);
-    this.emit.line(`${indent}    ${normalizedVar}.then((finalValue) => cb(null, finalValue)).catch((err) => {`);
-    this._emitFinalizationErrorCallback(node, 'err', `${indent}      `);
-    this.emit.line(`${indent}    });`);
-    this.emit.line(`${indent}    return;`);
-    this.emit.line(`${indent}  }`);
-    this.emit.line(`${indent}  cb(null, ${normalizedVar});`);
-    this.emit.line(`${indent}};`);
-    this.emit.line(`${indent}const ${gatedResultVar} = ${effectiveCompletionGateVar} && typeof ${effectiveCompletionGateVar}.then === "function"`);
-    this.emit.line(`${indent}  ? ${effectiveCompletionGateVar}.then(${finishVar}, (err) => { ${finishVar}(); throw err; })`);
-    this.emit.line(`${indent}  : ${finishVar}();`);
-    this.emit.line(`${indent}if (${gatedResultVar} && typeof ${gatedResultVar}.then === "function") {`);
-    this.emit.line(`${indent}  ${gatedResultVar}.then(${deliverVar}).catch((err) => {`);
-    this._emitFinalizationErrorCallback(node, 'err', `${indent}    `);
-    this.emit.line(`${indent}  });`);
-    this.emit.line(`${indent}} else {`);
-    this.emit.line(`${indent}  ${deliverVar}(${gatedResultVar});`);
-    this.emit.line(`${indent}}`);
-  }
-
-  _emitRenderTemplateRootReturn(node, completionGateVar = null, indent = '') {
-    const finishVar = this.compiler._tmpid();
-    const finalizedResultVar = this.compiler._tmpid();
-
-    this.emit.line(`${indent}const ${finishVar} = () => {`);
-    this.emit.line(`${indent}  ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line(`${indent}  return ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot();`);
-    this.emit.line(`${indent}};`);
-    this.emit.line(`${indent}const ${finalizedResultVar} = ${completionGateVar} && typeof ${completionGateVar}.then === "function"`);
-    this.emit.line(`${indent}  ? ${completionGateVar}.then(${finishVar}, (err) => { ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks(); throw err; })`);
-    this.emit.line(`${indent}  : ${finishVar}();`);
-    this.emit.line(`${indent}${finalizedResultVar}.then((value) => cb(null, value)).catch((err) => {`);
-    this._emitFinalizationErrorCallback(node, 'err', `${indent}  `);
-    this.emit.line(`${indent}});`);
-  }
-
-  _emitCompositionRootReturn(node, completionGateVar = null, indent = '') {
-    if (completionGateVar) {
-      this.emit.line(`${indent}if (${completionGateVar} && typeof ${completionGateVar}.then === "function") {`);
-      this.emit.line(`${indent}  ${completionGateVar}.then(() => { ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks(); }, (err) => {`);
-      this.emit.line(`${indent}    ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      this.emit.line(`${indent}    throw err;`);
-      this.emit.line(`${indent}  }).catch((err) => {`);
-      this._emitFinalizationErrorCallback(node, 'err', `${indent}    `);
-      this.emit.line(`${indent}  });`);
-      this.emit.line(`${indent}} else {`);
-      this.emit.line(`${indent}  ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      this.emit.line(`${indent}}`);
-      this.emit.line(`${indent}return ${this.compiler.buffer.currentBuffer};`);
-      return;
-    }
-    this.emit.line(`${indent}${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line(`${indent}return ${this.compiler.buffer.currentBuffer};`);
-  }
-
-  _emitConstructorNullReturn(indent = '') {
-    this.emit.line(`${indent}${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line(`${indent}return null;`);
-  }
-
-  _emitConstructorReturnChannelSnapshot(node, indent = '') {
-    const returnVar = this.compiler._tmpid();
-    this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, node, returnVar, false);
-    this.emit.line(`${indent}${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line(`${indent}return ${returnVar};`);
-  }
-
-  _emitRootConstructorAdmission(node, constructorMethod) {
-    const constructorAdmissionVar = this.compiler._tmpid();
-    const completionVar = `${constructorAdmissionVar}_completion`;
-    const result = {
-      admissionVar: constructorAdmissionVar,
-      completionVar
-    };
-
-    this.emit(`const ${constructorAdmissionVar} = runtime.admitConstructorEntry(context, inheritanceState, `);
-    this.emitCompiledMethodEntryValue(constructorMethod);
-    this.emit.line(`, [], env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${JSON.stringify(this.compiler._createErrorContext(node))});`);
-    this.emit.line(`const ${completionVar} = ${constructorAdmissionVar}.completion;`);
-
-    if (this.compiler.scriptMode) {
-      result.valueVar = `${constructorAdmissionVar}_value`;
-      this.emit.line(`const ${result.valueVar} = ${constructorAdmissionVar}.promise;`);
-    }
-
-    return result;
+    this.emit(`, ${JSON.stringify(rootSharedSchema || [])}, ${this.compiler.buffer.currentBuffer}, context);`);
+    this.emit.line('');
   }
 
   _getStaticConstructorExtendsSplit(node, invariantLabel) {
@@ -527,9 +340,9 @@ class CompileExtends {
   _finishAsyncConstructorEntry(node, returnsValue = false) {
     this.emit.line('context.resolveExports();');
     if (returnsValue) {
-      this._emitConstructorReturnChannelSnapshot(node);
+      this.rootFinalization._emitConstructorReturnChannelSnapshot(node);
     } else {
-      this._emitConstructorNullReturn();
+      this.rootFinalization._emitConstructorNullReturn();
     }
     this.emit.endEntryFunction(node, true);
   }
@@ -609,52 +422,8 @@ class CompileExtends {
     });
   }
 
-  _compileConstructorAdmittedRootBody(node, constructorMethod) {
-    const constructorAdmission = this._emitRootConstructorAdmission(node, constructorMethod);
-
-    this.emit.line('if (!compositionMode) {');
-    if (this.compiler.scriptMode) {
-      this._emitRenderScriptRootReturn(
-        node,
-        constructorAdmission.valueVar,
-        constructorAdmission.completionVar,
-        '  '
-      );
-    } else {
-      this._emitRenderTemplateRootReturn(
-        node,
-        constructorAdmission.completionVar,
-        '  '
-      );
-    }
-    this.emit.line('} else {');
-    this._emitCompositionRootReturn(
-      node,
-      this.compiler.scriptMode ? null : constructorAdmission.completionVar,
-      '  '
-    );
-    this.emit.line('}');
-  }
-
   _compileAsyncRootBody(node, sharedChannelNames = null, compiledMethods = null, rootSharedSchema = null) {
-    const needsRootInheritanceState = this.needsRootInheritanceState(compiledMethods, rootSharedSchema);
-    const isDynamicTemplateRoot = !this.compiler.scriptMode && this.compiler.hasDynamicExtends;
-
-    this.emit.line(`runtime.markChannelBufferScope(${this.compiler.buffer.currentBuffer});`);
-    if (needsRootInheritanceState) {
-      this.emit.line('inheritanceState = inheritanceState || runtime.createInheritanceState();');
-    }
-    this._emitRootInheritanceBootstrap(compiledMethods || [], rootSharedSchema || []);
-
-    if (isDynamicTemplateRoot) {
-      this.dynamicTemplateRoot.compileDynamicParentRootBody(node);
-      return;
-    }
-
-    this._compileConstructorAdmittedRootBody(
-      node,
-      compiledMethods && compiledMethods.__constructor__
-    );
+    this.rootFinalization.compileAsyncRootBody(node, compiledMethods, rootSharedSchema);
   }
 
   _compileAsyncRoot(node, sharedChannelNames = null, compiledMethods = null, rootSharedSchema = null) {

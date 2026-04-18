@@ -634,13 +634,12 @@ describe('Extends', function () {
       const originalEnsureLinks = inheritanceBootstrap.ensureCurrentBufferSharedLinks;
       const seen = [];
 
-      inheritanceBootstrap.bootstrapInheritanceMetadata = function(inheritanceStateArg, methodsArg, sharedSchemaArg, ownerKeyArg, bufferArg, contextArg) {
+      inheritanceBootstrap.bootstrapInheritanceMetadata = function(inheritanceStateArg, methodsArg, sharedSchemaArg, bufferArg, contextArg) {
         seen.push({
           kind: 'bootstrap',
           inheritanceStateArg,
           methodsArg,
           sharedSchemaArg,
-          ownerKeyArg,
           bufferArg,
           contextArg
         });
@@ -672,8 +671,8 @@ describe('Extends', function () {
         expect(completion).to.be(null);
         expect(seen.map((entry) => entry.kind)).to.eql(['bootstrap', 'links']);
         expect(seen[0].inheritanceStateArg).to.be(inheritanceState);
-        expect(seen[0].ownerKeyArg).to.be('Parent.script');
         expect(seen[0].bufferArg).to.be(currentBuffer);
+        expect(seen[0].contextArg).to.be(registrationContext);
         expect(seen[1].bufferArg).to.be(currentBuffer);
       } finally {
         inheritanceBootstrap.bootstrapInheritanceMetadata = originalBootstrap;
@@ -846,11 +845,11 @@ describe('Extends', function () {
         'payload-shape.njk'
       )._compileSource();
 
-      expect(scriptSource).to.contain('context.createExtendsCompositionPayload(');
+      expect(scriptSource).to.contain('runtime.createExtendsCompositionPayload(');
       expect(scriptSource).to.contain('.explicitInputValues');
       expect(scriptSource).to.contain('runtime.startParentConstructor(');
-      expect(dynamicTemplateSource).to.contain('context.createExtendsCompositionPayload(');
-      expect(dynamicTemplateSource).to.contain('context.setExtendsComposition(');
+      expect(dynamicTemplateSource).to.contain('runtime.createExtendsCompositionPayload(');
+      expect(dynamicTemplateSource).to.contain('runtime.setExtendsComposition(inheritanceState,');
       expect(dynamicTemplateSource).to.contain('.explicitInputNames');
     });
   });

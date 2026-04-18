@@ -1,8 +1,8 @@
 'use strict';
 
 // Inheritance compiler helper.
-// Owns inheritance-specific block/super compilation plus shared template lookup
-// and import-binding helpers reused by extends/component/composition flows.
+// Owns inheritance-specific block/super compilation and sync extends block
+// registration/runtime call emission.
 
 const nodes = require('../nodes');
 
@@ -12,34 +12,11 @@ class CompileInheritance {
     this.emit = this.compiler.emit;
   }
 
-  _emitValueImportBinding(name, sourceVar, node) {
-    this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-    this.emit.line(
-      `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
-    );
-    if (this.compiler.analysis.isRootScopeOwner(node._analysis)) {
-      this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.compiler.buffer.currentBuffer});`);
+  _shouldSkipTopLevelBlockRender() {
+    if (this.compiler.extendsCompiler && typeof this.compiler.extendsCompiler.shouldSkipTopLevelBlockRender === 'function') {
+      return this.compiler.extendsCompiler.shouldSkipTopLevelBlockRender();
     }
-  }
-
-  _compileAsyncGetTemplateOrScript(node, eagerCompile, ignoreMissing) {
-    const parentTemplateId = this.compiler._tmpid();
-    const parentName = JSON.stringify(this.compiler.templateName);
-    const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
-    const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
-
-    // The relevant position is the template expression node
-    const positionNode = node.template || node; // node.template exists for Import, Extends, Include, FromImport
-
-    const getTemplateFunc = this.compiler._tmpid();
-    // Template/script lookup expressions feed composition boundaries, which
-    // emit their own completion tracking separately from root-expression WRCs.
-    this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
-    this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
-    this.compiler.compileExpression(node.template, null, positionNode, true);
-    this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
-
-    return parentTemplateId;
+    return !this.compiler.inBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends;
   }
 
   _getPositionalSuperArgsNode(node) {
@@ -63,22 +40,6 @@ class CompileInheritance {
     return new nodes.NodeList(node.lineno, node.colno, allArgs);
   }
 
-  _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
-    const templateId = this.compiler._tmpid();
-    const parentName = JSON.stringify(this.compiler.templateName);
-    const eagerCompileArg = eagerCompile ? 'true' : 'false';
-    const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
-    const cb = this.compiler._makeCallback(templateId);
-
-    this.emit('env.getTemplate(');
-    // Template lookup expressions feed composition boundaries, which
-    // emit their own completion tracking separately from root-expression WRCs.
-    this.compiler.compileExpression(node.template, frame, node.template, true);
-    this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
-
-    return templateId;
-  }
-
   compileAsyncBlock(node) {
     if (this.compiler.scriptMode && !this.compiler.inBlock) {
       return;
@@ -89,7 +50,7 @@ class CompileInheritance {
     // skip compiling any rendering code for it, as the parent template is
     // responsible for its execution. The dynamic extends case is handled later
     // through the extends-owned dynamic parent-resolution helper.
-    if (!this.compiler.inBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends) {
+    if (this._shouldSkipTopLevelBlockRender()) {
       return;
     }
 
@@ -127,19 +88,14 @@ class CompileInheritance {
           });
         }
         if (hasInheritancePayload) {
-          this.emit.line(`const ${blockPayloadVar} = context.createInheritancePayload(${templateKey}, ${explicitInputNameNodes.length > 0 ? blockVarsVar : '{}'}, ${hasLocalCaptures ? blockLocalsVar : 'null'});`);
+          this.emit.line(`const ${blockPayloadVar} = runtime.createInheritancePayload(${templateKey}, ${explicitInputNameNodes.length > 0 ? blockVarsVar : '{}'}, ${hasLocalCaptures ? blockLocalsVar : 'null'});`);
         }
-        const needsParentCheck = !this.compiler.inBlock && this.compiler.hasDynamicExtends;
-        if (needsParentCheck) {
-          this.compiler.extendsCompiler.emitDynamicTopLevelBlockResolution(
-            node,
-            id,
-            hasInheritancePayload ? blockPayloadVar : 'null',
-            blockRenderCtxExpr
-          );
-        } else {
-          this.emit.line(`${id} = runtime.getRegisteredAsyncBlock(inheritanceState, context, "${node.name.value}").then((blockFunc) => blockFunc(env, context, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.prepareInheritancePayloadForBlock(blockFunc, ${hasInheritancePayload ? blockPayloadVar : 'null'}), ${blockRenderCtxExpr}));`);
-        }
+        this.compiler.extendsCompiler.emitTopLevelBlockResolution(
+          node,
+          id,
+          hasInheritancePayload ? blockPayloadVar : 'null',
+          blockRenderCtxExpr
+        );
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
       }
     );
@@ -162,7 +118,7 @@ class CompileInheritance {
     // skip compiling any rendering code for it, as the parent template is
     // responsible for its execution. The dynamic extends case is handled later
     // through the extends-owned dynamic parent-resolution helper.
-    if (!this.compiler.inBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends) {
+    if (this._shouldSkipTopLevelBlockRender()) {
       return;
     }
 
@@ -202,7 +158,7 @@ class CompileInheritance {
         node
       );
     }
-    const parentTemplateId = this._compileSyncGetTemplate(node, frame, true, false);
+    const parentTemplateId = this.compiler.composition._compileSyncGetTemplate(node, frame, true, false);
     this.emit.line(`parentTemplate = ${parentTemplateId};`);
     this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
     this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
@@ -215,7 +171,7 @@ class CompileInheritance {
       const id = node.symbol ? node.symbol.value : null;
       const compilingBlock = this.compiler.currentCompilingBlock;
       const blockName = compilingBlock && compilingBlock.name ? compilingBlock.name.value : null;
-      const ownerKey = this.compiler.extendsCompiler.getCompiledMethodOwnerKey();
+      const ownerKey = this.compiler.extendsCompiler.metadata.getCompiledMethodOwnerKey();
       if (!blockName) {
         this.compiler.fail(
           'super() is only valid inside a method body',
@@ -271,7 +227,7 @@ class CompileInheritance {
 
     if (!id) {
       if (args.length === 0) {
-        this.emit(`runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.createSuperInheritancePayload(blockPayload), blockRenderCtx))`);
+        this.emit(`runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, runtime.createSuperInheritancePayload(blockPayload), blockRenderCtx))`);
         return;
       }
       const superArgsVar = this.compiler._tmpid();
@@ -285,7 +241,7 @@ class CompileInheritance {
       knownInputNames.slice(0, args.length).forEach((inputName, idx) => {
         this.emit.line(`${superArgsOverrideVar}[${JSON.stringify(inputName)}] = ${superArgsVar}[${idx}];`);
       });
-      this.emit.line(`const ${superBlockPayloadVar} = context.createSuperInheritancePayload(blockPayload, ${superArgsOverrideVar});`);
+      this.emit.line(`const ${superBlockPayloadVar} = runtime.createSuperInheritancePayload(blockPayload, ${superArgsOverrideVar});`);
       this.emit(`return runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, ${superBlockPayloadVar}, blockRenderCtx));`);
       this.emit('})()');
       return;
@@ -301,10 +257,10 @@ class CompileInheritance {
       knownInputNames.slice(0, args.length).forEach((inputName, idx) => {
         this.emit.line(`${superArgsOverrideVar}[${JSON.stringify(inputName)}] = ${superArgsVar}[${idx}];`);
       });
-      this.emit.line(`const ${superBlockPayloadVar} = context.createSuperInheritancePayload(blockPayload, ${superArgsOverrideVar});`);
+      this.emit.line(`const ${superBlockPayloadVar} = runtime.createSuperInheritancePayload(blockPayload, ${superArgsOverrideVar});`);
       this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, ${superBlockPayloadVar}, blockRenderCtx);`);
     } else {
-      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, context.createSuperInheritancePayload(blockPayload), blockRenderCtx);`);
+      this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, inheritanceState, runtime.createSuperInheritancePayload(blockPayload), blockRenderCtx);`);
     }
     this.emit.line(`${id} = runtime.markSafe(${id});`);
   }

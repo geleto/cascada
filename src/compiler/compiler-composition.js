@@ -13,6 +13,46 @@ class CompileComposition {
     this.emit = compiler.emit;
   }
 
+  emitValueImportBinding(name, sourceVar, node) {
+    this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+    this.emit.line(
+      `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
+    );
+    if (this.compiler.analysis.isRootScopeOwner(node._analysis)) {
+      this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.compiler.buffer.currentBuffer});`);
+    }
+  }
+
+  _compileAsyncGetTemplateOrScript(node, eagerCompile, ignoreMissing) {
+    const parentTemplateId = this.compiler._tmpid();
+    const parentName = JSON.stringify(this.compiler.templateName);
+    const eagerCompileArg = eagerCompile ? 'true' : 'false';
+    const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
+    const positionNode = node.template || node;
+    const getTemplateFunc = this.compiler._tmpid();
+
+    this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
+    this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
+    this.compiler.compileExpression(node.template, null, positionNode, true);
+    this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
+
+    return parentTemplateId;
+  }
+
+  _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing) {
+    const templateId = this.compiler._tmpid();
+    const parentName = JSON.stringify(this.compiler.templateName);
+    const eagerCompileArg = eagerCompile ? 'true' : 'false';
+    const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
+    const cb = this.compiler._makeCallback(templateId);
+
+    this.emit('env.getTemplate(');
+    this.compiler.compileExpression(node.template, frame, node.template, true);
+    this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
+
+    return templateId;
+  }
+
   _getWithVars(node) {
     return node.withVars && node.withVars.children ? node.withVars.children : [];
   }
@@ -93,7 +133,7 @@ class CompileComposition {
       this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
       bindingIds.push(id);
 
-      this.compiler.inheritance._emitValueImportBinding(alias, id, node);
+      this.emitValueImportBinding(alias, id, node);
     });
 
     return bindingIds;
@@ -292,19 +332,19 @@ class CompileComposition {
     }
     if (!this._hasAsyncCompositionContext(node)) {
       const target = node.target.value;
-      const id = this.compiler.inheritance._compileAsyncGetTemplateOrScript(node, false, false);
+      const id = this._compileAsyncGetTemplateOrScript(node, false, false);
       const exportedId = this.compiler._tmpid();
       this._emitAsyncResolvedExportLookup(exportedId, id, {
         operationName: 'import',
         isolated: true
       });
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
-      this.compiler.inheritance._emitValueImportBinding(target, exportedId, node);
+      this.emitValueImportBinding(target, exportedId, node);
       return;
     }
 
     const target = node.target.value;
-    const id = this.compiler.inheritance._compileAsyncGetTemplateOrScript(node, false, false);
+    const id = this._compileAsyncGetTemplateOrScript(node, false, false);
     const exportedId = this.compiler._tmpid();
     const importVarsVar = this.compiler._tmpid();
     const importInputNamesVar = this.compiler._tmpid();
@@ -318,7 +358,7 @@ class CompileComposition {
       renderContextExpr: node.withContext ? 'context.getRenderContextVariables()' : 'null'
     });
     this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
-    this.compiler.inheritance._emitValueImportBinding(target, exportedId, node);
+    this.emitValueImportBinding(target, exportedId, node);
   }
 
   compileSyncImport(node, frame) {
@@ -331,7 +371,7 @@ class CompileComposition {
       );
     }
     const target = node.target.value;
-    const id = this.compiler.inheritance._compileSyncGetTemplate(node, frame, false, false);
+    const id = this._compileSyncGetTemplate(node, frame, false, false);
     this.emit.addScopeLevel();
     this.emit.line(id + '.getExported(' +
       (node.withContext ? 'context.getVariables(), frame, ' : '') +
@@ -347,7 +387,7 @@ class CompileComposition {
 
   compileAsyncFromImport(node) {
     if (!this._hasAsyncCompositionContext(node)) {
-      const importedId = this.compiler.inheritance._compileAsyncGetTemplateOrScript(node, false, false);
+      const importedId = this._compileAsyncGetTemplateOrScript(node, false, false);
       const exportedId = this.compiler._tmpid();
       this._emitAsyncResolvedExportLookup(exportedId, importedId, {
         operationName: 'from-import',
@@ -358,7 +398,7 @@ class CompileComposition {
       return;
     }
 
-    const importedId = this.compiler.inheritance._compileAsyncGetTemplateOrScript(node, false, false);
+    const importedId = this._compileAsyncGetTemplateOrScript(node, false, false);
     const exportedId = this.compiler._tmpid();
     const importVarsVar = this.compiler._tmpid();
     const importInputNamesVar = this.compiler._tmpid();
@@ -384,7 +424,7 @@ class CompileComposition {
         node
       );
     }
-    const importedId = this.compiler.inheritance._compileSyncGetTemplate(node, frame, false, false);
+    const importedId = this._compileSyncGetTemplate(node, frame, false, false);
     this.emit.addScopeLevel();
     this.emit.line(importedId + '.getExported(' +
       (node.withContext ? 'context.getVariables(), frame, ' : '') +
@@ -464,7 +504,7 @@ class CompileComposition {
     this.emit.line('tasks.push(');
     this.emit.line('function(callback) {');
 
-    const id = this.compiler.inheritance._compileSyncGetTemplate(node, frame, false, node.ignoreMissing);
+    const id = this._compileSyncGetTemplate(node, frame, false, node.ignoreMissing);
     this.emit.line(`callback(null,${id});});`);
 
     this.emit.line('});');

@@ -15,6 +15,7 @@ const { RESOLVE_MARKER } = require('./resolve');
 const { createCommandBuffer, isCommandBuffer } = require('./command-buffer');
 const { declareBufferChannel } = require('./channel');
 const { Command } = require('./commands');
+const inheritanceStateRuntime = require('./inheritance-state');
 const inheritanceConstants = require('../inheritance-constants');
 
 const INHERITANCE_ADMISSION_CHANNEL = '__inheritance_admission__';
@@ -150,9 +151,14 @@ function _invokeMethodEntry(methodEntry, context, inheritanceState, resolvedArgs
     argMap[inputNames[i]] = resolvedArgs[i];
   }
   const payload = currentPayload
-    ? context.createSuperInheritancePayload(currentPayload, argMap)
-    : context.createInheritancePayload(methodEntry && methodEntry.ownerKey, argMap, null);
-  const preparedPayload = context.prepareInheritancePayloadForBlock(methodEntry.fn, payload);
+    ? inheritanceStateRuntime.createSuperInheritancePayload(currentPayload, argMap)
+    : inheritanceStateRuntime.createInheritancePayload(methodEntry && methodEntry.ownerKey, argMap, null);
+  const preparedPayload = inheritanceStateRuntime.prepareInheritancePayloadForBlock(
+    inheritanceState,
+    methodEntry.fn,
+    context && context.path ? context.path : null,
+    payload
+  );
   const renderCtx = methodEntry && methodEntry.contract && methodEntry.contract.withContext
     ? context.getRenderContextVariables()
     : undefined;

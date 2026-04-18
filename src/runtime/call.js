@@ -8,8 +8,6 @@ const {
   RuntimePromise
 } = require('./errors');
 const { RESOLVE_MARKER, resolveAll } = require('./resolve');
-const inheritanceCall = require('./inheritance-call');
-const inheritanceStartup = require('./inheritance-startup');
 
 // Ordinary callable invocation
 
@@ -182,9 +180,5 @@ function _getCallableExecutionContext(obj, name, context) {
 
 module.exports = {
   invokeCallable,
-  invokeCallableAsync,
-  admitConstructorEntry: inheritanceCall.admitConstructorEntry,
-  startParentConstructor: inheritanceStartup.startParentConstructor,
-  callInheritedMethod: inheritanceCall.callInheritedMethod,
-  callSuperMethod: inheritanceCall.callSuperMethod
+  invokeCallableAsync
 };

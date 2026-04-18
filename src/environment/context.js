@@ -29,8 +29,6 @@ class Context extends Obj {
     this.blocks = {};
     this.exportResolveFunctions = Object.create(null);
     this.exportChannels = Object.create(null);
-    this.extendsCompositionByParent = new WeakMap();
-    this.inheritanceLocalCapturesByTemplate = Object.create(null);
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -117,7 +115,16 @@ class Context extends Obj {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    return blk(env, context, runtime, cb, parentBuffer, inheritanceState, context.prepareInheritancePayloadForBlock(blk, blockPayload), blockRenderCtx);
+    return blk(
+      env,
+      context,
+      runtime,
+      cb,
+      parentBuffer,
+      inheritanceState,
+      runtime.prepareInheritancePayloadForBlock(inheritanceState, blk, context.path, blockPayload),
+      blockRenderCtx
+    );
   }
 
   getSyncSuper(env, name, block, frame, runtime, cb) {
@@ -183,130 +190,6 @@ class Context extends Obj {
     return exported;
   }
 
-  _getInheritanceTemplateKey(templateName) {
-    return templateName == null ? '__anonymous__' : String(templateName);
-  }
-
-  createExtendsCompositionPayload(explicitInputValues, explicitInputNames, rootContext, externContext) {
-    const normalizedExplicitInputValues = lib.extend({}, explicitInputValues || {});
-    return {
-      explicitInputValues: normalizedExplicitInputValues,
-      explicitInputNames: Array.isArray(explicitInputNames)
-        ? explicitInputNames.slice()
-        : Object.keys(normalizedExplicitInputValues),
-      rootContext: rootContext || {},
-      externContext: externContext || {}
-    };
-  }
-
-  setExtendsComposition(templateObject, compositionPayload) {
-    if (!templateObject || typeof templateObject !== 'object') {
-      throw new Error('Extends composition requires a resolved parent template/script object');
-    }
-    // forkForComposition() copies these again into the new child Context, so
-    // keep only a single stored snapshot here.
-    this.extendsCompositionByParent.set(
-      templateObject,
-      this.createExtendsCompositionPayload(
-        compositionPayload && compositionPayload.explicitInputValues,
-        compositionPayload && compositionPayload.explicitInputNames,
-        compositionPayload && compositionPayload.rootContext,
-        compositionPayload && compositionPayload.externContext
-      )
-    );
-  }
-
-  getExtendsComposition(templateObject) {
-    if (!templateObject || typeof templateObject !== 'object') {
-      throw new Error('Extends composition lookup requires a resolved parent template/script object');
-    }
-    return this.extendsCompositionByParent.get(templateObject) || null;
-  }
-
-  setTemplateLocalCaptures(templateName, captures) {
-    const key = this._getInheritanceTemplateKey(templateName);
-    this.inheritanceLocalCapturesByTemplate[key] = lib.extend({}, captures || {});
-  }
-
-  getTemplateLocalCaptures(templateName) {
-    const key = this._getInheritanceTemplateKey(templateName);
-    return this.inheritanceLocalCapturesByTemplate[key] || null;
-  }
-
-  _cloneInheritanceLocalsByTemplate(localsByTemplate) {
-    const cloned = Object.create(null);
-    if (!localsByTemplate || typeof localsByTemplate !== 'object') {
-      return cloned;
-    }
-    const templateNames = Object.keys(localsByTemplate);
-    for (let i = 0; i < templateNames.length; i++) {
-      const templateName = templateNames[i];
-      cloned[templateName] = lib.extend({}, localsByTemplate[templateName] || {});
-    }
-    return cloned;
-  }
-
-  createInheritancePayload(templateName, args, localCaptures) {
-    const argValues = lib.extend({}, args || {});
-    const templateKey = this._getInheritanceTemplateKey(templateName);
-    const payload = {
-      originalArgs: argValues,
-      localsByTemplate: Object.create(null)
-    };
-    if (localCaptures && typeof localCaptures === 'object') {
-      const localValues = lib.extend({}, localCaptures);
-      if (Object.keys(localValues).length > 0) {
-        payload.localsByTemplate[templateKey] = localValues;
-      }
-    }
-    return payload;
-  }
-
-  createSuperInheritancePayload(currentPayload, nextArgs = null) {
-    const payload = currentPayload && typeof currentPayload === 'object' ? currentPayload : null;
-    if (!payload && !nextArgs) {
-      return null;
-    }
-    const sourceArgs = lib.extend({}, (payload && payload.originalArgs) || {});
-    if (nextArgs && typeof nextArgs === 'object') {
-      lib.extend(sourceArgs, nextArgs);
-    }
-    return {
-      originalArgs: sourceArgs,
-      localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload && payload.localsByTemplate)
-    };
-  }
-
-  prepareInheritancePayloadForBlock(block, payload) {
-    const templatePath = this._getInheritanceTemplateKey(
-      block && Object.prototype.hasOwnProperty.call(block, 'templatePath') ? block.templatePath : this.path
-    );
-    const storedLocals = this.getTemplateLocalCaptures(templatePath);
-    const hasPayload = !!(payload && typeof payload === 'object');
-    if (!hasPayload && !storedLocals) {
-      return null;
-    }
-    if (hasPayload && !storedLocals) {
-      return payload;
-    }
-    const basePayload = hasPayload
-      ? {
-        originalArgs: lib.extend({}, payload.originalArgs || {}),
-        localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload.localsByTemplate)
-      }
-      : {
-        originalArgs: {},
-        localsByTemplate: Object.create(null)
-      };
-    if (storedLocals) {
-      basePayload.localsByTemplate[templatePath] = lib.extend(
-        lib.extend({}, storedLocals),
-        basePayload.localsByTemplate[templatePath] || {}
-      );
-    }
-    return basePayload;
-  }
-
   // Shared structural state that still lives on Context after Step 6. The
   // explicit inheritance-state object now threads separately through root and
   // block/method entrypoints instead of being copied here.
@@ -314,11 +197,6 @@ class Context extends Obj {
     newContext.blocks = this.blocks;
     newContext.exportResolveFunctions = this.exportResolveFunctions;
     newContext.exportChannels = this.exportChannels;
-    newContext.extendsCompositionByParent = this.extendsCompositionByParent;
-    newContext.inheritanceLocalCapturesByTemplate = this.inheritanceLocalCapturesByTemplate;
-    newContext.inheritanceResolutionPromise = this.inheritanceResolutionPromise;
-    newContext.inheritanceResolutionResolver = this.inheritanceResolutionResolver;
-    newContext.inheritanceResolutionPendingCount = this.inheritanceResolutionPendingCount;
     return newContext;
   }
 

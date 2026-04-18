@@ -13,6 +13,7 @@
   var finish;
   var isSlim;
   var Compiler;
+  var StringLoader;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -37,6 +38,7 @@
   finish = util.finish;
   isSlim = util.isSlim;
   Loader = util.Loader;
+  StringLoader = util.StringLoader;
 
   describe('compiler', function () {
 
@@ -1258,6 +1260,25 @@
 
       finish(done);
     });
+
+    it('should keep sync extends block scope isolated from top-level child assignments', function() {
+      var loader = new StringLoader();
+      var env = new Environment(loader);
+
+      loader.addTemplate(
+        'base.njk',
+        '[{% block body %}Base{% endblock %}]{{ outer }}'
+      );
+      loader.addTemplate(
+        'child.njk',
+        '{% extends "base.njk" %}' +
+        '{% set outer = "child-top" %}' +
+        '{% block body %}{% set outer = "child-block" %}Child{% endblock %}'
+      );
+
+      expect(env.render('child.njk')).to.be('[Child]child-top');
+    });
+
     it('should not call blocks not defined from template inheritance', function (done) {
       var count = 0;
       render(
