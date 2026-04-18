@@ -186,60 +186,6 @@ class InheritanceState {
     this.methods = new InheritanceMethodRegistry(this.resolution);
     this.shared = new InheritanceSharedRegistry(this.resolution);
   }
-
-  // Thin compatibility delegates keep older tests/helpers stable while the
-  // runtime owners move to the explicit domain presentation.
-  registerCompiledMethods(methods) {
-    return this.methods.registerCompiled(methods);
-  }
-
-  getRegisteredMethodChain(name) {
-    return this.methods.getChain(name);
-  }
-
-  getImmediateInheritedMethodEntry(name) {
-    return this.methods.getImmediateInherited(name);
-  }
-
-  getImmediateSuperMethodEntry(name, ownerKey) {
-    return this.methods.getImmediateSuper(name, ownerKey);
-  }
-
-  resolveInheritedMethodEntry(name) {
-    return this.methods.resolveInherited(name);
-  }
-
-  resolveSuperMethodEntry(name, ownerKey) {
-    return this.methods.resolveSuper(name, ownerKey);
-  }
-
-  registerSharedSchema(sharedSchema) {
-    return this.shared.registerSchema(sharedSchema);
-  }
-
-  getRegisteredSharedChannelNames() {
-    return this.shared.getNames();
-  }
-
-  getImmediateSharedChannelType(name) {
-    return this.shared.getImmediateType(name);
-  }
-
-  resolveSharedChannelType(name) {
-    return this.shared.resolveType(name);
-  }
-
-  beginInheritanceResolution() {
-    this.resolution.begin();
-  }
-
-  awaitInheritanceResolution() {
-    return this.resolution.await();
-  }
-
-  finishInheritanceResolution() {
-    this.resolution.finish();
-  }
 }
 
 function beginInheritanceResolution(inheritanceState) {
