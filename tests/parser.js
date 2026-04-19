@@ -110,12 +110,10 @@
       return new Type(ast[1], ast[2], ast[3] ? toNodes(ast[3]) : ast[3],
         lib.isArray(ast[4]) ? lib.map(ast[4], toNodes) : ast[4]);
     } else {
-      return new Type(0, 0,
-        toNodes(ast[1]),
-        toNodes(ast[2]),
-        toNodes(ast[3]),
-        toNodes(ast[4]),
-        toNodes(ast[5]));
+      var args = lib.map(dummy.fields, function(_, index) {
+        return toNodes(ast[index + 1]);
+      });
+      return Reflect.construct(Type, [0, 0].concat(args));
     }
   }
 
@@ -697,7 +695,8 @@
             [nodes.Literal, 'foo/bar.njk'],
             [nodes.Symbol, 'baz'],
             null,
-            [nodes.NodeList]]]);
+            [nodes.NodeList],
+            null]]);
 
       isAST(parser.parse('{% from "foo/bar.njk" import baz, foobar as foobarbaz %}'),
         [nodes.Root,
@@ -724,7 +723,8 @@
             ],
             [nodes.Symbol, 'baz'],
             null,
-            [nodes.NodeList]]]);
+            [nodes.NodeList],
+            null]]);
 
       isAST(parser.parse('{% from ""|default("foo/bar.njk") import baz, foobar as foobarbaz %}'),
         [nodes.Root,
@@ -752,7 +752,35 @@
             true,
             [nodes.NodeList,
               [nodes.Symbol, 'user'],
-              [nodes.Symbol, 'theme']]]]);
+              [nodes.Symbol, 'theme']],
+            null]]);
+
+      isAST(parser.parse('{% import "foo/bar.njk" as baz with { user: currentUser, theme: palette } %}'),
+        [nodes.Root,
+          [nodes.Import,
+            [nodes.Literal, 'foo/bar.njk'],
+            [nodes.Symbol, 'baz'],
+            null,
+            [nodes.NodeList],
+            [nodes.Dict,
+              [nodes.Pair,
+                [nodes.Symbol, 'user'],
+                [nodes.Symbol, 'currentUser']],
+              [nodes.Pair,
+                [nodes.Symbol, 'theme'],
+                [nodes.Symbol, 'palette']]]]]);
+
+      isAST(parser.parse('{% import "foo/bar.njk" as baz with context, { user: currentUser } %}'),
+        [nodes.Root,
+          [nodes.Import,
+            [nodes.Literal, 'foo/bar.njk'],
+            [nodes.Symbol, 'baz'],
+            true,
+            [nodes.NodeList],
+            [nodes.Dict,
+              [nodes.Pair,
+                [nodes.Symbol, 'user'],
+                [nodes.Symbol, 'currentUser']]]]]);
 
       isAST(parser.parse('{% from "foo/bar.njk" import baz with context, user %}'),
         [nodes.Root,

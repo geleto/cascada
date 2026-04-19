@@ -1,6 +1,6 @@
 'use strict';
 
-const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', '__return__']);
+const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', 'component', '__return__']);
 const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
 
 /**
@@ -40,6 +40,8 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
  * @param {boolean} options.asyncMode - Compiler async mode
  * @param {boolean} options.scriptMode - Compiler script mode
  * @param {boolean} options.isNameSymbol - Whether nameNode is a Symbol
+ * @param {boolean} options.isShared - Whether declaration uses the shared keyword
+ * @param {boolean} options.isRootScopeOwner - Whether declaration is in the root scope owner
  */
 function validateChannelDeclarationNode(compiler, {
   node,
@@ -48,7 +50,9 @@ function validateChannelDeclarationNode(compiler, {
   hasInitializer,
   asyncMode,
   scriptMode,
-  isNameSymbol
+  isNameSymbol,
+  isShared,
+  isRootScopeOwner
 }) {
   if (!asyncMode) {
     compiler.fail('Channel declarations are only supported in async mode', node.lineno, node.colno, node);
@@ -59,7 +63,13 @@ function validateChannelDeclarationNode(compiler, {
   if (!isNameSymbol) {
     compiler.fail('Channel declaration name must be a symbol', node.lineno, node.colno, node);
   }
-  if ((channelType === 'sink' || channelType === 'sequence') && !hasInitializer) {
+  if (isShared && !isRootScopeOwner) {
+    compiler.fail('shared declarations are only allowed at the root scope', node.lineno, node.colno, node);
+  }
+  if (isShared && channelType === 'sink') {
+    compiler.fail('shared sink declarations are not supported', node.lineno, node.colno, node);
+  }
+  if (!isShared && (channelType === 'sink' || channelType === 'sequence') && !hasInitializer) {
     compiler.fail(`${channelType} channels must have an initializer`, node.lineno, node.colno, node);
   }
 }

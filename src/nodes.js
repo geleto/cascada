@@ -171,10 +171,19 @@ class Caller extends Macro {
 
 class Import extends Node {
   get typename() { return 'Import'; }
-  get fields() { return ['template', 'target', 'withContext', 'withVars']; }
+  get fields() { return ['template', 'target', 'withContext', 'withVars', 'withValue']; }
 
-  init(lineno, colno, template, target, withContext, withVars) {
-    super.init(lineno, colno, template, target, withContext, withVars || new NodeList());
+  init(lineno, colno, template, target, withContext, withVars, withValue) {
+    super.init(lineno, colno, template, target, withContext, withVars || new NodeList(), withValue);
+  }
+}
+
+class Component extends Node {
+  get typename() { return 'Component'; }
+  get fields() { return ['template', 'target', 'withContext', 'withVars', 'withValue']; }
+
+  init(lineno, colno, template, target, withContext, withVars, withValue) {
+    super.init(lineno, colno, template, target, withContext, withVars || new NodeList(), withValue);
   }
 }
 
@@ -277,7 +286,7 @@ class CallAssign extends Node {
 
 class ChannelDeclaration extends Node {
   get typename() { return 'ChannelDeclaration'; }
-  get fields() { return ['channelType', 'name', 'initializer']; }
+  get fields() { return ['channelType', 'name', 'initializer', 'isShared']; }
 }
 
 class Switch extends Node {
@@ -509,6 +518,7 @@ module.exports = {
   Macro: Macro,
   Caller: Caller,
   Import: Import,
+  Component: Component,
   FromImport: FromImport,
   FunCall: FunCall,
   Filter: Filter,

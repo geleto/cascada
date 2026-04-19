@@ -73,7 +73,7 @@ describe('Extends Foundation', function () {
     env = new AsyncEnvironment();
   });
 
-  describe.skip('Phase 1 - Frontend Syntax', function () {
+  describe('Phase 1 - Frontend Syntax', function () {
     describe('shared keyword', function () {
       it('should parse shared var declarations', function () {
         const template = scriptTranspiler.scriptToTemplate('shared var theme = "dark"');
@@ -103,6 +103,18 @@ describe('Extends Foundation', function () {
         }).not.to.throwException();
       });
 
+      it('should parse shared sequence declarations with an initializer', function () {
+        const template = scriptTranspiler.scriptToTemplate('shared sequence db = makeDb()');
+        const ast = parser.parse(template);
+        const declaration = ast.findAll(nodes.ChannelDeclaration)[0];
+
+        expect(declaration).to.be.ok();
+        expect(declaration.channelType).to.be('sequence');
+        expect(declaration.name.value).to.be('db');
+        expect(declaration.isShared).to.be(true);
+        expect(declaration.initializer).to.be.ok();
+      });
+
       it('should reject shared inside a method body', function () {
         try {
           new Script('method build()\n  shared var theme = "dark"\nendmethod', env, 'shared-inside-method.casc')._compileSource();
@@ -122,6 +134,12 @@ describe('Extends Foundation', function () {
         expect(() => {
           new Script('shared data state = 1', env, 'shared-data-init.casc')._compileSource();
         }).not.to.throwException();
+      });
+
+      it('should reject shared sink declarations', function () {
+        expect(() => {
+          parser.parse(scriptTranspiler.scriptToTemplate('shared sink logger = makeLogger()'));
+        }).to.throwException(/unsupported shared channel type 'sink'/);
       });
     });
 
@@ -152,6 +170,141 @@ describe('Extends Foundation', function () {
         expect(() => {
           scriptTranspiler.scriptToTemplate('endmethod');
         }).to.throwException(/Unexpected 'endmethod'/);
+      });
+    });
+
+    describe('inherited dispatch syntax', function () {
+      it('should allow this.method(...) calls in script methods', function () {
+        expect(() => {
+          new Script(
+            'method build(name)\n  this.render(name)\nendmethod\nreturn null',
+            env,
+            'this-method-call.script'
+          )._compileSource();
+        }).not.to.throwException();
+      });
+
+      it('should reject bare this.method references in scripts', function () {
+        expect(() => {
+          new Script(
+            'method build(name)\n  this.render\nendmethod\nreturn null',
+            env,
+            'bare-this-method.script'
+          )._compileSource();
+        }).to.throwException(/bare this\.render references are not allowed; use this\.render\(\.\.\.\)/);
+      });
+
+      it('should keep bare foo() as an ordinary call', function () {
+        expect(() => {
+          new Script(
+            'method build(name)\n  helper(name)\nendmethod\nreturn null',
+            env,
+            'ordinary-call.script'
+          )._compileSource();
+        }).not.to.throwException();
+      });
+
+      it('should allow super() calls in script methods', function () {
+        expect(() => {
+          new Script(
+            'method build(name)\n  super(name)\nendmethod\nreturn null',
+            env,
+            'script-super-call.script'
+          )._compileSource();
+        }).not.to.throwException();
+      });
+    });
+
+    describe('component syntax', function () {
+      it('should parse component bindings without inputs', function () {
+        const ast = parser.parse(scriptTranspiler.scriptToTemplate('component "Card.script" as card'));
+        const componentNode = ast.findAll(nodes.Component)[0];
+
+        expect(componentNode).to.be.ok();
+        expect(componentNode.target.value).to.be('card');
+        expect(componentNode.withContext).to.be(null);
+        expect(componentNode.withVars.children).to.have.length(0);
+        expect(componentNode.withValue).to.be(null);
+      });
+
+      it('should parse component bindings with shorthand inputs', function () {
+        const ast = parser.parse(scriptTranspiler.scriptToTemplate('component "Card.script" as card with theme, id'));
+        const componentNode = ast.findAll(nodes.Component)[0];
+
+        expect(componentNode).to.be.ok();
+        expect(componentNode.withContext).to.be(null);
+        expect(componentNode.withVars.children).to.have.length(2);
+        expect(componentNode.withVars.children[0].value).to.be('theme');
+        expect(componentNode.withVars.children[1].value).to.be('id');
+        expect(componentNode.withValue).to.be(null);
+      });
+
+      it('should parse component bindings with object inputs', function () {
+        const ast = parser.parse(scriptTranspiler.scriptToTemplate('component "Card.script" as card with { theme: theme, id: cardId }'));
+        const componentNode = ast.findAll(nodes.Component)[0];
+
+        expect(componentNode).to.be.ok();
+        expect(componentNode.withContext).to.be(null);
+        expect(componentNode.withVars.children).to.have.length(0);
+        expect(componentNode.withValue).to.be.a(nodes.Dict);
+      });
+
+      it('should parse component bindings with context only', function () {
+        const ast = parser.parse(scriptTranspiler.scriptToTemplate('component "Card.script" as card with context'));
+        const componentNode = ast.findAll(nodes.Component)[0];
+
+        expect(componentNode).to.be.ok();
+        expect(componentNode.withContext).to.be(true);
+        expect(componentNode.withVars.children).to.have.length(0);
+        expect(componentNode.withValue).to.be(null);
+      });
+
+      it('should parse component bindings with context and object inputs', function () {
+        const ast = parser.parse(scriptTranspiler.scriptToTemplate('component "Card.script" as card with context, { theme: theme }'));
+        const componentNode = ast.findAll(nodes.Component)[0];
+
+        expect(componentNode).to.be.ok();
+        expect(componentNode.withContext).to.be(true);
+        expect(componentNode.withVars.children).to.have.length(0);
+        expect(componentNode.withValue).to.be.a(nodes.Dict);
+      });
+
+      it('should reserve component as a declaration name', function () {
+        expect(() => {
+          scriptTranspiler.scriptToTemplate('var component = 1');
+        }).to.throwException(/Identifier 'component' is reserved/);
+      });
+    });
+
+    describe('extends source order', function () {
+      it('should allow only shared declarations before extends', function () {
+        expect(() => {
+          new Script(
+            'shared var theme = "dark"\nshared text trace\nextends "A.script"\nreturn null',
+            env,
+            'shared-before-extends.script'
+          )._compileSource();
+        }).not.to.throwException();
+      });
+
+      it('should reject plain vars before extends', function () {
+        expect(() => {
+          new Script(
+            'var theme = "dark"\nextends "A.script"\nreturn null',
+            env,
+            'var-before-extends.script'
+          )._compileSource();
+        }).to.throwException(/only shared declarations are allowed before extends/);
+      });
+
+      it('should reject methods before extends', function () {
+        expect(() => {
+          new Script(
+            'method build(name)\n  helper(name)\nendmethod\nextends "A.script"\nreturn null',
+            env,
+            'method-before-extends.script'
+          )._compileSource();
+        }).to.throwException(/only shared declarations are allowed before extends/);
       });
     });
   });

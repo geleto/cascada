@@ -420,9 +420,11 @@ class Parser extends Obj {
 
   parseCompositionWithClause(errorPrefix = 'parseCompositionWithClause', opts = {}) {
     const allowWithoutContext = !!opts.allowWithoutContext;
+    const allowObjectValue = !!opts.allowObjectValue;
     const tok = this.peekToken();
     let withContext = null;
     const withVars = new nodes.NodeList(tok.lineno, tok.colno);
+    let withValue = null;
 
     if (this.skipSymbol('without')) {
       if (!allowWithoutContext) {
@@ -433,38 +435,71 @@ class Parser extends Obj {
           tok.lineno,
           tok.colno);
       }
-      return { withContext: false, withVars: null };
+      return { withContext: false, withVars: null, withValue: null };
     }
 
     if (!this.skipSymbol('with')) {
-      return { withContext: null, withVars: null };
+      return { withContext: null, withVars: null, withValue: null };
     }
 
     let sawAny = false;
     let sawContext = false;
-    let nameNode;
-    while ((nameNode = this.parsePrimary())) {
-      sawAny = true;
-      if (!(nameNode instanceof nodes.Symbol)) {
-        this.fail(`${errorPrefix}: expected variable name after with`,
-          nameNode.lineno,
-          nameNode.colno);
-      }
+    while (true) { // eslint-disable-line no-constant-condition
+      const nextTok = this.peekToken();
+      if (allowObjectValue && nextTok && nextTok.type === lexer.TOKEN_LEFT_CURLY) {
+        if (withValue) {
+          this.fail(`${errorPrefix}: duplicate object input in with clause`,
+            nextTok.lineno,
+            nextTok.colno);
+        }
+        withValue = this.parseExpression();
+        if (!(withValue instanceof nodes.Dict)) {
+          this.fail(`${errorPrefix}: object-style with inputs must use a dictionary literal`,
+            tok.lineno,
+            tok.colno);
+        }
+        sawAny = true;
+      } else {
+        const nameNode = this.parsePrimary();
+        if (!nameNode) {
+          break;
+        }
 
-      if (nameNode.value === 'context') {
-        if (sawContext) {
-          this.fail(`${errorPrefix}: duplicate context in with clause`,
+        if (!(nameNode instanceof nodes.Symbol)) {
+          this.fail(`${errorPrefix}: expected variable name after with`,
             nameNode.lineno,
             nameNode.colno);
         }
-        sawContext = true;
-        withContext = true;
-      } else {
-        withVars.addChild(nameNode);
+
+        if (withValue) {
+          this.fail(`${errorPrefix}: named with inputs cannot appear after object-style inputs`,
+            nameNode.lineno,
+            nameNode.colno);
+        }
+
+        sawAny = true;
+        if (nameNode.value === 'context') {
+          if (sawContext) {
+            this.fail(`${errorPrefix}: duplicate context in with clause`,
+              nameNode.lineno,
+              nameNode.colno);
+          }
+          sawContext = true;
+          withContext = true;
+        } else {
+          withVars.addChild(nameNode);
+        }
       }
 
       if (!this.skip(lexer.TOKEN_COMMA)) {
         break;
+      }
+
+      if (withValue) {
+        const trailingTok = this.peekToken() || tok;
+        this.fail(`${errorPrefix}: object-style with inputs must be the last item in the with clause`,
+          trailingTok.lineno,
+          trailingTok.colno);
       }
     }
 
@@ -476,38 +511,69 @@ class Parser extends Obj {
 
     return {
       withContext,
-      withVars
+      withVars,
+      withValue
     };
   }
 
-  parseImport() {
-    var importTok = this.peekToken();
-    if (!this.skipSymbol('import')) {
-      this.fail('parseImport: expected import',
-        importTok.lineno,
-        importTok.colno);
+  parseAliasedCompositionReference(keyword, errorPrefix) {
+    const tagTok = this.peekToken();
+    if (!this.skipSymbol(keyword)) {
+      this.fail(`${errorPrefix}: expected ${keyword}`,
+        tagTok.lineno,
+        tagTok.colno);
     }
 
     const template = this.parseExpression();
 
     if (!this.skipSymbol('as')) {
-      this.fail('parseImport: expected "as" keyword',
-        importTok.lineno,
-        importTok.colno);
+      this.fail(`${errorPrefix}: expected "as" keyword`,
+        tagTok.lineno,
+        tagTok.colno);
     }
 
-    const target = this.parseExpression();
-    const compositionInputs = this.parseCompositionWithClause('parseImport', { allowWithoutContext: true });
-    const node = new nodes.Import(importTok.lineno,
-      importTok.colno,
-      template,
-      target,
-      compositionInputs.withContext,
-      compositionInputs.withVars);
+    const target = this.parsePrimary();
+    if (!(target instanceof nodes.Symbol)) {
+      this.fail(`${errorPrefix}: binding target must be a symbol`,
+        tagTok.lineno,
+        tagTok.colno);
+    }
 
-    this.advanceAfterBlockEnd(importTok.value);
+    return { tagTok, template, target };
+  }
+
+  parseImport() {
+    const reference = this.parseAliasedCompositionReference('import', 'parseImport');
+    const compositionInputs = this.parseCompositionWithClause('parseImport', {
+      allowWithoutContext: true,
+      allowObjectValue: true
+    });
+    const node = new nodes.Import(reference.tagTok.lineno,
+      reference.tagTok.colno,
+      reference.template,
+      reference.target,
+      compositionInputs.withContext,
+      compositionInputs.withVars,
+      compositionInputs.withValue);
+
+    this.advanceAfterBlockEnd(reference.tagTok.value);
 
     return node;
+  }
+
+  parseComponent() {
+    const reference = this.parseAliasedCompositionReference('component', 'parseComponent');
+    const compositionInputs = this.parseCompositionWithClause('parseComponent', {
+      allowObjectValue: true
+    });
+    this.advanceAfterBlockEnd(reference.tagTok.value);
+    return new nodes.Component(reference.tagTok.lineno,
+      reference.tagTok.colno,
+      reference.template,
+      reference.target,
+      compositionInputs.withContext,
+      compositionInputs.withVars,
+      compositionInputs.withValue);
   }
 
   parseFrom() {
@@ -935,6 +1001,37 @@ class Parser extends Obj {
     return new nodes.ChannelDeclaration(tag.lineno, tag.colno, channelType, nameNode, initializer);
   }
 
+  parseSharedDeclaration() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('shared')) {
+      this.fail('parseSharedDeclaration: expected shared', tag.lineno, tag.colno);
+    }
+
+    const channelTypeTok = this.peekToken();
+    if (!channelTypeTok || channelTypeTok.type !== lexer.TOKEN_SYMBOL) {
+      this.fail('parseSharedDeclaration: expected shared channel type', tag.lineno, tag.colno);
+    }
+
+    const channelType = channelTypeTok.value;
+    if (channelType !== 'var' && channelType !== 'text' && channelType !== 'data' && channelType !== 'sequence') {
+      this.fail(`parseSharedDeclaration: unsupported shared channel type '${channelType}'`, channelTypeTok.lineno, channelTypeTok.colno);
+    }
+    this.nextToken();
+
+    const nameNode = this.parsePrimary();
+    if (!(nameNode instanceof nodes.Symbol)) {
+      this.fail('parseSharedDeclaration: channel name expected', tag.lineno, tag.colno);
+    }
+
+    let initializer = null;
+    if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+      initializer = this.parseExpression();
+    }
+
+    this.advanceAfterBlockEnd(tag.value);
+    return new nodes.ChannelDeclaration(tag.lineno, tag.colno, channelType, nameNode, initializer, true);
+  }
+
   parseSwitch() {
     /*
      * Store the tag names in variables in case someone ever wants to
@@ -1220,6 +1317,8 @@ class Parser extends Obj {
         return this.parseBlock();
       case 'extends':
         return this.parseExtends();
+      case 'component':
+        return this.parseComponent();
       case 'include':
         return this.parseInclude();
       case 'set':
@@ -1235,6 +1334,8 @@ class Parser extends Obj {
       case 'sink':
       case 'sequence':
         return this.parseChannelDeclaration();
+      case 'shared':
+        return this.parseSharedDeclaration();
       case 'macro':
         return this.parseMacro();
       case 'call':

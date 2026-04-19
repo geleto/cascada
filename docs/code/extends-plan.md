@@ -154,6 +154,21 @@ Scope:
 - audit the current use of `component` as an identifier in tests/templates so
   the breaking-change surface is explicit before the keyword is reserved
 
+Legacy removal map:
+
+- keep the legacy async template inheritance/runtime path in place during this
+  phase; frontend syntax lands first
+- remove nothing immediately in Phase 1 beyond reserving the new frontend
+  syntax surface
+- audit result for the `component` keyword on this branch:
+  - no existing script/template declaration currently uses `component` as an
+    identifier
+- later removals should start from these legacy areas:
+  - `src/compiler/inheritance.js`
+  - async-root inheritance handling in `src/compiler/compiler-async.js`
+  - legacy inheritance/super helpers on `Context` / template runtime paths
+  - legacy inheritance runtime modules under `src/runtime/inheritance-*`
+
 Tests:
 
 - parser/transpiler tests for all accepted and rejected forms
@@ -166,8 +181,31 @@ Tests:
 - re-enable groups:
   - `tests/pasync/extends-foundation.js` -> `Phase 1 - Frontend Syntax`
 
-Phase 1 output should also update the later phase sections with explicit
-"remove first" notes derived from the legacy-extends removal map.
+Remove first notes for later phases:
+
+- Phase 3:
+  - keep `src/compiler/inheritance.js` only for the old call path while the
+    new metadata shape is introduced
+  - do not add new owner-key / chain metadata to the legacy method objects
+- Phase 4:
+  - remove any temporary dependence on legacy inheritance startup ordering
+    before wiring the new shared method/shared registration path
+- Phase 5:
+  - remove the old root `__parentTemplate` / final-parent handoff path and the
+    template-local-capture assumptions in `src/compiler/compiler-async.js`
+    before moving top-level code into `__constructor__`
+- Phase 6:
+  - remove legacy "read raw method metadata directly" paths before helper-based
+    resolution is introduced
+- Phase 7:
+  - remove legacy inherited dispatch / `Context.getAsyncSuper(...)`-style call
+    routing before landing the new invocation/linking model
+- Phase 8:
+  - remove any remaining import-style component shortcuts before explicit
+    `component ... as ns` runtime wiring lands
+- Phase 9:
+  - remove the old async template inheritance pre/post-extends flow before
+    switching templates onto the constructor/method model
 
 ## Phase 2 - Generic Channel Baseline
 
@@ -225,6 +263,11 @@ Scope:
   - `shared sequence db` declares participation with no initializer
 - emit code that creates unresolved method/shared entries as pending promise
   structs at runtime startup where needed
+- remove first:
+  - do not extend the legacy compiled method/block contract with more owner-key
+    or chain-specific state
+  - keep `src/compiler/inheritance.js` only as a temporary caller while this
+    phase emits the new metadata shape
 
 Tests:
 
@@ -257,6 +300,9 @@ Scope:
 - `super` wiring during method register / resolve / reject when the current
   level defines the same method name needed by a child `super()`
 - root rejection of any still-pending entries
+- remove first:
+  - stop depending on legacy inheritance startup ordering/state before landing
+    the synchronous register/resolve/reject path
 
 Tests:
 
@@ -298,6 +344,10 @@ Scope:
   - include `compositionPayload` in the shared metadata object for plain
     extends chains
   - keep upward propagation unchanged across multiple levels
+- remove first:
+  - delete the old root `__parentTemplate` / final-parent continuation path
+    and the template-local-capture assumptions in `src/compiler/compiler-async.js`
+    before constructor lowering becomes authoritative
 
 Tests:
 
@@ -335,6 +385,9 @@ Scope:
   - method-call commands await helper-resolved used/mutated channel metadata
   - shared-channel-lookup commands await helper-resolved shared-channel
     metadata
+- remove first:
+  - remove legacy direct metadata reads before helper-based resolution becomes
+    the only way to cross the barrier
 
 Tests:
 
@@ -368,9 +421,12 @@ Scope:
     context, rather than creating a second inheritance-specific context model
   - method bodies see shared channels, method arguments, and
     `compositionPayload`
-  - method bodies do not inherit the caller's local variables
+- method bodies do not inherit the caller's local variables
 - sequential `!` paths inside inherited methods are intentionally deferred
   until the main model is stable and are taken up in Phase 10
+- remove first:
+  - remove legacy inherited dispatch / super-routing helpers before the new
+    invocation-buffer linking model lands
 
 Tests:
 
@@ -409,6 +465,9 @@ Scope:
   - it closes when no new component operations can arrive from that owner
 - `ns.x` for `shared var` as a current-buffer observation operation, not a
   stored JS property
+- remove first:
+  - remove any temporary import-style or legacy component-binding shortcuts
+    before explicit component runtime wiring lands
 
 Tests:
 
@@ -440,6 +499,9 @@ Scope:
 - block `withContext` follows the enclosing template/script mode; it is not a
   separate block-level runtime flag to infer later
 - block argument passing on the new explicit `()` call model
+- remove first:
+  - remove the old async template inheritance pre/post-extends flow before
+    templates switch to the constructor/method model
 
 Tests:
 
@@ -487,6 +549,45 @@ Tests:
   - `tests/pasync/extends-foundation.js` ->
     `Phase 10 - Composition Payload Shape`
   - keep the sync extends regression in `tests/compiler.js` active throughout
+
+## Phase 11 - Documentation
+
+Goal:
+
+- update the user-facing and implementation documentation to match the final
+  extends/component/import architecture
+
+Scope:
+
+- update `docs/code/extends-architecture.md` where implementation details or
+  final terminology drifted during delivery
+- update `docs/cascada/script.md` and any agent-facing script docs that
+  describe:
+  - `shared` declarations
+  - `method ... endmethod`
+  - inherited dispatch via `this.method(...)`
+  - `super()`
+  - `component ... as ns`
+  - component `with` payload forms
+- update the new import functionality in the docs too:
+  - `import "X" as ns with context`
+  - `import "X" as ns with theme, id`
+  - `import "X" as ns with { ... }`
+  - mixed `import "X" as ns with context, { ... }`
+- update any composition/inheritance docs that compare or distinguish:
+  - `import`
+  - `from import`
+  - `include`
+  - `component`
+  - `extends`
+- remove or rewrite outdated examples that still show superseded pre-`extends`
+  script patterns or older import/component terminology
+
+Tests / Verification:
+
+- no new runtime behavior is introduced in this phase
+- verify examples and terminology against the implemented parser/compiler
+  surface before considering the phase complete
 
 ## Rules While Implementing
 

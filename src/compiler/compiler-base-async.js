@@ -208,6 +208,21 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(')');
   }
 
+  _getExplicitThisDispatchFacts(node) {
+    if (!(node instanceof nodes.LookupVal)) {
+      return null;
+    }
+    if (!(node.target instanceof nodes.Symbol) || node.target.value !== 'this') {
+      return null;
+    }
+    if (!(node.val instanceof nodes.Literal) || typeof node.val.value !== 'string') {
+      return null;
+    }
+    return {
+      methodName: node.val.value
+    };
+  }
+
   compileCompare(node) {
     this.emit('runtime.resolveDuo(');
     this.compile(node.expr, null);
@@ -265,6 +280,16 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileLookupVal(node) {
+    const explicitThisDispatch = this.scriptMode ? this._getExplicitThisDispatchFacts(node) : null;
+    if (explicitThisDispatch && !(node._analysis && node._analysis.allowExplicitThisDispatchCall)) {
+      this.fail(
+        `bare this.${explicitThisDispatch.methodName} references are not allowed; use this.${explicitThisDispatch.methodName}(...)`,
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+
     const sequenceChannelLookup =
       node._analysis && node._analysis.sequenceChannelLookup;
     if (this.scriptMode && sequenceChannelLookup) {
@@ -411,6 +436,9 @@ class CompilerBaseAsync extends CompilerCommon {
     const directMacroBinding = directMacroCall ? directMacroCall.binding : null;
     const isDirectMacroCall = !!directMacroCall;
     const importedCallableFacts = node._analysis.importedCallable;
+    if (this.scriptMode && this._getExplicitThisDispatchFacts(node.name) && node.name && node.name._analysis) {
+      node.name._analysis.allowExplicitThisDispatchCall = true;
+    }
 
     if (this._compileSpecialChannelFunCall(node)) {
       return;

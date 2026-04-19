@@ -281,6 +281,22 @@
           expect(unescape(result.trim())).to.equal('<input name="user" value="manual_user" />');
         });
 
+        it('should allow async import object-style with inputs for extern-backed imports', async () => {
+          loader.addTemplate('extern-import-with-object.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% set suppliedUsername = "manual_user" %}
+            {% import "extern-import-with-object.njk" as forms with { username: suppliedUsername } %}
+            {{ forms.userField() }}
+          `, {});
+          expect(unescape(result.trim())).to.equal('<input name="user" value="manual_user" />');
+        });
+
         it('should allow async from-import explicit named with inputs for extern-backed imports', async () => {
           loader.addTemplate('extern-from-import-with-vars.njk', `
             {% extern username %}
@@ -343,6 +359,24 @@
           const result = await env.renderTemplateString(`
             {% set username = "explicit_user" %}
             {% import "extern-import-shadow.njk" as forms with context, username %}
+            {{ forms.userField() }}
+          `, {
+            username: 'render_user'
+          });
+          expect(unescape(result.trim())).to.equal('<input name="user" value="explicit_user" />');
+        });
+
+        it('should let object-style import inputs shadow render-context properties of the same name', async () => {
+          loader.addTemplate('extern-import-object-shadow.njk', `
+            {% extern username %}
+            {% macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+          `);
+
+          const result = await env.renderTemplateString(`
+            {% set explicitUsername = "explicit_user" %}
+            {% import "extern-import-object-shadow.njk" as forms with context, { username: explicitUsername } %}
             {{ forms.userField() }}
           `, {
             username: 'render_user'

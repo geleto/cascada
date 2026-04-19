@@ -856,8 +856,24 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
+  analyzeComponent(node) {
+    node.target._analysis = { declarationTarget: true };
+    return {
+      declares: [{ name: node.target.value, type: 'var', initializer: null, explicit: true }]
+    };
+  }
+
   compileImport(node) {
     this.inheritance.compileAsyncImport(node);
+  }
+
+  compileComponent(node) {
+    this.fail(
+      'component syntax is available, but component runtime support is implemented in a later phase',
+      node.lineno,
+      node.colno,
+      node
+    );
   }
 
   analyzeFromImport(node) {
@@ -942,12 +958,14 @@ class CompilerAsync extends CompilerBaseAsync {
       hasInitializer: !!node.initializer,
       asyncMode: this.asyncMode,
       scriptMode: this.scriptMode,
-      isNameSymbol: nameNode instanceof nodes.Symbol
+      isNameSymbol: nameNode instanceof nodes.Symbol,
+      isShared: !!node.isShared,
+      isRootScopeOwner: this.analysis.isRootScopeOwner(node._analysis)
     });
     const name = nameNode.value;
 
     this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
-    if (channelType === 'sink' || channelType === 'sequence') {
+    if ((channelType === 'sink' || channelType === 'sequence') && node.initializer) {
       this.compile(node.initializer, null);
     } else {
       this.emit('null');
@@ -974,6 +992,56 @@ class CompilerAsync extends CompilerBaseAsync {
         this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.DataCommand({ channelName: '${name}', command: 'set', args: [null, ${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
       }
     }
+  }
+
+  _validateScriptExtendsSourceOrder(node) {
+    if (!this.scriptMode || !node || !Array.isArray(node.children)) {
+      return;
+    }
+
+    const firstDirectExtendsIndex = node.children.findIndex((child) => child instanceof nodes.Extends);
+    if (firstDirectExtendsIndex === -1) {
+      return;
+    }
+
+    for (let i = 0; i < firstDirectExtendsIndex; i++) {
+      const child = node.children[i];
+      if (child instanceof nodes.ChannelDeclaration && child.isShared) {
+        continue;
+      }
+      const offendingNodeDescription = this._describePreExtendsRootStatement(child);
+      this.fail(
+        `unexpected ${offendingNodeDescription} before extends; only shared declarations are allowed before extends`,
+        child.lineno,
+        child.colno,
+        child
+      );
+    }
+  }
+
+  _describePreExtendsRootStatement(node) {
+    if (node instanceof nodes.Set) {
+      return node.varType === 'declaration' ? 'var declaration' : 'assignment';
+    }
+    if (node instanceof nodes.Block) {
+      return 'method declaration';
+    }
+    if (node instanceof nodes.Extern) {
+      return 'extern declaration';
+    }
+    if (node instanceof nodes.Import) {
+      return 'import statement';
+    }
+    if (node instanceof nodes.FromImport) {
+      return 'from-import statement';
+    }
+    if (node instanceof nodes.Component) {
+      return 'component declaration';
+    }
+    if (node instanceof nodes.ChannelDeclaration) {
+      return `${node.channelType} declaration`;
+    }
+    return node && node.typename ? node.typename.toLowerCase() : 'statement';
   }
 
   analyzeChannelCommand(node) {
@@ -1254,6 +1322,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _compileAsyncRootBody(node) {
+    this._validateScriptExtendsSourceOrder(node);
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);

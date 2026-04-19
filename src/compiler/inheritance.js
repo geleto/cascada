@@ -54,6 +54,11 @@ class CompileInheritance {
       this.compiler.compileExpression(nameNode, null, nameNode, true);
       this.emit.line(';');
     });
+    if (node.withValue) {
+      this.emit(`Object.assign(${targetVarsVar}, `);
+      this.compiler.compileExpression(node.withValue, null, node.withValue, true);
+      this.emit.line(');');
+    }
   }
 
   _emitImmediateExternInputs(node, targetVarsVar) {
@@ -130,7 +135,7 @@ class CompileInheritance {
 
   _compileAsyncImport(node) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    if (!node.withContext && withVars.length === 0) {
+    if (!node.withContext && withVars.length === 0 && !node.withValue) {
       const target = node.target.value;
       const id = this._compileAsyncGetTemplateOrScript(node, false, false);
       const exportedId = this.compiler._tmpid();
@@ -163,9 +168,9 @@ class CompileInheritance {
   }
 
   _compileSyncImport(node, frame) {
-    if (node.withVars && node.withVars.children && node.withVars.children.length > 0) {
+    if ((node.withVars && node.withVars.children && node.withVars.children.length > 0) || node.withValue) {
       this.compiler.fail(
-        'sync import does not support explicit with variables',
+        'sync import does not support explicit with inputs',
         node.lineno,
         node.colno,
         node
