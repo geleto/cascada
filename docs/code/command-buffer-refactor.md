@@ -1069,7 +1069,7 @@ Changes:
 Final verification for this step:
 
 - run focused suites for:
-  - `tests/explicit-outputs.js`
+  - `tests/pasync/channels-explicit.js`
   - `tests/pasync/calls.js`
   - `tests/pasync/template-command-buffer.js`
 - then run the full relevant test suite

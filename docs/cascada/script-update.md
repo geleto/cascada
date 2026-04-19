@@ -23,7 +23,7 @@ This document tracks how [script.md](/c:/Projects/cascada/docs/cascada/script.md
   - [script.js](/c:/Projects/cascada/tests/pasync/script.js)
   - [loader.js](/c:/Projects/cascada/tests/pasync/loader.js)
   - [script-transpiler.js](/c:/Projects/cascada/tests/script-transpiler.js)
-  - [explicit-outputs.js](/c:/Projects/cascada/tests/explicit-outputs.js)
+  - [channels-explicit.js](/c:/Projects/cascada/tests/pasync/channels-explicit.js)
 
 ## Evaluation Summary
 
@@ -146,7 +146,7 @@ This document tracks how [script.md](/c:/Projects/cascada/docs/cascada/script.md
   - `super()` preserving invocation inputs
 - `depends` is not currently supported script syntax (see Current-Surface Checks above) — no documentation needed in `script.md`.
 - Clarify that both `recover` and `recover err` are valid script syntax:
-  - The parser makes the error-binding variable optional (`parser.js` guard parse, `tests/explicit-outputs.js:2326` uses bare `recover` in a live passing test).
+  - The parser makes the error-binding variable optional (`parser.js` guard parse, `tests/pasync/channels-explicit.js:2380` uses bare `recover` in a live passing test).
   - The current guard syntax entry in `script.md` (`guard [targets] / recover err / endguard`) implies `err` is required — update the syntax table and the `recover` section to show the variable is optional.
 - Keep macro and call-block examples aligned with assignment-form script syntax.
 

@@ -396,28 +396,6 @@ class Parser extends Obj {
     return node;
   }
 
-  parseWithContext() {
-    var tok = this.peekToken();
-
-    var withContext = null;
-
-    if (this.skipSymbol('with')) {
-      withContext = true;
-    } else if (this.skipSymbol('without')) {
-      withContext = false;
-    }
-
-    if (withContext !== null) {
-      if (!this.skipSymbol('context')) {
-        this.fail('parseFrom: expected context after with/without',
-          tok.lineno,
-          tok.colno);
-      }
-    }
-
-    return withContext;
-  }
-
   parseCompositionWithClause(errorPrefix = 'parseCompositionWithClause', opts = {}) {
     const allowWithoutContext = !!opts.allowWithoutContext;
     const allowObjectValue = !!opts.allowObjectValue;
@@ -425,6 +403,7 @@ class Parser extends Obj {
     let withContext = null;
     const withVars = new nodes.NodeList(tok.lineno, tok.colno);
     let withValue = null;
+    const seenWithVars = Object.create(null);
 
     if (this.skipSymbol('without')) {
       if (!allowWithoutContext) {
@@ -487,6 +466,12 @@ class Parser extends Obj {
           sawContext = true;
           withContext = true;
         } else {
+          if (Object.prototype.hasOwnProperty.call(seenWithVars, nameNode.value)) {
+            this.fail(`${errorPrefix}: duplicate named input "${nameNode.value}" in with clause`,
+              nameNode.lineno,
+              nameNode.colno);
+          }
+          seenWithVars[nameNode.value] = true;
           withVars.addChild(nameNode);
         }
       }

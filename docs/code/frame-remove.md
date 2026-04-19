@@ -445,7 +445,7 @@ Focused verification currently used during this migration:
 
 - `tests/pasync/channel-errors.js`
 - `tests/pasync/snapshots.js`
-- `tests/explicit-outputs.js`
+- `tests/pasync/channels-explicit.js`
 - `tests/pasync/loop-concurrent-limit.js`
 - `tests/poison/call-suppression.js`
 - `tests/poison/lookup.js`
@@ -1327,7 +1327,7 @@ Verification used:
 
 - `tests/poison/guard.js`
 - `tests/pasync/snapshots.js`
-- `tests/explicit-outputs.js`
+- `tests/pasync/channels-explicit.js`
 - `tests/pasync/composition.js`
 - `tests/pasync/macros.js`
 

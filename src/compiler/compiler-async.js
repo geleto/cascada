@@ -973,6 +973,8 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(');');
 
     if (node.initializer && channelType !== 'sink' && channelType !== 'sequence') {
+      // Phase 1 validates `shared`, but it still lowers through the same
+      // runtime channel startup path until shared-specific wiring lands.
       const initNode = node.initializer;
       const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;

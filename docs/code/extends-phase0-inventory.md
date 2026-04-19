@@ -54,7 +54,7 @@ Files:
 - `src/parser.js`
 - `src/compiler/validation.js`
 - `src/compiler/compiler-async.js`
-- `tests/explicit-outputs.js`
+- `tests/pasync/channels-explicit.js`
 
 ### Fatal runtime errors remain fatal
 
@@ -92,7 +92,7 @@ Relevant baseline files:
 Existing baseline coverage already present on this branch:
 
 - parser / transpiler: `tests/parser.js`, `tests/script-transpiler.js`
-- explicit channels / outputs: `tests/explicit-outputs.js`
+- explicit channels / outputs: `tests/pasync/channels-explicit.js`
 - async composition / inheritance: `tests/pasync/composition.js`,
   `tests/pasync/loader.js`, `tests/pasync/script.js`,
   `tests/pasync/template-command-buffer.js`
@@ -124,7 +124,7 @@ records which grouped suites exist on the restart branch.
 
 ## Focused Verification Run
 
-- `npx.cmd mocha tests/explicit-outputs.js --timeout 10000`
+- `npx.cmd mocha tests/pasync/channels-explicit.js --timeout 10000`
 - `npx.cmd mocha tests/pasync/channel-errors.js --timeout 10000`
 - `npx.cmd mocha tests/pasync/extends-foundation.js --timeout 10000`
 - `npx.cmd mocha tests/pasync/extends.js --timeout 10000`

@@ -195,9 +195,12 @@ This is the proposed direction, with only minimal edits for clarity.
 - Normal context lookup should also check `compositionPayload`.
 - Component `with` values feed `compositionPayload`, not shared channels.
   Supported forms include:
+  - `component "X" as ns with context`
   - `component "X" as ns with theme, id`
+  - `component "X" as ns with context, theme, id`
   - `component "X" as ns with { theme: "dark", id: 0 }`
-- In both cases, the values are passed as context-like key/value payload and
+  - `component "X" as ns with context, { theme: "dark", id: 0 }`
+- In all cases, the values are passed as context-like key/value payload and
   are not written into shared state automatically.
 - The shorthand `with theme, id` means "capture the current caller-context
   values of `theme` and `id`". This shorthand is limited to `var` values.

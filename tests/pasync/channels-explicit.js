@@ -663,7 +663,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql(['msg']);
     });
 
-    it.skip('should await async sink methods', async () => {
+    it('should await async sink methods', async () => {
       const context = {
         makeLogger() {
           return {
@@ -1488,9 +1488,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Capture', function () {
-    // Skipped: capture block syntax is not yet removed.
-    it.skip('should reject capture blocks', async () => {
-      // TODO: Remove capture once the new explicit channel model fully replaces it.
+    it('should reject capture blocks', async () => {
       const script = `
         var result = capture
           var x = 1
@@ -1501,7 +1499,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         await render(script);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.match(/capture|Unexpected|Invalid/);
+        expect(err.message).to.match(/Capture blocks are no longer supported|capture|Unexpected|Invalid/);
       }
     });
   });
@@ -1574,8 +1572,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ ok: true, nested: { value: 7 } });
     });
 
-    // Skipped: caller with arguments is not supported yet.
-    it.skip('should keep macro and caller channels isolated', async () => {
+    it('should keep macro and caller channels isolated', async () => {
       const script = `
         data outer
         macro collect(items)
@@ -2068,9 +2065,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Revert Operations', function () {
-    // Skipped: channel _revert() syntax is removed.
-    it.skip('should reject _revert() on channels', async () => {
-      // TODO: Remove _revert once guard/revert semantics are updated to the new model.
+    it('should reject _revert() on channels', async () => {
       const script = `
         data myData
         myData.x = 1

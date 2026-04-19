@@ -67,6 +67,8 @@ function validateChannelDeclarationNode(compiler, {
     compiler.fail('shared declarations are only allowed at the root scope', node.lineno, node.colno, node);
   }
   if (isShared && channelType === 'sink') {
+    // The parser already rejects `shared sink`, but keep the compiler-side
+    // guard so manually constructed ASTs fail the same feature gate.
     compiler.fail('shared sink declarations are not supported', node.lineno, node.colno, node);
   }
   if (!isShared && (channelType === 'sink' || channelType === 'sequence') && !hasInitializer) {

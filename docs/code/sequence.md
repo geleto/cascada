@@ -162,7 +162,7 @@ Relevant files:
 
 Primary suites:
 
-- `tests/explicit-outputs.js`
+- `tests/pasync/channels-explicit.js`
 - `tests/poison/guard.js`
 
 Covered behavior includes:

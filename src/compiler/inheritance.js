@@ -55,6 +55,8 @@ class CompileInheritance {
       this.emit.line(';');
     });
     if (node.withValue) {
+      // Object-style inputs are merged last, so they intentionally override
+      // earlier shorthand `with foo, bar` entries on key collisions.
       this.emit(`Object.assign(${targetVarsVar}, `);
       this.compiler.compileExpression(node.withValue, null, node.withValue, true);
       this.emit.line(');');

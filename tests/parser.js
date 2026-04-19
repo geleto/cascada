@@ -793,6 +793,16 @@
               [nodes.Symbol, 'user']]]]);
     });
 
+    it('should reject duplicate named composition inputs', function() {
+      expect(function() {
+        parser.parse('{% import "foo/bar.njk" as baz with theme, theme %}');
+      }).to.throwException(/duplicate named input "theme" in with clause/);
+
+      expect(function() {
+        parser.parse('{% component "Card.script" as card with context, theme, theme %}');
+      }).to.throwException(/duplicate named input "theme" in with clause/);
+    });
+
     it('should reject legacy named block with-input lists', function() {
       expect(function() {
         parser.parse('{% block content with user, theme %}{{ user }}{% endblock %}');

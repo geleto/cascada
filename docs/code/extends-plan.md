@@ -143,8 +143,11 @@ Scope:
   - `super()`
 - explicit component syntax:
   - `component "X" as ns`
+  - `component "X" as ns with context`
   - `component "X" as ns with theme, id`
+  - `component "X" as ns with context, theme, id`
   - `component "X" as ns with { ... }`
+  - `component "X" as ns with context, { ... }`
 - `component` reserved as a keyword on this new path
 - `extends` source-order restriction:
   - only `shared` declarations are allowed before `extends`
@@ -232,10 +235,10 @@ Scope:
 
 Tests:
 
-- focused `explicit-outputs` coverage
+- focused explicit-channel coverage
 - no inheritance yet
 - run active baseline suites:
-  - `tests/explicit-outputs.js`
+  - `tests/pasync/channels-explicit.js`
   - `tests/pasync/channel-errors.js`
 - no deferred extends/component groups are re-enabled in this phase
 
@@ -453,8 +456,11 @@ Scope:
 - `component ... as ns`
 - `compositionPayload`
 - component-specific `compositionPayload` forms:
+  - `component ... with context`
   - `component ... with theme, id`
+  - `component ... with context, theme, id`
   - `component ... with { ... }`
+  - `component ... with context, { ... }`
 - direct-binding-only first implementation
 - method calls through component binding
 - shared-channel observations through component binding
