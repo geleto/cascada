@@ -443,7 +443,7 @@ Current next target:
 
 Focused verification currently used during this migration:
 
-- `tests/pasync/output-errors.js`
+- `tests/pasync/channel-errors.js`
 - `tests/pasync/snapshots.js`
 - `tests/explicit-outputs.js`
 - `tests/pasync/loop-concurrent-limit.js`

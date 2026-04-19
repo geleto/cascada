@@ -401,6 +401,10 @@ function isPoisonError(error) {
   return error instanceof PoisonError;
 }
 
+function isRuntimeFatalError(error) {
+  return error instanceof RuntimeFatalError;
+}
+
 /**
  * Check if a value is an error or a promise that rejects with an error.
  * Awaits promises and checks if they resolve to poison or reject.
@@ -547,6 +551,7 @@ module.exports = {
   createPoison,
   isPoison,
   isPoisonError,
+  isRuntimeFatalError,
   isError,
   collectErrors,
   handleError,

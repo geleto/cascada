@@ -923,14 +923,11 @@ class Parser extends Obj {
       initializer = this.parseExpression();
     } else {
       if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-        if (channelType === 'var') {
+        if (channelType === 'var' || channelType === 'data' || channelType === 'text') {
           initializer = this.parseExpression();
         } else {
           this.fail(`parseChannelDeclaration: ${channelType} channels cannot have initializers`, tag.lineno, tag.colno);
         }
-      }
-      if ((channelType === 'data' || channelType === 'text') && initializer) {
-        this.fail(`parseChannelDeclaration: ${channelType} channels cannot have initializers`, tag.lineno, tag.colno);
       }
     }
 

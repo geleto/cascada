@@ -7,8 +7,8 @@ let isPoisonError;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
-  AsyncEnvironment = require('../src/environment/environment').AsyncEnvironment;
-  const runtime = require('../src/runtime/runtime');
+  AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
+  const runtime = require('../../src/runtime/runtime');
   createPoison = runtime.createPoison;
   isPoisonError = runtime.isPoisonError;
 } else {
@@ -1223,7 +1223,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Buffer Tree Ordering', function () {
-    it('should preserve source order for root output writes emitted from async child blocks (data)', async () => {
+    it('should preserve source order for root channel writes emitted from async child blocks (data)', async () => {
       const script = `
         data out
         var cond = slowTrue()
@@ -1303,7 +1303,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Macros', function () {
-    it('should support explicit outputs inside macros', async () => {
+    it('should support explicit channels inside macros', async () => {
       const script = `
         macro buildUser()
           data myData
@@ -1317,7 +1317,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ name: 'Alice' });
     });
 
-    it('should reject macro outputs that shadow parent scope outputs', async () => {
+    it('should reject macro channels that shadow parent scope channels', async () => {
       const script = `
         data myData
         myData.outer = true
@@ -1337,7 +1337,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should support text output inside macros', async () => {
+    it('should support text channel inside macros', async () => {
       const script = `
         macro greet()
           text textOut
@@ -1352,7 +1352,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.be('hello world');
     });
 
-    it('should support multiple outputs inside macros', async () => {
+    it('should support multiple channels inside macros', async () => {
       const script = `
         macro bundle()
           data myData
@@ -1368,7 +1368,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ data: { x: 1 }, text: 'ok' });
     });
 
-    it('should handle nested macros with same output name', async () => {
+    it('should handle nested macros with same channel name', async () => {
       const script = `
         macro inner()
         data myData
@@ -1408,7 +1408,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should throw when macro parameter conflicts with output name', async () => {
+    it('should throw when macro parameter conflicts with channel name', async () => {
       const script = `
         macro conflict(x)
           data x
@@ -1471,7 +1471,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should pass output snapshots as regular values', async () => {
+    it('should pass channel snapshots as regular values', async () => {
       const script = `
         data myData
         myData.x = 1
@@ -1490,7 +1490,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   describe('Capture', function () {
     // Skipped: capture block syntax is not yet removed.
     it.skip('should reject capture blocks', async () => {
-      // TODO: Remove capture once the new explicit output model fully replaces it.
+      // TODO: Remove capture once the new explicit channel model fully replaces it.
       const script = `
         var result = capture
           var x = 1
@@ -1507,7 +1507,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Caller', function () {
-    it('should support caller blocks with explicit outputs', async () => {
+    it('should support caller blocks with explicit channels', async () => {
       const script = `
         macro collect(items)
           data myData
@@ -1575,7 +1575,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
     });
 
     // Skipped: caller with arguments is not supported yet.
-    it.skip('should keep macro and caller outputs isolated', async () => {
+    it.skip('should keep macro and caller channels isolated', async () => {
       const script = `
         data outer
         macro collect(items)
@@ -1603,7 +1603,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Scoping', function () {
-    it('should reject same-name nested outputs that shadow parent scope', async () => {
+    it('should reject same-name nested channels that shadow parent scope', async () => {
       const script = `
         data myData
         myData.x = 1
@@ -1621,7 +1621,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should reject nested outputs that shadow parent outputs across types', async () => {
+    it('should reject nested channels that shadow parent channels across types', async () => {
       const script = `
         data out
         if true
@@ -1638,7 +1638,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should allow inner scopes to use parent outputs', async () => {
+    it('should allow inner scopes to use parent channels', async () => {
       const script = `
         data myData
         if true
@@ -1650,7 +1650,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ x: 1 });
     });
 
-    it('should allow outputs inside loops', async () => {
+    it('should allow channels inside loops', async () => {
       const script = `
         data myData
         for item in [1, 2, 3]
@@ -1662,7 +1662,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ items: [1, 2, 3] });
     });
 
-    it('should keep block-scoped outputs inaccessible outside the block', async () => {
+    it('should keep block-scoped channels inaccessible outside the block', async () => {
       const script = `
         if true
           data scoped
@@ -1680,7 +1680,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Async', function () {
-    it('should handle async values when writing to outputs', async () => {
+    it('should handle async values when writing to channels', async () => {
       const context = {
         fetchValue() { return delay(5, 10); }
       };
@@ -1694,7 +1694,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ x: 10 });
     });
 
-    it('should combine multiple async writes to the same output', async () => {
+    it('should combine multiple async writes to the same channel', async () => {
       const context = {
         fetchA() { return delay(5, 'a'); },
         fetchB() { return delay(1, 'b'); }
@@ -1721,7 +1721,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ result: 99 });
     });
 
-    it('should handle nested async dependencies with outputs', async () => {
+    it('should handle nested async dependencies with channels', async () => {
       const context = {
         fetchUser() { return delay(5, { id: 3, name: 'Ana' }); },
         fetchProfile(id) { return delay(5, { userId: id, theme: 'light' }); }
@@ -1738,7 +1738,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ user: { id: 3, name: 'Ana' }, profile: { userId: 3, theme: 'light' } });
     });
 
-    it('should support sequential each loops with outputs', async () => {
+    it('should support sequential each loops with channels', async () => {
       const context = {
         fetchValue(v) { return delay(2, v * 2); }
       };
@@ -1755,7 +1755,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Error Cases', function () {
-    it('should throw on redeclaration of an output', async () => {
+    it('should throw on redeclaration of an channel', async () => {
       const script = `
         data myData
         data myData
@@ -1768,31 +1768,47 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should throw when data outputs have initializers', async () => {
+    it('should allow data channels with initializers', async () => {
       const script = `
-        data myData = 1
+        data myData = { x: 1 }
+        return myData.snapshot()
       `;
-      try {
-        await render(script);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('cannot have initializers');
-      }
+      const result = await render(script);
+      expect(result).to.eql({ x: 1 });
     });
 
-    it('should throw when text outputs have initializers', async () => {
+    it('should allow text channels with initializers', async () => {
       const script = `
         text textOut = "hi"
+        return textOut.snapshot()
       `;
-      try {
-        await render(script);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('cannot have initializers');
-      }
+      const result = await render(script);
+      expect(result).to.be('hi');
     });
 
-    it('should overwrite text outputs when assigning with =', async () => {
+    it('should resolve async data channel initializers', async () => {
+      const script = `
+        data myData = delayed({ x: 1 }, 10)
+        return myData.snapshot()
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.eql({ x: 1 });
+    });
+
+    it('should resolve async text channel initializers', async () => {
+      const script = `
+        text textOut = delayed("hi", 10)
+        return textOut.snapshot()
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.be('hi');
+    });
+
+    it('should overwrite text channels when assigning with =', async () => {
       const script = `
         text textOut
         textOut = "hi"
@@ -1826,7 +1842,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.be(1);
     });
 
-    it('should throw when sink outputs have no initializer', async () => {
+    it('should throw when sink channels have no initializer', async () => {
       const script = `
         sink logger
       `;
@@ -1838,7 +1854,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should throw when sequence outputs have no initializer', async () => {
+    it('should throw when sequence channels have no initializer', async () => {
       const script = `
         sequence db
       `;
@@ -1850,7 +1866,50 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should throw when using undeclared outputs', async () => {
+    it('should evaluate sink initializers only once', async () => {
+      let created = 0;
+      const script = `
+        sink logger = makeLogger()
+        return getCreated()
+      `;
+      const result = await render(script, {
+        makeLogger: () => {
+          created += 1;
+          return {
+            write() {},
+            snapshot() {
+              return created;
+            }
+          };
+        },
+        getCreated: () => created
+      });
+
+      expect(result).to.be(1);
+    });
+
+    it('should evaluate sequence initializers only once', async () => {
+      let created = 0;
+      const script = `
+        sequence db = makeDb()
+        return getCreated()
+      `;
+      const result = await render(script, {
+        makeDb: () => {
+          created += 1;
+          return {
+            read() {
+              return created;
+            }
+          };
+        },
+        getCreated: () => created
+      });
+
+      expect(result).to.be(1);
+    });
+
+    it('should throw when using undeclared channels', async () => {
       const script = `
         myData.x = 1
         return myData.snapshot()
@@ -1877,7 +1936,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should throw when output name conflicts with variable', async () => {
+    it('should throw when channel name conflicts with variable', async () => {
       const script = `
         var x = 1
         data x
@@ -1890,7 +1949,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should throw when variable name conflicts with output', async () => {
+    it('should throw when variable name conflicts with channel', async () => {
       const script = `
         data x
         var x = 1
@@ -1903,7 +1962,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should reject reserved keywords as output names', async () => {
+    it('should reject reserved keywords as channel names', async () => {
       const scripts = [
         'data data',
         'var var = 1',
@@ -1925,7 +1984,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should throw on invalid output method', async () => {
+    it('should throw on invalid channel method', async () => {
       const script = `
         data myData
         myData.x.nonExistentMethod(1)
@@ -2009,8 +2068,8 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Revert Operations', function () {
-    // Skipped: output _revert() syntax is removed.
-    it.skip('should reject _revert() on outputs', async () => {
+    // Skipped: channel _revert() syntax is removed.
+    it.skip('should reject _revert() on channels', async () => {
       // TODO: Remove _revert once guard/revert semantics are updated to the new model.
       const script = `
         data myData
@@ -2028,7 +2087,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Edge Cases', function () {
-    it('should allow very long output names', async () => {
+    it('should allow very long channel names', async () => {
       const script = `
         data thisIsAReallyLongOutputNameForTestingPurposesOnly
         thisIsAReallyLongOutputNameForTestingPurposesOnly.x = 1
@@ -2048,7 +2107,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ x: 1 });
     });
 
-    it('should allow single character output names', async () => {
+    it('should allow single character channel names', async () => {
       const script = `
         data x
         x.value = 10
@@ -2058,7 +2117,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ value: 10 });
     });
 
-    it('should support all output types in a single script', async () => {
+    it('should support all channel types in a single script', async () => {
       const context = {
         makeLogger() {
           return {
@@ -2083,7 +2142,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ data: { x: 1 }, text: 'hi', value: 5, sink: ['log'] });
     });
 
-    it('should support outputs in for, while, and each loops', async () => {
+    it('should support channels in for, while, and each loops', async () => {
       const script = `
         data myData
         for item in [1, 2]
@@ -2133,7 +2192,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ n: null, u: undefined });
     });
 
-    it('should preserve special characters in text outputs', async () => {
+    it('should preserve special characters in text channels', async () => {
       env = new AsyncEnvironment(null, { autoescape: false });
       const script = `
         text textOut
@@ -2165,7 +2224,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should propagate poison through outputs', async () => {
+    it('should propagate poison through channels', async () => {
       const context = {
         failAsync() { return Promise.reject(new Error('async fail')); }
       };
@@ -2183,7 +2242,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should collect multiple output errors', async () => {
+    it('should collect multiple channel errors', async () => {
       const context = {
         failA() { return Promise.reject(new Error('fail A')); },
         failB() { return Promise.reject(new Error('fail B')); }
@@ -2229,7 +2288,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   });
 
   describe('Guard Operations', function () {
-    it('should allow guard blocks with explicit outputs', async () => {
+    it('should allow guard blocks with explicit channels', async () => {
       const script = `
         data myData
         guard
@@ -2241,7 +2300,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ x: 1 });
     });
 
-    it('should revert outputs when guard fails', async () => {
+    it('should revert channels when guard fails', async () => {
       const context = {
         fail() { return createPoison([new Error('guard fail')]); }
       };
@@ -2273,7 +2332,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ x: 1 });
     });
 
-    it('should handle nested guards with output reverts', async () => {
+    it('should handle nested guards with channel reverts', async () => {
       const context = {
         fail() { return createPoison([new Error('inner fail')]); }
       };

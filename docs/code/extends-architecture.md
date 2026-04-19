@@ -1,0 +1,523 @@
+# `extends` Architecture
+
+This document is a structured rewrite of `extends-architecture-raw.md`.
+
+It preserves the same semantics and does not intentionally add or remove
+information. The raw document remains the source of truth if anything appears
+ambiguous after restructuring.
+
+This architecture is intentionally high level.
+
+It assumes a more radical reorganization than `extends-implementation-2.md`.
+
+Open questions, missing pieces, and compatibility constraints will be added in
+later revisions instead of being front-loaded here.
+
+## Overview
+
+The design assumes a static parent chain. Parent paths are declared statically
+in source and are not computed dynamically.
+
+Per-template state is the compiled JS shape. Per-instance state is that same
+compiled JS running for one render, resolving method entries, `super`, and
+parent arrival through the shared runtime objects passed up the inheritance
+chain.
+
+The shared metadata object has the final shape:
+
+- `methods`
+- `sharedRootBuffer`
+- `sharedSchema`
+- `compositionPayload`
+
+Parent invocation is normalized into one object-shaped argument containing at
+least those four fields.
+
+Shared-root ownership is single-origin:
+
+- the most-derived direct-render entry creates the hierarchy shared root once
+- component instantiation creates the component shared root once
+- parent files do not create replacement shared roots
+- inheritance/composition entry calls reuse the already-created shared root
+
+## Compiler Model
+
+The compiler should have an easy way to detect block/method
+scripts/templates.
+
+Blocks/methods move to a separate AST node in the transformer.
+
+That node compiles into a key-value object (`methods`) at the start of the JS
+file. The keys are the method/block names. The values contain both metadata
+(like used/mutated channels), the function, as well as the `super` object. The
+constructor is part of this too, named `__constructor__` or similar.
+
+Blocks and methods should share the same runtime model and syntax. The main
+difference is only in what the compiled function does:
+
+- script entries may return
+- template entries write to the text channel
+
+Blocks do not have their own `withContext` mode. They follow the enclosing
+template/script `withContext`.
+
+Blocks should move toward the same callable model as methods: identifier plus
+explicit arguments in `()`, rather than a separate `with`-style calling
+convention. This is intentionally clearer than traditional Nunjucks block
+invocation.
+
+Templates follow the same model:
+
+- template body compiles to internal `__constructor__`
+- blocks are the method form
+- code before `extends` is pre-extends code
+- code after `extends` is post-extends code
+
+Because only `shared` declarations are allowed before `extends`, there is no
+template-local-capture mechanism in this architecture for arbitrary
+pre-`extends` variables.
+
+## Shared Metadata Objects
+
+### Method Entries
+
+Additionally, collect all parent methods: methods that are either not yet
+defined, or used through `super()`. These are compiled into the block/methods
+object as promises, with `resolve` and `reject` methods, so 3 properties:
+`promise`, `resolve`, `reject`.
+
+Once a promise is resolved by the parent, it will be replaced with the value
+object (metadata and function). The `super` properties are also a promise in
+the same way. If there is no definition for a called method, it is added to
+the methods object, not as `super`.
+
+Unresolved vs resolved entries should keep the smallest possible stable shape:
+
+- unresolved entry: promise structure, with `promise`, `resolve`, `reject`
+- resolved entry: actual method object; the promise structure is replaced
+- rejected entry: promise rejects; no extra `state` field is required
+
+Pending method entries and pending shared-channel entries should use the same
+promise-structure shape.
+
+The minimum resolved method-entry shape should stay small:
+
+- `usedChannels`
+- `mutatedChannels`
+- compiled function
+- `super`
+
+No signatures are part of the first version, though signature compatibility
+may be checked later.
+
+The compiler should emit only the channels directly touched by the local method
+body. Channels coming from the `super` chain are unknown at compile time and
+are merged later by the helper.
+
+Keep `usedChannels` and `mutatedChannels` separate in the stored method entry,
+but merge conservatively when needed. Treat `usedChannels` as read+write for
+safety if existing compiler behavior is inconsistent.
+
+### Shared-Channel Entries
+
+Also collect all shared channels. The key is the channel name. The value is
+shared-channel metadata including at least the channel type and the local
+default value.
+
+Unknown shared channels use the same promise structure and are replaced in
+place once resolved.
+
+The shared channel schema should stay explicit: key is identifier, value is
+shared-channel metadata containing at least the channel type and local default
+value. This is still needed so each script/template can add channels that are
+not yet present in the shared command buffer.
+
+Shared channel metadata should follow the same model as method metadata. The
+shared schema is a key-value object where the key is the channel name. A known
+channel is stored as its resolved metadata, including at least the channel type
+and the local default value. A not-yet-known channel is stored as a promise
+structure with `promise`, `resolve`, and `reject`, and is replaced with the
+resolved metadata once a parent defines it.
+
+The resolved shared-channel metadata shape should stay small, but it now needs
+more than just the type:
+
+- channel type
+- local default value
+
+That is enough to choose the side-channel command shape, detect conflicting
+declarations across scripts/templates, and preserve child-first shared
+defaults.
+
+## Shared State
+
+`shared` means hierarchy-owned instance state. `extern` remains the caller-input
+mechanism for ordinary composition paths such as plain `import`, `from import`,
+and `include`.
+
+Shared declarations belong to constructor/root scope only. They are not
+allowed inside methods/blocks.
+
+All shared channels should be declared before any `extends` and before any
+`super()`-driven inherited work that depends on them.
+
+Shared defaults follow the inheritance contract:
+
+- `shared x = default` means initialize-if-not-set
+- a more-derived shared default wins over an ancestor default
+- a later plain assignment overwrites the current value
+
+Shared default handling should stay simple:
+
+- when a shared channel is declared for the first time, its default value is
+  set
+- if that shared channel was already declared earlier in the chain, the new
+  default value is ignored
+- `with ...` / `compositionPayload` does not override shared defaults, even
+  though shared defaults may read values from that payload
+
+Per-channel-type shared rules stay explicit:
+
+- `shared var x = value` is allowed
+- `shared text x = value` is allowed
+- `shared data x = value` is allowed
+- `shared sequence db = sinkExpr` initializes the shared sequence
+- `shared sequence db` declares participation without an initializer
+
+Shared channel metadata should be described with the same lifecycle as method
+metadata:
+
+- compiled child access to an unknown shared channel creates a pending entry
+- each parent resolves the entries it can define and replaces them with the
+  actual metadata
+- unresolved entries at the topmost parent are rejected and become fatal on
+  await
+
+Shared channel declaration should only do work when the channel does not yet
+exist. Re-declaring an already existing shared channel with the same type is
+effectively a no-op.
+
+Re-declaring an existing shared channel with a different type is a
+`RuntimeFatalError` as soon as it is detected, then normal fatal handling
+applies.
+
+## Startup and Registration
+
+For scripts/templates that define blocks or methods, the first thing the
+script does at startup is wire its local method metadata into the shared method
+object. That is where child-overrides-parent semantics are established.
+
+Startup order should stay simple:
+
+- shared-channel register / resolve / reject
+- method register / resolve / reject
+- `super` register / resolve / reject
+- parent call if `extends` is present
+
+Startup register / resolve / reject is synchronous. It only updates the shared
+metadata object using already-available local metadata:
+
+- declare if missing
+- resolve if the current entry is a promise structure
+- wire `super` if a child method uses `super()` and the local parent method
+  matches
+
+Each script/template tries to resolve pending methods, pending shared channels,
+and pending method `super` entries using its own local definitions. When the
+root script/template is reached, any still-pending entries are rejected there.
+
+The parent script resolves all method object / `super` promises that it can and
+replaces the target with the resolved object. It adds its own methods to that
+object for methods that are not already there and passes it to the parent if
+`extends` is used. If no `extends` is used and there are still promise methods
+that have not been resolved, these are rejected.
+
+Each script/template adds shared channels to the shared schema when they do not
+exist yet, resolves pending entries when it can, and rejects unresolved ones
+when it is the root.
+
+## Constructors and `extends`
+
+Constructor dispatch should not be a special runtime model. It is compiled as
+an imported call to `__constructor__`, and then resolved and linked exactly
+like any other method call.
+
+The main body is the constructor. If the constructor is empty, `super()` is
+implicit, except at the root level where an empty constructor stays empty. This
+means every non-root level effectively has a constructor. If the constructor is
+not empty, parent-constructor execution is not automatic; it happens only
+through the constructor's own `super()` behavior.
+
+Constructor and inherited-method dispatch use the same runtime call model.
+
+To keep the model simple, only `shared` declarations are allowed before
+`extends`. Arbitrary executable pre-extends code is not part of this
+architecture.
+
+There is therefore no split "before-extends context" vs "after-extends
+context" model. Constructor/body execution begins after the `extends`
+boundary.
+
+`extends` creates an async boundary. Code after `extends` executes in a later
+async boundary / command buffer, similar in spirit to how other structural async
+boundaries split execution.
+
+The initial entrypoint is the import-run script/template itself. It executes
+exactly like a normal import-run wrapper, but it receives the shared metadata
+object and uses it for method dispatch and shared-channel access. It returns
+the shared metadata object.
+
+Imported components should not have a meaningful return value of their own.
+Component constructor return is ignored so one script can still serve both as a
+component and as an extended script. In all cases, the runtime value that
+matters is the shared metadata object.
+
+## Method Dispatch and `super()`
+
+The method calls reference the method from the method object, which can be
+either the promise structure or a resolved object.
+
+Inherited dispatch is explicit:
+
+- `this.method(...)` participates in inheritance lookup
+- bare `foo()` remains an ordinary local/context/global call
+- `this.method` without a call is a compile-time error
+
+Inherited methods operate on shared state, method arguments, and method
+payload. They do not depend on ancestor-private constructor-local channels.
+
+Sequential `!` paths inside inherited methods should work like normal Cascada
+sequential paths, but this can be deferred in the implementation plan.
+
+When a child defines the same method name as its parent, child overrides
+parent. If that child method uses `super()`, the child's local startup wiring
+creates a pending `super` entry in the child's `super` property. The parent
+resolves that pending entry during its own startup wiring, so the later helper
+resolution lands on the parent's final resolved method object.
+
+`super` should stay part of the resolved method metadata shape rather than
+becoming a separate lookup table. A `super()` call should resolve that `super`
+property through the same helper model, or through a dedicated helper that
+behaves the same way.
+
+Each method call should still create its own child invocation buffer after the
+target metadata is current. That child invocation buffer lives inside the
+shared command-buffer tree. Exact linking is done for that call buffer at that
+point.
+
+## Helper Model and Late Linking
+
+Do not read `usedChannels` / `mutatedChannels` directly from the raw method
+metadata object. Instead, use a helper that:
+
+- resolves the method entry if it is still pending
+- resolves the `super` chain as needed
+- returns the merged channel information for the effective call target
+- may memoize merged metadata on the resolved entry as an optimization
+
+The promise returned by that helper is the actual barrier used by side-channel
+apply. The barrier is not "get the metadata object", but "resolve the effective
+method data, including merged super-channel data".
+
+There are two kinds of side-channel commands:
+
+- method-call commands
+- shared-channel-lookup commands
+
+The helper described above is the exact-link-after-load mechanism. It is
+awaited by `apply()` before linking, and it does not resolve until the
+effective method entry is fully available.
+
+That helper must resolve the full `super` chain recursively when the method
+uses `super()`. Channel metadata is merged only across the actually relevant
+method chain, and the same promise/resolve/reject mechanism is used for the
+`super` entries themselves.
+
+Entry replacement belongs to startup registration, not to the helper. The
+helper may still memoize merged metadata on a resolved entry so repeated calls
+do not redo the same merge work.
+
+When apply requests metadata through the helper, it awaits the already-shared
+entry reference. By the time that await resolves, startup replacement has
+already happened. The helper only computes and memoizes derived merged metadata
+such as effective channel sets.
+
+Call sites should not read `usedChannels` / `mutatedChannels` directly from the
+raw stored entry. They should go through the helper, which resolves the
+effective method target and merges channel metadata across the relevant `super`
+chain when needed.
+
+## Shared-Channel Access
+
+Shared channel access should use a dedicated helper, analogous to the method
+helper. It:
+
+- resolves the channel entry if it is still pending
+- returns the effective channel metadata required for command creation
+- may memoize derived metadata on the resolved entry as an optimization
+
+The promise returned by the shared-channel helper is the barrier for
+caller-side shared-channel access. Side-channel apply must await it before
+adding the command that reads from the shared channel.
+
+Shared channel lookup from the caller script/template mirrors method lookup. It
+uses a dedicated helper that:
+
+- waits until the shared schema contains the requested channel
+- returns the effective shared-channel metadata once the channel is known
+- throws if the topmost parent is reached and the channel still does not exist
+
+That shared-channel helper uses the same pending/resolved/rejected model as
+method entries. The helper result is the effective shared-channel metadata used
+to choose and construct the side-channel command.
+
+Allowed shared-channel operations should stay explicit:
+
+- `snapshot()`
+- `isError()`
+- `getError()`
+- implicit `var` snapshot when no more specific operation is requested
+
+Any other operation should fail dynamically with a good fatal error if the
+channel does not support that access pattern. For non-`var` channels, method
+calls should be used instead.
+
+Method-call side-channel commands await helper-resolved used/mutated channel
+metadata. Shared-channel-lookup side-channel commands await helper-resolved
+shared-channel metadata.
+
+Shared-channel observation remains a current-buffer operation. The caller does
+not receive a stored JS channel object; instead, the corresponding command is
+added against the hierarchy/component shared root from the caller's current
+position.
+
+## Component Model
+
+Each component instance gets its own shared metadata object. More generally,
+each extends-linked chain, whether run directly or imported as a component,
+gets its own shared metadata object.
+
+Component use should have explicit syntax. Use a `component` keyword instead of
+overloading `import`, so the compiler has a clear compile-time signal to emit
+component-specific code such as instance creation, side-channel operations, and
+lifecycle handling.
+
+`component` is therefore an intentionally reserved keyword on this new path.
+
+Regular import and component import remain distinct:
+
+- `import ...` stays regular import
+- `component ... as ...` creates a component instance binding
+
+Component semantics apply only to the direct binding introduced by
+`component ... as ns` in the first implementation. Aliasing, passing, or
+returning that component value is out of scope.
+
+Components use the same shared metadata object model. On the caller side,
+`apply()` should:
+
+- look up the method in the shared component metadata object
+- create the promise structure if the method is not present yet
+- resolve the effective method data and merged channel metadata through the
+  helper
+- await that helper result when needed
+- perform linking only after that resolution step completes
+
+Multiple component instantiations are fully independent instances with separate
+shared roots, shared state, side-channels, and method calls.
+
+If a script/template receives the shared metadata object but defines no
+blocks/methods, it should still be able to declare or override the constructor.
+The compiled code for that case should stay minimal.
+
+## Composition Payload
+
+`compositionPayload` should stay simple for the first version. Treat it as a
+plain context-like key/value payload unless a later redesign proves that it
+must itself participate in shared-state semantics.
+
+`compositionPayload` should not have schema validation. It behaves like a
+context object: arbitrary keys are allowed.
+
+Normal context lookup should also check `compositionPayload`.
+
+Component `with` values feed `compositionPayload`, not shared channels.
+Supported forms include:
+
+- `component "X" as ns with theme, id`
+- `component "X" as ns with { theme: "dark", id: 0 }`
+
+In both cases, the values are passed as context-like key/value payload and are
+not written into shared state automatically.
+
+The shorthand `with theme, id` means "capture the current caller-context values
+of `theme` and `id`". This shorthand is limited to `var` values.
+
+For multi-level inheritance, `compositionPayload` flows upward unchanged.
+
+## Returns
+
+Return semantics stay explicit:
+
+- `extends` is not a value-producing expression
+- for direct render, only the most-derived entry file's explicit `return`
+  counts
+- ancestor constructor returns are ignored
+- for component instantiation, constructor return is ignored and the component
+  object is produced
+- component method return is separate and resolves from that method call
+- standalone/direct-render scripts still use normal script return scaffolding
+
+## Error Handling
+
+The default error model should be strict:
+
+- unresolved entries at the topmost parent are fatal and reject
+- helper rejection during apply/link is fatal
+- missing `__constructor__` is the one allowed non-error case and should map to
+  an empty constructor method
+
+Topmost-parent rejection becomes observable when apply awaits the helper. If
+that await rejects, apply should report the failure through `cb()` and throw
+`RuntimeFatalError`.
+
+Error and poison propagation follow ordinary Cascada rules. This redesign
+changes where work is attached and where shared-root apply may stall; it does
+not change poison semantics.
+
+## Static Analysis
+
+Static analysis requirements stay narrow:
+
+- shared schema declared by each file
+- upfront method metadata including internal `__constructor__`
+- override metadata needed for runtime inheritance resolution
+- no caller-side method read/write tracking for component scheduling
+- no wildcard parent-lane linking for unresolved inherited calls
+
+## Compatibility
+
+Compatibility requirements should still be preserved:
+
+- plain scripts and templates without `extends`
+- plain `import`, `from import`, and `include`
+- existing `extern` / `with` behavior for non-inheritance composition
+- `caller()` in macros
+- sequential `!` paths
+- 100% Nunjucks compatibility for sync template inheritance
+
+Sync templates do not use this architecture. They stay on the old
+Nunjucks-compatible path.
+
+The redesign should still enable:
+
+- shared channels readable and writable across the hierarchy
+- JS-style dynamic dispatch from ancestor constructors
+- independent instances via explicit `component` instantiation
+- `compositionPayload` values usable from shared defaults and constructors
+- component method calls that return values without exposing internal buffers
+
+Dynamic `extends` means the parent target is an expression rather than a
+literal path. It should work through the same composition model rather than a
+separate architecture, and remains deferred until the static model is stable.
+Dynamic `extends` waits for parent-name resolution and loading.

@@ -1,6 +1,6 @@
 'use strict';
 
-const { isPoison, isPoisonError, PoisonError, createPoison, handleError } = require('./errors');
+const { isPoison, isPoisonError, isRuntimeFatalError, PoisonError, createPoison, handleError } = require('./errors');
 const { RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue } = require('./resolve');
 const contextualizedOutputErrorCache = new WeakMap();
 let safeOutputApi = null;
@@ -1166,7 +1166,7 @@ function runWithResolvedArguments(value, cmd, output, applyFn) {
       return Promise.resolve(value[RESOLVE_MARKER]).then(() => {
         return applyFn(value);
       }).catch((err) => {
-        return applyFn(createCommandArgumentPoison(output, cmd, err));
+        return applyFn(classifyCommandArgumentFailure(output, cmd, err));
       });
     }
 
@@ -1176,7 +1176,7 @@ function runWithResolvedArguments(value, cmd, output, applyFn) {
       }
       return applyFn(resolvedValue);
     }).catch((err) => {
-      return applyFn(createCommandArgumentPoison(output, cmd, err));
+      return applyFn(classifyCommandArgumentFailure(output, cmd, err));
     });
   }
 }
@@ -1199,7 +1199,7 @@ async function runWithResolvedArgumentsAsync (value, cmd, output, applyFn) {
         await fastValue[RESOLVE_MARKER];
         resolvedArray[i] = fastValue;
       } catch (err) {
-        resolvedArray[i] = createCommandArgumentPoison(output, cmd, err);
+        resolvedArray[i] = classifyCommandArgumentFailure(output, cmd, err);
       }
       continue;
     }
@@ -1211,24 +1211,28 @@ async function runWithResolvedArgumentsAsync (value, cmd, output, applyFn) {
           await resolvedValue[RESOLVE_MARKER];
           resolvedArray[i] = resolvedValue;
         } catch (err) {
-          resolvedArray[i] = createCommandArgumentPoison(output, cmd, err);
+          resolvedArray[i] = classifyCommandArgumentFailure(output, cmd, err);
         }
       } else {
         resolvedArray[i] = resolvedValue;
       }
     } catch (err) {
-      resolvedArray[i] = createCommandArgumentPoison(output, cmd, err);
+      resolvedArray[i] = classifyCommandArgumentFailure(output, cmd, err);
     }
   }
   return applyFn(resolvedArray);
 }
 
-function createCommandArgumentPoison(output, cmd, err) {
+function classifyCommandArgumentFailure(output, cmd, err) {
   const errors = isPoisonError(err) ? err.errors : [err];
   const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
   const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
   const path = output && output._context && output._context.path ? output._context.path : null;
   const contextualized = errors.map((item) => handleError(item, lineno, colno, null, path));
+  const fatalRuntimeError = contextualized.find((item) => isRuntimeFatalError(item));
+  if (fatalRuntimeError) {
+    throw fatalRuntimeError;
+  }
   return createPoison(contextualized);
 }
 

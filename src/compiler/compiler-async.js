@@ -954,7 +954,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     this.emit.line(');');
 
-    if (channelType === 'var' && node.initializer) {
+    if (node.initializer && channelType !== 'sink' && channelType !== 'sequence') {
       const initNode = node.initializer;
       const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
@@ -962,7 +962,17 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit(`let ${initValueId} = `);
       this.compileExpression(initNode, null, initNode);
       this.emit.line(';');
-      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+      if (channelType === 'var') {
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        return;
+      }
+      if (channelType === 'text') {
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.TextCommand({ channelName: '${name}', command: 'set', args: [${initValueId}], normalizeArgs: true, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        return;
+      }
+      if (channelType === 'data') {
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.DataCommand({ channelName: '${name}', command: 'set', args: [null, ${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+      }
     }
   }
 

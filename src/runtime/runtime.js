@@ -236,6 +236,7 @@ module.exports = {
   createPoison: errors.createPoison,
   isPoison: errors.isPoison,
   isPoisonError: errors.isPoisonError,
+  isRuntimeFatalError: errors.isRuntimeFatalError,
   collectErrors: errors.collectErrors,
   isError: errors.isError,
   peekError: errors.peekError,

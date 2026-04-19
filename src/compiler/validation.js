@@ -59,9 +59,6 @@ function validateChannelDeclarationNode(compiler, {
   if (!isNameSymbol) {
     compiler.fail('Channel declaration name must be a symbol', node.lineno, node.colno, node);
   }
-  if ((channelType === 'data' || channelType === 'text') && hasInitializer) {
-    compiler.fail(`${channelType} channels cannot have initializers`, node.lineno, node.colno, node);
-  }
   if ((channelType === 'sink' || channelType === 'sequence') && !hasInitializer) {
     compiler.fail(`${channelType} channels must have an initializer`, node.lineno, node.colno, node);
   }

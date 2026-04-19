@@ -1,7 +1,7 @@
 'use strict';
 
 const lib = require('../lib');
-const { createPoison, isPoison, isPoisonError, PoisonError, RuntimeFatalError, handleError } = require('./errors');
+const { createPoison, isPoison, isPoisonError, isRuntimeFatalError, PoisonError, handleError } = require('./errors');
 const { VarCommand } = require('./commands');
 
 const arrayFrom = Array.from;
@@ -793,7 +793,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
       }
     }
   } catch (err) {
-    if (!asyncOptions || err instanceof RuntimeFatalError) {
+    if (!asyncOptions || isRuntimeFatalError(err)) {
       throw err;
     }
     const errors = isPoisonError(err) ? err.errors : [err];

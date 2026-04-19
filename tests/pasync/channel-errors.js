@@ -6,7 +6,8 @@ const {
   createPoison,
   isPoison,
   isPoisonError,
-  PoisonError
+  PoisonError,
+  RuntimeFatalError
 } = require('../../src/runtime/errors');
 const {
   TextCommand,
@@ -29,6 +30,24 @@ const { createCommandBuffer } = require('../../src/runtime/command-buffer');
 const { createArray } = require('../../src/runtime/resolve');
 describe('channel errors', function () {
   describe('channel commands step2 poison encoding', function () {
+    it('propagates RuntimeFatalError instead of degrading it into poison during argument resolution', async () => {
+      const output = new TextChannel(null, 'text', { path: 'fatal-output.script' }, 'text');
+      const fatal = new RuntimeFatalError('fatal command failure', 1, 1, null, 'fatal-output.script');
+      const cmd = new TextCommand({
+        channelName: 'text',
+        args: [Promise.reject(fatal)],
+        pos: { lineno: 1, colno: 1 }
+      });
+
+      try {
+        await cmd.apply(output);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err).to.be.a(RuntimeFatalError);
+        expect(err.message).to.contain('fatal command failure');
+      }
+    });
+
     it('TextCommand encodes poison into target instead of throwing', () => {
       const output = new TextChannel(null, 'text', null, 'text');
       const poison = createPoison([new Error('text poison')]);
@@ -152,6 +171,18 @@ describe('channel errors', function () {
   });
 
   describe('output target inspection internals', function () {
+    it('surfaces RuntimeFatalError through channel inspection without wrapping it as poison', async () => {
+      const output = new VarChannel(null, 'value', { path: 'fatal-inspection.script' }, 'value');
+      const fatal = new RuntimeFatalError('fatal inspection failure', 2, 3, null, 'fatal-inspection.script');
+
+      output._recordError(fatal, { pos: { lineno: 2, colno: 3 } });
+
+      const result = await output._ensureErrorState();
+      expect(result.hasError).to.be(true);
+      expect(result.error).to.be.a(RuntimeFatalError);
+      expect(result.error.message).to.contain('fatal inspection failure');
+    });
+
     it('collects poison from nested arrays/objects/promises', async () => {
       const target = {
         direct: createPoison([new Error('direct poison')]),
@@ -200,17 +231,17 @@ describe('channel errors', function () {
     it('caches inspection by state version and invalidates on writes', async () => {
       const output = new Channel(null, null, 'x', null, 'value', 1, null);
       let inspectCalls = 0;
-      output._inspectTargetForErrors = async () => {
+      output._computeTargetErrorState = async () => {
         inspectCalls += 1;
         return { hasError: false, error: null };
       };
 
-      await output._ensureInspection();
-      await output._ensureInspection();
+      await output._ensureErrorState();
+      await output._ensureErrorState();
       expect(inspectCalls).to.be(1);
 
       output._setTarget(2);
-      await output._ensureInspection();
+      await output._ensureErrorState();
       expect(inspectCalls).to.be(2);
     });
   });

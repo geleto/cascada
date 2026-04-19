@@ -1428,6 +1428,25 @@
       finish(done);
     });
 
+    it('should keep sync extends block scope isolated from top-level child assignments', function (done) {
+      var loader = new util.StringLoader();
+      var env = new Environment(loader);
+
+      loader.addTemplate(
+        'base.njk',
+        '[{% block body %}Base{% endblock %}]{{ outer }}'
+      );
+      loader.addTemplate(
+        'child.njk',
+        '{% extends "base.njk" %}' +
+        '{% set outer = "child-top" %}' +
+        '{% block body %}{% set outer = "child-block" %}Child{% endblock %}'
+      );
+
+      expect(env.render('child.njk')).to.be('[Child]child-top');
+      finish(done);
+    });
+
     it('should render blocks in their own scope', function (done) {
       equal(
         '{% set var = "parent" %}' +

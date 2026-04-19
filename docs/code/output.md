@@ -170,6 +170,6 @@ File: `src/runtime/guard.js`
 - No output health semantics based on separate `_errors` side channel.
 
 ## Key Tests
-- `tests/pasync/output-errors.js`
+- `tests/pasync/channel-errors.js`
 - `tests/pasync/script.js` (output scoping and timeout-sensitive script paths)
 - `tests/pasync/setblock.js` (text-output buffer capture regression gate)

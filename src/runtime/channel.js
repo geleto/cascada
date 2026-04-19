@@ -9,7 +9,7 @@ const {
 const { RESOLVE_MARKER } = require('./resolve');
 const DataChannelTarget = require('../script/data-channel');
 const { BufferIterator } = require('./buffer-iterator');
-const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
+const { PoisonError, isPoison, isPoisonError, isRuntimeFatalError, createPoison, handleError } = require('./errors');
 
 class Channel {
   constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
@@ -22,10 +22,11 @@ class Channel {
 
     this._iterator = new BufferIterator(this);
     this._stateVersion = 0;
-    this._inspectionCache = {
+    this._fatalError = null;
+    this._errorStateCache = {
       version: -1,
       hasError: false,
-      poisonError: null
+      error: null
     };
     this._completionResolved = false;
     this._completionPromise = new Promise((resolve) => {
@@ -83,47 +84,59 @@ class Channel {
     return this._target;
   }
 
-  _invalidateInspectionCache() {
-    this._inspectionCache = {
+  _invalidateErrorStateCache() {
+    this._errorStateCache = {
       version: -1,
       hasError: false,
-      poisonError: null
+      error: null
     };
   }
 
   _markStateChanged() {
     this._stateVersion += 1;
-    this._invalidateInspectionCache();
+    this._invalidateErrorStateCache();
     return this._stateVersion;
   }
 
-  async _inspectTargetForErrors(target) {
+  async _computeTargetErrorState(target) {
     return inspectTargetForErrors(target);
   }
 
-  async _ensureInspection() {
-    if (this._inspectionCache.version === this._stateVersion) {
+  async _ensureErrorState() {
+    if (this._errorStateCache.version === this._stateVersion) {
       return {
-        hasError: this._inspectionCache.hasError,
-        error: this._inspectionCache.poisonError
+        hasError: this._errorStateCache.hasError,
+        error: this._errorStateCache.error
       };
     }
 
-    const inspection = await this._inspectTargetForErrors(this._getTarget());
-    const hasError = !!(inspection && inspection.hasError);
-    const poisonError = hasError && inspection && inspection.error && Array.isArray(inspection.error.errors)
-      ? new PoisonError(inspection.error.errors.slice())
+    if (this._fatalError) {
+      this._errorStateCache = {
+        version: this._stateVersion,
+        hasError: true,
+        error: this._fatalError
+      };
+      return {
+        hasError: true,
+        error: this._fatalError
+      };
+    }
+
+    const errorState = await this._computeTargetErrorState(this._getTarget());
+    const hasError = !!(errorState && errorState.hasError);
+    const error = hasError && errorState && errorState.error && Array.isArray(errorState.error.errors)
+      ? new PoisonError(errorState.error.errors.slice())
       : null;
 
-    this._inspectionCache = {
+    this._errorStateCache = {
       version: this._stateVersion,
       hasError,
-      poisonError
+      error
     };
 
     return {
-      hasError: this._inspectionCache.hasError,
-      error: this._inspectionCache.poisonError
+      hasError: this._errorStateCache.hasError,
+      error: this._errorStateCache.error
     };
   }
 
@@ -131,8 +144,20 @@ class Channel {
     throw new Error(`Channel type '${this._channelType}' must implement _getCurrentResult()`);
   }
 
+  _setFatalError(err, cmd = null) {
+    const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
+    const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
+    const path = this._context && this._context.path ? this._context.path : null;
+    this._fatalError = handleError(err, lineno, colno, null, path);
+    this._markStateChanged();
+  }
+
   _recordError(err, cmd = null) {
     if (!err) return;
+    if (isRuntimeFatalError(err)) {
+      this._setFatalError(err, cmd);
+      return;
+    }
     const errors = isPoisonError(err) && Array.isArray(err.errors)
       ? err.errors
       : [err];
@@ -184,11 +209,11 @@ class Channel {
       return this._getCurrentResult();
     };
 
-    const inspection = this._ensureInspection();
-    if (inspection && typeof inspection.then === 'function') {
-      return Promise.resolve(inspection).then(finalize);
+    const errorState = this._ensureErrorState();
+    if (errorState && typeof errorState.then === 'function') {
+      return Promise.resolve(errorState).then(finalize);
     }
-    return finalize(inspection);
+    return finalize(errorState);
   }
 
   _resolveSnapshotCommandResult() {
@@ -196,11 +221,11 @@ class Channel {
   }
 
   _isErrorNow() {
-    return this._ensureInspection().then((inspection) => !!(inspection && inspection.hasError));
+    return this._ensureErrorState().then((errorState) => !!(errorState && errorState.hasError));
   }
 
   _getErrorNow() {
-    return this._ensureInspection().then((inspection) => (inspection ? inspection.error : null));
+    return this._ensureErrorState().then((errorState) => (errorState ? errorState.error : null));
   }
 
   _captureGuardState() {
@@ -212,7 +237,7 @@ class Channel {
   _restoreGuardState(state) {
     if (state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target')) {
       this._setTarget(state.target);
-      this._invalidateInspectionCache();
+      this._invalidateErrorStateCache();
       return;
     }
     this._setTarget(state);
@@ -241,7 +266,8 @@ const CHANNEL_API_PROPS = new Set([
   '_buffer',
   '_iterator',
   '_stateVersion',
-  '_inspectionCache',
+  '_fatalError',
+  '_errorStateCache',
   '_completionResolved'
 ]);
 
@@ -286,11 +312,11 @@ function createChannelFacade(output, options) {
       if (prop === '_markStateChanged') {
         return output._markStateChanged.bind(output);
       }
-      if (prop === '_ensureInspection') {
-        return output._ensureInspection.bind(output);
+      if (prop === '_ensureErrorState') {
+        return output._ensureErrorState.bind(output);
       }
-      if (prop === '_inspectTargetForErrors') {
-        return output._inspectTargetForErrors.bind(output);
+      if (prop === '_computeTargetErrorState') {
+        return output._computeTargetErrorState.bind(output);
       }
       if (CHANNEL_API_PROPS.has(prop)) {
         return output[prop];
