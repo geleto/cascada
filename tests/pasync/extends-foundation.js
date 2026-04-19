@@ -274,6 +274,12 @@ describe('Extends Foundation', function () {
           scriptTranspiler.scriptToTemplate('var component = 1');
         }).to.throwException(/Identifier 'component' is reserved/);
       });
+
+      it('should reserve this as a declaration name', function () {
+        expect(() => {
+          scriptTranspiler.scriptToTemplate('var this = 1');
+        }).to.throwException(/Identifier 'this' is reserved/);
+      });
     });
 
     describe('extends source order', function () {
@@ -309,11 +315,11 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe.skip('Phase 3 - Shared Channel Metadata and Lowering', function () {
+  describe('Phase 3 - Shared Channel Metadata and Lowering', function () {
     it('should lower shared declarations through the normal script compile path', function () {
       const source = new Script('shared var theme = "dark"\nreturn theme', env, 'shared-lowering.casc')._compileSource();
 
-      expect(source).to.contain('runtime.declareSharedBufferChannel(output, "theme", "var", context, null);');
+      expect(source).to.contain('runtime.declareInheritanceSharedChannel(output, "theme", "var", context, null);');
       expect(source).to.contain('initializeIfNotSet: true');
     });
 
@@ -321,8 +327,8 @@ describe('Extends Foundation', function () {
       const declaredOnly = new Script('shared sequence db\nreturn null', env, 'shared-sequence-decl.casc')._compileSource();
       const initialized = new Script('shared sequence db = makeDb()\nreturn null', env, 'shared-sequence-init.casc')._compileSource();
 
-      expect(declaredOnly).to.contain('runtime.declareSharedBufferChannel(output, "db", "sequence", context, null);');
-      expect(initialized).to.contain('runtime.declareSharedBufferChannel(output, "db", "sequence", context, ');
+      expect(declaredOnly).to.contain('runtime.declareInheritanceSharedChannel(output, "db", "sequence", context, null);');
+      expect(initialized).to.contain('runtime.declareInheritanceSharedChannel(output, "db", "sequence", context, ');
       expect(initialized).to.contain('makeDb');
     });
 
@@ -330,10 +336,12 @@ describe('Extends Foundation', function () {
       const script = new Script('shared var theme = "dark"\nshared text log\nreturn null', env, 'shared-schema.casc');
       script.compile();
 
-      expect(script.sharedSchema).to.eql([
-        { name: 'theme', type: 'var' },
-        { name: 'log', type: 'text' }
-      ]);
+      expect(Object.keys(script.sharedSchema).sort()).to.eql(['log', 'theme']);
+      expect(script.sharedSchema.theme.type).to.be('var');
+      expect(typeof script.sharedSchema.theme.defaultValue).to.be('function');
+      expect(script.sharedSchema.theme.defaultValue()).to.be('dark');
+      expect(script.sharedSchema.log.type).to.be('text');
+      expect(script.sharedSchema.log.defaultValue).to.be(null);
     });
   });
 
@@ -355,7 +363,7 @@ describe('Extends Foundation', function () {
     it('should let an earlier child-buffer shared default win over a later parent-buffer default', async function () {
       const rootBuffer = runtime.createCommandBuffer(null);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
-      runtime.declareSharedBufferChannel(childBuffer, 'theme', 'var', null, null);
+      runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, null);
 
       childBuffer.add(new runtime.VarCommand({
         channelName: 'theme',
@@ -380,7 +388,7 @@ describe('Extends Foundation', function () {
     it('should mark shared channels as explicitly readable across template boundaries', function () {
       const rootBuffer = runtime.createCommandBuffer(null);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
-      const sharedChannel = runtime.declareSharedBufferChannel(childBuffer, 'theme', 'var', null, null);
+      const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, null);
 
       expect(typeof sharedChannel.allowsCrossTemplateRead).to.be('function');
       expect(sharedChannel.allowsCrossTemplateRead()).to.be(true);
@@ -420,7 +428,7 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe.skip('Phase 3 - Method Metadata Compilation', function () {
+  describe('Phase 3 - Method Metadata Compilation', function () {
     it('should expose compiled methods metadata up front', function () {
       const script = new Script('method build(user)\n  user\nendmethod\nreturn null', env, 'method-metadata.script');
       script.compile();
@@ -428,11 +436,11 @@ describe('Extends Foundation', function () {
       expect(script.methods).to.be.ok();
       expect(script.methods.build).to.be.ok();
       expect(typeof script.methods.build.fn).to.be('function');
-      expect(script.methods.build.contract).to.eql({
-        inputNames: ['user'],
-        withContext: false
-      });
-      expect(script.methods.build.ownerKey).to.be('method-metadata.script');
+      expect(script.methods.build.usedChannels).to.be.an(Array);
+      expect(script.methods.build.mutatedChannels).to.be.an(Array);
+      expect(script.methods.build.super).to.be(null);
+      expect(script.methods.build.contract).to.be(undefined);
+      expect(script.methods.build.ownerKey).to.be(undefined);
     });
 
     it('should expose __constructor__ in the compiled methods map with internal metadata', function () {
@@ -442,17 +450,31 @@ describe('Extends Foundation', function () {
       expect(script.methods).to.be.ok();
       expect(script.methods.__constructor__).to.be.ok();
       expect(typeof script.methods.__constructor__.fn).to.be('function');
-      expect(script.methods.__constructor__.contract).to.eql({
-        inputNames: [],
-        withContext: false
-      });
-      expect(script.methods.__constructor__.ownerKey).to.be('constructor-metadata.script');
+      expect(script.methods.__constructor__.usedChannels).to.be.an(Array);
+      expect(script.methods.__constructor__.mutatedChannels).to.be.an(Array);
+      expect(script.methods.__constructor__.usedChannels).to.contain('trace');
+      expect(script.methods.__constructor__.mutatedChannels).to.contain('trace');
+      expect(script.methods.__constructor__.super).to.be(null);
+      expect(script.methods.__constructor__.contract).to.be(undefined);
+      expect(script.methods.__constructor__.ownerKey).to.be(undefined);
     });
 
     it('should reject __constructor__ as a user-declared method name', function () {
       expect(() => {
         new Script('method __constructor__()\n  return null\nendmethod\nreturn null', env, 'reserved-constructor.script')._compileSource();
       }).to.throwException(/Identifier '__constructor__' is reserved/);
+    });
+
+    it('should reject __constructor__ as a template block name', function () {
+      expect(() => {
+        new AsyncTemplate('{% block __constructor__ %}x{% endblock %}', env, 'reserved-constructor-block.njk')._compileSource();
+      }).to.throwException(/Identifier '__constructor__' is reserved/);
+    });
+
+    it('should reject this as a template block name', function () {
+      expect(() => {
+        new AsyncTemplate('{% block this %}x{% endblock %}', env, 'reserved-this-block.njk')._compileSource();
+      }).to.throwException(/Identifier 'this' is reserved/);
     });
   });
 

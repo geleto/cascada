@@ -185,11 +185,11 @@ describe('Extends Runtime', function () {
     it('should route shared declarations from the whole hierarchy to the same shared root buffer', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
-      const originalDeclareSharedBufferChannel = runtime.declareSharedBufferChannel;
+      const originalDeclareInheritanceSharedChannel = runtime.declareInheritanceSharedChannel;
       const themeBuffers = [];
 
-      runtime.declareSharedBufferChannel = function(buffer, channelName, channelType, context, initializer) {
-        const channel = originalDeclareSharedBufferChannel(buffer, channelName, channelType, context, initializer);
+      runtime.declareInheritanceSharedChannel = function(buffer, channelName, channelType, context, initializer) {
+        const channel = originalDeclareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer);
         if (channelName === 'theme') {
           themeBuffers.push(channel._buffer);
         }
@@ -208,7 +208,7 @@ describe('Extends Runtime', function () {
           expect(buffer).to.be(themeBuffers[0]);
         });
       } finally {
-        runtime.declareSharedBufferChannel = originalDeclareSharedBufferChannel;
+        runtime.declareInheritanceSharedChannel = originalDeclareInheritanceSharedChannel;
       }
     });
 

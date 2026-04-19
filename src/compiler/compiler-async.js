@@ -3,7 +3,8 @@
 const nodes = require('../nodes');
 const {
   validateGuardVariablesDeclared,
-  validateChannelDeclarationNode
+  validateChannelDeclarationNode,
+  validateScriptExtendsSourceOrder
 } = require('./validation');
 const CompilerBaseAsync = require('./compiler-base-async');
 const CompileBuffer = require('./buffer');
@@ -436,17 +437,17 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       node.recoveryBody._analysis = recoveryAnalysis;
     }
+    const guardTargets = this._getGuardTargets(node);
+    validateGuardVariablesDeclared(guardTargets.variableValidationTargets, this, node);
     return {};
   }
 
   compileGuard(node) {
     const guardTargets = this._getGuardTargets(node);
     const variableTargetsAll = guardTargets.variableTargetsAll;
-    const variableValidationTargets = guardTargets.variableValidationTargets;
     const hasSequenceTargets = !!guardTargets.sequenceTargets;
     const needsGuardState = variableTargetsAll || hasSequenceTargets;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
-    validateGuardVariablesDeclared(variableValidationTargets, this, node);
 
     this.buffer._compileAsyncControlFlowBoundary(node, () => {
       const previousGuardDepth = this.guardDepth;
@@ -941,6 +942,17 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeChannelDeclaration(node) {
     node.name._analysis = { declarationTarget: true };
+    validateChannelDeclarationNode(this, {
+      node,
+      nameNode: node.name,
+      channelType: node.channelType,
+      hasInitializer: !!node.initializer,
+      asyncMode: this.asyncMode,
+      scriptMode: this.scriptMode,
+      isNameSymbol: node.name instanceof nodes.Symbol,
+      isShared: !!node.isShared,
+      isRootScopeOwner: this.analysis.isRootScopeOwner(node._analysis)
+    });
     const name = node.name.value;
     return {
       declares: [{ name, type: node.channelType, initializer: node.initializer || null }],
@@ -950,21 +962,10 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileChannelDeclaration(node) {
     const channelType = node.channelType;
-    const nameNode = node.name;
-    validateChannelDeclarationNode(this, {
-      node,
-      nameNode,
-      channelType,
-      hasInitializer: !!node.initializer,
-      asyncMode: this.asyncMode,
-      scriptMode: this.scriptMode,
-      isNameSymbol: nameNode instanceof nodes.Symbol,
-      isShared: !!node.isShared,
-      isRootScopeOwner: this.analysis.isRootScopeOwner(node._analysis)
-    });
-    const name = nameNode.value;
+    const name = node.name.value;
+    const declareHelperName = node.isShared ? 'declareInheritanceSharedChannel' : 'declareBufferChannel';
 
-    this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
+    this.emit(`runtime.${declareHelperName}(${this.buffer.currentBuffer}, "${name}", "${channelType}", context, `);
     if ((channelType === 'sink' || channelType === 'sequence') && node.initializer) {
       this.compile(node.initializer, null);
     } else {
@@ -973,77 +974,26 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(');');
 
     if (node.initializer && channelType !== 'sink' && channelType !== 'sequence') {
-      // Phase 1 validates `shared`, but it still lowers through the same
-      // runtime channel startup path until shared-specific wiring lands.
       const initNode = node.initializer;
       const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
       const initValueId = this._tmpid();
+      const initIfNotSetFlag = node.isShared ? ', initializeIfNotSet: true' : '';
       this.emit(`let ${initValueId} = `);
       this.compileExpression(initNode, null, initNode);
       this.emit.line(';');
       if (channelType === 'var') {
-        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}]${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
         return;
       }
       if (channelType === 'text') {
-        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.TextCommand({ channelName: '${name}', command: 'set', args: [${initValueId}], normalizeArgs: true, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.TextCommand({ channelName: '${name}', command: 'set', args: [${initValueId}], normalizeArgs: true${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
         return;
       }
       if (channelType === 'data') {
-        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.DataCommand({ channelName: '${name}', command: 'set', args: [null, ${initValueId}], pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.DataCommand({ channelName: '${name}', command: 'set', args: [null, ${initValueId}]${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
       }
     }
-  }
-
-  _validateScriptExtendsSourceOrder(node) {
-    if (!this.scriptMode || !node || !Array.isArray(node.children)) {
-      return;
-    }
-
-    const firstDirectExtendsIndex = node.children.findIndex((child) => child instanceof nodes.Extends);
-    if (firstDirectExtendsIndex === -1) {
-      return;
-    }
-
-    for (let i = 0; i < firstDirectExtendsIndex; i++) {
-      const child = node.children[i];
-      if (child instanceof nodes.ChannelDeclaration && child.isShared) {
-        continue;
-      }
-      const offendingNodeDescription = this._describePreExtendsRootStatement(child);
-      this.fail(
-        `unexpected ${offendingNodeDescription} before extends; only shared declarations are allowed before extends`,
-        child.lineno,
-        child.colno,
-        child
-      );
-    }
-  }
-
-  _describePreExtendsRootStatement(node) {
-    if (node instanceof nodes.Set) {
-      return node.varType === 'declaration' ? 'var declaration' : 'assignment';
-    }
-    if (node instanceof nodes.Block) {
-      return 'method declaration';
-    }
-    if (node instanceof nodes.Extern) {
-      return 'extern declaration';
-    }
-    if (node instanceof nodes.Import) {
-      return 'import statement';
-    }
-    if (node instanceof nodes.FromImport) {
-      return 'from-import statement';
-    }
-    if (node instanceof nodes.Component) {
-      return 'component declaration';
-    }
-    if (node instanceof nodes.ChannelDeclaration) {
-      return `${node.channelType} declaration`;
-    }
-    return node && node.typename ? node.typename.toLowerCase() : 'statement';
   }
 
   analyzeChannelCommand(node) {
@@ -1093,6 +1043,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   finalizeAnalyzeRoot(node) {
     const externSpec = this._collectRootExternSpec(node);
+    validateScriptExtendsSourceOrder(this, node);
     this._validateRootExternFallbackOrder(node, externSpec);
     this._validateRootExternCycles(node);
     return { externSpec };
@@ -1324,7 +1275,6 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _compileAsyncRootBody(node) {
-    this._validateScriptExtendsSourceOrder(node);
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
@@ -1557,6 +1507,7 @@ class CompilerAsync extends CompilerBaseAsync {
     );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
     const blocks = this._compileAsyncRoot(node);
+    const methods = this._collectCompiledMethods(node, blocks);
 
     this.emit.line('return {');
     blocks.forEach((block) => {
@@ -1565,7 +1516,85 @@ class CompilerAsync extends CompilerBaseAsync {
     });
     this.emit.line(`blockContracts: ${JSON.stringify(this._collectBlockContracts(node))},`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
+    this.emit.line(`methods: ${methods},`);
+    this._emitSharedSchema(node);
     this.emit.line('root: root\n};');
+  }
+
+  _collectCompiledMethods(node, blocks) {
+    const methodEntries = [];
+    blocks.forEach((block) => {
+      const usedChannels = JSON.stringify(this._collectMethodChannelNames(
+        block.body && block.body._analysis,
+        block
+      ));
+      const mutatedChannels = JSON.stringify(this._collectMethodChannelNames(
+        block.body && block.body._analysis,
+        block,
+        'mutatedChannels'
+      ));
+      methodEntries.push(
+        `${JSON.stringify(block.name.value)}: { fn: b_${block.name.value}, usedChannels: ${usedChannels}, mutatedChannels: ${mutatedChannels}, super: null }`
+      );
+    });
+    const constructorUsedChannels = JSON.stringify(this._collectMethodChannelNames(node && node._analysis, node));
+    const constructorMutatedChannels = JSON.stringify(this._collectMethodChannelNames(
+      node && node._analysis,
+      node,
+      'mutatedChannels'
+    ));
+    methodEntries.push(
+      `__constructor__: { fn: root, usedChannels: ${constructorUsedChannels}, mutatedChannels: ${constructorMutatedChannels}, super: null }`
+    );
+    return `{ ${methodEntries.join(', ')} }`;
+  }
+
+  _emitSharedSchema(node) {
+    this.emit.line('sharedSchema: {');
+    const sharedDeclarations = this._getRootSharedDeclarations(node);
+    sharedDeclarations.forEach((child, index) => {
+      this.emit(`${JSON.stringify(child.name.value)}: { type: ${JSON.stringify(child.channelType)}, defaultValue: `);
+      if (child.initializer) {
+        this.emit('function(env, context, runtime, cb, output = null) { return ');
+        this.compileExpression(child.initializer, null, child.initializer);
+        this.emit('; }');
+      } else {
+        this.emit('null');
+      }
+      this.emit.line(` }${index === sharedDeclarations.length - 1 ? '' : ','}`);
+    });
+    this.emit.line('},');
+  }
+
+  _getRootSharedDeclarations(node) {
+    if (!this.scriptMode || !node || !Array.isArray(node.children)) {
+      return [];
+    }
+    return node.children
+      .filter((child) => child instanceof nodes.ChannelDeclaration && child.isShared);
+  }
+
+  _collectMethodChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
+    if (!analysis) {
+      return [];
+    }
+
+    return Array.from(analysis[fieldName] || []).filter((name) => {
+      if (!name || name === RETURN_CHANNEL_NAME || name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL) {
+        return false;
+      }
+      const declaration = this.analysis.findDeclaration(analysis, name);
+      if (declaration && (declaration.internal || declaration.blockInput)) {
+        return false;
+      }
+      if (ownerNode && ownerNode instanceof nodes.Block) {
+        const declarationOwner = this.analysis.findDeclarationOwner(analysis, name);
+        if (declarationOwner === ownerNode._analysis || declarationOwner === ownerNode.body._analysis) {
+          return false;
+        }
+      }
+      return true;
+    });
   }
 
   _collectBlockContracts(node) {

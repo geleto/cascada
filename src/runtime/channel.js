@@ -873,6 +873,12 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
+function declareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer = null) {
+  const channel = declareBufferChannel(buffer, channelName, channelType, context, initializer);
+  channel._allowsCrossTemplateRead = true;
+  return channel;
+}
+
 module.exports = {
   Channel,
   DataChannel,
@@ -885,7 +891,8 @@ module.exports = {
   createSinkChannel,
   SequenceChannel,
   createSequenceChannel,
-  declareBufferChannel
+  declareBufferChannel,
+  declareInheritanceSharedChannel
 };
 
 function cloneSnapshotValue(value) {

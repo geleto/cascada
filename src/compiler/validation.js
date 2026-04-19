@@ -1,6 +1,8 @@
 'use strict';
 
-const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', 'component', '__return__']);
+const nodes = require('../nodes');
+
+const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', 'component', 'this', '__return__', '__constructor__']);
 const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
 
 /**
@@ -111,6 +113,47 @@ function validateChannelObservationCall(compiler, { node, command, channelName, 
   validateSinkSnapshotInGuard(compiler, { node, command, channelType });
 }
 
+function describePreExtendsRootStatement(node) {
+  if (node instanceof nodes.Set) {
+    return node.varType === 'declaration' ? 'var declaration' : 'assignment';
+  }
+  if (node instanceof nodes.Block) {
+    return 'method declaration';
+  }
+  if (node instanceof nodes.Extends) {
+    return 'extends statement';
+  }
+  if (node instanceof nodes.ChannelDeclaration) {
+    return `${node.isShared ? 'shared ' : ''}${node.channelType} declaration`;
+  }
+  return `${node.typename || 'statement'} statement`;
+}
+
+function validateScriptExtendsSourceOrder(compiler, node) {
+  if (!compiler.scriptMode || !node || !Array.isArray(node.children)) {
+    return;
+  }
+
+  const firstDirectExtendsIndex = node.children.findIndex((child) => child instanceof nodes.Extends);
+  if (firstDirectExtendsIndex === -1) {
+    return;
+  }
+
+  for (let i = 0; i < firstDirectExtendsIndex; i++) {
+    const child = node.children[i];
+    if (child instanceof nodes.ChannelDeclaration && child.isShared) {
+      continue;
+    }
+    const offendingNodeDescription = describePreExtendsRootStatement(child);
+    compiler.fail(
+      `unexpected ${offendingNodeDescription} before extends; only shared declarations are allowed before extends`,
+      child.lineno,
+      child.colno,
+      child
+    );
+  }
+}
+
 
 
 module.exports = {
@@ -119,5 +162,6 @@ module.exports = {
   validateGuardVariablesDeclared,
   validateChannelDeclarationNode,
   validateSinkSnapshotInGuard,
-  validateChannelObservationCall
+  validateChannelObservationCall,
+  validateScriptExtendsSourceOrder
 };

@@ -1499,7 +1499,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         await render(script);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.match(/Capture blocks are no longer supported|capture|Unexpected|Invalid/);
+        expect(err.message).to.match(/Capture blocks are no longer supported/);
       }
     });
   });
@@ -1963,6 +1963,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       const scripts = [
         'data data',
         'var var = 1',
+        'var this = 1',
         'text var',
         'sink sequence = makeSink()'
       ];

@@ -284,6 +284,8 @@ class Template extends Obj {
     this.blockContracts = props.blockContracts || {};
     this.blocks = this._getBlocks(props);
     this.externSpec = props.externSpec || [];
+    this.methods = props.methods || {};
+    this.sharedSchema = props.sharedSchema || {};
     this.rootRenderFunc = props.root;
     this.compiled = true;
   }

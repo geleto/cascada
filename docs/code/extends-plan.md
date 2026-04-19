@@ -252,6 +252,16 @@ Goal:
 Scope:
 
 - compile `methods` object up front
+- treat the current root/block scan in `_collectCompiledMethods(...)` as a
+  temporary bridge only
+  - do not keep reconstructing the method model late from `Root` plus `Block`
+    nodes as the long-term design
+  - keep `_collectMethodChannelNames(...)` only as the same bridge-era
+    metadata extraction helper, not as the permanent architectural boundary
+  - replace that bridge with the dedicated transformed AST node for methods and
+    constructor described in `docs/code/extends-architecture.md`
+  - compile the runtime `methods` key-value object from that transformed node
+    once it exists
 - include internal `__constructor__`
   - in this phase, establish the presence and compiled-object shape of the
     constructor entry
@@ -261,6 +271,11 @@ Scope:
 - compile shared schema metadata with:
   - channel type
   - local default value
+  - treat `_getRootSharedDeclarations(...)` as a temporary bridge only
+    - do not keep re-scanning raw root children as the long-term source of
+      shared-schema metadata
+    - move shared-schema compilation onto analyzed/transformed metadata along
+      with the later dedicated methods/constructor node work
 - handle `shared sequence` explicitly:
   - `shared sequence db = sinkExpr` carries an initializer expression
   - `shared sequence db` declares participation with no initializer
@@ -271,6 +286,10 @@ Scope:
     or chain-specific state
   - keep `src/compiler/inheritance.js` only as a temporary caller while this
     phase emits the new metadata shape
+  - do not let `_collectCompiledMethods(...)` become permanent follow-on
+    architecture after this metadata shape lands
+  - do not let `_getRootSharedDeclarations(...)` remain the permanent
+    shared-schema source once analyzed/transformed metadata exists
 
 Tests:
 
@@ -306,6 +325,9 @@ Scope:
 - remove first:
   - stop depending on legacy inheritance startup ordering/state before landing
     the synchronous register/resolve/reject path
+  - replace `Context._copySharedStructuralState(...)` with the reusable shared
+    composition/inheritance runtime state object rather than keeping a manual
+    copied field list on every fork
 
 Tests:
 
@@ -351,6 +373,15 @@ Scope:
   - delete the old root `__parentTemplate` / final-parent continuation path
     and the template-local-capture assumptions in `src/compiler/compiler-async.js`
     before constructor lowering becomes authoritative
+  - remove the current plain-extends payload capture bridge once
+    `compositionPayload` is wired directly:
+    - `captureCompositionValueImpl(...)` in `src/runtime/lookup.js`
+    - `CommandBuffer._recordTemporaryCompositionAssignedValue(...)`
+    - `recordTemporaryCompositionAssignedValue(...)` /
+      `getTemporaryCompositionAssignedValue(...)` on channels
+  - if any narrow composition-capture helper still survives after this phase,
+    it must no longer depend on channel-side "latest assigned value" escape
+    hatches
 
 Tests:
 
@@ -430,6 +461,10 @@ Scope:
 - remove first:
   - remove legacy inherited dispatch / super-routing helpers before the new
     invocation-buffer linking model lands
+  - explicitly remove the current context-based super bridge helpers rather
+    than letting them linger behind the new method model:
+    - `Context.getAsyncSuper(...)`
+    - `Context.getSyncSuper(...)`
 
 Tests:
 
@@ -508,6 +543,31 @@ Scope:
 - remove first:
   - remove the old async template inheritance pre/post-extends flow before
     templates switch to the constructor/method model
+  - remove the old block-registry / block-contract runtime path once template
+    blocks compile as methods on the shared metadata object:
+    - `blockContracts` emission and `Template.blockContracts`
+    - `CompilerAsync._collectBlockContracts(...)`
+    - `Template._getBlocks(...)` attaching `blockContract`
+    - `Context.addBlock(...)`
+    - `Context.getBlock(...)`
+    - `Context.getAsyncBlock(...)`
+    - the `templateVar.blocks[...]` / `context.addBlock(...)` inheritance
+      merge path in `src/compiler/inheritance.js`
+  - remove the old template inheritance payload/capture state on `Context`
+    once templates use the shared metadata object directly:
+    - `extendsCompositionByParent`
+    - `inheritanceLocalCapturesByTemplate`
+    - `setExtendsComposition(...)` / `getExtendsComposition(...)`
+    - `setTemplateLocalCaptures(...)` / `getTemplateLocalCaptures(...)`
+    - `createInheritancePayload(...)`
+    - `createSuperInheritancePayload(...)`
+    - `prepareInheritancePayloadForBlock(...)`
+    - `beginAsyncExtendsBlockRegistration(...)` /
+      `finishAsyncExtendsBlockRegistration(...)`
+    - `asyncExtendsBlocksPromise` / resolver / pending-count state
+  - remove `isBlockedCrossTemplateChannelRead(...)` in `src/runtime/lookup.js`
+    once cross-template bare-name reads are no longer part of the template
+    inheritance path
 
 Tests:
 

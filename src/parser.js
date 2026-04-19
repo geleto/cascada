@@ -403,7 +403,6 @@ class Parser extends Obj {
     let withContext = null;
     const withVars = new nodes.NodeList(tok.lineno, tok.colno);
     let withValue = null;
-    const seenWithVars = Object.create(null);
 
     if (this.skipSymbol('without')) {
       if (!allowWithoutContext) {
@@ -421,6 +420,7 @@ class Parser extends Obj {
       return { withContext: null, withVars: null, withValue: null };
     }
 
+    const seenWithVars = Object.create(null);
     let sawAny = false;
     let sawContext = false;
     while (true) { // eslint-disable-line no-constant-condition
@@ -576,7 +576,7 @@ class Parser extends Obj {
     }
 
     const names = new nodes.NodeList();
-    let compositionInputs = { withContext: null, withVars: null };
+    let compositionInputs = { withContext: null, withVars: null, withValue: null };
 
     while (1) { // eslint-disable-line no-constant-condition
       const nextTok = this.peekToken();
@@ -659,6 +659,12 @@ class Parser extends Obj {
       this.fail('parseBlock: variable name expected',
         tag.lineno,
         tag.colno);
+    }
+    if (RESERVED_DECLARATION_NAMES.has(node.name.value)) {
+      this.fail(`Identifier '${node.name.value}' is reserved and cannot be used as a block name`,
+        node.name.lineno,
+        node.name.colno,
+        node.name);
     }
 
     if (this.peekToken().type === lexer.TOKEN_LEFT_PAREN) {

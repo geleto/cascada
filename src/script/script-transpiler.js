@@ -1213,25 +1213,63 @@ class ScriptTranspiler {
     return true;
   }
 
+  _parseSingleChannelDeclaration(remainder, lineIndex, allowedTypes, errorLabel) {
+    const channelType = this._getFirstWord(remainder);
+    if (!channelType) {
+      throw new Error(`Invalid ${errorLabel} at line ${lineIndex + 1}`);
+    }
+    if (!allowedTypes.includes(channelType)) {
+      throw new Error(`unsupported ${errorLabel} type '${channelType}'`);
+    }
+
+    const nameRemainder = remainder.substring(channelType.length).trim();
+    const name = this._getLeadingIdentifier(nameRemainder);
+    if (!name) {
+      throw new Error(`Invalid ${errorLabel} at line ${lineIndex + 1}`);
+    }
+    this._assertNonReservedDeclarationNames([name], lineIndex);
+    return {
+      channelType,
+      name,
+      remainder: nameRemainder.substring(name.length).trim()
+    };
+  }
+
   _parseChannelDeclaration(codeContent, lineIndex) {
     const trimmed = codeContent.trim();
-    const channelType = this._getFirstWord(trimmed);
-    if (!channelType) return null;
-    if (!(channelType === 'data' || channelType === 'text' || channelType === 'sink' || channelType === 'sequence')) {
+    const firstWord = this._getFirstWord(trimmed);
+    if (!firstWord) return null;
+    if (!(firstWord === 'data' || firstWord === 'text' || firstWord === 'sink' || firstWord === 'sequence')) {
       return null;
     }
 
-    const remainder = trimmed.substring(channelType.length).trim();
-    const nameMatch = remainder.match(/^([A-Za-z_][A-Za-z0-9_]*)\b/);
-    if (!nameMatch) {
-      throw new Error(`Invalid channel declaration at line ${lineIndex + 1}`);
+    const decl = this._parseSingleChannelDeclaration(
+      trimmed,
+      lineIndex,
+      ['data', 'text', 'sink', 'sequence'],
+      'channel declaration'
+    );
+    return {
+      channelType: decl.channelType,
+      name: decl.name,
+      initializer: decl.remainder
+    };
+  }
+
+  _parseSharedDeclaration(codeContent, lineIndex) {
+    const trimmed = codeContent.trim();
+    const firstWord = this._getFirstWord(trimmed);
+    if (firstWord !== 'shared') {
+      return null;
     }
-    const name = nameMatch[1];
-    if (this.RESERVED_DECLARATION_NAMES.has(name)) {
-      throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or channel name at line ${lineIndex + 1}`);
-    }
-    const initializer = remainder.substring(name.length).trim();
-    return { channelType, name, initializer };
+
+    const decl = this._parseSingleChannelDeclaration(
+      trimmed.substring(firstWord.length).trim(),
+      lineIndex,
+      ['var', 'text', 'data', 'sequence'],
+      'shared channel'
+    );
+    return { channelType: decl.channelType, name: decl.name };
   }
 
   _processChannelDeclaration(parseResult, lineIndex) {
@@ -1245,6 +1283,20 @@ class ScriptTranspiler {
     parseResult.lineType = 'TAG';
     parseResult.tagName = decl.channelType;
     parseResult.codeContent = parseResult.codeContent.substring(decl.channelType.length + 1).trim();
+    parseResult.blockType = null;
+  }
+
+  _processSharedDeclaration(parseResult, lineIndex) {
+    const decl = this._parseSharedDeclaration(parseResult.codeContent, lineIndex);
+    if (!decl) {
+      throw new Error(`Invalid shared declaration at line ${lineIndex + 1}`);
+    }
+
+    this.declareChannel(decl.name, decl.channelType);
+
+    parseResult.lineType = 'TAG';
+    parseResult.tagName = 'shared';
+    parseResult.codeContent = parseResult.codeContent.substring('shared'.length + 1).trim();
     parseResult.blockType = null;
   }
 
@@ -1320,6 +1372,8 @@ class ScriptTranspiler {
       throw new Error(`Explicit 'value' declarations are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'var') {
       this._processVar(parseResult, lineIndex);
+    } else if (firstWord === 'shared') {
+      this._processSharedDeclaration(parseResult, lineIndex);
     } else if (this._isChannelDeclarationLine(firstWord, code)) {
       this._processChannelDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {
@@ -1335,6 +1389,13 @@ class ScriptTranspiler {
       parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1);//skip the first word
       parseResult.blockType = this._getBlockType(firstWord, code);
       parseResult.tagName = firstWord;
+
+      if (firstWord === 'method') {
+        const methodName = this._getLeadingIdentifier(parseResult.codeContent);
+        if (methodName && this.RESERVED_DECLARATION_NAMES.has(methodName)) {
+          throw new Error(`Identifier '${methodName}' is reserved and cannot be used as a variable or channel name at line ${lineIndex + 1}`);
+        }
+      }
 
       if (firstWord === 'call' && parseResult.blockType === this.BLOCK_TYPE.START) {
         throw new Error(`Bare call blocks are not supported at line ${lineIndex + 1}; assign the call result (e.g. var x = call ... endcall).`);
