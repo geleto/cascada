@@ -171,6 +171,10 @@ function wireResolvedSuperEntry(targetEntry, parentEntry) {
     current.super = parentEntry;
     return true;
   }
+  if (current && !current.super) {
+    current.super = parentEntry;
+    return true;
+  }
   return false;
 }
 

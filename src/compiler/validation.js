@@ -59,7 +59,7 @@ function validateChannelDeclarationNode(compiler, {
   if (!asyncMode) {
     compiler.fail('Channel declarations are only supported in async mode', node.lineno, node.colno, node);
   }
-  if (!scriptMode) {
+  if (!scriptMode && !isShared) {
     compiler.fail('Channel declarations are only supported in script mode', node.lineno, node.colno, node);
   }
   if (!isNameSymbol) {

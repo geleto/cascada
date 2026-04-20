@@ -522,10 +522,17 @@ class CompilerCommon extends Obj {
 
   _getSharedDeclarations(node) {
     const metadata = this._getInheritanceMetadata(node);
-    if (!metadata || !metadata.sharedDeclarations || !Array.isArray(metadata.sharedDeclarations.children)) {
+    if (metadata && metadata.sharedDeclarations && Array.isArray(metadata.sharedDeclarations.children)) {
+      return metadata.sharedDeclarations.children.filter(Boolean);
+    }
+    if (!node || typeof node.findAll !== 'function') {
       return [];
     }
-    return metadata.sharedDeclarations.children.filter(Boolean);
+    // Temporary bridge while some async template/shared-declaration paths still
+    // surface raw ChannelDeclaration nodes instead of a single transformed
+    // inheritance-metadata source. The cleanup plan removes this dual-source
+    // lookup once templates and scripts share one metadata pipeline.
+    return node.findAll(nodes.ChannelDeclaration).filter((child) => !!(child && child.isShared));
   }
 
   compileNodeList(node, frame) {

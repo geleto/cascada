@@ -8,12 +8,7 @@ function createContextStructuralState() {
   return {
     blocks: {},
     exportResolveFunctions: Object.create(null),
-    exportChannels: Object.create(null),
-    extendsCompositionByParent: new WeakMap(),
-    inheritanceLocalCapturesByTemplate: Object.create(null),
-    asyncExtendsBlocksPromise: undefined,
-    asyncExtendsBlocksResolver: undefined,
-    asyncExtendsBlocksPendingCount: undefined
+    exportChannels: Object.create(null)
   };
 }
 
@@ -145,51 +140,6 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
-  beginAsyncExtendsBlockRegistration() {
-    if (!this.asyncExtendsBlocksPromise) {
-      this.asyncExtendsBlocksPendingCount = 0;
-      this.asyncExtendsBlocksPromise = new Promise((resolve) => {
-        this.asyncExtendsBlocksResolver = resolve;
-      }).then(() => {
-        this.asyncExtendsBlocksPromise = undefined;
-        this.asyncExtendsBlocksResolver = undefined;
-        this.asyncExtendsBlocksPendingCount = undefined;
-      });
-    }
-    this.asyncExtendsBlocksPendingCount = (this.asyncExtendsBlocksPendingCount || 0) + 1;
-  }
-
-  async getAsyncBlock(name) {
-    if (this.asyncExtendsBlocksPromise) {
-      await this.asyncExtendsBlocksPromise;
-    }
-    return this.getBlock(name);
-  }
-
-  async finishAsyncExtendsBlockRegistration() {
-    if (!this.asyncExtendsBlocksResolver) {
-      return;
-    }
-    if (this.asyncExtendsBlocksPendingCount > 0) {
-      this.asyncExtendsBlocksPendingCount -= 1;
-    }
-    if (this.asyncExtendsBlocksPendingCount === 0) {
-      this.asyncExtendsBlocksResolver();
-    }
-  }
-
-  getAsyncSuper(env, name, block, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {
-    var idx = lib.indexOf(this.blocks[name] || [], block);
-    var blk = this.blocks[name][idx + 1];
-    var context = this;
-
-    if (idx === -1 || !blk) {
-      throw new Error('no super block available for "' + name + '"');
-    }
-
-    return blk(env, context, runtime, cb, parentBuffer, context.prepareInheritancePayloadForBlock(blk, blockPayload), blockRenderCtx);
-  }
-
   getSyncSuper(env, name, block, frame, runtime, cb) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
@@ -253,124 +203,6 @@ class Context extends Obj {
     return exported;
   }
 
-  _getInheritanceTemplateKey(templateName) {
-    return templateName == null ? '__anonymous__' : String(templateName);
-  }
-
-  setExtendsComposition(templateObject, rootContext, externContext) {
-    if (!templateObject || typeof templateObject !== 'object') {
-      throw new Error('Extends composition requires a resolved parent template/script object');
-    }
-    this.extendsCompositionByParent.set(templateObject, {
-      // forkForComposition() copies these again into the new child Context, so
-      // keep only a single stored snapshot here.
-      rootContext: rootContext || {},
-      externContext: externContext || {}
-    });
-  }
-
-  getExtendsComposition(templateObject) {
-    if (!templateObject || typeof templateObject !== 'object') {
-      throw new Error('Extends composition lookup requires a resolved parent template/script object');
-    }
-    return this.extendsCompositionByParent.get(templateObject) || null;
-  }
-
-  setTemplateLocalCaptures(templateName, captures) {
-    // Template-only legacy inheritance payload/capture state.
-    // Script methods do not rely on this anymore. Remove together with the
-    // old async template block-registry/payload path in Phase 9.
-    const key = this._getInheritanceTemplateKey(templateName);
-    this.inheritanceLocalCapturesByTemplate[key] = lib.extend({}, captures || {});
-  }
-
-  getTemplateLocalCaptures(templateName) {
-    const key = this._getInheritanceTemplateKey(templateName);
-    return this.inheritanceLocalCapturesByTemplate[key] || null;
-  }
-
-  _cloneInheritanceLocalsByTemplate(localsByTemplate) {
-    // Template-only legacy inheritance payload/capture state.
-    const cloned = Object.create(null);
-    if (!localsByTemplate || typeof localsByTemplate !== 'object') {
-      return cloned;
-    }
-    const templateNames = Object.keys(localsByTemplate);
-    for (let i = 0; i < templateNames.length; i++) {
-      const templateName = templateNames[i];
-      cloned[templateName] = lib.extend({}, localsByTemplate[templateName] || {});
-    }
-    return cloned;
-  }
-
-  createInheritancePayload(templateName, args, localCaptures) {
-    // Template-only legacy inheritance payload shape.
-    // The final architecture should move template inheritance off this
-    // context-owned localsByTemplate payload path in Phase 9.
-    const argValues = lib.extend({}, args || {});
-    const templateKey = this._getInheritanceTemplateKey(templateName);
-    const payload = {
-      originalArgs: argValues,
-      localsByTemplate: Object.create(null)
-    };
-    if (localCaptures && typeof localCaptures === 'object') {
-      const localValues = lib.extend({}, localCaptures);
-      if (Object.keys(localValues).length > 0) {
-        payload.localsByTemplate[templateKey] = localValues;
-      }
-    }
-    return payload;
-  }
-
-  createSuperInheritancePayload(currentPayload, nextArgs = null) {
-    // Template-only legacy inheritance payload shape.
-    const payload = currentPayload && typeof currentPayload === 'object' ? currentPayload : null;
-    if (!payload && !nextArgs) {
-      return null;
-    }
-    const sourceArgs = lib.extend({}, (payload && payload.originalArgs) || {});
-    if (nextArgs && typeof nextArgs === 'object') {
-      lib.extend(sourceArgs, nextArgs);
-    }
-    return {
-      originalArgs: sourceArgs,
-      localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload && payload.localsByTemplate)
-    };
-  }
-
-  prepareInheritancePayloadForBlock(block, payload) {
-    // Template-only legacy inheritance payload/capture merge.
-    // Phase 9 should remove this with Context block-registry inheritance.
-    const templatePath = this._getInheritanceTemplateKey(
-      block && Object.prototype.hasOwnProperty.call(block, 'templatePath') ? block.templatePath : this.path
-    );
-    const storedLocals = this.getTemplateLocalCaptures(templatePath);
-    const hasPayload = !!(payload && typeof payload === 'object');
-    if (!hasPayload && !storedLocals) {
-      return null;
-    }
-    if (hasPayload && !storedLocals) {
-      return payload;
-    }
-    const basePayload = hasPayload
-      ? {
-        originalArgs: lib.extend({}, payload.originalArgs || {}),
-        localsByTemplate: this._cloneInheritanceLocalsByTemplate(payload.localsByTemplate)
-      }
-      : {
-        originalArgs: {},
-        localsByTemplate: Object.create(null)
-      };
-    if (storedLocals) {
-      basePayload.localsByTemplate[templatePath] = lib.extend(
-        {},
-        storedLocals,
-        basePayload.localsByTemplate[templatePath] || {}
-      );
-    }
-    return basePayload;
-  }
-
   forkForPath(newPath) {
     // Create a new, empty context object.
     // It will inherit the correct `env` from `this`.
@@ -380,6 +212,9 @@ class Context extends Obj {
     newContext.ctx = this.ctx;           // Share the variable store.
     newContext.renderCtx = this.renderCtx;
     newContext.compositionCtx = this.compositionCtx;
+    // Keep the remaining shared structural state limited to deferred exports
+    // and sync-template block registry data until the explicit execution-state
+    // object replaces this bridge in the later cleanup phase.
     newContext._sharedStructuralState = this._sharedStructuralState;
 
     // Set the ONLY property that should be different.
@@ -405,12 +240,7 @@ class Context extends Obj {
 [
   'blocks',
   'exportResolveFunctions',
-  'exportChannels',
-  'extendsCompositionByParent',
-  'inheritanceLocalCapturesByTemplate',
-  'asyncExtendsBlocksPromise',
-  'asyncExtendsBlocksResolver',
-  'asyncExtendsBlocksPendingCount'
+  'exportChannels'
 ].forEach((fieldName) => {
   Object.defineProperty(Context.prototype, fieldName, {
     configurable: true,

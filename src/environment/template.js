@@ -281,8 +281,8 @@ class Template extends Obj {
       props = func(globalRuntime);
     }
 
-    this.blockContracts = props.blockContracts || {};
-    this.blocks = this._getBlocks(props);
+    this.blockContracts = this._getCompiledBlockContracts(props);
+    this.blocks = this._getCompiledBlocks(props);
     this.externSpec = props.externSpec || [];
     this.methods = props.methods || {};
     this.sharedSchema = props.sharedSchema || {};
@@ -312,6 +312,14 @@ class Template extends Obj {
     });
 
     return blocks;
+  }
+
+  _getCompiledBlockContracts(props) {
+    return props.blockContracts || {};
+  }
+
+  _getCompiledBlocks(props) {
+    return this._getBlocks(props);
   }
 }
 
@@ -387,6 +395,14 @@ class AsyncTemplate extends Template {
     this.compile();
     const context = this._createContext(ctx, renderCtx);
     return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+  }
+
+  _getCompiledBlockContracts() {
+    return {};
+  }
+
+  _getCompiledBlocks() {
+    return {};
   }
 
   _compileSource() {

@@ -815,12 +815,12 @@ class CompilerBaseAsync extends CompilerCommon {
       this.inBlock &&
       !this.analysis.findDeclaration(node._analysis, name);
     if (useContextOnlyInheritanceLookup) {
-      const contextRef = this._tmpid();
-      this.emit('(() => {');
-      this.emit(`const ${contextRef} = context.lookup("${name}");`);
-      this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
-      this.emit(`return runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer});`);
-      this.emit('})()');
+      this.emit(
+        `runtime.contextOrInheritableChannelLookup(` +
+        `context, "${name}", ${this.buffer.currentBuffer}, ` +
+        `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }, ` +
+        `inheritanceState)`
+      );
     } else {
       this.emit(`runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer})`);
     }

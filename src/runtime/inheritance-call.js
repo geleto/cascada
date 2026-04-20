@@ -107,6 +107,7 @@ async function _resolveEffectiveInheritanceMethodFromEntry(entry, errorContext) 
   resolvedEntry._resolvedInheritanceMethodMetaPromise = (async () => {
     const usedChannels = new Set(Array.isArray(resolvedEntry.usedChannels) ? resolvedEntry.usedChannels : []);
     const mutatedChannels = new Set(Array.isArray(resolvedEntry.mutatedChannels) ? resolvedEntry.mutatedChannels : []);
+    let contract = resolvedEntry.contract || { argNames: [], withContext: false };
 
     if (resolvedEntry.super) {
       const superMeta = await _resolveEffectiveInheritanceMethodFromEntry(
@@ -115,13 +116,28 @@ async function _resolveEffectiveInheritanceMethodFromEntry(entry, errorContext) 
       );
       superMeta.usedChannels.forEach((name) => usedChannels.add(name));
       superMeta.mutatedChannels.forEach((name) => mutatedChannels.add(name));
+
+      const localArgNames = Array.isArray(contract.argNames) ? contract.argNames : [];
+      const superArgNames = Array.isArray(superMeta.contract && superMeta.contract.argNames)
+        ? superMeta.contract.argNames
+        : [];
+      if (localArgNames.length === 0 && superArgNames.length > 0) {
+        contract = {
+          argNames: superArgNames.slice(),
+          withContext: !!(contract.withContext || (superMeta.contract && superMeta.contract.withContext))
+        };
+      } else if (!contract.withContext && superMeta.contract && superMeta.contract.withContext) {
+        contract = {
+          argNames: localArgNames.slice(),
+          withContext: true
+        };
+      }
     }
 
     const linkedChannels = Array.from(new Set([
       ...usedChannels,
       ...mutatedChannels
     ]));
-    const contract = resolvedEntry.contract || { argNames: [], withContext: false };
     const effectiveMeta = {
       entry: resolvedEntry,
       usedChannels: Array.from(usedChannels),
@@ -231,8 +247,7 @@ function _createMethodPayload(methodMeta, args, errorContext, label) {
   }
 
   return {
-    originalArgs,
-    localsByTemplate: Object.create(null)
+    originalArgs
   };
 }
 

@@ -171,6 +171,18 @@
       expect(source).to.not.contain('linkVisibleChannel(');
     });
 
+    it('should guard template deferred export resolution when rendering in component mode', function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
+
+      const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'component-mode-export-guard.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('if (!(inheritanceState && inheritanceState.componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE)) {');
+      expect(source).to.contain('  context.resolveExports();');
+    });
+
     it('should assert when a deferred export is missing its explicit producer record', function () {
       const env = new AsyncEnvironment();
       const context = new Context({}, {}, env, 'missing-export-producer.njk');
@@ -187,10 +199,10 @@
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {');
-      expect(source).to.contain('context.createInheritancePayload("block-input-vars.njk"');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null) {');
+      expect(source).to.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
       expect(source).to.contain('blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {}');
-      expect(source).to.contain('blockPayload && blockPayload.localsByTemplate');
+      expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
       expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
       expect(source).to.not.contain('context.getBlockContract("content")');
       expect(source).to.not.contain('context.getCompositionSourceBuffer(');
@@ -209,10 +221,9 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined) {');
-      expect(source).to.contain('blockPayload && blockPayload.localsByTemplate');
-      expect(source).to.contain('context.forkForPath("child-inherited-block-inputs.njk")');
-      expect(source).to.contain('blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate["child-inherited-block-inputs.njk"]');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null) {');
+      expect(source).to.contain('context.forkForComposition("child-inherited-block-inputs.njk"');
+      expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
       expect(source).to.not.contain('context.getBlockContract("content")');
       expect(source).to.not.contain('context.getCompositionSourceBuffer(');
       expect(source).to.not.contain('findChannel(name)?.finalSnapshot()');
@@ -232,11 +243,12 @@
 
       expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('blockRenderCtx = undefined');
-      expect(source).to.contain('context.createSuperInheritancePayload(blockPayload)');
+      expect(source).to.contain('runtime.invokeSuperMethod(inheritanceState, "content"');
       expect(source).to.not.contain('blockContext = null');
       expect(source).to.not.contain('context.getBlockContract(');
       expect(source).to.not.contain('context.getCompositionSourceBuffer(');
-      expect(source).to.contain('context.getAsyncSuper(');
+      expect(source).to.not.contain('context.getAsyncSuper(');
+      expect(source).to.not.contain('context.createSuperInheritancePayload(');
       expect(source).to.not.contain('__caller__');
       expect(source).to.not.contain('__callerUsedChannels');
       expect(source).to.not.contain('CALLER_SCHED_CHANNEL_NAME');
@@ -284,7 +296,7 @@
       const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'imported-member-boundary.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("m"');
+      expect(source).to.contain('runtime.memberLookupAsync((runtime.channelLookup("m", currentBuffer))');
       expect(source).to.contain('runtime.callWrapAsync(');
     });
 
@@ -332,7 +344,7 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('addSnapshot("foo"');
+      expect(source).to.contain('runtime.channelLookup("foo", t_8)');
       expect(source).to.not.contain('currentBuffer.addSnapshot("foo"');
     });
 
@@ -348,7 +360,7 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('addSnapshot("m"');
+      expect(source).to.contain('runtime.channelLookup("m", t_6)');
       expect(source).to.not.contain('currentBuffer.addSnapshot("m"');
     });
 

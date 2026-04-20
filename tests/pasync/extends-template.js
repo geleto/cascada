@@ -19,7 +19,7 @@ if (typeof require !== 'undefined') {
 }
 
 describe('Template Extends', function () {
-  describe.skip('Phase 9 - Template Extends Pre/Post', function () {
+  describe('Phase 9 - Template Extends Pre/Post', function () {
     it('should run child template code before and after static extends', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
@@ -66,18 +66,29 @@ describe('Template Extends', function () {
       expect(result).to.be('Base[dark]');
     });
 
-    it('should carry pre/post set locals into overriding block reads', async function () {
+    it('should pass parent block arguments into overriding blocks through inherited dispatch', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', 'Base[{% block body %}{{ before }}|{{ after }}{% endblock %}]');
+      loader.addTemplate('base.njk', 'Base[{% block body(user) %}{{ user }}{% endblock %}]');
       loader.addTemplate(
         'child.njk',
-        '{% set before = "pre" %}{% extends "base.njk" %}{% set after = "post" %}{% block body %}{{ before }}|{{ after }}{% endblock %}'
+        '{% extends "base.njk" %}{% block body %}{{ user }}{% endblock %}'
       );
 
-      const result = await env.renderTemplate('child.njk', {});
-      expect(result).to.be('Base[pre|post]');
+      const result = await env.renderTemplate('child.njk', { user: 'Ada' });
+      expect(result).to.be('Base[Ada]');
+    });
+
+    it('should expose render-context bare names through inherited block calls with context', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', 'Base[{% block body with context %}{{ site }}{% endblock %}]');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}');
+
+      const result = await env.renderTemplate('child.njk', { site: 'Example' });
+      expect(result).to.be('Base[Example]');
     });
 
     it('should let post-extends shared mutations flow into overriding block reads', async function () {
@@ -152,23 +163,25 @@ describe('Template Extends', function () {
     });
   });
 
-  describe.skip('Phase 9 - Template Inheritance Compiled Shape', function () {
-    it('should initialize base-block arguments through the inheritance payload helpers', function () {
+  describe('Phase 9 - Template Inheritance Compiled Shape', function () {
+    it('should compile template blocks as inherited callable entries with explicit payload args', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, inheritanceState = null, blockPayload = null, blockRenderCtx = undefined) {');
-      expect(source).to.contain('runtime.createInheritancePayload("block-input-vars.njk"');
-      expect(source).to.contain('runtime.prepareBlockEntryContext(context, "block-input-vars.njk", blockPayload, blockRenderCtx, true, false);');
-      expect(source).to.contain('.originalArgs;');
-      expect(source).to.contain('.localCaptures;');
+      expect(source).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null) {');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null) {');
+      expect(source).to.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
+      expect(source).to.contain('blockPayload && blockPayload.originalArgs');
+      expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
+      expect(source).to.contain('contract: {"argNames":["user"],"withContext":true}');
       expect(source).to.not.contain('context.getBlockContract("content")');
-      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
-      expect(source).to.contain('new runtime.VarCommand({ channelName: name, args: [');
+      expect(source).to.not.contain('context.createInheritancePayload(');
+      expect(source).to.not.contain('blockPayload.localsByTemplate');
+      expect(source).to.not.contain('runtime.prepareBlockEntryContext(');
     });
 
-    it('should initialize inherited block arguments through the prepared block-entry context', function () {
+    it('should treat top-level overriding blocks as definition-only under static extends', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
@@ -180,15 +193,14 @@ describe('Template Extends', function () {
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, inheritanceState = null, blockPayload = null, blockRenderCtx = undefined) {');
-      expect(source).to.contain('runtime.prepareBlockEntryContext(context, "child-inherited-block-inputs.njk", blockPayload, blockRenderCtx, false, false);');
-      expect(source).to.not.contain('context.forkForComposition("child-inherited-block-inputs.njk"');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null) {');
+      expect(source).to.contain('context.forkForComposition("child-inherited-block-inputs.njk"');
+      expect(source).to.not.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
       expect(source).to.not.contain('context.getBlockContract("content")');
-      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
-      expect(source).to.not.contain('findChannel(name)?.finalSnapshot()');
+      expect(source).to.not.contain('context.getAsyncBlock(');
     });
 
-    it('should compile async super() through the runtime super-payload helper', function () {
+    it('should compile async super() through invokeSuperMethod', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
@@ -202,11 +214,10 @@ describe('Template Extends', function () {
 
       expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('blockRenderCtx = undefined');
-      expect(source).to.contain('runtime.createSuperInheritancePayload(blockPayload)');
-      expect(source).to.not.contain('blockContext = null');
+      expect(source).to.contain('runtime.invokeSuperMethod(inheritanceState, "content"');
       expect(source).to.not.contain('context.getBlockContract(');
-      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
-      expect(source).to.contain('context.getAsyncSuper(');
+      expect(source).to.not.contain('context.createSuperInheritancePayload(');
+      expect(source).to.not.contain('context.getAsyncSuper(');
     });
 
     it('should compile imported member calls against invokeCallableAsync', function () {
@@ -217,8 +228,8 @@ describe('Template Extends', function () {
       const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'imported-member-boundary.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("m"');
-      expect(source).to.contain('runtime.invokeCallableAsync(');
+      expect(source).to.contain('runtime.memberLookupAsync((runtime.channelLookup("m", currentBuffer)),"hi"');
+      expect(source).to.contain('runtime.callWrapAsync(');
     });
   });
 });

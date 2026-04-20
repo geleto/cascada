@@ -11,6 +11,7 @@ const {
 } = require('./errors');
 const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 const inheritanceCall = require('./inheritance-call');
+const inheritanceState = require('./inheritance-state');
 
 const {
   resolveDuo
@@ -214,6 +215,70 @@ function contextOrChannelLookup(_context, name, currentBuffer) {
   return _context.lookup(name);
 }
 
+function contextOrInheritableChannelLookup(_context, name, currentBuffer, errorContext = null, inheritanceStateValue = null) {
+  const contextValue = _context.lookup(name);
+  if (contextValue !== undefined) {
+    return contextValue;
+  }
+
+  if (!inheritanceStateValue) {
+    return contextOrChannelLookup(_context, name, currentBuffer);
+  }
+
+  return Promise.resolve(
+    observeInheritanceSharedChannel(
+      name,
+      currentBuffer,
+      errorContext,
+      inheritanceStateValue,
+      'snapshot',
+      true
+    )
+  ).catch((error) => {
+    if (error && error.code === inheritanceState.ERR_SHARED_CHANNEL_NOT_FOUND) {
+      return contextOrChannelLookup(_context, name, currentBuffer);
+    }
+    throw error;
+  });
+}
+
+function _resolveOwnedChannelReadFromCurrentBuffer(currentBuffer, channel, requestedName) {
+  if (!isBufferInAncestry(currentBuffer, channel._buffer)) {
+    return {
+      buffer: channel._buffer,
+      channelName: channel._channelName
+    };
+  }
+
+  const canReadThroughCurrentLane =
+    channel._buffer === currentBuffer ||
+    hasLinkedChannelPathToOwner(currentBuffer, channel._buffer, requestedName);
+
+  if (!canReadThroughCurrentLane) {
+    // Phase 9 constructor/block dispatch can read a channel owned by an
+    // ancestor render buffer without there being a fully linked lane path from
+    // the current invocation buffer back to that owner. In that case we must
+    // read from the producer buffer directly rather than enqueueing a snapshot
+    // onto a descendant lane that can never observe the write.
+    return {
+      buffer: channel._buffer,
+      channelName: channel._channelName
+    };
+  }
+
+  // Optional dynamic mode: lazily link current read buffer into the channel
+  // lane. This remains flag/marker-guarded so structural prelinking stays the
+  // default model until the final cross-boundary read policy is cleaned up.
+  if (LOOKUP_DYNAMIC_CHANNEL_LINKING || (channel._buffer !== currentBuffer && channel._allowsInheritanceBoundaryRead)) {
+    ensureReadChannelLink(currentBuffer, channel, requestedName);
+  }
+
+  return {
+    buffer: currentBuffer,
+    channelName: requestedName
+  };
+}
+
 /**
  * Capture the current template symbol value for an explicit composition
  * boundary such as `extends ... with ...`.
@@ -241,6 +306,26 @@ function _getObservationPosition(errorContext) {
 }
 
 function _addObservationCommand(targetBuffer, channelName, pos, mode) {
+  if (
+    targetBuffer &&
+    typeof targetBuffer.isFinished === 'function' &&
+    targetBuffer.isFinished(channelName) &&
+    typeof targetBuffer.findChannel === 'function'
+  ) {
+    const channel = targetBuffer.findChannel(channelName);
+    if (channel) {
+      if (mode === 'snapshot') {
+        return channel._getResultOrThrow();
+      }
+      if (mode === 'isError') {
+        return channel._isErrorNow();
+      }
+      if (mode === 'getError') {
+        return channel._getErrorNow();
+      }
+    }
+  }
+
   if (mode === 'snapshot') {
     return targetBuffer.addSnapshot(channelName, pos);
   }
@@ -267,6 +352,12 @@ function _resolveSharedObservationTarget(currentBuffer, name) {
   }
 
   if (isBufferInAncestry(currentBuffer, channel._buffer)) {
+    if (channel._buffer !== currentBuffer && channel._allowsInheritanceBoundaryRead) {
+      return {
+        buffer: channel._buffer,
+        channelName: channel._channelName
+      };
+    }
     return {
       buffer: currentBuffer,
       channelName: name
@@ -322,16 +413,8 @@ function channelLookup(name, currentBuffer) {
   if (isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel)) {
     return undefined;
   }
-  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
-    // Optional dynamic mode: lazily link current read buffer into the channel lane.
-    // This is intentionally flag-guarded so structural prelinking remains the default model,
-    // but dynamic compositions can opt in without changing compiler wiring.
-    if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
-      ensureReadChannelLink(currentBuffer, channel, name);
-    }
-    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
-  }
-  return channel._buffer.addSnapshot(channel._channelName, { lineno: 0, colno: 0 });
+  const target = _resolveOwnedChannelReadFromCurrentBuffer(currentBuffer, channel, name);
+  return target.buffer.addSnapshot(target.channelName, { lineno: 0, colno: 0 });
 }
 
 /**
@@ -402,6 +485,25 @@ function isBufferInAncestry(buffer, ancestor) {
   return false;
 }
 
+function hasLinkedChannelPathToOwner(buffer, ownerBuffer, channelName) {
+  // A descendant buffer can only observe an ancestor-owned channel through its
+  // own lane if every parent/child edge on the way back to the owner is linked
+  // for that channel name. Constructor-boundary/template dispatch failures in
+  // Phase 9 showed that mere ancestry is not enough.
+  let current = buffer;
+  while (current && current !== ownerBuffer) {
+    const parent = current.parent;
+    if (!parent || typeof parent.hasLinkedBuffer !== 'function') {
+      return false;
+    }
+    if (!parent.hasLinkedBuffer(current, channelName)) {
+      return false;
+    }
+    current = parent;
+  }
+  return current === ownerBuffer;
+}
+
 module.exports = {
   memberLookup,
   memberLookupScriptRaw,
@@ -410,6 +512,7 @@ module.exports = {
   observeInheritanceSharedChannel,
   channelLookup,
   contextOrChannelLookup,
+  contextOrInheritableChannelLookup,
   captureCompositionValue,
   contextOrScriptChannelLookup,
   captureCompositionScriptValue,

@@ -93,14 +93,28 @@ module.exports = class CompileEmit {
       const linkedChannelsArg = Array.isArray(linkedChannels) && linkedChannels.length > 0
         ? JSON.stringify(linkedChannels)
         : 'null';
-      this.line(
-        `let ${this.compiler.buffer.currentBuffer} = ` +
-        `(compositionMode === runtime.COMPONENT_COMPOSITION_MODE && parentBuffer)` +
-        ` ? parentBuffer` +
-        ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
-      );
       if (!this.compiler.scriptMode) {
-        this.line(`let ${this.compiler.buffer.currentTextChannelVar} = runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${this.compiler.buffer.currentTextChannelName}", "text", context, null);`);
+        this.line(
+          `let ${this.compiler.buffer.currentBuffer} = ` +
+          `(compositionMode && parentBuffer)` +
+          ` ? parentBuffer` +
+          ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
+        );
+      } else {
+        this.line(
+          `let ${this.compiler.buffer.currentBuffer} = ` +
+          `(compositionMode === runtime.COMPONENT_COMPOSITION_MODE && parentBuffer)` +
+          ` ? parentBuffer` +
+          ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
+        );
+      }
+      if (!this.compiler.scriptMode) {
+        this.line(
+          `let ${this.compiler.buffer.currentTextChannelVar} = ` +
+          `((compositionMode && parentBuffer && typeof ${this.compiler.buffer.currentBuffer}.getChannel === "function")` +
+          ` ? ${this.compiler.buffer.currentBuffer}.getChannel("${this.compiler.buffer.currentTextChannelName}")` +
+          ` : runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${this.compiler.buffer.currentTextChannelName}", "text", context, null));`
+        );
       }
     } else {
       this.compiler.buffer.initManagedBuffer(

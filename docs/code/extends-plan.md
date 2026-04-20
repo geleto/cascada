@@ -665,13 +665,19 @@ Scope:
   - block registries, deferred export state, inheritance payload bookkeeping,
     and related shared structural state should live on the execution-state
     object instead of `Context._sharedStructuralState`
-  - update async root/block entry signatures to accept and thread that
-    execution-state object directly rather than hiding it inside context forks
+    - update async root/block entry signatures to accept and thread that
+      execution-state object directly rather than hiding it inside context forks
+  - this Phase 9 cleanup may stop short of moving the remaining shared
+    block/export state off `Context` if doing so would entangle the untouched
+    sync/Nunjucks compatibility path; any residue must be called out and
+    finished in Phase 10 rather than being treated as complete here
 - remove first:
   - remove the remaining template/block legacy super helpers once template
     blocks use the shared constructor/method runtime path:
     - `Context.getAsyncSuper(...)`
-    - `Context.getSyncSuper(...)`
+    - keep `Context.getSyncSuper(...)` for the untouched sync/Nunjucks
+      compatibility path; defer its fate to Phase 10 cleanup instead of
+      coupling Phase 9 async-template work back to sync inheritance
   - remove the old async template inheritance pre/post-extends flow before
     templates switch to the constructor/method model
   - remove the template-only compiler capture bridge in
@@ -716,6 +722,9 @@ Scope:
       `_normalizeMethodMeta(...)` once both sides produce one canonical
       callable metadata shape instead of normalizing mixed entry/meta inputs at
       dispatch time
+      - if constructor admission still passes raw entries at the end of Phase
+        9, finish that canonical-meta conversion in Phase 10 before collapsing
+        `_normalizeMethodMeta(...)` to a validation-only assertion
   - drop script-only dead payload-local-capture setup once the shared
     script/template entry-compilation path is split cleanly:
     - stop emitting the unused script-method `payloadLocalCapturesVar` /
@@ -727,6 +736,14 @@ Scope:
   - remove `isBlockedInheritanceBoundaryChannelRead(...)` in `src/runtime/lookup.js`
     once cross-template bare-name reads are no longer part of the template
     inheritance path
+  - remove the temporary dual shared-declaration metadata source once template
+    shared declarations always arrive through transformed inheritance metadata:
+    - drop the raw `node.findAll(nodes.ChannelDeclaration)` fallback in
+      `CompilerCommon._getSharedDeclarations(...)`
+    - keep one authoritative metadata source for scripts and templates
+  - if the template-side inheritance metadata source is not fully unified in
+    this phase, schedule the remaining callable/shared metadata unification in
+    Phase 10 instead of leaving the raw-template fallback implicit
 
 Tests:
 
@@ -783,6 +800,12 @@ Scope:
       - remove `runtime.allowInheritanceBoundaryRead(...)` and its remaining
         compiler/runtime bridge hooks once import/extern/template visibility
         paths no longer depend on that escape hatch
+      - decide the final cross-boundary read rule for `channelLookup(...)`
+        after template/component/runtime cleanup stabilizes:
+        - either keep the current producer-buffer fallback when there is no
+          fully linked lane path back to the owner buffer
+        - or replace it with a stricter explicit-link / explicit-payload-only
+          model if that better matches the final architecture
     - collapse the remaining helper-owned admission-buffer scaffolding in
       `src/runtime/inheritance-call.js` if it still exists after the main
       caller-side invocation model is stable:
@@ -818,9 +841,54 @@ Scope:
         before exposing the instance, and collapse it if the later shared
         caller-side lifecycle model makes that eager wait unnecessary
       - replace the current component-mode sentinel string
-        (`componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE`)
-        with a cleaner final marker/API once template integration settles the
-        shared inheritance-state surface
+    - remove remaining async-template-only legacy `Context` helpers and state
+      once dynamic/static compatibility work no longer needs them:
+      - `beginAsyncExtendsBlockRegistration(...)` /
+        `finishAsyncExtendsBlockRegistration(...)`
+      - `Context.getAsyncBlock(...)`
+      - `setExtendsComposition(...)` / `getExtendsComposition(...)`
+      - template-local capture / inheritance-payload helpers still left on
+        `Context`
+      - move the last shared block/export state off `Context` and onto the
+        explicit per-render execution-state object if Phase 9 left that bridge
+        in place for sync/Nunjucks compatibility
+    - decide the final async-template compatibility surface for legacy block
+      registry metadata:
+      - remove or formally keep the empty `AsyncTemplate.blocks` /
+        `AsyncTemplate.blockContracts` surface now that async inheritance no
+        longer uses the old block-registry runtime path
+    - revisit the constructor/script-vs-template callable wrapper duplication
+      in `src/compiler/inheritance.js` and collapse it if the Phase 9 shared
+      callable-entry model is stable enough to support one helper-owned
+      emission path
+    - revisit the remaining async template runtime-shape asymmetries once the
+      final template/component model settles:
+      - decide whether template block invocation should keep snapshotting the
+        full `context.getVariables()` map or move onto the narrower
+        `getCompositionContextVariables()`-style contract used by script
+        methods
+      - decide whether the static-only template `__parentTemplate` declaration
+        remains useful as a shared compiler shape or should be removed once the
+        dynamic/static parent-resolution path is finalized
+      - split `currentCompilingBlock` if it still acts as both "current block
+        body being compiled" state and the sentinel for "top-level block
+        definition vs nested render path"
+      - revisit the promise-wrapped `runtime.markSafe(runtime.invokeSuperMethod(...))`
+        template path before any later text-buffer/safe-string pipeline cleanup
+        changes how promised safe values are flattened
+      - revisit emitted temporary-name readability for shared block payload /
+        context helpers if `_tmpid()`-style names are still making generated
+        async template output harder to inspect
+    - replace the current component-mode sentinel
+      (`componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE`)
+      with a cleaner final marker/API once template integration settles the
+      shared inheritance-state surface
+    - finish the remaining template metadata-source unification if Phase 9
+      still leaves any raw `Block` / `ChannelDeclaration` rescans in place:
+      - remove the `node.findAll(nodes.ChannelDeclaration)` fallback in
+        `CompilerCommon._getSharedDeclarations(...)`
+      - stop switching between transformed method metadata and raw template
+        `Block` nodes when only metadata assembly is needed
       - decide the final policy for rejected async component declarations that
         are never observed or invoked by the caller, instead of leaving that
         behavior to the broader "unused async declaration" fallback

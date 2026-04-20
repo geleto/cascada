@@ -1286,11 +1286,9 @@ class CompilerAsync extends CompilerBaseAsync {
   _compileAsyncRootBody(node) {
     this.inheritance.emitAsyncRootStateInitialization(COMPILED_METHODS_VAR, COMPILED_SHARED_SCHEMA_VAR);
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line(`let ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = null;`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
-      if (this.hasExtends) {
-        this.emit.line(`let ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = null;`);
-      }
     }
     const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
@@ -1312,8 +1310,8 @@ class CompilerAsync extends CompilerBaseAsync {
         this.emit.line('if (inheritanceState) { inheritanceState.constructorBoundaryPromise = null; }');
       }
     } else {
-      this._compileChildren(node, null);
-      this.emit.line('context.resolveExports();');
+      this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState);`);
+      this.emit.line('if (inheritanceState) { inheritanceState.constructorBoundaryPromise = ' + CONSTRUCTOR_BOUNDARY_PROMISE_VAR + '; }');
     }
     this.inheritance.emitAsyncRootCompletion(node);
   }
@@ -1323,9 +1321,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this._compileAsyncRootBody(node);
     this.emit.endEntryFunction(node, true);
     this.inBlock = true;
-    if (this.scriptMode) {
-      this.inheritance.compileAsyncScriptConstructorEntry(node);
-    }
+    this.inheritance.compileAsyncConstructorEntry(node);
     return this.inheritance.compileAsyncBlockEntries(node);
   }
 
@@ -1376,7 +1372,7 @@ class CompilerAsync extends CompilerBaseAsync {
       const blockName = `b_${block.name.value}`;
       this.emit.line(`${blockName}: ${blockName},`);
     });
-    this.emit.line(`blockContracts: ${JSON.stringify(this.inheritance.collectBlockContracts(node))},`);
+    this.emit.line(`b___constructor__: b___constructor__,`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line(`methods: ${COMPILED_METHODS_VAR},`);
     this.emit.line(`sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);

@@ -428,72 +428,31 @@ describe('Extends Foundation', function () {
       expect(rootBuffer.getOwnChannel('theme')).to.be(parentChannel);
     });
 
-    it('should clear async extends registration state so a later cycle can start fresh', async function () {
+    it('should remove legacy async extends registration helpers from Context', function () {
       if (!Context) {
         this.skip();
         return;
       }
 
-      const context = new Context({}, {}, env, 'child.njk', false);
-
-      context.beginAsyncExtendsBlockRegistration();
-      const firstPromise = context.asyncExtendsBlocksPromise;
-
-      expect(firstPromise).to.be.ok();
-      expect(firstPromise.then).to.be.a('function');
-
-      await context.finishAsyncExtendsBlockRegistration();
-      await firstPromise;
-
-      expect(context.asyncExtendsBlocksPromise).to.be(undefined);
-      expect(context.asyncExtendsBlocksResolver).to.be(undefined);
-      expect(context.asyncExtendsBlocksPendingCount).to.be(undefined);
-
-      context.beginAsyncExtendsBlockRegistration();
-      const secondPromise = context.asyncExtendsBlocksPromise;
-
-      expect(secondPromise).to.be.ok();
-      expect(secondPromise.then).to.be.a('function');
-      expect(secondPromise).not.to.be(firstPromise);
-
-      await context.finishAsyncExtendsBlockRegistration();
-      await secondPromise;
+      expect(Context.prototype.beginAsyncExtendsBlockRegistration).to.be(undefined);
+      expect(Context.prototype.getAsyncBlock).to.be(undefined);
+      expect(Context.prototype.finishAsyncExtendsBlockRegistration).to.be(undefined);
     });
 
-    it('should keep async extends registration state alive until every pending registration finishes', async function () {
+    it('should remove legacy template payload helpers from Context', function () {
       if (!Context) {
         this.skip();
         return;
       }
 
-      const context = new Context({}, {}, env, 'child.njk', false);
-
-      context.beginAsyncExtendsBlockRegistration();
-      context.beginAsyncExtendsBlockRegistration();
-      const pendingPromise = context.asyncExtendsBlocksPromise;
-
-      expect(pendingPromise).to.be.ok();
-      expect(pendingPromise.then).to.be.a('function');
-      expect(context.asyncExtendsBlocksPendingCount).to.be(2);
-
-      let settled = false;
-      pendingPromise.then(() => {
-        settled = true;
-      });
-
-      await context.finishAsyncExtendsBlockRegistration();
-      expect(context.asyncExtendsBlocksPendingCount).to.be(1);
-      expect(context.asyncExtendsBlocksPromise).to.be(pendingPromise);
-      await Promise.resolve();
-      expect(settled).to.be(false);
-
-      await context.finishAsyncExtendsBlockRegistration();
-      await pendingPromise;
-
-      expect(settled).to.be(true);
-      expect(context.asyncExtendsBlocksPromise).to.be(undefined);
-      expect(context.asyncExtendsBlocksResolver).to.be(undefined);
-      expect(context.asyncExtendsBlocksPendingCount).to.be(undefined);
+      expect(Context.prototype.getAsyncSuper).to.be(undefined);
+      expect(Context.prototype.setExtendsComposition).to.be(undefined);
+      expect(Context.prototype.getExtendsComposition).to.be(undefined);
+      expect(Context.prototype.setTemplateLocalCaptures).to.be(undefined);
+      expect(Context.prototype.getTemplateLocalCaptures).to.be(undefined);
+      expect(Context.prototype.createInheritancePayload).to.be(undefined);
+      expect(Context.prototype.createSuperInheritancePayload).to.be(undefined);
+      expect(Context.prototype.prepareInheritancePayloadForBlock).to.be(undefined);
     });
   });
 
@@ -926,7 +885,7 @@ describe('Extends Foundation', function () {
       expect(result).to.be('done');
     });
 
-    it('should share one structural-state object across context forks', function () {
+    it('should share deferred-export and sync-block state across context forks', function () {
       if (!Context) {
         this.skip();
         return;
@@ -936,7 +895,6 @@ describe('Extends Foundation', function () {
       ctx.blocks.demo = ['block'];
       ctx.exportResolveFunctions.value = () => 'x';
       ctx.exportChannels.value = { channelName: 'value', buffer: { id: 1 } };
-      ctx.inheritanceLocalCapturesByTemplate.root = { theme: 'dark' };
 
       const forkedPath = ctx.forkForPath('child.script');
       const forkedComposition = ctx.forkForComposition('parent.script', { local: true }, { site: 'Example' }, { extern: true });
@@ -945,13 +903,13 @@ describe('Extends Foundation', function () {
       expect(forkedComposition._sharedStructuralState).to.be(ctx._sharedStructuralState);
       expect(forkedPath.blocks).to.be(ctx.blocks);
       expect(forkedComposition.exportResolveFunctions).to.be(ctx.exportResolveFunctions);
-      expect(forkedComposition.inheritanceLocalCapturesByTemplate).to.be(ctx.inheritanceLocalCapturesByTemplate);
+      expect(forkedComposition.exportChannels).to.be(ctx.exportChannels);
 
       forkedPath.blocks.later = ['new-block'];
-      forkedComposition.inheritanceLocalCapturesByTemplate.parent = { user: 'Ada' };
+      forkedComposition.exportChannels.other = { channelName: 'other', buffer: { id: 2 } };
 
       expect(ctx.blocks.later).to.eql(['new-block']);
-      expect(ctx.inheritanceLocalCapturesByTemplate.parent).to.eql({ user: 'Ada' });
+      expect(ctx.exportChannels.other.channelName).to.be('other');
     });
   });
 
