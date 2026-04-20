@@ -377,6 +377,12 @@ Scope:
   - include `compositionPayload` in the shared metadata object for plain
     extends chains
   - keep upward propagation unchanged across multiple levels
+- once the constructor split lands:
+  - script `__constructor__` should point at its own compiled function rather
+    than aliasing `root`
+  - any remaining template use of `root` as the constructor entry stays
+    temporary until Phase 9 moves templates onto the same constructor/method
+    model
 - remove first:
   - replace the temporary script-transform source-order bridge
     `_preExtendsMovedMethodNode` with direct source-order validation before
@@ -392,8 +398,8 @@ Scope:
     - `recordTemporaryCompositionAssignedValue(...)` /
       `getTemporaryCompositionAssignedValue(...)` on channels
   - if any narrow composition-capture helper still survives after this phase,
-    it must no longer depend on channel-side "latest assigned value" escape
-    hatches
+    it must be just an ordered channel lookup plus ordinary context fallback,
+    not a channel-side "latest assigned value" escape hatch
 
 Tests:
 
@@ -519,6 +525,12 @@ Scope:
 
 - `component ... as ns`
 - `compositionPayload`
+- decide the ownership of `src/runtime/inheritance-inputs.js` on the component
+  path:
+  - if component startup needs shared-input preload/validation helpers, move
+    that module under explicit component ownership here
+  - otherwise treat it as leftover Phase 4/5 scaffolding and schedule its
+    removal in Phase 10 instead of letting it linger as an orphaned runtime API
 - component-specific `compositionPayload` forms:
   - `component ... with context`
   - `component ... with theme, id`
@@ -574,6 +586,9 @@ Scope:
   - stop switching between `MethodDefinition` and `Block` for metadata
     collection
   - move both onto one callable-entry path for metadata and startup assembly
+- finish the constructor-target unification started in Phase 5:
+  - remove the remaining template-side `__constructor__ -> root` aliasing
+  - compile template `__constructor__` as its own callable entry as well
 - move shared render-structure ownership off `Context` and onto an explicit
   per-render execution-state argument passed to async entry functions:
   - `Context` should keep lexical/render/extern variable scope concerns
@@ -614,6 +629,9 @@ Scope:
     - `beginAsyncExtendsBlockRegistration(...)` /
       `finishAsyncExtendsBlockRegistration(...)`
     - `asyncExtendsBlocksPromise` / resolver / pending-count state
+  - when this state moves off `Context`, remove the remaining prototype
+    accessor indirection and lazy accessor guards that only exist to proxy
+    `_sharedStructuralState`
   - remove `isBlockedInheritanceBoundaryChannelRead(...)` in `src/runtime/lookup.js`
     once cross-template bare-name reads are no longer part of the template
     inheritance path
@@ -661,6 +679,17 @@ Scope:
     value over plain shared metadata objects and helpers:
     - `InheritanceMethodRegistry`
     - `InheritanceSharedRegistry`
+  - remove leftover bootstrap/API defensive code once the final ownership
+    boundaries are settled:
+    - drop the unreachable `bootstrapInheritanceMetadata(...)` fallback that
+      creates a new inheritance state when the caller already owns creation
+    - remove `src/runtime/inheritance-inputs.js` if Phase 8 does not adopt it
+  - clean up remaining low-risk parser/compiler consistency nits that are not
+    worth carrying as architecture work:
+    - parser recovery around `parseCompositionWithClause(...)` consuming a
+      symbol before rejecting object-style trailing named inputs
+    - extract helper-based save/restore for compiler buffer context if the
+      current manual restoration pattern still exists
 
 Tests:
 

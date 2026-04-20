@@ -402,7 +402,6 @@ class VarChannel extends Channel {
     // Keep declaration-only var channels aligned with `none` semantics unless
     // a caller provides an explicit initializer.
     super(buffer, channelName, context, channelType, initialValue, null);
-    this._latestAssignedValue = initialValue;
   }
 
   invoke(value) {
@@ -412,20 +411,6 @@ class VarChannel extends Channel {
 
   _getCurrentResult() {
     return this._target;
-  }
-
-  // Temporary Step C bridge for `extends ... with ...`.
-  // Remove this completely once composition capture no longer needs a current-
-  // assigned-value escape hatch and later payload work makes the bridge unnecessary.
-  recordTemporaryCompositionAssignedValue(value) {
-    this._latestAssignedValue = value;
-  }
-
-  // Temporary Step C bridge for `extends ... with ...`.
-  // This is intentionally not a general runtime read API and should disappear
-  // completely when the bridge-era composition capture path is removed.
-  getTemporaryCompositionAssignedValue() {
-    return this._latestAssignedValue;
   }
 }
 

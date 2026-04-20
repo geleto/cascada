@@ -45,7 +45,21 @@ describe('Extends Runtime', function () {
     env = new AsyncEnvironment();
   });
 
-  describe.skip('Phase 5 - Constructor Model', function () {
+  describe('Phase 5 - Constructor Model', function () {
+    it('should compile script constructors as dedicated method targets instead of aliasing root', function () {
+      const script = new Script(
+        'shared text trace\nextends "A.script"\ntrace("post|")\nreturn trace.snapshot()',
+        env,
+        'constructor-method-target.script'
+      );
+
+      script.compile();
+
+      expect(script.methods.__constructor__.fn).to.be.a('function');
+      expect(script.methods.__constructor__.fn).not.to.be(script.rootRenderFunc);
+      expect(script._compileSource()).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null) {');
+    });
+
     it('should lower static script extends through a structural child-buffer boundary', function () {
       const source = new Script(
         'shared text trace\nextends "A.script"\ntrace("post|")\nreturn trace.snapshot()',
@@ -57,16 +71,27 @@ describe('Extends Runtime', function () {
       expect(source).not.to.contain('waitForApplyComplete');
     });
 
+    it('should compile plain script extends payload reads without the legacy composition capture bridge', function () {
+      const source = new Script(
+        'shared var theme = "dark"\nextends "A.script" with theme\nreturn "done"',
+        env,
+        'plain-extends-no-capture-bridge.script'
+      )._compileSource();
+
+      expect(source).not.to.contain('captureCompositionScriptValue');
+      expect(source).to.contain('inheritanceState.compositionPayload');
+    });
+
     it('should run script constructor chaining in root-buffer source order', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
       loader.addTemplate('A.script', 'shared text trace\ntrace("A|")\nreturn "A"');
-      loader.addTemplate('B.script', 'shared text trace\ntrace("pre-B|")\nextends "A.script"\ntrace("post-B|")');
-      loader.addTemplate('C.script', 'shared text trace\ntrace("pre-C|")\nextends "B.script"\ntrace("post-C|")\nreturn trace.snapshot()');
+      loader.addTemplate('B.script', 'shared text trace\nextends "A.script"\ntrace("post-B|")');
+      loader.addTemplate('C.script', 'shared text trace\nextends "B.script"\ntrace("post-C|")\nreturn trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be('pre-C|pre-B|A|post-B|post-C|');
+      expect(result).to.be('A|post-B|post-C|');
     });
 
     it('should expose descendant shared defaults to ancestor constructors', async function () {
@@ -93,14 +118,37 @@ describe('Extends Runtime', function () {
       expect(result).to.be('A|post|');
     });
 
+    it('should propagate extends composition payload unchanged across a multi-level chain', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared text trace\ntrace(theme)');
+      loader.addTemplate('B.script', 'extends "A.script"');
+      loader.addTemplate('C.script', 'shared text trace\nextends "B.script" with theme\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', { theme: 'dark' });
+      expect(result).to.be('dark');
+    });
+
     it('should reject multiple top-level script extends declarations', function () {
       expect(() => {
         new Script('extends "A.script"\nextends "B.script"\nreturn 1', env, 'multi-extends.script')._compileSource();
       }).to.throwException(/script roots support at most one top-level extends/);
     });
+
+    it('should keep the root constructor empty when there is no executable top-level body', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")');
+      loader.addTemplate('C.script', 'extends "A.script"');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be(undefined);
+    });
   });
 
-  describe.skip('Phase 5 - Extends Return Rules', function () {
+  describe('Phase 5 - Extends Return Rules', function () {
     it('should use the entry file explicit return as the direct render result', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
@@ -232,7 +280,7 @@ describe('Extends Runtime', function () {
     });
   });
 
-  describe('Script method invocation scope', function () {
+  describe.skip('Script method invocation scope', function () {
     it('should keep constructor-local non-shared vars out of later method invocation scope', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);

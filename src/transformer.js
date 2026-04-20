@@ -3,6 +3,7 @@
 var nodes = require('./nodes');
 var lib = require('./lib');
 var scopeBoundaries = require('./compiler/scope-boundaries');
+const { getScriptExtendsSourceOrderViolation } = require('./compiler/validation');
 
 var sym = 0;
 function gensym() {
@@ -244,6 +245,21 @@ function renameConflictingDeclarations(ast, idPool) {
   const scopeStack = [new Map()];
   const declarationCounts = new Map();
   const scopeRules = scopeBoundaries;
+  function getNonBoundaryTraversalFields(node, boundarySet) {
+    const fields = node.fields.filter((field) => !boundarySet.has(field));
+    if (node instanceof nodes.Root) {
+      fields.sort((left, right) => {
+        if (left === 'children') {
+          return -1;
+        }
+        if (right === 'children') {
+          return 1;
+        }
+        return 0;
+      });
+    }
+    return fields;
+  }
 
   function currentScope() {
     return scopeStack[scopeStack.length - 1];
@@ -330,7 +346,7 @@ function renameConflictingDeclarations(ast, idPool) {
     }
 
     // Non-boundary fields remain in the current lexical scope.
-    node.fields.forEach((field) => {
+    getNonBoundaryTraversalFields(node, boundarySet).forEach((field) => {
       if (boundarySet.has(field)) {
         return;
       }
@@ -383,19 +399,23 @@ function extractScriptInheritanceMetadata(ast) {
   }
 
   const hasDirectExtends = (ast.children || []).some((child) => child instanceof nodes.Extends);
+  if (hasDirectExtends) {
+    const violation = getScriptExtendsSourceOrderViolation(ast);
+    if (violation) {
+      const error = new Error(violation.message);
+      if (violation.node) {
+        error.lineno = violation.node.lineno;
+        error.colno = violation.node.colno;
+      }
+      throw error;
+    }
+  }
   const methodNodes = [];
   const sharedDeclarations = [];
   const remainingChildren = [];
-  let seenExtends = false;
 
   (ast.children || []).forEach((child) => {
-    if (child instanceof nodes.Extends) {
-      seenExtends = true;
-    }
     if (child instanceof nodes.Block) {
-      if (hasDirectExtends && !seenExtends && !ast._preExtendsMovedMethodNode) {
-        ast._preExtendsMovedMethodNode = child;
-      }
       methodNodes.push(new nodes.MethodDefinition(
         child.lineno,
         child.colno,

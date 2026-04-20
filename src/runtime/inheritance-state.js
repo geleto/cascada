@@ -83,10 +83,6 @@ class InheritanceSharedRegistry {
     registerInheritanceSharedSchema({ sharedSchema: this }, sharedSchema, context);
     return this;
   }
-
-  has(name) {
-    return Object.prototype.hasOwnProperty.call(this, name);
-  }
 }
 
 class InheritanceResolutionState {

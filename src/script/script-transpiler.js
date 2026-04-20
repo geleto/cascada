@@ -1287,6 +1287,7 @@ class ScriptTranspiler {
   }
 
   _processSharedDeclaration(parseResult, lineIndex) {
+    const firstWord = this._getFirstWord(parseResult.codeContent);
     const decl = this._parseSharedDeclaration(parseResult.codeContent, lineIndex);
     if (!decl) {
       throw new Error(`Invalid shared declaration at line ${lineIndex + 1}`);
@@ -1296,7 +1297,7 @@ class ScriptTranspiler {
 
     parseResult.lineType = 'TAG';
     parseResult.tagName = 'shared';
-    parseResult.codeContent = parseResult.codeContent.substring('shared'.length + 1).trim();
+    parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1).trim();
     parseResult.blockType = null;
   }
 

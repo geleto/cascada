@@ -222,7 +222,11 @@ function contextOrChannelLookup(_context, name, currentBuffer) {
  * composition payload.
  */
 function captureCompositionValue(_context, name, currentBuffer) {
-  return captureCompositionValueImpl(name, currentBuffer, () => _context.lookup(name));
+  const channelRead = channelLookup(name, currentBuffer);
+  if (channelRead !== undefined) {
+    return channelRead;
+  }
+  return _context.lookup(name);
 }
 
 /**
@@ -270,41 +274,11 @@ function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext
 }
 
 function captureCompositionScriptValue(context, name, currentBuffer, errorContext = null) {
-  return captureCompositionValueImpl(
-    name,
-    currentBuffer,
-    () => context.lookupScript(name, errorContext)
-  );
-}
-
-const COMPOSITION_CAPTURE_UNAVAILABLE = Symbol('COMPOSITION_CAPTURE_UNAVAILABLE');
-
-// Temporary Step C bridge for `extends ... with ...`.
-// Revisit or remove this once later inheritance payload work decides whether
-// composition capture remains a narrow runtime primitive or is fully subsumed
-// by explicit payload construction.
-function captureCompositionValueImpl(name, currentBuffer, fallbackLookup) {
-  const channel = currentBuffer.findChannel(name);
-  if (channel) {
-    const captured = getCurrentCompositionChannelValue(channel);
-    if (captured !== COMPOSITION_CAPTURE_UNAVAILABLE) {
-      return captured;
-    }
+  const channelRead = channelLookup(name, currentBuffer);
+  if (channelRead !== undefined) {
+    return channelRead;
   }
-  return fallbackLookup();
-}
-
-// Temporary Step C bridge for `extends ... with ...`.
-// This is intentionally separate from ordered channel reads and must not be
-// treated as a general replacement for snapshot-based observation.
-function getCurrentCompositionChannelValue(channel) {
-  if (!channel) {
-    return COMPOSITION_CAPTURE_UNAVAILABLE;
-  }
-  if (typeof channel.getTemporaryCompositionAssignedValue === 'function') {
-    return channel.getTemporaryCompositionAssignedValue();
-  }
-  return COMPOSITION_CAPTURE_UNAVAILABLE;
+  return context.lookupScript(name, errorContext);
 }
 
 // Temporary Step C fence until later payload work removes the need for linked

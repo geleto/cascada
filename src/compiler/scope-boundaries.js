@@ -18,6 +18,7 @@ const SCOPE_BOUNDARY_FIELDS_BY_NODE = Object.freeze({
   Caller: Object.freeze(['body']),
   Capture: Object.freeze(['body']),
   Block: Object.freeze(['body']),
+  MethodDefinition: Object.freeze(['body']),
   // Set/CallAssign capture bodies are not regular node.fields but are lexical scopes.
   Set: Object.freeze(['body']),
   CallAssign: Object.freeze(['body'])

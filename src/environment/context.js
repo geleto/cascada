@@ -143,9 +143,9 @@ class Context extends Obj {
       this.asyncExtendsBlocksPromise = new Promise((resolve) => {
         this.asyncExtendsBlocksResolver = resolve;
       }).then(() => {
-        delete this.asyncExtendsBlocksPromise;
-        delete this.asyncExtendsBlocksResolver;
-        delete this.asyncExtendsBlocksPendingCount;
+        this.asyncExtendsBlocksPromise = undefined;
+        this.asyncExtendsBlocksResolver = undefined;
+        this.asyncExtendsBlocksPendingCount = undefined;
       });
     }
     this.asyncExtendsBlocksPendingCount = (this.asyncExtendsBlocksPendingCount || 0) + 1;

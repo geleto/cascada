@@ -8,6 +8,9 @@ const {
 } = require('./validation');
 const CompilerBaseAsync = require('./compiler-base-async');
 const CompileBuffer = require('./buffer');
+const {
+  CONSTRUCTOR_BOUNDARY_PROMISE_VAR
+} = require('./inheritance');
 
 const RETURN_CHANNEL_NAME = '__return__';
 const COMPILED_METHODS_VAR = '__compiledMethods';
@@ -1023,6 +1026,9 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeExtends(node) {
+    if (this.scriptMode) {
+      return {};
+    }
     return {
       uses: ['__parentTemplate'],
       mutates: ['__parentTemplate']
@@ -1221,6 +1227,9 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
+      if (this.hasExtends) {
+        this.emit.line(`let ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = null;`);
+      }
     }
     const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
@@ -1228,13 +1237,21 @@ class CompilerAsync extends CompilerBaseAsync {
     for (const name of sequenceLocks) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
-    if (this.hasStaticExtends && !this.hasDynamicExtends) {
+    if (!this.scriptMode && this.hasStaticExtends && !this.hasDynamicExtends) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
     }
     this._emitRootExternInitialization(node);
     this.inheritance.emitRootSharedDeclarations(node);
-    this._compileChildren(node, null);
-    this.emit.line('context.resolveExports();');
+    if (this.scriptMode) {
+      if (this.hasExtends) {
+        this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState);`);
+      } else {
+        this.emit.line(`b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState);`);
+      }
+    } else {
+      this._compileChildren(node, null);
+      this.emit.line('context.resolveExports();');
+    }
     this.inheritance.emitAsyncRootCompletion(node);
   }
 
@@ -1243,6 +1260,9 @@ class CompilerAsync extends CompilerBaseAsync {
     this._compileAsyncRootBody(node);
     this.emit.endEntryFunction(node, true);
     this.inBlock = true;
+    if (this.scriptMode) {
+      this.inheritance.compileAsyncScriptConstructorEntry(node);
+    }
     return this.inheritance.compileAsyncBlockEntries(node);
   }
 
@@ -1322,7 +1342,7 @@ class CompilerAsync extends CompilerBaseAsync {
       child.targets[0] &&
       child.targets[0].value === '__parentTemplate'
     );
-    if (hasExtendsNode && !hasParentTemplateDeclaration) {
+    if (!this.scriptMode && hasExtendsNode && !hasParentTemplateDeclaration) {
       declares.push({ name: '__parentTemplate', type: 'var', initializer: null, internal: true });
     }
 

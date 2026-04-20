@@ -129,24 +129,24 @@ function describePreExtendsRootStatement(node) {
   return `${node.typename || 'statement'} statement`;
 }
 
-function validateScriptExtendsSourceOrder(compiler, node) {
-  if (!compiler.scriptMode || !node || !Array.isArray(node.children)) {
-    return;
+function getScriptExtendsSourceOrderViolation(node) {
+  if (!node || !Array.isArray(node.children)) {
+    return null;
+  }
+  const directExtendsNodes = node.children.filter((child) => child instanceof nodes.Extends);
+  if (directExtendsNodes.length > 1) {
+    const extraExtendsNode = directExtendsNodes[1];
+    return {
+      node: extraExtendsNode,
+      message: 'script roots support at most one top-level extends declaration'
+    };
   }
 
-  if (node._preExtendsMovedMethodNode) {
-    const offendingNode = node._preExtendsMovedMethodNode;
-    compiler.fail(
-      'unexpected method declaration before extends; only shared declarations are allowed before extends',
-      offendingNode.lineno,
-      offendingNode.colno,
-      offendingNode
-    );
-  }
-
-  const firstDirectExtendsIndex = node.children.findIndex((child) => child instanceof nodes.Extends);
+  const firstDirectExtendsIndex = directExtendsNodes.length > 0
+    ? node.children.indexOf(directExtendsNodes[0])
+    : -1;
   if (firstDirectExtendsIndex === -1) {
-    return;
+    return null;
   }
 
   for (let i = 0; i < firstDirectExtendsIndex; i++) {
@@ -155,13 +155,31 @@ function validateScriptExtendsSourceOrder(compiler, node) {
       continue;
     }
     const offendingNodeDescription = describePreExtendsRootStatement(child);
-    compiler.fail(
-      `unexpected ${offendingNodeDescription} before extends; only shared declarations are allowed before extends`,
-      child.lineno,
-      child.colno,
-      child
-    );
+    return {
+      node: child,
+      message: `unexpected ${offendingNodeDescription} before extends; only shared declarations are allowed before extends`
+    };
   }
+
+  return null;
+}
+
+function validateScriptExtendsSourceOrder(compiler, node) {
+  if (!compiler.scriptMode) {
+    return;
+  }
+
+  const violation = getScriptExtendsSourceOrderViolation(node);
+  if (!violation) {
+    return;
+  }
+
+  compiler.fail(
+    violation.message,
+    violation.node.lineno,
+    violation.node.colno,
+    violation.node
+  );
 }
 
 
@@ -173,5 +191,6 @@ module.exports = {
   validateChannelDeclarationNode,
   validateSinkSnapshotInGuard,
   validateChannelObservationCall,
+  getScriptExtendsSourceOrderViolation,
   validateScriptExtendsSourceOrder
 };

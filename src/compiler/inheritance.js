@@ -2,6 +2,7 @@
 
 const nodes = require('../nodes');
 const CompileBuffer = require('./buffer');
+const CONSTRUCTOR_BOUNDARY_PROMISE_VAR = '__constructorBoundaryPromise';
 
 /**
  * CompileInheritance - Handles template inheritance operations
@@ -491,18 +492,60 @@ class CompileInheritance {
     }
   }
 
-  emitAsyncRootFinalParentLookup() {
-    if (this.compiler.hasExtends) {
-      this.emit.line(`  let finalParent = await runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer});`);
-    } else {
-      this.emit.line('  let finalParent = null;');
+  compileAsyncScriptConstructorEntry(node) {
+    if (!this.compiler.scriptMode) {
+      return;
+    }
+
+    const previousBuffer = this.compiler.buffer.currentBuffer;
+    const previousTextChannelVar = this.compiler.buffer.currentTextChannelVar;
+    const previousTextChannelName = this.compiler.buffer.currentTextChannelName;
+    const previousWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
+    const previousScopeClosers = this.emit.scopeClosers;
+
+    this.compiler.buffer.currentBuffer = 'output';
+    this.compiler.buffer.currentTextChannelVar = null;
+    this.compiler.buffer.currentTextChannelName = null;
+    this.compiler.buffer.currentWaitedChannelName = null;
+    this.emit.scopeClosers = '';
+
+    try {
+      this.emit.line('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null) {');
+      this.emit.line('try {');
+      this.emit.line(`let ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = null;`);
+      this.compiler._compileChildren(node, null);
+      this.emit.line('context.resolveExports();');
+      this.emit.line(`return ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR};`);
+      this.emit.closeScopeLevels();
+      this.emit.line('} catch (e) {');
+      this.emit.line(`  throw runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
+      this.emit.line('}');
+      this.emit.line('}');
+    } finally {
+      this.compiler.buffer.currentBuffer = previousBuffer;
+      this.compiler.buffer.currentTextChannelVar = previousTextChannelVar;
+      this.compiler.buffer.currentTextChannelName = previousTextChannelName;
+      this.compiler.buffer.currentWaitedChannelName = previousWaitedChannelName;
+      this.emit.scopeClosers = previousScopeClosers;
     }
   }
 
   emitScriptRootLeafResult(node) {
     const returnVar = this.compiler._tmpid();
+    if (this.compiler.hasExtends) {
+      // The boundary promise gates root-buffer finalization. `getFinishedPromise()`
+      // also waits on child buffers, but we must not mark the root buffer finished
+      // until the extends boundary has linked the parent work into the tree.
+      this.emit.line(`    if (${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}) {`);
+      this.emit.line(`      await ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR};`);
+      this.emit.line('    }');
+    }
     this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, node, returnVar);
-    this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) { inheritanceState.sharedRootBuffer.markFinishedAndPatchLinks(); }`);
+    this.emit.line(`    await ${this.compiler.buffer.currentBuffer}.getFinishedPromise();`);
+    this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) {`);
+      this.emit.line('      inheritanceState.sharedRootBuffer.markFinishedAndPatchLinks();');
+      this.emit.line('      await inheritanceState.sharedRootBuffer.getFinishedPromise();');
+    this.emit.line('    }');
     this.emit.line(`    cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
   }
 
@@ -513,10 +556,42 @@ class CompileInheritance {
   }
 
   emitAsyncRootCompletion(node) {
+    if (this.compiler.scriptMode) {
+      this.emit.line('if (!compositionMode) {');
+      this.emit.line('(async () => {');
+      this.emitScriptRootLeafResult(node);
+      this.emit.line('})().catch(e => {');
+      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
+      this.emit.line('  cb(err);');
+      this.emit.line('});');
+      this.emit.line('} else {');
+      if (this.compiler.hasExtends) {
+        this.emit.line(`  if (${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}) {`);
+        this.emit.line(`    ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}.then(() => {`);
+        this.emit.line(`      ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+        this.emit.line('    }).catch((e) => {');
+        this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
+        this.emit.line('      cb(err);');
+        this.emit.line('    });');
+        this.emit.line('  } else {');
+        this.emit.line(`    ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+        this.emit.line('  }');
+      } else {
+        this.emit.line(`  ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      }
+      this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
+      this.emit.line('}');
+      return;
+    }
+
     const templateKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
     this.emit.line('if (!compositionMode) {');
     this.emit.line('(async () => {');
-    this.emitAsyncRootFinalParentLookup();
+    if (this.compiler.hasExtends) {
+      this.emit.line(`  let finalParent = await runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer});`);
+    } else {
+      this.emit.line('  let finalParent = null;');
+    }
     this.emit.line('  if(finalParent) {');
     const templateLocalCaptures = this.collectTemplateInheritanceCaptureNames(node);
     if (templateLocalCaptures.length > 0) {
@@ -556,6 +631,18 @@ class CompileInheritance {
     this.emit.line('} else {');
     this.emit.line(`  ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
+    this.emit.line('}');
+  }
+
+  _emitScriptExtendsCompositionPayload(node, extendsVarsVar, extendsExternInputNamesVar, extendsExternContextVar, extendsRootContextVar, payloadVar) {
+    this.emit.line(`const ${payloadVar} = inheritanceState && inheritanceState.compositionPayload ? inheritanceState.compositionPayload : {`);
+    this.emit.line(`  explicitInputValues: ${extendsVarsVar},`);
+    this.emit.line(`  explicitInputNames: ${extendsExternInputNamesVar},`);
+    this.emit.line(`  rootContext: ${extendsRootContextVar},`);
+    this.emit.line(`  externContext: ${extendsExternContextVar}`);
+    this.emit.line('};');
+    this.emit.line('if (inheritanceState && !inheritanceState.compositionPayload) {');
+    this.emit.line(`  inheritanceState.compositionPayload = ${payloadVar};`);
     this.emit.line('}');
   }
 
@@ -702,7 +789,9 @@ class CompileInheritance {
       this.emit.line(`context = context.forkForPath(${invocationPath});`);
     }
     this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
-    this.emit.line(`${this.compiler.buffer.currentTextChannelVar}._context = context;`);
+    if (!isScriptMethod) {
+      this.emit.line(`${this.compiler.buffer.currentTextChannelVar}._context = context;`);
+    }
     if (isScriptMethod) {
       // Temporary script-method visibility bridge.
       // This is not the final caller-side admission/linking model; Phase 7
@@ -796,7 +885,7 @@ class CompileInheritance {
 
     methodEntries.push(this.compileMethodMetadataEntry({
       methodName: '__constructor__',
-      fnExpr: 'root',
+      fnExpr: this.compiler.scriptMode ? 'b___constructor__' : 'root',
       analysis: node && node._analysis,
       ownerNode: node,
       superExpr: 'null',
@@ -996,6 +1085,56 @@ class CompileInheritance {
   }
 
   compileAsyncExtends(node) {
+    if (this.compiler.scriptMode) {
+      const extendsVarsVar = this.compiler._tmpid();
+      const extendsExternInputNamesVar = this.compiler._tmpid();
+      const extendsExternContextVar = this.compiler._tmpid();
+      const extendsRootContextVar = this.compiler._tmpid();
+      const compositionPayloadVar = this.compiler._tmpid();
+
+      this.emit.line(`const ${extendsVarsVar} = {};`);
+      this._emitExplicitExternInputs(node, extendsVarsVar);
+      this._emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, extendsExternInputNamesVar, !!node.withContext);
+      this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
+      this._emitScriptExtendsCompositionPayload(
+        node,
+        extendsVarsVar,
+        extendsExternInputNamesVar,
+        extendsExternContextVar,
+        extendsRootContextVar,
+        compositionPayloadVar
+      );
+
+      const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false);
+      // This first channel set links the caller's root buffer to the boundary
+      // child buffer so any post-extends constructor work stays ordered behind
+      // the boundary slot for the channels currently known at the call site.
+      const linkedChannelsArg = 'Object.keys((inheritanceState && inheritanceState.sharedSchema) || {})';
+      this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
+      const templateVar = this.compiler._tmpid();
+      const parentContextVar = this.compiler._tmpid();
+      const parentOutputVar = this.compiler._tmpid();
+      const parentLinkedChannelsVar = this.compiler._tmpid();
+      this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
+      this.emit.line(`  ${templateVar}.compile();`);
+      this.emit.line(`  const ${parentContextVar} = ${compositionPayloadVar}`);
+      this.emit.line(`    ? context.forkForComposition(${templateVar}.path, ${compositionPayloadVar}.rootContext || {}, context.getRenderContextVariables(), ${compositionPayloadVar}.externContext || {})`);
+      this.emit.line(`    : context.forkForPath(${templateVar}.path);`);
+      this.emit.line(`  const ${parentOutputVar} = ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, true, currentBuffer, inheritanceState);`);
+      // Recompute after parent startup so the boundary child links to the
+      // parent's returned buffer for the full shared-schema set, including any
+      // channels newly registered by ancestors during constructor startup.
+      this.emit.line(`  const ${parentLinkedChannelsVar} = Object.keys((inheritanceState && inheritanceState.sharedSchema) || {});`);
+      this.emit.line(`  for (const channelName of ${parentLinkedChannelsVar}) {`);
+      this.emit.line(`    currentBuffer.addBuffer(${parentOutputVar}, channelName);`);
+      this.emit.line('  }');
+      this.emit.line(`  if (${parentOutputVar} && typeof ${parentOutputVar}.getFinishedPromise === 'function') {`);
+      this.emit.line(`    await ${parentOutputVar}.getFinishedPromise();`);
+      this.emit.line('  }');
+      this.emit.line('});');
+      return;
+    }
+
     var k = this.compiler._tmpid();
     const extendsVarsVar = this.compiler._tmpid();
     const extendsExternInputNamesVar = this.compiler._tmpid();
@@ -1025,12 +1164,7 @@ class CompileInheritance {
       }
       this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
       this.emit.line(`${templateVar}.compile();`);
-      if (this.compiler.scriptMode) {
-        this.emit.line(`runtime.validateInheritanceSharedInputs(${templateVar}.sharedSchema || {}, ${extendsExternInputNamesVar}, "extends");`);
-        this.emit.line(`runtime.preloadSharedInputs(${templateVar}.sharedSchema || {}, ${extendsVarsVar}, runtime.getInheritanceSharedBuffer(${this.compiler.buffer.currentBuffer}, inheritanceState), context, { lineno: ${node.lineno}, colno: ${node.colno} });`);
-      } else {
-        this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
-      }
+      this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
       this.emit.line(`context.setExtendsComposition(${templateVar}, ${extendsRootContextVar}, ${extendsExternContextVar});`);
       this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
       this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
@@ -1212,4 +1346,5 @@ class CompileInheritance {
 }
 
 module.exports = CompileInheritance;
+module.exports.CONSTRUCTOR_BOUNDARY_PROMISE_VAR = CONSTRUCTOR_BOUNDARY_PROMISE_VAR;
 

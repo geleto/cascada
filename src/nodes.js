@@ -77,6 +77,8 @@ class NodeList extends Node {
 class Root extends NodeList {
   get typename() { return 'Root'; }
   get fields() {
+    // Keep inheritanceMetadata before children so generic field-based walkers
+    // can see the transformed script inheritance metadata attached at the root.
     return ['inheritanceMetadata', 'children'];
   }
 

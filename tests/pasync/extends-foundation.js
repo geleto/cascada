@@ -315,6 +315,26 @@ describe('Extends Foundation', function () {
           )._compileSource();
         }).to.throwException(/only shared declarations are allowed before extends/);
       });
+
+      it('should preserve source locations on pre-extends validation failures', function () {
+        const ast = parser.parse(
+          scriptTranspiler.scriptToTemplate('var theme = "dark"\nextends "A.script"\nreturn null')
+        );
+        const offendingNode = ast.children[0];
+
+        try {
+          new Script(
+            'var theme = "dark"\nextends "A.script"\nreturn null',
+            env,
+            'var-before-extends-location.script'
+          )._compileSource();
+          expect().fail('Expected pre-extends validation to fail');
+        } catch (error) {
+          expect(error.lineno).to.be(offendingNode.lineno);
+          expect(error.colno).to.be(offendingNode.colno);
+          expect(String(error)).to.contain('only shared declarations are allowed before extends');
+        }
+      });
     });
   });
 
@@ -438,6 +458,74 @@ describe('Extends Foundation', function () {
       expect(await rootBuffer.getChannel('state').finalSnapshot()).to.eql({ ok: true });
       expect(await rootBuffer.getChannel('logger').finalSnapshot()).to.be('logger-ready');
       expect(await rootBuffer.getChannel('db').finalSnapshot()).to.be('sequence-ready');
+    });
+
+    it('should clear async extends registration state so a later cycle can start fresh', async function () {
+      if (!Context) {
+        this.skip();
+        return;
+      }
+
+      const context = new Context({}, {}, env, 'child.njk', false);
+
+      context.beginAsyncExtendsBlockRegistration();
+      const firstPromise = context.asyncExtendsBlocksPromise;
+
+      expect(firstPromise).to.be.ok();
+      expect(firstPromise.then).to.be.a('function');
+
+      await context.finishAsyncExtendsBlockRegistration();
+      await firstPromise;
+
+      expect(context.asyncExtendsBlocksPromise).to.be(undefined);
+      expect(context.asyncExtendsBlocksResolver).to.be(undefined);
+      expect(context.asyncExtendsBlocksPendingCount).to.be(undefined);
+
+      context.beginAsyncExtendsBlockRegistration();
+      const secondPromise = context.asyncExtendsBlocksPromise;
+
+      expect(secondPromise).to.be.ok();
+      expect(secondPromise.then).to.be.a('function');
+      expect(secondPromise).not.to.be(firstPromise);
+
+      await context.finishAsyncExtendsBlockRegistration();
+      await secondPromise;
+    });
+
+    it('should keep async extends registration state alive until every pending registration finishes', async function () {
+      if (!Context) {
+        this.skip();
+        return;
+      }
+
+      const context = new Context({}, {}, env, 'child.njk', false);
+
+      context.beginAsyncExtendsBlockRegistration();
+      context.beginAsyncExtendsBlockRegistration();
+      const pendingPromise = context.asyncExtendsBlocksPromise;
+
+      expect(pendingPromise).to.be.ok();
+      expect(pendingPromise.then).to.be.a('function');
+      expect(context.asyncExtendsBlocksPendingCount).to.be(2);
+
+      let settled = false;
+      pendingPromise.then(() => {
+        settled = true;
+      });
+
+      await context.finishAsyncExtendsBlockRegistration();
+      expect(context.asyncExtendsBlocksPendingCount).to.be(1);
+      expect(context.asyncExtendsBlocksPromise).to.be(pendingPromise);
+      await Promise.resolve();
+      expect(settled).to.be(false);
+
+      await context.finishAsyncExtendsBlockRegistration();
+      await pendingPromise;
+
+      expect(settled).to.be(true);
+      expect(context.asyncExtendsBlocksPromise).to.be(undefined);
+      expect(context.asyncExtendsBlocksResolver).to.be(undefined);
+      expect(context.asyncExtendsBlocksPendingCount).to.be(undefined);
     });
   });
 
@@ -813,35 +901,61 @@ describe('Extends Foundation', function () {
       }
     });
 
-    it('should preload shared inputs from extends with before ancestor constructor code runs', async function () {
+    it('should assign the direct-render extends composition payload before the parent constructor starts', async function () {
       const source = new Script(
         'extends "A.script" with theme\nreturn "done"',
         env,
         'child-preload.script'
       )._compileSource();
 
-      const preloadIndex = source.indexOf('runtime.preloadSharedInputs(');
-      const compositionIndex = source.indexOf('context.setExtendsComposition(');
+      const payloadIndex = source.indexOf('inheritanceState.compositionPayload');
+      const parentCallIndex = source.indexOf('.rootRenderFunc(env,');
 
-      expect(preloadIndex).to.be.greaterThan(-1);
-      expect(source).to.contain('runtime.validateInheritanceSharedInputs(');
-      expect(source).to.contain('runtime.getInheritanceSharedBuffer(currentBuffer, inheritanceState)');
-      expect(compositionIndex).to.be.greaterThan(preloadIndex);
+      expect(payloadIndex).to.be.greaterThan(-1);
+      expect(parentCallIndex).to.be.greaterThan(payloadIndex);
     });
 
-    it('should reject extends with names that are not declared shared by the parent', async function () {
+    it('should compile script constructor metadata to a dedicated function target', function () {
+      const script = new Script('shared text trace\ntrace("x")\nreturn trace.snapshot()', env, 'constructor-metadata.script');
+      script.compile();
+
+      expect(script.methods.__constructor__).to.be.ok();
+      expect(script.methods.__constructor__.fn).to.be.a('function');
+      expect(script.methods.__constructor__.fn).not.to.be(script.rootRenderFunc);
+    });
+
+    it('should keep method-local declarations from renaming root declarations', function () {
+      const source = new Script(
+        'method build()\n  var x = 2\n  return x\nendmethod\nvar x = 1\nreturn x',
+        env,
+        'method-scope-root-name.script'
+      )._compileSource();
+
+      expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null);');
+      expect(source).to.contain('context.addDeferredExport("x", "x", output);');
+      expect(source).to.not.contain('context.addDeferredExport("x#');
+    });
+
+    it('should not emit template text-channel context wiring inside script methods', function () {
+      const source = new Script(
+        'method build(name)\n  return name\nendmethod\nreturn null',
+        env,
+        'script-method-context-wiring.script'
+      )._compileSource();
+
+      expect(source).to.contain('function b_build(');
+      expect(source).to.not.contain('output_textChannelVar._context = context;');
+    });
+
+    it('should allow plain extends composition payload keys that are not shared by the immediate parent', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'extern theme = "light"\nreturn theme');
+      loader.addTemplate('A.script', 'return theme');
       loader.addTemplate('C.script', 'extends "A.script" with theme\nreturn "done"');
 
-      try {
-        await env.renderScript('C.script', { theme: 'dark' });
-        expect().fail('Expected shared-input validation to fail');
-      } catch (error) {
-        expect(String(error)).to.contain("does not declare it as shared");
-      }
+      const result = await env.renderScript('C.script', { theme: 'dark' });
+      expect(result).to.be('done');
     });
 
     it('should share one structural-state object across context forks', function () {
