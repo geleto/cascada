@@ -788,7 +788,7 @@ describe('Extends Foundation', function () {
         await inheritanceState.methods.build.promise;
         expect().fail('Expected unresolved inherited method to reject');
       } catch (error) {
-        expect(String(error)).to.contain("inherited method 'build' was not defined by any ancestor");
+        expect(String(error)).to.contain("Inherited method 'build' was not found");
       }
     });
 
@@ -806,7 +806,7 @@ describe('Extends Foundation', function () {
         await script.methods.build.super.promise;
         expect().fail('Expected unresolved super entry to reject');
       } catch (error) {
-        expect(String(error)).to.contain("super() for method 'build' was not defined by any ancestor");
+        expect(String(error)).to.contain("super() for method 'build' was not found");
       }
     });
 
@@ -852,7 +852,7 @@ describe('Extends Foundation', function () {
         await inheritanceState.sharedSchema.theme.promise;
         expect().fail('Expected unresolved shared channel to reject');
       } catch (error) {
-        expect(String(error)).to.contain("shared channel 'theme' was not defined by any ancestor");
+        expect(String(error)).to.contain("Shared channel 'theme' was not found");
       }
     });
 
@@ -987,7 +987,7 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe.skip('Phase 7 - Startup-Resolved Inherited Calls', function () {
+  describe('Phase 7 - Startup-Resolved Inherited Calls', function () {
     it('should make parent methods reachable after the extends load boundary resolves', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
@@ -1097,7 +1097,7 @@ describe('Extends Foundation', function () {
         expect(error.path).to.be('missing-method.script');
         expect(error.lineno).to.be(0);
         expect(error.colno).to.be(0);
-        expect(String(error)).to.contain("inherited method 'build' was not defined by any ancestor");
+        expect(String(error)).to.contain("Inherited method 'build' was not found");
         expect(String(error)).to.contain('missing-method.script');
         expect(String(error)).to.not.contain('dispatch.script');
       }
@@ -1129,7 +1129,7 @@ describe('Extends Foundation', function () {
         expect(error.path).to.be('missing-shared.script');
         expect(error.lineno).to.be(0);
         expect(error.colno).to.be(0);
-        expect(String(error)).to.contain("shared channel 'theme' was not defined by any ancestor");
+        expect(String(error)).to.contain("Shared channel 'theme' was not found");
         expect(String(error)).to.contain('missing-shared.script');
         expect(String(error)).to.not.contain('dispatch.script');
       }
@@ -1244,6 +1244,135 @@ describe('Extends Foundation', function () {
       expect(resolvedBuild.entry._resolvedInheritanceMethodMeta).to.be(resolvedBuild);
       expect(resolvedBuild.entry._resolvedInheritanceMethodMetaPromise).to.be.ok();
       expect(resolvedBuild.linkedChannels).to.contain('trace');
+    });
+
+    it('should mark missing inherited-method failures with a structural error code', async function () {
+      const state = runtime.createInheritanceState();
+
+      try {
+        await runtime.resolveInheritanceMethod(state, 'missing', {
+          lineno: 2,
+          colno: 4,
+          path: 'dispatch.script',
+          errorContextString: 'calling missing()'
+        });
+        expect().fail('Expected missing inherited method lookup to reject');
+      } catch (error) {
+        expect(error.code).to.be('ERR_INHERITED_METHOD_NOT_FOUND');
+        expect(String(error)).to.contain("Inherited method 'missing' was not found");
+      }
+    });
+
+    it('should fail clearly when inherited dispatch resolves to an invalid method entry', async function () {
+      const command = new runtime.InheritanceAdmissionCommand({
+        name: 'build',
+        resolveMethodEntry: () => Promise.resolve(null),
+        normalizeError: (error) => error,
+        args: [],
+        context: {},
+        inheritanceState: runtime.createInheritanceState(),
+        env: env,
+        runtime: runtime,
+        cb: () => {},
+        barrierBuffer: null,
+        currentBuffer: null,
+        errorContext: null
+      });
+
+      try {
+        await command._start();
+        expect().fail('Expected invalid inherited method entry to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('Inherited dispatch resolved to an invalid method entry');
+      }
+    });
+
+    it('should not double-settle the inherited-call result when cleanup fails after resolution', async function () {
+      const fakeBuffer = {
+        isLinkedChannel() {
+          return false;
+        },
+        isFinished() {
+          return false;
+        },
+        addBuffer() {},
+        _registerLinkedChannel() {},
+        markFinishedAndPatchLinks() {}
+      };
+      const command = new runtime.InheritanceAdmissionCommand({
+        name: '__constructor__',
+        resolveMethodEntry: () => Promise.resolve({
+          fn() {
+            return 'ok';
+          },
+          contract: { argNames: [], withContext: false },
+          usedChannels: [],
+          mutatedChannels: [],
+          super: null,
+          ownerKey: 'A.script'
+        }),
+        normalizeError: (error) => error,
+        args: [],
+        context: {},
+        inheritanceState: runtime.createInheritanceState(),
+        env: env,
+        runtime: runtime,
+        cb: () => {},
+        barrierBuffer: fakeBuffer,
+        invocationBuffer: fakeBuffer,
+        currentBuffer: fakeBuffer,
+        errorContext: null
+      });
+      const cleanupError = new Error('cleanup failed');
+
+      command._finishAdmissionBuffers = function() {
+        throw cleanupError;
+      };
+
+      const resultPromise = command.promise;
+      const completionPromise = command._start();
+
+      expect(await resultPromise).to.be('ok');
+
+      try {
+        await completionPromise;
+        expect().fail('Expected completion to reject when cleanup fails');
+      } catch (error) {
+        expect(error).to.be(cleanupError);
+      }
+    });
+
+    it('should pass error context through script fallback lookups after a channel miss', function () {
+      const seen = [];
+      const errorContext = {
+        lineno: 3,
+        colno: 5,
+        errorContextString: 'reading missingName',
+        path: 'lookup.script'
+      };
+      const context = {
+        lookupScript(name, receivedErrorContext) {
+          seen.push({ name, errorContext: receivedErrorContext });
+          return 'resolved-from-context';
+        }
+      };
+      const currentBuffer = {
+        findChannel() {
+          return null;
+        }
+      };
+
+      const result = runtime.contextOrScriptChannelLookup(
+        context,
+        'missingName',
+        currentBuffer,
+        errorContext
+      );
+
+      expect(result).to.be('resolved-from-context');
+      expect(seen).to.have.length(1);
+      expect(seen[0].name).to.be('missingName');
+      expect(seen[0].errorContext).to.be(errorContext);
     });
   });
 

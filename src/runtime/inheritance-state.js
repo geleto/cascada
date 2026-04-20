@@ -2,6 +2,17 @@
 
 const { RuntimeFatalError } = require('./errors');
 
+const ERR_INHERITED_METHOD_NOT_FOUND = 'ERR_INHERITED_METHOD_NOT_FOUND';
+const ERR_SUPER_METHOD_NOT_FOUND = 'ERR_SUPER_METHOD_NOT_FOUND';
+const ERR_SHARED_CHANNEL_NOT_FOUND = 'ERR_SHARED_CHANNEL_NOT_FOUND';
+
+function withInheritanceErrorCode(error, code) {
+  if (error && code) {
+    error.code = code;
+  }
+  return error;
+}
+
 function createPendingInheritanceEntry() {
   let settled = false;
   let settleResolve = null;
@@ -271,12 +282,15 @@ function finalizeInheritanceMethods(state, context = null) {
         sharedMethods[name] = emptyConstructor;
         continue;
       }
-      entry.reject(new RuntimeFatalError(
-        `inherited method '${name}' was not defined by any ancestor`,
-        0,
-        0,
-        null,
-        context && context.path ? context.path : null
+      entry.reject(withInheritanceErrorCode(
+        new RuntimeFatalError(
+          `Inherited method '${name}' was not found`,
+          0,
+          0,
+          null,
+          context && context.path ? context.path : null
+        ),
+        ERR_INHERITED_METHOD_NOT_FOUND
       ));
       continue;
     }
@@ -285,12 +299,15 @@ function finalizeInheritanceMethods(state, context = null) {
       superEntry = superEntry.super;
     }
     if (isPendingInheritanceEntry(superEntry)) {
-      superEntry.reject(new RuntimeFatalError(
-        `super() for method '${name}' was not defined by any ancestor`,
-        0,
-        0,
-        null,
-        context && context.path ? context.path : null
+      superEntry.reject(withInheritanceErrorCode(
+        new RuntimeFatalError(
+          `super() for method '${name}' was not found`,
+          0,
+          0,
+          null,
+          context && context.path ? context.path : null
+        ),
+        ERR_SUPER_METHOD_NOT_FOUND
       ));
     }
   }
@@ -306,12 +323,15 @@ function finalizeInheritanceSharedSchema(state, context = null) {
     if (!isPendingInheritanceEntry(entry)) {
       continue;
     }
-    entry.reject(new RuntimeFatalError(
-      `shared channel '${name}' was not defined by any ancestor`,
-      0,
-      0,
-      null,
-      context && context.path ? context.path : null
+    entry.reject(withInheritanceErrorCode(
+      new RuntimeFatalError(
+        `Shared channel '${name}' was not found`,
+        0,
+        0,
+        null,
+        context && context.path ? context.path : null
+      ),
+      ERR_SHARED_CHANNEL_NOT_FOUND
     ));
   }
   return sharedSchema;
@@ -332,5 +352,9 @@ module.exports = {
   wireResolvedSuperEntry,
   registerInheritanceSharedSchema,
   finalizeInheritanceMethods,
-  finalizeInheritanceSharedSchema
+  finalizeInheritanceSharedSchema,
+  ERR_INHERITED_METHOD_NOT_FOUND,
+  ERR_SUPER_METHOD_NOT_FOUND,
+  ERR_SHARED_CHANNEL_NOT_FOUND,
+  withInheritanceErrorCode
 };

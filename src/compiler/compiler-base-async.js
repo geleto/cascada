@@ -56,6 +56,22 @@ class CompilerBaseAsync extends CompilerCommon {
     }
     const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
     if (declaredOutput) {
+      if (this.scriptMode && this.currentCompilingBlock) {
+        const declarationOwner = this.analysis.findDeclarationOwner(node._analysis, name);
+        const blockOwner = this.currentCompilingBlock._analysis;
+        const blockBodyOwner = this.currentCompilingBlock.body ? this.currentCompilingBlock.body._analysis : null;
+        const isMethodVisibleBinding = !!(
+          declaredOutput.shared ||
+          declaredOutput.extern ||
+          declaredOutput.imported ||
+          declarationOwner === blockOwner ||
+          declarationOwner === blockBodyOwner
+        );
+        if (!isMethodVisibleBinding) {
+          this.emit('undefined');
+          return;
+        }
+      }
       if (node.sequential || node.sequentialRepair) {
         this._failNonContextSequenceRoot(node, declaredOutput);
       }
@@ -164,7 +180,12 @@ class CompilerBaseAsync extends CompilerCommon {
     if (testName === 'error') {
       const channelName = this._getObservedChannelName(node.left);
       if (channelName) {
-        this.buffer.emitAddIsError(channelName, node.left);
+        const channelDecl = this.analysis.findDeclaration(node.left._analysis, channelName);
+        if (channelDecl && channelDecl.shared) {
+          this._emitSharedChannelObservation(channelName, node.left, 'isError');
+        } else {
+          this.buffer.emitAddIsError(channelName, node.left);
+        }
         return;
       }
       this.emit('runtime.isError(');
@@ -200,7 +221,12 @@ class CompilerBaseAsync extends CompilerCommon {
   compilePeekError(node) {
     const channelName = this._getObservedChannelName(node.target);
     if (channelName) {
-      this.buffer.emitAddGetError(channelName, node.target);
+      const channelDecl = this.analysis.findDeclaration(node.target._analysis, channelName);
+      if (channelDecl && channelDecl.shared) {
+        this._emitSharedChannelObservation(channelName, node.target, 'getError');
+      } else {
+        this.buffer.emitAddGetError(channelName, node.target);
+      }
       return;
     }
     this.emit('runtime.peekError(');
@@ -283,7 +309,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const explicitThisDispatch = this.scriptMode ? this._getExplicitThisDispatchFacts(node) : null;
     if (explicitThisDispatch && !(node._analysis && node._analysis.allowExplicitThisDispatchCall)) {
       this.fail(
-        `bare this.${explicitThisDispatch.methodName} references are not allowed; use this.${explicitThisDispatch.methodName}(...)`,
+        `bare inherited-method references are not supported; bare this.${explicitThisDispatch.methodName} references are not allowed; use this.${explicitThisDispatch.methodName}(...)`,
         node.lineno,
         node.colno,
         node
@@ -411,6 +437,7 @@ class CompilerBaseAsync extends CompilerCommon {
           return {
             channelName,
             channelType: channelDecl.type,
+            shared: !!channelDecl.shared,
             methodName,
             subpath: sequencePath.slice(1, -1),
             isObservation:
@@ -488,6 +515,13 @@ class CompilerBaseAsync extends CompilerCommon {
       this.boundaries.compileValueBoundary(this.buffer, node, (n) => {
         this._emitAsyncDynamicCall(n, 'currentBuffer');
       });
+      return;
+    }
+    if (explicitThisDispatch) {
+      const errorContextJson = JSON.stringify(this._createErrorContext(node));
+      this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${explicitThisDispatch.methodName}", `);
+      this._compileAggregate(node.args, null, '[', ']', false, false);
+      this.emit(`, context, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson})`);
       return;
     }
     this._emitAsyncDynamicCall(node, this.buffer.currentBuffer);
@@ -736,18 +770,42 @@ class CompilerBaseAsync extends CompilerCommon {
       channelType: specialChannelCall.channelType
     });
     if (specialChannelCall.methodName === 'snapshot') {
-      this.buffer.emitAddSnapshot(specialChannelCall.channelName, node);
+      if (specialChannelCall.shared) {
+        this._emitSharedChannelObservation(specialChannelCall.channelName, node, 'snapshot');
+      } else {
+        this.buffer.emitAddSnapshot(specialChannelCall.channelName, node);
+      }
       return true;
     }
     if (specialChannelCall.methodName === 'isError') {
-      this.buffer.emitAddIsError(specialChannelCall.channelName, node);
+      if (specialChannelCall.shared) {
+        this._emitSharedChannelObservation(specialChannelCall.channelName, node, 'isError');
+      } else {
+        this.buffer.emitAddIsError(specialChannelCall.channelName, node);
+      }
       return true;
     }
     if (specialChannelCall.methodName === 'getError') {
-      this.buffer.emitAddGetError(specialChannelCall.channelName, node);
+      if (specialChannelCall.shared) {
+        this._emitSharedChannelObservation(specialChannelCall.channelName, node, 'getError');
+      } else {
+        this.buffer.emitAddGetError(specialChannelCall.channelName, node);
+      }
       return true;
     }
     return false;
+  }
+
+  _emitInheritanceStateReference() {
+    return '(typeof inheritanceState === "undefined" ? null : inheritanceState)';
+  }
+
+  _emitSharedChannelObservation(channelName, node, mode = 'snapshot', implicitVarRead = false) {
+    this.emit(
+      `runtime.observeInheritanceSharedChannel(${JSON.stringify(channelName)}, ${this.buffer.currentBuffer}, ` +
+      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }, ` +
+      `${this._emitInheritanceStateReference()}, ${JSON.stringify(mode)}, ${implicitVarRead})`
+    );
   }
 
   _compileSequenceChannelFunCall(node, specialChannelCall) {

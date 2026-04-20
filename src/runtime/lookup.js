@@ -5,10 +5,13 @@ const {
   isPoison,
   isPoisonError,
   handleError,
+  RuntimeFatalError,
   RuntimePromise,
   collectErrors,
 } = require('./errors');
 const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
+const inheritanceCall = require('./inheritance-call');
+const inheritanceState = require('./inheritance-state');
 
 const {
   resolveDuo
@@ -229,6 +232,82 @@ function captureCompositionValue(_context, name, currentBuffer) {
   return _context.lookup(name);
 }
 
+function _getObservationPosition(errorContext) {
+  return errorContext && typeof errorContext === 'object'
+    ? {
+      lineno: typeof errorContext.lineno === 'number' ? errorContext.lineno : 0,
+      colno: typeof errorContext.colno === 'number' ? errorContext.colno : 0
+    }
+    : { lineno: 0, colno: 0 };
+}
+
+function _addObservationCommand(targetBuffer, channelName, pos, mode) {
+  if (mode === 'snapshot') {
+    return targetBuffer.addSnapshot(channelName, pos);
+  }
+  if (mode === 'isError') {
+    return targetBuffer.addIsError(channelName, pos);
+  }
+  if (mode === 'getError') {
+    return targetBuffer.addGetError(channelName, pos);
+  }
+
+  throw new Error(`Unsupported shared-channel observation mode '${mode}'`);
+}
+
+function _resolveSharedObservationTarget(currentBuffer, name) {
+  const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
+    ? currentBuffer.findChannel(name)
+    : null;
+
+  if (!channel) {
+    return {
+      buffer: currentBuffer,
+      channelName: name
+    };
+  }
+
+  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
+    return {
+      buffer: currentBuffer,
+      channelName: name
+    };
+  }
+
+  return {
+    buffer: channel._buffer,
+    channelName: channel._channelName
+  };
+}
+
+function observeInheritanceSharedChannel(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
+  if (!currentBuffer || !inheritanceStateValue) {
+    return undefined;
+  }
+
+  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue);
+  if (!Object.prototype.hasOwnProperty.call(sharedSchema, name)) {
+    return undefined;
+  }
+
+  const pos = _getObservationPosition(errorContext);
+
+  return inheritanceCall.resolveInheritanceSharedChannel(inheritanceStateValue, name, errorContext).then((channelMeta) => {
+    if (implicitVarRead && channelMeta && channelMeta.type && channelMeta.type !== 'var') {
+      throw new RuntimeFatalError(
+        `Shared channel '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
+        pos.lineno,
+        pos.colno,
+        errorContext ? errorContext.errorContextString : null,
+        errorContext ? errorContext.path : null
+      );
+    }
+
+    const target = _resolveSharedObservationTarget(currentBuffer, name);
+    return _addObservationCommand(target.buffer, target.channelName, pos, mode);
+  });
+}
+
 /**
  * Channel-only lookup for known declared var channels.
  * Returns undefined when no channel binding is available.
@@ -266,6 +345,12 @@ function channelLookup(name, currentBuffer) {
  * Returns poison for missing names via context.lookupScript.
  */
 function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext = null) {
+  const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
+    ? currentBuffer.findChannel(name)
+    : null;
+  if (channel && isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel)) {
+    return undefined;
+  }
   const channelRead = channelLookup(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
@@ -328,6 +413,7 @@ module.exports = {
   memberLookupScriptRaw,
   memberLookupAsync,
   memberLookupScript,
+  observeInheritanceSharedChannel,
   channelLookup,
   contextOrChannelLookup,
   captureCompositionValue,

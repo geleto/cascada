@@ -229,7 +229,7 @@ describe('Extends Runtime', function () {
     });
   });
 
-  describe.skip('Phase 7 - Shared Root and Invocation Scope', function () {
+  describe('Phase 7 - Shared Root and Invocation Scope', function () {
     it('should route shared declarations from the whole hierarchy to the same shared root buffer', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
@@ -280,7 +280,7 @@ describe('Extends Runtime', function () {
     });
   });
 
-  describe.skip('Script method invocation scope', function () {
+  describe('Script method invocation scope', function () {
     it('should keep constructor-local non-shared vars out of later method invocation scope', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
@@ -293,13 +293,13 @@ describe('Extends Runtime', function () {
     });
   });
 
-  describe.skip('Phase 7 - Inherited Dispatch', function () {
+  describe('Phase 7 - Inherited Dispatch', function () {
     it('should let an ancestor constructor call a child-defined override before parent methods load', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
       loader.addTemplate('A.script', 'shared text trace\ntrace(this.build("Ada"))');
-      loader.addTemplate('C.script', 'shared text trace\nmethod build(name)\n  return "child:" + name\nendmethod\nextends "A.script"\nreturn trace.snapshot()');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nmethod build(name)\n  return "child:" + name\nendmethod\nreturn trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('child:Ada');
@@ -324,8 +324,8 @@ describe('Extends Runtime', function () {
       env = new AsyncEnvironment(loader);
 
       loader.addTemplate('A.script', 'method build(name)\n  return "A(" + name + ")"\nendmethod');
-      loader.addTemplate('B.script', 'method build(name)\n  return "B>" + super(name)\nendmethod\nextends "A.script"');
-      loader.addTemplate('C.script', 'method build(name)\n  return "C>" + super(name)\nendmethod\nextends "B.script"\nreturn this.build("x")');
+      loader.addTemplate('B.script', 'extends "A.script"\nmethod build(name)\n  return "B>" + super(name)\nendmethod');
+      loader.addTemplate('C.script', 'extends "B.script"\nmethod build(name)\n  return "C>" + super(name)\nendmethod\nreturn this.build("x")');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('C>B>A(x)');
@@ -428,7 +428,7 @@ describe('Extends Runtime', function () {
       env = new AsyncEnvironment(loader);
 
       loader.addTemplate('A.script', 'method build(name)\n  return name\nendmethod');
-      loader.addTemplate('B.script', 'method build(name)\n  return super(name, "extra")\nendmethod\nextends "A.script"\nreturn this.build("x")');
+      loader.addTemplate('B.script', 'extends "A.script"\nmethod build(name)\n  return super(name, "extra")\nendmethod\nreturn this.build("x")');
 
       try {
         await env.renderScript('B.script', {});
@@ -540,7 +540,6 @@ describe('Extends Runtime', function () {
         env: {},
         runtime,
         cb: () => {},
-        barrierBuffer: fakeBuffer,
         invocationBuffer: fakeBuffer,
         currentBuffer: fakeBuffer,
         errorContext: { lineno: 1, colno: 1, errorContextString: null, path: 'Parent.script' }
@@ -626,7 +625,11 @@ describe('Extends Runtime', function () {
           const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
           if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
             seenLinkedChannels = {
-              methodLinkedChannels: Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : [],
+              methodLinkedChannels: Array.from(new Set([
+                ...(Array.isArray(methodEntry.usedChannels) ? methodEntry.usedChannels : []),
+                ...(Array.isArray(methodEntry.mutatedChannels) ? methodEntry.mutatedChannels : [])
+              ])),
+              rawEntryLinkedChannels: Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : [],
               late: invocationBuffer.isLinkedChannel('late'),
               trace: invocationBuffer.isLinkedChannel('trace')
             };
@@ -658,6 +661,7 @@ describe('Extends Runtime', function () {
           expect(seenLinkedChannels).to.be.ok();
           expect(seenLinkedChannels.methodLinkedChannels).to.contain('trace');
           expect(seenLinkedChannels.methodLinkedChannels).to.contain('late');
+          expect(seenLinkedChannels.rawEntryLinkedChannels).to.eql([]);
           expect(seenLinkedChannels.trace).to.be(true);
           expect(seenLinkedChannels.late).to.be(true);
         } finally {
@@ -693,18 +697,19 @@ describe('Extends Runtime', function () {
         expect(result).to.be('before|method|after|done');
       });
 
-      it('should link late parent-only shared lanes onto the inherited admission barrier when the method entry resolves', async function () {
+      it('should link late parent-only shared lanes onto the invocation buffer when the method entry resolves', async function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
-        let seenBarrierLate = null;
+        let seenInvocationLate = null;
         const originalEnsureInvocationBuffer = runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
 
         runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
           const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
           if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
-            seenBarrierLate = this.barrierBuffer && this.barrierBuffer !== invocationBuffer
-              ? this.barrierBuffer.isLinkedChannel('late')
-              : null;
+            seenInvocationLate = {
+              late: invocationBuffer ? invocationBuffer.isLinkedChannel('late') : null,
+              usesOwnInvocationBuffer: this.invocationBuffer === invocationBuffer
+            };
           }
           return invocationBuffer;
         };
@@ -731,9 +736,48 @@ describe('Extends Runtime', function () {
         try {
           const result = await env.renderScript('C.script', {});
           expect(result).to.be('before|method|after|done');
-          expect(seenBarrierLate).to.be(true);
+          expect(seenInvocationLate).to.eql({
+            late: true,
+            usesOwnInvocationBuffer: true
+          });
         } finally {
           runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+        }
+      });
+
+      it('should resolve shared snapshot observations through the shared helper', async function () {
+        const loader = new StringLoader();
+        env = new AsyncEnvironment(loader);
+        const seenModes = [];
+        const originalObserveInheritanceSharedChannel = runtime.observeInheritanceSharedChannel;
+
+        runtime.observeInheritanceSharedChannel = function(channelName, currentBuffer, errorContext, inheritanceState, mode) {
+          if (channelName === 'trace') {
+            seenModes.push(mode);
+          }
+          return originalObserveInheritanceSharedChannel.apply(this, arguments);
+        };
+
+        try {
+          loader.addTemplate('A.script', [
+            'shared text trace',
+            'trace(waitAndGet("parent|", 10))',
+            'return null'
+          ].join('\n'));
+          loader.addTemplate('C.script', [
+            'shared text trace',
+            'extends "A.script"',
+            'return trace.snapshot()'
+          ].join('\n'));
+
+          const result = await env.renderScript('C.script', {
+            waitAndGet: (value, delay) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
+          });
+
+          expect(result).to.be('parent|');
+          expect(seenModes).to.eql(['snapshot']);
+        } finally {
+          runtime.observeInheritanceSharedChannel = originalObserveInheritanceSharedChannel;
         }
       });
     });

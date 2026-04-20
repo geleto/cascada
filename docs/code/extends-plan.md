@@ -484,33 +484,44 @@ Scope:
       caller-side admission path lands
   - remove legacy inherited dispatch / super-routing helpers before the new
     invocation-buffer linking model lands
-  - explicitly remove the current context-based super bridge helpers rather
-    than letting them linger behind the new method model:
-    - `Context.getAsyncSuper(...)`
-    - `Context.getSyncSuper(...)`
+  - for script inherited dispatch, stop depending on the current
+    context-based super bridge helpers:
+    - script `super()` should route through the caller-side inherited
+      invocation path, not `Context.getAsyncSuper(...)`
+    - keep `Context.getAsyncSuper(...)` / `Context.getSyncSuper(...)` only as
+      template/block legacy helpers until Phase 9 moves templates onto the
+      same constructor/method model
   - remove any temporary helper-owned admission/barrier scaffolding once the
     caller-side invocation path owns ordering:
-    - `invokeInheritedMethod(...)`
-    - `invokeSuperMethod(...)`
-    - `_createAdmissionBarrier(...)`
-    - `_finishAdmissionBarrier(...)`
+    - keep `invokeInheritedMethod(...)` / `invokeSuperMethod(...)` only if
+      they are the real caller-side admission entrypoints rather than a second
+      helper-owned architecture
+    - do not keep a separate pre-Phase-7 helper barrier path alongside the
+      real admission-command path
     - do not carry forward the temporary helper barrier's current narrow link
       set (`__return__` plus shared channels only); the real invocation path
       must link the full caller-observable channel set needed by inherited
       method execution, including non-shared channels when required
-    - do not route `__constructor__` through the temporary method helper call
-      signature as-is; Phase 7 must either unify callable entry signatures or
-      keep constructor invocation on a dedicated path so the constructor's
-      `inheritanceState` slot is not misaligned with method payload arguments
-    - unify payload-shape ownership when the real invocation path lands so the
-      method-call payload contract does not drift separately from the remaining
-      context/template inheritance payload helpers
+    - keep `__constructor__` on a dedicated admission path unless callable
+      entry signatures are truly unified; do not reintroduce the old argument
+      misalignment where constructor `inheritanceState` and method payload
+      slots overlap
+    - if Phase 7 keeps a separate method-call payload builder, treat that as a
+      temporary runtime-owned shape and explicitly revisit ownership in the
+      later template/execution-state cleanup rather than coupling it back to
+      legacy `Context` payload helpers
     - avoid deepening that temporary helper-owned barrier path while Phase 7 is
       in progress:
     - do not add new behavior there that belongs to the final caller-side
       admission/linking model
     - keep new inherited dispatch ordering work on the real invocation path so
       the temporary helper scaffolding does not become a second architecture
+    - if a distinct admission placeholder/buffer still remains after the Phase
+      7 fixes, freeze it as compatibility scaffolding only:
+    - do not add new behavior there that belongs to the final shared
+      script/template/component call-site ordering model
+    - collapse that remaining placeholder/buffer shape in Phase 10 cleanup once
+      the shared runtime model is stable across the later phases
   - remove the temporary script-method visibility/linking bridge in
     `src/compiler/inheritance.js` before the phase is considered complete:
     - `_getMethodVisibleRootBindingNames(...)`
@@ -527,6 +538,14 @@ Scope:
   - after this phase, method/shared access ordering should come from the
     caller-side admission/helper path only, not from compiler-side visibility
     exceptions
+  - if a late-resolved inherited/shared lane is discovered after the caller
+    buffer has already closed that lane, do not try to reopen the finished
+    caller buffer just to attach the link:
+    - keep the late lane registered on the admission/invocation buffers for
+      correctness of the already-running call
+    - treat wider late-lane ownership/lifecycle cleanup as part of the later
+      component/template execution-state work, not as a reason to weaken
+      finished-buffer rules here
 
 Tests:
 
@@ -552,6 +571,15 @@ Scope:
 
 - `component ... as ns`
 - `compositionPayload`
+- decide whether `runtime.allowInheritanceBoundaryRead(...)` remains part of
+  the explicit component-binding model:
+  - keep it only if component `ns.x` / method wiring still needs an explicit
+    boundary-read escape hatch
+  - otherwise treat it as leftover script/template bridge scaffolding and
+    schedule its removal in Phase 10 rather than carrying it forward by default
+  - this decision should cover both sides of the current bridge:
+    - compiler-side emission sites such as `_emitValueImportBinding(...)`
+    - the runtime-side channel flag / lookup behavior that honors that marker
 - decide the ownership of `src/runtime/inheritance-inputs.js` on the component
   path:
   - if component startup needs shared-input preload/validation helpers, move
@@ -625,6 +653,10 @@ Scope:
   - update async root/block entry signatures to accept and thread that
     execution-state object directly rather than hiding it inside context forks
 - remove first:
+  - remove the remaining template/block legacy super helpers once template
+    blocks use the shared constructor/method runtime path:
+    - `Context.getAsyncSuper(...)`
+    - `Context.getSyncSuper(...)`
   - remove the old async template inheritance pre/post-extends flow before
     templates switch to the constructor/method model
   - remove the template-only compiler capture bridge in
@@ -659,6 +691,24 @@ Scope:
   - when this state moves off `Context`, remove the remaining prototype
     accessor indirection and lazy accessor guards that only exist to proxy
     `_sharedStructuralState`
+  - unify remaining method-call payload ownership here or in the adjacent
+    cleanup once templates are on the same callable-entry/runtime model:
+    - remove the drift between the script inherited-call payload builder and
+      the older context-owned template payload helpers
+    - keep one authoritative payload/execution-state contract once both script
+      methods and template blocks share the same model
+    - collapse temporary runtime compatibility adapters such as
+      `_normalizeMethodMeta(...)` once both sides produce one canonical
+      callable metadata shape instead of normalizing mixed entry/meta inputs at
+      dispatch time
+  - drop script-only dead payload-local-capture setup once the shared
+    script/template entry-compilation path is split cleanly:
+    - stop emitting the unused script-method `payloadLocalCapturesVar` /
+      `localsByTemplate[...]` read in `compileAsyncBlockEntry(...)`
+    - keep payload-local-capture wiring only on the template/block path that
+      still consumes it
+    - remove any remaining script-side `localsByTemplate` payload coupling once
+      method/block payload ownership is unified
   - remove `isBlockedInheritanceBoundaryChannelRead(...)` in `src/runtime/lookup.js`
     once cross-template bare-name reads are no longer part of the template
     inheritance path
@@ -711,12 +761,29 @@ Scope:
     - drop the unreachable `bootstrapInheritanceMetadata(...)` fallback that
       creates a new inheritance state when the caller already owns creation
     - remove `src/runtime/inheritance-inputs.js` if Phase 8 does not adopt it
+    - collapse the remaining helper-owned admission-buffer scaffolding in
+      `src/runtime/inheritance-call.js` if it still exists after the main
+      caller-side invocation model is stable:
+      - `_createAdmissionBarrier(...)`
+      - `_linkBarrierChannel(...)`
+      - any distinct placeholder/buffer shape that still sits between the
+        caller buffer and the real invocation buffer
   - clean up remaining low-risk parser/compiler consistency nits that are not
     worth carrying as architecture work:
     - parser recovery around `parseCompositionWithClause(...)` consuming a
       symbol before rejecting object-style trailing named inputs
     - extract helper-based save/restore for compiler buffer context if the
       current manual restoration pattern still exists
+  - rename remaining internal admission/barrier terminology once the shared
+    runtime model is stable across script/template/component dispatch:
+    - revisit `InheritanceAdmissionCommand` and related helper names if they
+      still reflect Phase 7 transitional jargon rather than the final runtime
+      responsibility
+  - replace the current late-link fallback for newly discovered non-shared
+    inherited-method lanes once finished-buffer ownership is settled across the
+    later component/template phases:
+    - avoid relying on post-close linked-channel registration as the long-term
+      model for inherited non-shared channel visibility
 
 Tests:
 

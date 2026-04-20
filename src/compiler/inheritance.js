@@ -451,39 +451,11 @@ class CompileInheritance {
     return !!(this.compiler.scriptMode && node instanceof nodes.MethodDefinition);
   }
 
-  _getMethodVisibleRootBindingNames(methodNode) {
-    if (!this._isScriptMethodEntry(methodNode)) {
-      return [];
-    }
-    // Temporary script-method bridge.
-    // This keeps shared/extern/imported root bindings visible from isolated
-    // method scope until Phase 7 lands the proper helper-resolved caller-side
-    // admission/linking model. Remove this helper once call-time linking is
-    // driven exclusively by resolved method/shared metadata.
-    const analysis = methodNode && methodNode.body ? methodNode.body._analysis : null;
-    const usedChannels = Array.from((analysis && analysis.usedChannels) || []);
-    const visibleRootBindingNames = [];
-    const seenNames = new Set();
-
-    usedChannels.forEach((name) => {
-      if (!name || seenNames.has(name)) {
-        return;
-      }
-      const declaration = this.compiler.analysis.findDeclaration(analysis, name);
-      if (!declaration) {
-        return;
-      }
-      if (declaration.shared || declaration.extern || declaration.imported) {
-        seenNames.add(name);
-        visibleRootBindingNames.push(name);
-      }
-    });
-
-    return visibleRootBindingNames;
-  }
-
   emitAsyncRootStateInitialization(compiledMethodsVar, compiledSharedSchemaVar) {
     if (!this.compiler.needsInheritanceState) {
+      this.emit.line('if (inheritanceState) {');
+      this.emit.line('  inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
+      this.emit.line('}');
       return;
     }
     this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledMethodsVar}, ${compiledSharedSchemaVar}, ${this.compiler.buffer.currentBuffer}, context);`);
@@ -754,19 +726,23 @@ class CompileInheritance {
     const locallyInitializedNames = new Set(
       localCaptureNames.concat(declaredBlockArgNames)
     );
-    const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
+    const entryBufferLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
       .filter((hname) =>
         hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL &&
         !locallyInitializedNames.has(hname)
       );
-    // For script methods this is still only the locally compiled body view.
-    // The final architecture replaces this with helper-resolved call-time
-    // merged metadata across the super chain in Phase 7.
+    // This only wires the entry-local output buffer to its immediate parent
+    // invocation buffer. Caller-side inherited dispatch linking is resolved
+    // separately from helper-resolved method metadata at runtime.
+    const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined'];
+    if (isScriptMethod) {
+      extraParams.push('inheritanceState = null');
+    }
     this.emit.beginEntryFunction(
       block,
       `b_${name}`,
-      blockLinkedChannels,
-      ['blockPayload = null', 'blockRenderCtx = undefined']
+      entryBufferLinkedChannels,
+      extraParams
     );
     if (isScriptMethod) {
       this.compiler.emitDeclareReturnChannel(this.compiler.buffer.currentBuffer);
@@ -776,7 +752,11 @@ class CompileInheritance {
     this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
     this.emit.line(`const ${payloadLocalCapturesVar} = blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate[${invocationPath}] ? blockPayload.localsByTemplate[${invocationPath}] : {};`);
     if (isScriptMethod) {
-      this.emit.line(`context = context.forkForComposition(${invocationPath}, {}, ${block.withContext ? '(blockRenderCtx || undefined)' : 'undefined'});`);
+      const methodBaseContextVar = this.compiler._tmpid();
+      const methodExternContextVar = this.compiler._tmpid();
+      this.emit.line(`const ${methodBaseContextVar} = context.getRenderContextVariables ? context.getRenderContextVariables() : {};`);
+      this.emit.line(`const ${methodExternContextVar} = context.getExternContextVariables ? context.getExternContextVariables() : undefined;`);
+      this.emit.line(`context = context.forkForComposition(${invocationPath}, ${methodBaseContextVar}, ${block.withContext ? '(blockRenderCtx || undefined)' : 'undefined'}, ${methodExternContextVar});`);
     } else if (hasExplicitBlockContext) {
       const payloadContextVar = this.compiler._tmpid();
       this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${block.withContext ? '(blockRenderCtx || {})' : '{}'}, ${payloadLocalCapturesVar}, ${payloadOriginalArgsVar});`);
@@ -791,15 +771,6 @@ class CompileInheritance {
     this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
     if (!isScriptMethod) {
       this.emit.line(`${this.compiler.buffer.currentTextChannelVar}._context = context;`);
-    }
-    if (isScriptMethod) {
-      // Temporary script-method visibility bridge.
-      // This is not the final caller-side admission/linking model; Phase 7
-      // should remove it in favor of helper-resolved exact linking at the call
-      // site.
-      this._getMethodVisibleRootBindingNames(block).forEach((channelName) => {
-        this.emit.line(`runtime.allowInheritanceBoundaryRead(${this.compiler.buffer.currentBuffer}.parent, "${channelName}");`);
-      });
     }
     this.emitAsyncBlockArgInitialization(block, {
       declaredBlockArgNames,
@@ -817,6 +788,9 @@ class CompileInheritance {
     if (isScriptMethod) {
       const resultVar = this.compiler._tmpid();
       this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, block, resultVar);
+      // Script methods leave invocation-buffer completion to the inherited
+      // dispatch admission path after the synthetic `__return__` snapshot
+      // resolves, so method bodies should not finish their own buffers here.
       this.emit.line(`return runtime.normalizeFinalPromise(${resultVar});`);
     } else {
       this.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
@@ -1204,14 +1178,30 @@ class CompileInheritance {
     const args = positionalArgsNode.children;
     const compilingBlock = this.compiler.currentCompilingBlock;
     const knownArgNames = compilingBlock ? this.getBlockArgNames(compilingBlock) : [];
+    const isScriptMethod = this.compiler.scriptMode && this._isScriptMethodEntry(compilingBlock);
 
     if (args.length > knownArgNames.length) {
       this.compiler.fail(
-        `super(...) for block "${name}" received too many arguments`,
+        `super(...) for ${isScriptMethod ? 'method' : 'block'} "${name}" received too many arguments`,
         node.lineno,
         node.colno,
         node
       );
+    }
+
+    if (isScriptMethod) {
+      const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+      const ownerKeyJson = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
+      if (!id) {
+        this.emit(`runtime.invokeSuperMethod(inheritanceState, "${name}", ${ownerKeyJson}, `);
+        this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+        this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
+        return;
+      }
+      this.emit(`let ${id} = runtime.invokeSuperMethod(inheritanceState, "${name}", ${ownerKeyJson}, `);
+      this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+      this.emit.line(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson});`);
+      return;
     }
 
     if (!id) {
