@@ -879,6 +879,10 @@ class CompileInheritance {
         superExpr: this.blockUsesSuper(block)
           ? '__createPendingInheritanceEntry()'
           : 'null',
+        contractExpr: JSON.stringify({
+          argNames: this.getBlockSignature(block).argNames,
+          withContext: !!block.withContext
+        }),
         ownerKey
       });
     });
@@ -889,6 +893,7 @@ class CompileInheritance {
       analysis: node && node._analysis,
       ownerNode: node,
       superExpr: 'null',
+      contractExpr: JSON.stringify({ argNames: [], withContext: false }),
       ownerKey
     }));
 
@@ -901,14 +906,14 @@ class CompileInheritance {
     return `{ ${methodEntries.join(', ')} }`;
   }
 
-  compileMethodMetadataEntry({ methodName, fnExpr, analysis, ownerNode, superExpr, ownerKey }) {
+  compileMethodMetadataEntry({ methodName, fnExpr, analysis, ownerNode, superExpr, contractExpr, ownerKey }) {
     const usedChannels = JSON.stringify(this.collectMethodChannelNames(analysis, ownerNode));
     const mutatedChannels = JSON.stringify(this.collectMethodChannelNames(
       analysis,
       ownerNode,
       'mutatedChannels'
     ));
-    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, usedChannels: ${usedChannels}, mutatedChannels: ${mutatedChannels}, super: ${superExpr}, ownerKey: ${ownerKey} }`;
+    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, usedChannels: ${usedChannels}, mutatedChannels: ${mutatedChannels}, super: ${superExpr}, contract: ${contractExpr}, ownerKey: ${ownerKey} }`;
   }
 
   compileSharedSchemaLiteral(node, pendingSharedNames = []) {

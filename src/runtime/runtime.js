@@ -18,6 +18,7 @@ const markers = require('./markers');
 const inheritanceState = require('./inheritance-state');
 const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceInputs = require('./inheritance-inputs');
+const inheritanceCall = require('./inheritance-call');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -280,6 +281,10 @@ module.exports = {
   ensureCurrentBufferSharedLinks: inheritanceBootstrap.ensureCurrentBufferSharedLinks,
   finalizeInheritanceMetadata: inheritanceBootstrap.finalizeInheritanceMetadata,
   validateInheritanceSharedInputs: inheritanceInputs.validateInheritanceSharedInputs,
+  resolveInheritanceMethod: inheritanceCall.resolveInheritanceMethod,
+  resolveInheritanceSharedChannel: inheritanceCall.resolveInheritanceSharedChannel,
+  invokeInheritedMethod: inheritanceCall.invokeInheritedMethod,
+  invokeSuperMethod: inheritanceCall.invokeSuperMethod,
 
   guard,
 

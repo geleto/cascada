@@ -421,32 +421,22 @@ Scope:
 
 - method helper
 - shared-channel helper
-- helper-awaited exact-link-after-load behavior
-- `apply()` must await the helper before it creates the child invocation buffer
-  or performs linking, so method/channel resolution completes before the call
-  is linked into shared-visible lanes
-- no separate barrier buffer is introduced here:
-  - the side-channel is a regular channel
-  - it ensures method calls and shared-channel reads are requested in source
-    order so the helper barrier is crossed safely
-  - on the other side, the child invocation buffer on top of the shared root
-    handles the concurrency/linking correctness
 - helper memoization of merged metadata
 - no helper-driven entry replacement
-- side-channel command split:
-  - method-call commands await helper-resolved used/mutated channel metadata
-  - shared-channel-lookup commands await helper-resolved shared-channel
-    metadata
-- this phase is where the current script-method visibility bridge starts to go
-  away:
-  - stop treating the compiler-emitted method-entry `linkedChannels` list as
-    authoritative for inherited dispatch
-  - stop relying on the temporary "root-visible binding" bridge in
-    `src/compiler/inheritance.js` to expose shared/extern/imported names from
-    isolated method scope
+- reuse of the existing inheritance-state object across parent startup and
+  later helper resolution
+- expose helper/runtime surface needed by later caller-side invocation work
 - remove first:
-  - remove legacy direct metadata reads before helper-based resolution becomes
-    the only way to cross the barrier
+  - remove legacy direct metadata reads on the helper path so helper-based
+    resolution is the only Phase 6 way to obtain effective inherited/shared
+    metadata
+- explicitly defer caller-side barrier/linking behavior to Phase 7:
+  - helper-awaited exact-link-after-load behavior
+  - `apply()` awaiting the helper before it creates child invocation buffers or
+    performs linking
+  - side-channel command split between method-call and shared-channel lookup
+    commands
+  - removal of compiler-side inherited visibility/linking bridges
 
 Tests:
 
@@ -484,12 +474,43 @@ Scope:
 - sequential `!` paths inside inherited methods are intentionally deferred
   until the main model is stable and are taken up in Phase 10
 - remove first:
+  - move the remaining caller-side barrier behavior from Phase 6 into the real
+    invocation path:
+    - `apply()` must await the method/shared helper before it creates the child
+      invocation buffer or performs linking
+    - helper-awaited exact-link-after-load behavior becomes the only inherited
+      method/shared access barrier
+    - no separate temporary barrier buffer should remain once the real
+      caller-side admission path lands
   - remove legacy inherited dispatch / super-routing helpers before the new
     invocation-buffer linking model lands
   - explicitly remove the current context-based super bridge helpers rather
     than letting them linger behind the new method model:
     - `Context.getAsyncSuper(...)`
     - `Context.getSyncSuper(...)`
+  - remove any temporary helper-owned admission/barrier scaffolding once the
+    caller-side invocation path owns ordering:
+    - `invokeInheritedMethod(...)`
+    - `invokeSuperMethod(...)`
+    - `_createAdmissionBarrier(...)`
+    - `_finishAdmissionBarrier(...)`
+    - do not carry forward the temporary helper barrier's current narrow link
+      set (`__return__` plus shared channels only); the real invocation path
+      must link the full caller-observable channel set needed by inherited
+      method execution, including non-shared channels when required
+    - do not route `__constructor__` through the temporary method helper call
+      signature as-is; Phase 7 must either unify callable entry signatures or
+      keep constructor invocation on a dedicated path so the constructor's
+      `inheritanceState` slot is not misaligned with method payload arguments
+    - unify payload-shape ownership when the real invocation path lands so the
+      method-call payload contract does not drift separately from the remaining
+      context/template inheritance payload helpers
+    - avoid deepening that temporary helper-owned barrier path while Phase 7 is
+      in progress:
+    - do not add new behavior there that belongs to the final caller-side
+      admission/linking model
+    - keep new inherited dispatch ordering work on the real invocation path so
+      the temporary helper scaffolding does not become a second architecture
   - remove the temporary script-method visibility/linking bridge in
     `src/compiler/inheritance.js` before the phase is considered complete:
     - `_getMethodVisibleRootBindingNames(...)`
@@ -497,6 +518,12 @@ Scope:
       emission inside `compileAsyncBlockEntry(...)`
     - reliance on method-entry-local `blockLinkedChannels` as the final
       inherited dispatch linkage set
+  - if the Phase 6 helper still back-fills `entry.linkedChannels`, treat that
+    as temporary bridge data only:
+    - caller-side invocation/linking should use the resolved helper metadata as
+      the authoritative source for exact linkage
+    - remove or stop depending on helper-populated raw-entry linkage state once
+      the real invocation path is in place
   - after this phase, method/shared access ordering should come from the
     caller-side admission/helper path only, not from compiler-side visibility
     exceptions

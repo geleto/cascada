@@ -436,7 +436,8 @@ class CompilerBaseAsync extends CompilerCommon {
     const directMacroBinding = directMacroCall ? directMacroCall.binding : null;
     const isDirectMacroCall = !!directMacroCall;
     const importedCallableFacts = node._analysis.importedCallable;
-    if (this.scriptMode && this._getExplicitThisDispatchFacts(node.name)) {
+    const explicitThisDispatch = this.scriptMode ? this._getExplicitThisDispatchFacts(node.name) : null;
+    if (explicitThisDispatch) {
       (node.name._analysis || (node.name._analysis = {})).allowExplicitThisDispatchCall = true;
     }
 
