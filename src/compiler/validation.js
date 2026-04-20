@@ -134,6 +134,16 @@ function validateScriptExtendsSourceOrder(compiler, node) {
     return;
   }
 
+  if (node._preExtendsMovedMethodNode) {
+    const offendingNode = node._preExtendsMovedMethodNode;
+    compiler.fail(
+      'unexpected method declaration before extends; only shared declarations are allowed before extends',
+      offendingNode.lineno,
+      offendingNode.colno,
+      offendingNode
+    );
+  }
+
   const firstDirectExtendsIndex = node.children.findIndex((child) => child instanceof nodes.Extends);
   if (firstDirectExtendsIndex === -1) {
     return;

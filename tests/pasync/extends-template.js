@@ -153,7 +153,7 @@ describe('Template Extends', function () {
   });
 
   describe.skip('Phase 9 - Template Inheritance Compiled Shape', function () {
-    it('should initialize base-block inputs through the inheritance payload helpers', function () {
+    it('should initialize base-block arguments through the inheritance payload helpers', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
@@ -168,7 +168,7 @@ describe('Template Extends', function () {
       expect(source).to.contain('new runtime.VarCommand({ channelName: name, args: [');
     });
 
-    it('should initialize inherited block inputs through the prepared block-entry context', function () {
+    it('should initialize inherited block arguments through the prepared block-entry context', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');

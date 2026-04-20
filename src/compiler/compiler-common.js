@@ -508,6 +508,26 @@ class CompilerCommon extends Obj {
     });
   }
 
+  _getInheritanceMetadata(node) {
+    return node && node.inheritanceMetadata ? node.inheritanceMetadata : null;
+  }
+
+  _getMethodDefinitions(node) {
+    const metadata = this._getInheritanceMetadata(node);
+    if (!metadata || !metadata.methods || !Array.isArray(metadata.methods.children)) {
+      return [];
+    }
+    return metadata.methods.children.filter(Boolean);
+  }
+
+  _getSharedDeclarations(node) {
+    const metadata = this._getInheritanceMetadata(node);
+    if (!metadata || !metadata.sharedDeclarations || !Array.isArray(metadata.sharedDeclarations.children)) {
+      return [];
+    }
+    return metadata.sharedDeclarations.children.filter(Boolean);
+  }
+
   compileNodeList(node, frame) {
     this._compileChildren(node, frame);
   }

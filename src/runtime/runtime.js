@@ -15,6 +15,9 @@ const outputValue = require('./safe-output');
 const commands = require('./commands');
 const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
+const inheritanceState = require('./inheritance-state');
+const inheritanceBootstrap = require('./inheritance-bootstrap');
+const inheritanceInputs = require('./inheritance-inputs');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -208,6 +211,9 @@ module.exports = {
   createSequenceChannel: output.createSequenceChannel,
   declareBufferChannel: output.declareBufferChannel,
   declareInheritanceSharedChannel: output.declareInheritanceSharedChannel,
+  allowInheritanceBoundaryRead: output.allowInheritanceBoundaryRead,
+  getInheritanceSharedBuffer: inheritanceBootstrap.getInheritanceSharedBuffer,
+  preloadSharedInputs: inheritanceInputs.preloadSharedInputs,
   ChannelCommand: commands.ChannelCommand,
   TextCommand: commands.TextCommand,
   VarCommand: commands.VarCommand,
@@ -257,6 +263,23 @@ module.exports = {
 
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
+  InheritanceState: inheritanceState.InheritanceState,
+  InheritanceMethodRegistry: inheritanceState.InheritanceMethodRegistry,
+  InheritanceSharedRegistry: inheritanceState.InheritanceSharedRegistry,
+  InheritanceResolutionState: inheritanceState.InheritanceResolutionState,
+  createInheritanceState: inheritanceState.createInheritanceState,
+  createPendingInheritanceEntry: inheritanceState.createPendingInheritanceEntry,
+  isPendingInheritanceEntry: inheritanceState.isPendingInheritanceEntry,
+  resolveInheritanceMethodEntry: inheritanceState.resolveInheritanceMethodEntry,
+  registerInheritanceMethods: inheritanceState.registerInheritanceMethods,
+  registerInheritanceSharedSchema: inheritanceState.registerInheritanceSharedSchema,
+  wireResolvedSuperEntry: inheritanceState.wireResolvedSuperEntry,
+  finalizeInheritanceMethods: inheritanceState.finalizeInheritanceMethods,
+  finalizeInheritanceSharedSchema: inheritanceState.finalizeInheritanceSharedSchema,
+  bootstrapInheritanceMetadata: inheritanceBootstrap.bootstrapInheritanceMetadata,
+  ensureCurrentBufferSharedLinks: inheritanceBootstrap.ensureCurrentBufferSharedLinks,
+  finalizeInheritanceMetadata: inheritanceBootstrap.finalizeInheritanceMetadata,
+  validateInheritanceSharedInputs: inheritanceInputs.validateInheritanceSharedInputs,
 
   guard,
 

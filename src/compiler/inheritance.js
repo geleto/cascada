@@ -13,11 +13,14 @@ const CompileBuffer = require('./buffer');
 class CompileInheritance {
   constructor(compiler) {
     this.compiler = compiler;
-	  this.emit = this.compiler.emit;
+    this.emit = this.compiler.emit;
   }
 
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+    if (this.compiler.scriptMode && this.compiler.analysis.isRootScopeOwner(node._analysis)) {
+      this.emit.line(`runtime.allowInheritanceBoundaryRead(${this.compiler.buffer.currentBuffer}, "${name}");`);
+    }
     this.emit.line(
       `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
     );
@@ -78,8 +81,8 @@ class CompileInheritance {
     });
   }
 
-  _emitNamedInputBindings(nameNodes, targetVarsVar) {
-    nameNodes.forEach((nameNode) => {
+  _emitNamedArgBindings(argNodes, targetVarsVar) {
+    argNodes.forEach((nameNode) => {
       const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
       this.emit(`${targetVarsVar}[${JSON.stringify(inputName)}] = `);
       this.compiler.compileExpression(nameNode, null, nameNode, true);
@@ -364,6 +367,12 @@ class CompileInheritance {
   compileAsyncBlock(node) {
     //var id = this._tmpid();
 
+    // Template-only legacy inheritance/block path.
+    // Script methods do not use this payload/local-capture/block-registry flow;
+    // they are compiled through compileAsyncBlockEntry() below. This whole path
+    // is scheduled for removal once async templates move onto the same
+    // constructor/method runtime model in Phase 9.
+
     // If we are at the top level of a template (`!this.inBlock`) that has a
     // static `extends` tag, this block is a definition-only. We can safely
     // skip compiling any rendering code for it, as the parent template is
@@ -379,17 +388,17 @@ class CompileInheritance {
       (id) => {
         this.emit.line(`let ${id};`);
         const templateKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
-        const explicitInputNameNodes = this.compiler._getBlockInputNameNodes(node);
-        const localCaptureNames = this.compiler._getBlockLocalCaptureNames(node);
+        const explicitBlockArgNodes = this.getBlockArgNodes(node);
+        const localCaptureNames = this.getBlockLocalCaptureNames(node);
         const hasLocalCaptures = localCaptureNames.length > 0;
-        const hasInheritancePayload = !!node.withContext || explicitInputNameNodes.length > 0 || localCaptureNames.length > 0;
-        const blockVarsVar = explicitInputNameNodes.length > 0 ? this.compiler._tmpid() : null;
+        const hasInheritancePayload = !!node.withContext || explicitBlockArgNodes.length > 0 || localCaptureNames.length > 0;
+        const blockVarsVar = explicitBlockArgNodes.length > 0 ? this.compiler._tmpid() : null;
         const blockLocalsVar = hasLocalCaptures ? this.compiler._tmpid() : null;
         const blockPayloadVar = hasInheritancePayload ? this.compiler._tmpid() : null;
         const blockRenderCtxExpr = node.withContext ? 'context.getRenderContextVariables()' : 'undefined';
-        if (explicitInputNameNodes.length > 0) {
+        if (explicitBlockArgNodes.length > 0) {
           this.emit.line(`let ${blockVarsVar} = {};`);
-          this._emitNamedInputBindings(explicitInputNameNodes, blockVarsVar);
+          this._emitNamedArgBindings(explicitBlockArgNodes, blockVarsVar);
         }
         if (hasLocalCaptures) {
           this.emit.line(`let ${blockLocalsVar} = {};`);
@@ -405,7 +414,7 @@ class CompileInheritance {
           });
         }
         if (hasInheritancePayload) {
-          this.emit.line(`const ${blockPayloadVar} = context.createInheritancePayload(${templateKey}, ${explicitInputNameNodes.length > 0 ? blockVarsVar : '{}'}, ${hasLocalCaptures ? blockLocalsVar : 'null'});`);
+          this.emit.line(`const ${blockPayloadVar} = context.createInheritancePayload(${templateKey}, ${explicitBlockArgNodes.length > 0 ? blockVarsVar : '{}'}, ${hasLocalCaptures ? blockLocalsVar : 'null'});`);
         }
         const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
         if (needsParentCheck) {
@@ -420,6 +429,524 @@ class CompileInheritance {
         this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
       }
     );
+  }
+
+  emitRootSharedDeclarations(node) {
+    if (!this.compiler.scriptMode) {
+      return;
+    }
+    const sharedDeclarations = this.compiler._getSharedDeclarations(node);
+    sharedDeclarations.forEach((declaration) => {
+      this.compiler.compileChannelDeclaration(declaration);
+    });
+  }
+
+  _getMethodInvocationPath(methodNode) {
+    const ownerPath = this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName);
+    return `${ownerPath}#method:${methodNode.name.value}`;
+  }
+
+  _isScriptMethodEntry(node) {
+    return !!(this.compiler.scriptMode && node instanceof nodes.MethodDefinition);
+  }
+
+  _getMethodVisibleRootBindingNames(methodNode) {
+    if (!this._isScriptMethodEntry(methodNode)) {
+      return [];
+    }
+    // Temporary script-method bridge.
+    // This keeps shared/extern/imported root bindings visible from isolated
+    // method scope until Phase 7 lands the proper helper-resolved caller-side
+    // admission/linking model. Remove this helper once call-time linking is
+    // driven exclusively by resolved method/shared metadata.
+    const analysis = methodNode && methodNode.body ? methodNode.body._analysis : null;
+    const usedChannels = Array.from((analysis && analysis.usedChannels) || []);
+    const visibleRootBindingNames = [];
+    const seenNames = new Set();
+
+    usedChannels.forEach((name) => {
+      if (!name || seenNames.has(name)) {
+        return;
+      }
+      const declaration = this.compiler.analysis.findDeclaration(analysis, name);
+      if (!declaration) {
+        return;
+      }
+      if (declaration.shared || declaration.extern || declaration.imported) {
+        seenNames.add(name);
+        visibleRootBindingNames.push(name);
+      }
+    });
+
+    return visibleRootBindingNames;
+  }
+
+  emitAsyncRootStateInitialization(compiledMethodsVar, compiledSharedSchemaVar) {
+    if (!this.compiler.needsInheritanceState) {
+      return;
+    }
+    this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledMethodsVar}, ${compiledSharedSchemaVar}, ${this.compiler.buffer.currentBuffer}, context);`);
+    if (!this.compiler.hasExtends) {
+      this.emit.line('inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
+    }
+  }
+
+  emitAsyncRootFinalParentLookup() {
+    if (this.compiler.hasExtends) {
+      this.emit.line(`  let finalParent = await runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer});`);
+    } else {
+      this.emit.line('  let finalParent = null;');
+    }
+  }
+
+  emitScriptRootLeafResult(node) {
+    const returnVar = this.compiler._tmpid();
+    this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, node, returnVar);
+    this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) { inheritanceState.sharedRootBuffer.markFinishedAndPatchLinks(); }`);
+    this.emit.line(`    cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
+  }
+
+  emitAsyncTemplateRootLeafResult() {
+    this.emit.line(`    ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) { inheritanceState.sharedRootBuffer.markFinishedAndPatchLinks(); }`);
+    this.emit.line(`    cb(null, await ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot());`);
+  }
+
+  emitAsyncRootCompletion(node) {
+    const templateKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
+    this.emit.line('if (!compositionMode) {');
+    this.emit.line('(async () => {');
+    this.emitAsyncRootFinalParentLookup();
+    this.emit.line('  if(finalParent) {');
+    const templateLocalCaptures = this.collectTemplateInheritanceCaptureNames(node);
+    if (templateLocalCaptures.length > 0) {
+      const templateLocalCapturesVar = this.compiler._tmpid();
+      this.emit.line(`    const ${templateLocalCapturesVar} = {};`);
+      templateLocalCaptures.forEach((name) => {
+        const helperName = this.compiler.scriptMode
+          ? 'captureCompositionScriptValue'
+          : 'captureCompositionValue';
+        this.emit(`    ${templateLocalCapturesVar}[${JSON.stringify(name)}] = runtime.${helperName}(context, ${JSON.stringify(name)}, ${this.compiler.buffer.currentBuffer}`);
+        if (this.compiler.scriptMode) {
+          this.emit(`, { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node))}, path: context.path }`);
+        }
+        this.emit.line(');');
+      });
+      this.emit.line(`    context.setTemplateLocalCaptures(${templateKey}, ${templateLocalCapturesVar});`);
+    }
+    this.emit.line('    const extendsComposition = context.getExtendsComposition(finalParent);');
+    this.emit.line('    const parentContext = extendsComposition');
+    this.emit.line('      ? context.forkForComposition(finalParent.path, extendsComposition.rootContext, context.getRenderContextVariables(), extendsComposition.externContext)');
+    this.emit.line('      : context.forkForPath(finalParent.path);');
+    this.emit.line(`    if (!inheritanceState || inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) { ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks(); }`);
+    this.emit.line('    finalParent.rootRenderFunc(env, parentContext, runtime, cb, compositionMode, output, inheritanceState);');
+    this.emit.line('  } else {');
+
+    if (this.compiler.scriptMode) {
+      this.emitScriptRootLeafResult(node);
+    } else {
+      this.emitAsyncTemplateRootLeafResult();
+    }
+
+    this.emit.line('  }');
+    this.emit.line('})().catch(e => {');
+    this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
+    this.emit.line('  cb(err);');
+    this.emit.line('});');
+    this.emit.line('} else {');
+    this.emit.line(`  ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
+    this.emit.line('}');
+  }
+
+  getBlockArgNames(block) {
+    return this.getBlockSignature(block).argNames;
+  }
+
+  getBlockArgNodes(block) {
+    return this.getBlockSignature(block).argNodes;
+  }
+
+  getBlockLocalCaptureNames(block) {
+    // Template-only legacy capture bridge.
+    // Script methods intentionally bypass this and treat root-shared state plus
+    // per-method arguments as the only inherited visibility model. Remove this
+    // helper with the rest of the template payload/capture runtime in Phase 9.
+    const blockArgNames = new Set(this.getBlockArgNames(block));
+    const usedChannels = Array.from((block && block.body && block.body._analysis && block.body._analysis.usedChannels) || []);
+    const captureNames = [];
+    const seenCaptureNames = new Set();
+
+    usedChannels.forEach((name) => {
+      if (!name ||
+        name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL ||
+        name === '__return__' ||
+        name.indexOf('!') === 0 ||
+        blockArgNames.has(name) ||
+        seenCaptureNames.has(name)) {
+        return;
+      }
+
+      const declaration = this.compiler.analysis.findDeclaration(block.body._analysis, name);
+      if (!declaration || declaration.internal || declaration.blockArg || declaration.type !== 'var') {
+        return;
+      }
+
+      const declarationOwner = this.compiler.analysis.findDeclarationOwner(block.body._analysis, name);
+      if (declarationOwner === block._analysis || declarationOwner === block.body._analysis) {
+        return;
+      }
+
+      seenCaptureNames.add(name);
+      captureNames.push(name);
+    });
+
+    return captureNames;
+  }
+
+  getBlockSignature(block) {
+    const signatureArgs = block && block.args && block.args.children ? block.args : new nodes.NodeList();
+    const parsed = this.compiler._parseCallableSignature(signatureArgs, {
+      allowKeywordArgs: false,
+      symbolsOnly: true,
+      label: 'block signature',
+      ownerNode: block
+    });
+    return {
+      argNames: parsed.args.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value)),
+      argNodes: parsed.args
+    };
+  }
+
+  emitAsyncBlockArgInitialization(block, options = {}) {
+    const blockSignature = this.getBlockSignature(block);
+    const declaredBlockArgNames = Array.isArray(options.declaredBlockArgNames)
+      ? options.declaredBlockArgNames
+      : blockSignature.argNames;
+    const compositionLocalChannelNames = Array.isArray(options.localCaptureNames)
+      ? options.localCaptureNames
+      : this.getBlockLocalCaptureNames(block);
+    const staticLocalNames = Array.from(new Set(
+      compositionLocalChannelNames.concat(declaredBlockArgNames)
+    ));
+    const allLocalNamesVar = this.compiler._tmpid();
+    const explicitBlockArgNamesVar = this.compiler._tmpid();
+    const blockPayloadOriginalArgsVar = options.payloadOriginalArgsVar || this.compiler._tmpid();
+    const blockPayloadLocalsVar = options.payloadLocalCapturesVar || this.compiler._tmpid();
+
+    this.emit.line(`const ${explicitBlockArgNamesVar} = ${JSON.stringify(declaredBlockArgNames)};`);
+    this.emit.line(`const ${allLocalNamesVar} = ${JSON.stringify(staticLocalNames)};`);
+    if (!options.payloadOriginalArgsVar) {
+      this.emit.line(`const ${blockPayloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
+    }
+    if (!options.payloadLocalCapturesVar) {
+      const templateKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
+      this.emit.line(`const ${blockPayloadLocalsVar} = blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate[${templateKey}] ? blockPayload.localsByTemplate[${templateKey}] : {};`);
+    }
+    this.emit.line(`if (${allLocalNamesVar}.length > 0) {`);
+    this.emit.line(`for (const name of ${allLocalNamesVar}) {`);
+    const blockValueId = this.compiler._tmpid();
+    this.emit.line(`  runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, name, "var", context, null);`);
+    this.emit.line(`  const ${blockValueId} = ${explicitBlockArgNamesVar}.includes(name) ? ${blockPayloadOriginalArgsVar}[name] : ${blockPayloadLocalsVar}[name];`);
+    this.emit.line(`  ${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
+    this.emit.line('}');
+    this.emit.line('}');
+  }
+
+  compileAsyncBlockEntry(block) {
+    const name = block.name.value;
+    const isScriptMethod = this._isScriptMethodEntry(block);
+    const invocationPath = JSON.stringify(
+      isScriptMethod
+        ? this._getMethodInvocationPath(block)
+        : (this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName))
+    );
+    const declaredBlockArgNames = this.getBlockArgNames(block);
+    const hasExplicitBlockContext = declaredBlockArgNames.length > 0 || !!block.withContext;
+    const localCaptureNames = isScriptMethod ? [] : this.getBlockLocalCaptureNames(block);
+    const locallyInitializedNames = new Set(
+      localCaptureNames.concat(declaredBlockArgNames)
+    );
+    const blockLinkedChannels = Array.from(block.body._analysis.usedChannels || [])
+      .filter((hname) =>
+        hname !== CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL &&
+        !locallyInitializedNames.has(hname)
+      );
+    // For script methods this is still only the locally compiled body view.
+    // The final architecture replaces this with helper-resolved call-time
+    // merged metadata across the super chain in Phase 7.
+    this.emit.beginEntryFunction(
+      block,
+      `b_${name}`,
+      blockLinkedChannels,
+      ['blockPayload = null', 'blockRenderCtx = undefined']
+    );
+    if (isScriptMethod) {
+      this.compiler.emitDeclareReturnChannel(this.compiler.buffer.currentBuffer);
+    }
+    const payloadOriginalArgsVar = this.compiler._tmpid();
+    const payloadLocalCapturesVar = this.compiler._tmpid();
+    this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
+    this.emit.line(`const ${payloadLocalCapturesVar} = blockPayload && blockPayload.localsByTemplate && blockPayload.localsByTemplate[${invocationPath}] ? blockPayload.localsByTemplate[${invocationPath}] : {};`);
+    if (isScriptMethod) {
+      this.emit.line(`context = context.forkForComposition(${invocationPath}, {}, ${block.withContext ? '(blockRenderCtx || undefined)' : 'undefined'});`);
+    } else if (hasExplicitBlockContext) {
+      const payloadContextVar = this.compiler._tmpid();
+      this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${block.withContext ? '(blockRenderCtx || {})' : '{}'}, ${payloadLocalCapturesVar}, ${payloadOriginalArgsVar});`);
+      this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);
+      this.emit.line(`  context = context.forkForComposition(${invocationPath}, ${payloadContextVar}, blockRenderCtx);`);
+      this.emit.line('} else {');
+      this.emit.line(`  context = context.forkForPath(${invocationPath});`);
+      this.emit.line('}');
+    } else {
+      this.emit.line(`context = context.forkForPath(${invocationPath});`);
+    }
+    this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
+    this.emit.line(`${this.compiler.buffer.currentTextChannelVar}._context = context;`);
+    if (isScriptMethod) {
+      // Temporary script-method visibility bridge.
+      // This is not the final caller-side admission/linking model; Phase 7
+      // should remove it in favor of helper-resolved exact linking at the call
+      // site.
+      this._getMethodVisibleRootBindingNames(block).forEach((channelName) => {
+        this.emit.line(`runtime.allowInheritanceBoundaryRead(${this.compiler.buffer.currentBuffer}.parent, "${channelName}");`);
+      });
+    }
+    this.emitAsyncBlockArgInitialization(block, {
+      declaredBlockArgNames,
+      localCaptureNames,
+      payloadOriginalArgsVar,
+      payloadLocalCapturesVar
+    });
+    const previousCompilingBlock = this.compiler.currentCompilingBlock;
+    this.compiler.currentCompilingBlock = block;
+    try {
+      this.compiler.compile(block.body, null);
+    } finally {
+      this.compiler.currentCompilingBlock = previousCompilingBlock;
+    }
+    if (isScriptMethod) {
+      const resultVar = this.compiler._tmpid();
+      this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, block, resultVar);
+      this.emit.line(`return runtime.normalizeFinalPromise(${resultVar});`);
+    } else {
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      this.emit.line(`return ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot();`);
+    }
+    this.emit.endEntryFunction(block, true);
+  }
+
+  compileAsyncBlockEntries(node) {
+    const blockNames = new Set();
+    const blocks = this.compiler.scriptMode
+      ? this.compiler._getMethodDefinitions(node)
+      : node.findAll(nodes.Block);
+
+    blocks.forEach((block) => {
+      const name = block.name.value;
+
+      if (blockNames.has(name)) {
+        this.compiler.fail(`Block "${name}" defined more than once.`, block.lineno, block.colno, block);
+      }
+      blockNames.add(name);
+      this.compileAsyncBlockEntry(block);
+    });
+
+    return blocks;
+  }
+
+  collectTemplateInheritanceCaptureNames(node) {
+    if (this.compiler.scriptMode) {
+      return [];
+    }
+    const captureNames = [];
+    const seenCaptureNames = new Set();
+    const blocks = node.findAll(nodes.Block);
+
+    blocks.forEach((block) => {
+      this.getBlockLocalCaptureNames(block).forEach((name) => {
+        if (seenCaptureNames.has(name)) {
+          return;
+        }
+        seenCaptureNames.add(name);
+        captureNames.push(name);
+      });
+    });
+
+    return captureNames;
+  }
+
+  collectCompiledMethods(node, blocks, pendingMethodNames = []) {
+    const localMethodNames = new Set();
+    const ownerKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
+    const methodEntries = blocks.map((block) => {
+      const methodName = block.name.value;
+      localMethodNames.add(methodName);
+      return this.compileMethodMetadataEntry({
+        methodName,
+        fnExpr: `b_${methodName}`,
+        analysis: block.body && block.body._analysis,
+        ownerNode: block,
+        superExpr: this.blockUsesSuper(block)
+          ? '__createPendingInheritanceEntry()'
+          : 'null',
+        ownerKey
+      });
+    });
+
+    methodEntries.push(this.compileMethodMetadataEntry({
+      methodName: '__constructor__',
+      fnExpr: 'root',
+      analysis: node && node._analysis,
+      ownerNode: node,
+      superExpr: 'null',
+      ownerKey
+    }));
+
+    pendingMethodNames.forEach((name) => {
+      if (localMethodNames.has(name) || name === '__constructor__') {
+        return;
+      }
+      methodEntries.push(`${JSON.stringify(name)}: __createPendingInheritanceEntry()`);
+    });
+    return `{ ${methodEntries.join(', ')} }`;
+  }
+
+  compileMethodMetadataEntry({ methodName, fnExpr, analysis, ownerNode, superExpr, ownerKey }) {
+    const usedChannels = JSON.stringify(this.collectMethodChannelNames(analysis, ownerNode));
+    const mutatedChannels = JSON.stringify(this.collectMethodChannelNames(
+      analysis,
+      ownerNode,
+      'mutatedChannels'
+    ));
+    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, usedChannels: ${usedChannels}, mutatedChannels: ${mutatedChannels}, super: ${superExpr}, ownerKey: ${ownerKey} }`;
+  }
+
+  compileSharedSchemaLiteral(node, pendingSharedNames = []) {
+    const fragments = ['{'];
+    const sharedDeclarations = this.compiler._getSharedDeclarations(node);
+    const emittedNames = new Set();
+    let needsComma = false;
+    sharedDeclarations.forEach((child) => {
+      emittedNames.add(child.name.value);
+      if (needsComma) {
+        fragments.push(', ');
+      }
+      fragments.push(`${JSON.stringify(child.name.value)}: { type: ${JSON.stringify(child.channelType)}, defaultValue: `);
+      if (child.initializer) {
+        fragments.push('function(env, context, runtime, cb, output = null) { return ');
+        fragments.push(this.compiler._compileExpressionToString(child.initializer));
+        fragments.push('; }');
+      } else {
+        fragments.push('null');
+      }
+      fragments.push(' }');
+      needsComma = true;
+    });
+    pendingSharedNames.forEach((name) => {
+      if (emittedNames.has(name)) {
+        return;
+      }
+      if (needsComma) {
+        fragments.push(', ');
+      }
+      fragments.push(`${JSON.stringify(name)}: __createPendingInheritanceEntry()`);
+      needsComma = true;
+    });
+    fragments.push('}');
+    return fragments.join('');
+  }
+
+  collectPendingMethodNames(node) {
+    // Temporary bridge until pending inherited dependency discovery is moved
+    // onto analysis-owned metadata instead of ad hoc AST rescans.
+    const localMethodNames = new Set(
+      (this.compiler.scriptMode ? this.compiler._getMethodDefinitions(node) : node.findAll(nodes.Block))
+        .map((block) => block.name.value)
+    );
+    const pendingNames = new Set();
+    const calls = node.findAll(nodes.FunCall);
+    calls.forEach((callNode) => {
+      const facts = this.compiler._getExplicitThisDispatchFacts(callNode.name);
+      if (!facts || localMethodNames.has(facts.methodName)) {
+        return;
+      }
+      pendingNames.add(facts.methodName);
+    });
+    return Array.from(pendingNames);
+  }
+
+  collectPendingSharedNames(node) {
+    // Temporary bridge until pending inherited dependency discovery is moved
+    // onto analysis-owned metadata instead of ad hoc AST rescans.
+    const localSharedNames = new Set(
+      this.compiler._getSharedDeclarations(node).map((child) => child.name.value)
+    );
+    const pendingNames = new Set();
+    node.children.forEach((child) => {
+      if (!(child instanceof nodes.Extends) || !child.withVars || !Array.isArray(child.withVars.children)) {
+        return;
+      }
+      child.withVars.children.forEach((nameNode) => {
+        if (!nameNode || !nameNode.value || localSharedNames.has(nameNode.value)) {
+          return;
+        }
+        pendingNames.add(nameNode.value);
+      });
+    });
+    return Array.from(pendingNames);
+  }
+
+  blockUsesSuper(block) {
+    return !!(block && block.body && block.body.findAll(nodes.Super).length > 0);
+  }
+
+  hasMethodSuperDependencies(blocks) {
+    return Array.isArray(blocks) && blocks.some((block) => this.blockUsesSuper(block));
+  }
+
+  emitPendingInheritanceEntryFactory() {
+    this.emit.line('const __createPendingInheritanceEntry = runtime.createPendingInheritanceEntry;');
+  }
+
+  collectMethodChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
+    if (!analysis) {
+      return [];
+    }
+
+    return Array.from(analysis[fieldName] || []).filter((name) => {
+      if (!name || name === '__return__' || name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL) {
+        return false;
+      }
+      const declaration = this.compiler.analysis.findDeclaration(analysis, name);
+      if (declaration && (declaration.internal || declaration.blockArg)) {
+        return false;
+      }
+      if (ownerNode && (ownerNode instanceof nodes.Block || ownerNode instanceof nodes.MethodDefinition)) {
+        const declarationOwner = this.compiler.analysis.findDeclarationOwner(analysis, name);
+        if (declarationOwner === ownerNode._analysis || declarationOwner === ownerNode.body._analysis) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  collectBlockContracts(node) {
+    const contracts = {};
+    const blocks = this.compiler.scriptMode
+      ? this.compiler._getMethodDefinitions(node)
+      : node.findAll(nodes.Block);
+
+    blocks.forEach((block) => {
+      const signature = this.getBlockSignature(block);
+      contracts[block.name.value] = {
+        argNames: signature.argNames,
+        withContext: !!block.withContext
+      };
+    });
+
+    return contracts;
   }
 
   compileSyncBlock(node, frame) {
@@ -498,7 +1025,12 @@ class CompileInheritance {
       }
       this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
       this.emit.line(`${templateVar}.compile();`);
-      this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
+      if (this.compiler.scriptMode) {
+        this.emit.line(`runtime.validateInheritanceSharedInputs(${templateVar}.sharedSchema || {}, ${extendsExternInputNamesVar}, "extends");`);
+        this.emit.line(`runtime.preloadSharedInputs(${templateVar}.sharedSchema || {}, ${extendsVarsVar}, runtime.getInheritanceSharedBuffer(${this.compiler.buffer.currentBuffer}, inheritanceState), context, { lineno: ${node.lineno}, colno: ${node.colno} });`);
+      } else {
+        this.emit.line(`runtime.validateExternInputs(${templateVar}.externSpec || [], ${extendsExternInputNamesVar}, Object.keys(${extendsExternContextVar}), "extends");`);
+      }
       this.emit.line(`context.setExtendsComposition(${templateVar}, ${extendsRootContextVar}, ${extendsExternContextVar});`);
       this.emit.line(`for(let ${k} in ${templateVar}.blocks) {`);
       this.emit.line(`  context.addBlock(${k}, ${templateVar}.blocks[${k}]);`);
@@ -532,9 +1064,9 @@ class CompileInheritance {
     const positionalArgsNode = this._getPositionalSuperArgsNode(node);
     const args = positionalArgsNode.children;
     const compilingBlock = this.compiler.currentCompilingBlock;
-    const knownInputNames = compilingBlock ? this.compiler._getBlockInputNames(compilingBlock) : [];
+    const knownArgNames = compilingBlock ? this.getBlockArgNames(compilingBlock) : [];
 
-    if (args.length > knownInputNames.length) {
+    if (args.length > knownArgNames.length) {
       this.compiler.fail(
         `super(...) for block "${name}" received too many arguments`,
         node.lineno,
@@ -552,8 +1084,8 @@ class CompileInheritance {
       this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
       this.emit.line(';');
       this.emit.line(`const ${superArgsOverrideVar} = {};`);
-      knownInputNames.slice(0, args.length).forEach((inputName, idx) => {
-        this.emit.line(`${superArgsOverrideVar}[${JSON.stringify(inputName)}] = ${superArgsVar}[${idx}];`);
+      knownArgNames.slice(0, args.length).forEach((argName, idx) => {
+        this.emit.line(`${superArgsOverrideVar}[${JSON.stringify(argName)}] = ${superArgsVar}[${idx}];`);
       });
       this.emit.line(`const ${superBlockPayloadVar} = context.createSuperInheritancePayload(blockPayload, ${superArgsOverrideVar});`);
       this.emit(`return runtime.markSafe(context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${superBlockPayloadVar}, blockRenderCtx));`);
@@ -568,8 +1100,8 @@ class CompileInheritance {
       this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
       this.emit.line(';');
       this.emit.line(`const ${superArgsOverrideVar} = {};`);
-      knownInputNames.slice(0, args.length).forEach((inputName, idx) => {
-        this.emit.line(`${superArgsOverrideVar}[${JSON.stringify(inputName)}] = ${superArgsVar}[${idx}];`);
+      knownArgNames.slice(0, args.length).forEach((argName, idx) => {
+        this.emit.line(`${superArgsOverrideVar}[${JSON.stringify(argName)}] = ${superArgsVar}[${idx}];`);
       });
       this.emit.line(`const ${superBlockPayloadVar} = context.createSuperInheritancePayload(blockPayload, ${superArgsOverrideVar});`);
       this.emit.line(`let ${id} = context.getAsyncSuper(env, "${name}", b_${name}, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${superBlockPayloadVar}, blockRenderCtx);`);

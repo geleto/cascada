@@ -197,7 +197,7 @@
       expect(source).to.contain(`new runtime.VarCommand({ channelName: name, args: [`);
     });
 
-    it('should initialize inherited block inputs as local async var channels in overriding blocks', function () {
+    it('should initialize inherited block arguments as local async var channels in overriding blocks', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');

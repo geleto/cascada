@@ -333,16 +333,16 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   _compileSyncBlockEntries(node, frame) {
-    const blockNames = [];
+    const blockNames = new Set();
     const blocks = node.findAll(nodes.Block);
 
     blocks.forEach((block) => {
       const name = block.name.value;
 
-      if (blockNames.indexOf(name) !== -1) {
+      if (blockNames.has(name)) {
         this.fail(`Block "${name}" defined more than once.`, block.lineno, block.colno, block);
       }
-      blockNames.push(name);
+      blockNames.add(name);
       this._compileSyncBlockEntry(block, frame);
     });
 

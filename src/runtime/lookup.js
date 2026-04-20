@@ -242,7 +242,7 @@ function channelLookup(name, currentBuffer) {
   if (!channel) {
     return undefined;
   }
-  if (isBlockedCrossTemplateChannelRead(currentBuffer, channel)) {
+  if (isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel)) {
     return undefined;
   }
   if (isBufferInAncestry(currentBuffer, channel._buffer)) {
@@ -309,8 +309,11 @@ function getCurrentCompositionChannelValue(channel) {
 
 // Temporary Step C fence until later payload work removes the need for linked
 // buffers to act as a source of ordinary bare-name lookup across templates.
-function isBlockedCrossTemplateChannelRead(currentBuffer, channel) {
+function isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel) {
   if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
+    return false;
+  }
+  if (channel._allowsInheritanceBoundaryRead) {
     return false;
   }
   const currentPath = currentBuffer._context ? currentBuffer._context.path : null;

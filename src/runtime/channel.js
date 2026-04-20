@@ -9,7 +9,15 @@ const {
 const { RESOLVE_MARKER } = require('./resolve');
 const DataChannelTarget = require('../script/data-channel');
 const { BufferIterator } = require('./buffer-iterator');
-const { PoisonError, isPoison, isPoisonError, isRuntimeFatalError, createPoison, handleError } = require('./errors');
+const {
+  PoisonError,
+  RuntimeFatalError,
+  isPoison,
+  isPoisonError,
+  isRuntimeFatalError,
+  createPoison,
+  handleError
+} = require('./errors');
 
 class Channel {
   constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
@@ -390,7 +398,7 @@ class TextChannel extends Channel {
 }
 
 class VarChannel extends Channel {
-  constructor(buffer, channelName, context, channelType, initialValue = null) {
+  constructor(buffer, channelName, context, channelType, initialValue = undefined) {
     // Keep declaration-only var channels aligned with `none` semantics unless
     // a caller provides an explicit initializer.
     super(buffer, channelName, context, channelType, initialValue, null);
@@ -561,7 +569,7 @@ class DataChannel extends Channel {
   }
 }
 
-function _createChannel(buffer, channelName, context, channelType = null, initializer = null) {
+function _createChannel(buffer, channelName, context, channelType = null, initializer) {
   const type = channelType || channelName;
   if (type === 'text') {
     // Text channel is callable; args are appended to the text buffer.
@@ -832,7 +840,7 @@ function _createSequenceChannel(buffer, channelName, context, sink) {
   return new SequenceChannel(buffer, channelName, context, sink);
 }
 
-function createChannel(buffer, channelName, context, channelType = null, initializer = null) {
+function createChannel(buffer, channelName, context, channelType = null, initializer) {
   return _createChannel(buffer, channelName, context, channelType, initializer);
 }
 
@@ -844,7 +852,7 @@ function createSequenceChannel(buffer, channelName, context, sink) {
   return _createSequenceChannel(buffer, channelName, context, sink);
 }
 
-function declareBufferChannel(buffer, channelName, channelType, context, initializer = null) {
+function declareBufferChannel(buffer, channelName, channelType, context, initializer) {
   const targetBuffer = buffer;
   if (!targetBuffer) {
     // No implicit CommandBuffer creation here by design.
@@ -873,9 +881,38 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
-function declareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer = null) {
+function declareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer) {
+  const existingChannel = buffer && typeof buffer.getOwnChannel === 'function'
+    ? buffer.getOwnChannel(channelName)
+    : null;
+  if (existingChannel) {
+    if (existingChannel._channelType !== channelType) {
+      throw new RuntimeFatalError(
+        `shared channel '${channelName}' was declared as '${existingChannel._channelType}' and '${channelType}'`,
+        0,
+        0,
+        null,
+        context && context.path ? context.path : null
+      );
+    }
+    existingChannel._allowsInheritanceBoundaryRead = true;
+    return existingChannel;
+  }
+
   const channel = declareBufferChannel(buffer, channelName, channelType, context, initializer);
-  channel._allowsCrossTemplateRead = true;
+  channel._allowsInheritanceBoundaryRead = true;
+  return channel;
+}
+
+function allowInheritanceBoundaryRead(buffer, channelName) {
+  if (!buffer || typeof buffer.getOwnChannel !== 'function') {
+    return null;
+  }
+  const channel = buffer.getOwnChannel(channelName);
+  if (!channel) {
+    return null;
+  }
+  channel._allowsInheritanceBoundaryRead = true;
   return channel;
 }
 
@@ -892,7 +929,8 @@ module.exports = {
   SequenceChannel,
   createSequenceChannel,
   declareBufferChannel,
-  declareInheritanceSharedChannel
+  declareInheritanceSharedChannel,
+  allowInheritanceBoundaryRead
 };
 
 function cloneSnapshotValue(value) {

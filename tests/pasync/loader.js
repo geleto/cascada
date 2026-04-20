@@ -1368,7 +1368,7 @@
         expect(result.trim()).to.equal('Child Ada');
       });
 
-      it('should resolve promised block input values in async overrides', async () => {
+      it('should resolve promised block argument values in async overrides', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content(user) %}Child {{ user }}{% endblock %}';
 
@@ -1376,7 +1376,7 @@
         expect(result.trim()).to.equal('Child Ada');
       });
 
-      it('should pass the same explicit block inputs to super() without seeing child-local rebinding', async () => {
+      it('should pass the same explicit block arguments to super() without seeing child-local rebinding', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}';
 
@@ -1455,25 +1455,25 @@
         expect(result.trim()).to.equal('Ada/Grace');
       });
 
-      it('should reject conflicting declarations of base-block input names', async () => {
+      it('should reject conflicting declarations of base-block argument names', async () => {
         const template = '{% block content(user) %}{% var user = "Grace" %}{{ user }}{% endblock %}';
 
         try {
           await env.renderTemplateString(template, { user: 'Ada' });
-          expect().fail('Expected block input declaration conflict');
+          expect().fail('Expected block argument declaration conflict');
         } catch (err) {
           expect(String(err)).to.contain(`Identifier 'user' has already been declared.`);
         }
       });
 
-      it('should reject duplicate base-block input names', async () => {
+      it('should reject duplicate base-block argument names', async () => {
         const template = '{% block content(user, user) %}{{ user }}{% endblock %}';
 
         try {
           await env.renderTemplateString(template, { user: 'Ada' });
-          expect().fail('Expected duplicate block input rejection');
+          expect().fail('Expected duplicate block argument rejection');
         } catch (err) {
-          expect(String(err)).to.contain(`block input 'user' is declared more than once`);
+          expect(String(err)).to.contain(`block argument 'user' is declared more than once`);
         }
       });
 
@@ -1532,7 +1532,7 @@
         }
       });
 
-      it('should not treat render-context visibility from with context as inherited explicit block inputs', async () => {
+      it('should not treat render-context visibility from with context as inherited explicit block arguments', async () => {
         loader.addTemplate('base.njk', '{% block content with context %}Base {{ username }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content with context %}{% var username = "Grace" %}{{ username }} / {{ super() }}{% endblock %}';
 
@@ -1540,14 +1540,14 @@
         expect(result.trim()).to.equal('Grace / Base Ada');
       });
 
-      it('should preserve same-template top-level locals alongside explicit block inputs', async () => {
+      it('should preserve same-template top-level locals alongside explicit block arguments', async () => {
         const template = '{% set suffix = "local" %}{% block content(user) %}{{ user }} {{ suffix }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, { user: 'Ada' });
         expect(result.trim()).to.equal('Ada local');
       });
 
-      it('should preserve child top-level locals alongside inherited explicit block inputs', async () => {
+      it('should preserve child top-level locals alongside inherited explicit block arguments', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% set suffix = "child" %}{% block content(user) %}{{ user }} {{ suffix }}{% endblock %}';
 
@@ -1555,7 +1555,7 @@
         expect(result.trim()).to.equal('Ada child');
       });
 
-      it('should preserve template-local values across a multi-level super chain with explicit block inputs', async () => {
+      it('should preserve template-local values across a multi-level super chain with explicit block arguments', async () => {
         loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
         loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% set parentLabel = "parent" %}{% block content(user) %}Parent {{ parentLabel }} {{ super() }}{% endblock %}');
         const childTemplate = '{% extends "parent.njk" %}{% set childLabel = "child" %}{% block content(user) %}Child {{ childLabel }} {{ super() }}{% endblock %}';
@@ -1564,7 +1564,7 @@
         expect(result.trim()).to.equal('Child child Parent parent Grand Ada');
       });
 
-      it('should keep original block inputs through a three-level super chain when the middle block rebinds them', async () => {
+      it('should keep original block arguments through a three-level super chain when the middle block rebinds them', async () => {
         loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
         loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block content(user) %}{% set user = "Mid" %}Parent {{ user }} {{ super() }}{% endblock %}');
         const childTemplate = '{% extends "parent.njk" %}{% block content(user) %}Child {{ super() }}{% endblock %}';
@@ -1590,7 +1590,7 @@
         expect(result.trim()).to.equal('[Ada]');
       });
 
-      it('should let explicit block inputs shadow render-context properties of the same name', async () => {
+      it('should let explicit block arguments shadow render-context properties of the same name', async () => {
         const template = '{% set user = "ExplicitUser" %}{% block content(user) with context %}{{ user }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, { user: 'RenderUser' });

@@ -61,8 +61,7 @@ class CompileAnalysis {
     this._validateUses(analysis);
     this._validateMutations(analysis);
 
-    node.fields.forEach((field) => {
-      const child = node[field];
+    this._getTraversalEntries(node).forEach(({ field, child }) => {
       this._walk(child, node, field);
     });
 
@@ -124,6 +123,41 @@ class CompileAnalysis {
         node._analysis = Object.assign(node._analysis || {}, returned);
       }
     }
+  }
+
+  _getTraversalEntries(node) {
+    if (node instanceof nodes.Root && node.inheritanceMetadata) {
+      return [
+        {
+          field: 'sharedDeclarations',
+          child: node.inheritanceMetadata.sharedDeclarations
+        },
+        {
+          field: 'children',
+          child: node.children
+        },
+        {
+          field: 'methods',
+          child: node.inheritanceMetadata.methods
+        }
+      ];
+    }
+    if (node instanceof nodes.InheritanceMetadata) {
+      return [
+        {
+          field: 'sharedDeclarations',
+          child: node.sharedDeclarations
+        },
+        {
+          field: 'methods',
+          child: node.methods
+        }
+      ];
+    }
+    return node.fields.map((field) => ({
+      field,
+      child: node[field]
+    }));
   }
 
   _extractSymbols(targetNode) {
@@ -480,6 +514,9 @@ class CompileAnalysis {
         continue;
       }
       if (declaration.type === 'sequential_path' || (name && name.charAt(0) === '!')) {
+        continue;
+      }
+      if (declaration.shared) {
         continue;
       }
       if (!this._passesReadOnlyBoundary(scopeOwner, declarationOwner)) {

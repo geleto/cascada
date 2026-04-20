@@ -367,10 +367,59 @@ function transform(ast, asyncFilters, name, opts) {
     ast = addDynamicExtendsSetup(ast, opts);
   }
   ast = cps(ast, asyncFilters || []);
+  if (opts.asyncMode && opts.scriptMode) {
+    ast = extractScriptInheritanceMetadata(ast);
+  }
   if (opts.asyncMode) {
     ast = normalizeAsyncCompilerNodes(ast);
     ast = renameConflictingDeclarations(ast, opts && opts.idPool);
   }
+  return ast;
+}
+
+function extractScriptInheritanceMetadata(ast) {
+  if (!(ast instanceof nodes.Root)) {
+    return ast;
+  }
+
+  const hasDirectExtends = (ast.children || []).some((child) => child instanceof nodes.Extends);
+  const methodNodes = [];
+  const sharedDeclarations = [];
+  const remainingChildren = [];
+  let seenExtends = false;
+
+  (ast.children || []).forEach((child) => {
+    if (child instanceof nodes.Extends) {
+      seenExtends = true;
+    }
+    if (child instanceof nodes.Block) {
+      if (hasDirectExtends && !seenExtends && !ast._preExtendsMovedMethodNode) {
+        ast._preExtendsMovedMethodNode = child;
+      }
+      methodNodes.push(new nodes.MethodDefinition(
+        child.lineno,
+        child.colno,
+        child.name,
+        child.args,
+        child.body,
+        child.withContext
+      ));
+      return;
+    }
+    if (child instanceof nodes.ChannelDeclaration && child.isShared) {
+      sharedDeclarations.push(child);
+      return;
+    }
+    remainingChildren.push(child);
+  });
+
+  ast.children = remainingChildren;
+  ast.inheritanceMetadata = new nodes.InheritanceMetadata(
+    ast.lineno,
+    ast.colno,
+    new nodes.NodeList(ast.lineno, ast.colno, methodNodes),
+    new nodes.SharedDeclarations(ast.lineno, ast.colno, sharedDeclarations)
+  );
   return ast;
 }
 

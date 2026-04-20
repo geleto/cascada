@@ -3,6 +3,11 @@
 const { Obj } = require('./object');
 
 function traverseAndCheck(obj, type, results) {
+  if (Array.isArray(obj)) {
+    obj.forEach((item) => traverseAndCheck(item, type, results));
+    return;
+  }
+
   if (obj instanceof type) {
     results.push(obj);
   }
@@ -36,11 +41,7 @@ class Node extends Obj {
   findAll(type, results) {
     results = results || [];
 
-    if (this instanceof NodeList) {
-      this.children.forEach(child => traverseAndCheck(child, type, results));
-    } else {
-      this.fields.forEach(field => traverseAndCheck(this[field], type, results));
-    }
+    this.fields.forEach(field => traverseAndCheck(this[field], type, results));
 
     return results;
   }
@@ -76,7 +77,14 @@ class NodeList extends Node {
 class Root extends NodeList {
   get typename() { return 'Root'; }
   get fields() {
-    return ['children'];
+    return ['inheritanceMetadata', 'children'];
+  }
+
+  init(lineno, colno, children, inheritanceMetadata) {
+    this.lineno = lineno;
+    this.colno = colno;
+    this.inheritanceMetadata = inheritanceMetadata === undefined ? null : inheritanceMetadata;
+    this.children = children || [];
   }
 }
 
@@ -220,6 +228,33 @@ class Block extends Node {
 
   init(lineno, colno, name, args, body, withContext) {
     super.init(lineno, colno, name, args || new NodeList(), body, withContext);
+  }
+}
+
+class MethodDefinition extends Node {
+  get typename() { return 'MethodDefinition'; }
+  get fields() { return ['name', 'args', 'body', 'withContext']; }
+
+  init(lineno, colno, name, args, body, withContext) {
+    super.init(lineno, colno, name, args || new NodeList(), body, withContext);
+  }
+}
+
+class SharedDeclarations extends NodeList {
+  get typename() { return 'SharedDeclarations'; }
+}
+
+class InheritanceMetadata extends Node {
+  get typename() { return 'InheritanceMetadata'; }
+  get fields() { return ['methods', 'sharedDeclarations']; }
+
+  init(lineno, colno, methods, sharedDeclarations) {
+    super.init(
+      lineno,
+      colno,
+      methods || new NodeList(lineno, colno, []),
+      sharedDeclarations || new SharedDeclarations(lineno, colno, [])
+    );
   }
 }
 
@@ -525,6 +560,9 @@ module.exports = {
   FilterAsync: FilterAsync,
   KeywordArgs: KeywordArgs,
   Block: Block,
+  MethodDefinition: MethodDefinition,
+  SharedDeclarations: SharedDeclarations,
+  InheritanceMetadata: InheritanceMetadata,
   Super: Super,
   Extends: Extends,
   Include: Include,

@@ -271,7 +271,8 @@ Scope:
 - compile shared schema metadata with:
   - channel type
   - local default value
-  - treat `_getRootSharedDeclarations(...)` as a temporary bridge only
+  - treat any raw root-child scan for shared declarations as a temporary bridge
+    only
     - do not keep re-scanning raw root children as the long-term source of
       shared-schema metadata
     - move shared-schema compilation onto analyzed/transformed metadata along
@@ -288,8 +289,8 @@ Scope:
     phase emits the new metadata shape
   - do not let `_collectCompiledMethods(...)` become permanent follow-on
     architecture after this metadata shape lands
-  - do not let `_getRootSharedDeclarations(...)` remain the permanent
-    shared-schema source once analyzed/transformed metadata exists
+  - do not let raw root-child scans remain the permanent shared-schema source
+    once analyzed/transformed metadata exists
 
 Tests:
 
@@ -314,6 +315,13 @@ Scope:
 - establish/reuse the shared metadata object:
   - the most-derived entry creates it once per render/instance
   - parents receive that same object and enrich it
+- finish the Phase 3 metadata-source cleanup in the async compiler:
+  - move method/block and shared-channel metadata lookup onto a transformed
+    inheritance-metadata AST node attached at `Root`
+  - stop re-scanning raw `Root` / `Block` structure for startup metadata in
+    `compiler-async.js`
+  - keep render-time block execution on the existing block nodes for now; this
+    step is only about where startup metadata comes from
 - create and assign `sharedRootBuffer` once at the owning most-derived
   direct-render entry or component owner, then thread that same buffer through
   the shared metadata object
@@ -370,6 +378,10 @@ Scope:
     extends chains
   - keep upward propagation unchanged across multiple levels
 - remove first:
+  - replace the temporary script-transform source-order bridge
+    `_preExtendsMovedMethodNode` with direct source-order validation before
+    method/shared extraction, so pre-`extends` validation no longer depends on
+    ad hoc transformer side state
   - delete the old root `__parentTemplate` / final-parent continuation path
     and the template-local-capture assumptions in `src/compiler/compiler-async.js`
     before constructor lowering becomes authoritative
@@ -419,6 +431,13 @@ Scope:
   - method-call commands await helper-resolved used/mutated channel metadata
   - shared-channel-lookup commands await helper-resolved shared-channel
     metadata
+- this phase is where the current script-method visibility bridge starts to go
+  away:
+  - stop treating the compiler-emitted method-entry `linkedChannels` list as
+    authoritative for inherited dispatch
+  - stop relying on the temporary "root-visible binding" bridge in
+    `src/compiler/inheritance.js` to expose shared/extern/imported names from
+    isolated method scope
 - remove first:
   - remove legacy direct metadata reads before helper-based resolution becomes
     the only way to cross the barrier
@@ -465,6 +484,16 @@ Scope:
     than letting them linger behind the new method model:
     - `Context.getAsyncSuper(...)`
     - `Context.getSyncSuper(...)`
+  - remove the temporary script-method visibility/linking bridge in
+    `src/compiler/inheritance.js` before the phase is considered complete:
+    - `_getMethodVisibleRootBindingNames(...)`
+    - the `runtime.allowInheritanceBoundaryRead(currentBuffer.parent, ...)`
+      emission inside `compileAsyncBlockEntry(...)`
+    - reliance on method-entry-local `blockLinkedChannels` as the final
+      inherited dispatch linkage set
+  - after this phase, method/shared access ordering should come from the
+    caller-side admission/helper path only, not from compiler-side visibility
+    exceptions
 
 Tests:
 
@@ -540,9 +569,28 @@ Scope:
 - block `withContext` follows the enclosing template/script mode; it is not a
   separate block-level runtime flag to infer later
 - block argument passing on the new explicit `()` call model
+- once templates are on the same metadata path, remove the remaining
+  script-vs-template callable-shape branching in async compilation:
+  - stop switching between `MethodDefinition` and `Block` for metadata
+    collection
+  - move both onto one callable-entry path for metadata and startup assembly
+- move shared render-structure ownership off `Context` and onto an explicit
+  per-render execution-state argument passed to async entry functions:
+  - `Context` should keep lexical/render/extern variable scope concerns
+  - block registries, deferred export state, inheritance payload bookkeeping,
+    and related shared structural state should live on the execution-state
+    object instead of `Context._sharedStructuralState`
+  - update async root/block entry signatures to accept and thread that
+    execution-state object directly rather than hiding it inside context forks
 - remove first:
   - remove the old async template inheritance pre/post-extends flow before
     templates switch to the constructor/method model
+  - remove the template-only compiler capture bridge in
+    `src/compiler/inheritance.js` once templates switch to the shared
+    constructor/method model:
+    - `getBlockLocalCaptureNames(...)`
+    - template/block use of `createInheritancePayload(...)`
+    - template/block use of `prepareInheritancePayloadForBlock(...)`
   - remove the old block-registry / block-contract runtime path once template
     blocks compile as methods on the shared metadata object:
     - `blockContracts` emission and `Template.blockContracts`
@@ -555,6 +603,7 @@ Scope:
       merge path in `src/compiler/inheritance.js`
   - remove the old template inheritance payload/capture state on `Context`
     once templates use the shared metadata object directly:
+    - `_sharedStructuralState`
     - `extendsCompositionByParent`
     - `inheritanceLocalCapturesByTemplate`
     - `setExtendsComposition(...)` / `getExtendsComposition(...)`
@@ -565,7 +614,7 @@ Scope:
     - `beginAsyncExtendsBlockRegistration(...)` /
       `finishAsyncExtendsBlockRegistration(...)`
     - `asyncExtendsBlocksPromise` / resolver / pending-count state
-  - remove `isBlockedCrossTemplateChannelRead(...)` in `src/runtime/lookup.js`
+  - remove `isBlockedInheritanceBoundaryChannelRead(...)` in `src/runtime/lookup.js`
     once cross-template bare-name reads are no longer part of the template
     inheritance path
 
@@ -602,6 +651,16 @@ Scope:
 - detailed dynamic `extends` work remains deferred until the main static model
   is stable; if the static model is not yet stable by this phase, dynamic
   `extends` may remain deferred past Phase 10 rather than being forced in here
+- clean up remaining architecture drift after the main model is stable:
+  - move pending inherited-method/shared dependency discovery off ad hoc AST
+    rescans and onto analysis-owned metadata
+    - remove the temporary compiler rescans in `src/compiler/inheritance.js`:
+      - `collectPendingMethodNames(...)`
+      - `collectPendingSharedNames(...)`
+  - flatten the temporary inheritance registry classes when they no longer add
+    value over plain shared metadata objects and helpers:
+    - `InheritanceMethodRegistry`
+    - `InheritanceSharedRegistry`
 
 Tests:
 

@@ -126,7 +126,7 @@
         tmpl.compile();
         expect(tmpl.blockContracts).to.eql({
           content: {
-            inputNames: ['user'],
+            argNames: ['user'],
             withContext: true
           }
         });

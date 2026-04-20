@@ -232,6 +232,19 @@ describe('Extends Runtime', function () {
     });
   });
 
+  describe('Script method invocation scope', function () {
+    it('should keep constructor-local non-shared vars out of later method invocation scope', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'var secret = "A"\nmethod readSecret()\n  return secret\nendmethod');
+      loader.addTemplate('C.script', 'extends "A.script"\nreturn this.readSecret()');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be(undefined);
+    });
+  });
+
   describe.skip('Phase 7 - Inherited Dispatch', function () {
     it('should let an ancestor constructor call a child-defined override before parent methods load', async function () {
       const loader = new StringLoader();
@@ -417,7 +430,7 @@ describe('Extends Runtime', function () {
               output.markFinishedAndPatchLinks();
               return 'result';
             },
-            contract: { inputNames: [], withContext: false },
+            contract: { argNames: [], withContext: false },
             ownerKey: 'Main.script',
             linkedChannels: ['trace']
           },
@@ -469,7 +482,7 @@ describe('Extends Runtime', function () {
           fn() {
             return 'done';
           },
-          contract: { inputNames: [], withContext: false },
+          contract: { argNames: [], withContext: false },
           ownerKey: 'Parent.script',
           linkedChannels: []
         }),

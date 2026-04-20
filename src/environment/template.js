@@ -241,7 +241,7 @@ class Template extends Obj {
 
       let func;
       try {
-        func = new Function(source);
+        func = new Function('runtime', source);
       } catch (e) {
         // @todo - CompileError
         /*console.error('Error compiling:\n' + source);
@@ -278,7 +278,7 @@ class Template extends Obj {
 
         throw new Error('Error trying to compile ' + this.path + ' ' + e.message);
       }
-      props = func();
+      props = func(globalRuntime);
     }
 
     this.blockContracts = props.blockContracts || {};

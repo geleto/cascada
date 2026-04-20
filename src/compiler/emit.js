@@ -31,6 +31,20 @@ module.exports = class CompileEmit {
     this.insert(pos, code + '\n');
   }
 
+  capture(emitFunc) {
+    const previousCodebuf = this.compiler.codebuf;
+    const previousScopeClosers = this.scopeClosers;
+    this.compiler.codebuf = [];
+    this.scopeClosers = '';
+    try {
+      emitFunc.call(this.compiler);
+      return this.compiler.codebuf.join('');
+    } finally {
+      this.compiler.codebuf = previousCodebuf;
+      this.scopeClosers = previousScopeClosers;
+    }
+  }
+
   addScopeLevel() {
     this.scopeClosers += '})';
   }
@@ -61,7 +75,7 @@ module.exports = class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false) {`);
+        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false, parentBuffer = null, inheritanceState = null) {`);
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
@@ -77,7 +91,7 @@ module.exports = class CompileEmit {
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     this.compiler.buffer.initManagedBuffer(
       this.compiler.buffer.currentBuffer,
-      (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null,
+      this.compiler.asyncMode ? 'parentBuffer' : null,
       this.compiler.buffer.currentTextChannelVar,
       linkedChannels
     );
