@@ -20,6 +20,10 @@ class CompileInheritance {
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     if (this.compiler.scriptMode && this.compiler.analysis.isRootScopeOwner(node._analysis)) {
+      // Keep the boundary-read marker while Phase 8/9 still route imported and
+      // component-adjacent root bindings through the constrained cross-boundary
+      // visibility bridge. Phase 10 owns removing this escape hatch once the
+      // final runtime visibility model is shared across all composition paths.
       this.emit.line(`runtime.allowInheritanceBoundaryRead(${this.compiler.buffer.currentBuffer}, "${name}");`);
     }
     this.emit.line(
@@ -486,7 +490,9 @@ class CompileInheritance {
       this.emit.line('try {');
       this.emit.line(`let ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = null;`);
       this.compiler._compileChildren(node, null);
-      this.emit.line('context.resolveExports();');
+      this.emit.line('if (!(inheritanceState && inheritanceState.componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE)) {');
+      this.emit.line('  context.resolveExports();');
+      this.emit.line('}');
       this.emit.line(`return ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR};`);
       this.emit.closeScopeLevels();
       this.emit.line('} catch (e) {');
@@ -536,6 +542,8 @@ class CompileInheritance {
       this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
       this.emit.line('  cb(err);');
       this.emit.line('});');
+      this.emit.line(`} else if (compositionMode === runtime.COMPONENT_COMPOSITION_MODE) {`);
+      this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
       this.emit.line('} else {');
       if (this.compiler.hasExtends) {
         this.emit.line(`  if (${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}) {`);
@@ -754,7 +762,7 @@ class CompileInheritance {
     if (isScriptMethod) {
       const methodBaseContextVar = this.compiler._tmpid();
       const methodExternContextVar = this.compiler._tmpid();
-      this.emit.line(`const ${methodBaseContextVar} = context.getRenderContextVariables ? context.getRenderContextVariables() : {};`);
+      this.emit.line(`const ${methodBaseContextVar} = context.getCompositionContextVariables ? context.getCompositionContextVariables() : (context.getRenderContextVariables ? context.getRenderContextVariables() : {});`);
       this.emit.line(`const ${methodExternContextVar} = context.getExternContextVariables ? context.getExternContextVariables() : undefined;`);
       this.emit.line(`context = context.forkForComposition(${invocationPath}, ${methodBaseContextVar}, ${block.withContext ? '(blockRenderCtx || undefined)' : 'undefined'}, ${methodExternContextVar});`);
     } else if (hasExplicitBlockContext) {
@@ -1093,21 +1101,16 @@ class CompileInheritance {
       const templateVar = this.compiler._tmpid();
       const parentContextVar = this.compiler._tmpid();
       const parentOutputVar = this.compiler._tmpid();
-      const parentLinkedChannelsVar = this.compiler._tmpid();
+      const parentCompositionModeVar = this.compiler._tmpid();
       this.emit.line(`  let ${templateVar} = await ${parentTemplateId};`);
       this.emit.line(`  ${templateVar}.compile();`);
       this.emit.line(`  const ${parentContextVar} = ${compositionPayloadVar}`);
       this.emit.line(`    ? context.forkForComposition(${templateVar}.path, ${compositionPayloadVar}.rootContext || {}, context.getRenderContextVariables(), ${compositionPayloadVar}.externContext || {})`);
       this.emit.line(`    : context.forkForPath(${templateVar}.path);`);
-      this.emit.line(`  const ${parentOutputVar} = ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, true, currentBuffer, inheritanceState);`);
-      // Recompute after parent startup so the boundary child links to the
-      // parent's returned buffer for the full shared-schema set, including any
-      // channels newly registered by ancestors during constructor startup.
-      this.emit.line(`  const ${parentLinkedChannelsVar} = Object.keys((inheritanceState && inheritanceState.sharedSchema) || {});`);
-      this.emit.line(`  for (const channelName of ${parentLinkedChannelsVar}) {`);
-      this.emit.line(`    currentBuffer.addBuffer(${parentOutputVar}, channelName);`);
-      this.emit.line('  }');
-      this.emit.line(`  if (${parentOutputVar} && typeof ${parentOutputVar}.getFinishedPromise === 'function') {`);
+      this.emit.line(`  const ${parentCompositionModeVar} = inheritanceState && inheritanceState.componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE ? runtime.COMPONENT_COMPOSITION_MODE : true;`);
+      this.emit.line(`  const ${parentOutputVar} = ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, ${parentCompositionModeVar}, currentBuffer, inheritanceState);`);
+      this.emit.line(`  runtime.linkCurrentBufferToResolvedParentSharedChannels(inheritanceState, currentBuffer, ${parentOutputVar});`);
+      this.emit.line(`  if (${parentCompositionModeVar} !== runtime.COMPONENT_COMPOSITION_MODE && ${parentOutputVar} && typeof ${parentOutputVar}.getFinishedPromise === 'function') {`);
       this.emit.line(`    await ${parentOutputVar}.getFinishedPromise();`);
       this.emit.line('  }');
       this.emit.line('});');

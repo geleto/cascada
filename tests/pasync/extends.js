@@ -344,6 +344,17 @@ describe('Extends Runtime', function () {
       expect(result).to.be('Ada|Example');
     });
 
+    it('should compile inherited methods against the composition-context baseline instead of render-context-only fallback', function () {
+      const source = new Script(
+        'extends "A.script"\nmethod build() with context\n  return siteName\nendmethod\nreturn null',
+        env,
+        'composition-context-method.script'
+      )._compileSource();
+
+      expect(source).to.contain('context.getCompositionContextVariables ? context.getCompositionContextVariables()');
+      expect(source).to.not.contain('context.getMethodCompositionVariables');
+    });
+
     it('should keep shared-channel writes from method bodies ordered at the call site', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
@@ -507,6 +518,52 @@ describe('Extends Runtime', function () {
       } finally {
         runtime.InheritanceAdmissionCommand.prototype.apply = originalApply;
       }
+    });
+
+    it('should expose resolvedMethodMeta on inherited dispatch promises', async function () {
+      env = new AsyncEnvironment();
+      const context = new Context({}, {}, env, 'Main.script', true, {}, {});
+      const inheritanceState = runtime.createInheritanceState();
+      const rootBuffer = runtime.createCommandBuffer(context);
+
+      inheritanceState.methods.build = {
+        fn() {
+          return 'done';
+        },
+        contract: { argNames: [], withContext: false },
+        ownerKey: 'Main.script',
+        usedChannels: ['theme'],
+        mutatedChannels: ['trace'],
+        super: null
+      };
+
+      const admission = runtime.invokeInheritedMethod(
+        inheritanceState,
+        'build',
+        [],
+        context,
+        env,
+        runtime,
+        () => {},
+        rootBuffer,
+        { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
+      );
+
+      expect(admission).to.be.ok();
+      expect(admission.resolvedMethodMeta).to.be.ok();
+      expect(typeof admission.resolvedMethodMeta.then).to.be('function');
+
+      rootBuffer.markFinishedAndPatchLinks();
+
+      const value = await admission;
+      const methodMeta = await admission.resolvedMethodMeta;
+      await admission.completion;
+
+      expect(value).to.be('done');
+      expect(methodMeta).to.be.ok();
+      expect(methodMeta.entry).to.be(inheritanceState.methods.build);
+      expect(methodMeta.linkedChannels).to.contain('theme');
+      expect(methodMeta.linkedChannels).to.contain('trace');
     });
 
     it('should let _finishAdmissionBuffers own sync admission-buffer cleanup', async function () {

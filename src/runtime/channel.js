@@ -867,6 +867,10 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
 }
 
 function declareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer) {
+  const normalizedInitializer =
+    channelType === 'var' && initializer === null
+      ? undefined
+      : initializer;
   const existingChannel = buffer && typeof buffer.getOwnChannel === 'function'
     ? buffer.getOwnChannel(channelName)
     : null;
@@ -884,7 +888,7 @@ function declareInheritanceSharedChannel(buffer, channelName, channelType, conte
     return existingChannel;
   }
 
-  const channel = declareBufferChannel(buffer, channelName, channelType, context, initializer);
+  const channel = declareBufferChannel(buffer, channelName, channelType, context, normalizedInitializer);
   channel._allowsInheritanceBoundaryRead = true;
   return channel;
 }
@@ -893,6 +897,10 @@ function allowInheritanceBoundaryRead(buffer, channelName) {
   if (!buffer || typeof buffer.getOwnChannel !== 'function') {
     return null;
   }
+  // Transitional visibility bridge: Phase 8 keeps this marker for the
+  // constrained component/import/extern boundary reads that still depend on
+  // channel-level opt-in. The plan removes it in Phase 10 once those paths no
+  // longer need a special cross-boundary escape hatch.
   const channel = buffer.getOwnChannel(channelName);
   if (!channel) {
     return null;

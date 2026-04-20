@@ -332,6 +332,8 @@ class InheritanceAdmissionCommand extends Command {
     this.errorContext = errorContext;
     this.isObservable = true;
     this.completion = null;
+    this.resolvedMethodMetaPromise = null;
+    this._resolvedMethodMeta = null;
     this._normalizedError = null;
     this._startPromise = null;
     this._finishedBuffers = false;
@@ -354,6 +356,7 @@ class InheritanceAdmissionCommand extends Command {
     this._startPromise = (async () => {
       try {
         const methodMeta = _normalizeMethodMeta(await this.resolveMethodEntry());
+        this._resolvedMethodMeta = methodMeta;
         const invocationBuffer = this._ensureInvocationBuffer(methodMeta.entry || methodMeta);
         const result = await this._invokeResolvedMethodMeta(methodMeta, invocationBuffer);
         this._resolveObservableResult(result);
@@ -376,6 +379,8 @@ class InheritanceAdmissionCommand extends Command {
 
     this.completion = this._startPromise;
     this.completion.catch(() => {});
+    this.resolvedMethodMetaPromise = this._startPromise.then(() => this._resolvedMethodMeta);
+    this.resolvedMethodMetaPromise.catch(() => {});
     return this._startPromise;
   }
 
@@ -531,7 +536,16 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
     errorContext
   });
 
-  return _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels).promise;
+  const admission = _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels);
+  if (admission.promise && admission.completion) {
+    // Component dispatch uses the shared returned promise surface: `.completion`
+    // waits for full admission teardown, while `.resolvedMethodMeta` exposes
+    // the already-resolved inherited method metadata without triggering a
+    // second ancestry walk just to learn linked channels.
+    admission.promise.completion = admission.completion;
+    admission.promise.resolvedMethodMeta = command.resolvedMethodMetaPromise;
+  }
+  return admission.promise;
 }
 
 function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, context, env, runtime, cb, currentBuffer, errorContext = null) {

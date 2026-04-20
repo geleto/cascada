@@ -865,7 +865,13 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeComponent(node) {
     node.target._analysis = { declarationTarget: true };
     return {
-      declares: [{ name: node.target.value, type: 'var', initializer: null, explicit: true }]
+      declares: [{
+        name: node.target.value,
+        type: 'var',
+        initializer: null,
+        explicit: true,
+        componentBinding: true
+      }]
     };
   }
 
@@ -874,12 +880,63 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileComponent(node) {
-    this.fail(
-      'component syntax is available, but component runtime support is implemented in a later phase',
-      node.lineno,
-      node.colno,
-      node
+    if (!this.scriptMode) {
+      this.fail(
+        'component bindings are only supported in script mode',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+
+    const targetName = node.target.value;
+    const componentTemplateVar = this.inheritance._compileAsyncGetTemplateOrScript(node, true, false);
+    const componentVarsVar = this._tmpid();
+    const explicitInputNamesVar = this._tmpid();
+    const externContextVar = this._tmpid();
+    const rootContextVar = this._tmpid();
+    const payloadVar = this._tmpid();
+    const instanceVar = this._tmpid();
+    const errorContextJson = JSON.stringify(this._createErrorContext(node));
+
+    this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
+    this.emit.line(`const ${componentVarsVar} = {};`);
+    this.inheritance._emitExplicitExternInputs(node, componentVarsVar);
+    this.inheritance._emitCompositionContextObject(
+      node,
+      componentVarsVar,
+      externContextVar,
+      explicitInputNamesVar,
+      !!node.withContext
     );
+    this.inheritance._emitCompositionContextObject(
+      node,
+      componentVarsVar,
+      rootContextVar,
+      null,
+      true
+    );
+    this.emit.line(`const ${payloadVar} = {`);
+    this.emit.line(`  explicitInputValues: ${componentVarsVar},`);
+    this.emit.line(`  explicitInputNames: ${explicitInputNamesVar},`);
+    this.emit.line(`  rootContext: ${rootContextVar},`);
+    this.emit.line(`  externContext: ${externContextVar}`);
+    this.emit.line('};');
+    this.emit.line(`const ${instanceVar} = runtime.createComponentInstance(`);
+    this.emit.line(`  ${componentTemplateVar},`);
+    this.emit.line(`  ${payloadVar},`);
+    this.emit.line('  context,');
+    this.emit.line('  env,');
+    this.emit.line('  runtime,');
+    this.emit.line('  cb,');
+    this.emit.line(`  ${this.buffer.currentBuffer},`);
+    this.emit.line(`  ${errorContextJson}`);
+    this.emit.line(');');
+    this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${targetName}', args: [${instanceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${targetName}');`);
+
+    if (targetName.charAt(0) !== '_' && this.analysis.isRootScopeOwner(node._analysis)) {
+      this.emit.line(`context.addDeferredExport("${targetName}", "${targetName}", ${this.buffer.currentBuffer});`);
+    }
   }
 
   analyzeFromImport(node) {
@@ -1201,6 +1258,10 @@ class CompilerAsync extends CompilerBaseAsync {
         const externCtxVar = this._tmpid();
 
         this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
+        // Keep the explicit boundary-read marker for extern root bindings while
+        // Phase 8 components and the remaining composition paths still share
+        // the constrained visibility bridge. The plan schedules the final
+        // removal once that bridge is no longer needed anywhere.
         this.emit.line(`runtime.allowInheritanceBoundaryRead(${this.buffer.currentBuffer}, "${name}");`);
         this.emit.line(`const ${externCtxVar} = context.getExternContextVariables();`);
         this.emit.line(`const ${hasCtxId} = Object.prototype.hasOwnProperty.call(${externCtxVar}, "${name}");`);
@@ -1245,8 +1306,10 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.scriptMode) {
       if (this.hasExtends) {
         this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState);`);
+        this.emit.line('if (inheritanceState) { inheritanceState.constructorBoundaryPromise = ' + CONSTRUCTOR_BOUNDARY_PROMISE_VAR + '; }');
       } else {
         this.emit.line(`b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState);`);
+        this.emit.line('if (inheritanceState) { inheritanceState.constructorBoundaryPromise = null; }');
       }
     } else {
       this._compileChildren(node, null);

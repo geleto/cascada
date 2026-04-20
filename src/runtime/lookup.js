@@ -11,7 +11,6 @@ const {
 } = require('./errors');
 const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 const inheritanceCall = require('./inheritance-call');
-const inheritanceState = require('./inheritance-state');
 
 const {
   resolveDuo
@@ -282,11 +281,6 @@ function _resolveSharedObservationTarget(currentBuffer, name) {
 
 function observeInheritanceSharedChannel(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
   if (!currentBuffer || !inheritanceStateValue) {
-    return undefined;
-  }
-
-  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue);
-  if (!Object.prototype.hasOwnProperty.call(sharedSchema, name)) {
     return undefined;
   }
 

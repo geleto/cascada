@@ -582,10 +582,16 @@ Scope:
     - the runtime-side channel flag / lookup behavior that honors that marker
 - decide the ownership of `src/runtime/inheritance-inputs.js` on the component
   path:
-  - if component startup needs shared-input preload/validation helpers, move
-    that module under explicit component ownership here
-  - otherwise treat it as leftover Phase 4/5 scaffolding and schedule its
-    removal in Phase 10 instead of letting it linger as an orphaned runtime API
+  - remove the leftover Phase 4/5 shared-input preload helper once explicit
+    component payloads stop auto-materializing shared channels
+  - do not keep a public runtime helper/module around once the component path
+    no longer uses it
+- component payload semantics on the explicit component path:
+  - `component ... with ...` populates `compositionPayload`
+  - those inputs are available through the component composition/render context
+  - they do not auto-materialize undeclared or declared `shared` channels
+  - declared shared channels still come from shared declarations plus
+    constructor/method writes, not implicit payload preload
 - component-specific `compositionPayload` forms:
   - `component ... with context`
   - `component ... with theme, id`
@@ -602,9 +608,18 @@ Scope:
   - it closes when no new component operations can arrive from that owner
 - `ns.x` for `shared var` as a current-buffer observation operation, not a
   stored JS property
+- constrain the component namespace surface:
+  - supported forms are `ns.x`, `ns.x.snapshot()`, `ns.x.isError()`,
+    `ns.x.getError()`, and `ns.method(...)`
+  - do not allow arbitrary JS-object-style chaining such as `ns.x.y` or
+    `ns.method.prop`
 - remove first:
-  - remove any temporary import-style or legacy component-binding shortcuts
-    before explicit component runtime wiring lands
+  - no separate import-style or legacy component-binding shortcuts remain after
+    the explicit Phase 8 namespace surface landed:
+    - the constrained `ns.x` / `ns.method(...)` forms are now the only
+      supported component binding surface
+    - keep any further namespace-surface cleanup focused on that explicit
+      runtime path rather than reintroducing compatibility aliases
 
 Tests:
 
@@ -746,21 +761,28 @@ Scope:
 - detailed dynamic `extends` work remains deferred until the main static model
   is stable; if the static model is not yet stable by this phase, dynamic
   `extends` may remain deferred past Phase 10 rather than being forced in here
-- clean up remaining architecture drift after the main model is stable:
-  - move pending inherited-method/shared dependency discovery off ad hoc AST
-    rescans and onto analysis-owned metadata
+  - clean up remaining architecture drift after the main model is stable:
+    - move pending inherited-method/shared dependency discovery off ad hoc AST
+      rescans and onto analysis-owned metadata
     - remove the temporary compiler rescans in `src/compiler/inheritance.js`:
       - `collectPendingMethodNames(...)`
       - `collectPendingSharedNames(...)`
-  - flatten the temporary inheritance registry classes when they no longer add
-    value over plain shared metadata objects and helpers:
-    - `InheritanceMethodRegistry`
-    - `InheritanceSharedRegistry`
-  - remove leftover bootstrap/API defensive code once the final ownership
-    boundaries are settled:
-    - drop the unreachable `bootstrapInheritanceMetadata(...)` fallback that
-      creates a new inheritance state when the caller already owns creation
-    - remove `src/runtime/inheritance-inputs.js` if Phase 8 does not adopt it
+    - flatten the temporary inheritance registry classes when they no longer add
+      value over plain shared metadata objects and helpers:
+      - `InheritanceMethodRegistry`
+      - `InheritanceSharedRegistry`
+    - revisit buffer-finish completion ownership once component/template
+      lifecycle semantics are fully stable:
+      - redesign or rename `CommandBuffer.getFinishCompletePromise()` if the
+        current "finished plus channel completion promises" contract is still a
+        transitional helper rather than the final runtime boundary
+    - remove leftover bootstrap/API defensive code once the final ownership
+      boundaries are settled:
+      - drop the unreachable `bootstrapInheritanceMetadata(...)` fallback that
+        creates a new inheritance state when the caller already owns creation
+      - remove `runtime.allowInheritanceBoundaryRead(...)` and its remaining
+        compiler/runtime bridge hooks once import/extern/template visibility
+        paths no longer depend on that escape hatch
     - collapse the remaining helper-owned admission-buffer scaffolding in
       `src/runtime/inheritance-call.js` if it still exists after the main
       caller-side invocation model is stable:
@@ -768,20 +790,45 @@ Scope:
       - `_linkBarrierChannel(...)`
       - any distinct placeholder/buffer shape that still sits between the
         caller buffer and the real invocation buffer
-  - clean up remaining low-risk parser/compiler consistency nits that are not
-    worth carrying as architecture work:
-    - parser recovery around `parseCompositionWithClause(...)` consuming a
-      symbol before rejecting object-style trailing named inputs
-    - extract helper-based save/restore for compiler buffer context if the
-      current manual restoration pattern still exists
-  - rename remaining internal admission/barrier terminology once the shared
-    runtime model is stable across script/template/component dispatch:
-    - revisit `InheritanceAdmissionCommand` and related helper names if they
-      still reflect Phase 7 transitional jargon rather than the final runtime
-      responsibility
-  - replace the current late-link fallback for newly discovered non-shared
-    inherited-method lanes once finished-buffer ownership is settled across the
-    later component/template phases:
+    - clean up remaining low-risk parser/compiler consistency nits that are not
+      worth carrying as architecture work:
+      - parser recovery around `parseCompositionWithClause(...)` consuming a
+        symbol before rejecting object-style trailing named inputs
+      - extract helper-based save/restore for compiler buffer context if the
+        current manual restoration pattern still exists
+    - remove compatibility-only shared-channel normalization once all startup
+      paths emit canonical shared var defaults directly:
+      - drop the `null -> undefined` normalization bridge in
+        `declareInheritanceSharedChannel(...)` if it is no longer needed for
+        older compile/output shapes
+    - rename remaining internal admission/barrier terminology once the shared
+      runtime model is stable across script/template/component dispatch:
+      - revisit `InheritanceAdmissionCommand` and related helper names if they
+        still reflect Phase 7 transitional jargon rather than the final runtime
+        responsibility
+    - simplify component-runtime helper structure once template integration is
+      complete and no temporary cross-phase compatibility shims remain:
+      - revisit component helper/class naming and any runtime-only staging
+        layers that were kept to land Phase 8 incrementally
+      - collapse the current double-resolution path for component method calls
+        if the shared inherited-dispatch API still makes components resolve
+        method metadata once for linked-channel waiting and again for admission
+      - revisit the current component-startup shortcut that awaits
+        `constructorBoundaryPromise` inside `createComponentInstance(...)`
+        before exposing the instance, and collapse it if the later shared
+        caller-side lifecycle model makes that eager wait unnecessary
+      - replace the current component-mode sentinel string
+        (`componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE`)
+        with a cleaner final marker/API once template integration settles the
+        shared inheritance-state surface
+      - decide the final policy for rejected async component declarations that
+        are never observed or invoked by the caller, instead of leaving that
+        behavior to the broader "unused async declaration" fallback
+      - simplify the fully-normalized component payload fast path if the Phase
+        8 validation-heavy branch still survives unchanged
+    - replace the current late-link fallback for newly discovered non-shared
+      inherited-method lanes once finished-buffer ownership is settled across the
+      later component/template phases:
     - avoid relying on post-close linked-channel registration as the long-term
       model for inherited non-shared channel visibility
 
@@ -817,6 +864,11 @@ Scope:
   - `super()`
   - `component ... as ns`
   - component `with` payload forms
+  - the constrained component namespace surface:
+    - allowed: `ns.x`, `ns.x.snapshot()`, `ns.x.isError()`,
+      `ns.x.getError()`, `ns.method(...)`
+    - not allowed: arbitrary property chaining or treating `ns` as a plain JS
+      object
 - update the new import functionality in the docs too:
   - `import "X" as ns with context`
   - `import "X" as ns with theme, id`

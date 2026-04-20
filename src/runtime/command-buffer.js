@@ -13,6 +13,7 @@ const {
   SnapshotCommand,
   RawSnapshotCommand,
   IsErrorCommand,
+  WaitCurrentCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,
   SinkRepairCommand,
@@ -85,6 +86,23 @@ class CommandBuffer {
       });
     }
     return this._finishedPromise;
+  }
+
+  getFinishCompletePromise() {
+    return Promise.resolve(this.getFinishedPromise()).then(() => {
+      const completions = [];
+      const channelNames = this._collectKnownChannelNames();
+      for (let i = 0; i < channelNames.length; i++) {
+        const channel = this.findChannel(channelNames[i]);
+        if (channel && channel._completionPromise) {
+          completions.push(channel._completionPromise);
+        }
+      }
+      if (completions.length === 0) {
+        return undefined;
+      }
+      return Promise.all(completions).then(() => undefined);
+    });
   }
 
   //@todo - rename this, maybe to finishBufferAndLetIteratorsExit
@@ -300,6 +318,14 @@ class CommandBuffer {
 
   addIsError(channelName, pos = null) {
     const cmd = new IsErrorCommand({
+      channelName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+    return this._addCommand(cmd, channelName);
+  }
+
+  addWaitCurrent(channelName, pos = null) {
+    const cmd = new WaitCurrentCommand({
       channelName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
@@ -567,6 +593,23 @@ class CommandBuffer {
     return this._linkedChannels[resolvedChannelName] === true;
   }
 
+  hasLinkedBuffer(buffer, channelName) {
+    if (!buffer || !channelName) {
+      return false;
+    }
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    const lane = this.arrays && this.arrays[resolvedChannelName];
+    if (!Array.isArray(lane)) {
+      return false;
+    }
+    for (let i = 0; i < lane.length; i++) {
+      if (lane[i] === buffer) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   _finishKnownChannelIfRequested(channelName) {
     if (!channelName) {
       return;
@@ -602,6 +645,13 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
   return buffer;
 }
 
+function waitForCurrentBufferChannel(buffer, channelName, pos = null) {
+  if (!buffer) {
+    return Promise.resolve();
+  }
+  return buffer.addWaitCurrent(channelName, pos);
+}
+
 function isCommandBuffer(value) {
   return value instanceof CommandBuffer;
 }
@@ -609,5 +659,6 @@ function isCommandBuffer(value) {
 module.exports = {
   CommandBuffer,
   createCommandBuffer,
+  waitForCurrentBufferChannel,
   isCommandBuffer
 };

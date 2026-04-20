@@ -36,6 +36,10 @@ class Context extends Obj {
     const initialRenderCtx = renderCtx === undefined ? ctx : (renderCtx || {});
     this.renderCtx = lib.extend({}, initialRenderCtx);
     this.ctx = lib.extend({}, ctx);
+    // Keep the composition payload baseline separate from the mutable working
+    // scope so inherited method/block entry forks can reuse the original
+    // composition inputs without leaking caller- or constructor-local vars.
+    this.compositionCtx = lib.extend({}, ctx);
     this.externCtx = externCtx === undefined ? null : lib.extend({}, externCtx);
 
     this._sharedStructuralState = createContextStructuralState();
@@ -87,6 +91,10 @@ class Context extends Obj {
 
   getRenderContextVariables() {
     return this.renderCtx;
+  }
+
+  getCompositionContextVariables() {
+    return this.compositionCtx || this.renderCtx;
   }
 
   getExternContextVariables() {
@@ -371,6 +379,7 @@ class Context extends Obj {
     // Share critical state objects by REFERENCE. Do NOT copy them.
     newContext.ctx = this.ctx;           // Share the variable store.
     newContext.renderCtx = this.renderCtx;
+    newContext.compositionCtx = this.compositionCtx;
     newContext._sharedStructuralState = this._sharedStructuralState;
 
     // Set the ONLY property that should be different.

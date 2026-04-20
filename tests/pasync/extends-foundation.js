@@ -428,38 +428,6 @@ describe('Extends Foundation', function () {
       expect(rootBuffer.getOwnChannel('theme')).to.be(parentChannel);
     });
 
-    it('should preload shared inputs for every declared channel kind through the channel runtime owner', async function () {
-      const rootBuffer = runtime.createCommandBuffer(null);
-      const sharedSchema = {
-        theme: { type: 'var', defaultValue: null },
-        log: { type: 'text', defaultValue: null },
-        state: { type: 'data', defaultValue: null },
-        logger: { type: 'sink', defaultValue: null },
-        db: { type: 'sequence', defaultValue: null }
-      };
-      const loggerSink = {
-        snapshot: () => 'logger-ready'
-      };
-      const sequenceSink = {
-        snapshot: () => 'sequence-ready'
-      };
-
-      runtime.preloadSharedInputs(sharedSchema, {
-        theme: 'dark',
-        log: 'boot|',
-        state: { ok: true },
-        logger: loggerSink,
-        db: sequenceSink
-      }, rootBuffer, null, { lineno: 1, colno: 1 });
-      rootBuffer.markFinishedAndPatchLinks();
-
-      expect(await rootBuffer.getChannel('theme').finalSnapshot()).to.be('dark');
-      expect(await rootBuffer.getChannel('log').finalSnapshot()).to.be('boot|');
-      expect(await rootBuffer.getChannel('state').finalSnapshot()).to.eql({ ok: true });
-      expect(await rootBuffer.getChannel('logger').finalSnapshot()).to.be('logger-ready');
-      expect(await rootBuffer.getChannel('db').finalSnapshot()).to.be('sequence-ready');
-    });
-
     it('should clear async extends registration state so a later cycle can start fresh', async function () {
       if (!Context) {
         this.skip();

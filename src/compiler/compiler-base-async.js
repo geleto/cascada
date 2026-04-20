@@ -249,6 +249,78 @@ class CompilerBaseAsync extends CompilerCommon {
     };
   }
 
+  _getComponentBindingFacts(node, { forCall = false } = {}) {
+    const bindingRoot = this._getComponentBindingRoot(node);
+    if (!bindingRoot) {
+      return null;
+    }
+    const bindingName = bindingRoot.bindingName;
+    const staticPath = bindingRoot.staticPath;
+
+    if (!forCall && staticPath.length === 2) {
+      return {
+        bindingName,
+        kind: 'shared-read',
+        channelName: staticPath[1],
+        implicitVarRead: true
+      };
+    }
+
+    if (
+      staticPath.length === 3 &&
+      (staticPath[2] === 'snapshot' || staticPath[2] === 'isError' || staticPath[2] === 'getError')
+    ) {
+      return {
+        bindingName,
+        kind: 'shared-observe',
+        channelName: staticPath[1],
+        mode: staticPath[2],
+        implicitVarRead: false
+      };
+    }
+
+    if (forCall && staticPath.length === 2) {
+      return {
+        bindingName,
+        kind: 'method-call',
+        methodName: staticPath[1]
+      };
+    }
+
+    return null;
+  }
+
+  _getComponentBindingRoot(node) {
+    if (!this.scriptMode || !node) {
+      return null;
+    }
+
+    const staticPath = this.sequential._extractStaticPath(node);
+    if (!staticPath || staticPath.length < 2) {
+      return null;
+    }
+
+    const bindingName = staticPath[0];
+    const bindingDecl = this.analysis.findDeclaration(node._analysis, bindingName);
+    if (!bindingDecl || !bindingDecl.componentBinding) {
+      return null;
+    }
+
+    return {
+      bindingName,
+      staticPath
+    };
+  }
+
+  _failUnsupportedComponentBindingUsage(node, bindingName, usage) {
+    this.fail(
+      `component binding '${bindingName}' only supports ${usage}`,
+      node.lineno,
+      node.colno,
+      node
+    );
+  }
+
   compileCompare(node) {
     this.emit('runtime.resolveDuo(');
     this.compile(node.expr, null);
@@ -313,6 +385,24 @@ class CompilerBaseAsync extends CompilerCommon {
         node.lineno,
         node.colno,
         node
+      );
+    }
+
+    const componentBindingRoot = this._getComponentBindingRoot(node);
+    const componentBindingFacts = this._getComponentBindingFacts(node);
+    if (componentBindingFacts && componentBindingFacts.kind === 'shared-read') {
+      const errorContextJson = JSON.stringify(this._createErrorContext(node));
+      this.emit(
+        `runtime.observeComponentChannel(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, ` +
+        `${JSON.stringify(componentBindingFacts.channelName)}, runtime, ${errorContextJson}, "snapshot", true)`
+      );
+      return;
+    }
+    if (componentBindingRoot) {
+      this._failUnsupportedComponentBindingUsage(
+        node,
+        componentBindingRoot.bindingName,
+        '`ns.x` reads, `ns.x.snapshot()/isError()/getError()` observations, and `ns.method(...)` calls'
       );
     }
 
@@ -464,8 +554,37 @@ class CompilerBaseAsync extends CompilerCommon {
     const isDirectMacroCall = !!directMacroCall;
     const importedCallableFacts = node._analysis.importedCallable;
     const explicitThisDispatch = this.scriptMode ? this._getExplicitThisDispatchFacts(node.name) : null;
+    const componentBindingRoot = this._getComponentBindingRoot(node.name);
+    const componentBindingFacts = this._getComponentBindingFacts(node.name, { forCall: true });
     if (explicitThisDispatch) {
       (node.name._analysis || (node.name._analysis = {})).allowExplicitThisDispatchCall = true;
+    }
+
+    if (componentBindingFacts) {
+      const errorContextJson = JSON.stringify(this._createErrorContext(node));
+      if (componentBindingFacts.kind === 'method-call') {
+        this.emit(
+          `runtime.callComponentMethod(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, ` +
+          `${JSON.stringify(componentBindingFacts.methodName)}, `
+        );
+        this._compileAggregate(node.args, null, '[', ']', false, false);
+        this.emit(`, env, runtime, cb, ${errorContextJson})`);
+        return;
+      }
+
+      this.emit(
+        `runtime.observeComponentChannel(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, ` +
+        `${JSON.stringify(componentBindingFacts.channelName)}, runtime, ${errorContextJson}, ` +
+        `${JSON.stringify(componentBindingFacts.mode || 'snapshot')}, ${componentBindingFacts.implicitVarRead ? 'true' : 'false'})`
+      );
+      return;
+    }
+    if (componentBindingRoot) {
+      this._failUnsupportedComponentBindingUsage(
+        node.name,
+        componentBindingRoot.bindingName,
+        '`ns.method(...)` calls and `ns.x.snapshot()/isError()/getError()` observations'
+      );
     }
 
     if (this._compileSpecialChannelFunCall(node)) {

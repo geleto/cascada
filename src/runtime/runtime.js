@@ -17,8 +17,8 @@ const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
 const inheritanceState = require('./inheritance-state');
 const inheritanceBootstrap = require('./inheritance-bootstrap');
-const inheritanceInputs = require('./inheritance-inputs');
 const inheritanceCall = require('./inheritance-call');
+const componentRuntime = require('./component');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -214,11 +214,17 @@ module.exports = {
   declareInheritanceSharedChannel: output.declareInheritanceSharedChannel,
   allowInheritanceBoundaryRead: output.allowInheritanceBoundaryRead,
   getInheritanceSharedBuffer: inheritanceBootstrap.getInheritanceSharedBuffer,
-  preloadSharedInputs: inheritanceInputs.preloadSharedInputs,
+  COMPONENT_COMPOSITION_MODE: componentRuntime.COMPONENT_COMPOSITION_MODE,
+  ComponentInstance: componentRuntime.ComponentInstance,
+  ComponentOperationCommand: componentRuntime.ComponentOperationCommand,
+  createComponentInstance: componentRuntime.createComponentInstance,
+  callComponentMethod: componentRuntime.callComponentMethod,
+  observeComponentChannel: componentRuntime.observeComponentChannel,
   ChannelCommand: commands.ChannelCommand,
   TextCommand: commands.TextCommand,
   VarCommand: commands.VarCommand,
   WaitResolveCommand: commands.WaitResolveCommand,
+  WaitCurrentCommand: commands.WaitCurrentCommand,
   DataCommand: commands.DataCommand,
   SinkCommand: commands.SinkCommand,
   SequenceCallCommand: commands.SequenceCallCommand,
@@ -264,6 +270,7 @@ module.exports = {
 
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
+  waitForCurrentBufferChannel: buffer.waitForCurrentBufferChannel,
   InheritanceState: inheritanceState.InheritanceState,
   InheritanceMethodRegistry: inheritanceState.InheritanceMethodRegistry,
   InheritanceSharedRegistry: inheritanceState.InheritanceSharedRegistry,
@@ -279,8 +286,8 @@ module.exports = {
   finalizeInheritanceSharedSchema: inheritanceState.finalizeInheritanceSharedSchema,
   bootstrapInheritanceMetadata: inheritanceBootstrap.bootstrapInheritanceMetadata,
   ensureCurrentBufferSharedLinks: inheritanceBootstrap.ensureCurrentBufferSharedLinks,
+  linkCurrentBufferToResolvedParentSharedChannels: inheritanceBootstrap.linkCurrentBufferToResolvedParentSharedChannels,
   finalizeInheritanceMetadata: inheritanceBootstrap.finalizeInheritanceMetadata,
-  validateInheritanceSharedInputs: inheritanceInputs.validateInheritanceSharedInputs,
   InheritanceAdmissionCommand: inheritanceCall.InheritanceAdmissionCommand,
   admitConstructorEntry: inheritanceCall.admitConstructorEntry,
   resolveInheritanceMethod: inheritanceCall.resolveInheritanceMethod,

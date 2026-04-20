@@ -45,7 +45,7 @@ if (typeof require !== 'undefined') {
   ComponentOperationCommand = null;
 }
 
-describe.skip('Phase 8 - Component Method Calls', function () {
+describe('Phase 8 - Component Method Calls', function () {
   it('should resolve component method return values correctly', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
@@ -264,6 +264,28 @@ describe.skip('Phase 8 - Component Method Calls', function () {
     expect(outcome.error.message).to.contain('fatal component arg');
   });
 
+  it('should reject unsupported nested component method property access', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'method build(name)',
+      '  return "hello " + name',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'return ns.build.extra()'
+    ].join('\n'));
+
+    try {
+      await env.getScript('Main.script', true);
+      expect().fail('Expected component namespace compile to fail');
+    } catch (error) {
+      expect(String(error)).to.match(/component binding 'ns' only supports/);
+    }
+  });
+
   describe('Phase 8 - Late Component Invocation Linking', function () {
     it('should defer unresolved component invocation-buffer creation until the target method entry is current', async function () {
       if (!InheritanceState) {
@@ -329,7 +351,10 @@ describe.skip('Phase 8 - Component Method Calls', function () {
         const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
         if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
           seenLinkedChannels = {
-            methodLinkedChannels: Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : [],
+            methodLinkedChannels: Array.from(new Set([
+              ...(Array.isArray(methodEntry.usedChannels) ? methodEntry.usedChannels : []),
+              ...(Array.isArray(methodEntry.mutatedChannels) ? methodEntry.mutatedChannels : [])
+            ])),
             late: invocationBuffer.isLinkedChannel('late'),
             trace: invocationBuffer.isLinkedChannel('trace')
           };
@@ -417,10 +442,103 @@ describe.skip('Phase 8 - Component Method Calls', function () {
       const result = await env.renderScript('Main.script', {});
       expect(result).to.be('from-parent-ctor');
     });
+
+    it('should resolve parent-only shared error observations through isError() and getError()', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      env.addGlobal('makePoison', (message) => runtimeModule.createPoison(new Error(message)));
+
+      loader.addTemplate('A.script', [
+        'shared var status = "ok"',
+        'method breakStatus()',
+        '  status = makePoison("bad parent status")',
+        '  return "done"',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'extends "A.script"'
+      ].join('\n'));
+      loader.addTemplate('Main.script', [
+        'component "C.script" as ns',
+        'var result = ns.breakStatus()',
+        'var hasError = ns.status.isError()',
+        'var err = ns.status.getError()',
+        'return [result, hasError, err.message]'
+      ].join('\n'));
+
+      const result = await env.renderScript('Main.script', {});
+      expect(result[0]).to.be('done');
+      expect(result[1]).to.be(true);
+      expect(result[2]).to.contain('bad parent status');
+    });
   });
 });
 
-describe.skip('Phase 8 - Component Observations', function () {
+describe('Phase 8 - Component Observations', function () {
+  it('should validate component extern inputs against the resolved child externSpec', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'extern site',
+      'method read()',
+      '  return site',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'return ns.read()'
+    ].join('\n'));
+
+    try {
+      await env.renderScript('Main.script', {});
+      expect().fail('Expected renderScript to reject');
+    } catch (error) {
+      expect(String(error)).to.contain("component is missing required extern 'site'");
+    }
+  });
+
+  it('should combine required and optional externs with context and object payload inputs', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'extern site',
+      'extern locale = "en"',
+      'method build()',
+      '  return site + "|" + locale + "|" + theme + "|" + id',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'var theme = "dark"',
+      'component "Component.script" as ns with context, { theme: theme, id: "card-7" }',
+      'return ns.build()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', { site: 'Example', locale: 'fr' });
+    expect(result).to.be('Example|fr|dark|card-7');
+  });
+
+  it('should allow extra payload keys alongside declared externs on the component path', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'extern site',
+      'method build()',
+      '  return site + "|" + theme + "|" + featureFlag',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns with context, { theme: "dark", featureFlag: "on" }',
+      'return ns.build()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', { site: 'Example' });
+    expect(result).to.be('Example|dark|on');
+  });
+
   it('should create a usable component instance and read shared vars through ns.x', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
@@ -504,27 +622,41 @@ describe.skip('Phase 8 - Component Observations', function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
-    loader.addTemplate('Component.script', 'shared var theme = "default"');
+    loader.addTemplate('Component.script', [
+      'shared var theme = "default"',
+      'method readIncomingTheme()',
+      '  return incomingTheme',
+      'endmethod'
+    ].join('\n'));
     loader.addTemplate('Main.script', [
       'var theme = "dark"',
-      'component "Component.script" as left with theme',
+      'component "Component.script" as left with { incomingTheme: theme }',
       'theme = "light"',
-      'component "Component.script" as right with theme',
-      'return [left.theme, right.theme]'
+      'component "Component.script" as right with { incomingTheme: theme }',
+      'return [left.theme, right.theme, left.readIncomingTheme(), right.readIncomingTheme()]'
     ].join('\n'));
 
     const result = await env.renderScript('Main.script', {});
-    expect(result).to.eql(['dark', 'light']);
+    expect(result).to.eql(['default', 'default', 'dark', 'light']);
   });
 
-  it('should report invalid component shared-input names with a neutral target message', function () {
-    expect(() => runtimeModule.validateSharedInputs(
-      [{ name: 'theme', type: 'var' }],
-      ['wrong'],
-      'component binding'
-    )).to.throwException((err) => {
-      expect(err.message).to.contain("component binding passed 'wrong' but the target does not declare it as shared");
-    });
+  it('should pass object-style payload keys through component composition inputs', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'method build()',
+      '  return site + "|" + theme + "|" + id',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'var theme = "dark"',
+      'component "Component.script" as ns with context, { theme: theme, id: "card-7" }',
+      'return ns.build()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', { site: 'Example' });
+    expect(result).to.be('Example|dark|card-7');
   });
 
   it('should reject instead of hanging when a component binding resolves asynchronously to a non-instance', async function () {
@@ -578,9 +710,54 @@ describe.skip('Phase 8 - Component Observations', function () {
     expect(runtimeModule.isPoisonError(outcome.error)).to.be(true);
     expect(outcome.error.message).to.match(/Missing\.script|missing/i);
   });
+
+  it('should reject instead of hanging when observing a missing shared component channel', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'shared var theme = "dark"'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'return ns.missing'
+    ].join('\n'));
+
+    const outcome = await Promise.race([
+      env.renderScript('Main.script', {}).then(
+        (value) => ({ type: 'value', value }),
+        (error) => ({ type: 'error', error })
+      ),
+      new Promise((resolve) => setTimeout(() => resolve({ type: 'timeout' }), 150))
+    ]);
+
+    expect(outcome.type).to.be('error');
+    expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
+    expect(outcome.error.message).to.contain("Shared channel 'missing' was not found");
+  });
+
+  it('should reject unsupported nested component shared-property chaining', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'shared var theme = "dark"'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'return ns.theme.value'
+    ].join('\n'));
+
+    try {
+      await env.getScript('Main.script', true);
+      expect().fail('Expected component namespace compile to fail');
+    } catch (error) {
+      expect(String(error)).to.match(/component binding 'ns' only supports/);
+    }
+  });
 });
 
-describe.skip('Phase 8 - Component Lifecycle', function () {
+describe('Phase 8 - Component Lifecycle', function () {
   it('should keep constructor work and later method work on the same long-lived component root', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
@@ -634,9 +811,9 @@ describe.skip('Phase 8 - Component Lifecycle', function () {
     loader.addTemplate('A.script', [
       'shared var theme = "parent"',
       'shared text log',
-      'log(waitAndGet(theme + "|", 10))',
+      'log(waitAndGet(incomingTheme + "|", 10))',
       'method read()',
-      '  return theme',
+      '  return incomingTheme',
       'endmethod'
     ].join('\n'));
     loader.addTemplate('C.script', [
@@ -646,9 +823,9 @@ describe.skip('Phase 8 - Component Lifecycle', function () {
     ].join('\n'));
     loader.addTemplate('Main.script', [
       'var theme = "left"',
-      'component "C.script" as left with theme',
+      'component "C.script" as left with { incomingTheme: theme }',
       'theme = "right"',
-      'component "C.script" as right with theme',
+      'component "C.script" as right with { incomingTheme: theme }',
       'return [left.log.snapshot(), right.log.snapshot(), left.read(), right.read()]'
     ].join('\n'));
 
@@ -697,8 +874,10 @@ describe.skip('Phase 8 - Component Lifecycle', function () {
     const componentInstance = await runtimeModule.createComponentInstance(
       {
         compile() {},
+        rootRenderFunc() {},
         methods: {},
         sharedSchema: [],
+        externSpec: [],
         path: 'Component.script'
       },
       {},
@@ -707,8 +886,6 @@ describe.skip('Phase 8 - Component Lifecycle', function () {
       runtimeModule,
       () => {},
       ownerBuffer,
-      'nsBinding',
-      '__component_root__nsBinding',
       { lineno: 1, colno: 1, path: 'Main.script' }
     );
 
@@ -726,7 +903,6 @@ describe.skip('Phase 8 - Component Lifecycle', function () {
     expect(() => componentInstance.callMethod(
       'build',
       [],
-      {},
       runtimeModule,
       () => {},
       { lineno: 1, colno: 1, path: 'Main.script' }
@@ -747,8 +923,7 @@ describe.skip('Phase 8 - Component Lifecycle', function () {
       rootBuffer: { markFinishedAndPatchLinks() {} },
       inheritanceState: {},
       template: null,
-      ownerBuffer: null,
-      ownerChannelName: null
+      ownerBuffer: null
     });
 
     componentInstance.close();
@@ -756,13 +931,160 @@ describe.skip('Phase 8 - Component Lifecycle', function () {
     expect(() => componentInstance.callMethod(
       'build',
       [],
-      null,
       runtimeModule,
       () => {},
       { lineno: 1, colno: 1, path: 'Main.script' }
     )).to.throwException((err) => {
       expect(err).to.be.a(runtimeModule.RuntimeFatalError);
       expect(err.message).to.contain('cannot accept new operations');
+    });
+  });
+
+  it('should keep rootContext and externContext separate when normalizing plain payload objects', async function () {
+    const seen = {};
+    const ownerContext = {
+      path: 'Main.script',
+      getRenderContextVariables() {
+        return {};
+      },
+      forkForComposition(nextPath, rootContext, renderCtx, externContext) {
+        void renderCtx;
+        seen.nextPath = nextPath;
+        seen.rootContext = rootContext;
+        seen.externContext = externContext;
+        rootContext.rootOnly = 'set-during-fork';
+        return {
+          path: nextPath,
+          getRenderContextVariables() {
+            return {};
+          }
+        };
+      }
+    };
+    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+
+    await runtimeModule.createComponentInstance(
+      {
+        compile() {},
+        rootRenderFunc() {},
+        methods: {},
+        sharedSchema: [],
+        externSpec: [],
+        path: 'Component.script'
+      },
+      { theme: 'dark' },
+      ownerContext,
+      {},
+      runtimeModule,
+      () => {},
+      ownerBuffer,
+      { lineno: 1, colno: 1, path: 'Main.script' }
+    );
+
+    expect(seen.nextPath).to.be('Component.script');
+    expect(seen.rootContext).not.to.be(seen.externContext);
+    expect(seen.rootContext.theme).to.be('dark');
+    expect(seen.externContext.theme).to.be('dark');
+    expect(seen.rootContext.rootOnly).to.be('set-during-fork');
+    expect(seen.externContext.rootOnly).to.be(undefined);
+  });
+
+  it('should fail clearly when a component target has no compiled rootRenderFunc', async function () {
+    const ownerContext = {
+      path: 'Main.script',
+      getRenderContextVariables() {
+        return {};
+      },
+      forkForComposition(nextPath, rootContext, renderCtx, externContext) {
+        return { path: nextPath, rootContext, renderCtx, externContext };
+      }
+    };
+    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+
+    try {
+      await runtimeModule.createComponentInstance(
+        {
+          compile() {},
+          methods: {},
+          sharedSchema: [],
+          externSpec: [],
+          path: 'Component.script'
+        },
+        {},
+        ownerContext,
+        {},
+        runtimeModule,
+        () => {},
+        ownerBuffer,
+        { lineno: 1, colno: 1, path: 'Main.script' }
+      );
+      expect().fail('Expected createComponentInstance to reject');
+    } catch (error) {
+      expect(error).to.be.a(runtimeModule.RuntimeFatalError);
+      expect(error.message).to.contain('did not expose a compiled rootRenderFunc');
+    }
+  });
+
+  it('should rethrow an async startup failure on later component operations', async function () {
+    const seenErrors = [];
+    const ownerContext = {
+      path: 'Main.script',
+      getRenderContextVariables() {
+        return {};
+      },
+      forkForComposition(nextPath, rootContext, renderCtx, externContext) {
+        return { path: nextPath, rootContext, renderCtx, externContext };
+      }
+    };
+    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+
+    const componentInstance = await runtimeModule.createComponentInstance(
+      {
+        compile() {},
+        rootRenderFunc(envArg, contextArg, runtimeArg, cbArg) {
+          void envArg;
+          void contextArg;
+          void runtimeArg;
+          setTimeout(() => {
+            cbArg(new runtimeModule.RuntimeFatalError(
+              'async startup failed',
+              1,
+              1,
+              null,
+              'Component.script'
+            ));
+          }, 10);
+        },
+        methods: {},
+        sharedSchema: [],
+        externSpec: [],
+        path: 'Component.script'
+      },
+      {},
+      ownerContext,
+      {},
+      runtimeModule,
+      (error) => {
+        if (error) {
+          seenErrors.push(error);
+        }
+      },
+      ownerBuffer,
+      { lineno: 1, colno: 1, path: 'Main.script' }
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(seenErrors).to.have.length(1);
+    expect(() => componentInstance.callMethod(
+      'build',
+      [],
+      runtimeModule,
+      () => {},
+      { lineno: 1, colno: 1, path: 'Main.script' }
+    )).to.throwException((error) => {
+      expect(error).to.be.a(runtimeModule.RuntimeFatalError);
+      expect(error.message).to.contain('async startup failed');
     });
   });
 

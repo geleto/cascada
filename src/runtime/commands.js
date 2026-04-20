@@ -146,6 +146,7 @@ class TextCommand extends ChannelCommand {
         pos: specOrValue.pos || null
       });
       this.normalizeArgs = !!specOrValue.normalizeArgs;
+      this.initializeIfNotSet = !!specOrValue.initializeIfNotSet;
       return;
     }
     super({
@@ -156,6 +157,7 @@ class TextCommand extends ChannelCommand {
       pos: null
     });
     this.normalizeArgs = false;
+    this.initializeIfNotSet = false;
   }
 
   apply(channel) {
@@ -179,6 +181,9 @@ class TextCommand extends ChannelCommand {
           channel._setTarget(this.toPoisonValue([
             contextualizeOutputError(channel, this.pos, new Error('text.set() accepts exactly one argument'))
           ]));
+          return;
+        }
+        if (this.initializeIfNotSet && Array.isArray(channel._target) && channel._target.length > 0) {
           return;
         }
         channel._setTarget([]);
@@ -224,6 +229,7 @@ class VarCommand extends ChannelCommand {
         subpath: null,
         pos: specOrValue.pos || null
       });
+      this.initializeIfNotSet = !!specOrValue.initializeIfNotSet;
       return;
     }
     super({
@@ -233,6 +239,7 @@ class VarCommand extends ChannelCommand {
       subpath: null,
       pos: null
     });
+    this.initializeIfNotSet = false;
   }
 
   apply(channel) {
@@ -253,6 +260,9 @@ class VarCommand extends ChannelCommand {
         channel._setTarget(this.toPoisonValue([
           contextualizeOutputError(channel, this.pos, new Error('var channel accepts exactly one argument'))
         ]));
+        return;
+      }
+      if (this.initializeIfNotSet && channel._getTarget() !== undefined) {
         return;
       }
       channel._setTarget(args[0]);
@@ -298,9 +308,27 @@ class WaitResolveCommand extends ChannelCommand {
   }
 }
 
+// Ordered timing-only sync point for a specific channel lane. Resolves once the
+// iterator reaches this source position on that lane without coupling the wait
+// to any snapshot/error-read semantics.
+class WaitCurrentCommand extends Command {
+  constructor({ channelName, pos = null }) {
+    super({ withDeferredResult: true });
+    this.channelName = channelName;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
+  }
+
+  apply(output) {
+    void output;
+    this.resolveResult(undefined);
+    return undefined;
+  }
+}
+
 // Invokes a named data method (e.g., set, push) on a data channel's DataChannelTarget. Corresponds to @data directives in scripts.
 class DataCommand extends ChannelCommand {
-  constructor({ channelName, command, args = null, pos = null }) {
+  constructor({ channelName, command, args = null, pos = null, initializeIfNotSet = false }) {
     super({
       channelName,
       command: command || null,
@@ -308,6 +336,7 @@ class DataCommand extends ChannelCommand {
       subpath: null,
       pos
     });
+    this.initializeIfNotSet = !!initializeIfNotSet;
   }
 
   apply(channel) {
@@ -343,6 +372,15 @@ class DataCommand extends ChannelCommand {
         return;
       }
       try {
+        if (
+          this.initializeIfNotSet &&
+          this.command === 'set' &&
+          channel._getTarget() &&
+          typeof channel._getTarget() === 'object' &&
+          Object.keys(channel._getTarget()).length > 0
+        ) {
+          return;
+        }
         method.apply(channel._base, args);
         channel._setTarget(channel._base.data);
       } catch (err) {
@@ -1007,6 +1045,7 @@ module.exports = {
   TextCommand,
   VarCommand,
   WaitResolveCommand,
+  WaitCurrentCommand,
   DataCommand,
   SinkCommand,
   SequenceCallCommand,

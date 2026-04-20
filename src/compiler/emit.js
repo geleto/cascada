@@ -89,12 +89,27 @@ module.exports = class CompileEmit {
       this.line(`let colno = ${node.colno};`);
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
-    this.compiler.buffer.initManagedBuffer(
-      this.compiler.buffer.currentBuffer,
-      this.compiler.asyncMode ? 'parentBuffer' : null,
-      this.compiler.buffer.currentTextChannelVar,
-      linkedChannels
-    );
+    if (this.compiler.asyncMode && name === 'root') {
+      const linkedChannelsArg = Array.isArray(linkedChannels) && linkedChannels.length > 0
+        ? JSON.stringify(linkedChannels)
+        : 'null';
+      this.line(
+        `let ${this.compiler.buffer.currentBuffer} = ` +
+        `(compositionMode === runtime.COMPONENT_COMPOSITION_MODE && parentBuffer)` +
+        ` ? parentBuffer` +
+        ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
+      );
+      if (!this.compiler.scriptMode) {
+        this.line(`let ${this.compiler.buffer.currentTextChannelVar} = runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${this.compiler.buffer.currentTextChannelName}", "text", context, null);`);
+      }
+    } else {
+      this.compiler.buffer.initManagedBuffer(
+        this.compiler.buffer.currentBuffer,
+        this.compiler.asyncMode ? 'parentBuffer' : null,
+        this.compiler.buffer.currentTextChannelVar,
+        linkedChannels
+      );
+    }
     this.line('try {');
   }
 
