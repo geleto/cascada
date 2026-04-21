@@ -20,25 +20,26 @@ script.md
 + Data-Driven Flow - mention if, expression depending on values that are not ready yet
 + Implicitly Parallel, Explicitly Sequential
  + while, each, !, sequential
-- Dataflow Poisoning - if condition - poison both branches
-- Features at a Glance - NO: Re-assign declared vars; supports +=, -=, *=, etc.
- - Parallel loop - for item in array / also show for property in object , for element in iterator
- - Function calls	funcName(a, b, keyword=c), is the keyword = c supported? named arguments?
- - Macros - rename to Functions, all function examples, etc..
- - Imports - show import from too
--  purpose-built constructs - show how data, text, sequence, etc.. work, not just declarations
++ Dataflow Poisoning - if condition - poison both branches
++ Features at a Glance - NO: Re-assign declared vars; 
+ + supports +=, -=, *=, etc.
+ + Parallel loop - for item in array / also show for property in object , for element in iterator
+ + Function calls	funcName(a, b, keyword=c), is the keyword = c supported? named arguments?
+ + Macros - rename to Functions, all function examples, etc..
+ + Imports - show import from too
++  purpose-built constructs - show how data, text, sequence, etc.. work, not just declarations
 - Core Syntax and Expressions: Remove No Tag Delimiters
-- Variable Assignment and Value Semantics : " assign or re-assign a value to a previously declared variable" - assign or reassign a variable to a new value.
-- Performance Note - mark it differently
-- Add object composition, array composition after assignment
-- Mutation Methods and Side Effects, Say there are still ways to use these safely: next section is data channel : say it mitigates these problems. Also Use if you don't care about order. Also - list the unsafe methods.
-- Handling none (null) - show usage that poisons - obj.propery
-- "Context values follow the same value semantics". What about appConfig.debug = true? I think the config shall be a local copy - you can modify it but changes are only local? The difference: side-effect functions.
-- Inline if Expressions : mention the Python syntax
-- Conditionals - I don't think we support elseif. Do we support else if
-- "Sequential or Constrained Async Iterators: ❌ Not Available. When an async iterator is restricted - by each or a concurrency limit (of N) - it behaves like a stream. Cascada cannot see the end of the stream in advance, so loop.length and loop.last are undefined." - I think they are promises? Can you create a deadlock. We shall forbid these in the condition. Explain, we move onto the next iteration, but the previous one remains unfinished till the loop ends.
-- Error handling and recovery with conditionals and loops. We have not mentioned error handling at this point. We shall reference the error handling section at the start.
-- "Note: Direct assignment to var is safe in concurrent code" - we do not need this in Channels, it is about var and is implied in multiple places.
++ Variable Assignment and Value Semantics : " assign or re-assign a value to a previously declared variable" - assign or reassign a variable to a new value.
++ Performance Note - mark it differently
++ Add object composition, array composition after assignment
++ Mutation Methods and Side Effects, Say there are still ways to use these safely: next section is data channel : say it mitigates these problems. Also Use if you don't care about order. Also - list the unsafe methods.
++ Handling none (null) - show usage that poisons - obj.propery
++ "Context values follow the same value semantics". What about appConfig.debug = true? I think the config shall be a local copy - you can modify it but changes are only local? The difference: side-effect functions.
++ Inline if Expressions : mention the Python syntax
++ Conditionals - I don't think we support elseif. Do we support else if
++ "Sequential or Constrained Async Iterators: ❌ Not Available. When an async iterator is restricted - by each or a concurrency limit (of N) - it behaves like a stream. Cascada cannot see the end of the stream in advance, so loop.length and loop.last are undefined." - I think they are promises? Can you create a deadlock. We shall forbid these in the condition. Explain, we move onto the next iteration, but the previous one remains unfinished till the loop ends.
++ Error handling and recovery with conditionals and loops. We have not mentioned error handling at this point. We shall reference the error handling section at the start.
++ "Note: Direct assignment to var is safe in concurrent code" - we do not need this in Channels, it is about var and is implied in multiple places.
 - "How Channel Writes Are Ordered" - shows data example followed immediately by the data docs, the first example is not needed.
 - The data Channel: Building Structured Data - explain how it is different than var: push/etc are safe, in var they use the standard JS side-effect calls. Use if you don't care about order. Property mutation - slower with big data.
 - text channel shall be first
