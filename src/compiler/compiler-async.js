@@ -1278,6 +1278,7 @@ class CompilerAsync extends CompilerBaseAsync {
           this.emit.line(`  throw new Error('Missing required extern: ${name}');`);
         }
         this.emit.line('}');
+        this.emit.line(`${externCtxVar}["${name}"] = ${valueId};`);
         this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${externNode.lineno}, colno: ${externNode.colno}} }), '${name}');`);
       });
     });
@@ -1361,6 +1362,7 @@ class CompilerAsync extends CompilerBaseAsync {
     );
     const blocks = this._compileAsyncRoot(node);
     const methods = this.inheritance.collectCompiledMethods(node, blocks, this.pendingInheritanceMethodNames);
+    const blockContracts = this.inheritance.compileBlockContractsLiteral(blocks);
 
     if (this.pendingInheritanceMethodNames.length > 0 || this.pendingInheritanceSharedNames.length > 0 || this.inheritance.hasMethodSuperDependencies(blocks)) {
       this.inheritance.emitPendingInheritanceEntryFactory();
@@ -1374,6 +1376,7 @@ class CompilerAsync extends CompilerBaseAsync {
     });
     this.emit.line(`b___constructor__: b___constructor__,`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
+    this.emit.line(`blockContracts: ${blockContracts},`);
     this.emit.line(`methods: ${COMPILED_METHODS_VAR},`);
     this.emit.line(`sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
     this.emit.line('root: root\n};');

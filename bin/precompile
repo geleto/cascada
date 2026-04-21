@@ -1,5 +1,19 @@
 #!/usr/bin/env node
 var { program } = require('commander');
+var fs = require('fs');
+var path = require('path');
+
+var requiredBuildEntries = [
+  path.join(__dirname, '..', 'dist', 'cjs', 'precompile.js'),
+  path.join(__dirname, '..', 'dist', 'cjs', 'environment', 'environment.js'),
+  path.join(__dirname, '..', 'dist', 'cjs', 'lib.js')
+];
+
+if (!requiredBuildEntries.every((entryPath) => fs.existsSync(entryPath))) {
+  console.error('Build output not found: required dist/cjs CLI files are missing. Run `npm run build` before using bin/precompile.');
+  process.exit(1);
+}
+
 var precompile = require('../dist/cjs/precompile').precompile;
 var Environment = require('../dist/cjs/environment/environment').Environment;
 var lib = require('../dist/cjs/lib');

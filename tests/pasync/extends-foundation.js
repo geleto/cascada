@@ -614,10 +614,10 @@ describe('Extends Foundation', function () {
         );
         script.compile();
 
-        expect(createCount).to.be(3);
+        expect(createCount).to.be(2);
         expect(script.methods.lookup.__fromRuntimeHelper).to.be(true);
         expect(script.methods.build.super.__fromRuntimeHelper).to.be(true);
-        expect(script.sharedSchema.theme.__fromRuntimeHelper).to.be(true);
+        expect(script.sharedSchema.theme).to.be(undefined);
       } finally {
         runtime.createPendingInheritanceEntry = originalCreatePendingInheritanceEntry;
       }
@@ -671,8 +671,12 @@ describe('Extends Foundation', function () {
       runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, null);
       runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null);
 
-      expect(inheritanceState.methods.build).to.be(childScript.methods.build);
-      expect(inheritanceState.methods.build.super).to.be(parentScript.methods.build);
+      expect(inheritanceState.methods.build).not.to.be(childScript.methods.build);
+      expect(inheritanceState.methods.build.fn).to.be(childScript.methods.build.fn);
+      expect(inheritanceState.methods.build.ownerKey).to.be('C.script');
+      expect(inheritanceState.methods.build.super).not.to.be(childScript.methods.build.super);
+      expect(inheritanceState.methods.build.super.fn).to.be(parentScript.methods.build.fn);
+      expect(inheritanceState.methods.build.super.ownerKey).to.be('A.script');
     });
 
     it('should wire multi-level super chains as each ancestor registers later', function () {
@@ -691,13 +695,14 @@ describe('Extends Foundation', function () {
       runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null);
       runtime.bootstrapInheritanceMetadata(inheritanceState, grandparentScript.methods, grandparentScript.sharedSchema, null);
 
-      expect(inheritanceState.methods.build).to.be(childScript.methods.build);
-      expect(inheritanceState.methods.build.super).to.be(parentScript.methods.build);
-      expect(inheritanceState.methods.build.super.super).to.be(grandparentScript.methods.build);
-      expect(inheritanceState.methods.getChain('build')).to.eql([
-        childScript.methods.build,
-        parentScript.methods.build,
-        grandparentScript.methods.build
+      expect(inheritanceState.methods.build).not.to.be(childScript.methods.build);
+      expect(inheritanceState.methods.build.fn).to.be(childScript.methods.build.fn);
+      expect(inheritanceState.methods.build.super.fn).to.be(parentScript.methods.build.fn);
+      expect(inheritanceState.methods.build.super.super.fn).to.be(grandparentScript.methods.build.fn);
+      expect(inheritanceState.methods.getChain('build').map((entry) => entry.ownerKey)).to.eql([
+        'C.script',
+        'B.script',
+        'A.script'
       ]);
     });
 
@@ -727,30 +732,32 @@ describe('Extends Foundation', function () {
 
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, null);
+      const pendingSuper = inheritanceState.methods.build.super.promise;
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-super.script' });
 
       try {
-        await script.methods.build.super.promise;
+        await pendingSuper;
         expect().fail('Expected unresolved super entry to reject');
       } catch (error) {
         expect(String(error)).to.contain("super() for method 'build' was not found");
       }
     });
 
-    it('should create pending shared entries for extends inputs and resolve them when a parent declares the channel', function () {
+    it('should register only real shared channels from parents, not extends input placeholders', function () {
       const childScript = new Script('extends "A.script" with theme\nreturn null', env, 'C.script');
       const parentScript = new Script('shared var theme = "light"\nreturn null', env, 'A.script');
       childScript.compile();
       parentScript.compile();
 
-      expect(runtime.isPendingInheritanceEntry(childScript.sharedSchema.theme)).to.be(true);
+      expect(childScript.sharedSchema.theme).to.be(undefined);
 
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, null);
-      expect(inheritanceState.sharedSchema.theme).to.be(childScript.sharedSchema.theme);
+      expect(inheritanceState.sharedSchema.theme).to.be(undefined);
 
       runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null);
-      expect(inheritanceState.sharedSchema.theme).to.be(parentScript.sharedSchema.theme);
+      expect(inheritanceState.sharedSchema.theme).to.be.ok();
+      expect(inheritanceState.sharedSchema.theme.type).to.be('var');
     });
 
     it('should reject conflicting shared channel types across the inheritance chain', function () {
@@ -767,16 +774,17 @@ describe('Extends Foundation', function () {
       }).to.throwException(/shared channel 'theme' was declared as 'var' and 'text'/);
     });
 
-    it('should reject unresolved shared entries at the topmost root', async function () {
+    it('should fail shared helper lookups for extends inputs that never become shared channels', async function () {
       const script = new Script('extends "A.script" with theme\nreturn null', env, 'missing-shared.script');
       script.compile();
 
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, null);
-      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-shared.script' });
 
       try {
-        await inheritanceState.sharedSchema.theme.promise;
+        await runtime.resolveInheritanceSharedChannel(inheritanceState, 'theme', {
+          path: 'missing-shared.script'
+        });
         expect().fail('Expected unresolved shared channel to reject');
       } catch (error) {
         expect(String(error)).to.contain("Shared channel 'theme' was not found");
@@ -967,7 +975,18 @@ describe('Extends Foundation', function () {
       expect(resolvedBuild.contract).to.eql({ argNames: ['name'], withContext: false });
     });
 
-    it('should resolve pending shared-channel metadata through the shared helper', async function () {
+    it('should keep repeated bootstrap of the same owner idempotent', function () {
+      const script = new Script('method build(name)\n  return name\nendmethod\nreturn null', env, 'A.script');
+      script.compile();
+
+      const state = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(state, script.methods, script.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(state, script.methods, script.sharedSchema, null);
+
+      expect(state.methods.getChain('build').map((entry) => entry.ownerKey)).to.eql(['A.script']);
+    });
+
+    it('should resolve registered shared-channel metadata through the shared helper', async function () {
       const childScript = new Script('extends "A.script" with theme\nreturn null', env, 'C.script');
       const parentScript = new Script('shared var theme = "light"\nreturn null', env, 'A.script');
 
@@ -980,8 +999,6 @@ describe('Extends Foundation', function () {
         childScript.sharedSchema,
         null
       );
-      const pendingTheme = runtime.resolveInheritanceSharedChannel(state, 'theme');
-
       runtime.bootstrapInheritanceMetadata(
         state,
         parentScript.methods,
@@ -989,7 +1006,7 @@ describe('Extends Foundation', function () {
         null
       );
 
-      const resolvedTheme = await pendingTheme;
+      const resolvedTheme = await runtime.resolveInheritanceSharedChannel(state, 'theme');
 
       expect(resolvedTheme).to.be.ok();
       expect(resolvedTheme.type).to.be('var');
@@ -1029,7 +1046,7 @@ describe('Extends Foundation', function () {
       }
     });
 
-    it('should preserve the root rejection path when shared-channel resolution fails later', async function () {
+    it('should use the helper call-site path when a shared-channel lookup fails immediately', async function () {
       const script = new Script('extends "A.script" with theme\nreturn null', env, 'missing-shared.script');
       script.compile();
 
@@ -1046,18 +1063,15 @@ describe('Extends Foundation', function () {
         errorContextString: 'reading shared theme'
       });
 
-      runtime.finalizeInheritanceMetadata(state, { path: 'missing-shared.script' });
-
       try {
         await pendingTheme;
         expect().fail('Expected shared-channel resolution to reject');
       } catch (error) {
-        expect(error.path).to.be('missing-shared.script');
-        expect(error.lineno).to.be(0);
-        expect(error.colno).to.be(0);
+        expect(error.path).to.be('dispatch.script');
+        expect(error.lineno).to.be(5);
+        expect(error.colno).to.be(7);
         expect(String(error)).to.contain("Shared channel 'theme' was not found");
-        expect(String(error)).to.contain('missing-shared.script');
-        expect(String(error)).to.not.contain('dispatch.script');
+        expect(String(error)).to.contain('dispatch.script');
       }
     });
 

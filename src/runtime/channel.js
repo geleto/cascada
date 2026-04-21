@@ -412,6 +412,17 @@ class VarChannel extends Channel {
   _getCurrentResult() {
     return this._target;
   }
+
+  // Temporary Step C bridge for `extends ... with ...`.
+  // Remove this once immediate composition capture no longer needs a dedicated
+  // "latest assigned value" primitive.
+  recordTemporaryCompositionAssignedValue(value) {
+    this._latestAssignedValue = value;
+  }
+
+  getTemporaryCompositionAssignedValue() {
+    return this._latestAssignedValue;
+  }
 }
 
 class SequentialPathChannel extends Channel {
@@ -899,9 +910,16 @@ function allowInheritanceBoundaryRead(buffer, channelName) {
   }
   // Transitional visibility bridge: Phase 8 keeps this marker for the
   // constrained component/import/extern boundary reads that still depend on
-  // channel-level opt-in. The plan removes it in Phase 10 once those paths no
-  // longer need a special cross-boundary escape hatch.
-  const channel = buffer.getOwnChannel(channelName);
+  // channel-level opt-in. Keep the opt-in scoped to the boundary subtree so we
+  // do not silently widen visibility to whichever unrelated channel happens to
+  // win a generic lookup walk.
+  const preferredPath = buffer._context && buffer._context.path
+    ? buffer._context.path
+    : undefined;
+  const channel = buffer.getOwnChannel(channelName) ||
+    (typeof buffer.findBoundaryOwnedChannel === 'function'
+      ? buffer.findBoundaryOwnedChannel(channelName, preferredPath)
+      : null);
   if (!channel) {
     return null;
   }

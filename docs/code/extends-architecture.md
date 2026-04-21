@@ -13,6 +13,14 @@ It assumes a more radical reorganization than `extends-implementation-2.md`.
 Open questions, missing pieces, and compatibility constraints will be added in
 later revisions instead of being front-loaded here.
 
+Evaluation baseline:
+
+- all review and implementation evaluation for `extends-next` should compare
+  against commit `016801d694a82068a3c8102231ae0636a68a6c42`
+- this is the exact branch point that `extends-next` restarted from
+- newer `master` changes are not the comparison target for this work and are
+  not architecture that this branch is trying to preserve
+
 ## Overview
 
 The design assumes a static parent chain. Parent paths are declared statically
@@ -158,6 +166,19 @@ and `include`.
 Shared declarations belong to constructor/root scope only. They are not
 allowed inside methods/blocks.
 
+That restriction is also the visibility boundary for inherited execution:
+
+- methods/blocks may read shared channels
+- methods/blocks may read their explicit call payload / arguments
+- methods/blocks may read any explicitly-enabled render/external context that
+  the language feature allows
+- methods/blocks do not read ambient constructor-local or parent-scope locals
+
+In particular, the constructor/root body is not a special outer scope that
+other methods can inspect later. It is just the `__constructor__` method.
+Constructor-local values therefore do not become ambient inherited state unless
+they are written into shared channels or forwarded explicitly in payload.
+
 All shared channels should be declared before any `extends` and before any
 `super()`-driven inherited work that depends on them.
 
@@ -247,6 +268,11 @@ implicit, except at the root level where an empty constructor stays empty. This
 means every non-root level effectively has a constructor. If the constructor is
 not empty, parent-constructor execution is not automatic; it happens only
 through the constructor's own `super()` behavior.
+
+Because the body is just the constructor method, it does not create a separate
+"parent scope" that other methods can read from. Later methods/blocks follow
+the same visibility rules as any other method call: shared channels plus
+explicit payload/context only.
 
 Constructor and inherited-method dispatch use the same runtime call model.
 

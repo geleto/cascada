@@ -147,6 +147,128 @@ function createInheritanceState() {
   return new InheritanceState();
 }
 
+function cloneInheritanceMethodEntry(entry, clones = new Map()) {
+  if (!entry || typeof entry !== 'object') {
+    return entry;
+  }
+  if (clones.has(entry)) {
+    return clones.get(entry);
+  }
+  if (isPendingInheritanceEntry(entry)) {
+    const pendingClone = createPendingInheritanceEntry();
+    clones.set(entry, pendingClone);
+    return pendingClone;
+  }
+
+  const clonedEntry = Object.assign({}, entry);
+  clones.set(entry, clonedEntry);
+  clonedEntry.usedChannels = Array.isArray(entry.usedChannels)
+    ? entry.usedChannels.slice()
+    : [];
+  clonedEntry.mutatedChannels = Array.isArray(entry.mutatedChannels)
+    ? entry.mutatedChannels.slice()
+    : [];
+  clonedEntry.contract = entry.contract && typeof entry.contract === 'object'
+    ? {
+      argNames: Array.isArray(entry.contract.argNames)
+        ? entry.contract.argNames.slice()
+        : [],
+      withContext: !!entry.contract.withContext
+    }
+    : { argNames: [], withContext: false };
+  clonedEntry.super = cloneInheritanceMethodEntry(entry.super, clones);
+  delete clonedEntry._resolvedInheritanceMethodMeta;
+  delete clonedEntry._resolvedInheritanceMethodMetaPromise;
+  return clonedEntry;
+}
+
+function cloneInheritanceMethods(localMethods) {
+  if (!localMethods || typeof localMethods !== 'object') {
+    return localMethods;
+  }
+
+  const clonedMethods = Object.create(null);
+  const clones = new Map();
+  const names = Object.keys(localMethods);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    clonedMethods[name] = cloneInheritanceMethodEntry(localMethods[name], clones);
+  }
+  return clonedMethods;
+}
+
+function cloneInheritanceSharedEntry(entry, clones = new Map()) {
+  if (!entry || typeof entry !== 'object') {
+    return entry;
+  }
+  if (clones.has(entry)) {
+    return clones.get(entry);
+  }
+  if (isPendingInheritanceEntry(entry)) {
+    const pendingClone = createPendingInheritanceEntry();
+    clones.set(entry, pendingClone);
+    return pendingClone;
+  }
+
+  const clonedEntry = Object.assign({}, entry);
+  clones.set(entry, clonedEntry);
+  return clonedEntry;
+}
+
+function cloneInheritanceSharedSchema(localSharedSchema) {
+  if (!localSharedSchema || typeof localSharedSchema !== 'object') {
+    return localSharedSchema;
+  }
+
+  const clonedSharedSchema = Object.create(null);
+  const clones = new Map();
+  const names = Object.keys(localSharedSchema);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    clonedSharedSchema[name] = cloneInheritanceSharedEntry(localSharedSchema[name], clones);
+  }
+  return clonedSharedSchema;
+}
+
+function _formatInheritanceContract(name, contract) {
+  const args = Array.isArray(contract && contract.argNames) ? contract.argNames.join(', ') : '';
+  const contextSuffix = contract && contract.withContext ? ' with context' : '';
+  return `${name}(${args})${contextSuffix}`;
+}
+
+function validateInheritanceContractCompatibility(name, overridingEntry, parentEntry) {
+  if (name === '__constructor__') {
+    return;
+  }
+
+  const overridingContract = overridingEntry && overridingEntry.contract;
+  const parentContract = parentEntry && parentEntry.contract;
+  if (!overridingContract || !parentContract) {
+    return;
+  }
+
+  const overridingNames = Array.isArray(overridingContract.argNames) ? overridingContract.argNames : [];
+  const parentNames = Array.isArray(parentContract.argNames) ? parentContract.argNames : [];
+  const overridingOmittedSignature = overridingNames.length === 0 && !overridingContract.withContext;
+  if (overridingOmittedSignature) {
+    return;
+  }
+  const sameLength = overridingNames.length === parentNames.length;
+  const sameNames = sameLength && overridingNames.every((value, index) => value === parentNames[index]);
+  const sameContextMode = !!overridingContract.withContext === !!parentContract.withContext;
+  if (sameNames && sameContextMode) {
+    return;
+  }
+
+  throw new RuntimeFatalError(
+    `block "${name}" signature mismatch: overriding block declares ${_formatInheritanceContract(name, overridingContract)} but parent declares ${_formatInheritanceContract(name, parentContract)}`,
+    0,
+    0,
+    null,
+    null
+  );
+}
+
 function resolveInheritanceMethodEntry(sharedMethods, methodName, resolvedEntry) {
   const methods = sharedMethods && typeof sharedMethods === 'object'
     ? sharedMethods
@@ -166,6 +288,9 @@ function wireResolvedSuperEntry(targetEntry, parentEntry) {
   while (current && !isPendingInheritanceEntry(current.super) && current.super) {
     current = current.super;
   }
+  if (current === parentEntry) {
+    return false;
+  }
   if (current && isPendingInheritanceEntry(current.super)) {
     current.super.resolve(parentEntry);
     current.super = parentEntry;
@@ -183,11 +308,12 @@ function registerInheritanceMethods(state, localMethods) {
   if (!localMethods || typeof localMethods !== 'object') {
     return sharedMethods;
   }
+  const isolatedLocalMethods = cloneInheritanceMethods(localMethods);
 
-  const names = Object.keys(localMethods);
+  const names = Object.keys(isolatedLocalMethods);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    const localEntry = localMethods[name];
+    const localEntry = isolatedLocalMethods[name];
     if (!localEntry) {
       continue;
     }
@@ -211,7 +337,15 @@ function registerInheritanceMethods(state, localMethods) {
     if (isPendingInheritanceEntry(localEntry)) {
       continue;
     }
+    if (
+      currentEntry.ownerKey &&
+      localEntry.ownerKey &&
+      currentEntry.ownerKey === localEntry.ownerKey
+    ) {
+      continue;
+    }
 
+    validateInheritanceContractCompatibility(name, currentEntry, localEntry);
     wireResolvedSuperEntry(currentEntry, localEntry);
   }
 
@@ -223,11 +357,12 @@ function registerInheritanceSharedSchema(state, localSharedSchema, context = nul
   if (!localSharedSchema || typeof localSharedSchema !== 'object') {
     return sharedSchema;
   }
+  const isolatedLocalSharedSchema = cloneInheritanceSharedSchema(localSharedSchema);
 
-  const names = Object.keys(localSharedSchema);
+  const names = Object.keys(isolatedLocalSharedSchema);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    const localEntry = localSharedSchema[name];
+    const localEntry = isolatedLocalSharedSchema[name];
     if (!localEntry) {
       continue;
     }
@@ -348,6 +483,10 @@ module.exports = {
   InheritanceResolutionState,
   createInheritanceState,
   createPendingInheritanceEntry,
+  cloneInheritanceMethodEntry,
+  cloneInheritanceMethods,
+  cloneInheritanceSharedEntry,
+  cloneInheritanceSharedSchema,
   isPendingInheritanceEntry,
   ensureInheritanceMethodsTable,
   ensureInheritanceSharedSchemaTable,

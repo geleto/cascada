@@ -215,6 +215,16 @@ function contextOrChannelLookup(_context, name, currentBuffer) {
   return _context.lookup(name);
 }
 
+function contextOrExternLookup(_context, name) {
+  const externContext = _context && typeof _context.getExternContextVariables === 'function'
+    ? _context.getExternContextVariables()
+    : null;
+  if (externContext && Object.prototype.hasOwnProperty.call(externContext, name)) {
+    return externContext[name];
+  }
+  return _context.lookup(name);
+}
+
 function contextOrInheritableChannelLookup(_context, name, currentBuffer, errorContext = null, inheritanceStateValue = null) {
   const contextValue = _context.lookup(name);
   if (contextValue !== undefined) {
@@ -242,41 +252,25 @@ function contextOrInheritableChannelLookup(_context, name, currentBuffer, errorC
   });
 }
 
-function _resolveOwnedChannelReadFromCurrentBuffer(currentBuffer, channel, requestedName) {
-  if (!isBufferInAncestry(currentBuffer, channel._buffer)) {
-    return {
-      buffer: channel._buffer,
-      channelName: channel._channelName
-    };
+function _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, requestedName) {
+  if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
+    return;
   }
 
-  const canReadThroughCurrentLane =
-    channel._buffer === currentBuffer ||
-    hasLinkedChannelPathToOwner(currentBuffer, channel._buffer, requestedName);
-
-  if (!canReadThroughCurrentLane) {
-    // Phase 9 constructor/block dispatch can read a channel owned by an
-    // ancestor render buffer without there being a fully linked lane path from
-    // the current invocation buffer back to that owner. In that case we must
-    // read from the producer buffer directly rather than enqueueing a snapshot
-    // onto a descendant lane that can never observe the write.
-    return {
-      buffer: channel._buffer,
-      channelName: channel._channelName
-    };
+  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
+    if (!hasLinkedChannelPathToOwner(currentBuffer, channel._buffer, requestedName)) {
+      throw new RuntimeFatalError(
+        `Channel '${requestedName}' is visible but not linked to the current buffer`,
+        0,
+        0,
+        null,
+        currentBuffer && currentBuffer._context ? currentBuffer._context.path : null
+      );
+    }
+    if (LOOKUP_DYNAMIC_CHANNEL_LINKING || channel._allowsInheritanceBoundaryRead) {
+      ensureReadChannelLink(currentBuffer, channel, requestedName);
+    }
   }
-
-  // Optional dynamic mode: lazily link current read buffer into the channel
-  // lane. This remains flag/marker-guarded so structural prelinking stays the
-  // default model until the final cross-boundary read policy is cleaned up.
-  if (LOOKUP_DYNAMIC_CHANNEL_LINKING || (channel._buffer !== currentBuffer && channel._allowsInheritanceBoundaryRead)) {
-    ensureReadChannelLink(currentBuffer, channel, requestedName);
-  }
-
-  return {
-    buffer: currentBuffer,
-    channelName: requestedName
-  };
 }
 
 /**
@@ -289,11 +283,28 @@ function _resolveOwnedChannelReadFromCurrentBuffer(currentBuffer, channel, reque
  * composition payload.
  */
 function captureCompositionValue(_context, name, currentBuffer) {
-  const channelRead = channelLookup(name, currentBuffer);
-  if (channelRead !== undefined) {
-    return channelRead;
+  const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
+    ? currentBuffer.findChannel(name)
+    : null;
+  if (channel) {
+    const captured = getCurrentCompositionChannelValue(channel);
+    if (captured !== COMPOSITION_CAPTURE_UNAVAILABLE) {
+      return captured;
+    }
   }
   return _context.lookup(name);
+}
+
+const COMPOSITION_CAPTURE_UNAVAILABLE = Symbol('COMPOSITION_CAPTURE_UNAVAILABLE');
+
+function getCurrentCompositionChannelValue(channel) {
+  if (!channel) {
+    return COMPOSITION_CAPTURE_UNAVAILABLE;
+  }
+  if (typeof channel.getTemporaryCompositionAssignedValue === 'function') {
+    return channel.getTemporaryCompositionAssignedValue();
+  }
+  return COMPOSITION_CAPTURE_UNAVAILABLE;
 }
 
 function _getObservationPosition(errorContext) {
@@ -343,30 +354,12 @@ function _resolveSharedObservationTarget(currentBuffer, name) {
   const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
     ? currentBuffer.findChannel(name)
     : null;
-
-  if (!channel) {
-    return {
-      buffer: currentBuffer,
-      channelName: name
-    };
+  if (channel) {
+    _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, name);
   }
-
-  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
-    if (channel._buffer !== currentBuffer && channel._allowsInheritanceBoundaryRead) {
-      return {
-        buffer: channel._buffer,
-        channelName: channel._channelName
-      };
-    }
-    return {
-      buffer: currentBuffer,
-      channelName: name
-    };
-  }
-
   return {
-    buffer: channel._buffer,
-    channelName: channel._channelName
+    buffer: currentBuffer,
+    channelName: name
   };
 }
 
@@ -397,13 +390,9 @@ function observeInheritanceSharedChannel(name, currentBuffer, errorContext = nul
  * Channel-only lookup for known declared var channels.
  * Returns undefined when no channel binding is available.
  *
- * Ordering rule:
- * - If the channel owner buffer is in the current buffer ancestry, snapshot from
- *   current buffer lane (ordered read).
- * - Otherwise, snapshot from the producer buffer lane.
- *
- * Ordinary symbol reads are not terminal consumers and must not use
- * finalSnapshot(); only explicit finalization sites may do that.
+ * Ordinary lookup never skips to the producer/owner buffer. It issues an
+ * ordered snapshot on the current buffer only, and throws if the owning lane
+ * is visible but not structurally linked to that current buffer.
  */
 function channelLookup(name, currentBuffer) {
   const channel = currentBuffer.findChannel(name);
@@ -413,8 +402,8 @@ function channelLookup(name, currentBuffer) {
   if (isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel)) {
     return undefined;
   }
-  const target = _resolveOwnedChannelReadFromCurrentBuffer(currentBuffer, channel, name);
-  return target.buffer.addSnapshot(target.channelName, { lineno: 0, colno: 0 });
+  _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, name);
+  return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
 }
 
 /**
@@ -436,9 +425,14 @@ function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext
 }
 
 function captureCompositionScriptValue(context, name, currentBuffer, errorContext = null) {
-  const channelRead = channelLookup(name, currentBuffer);
-  if (channelRead !== undefined) {
-    return channelRead;
+  const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
+    ? currentBuffer.findChannel(name)
+    : null;
+  if (channel) {
+    const captured = getCurrentCompositionChannelValue(channel);
+    if (captured !== COMPOSITION_CAPTURE_UNAVAILABLE) {
+      return captured;
+    }
   }
   return context.lookupScript(name, errorContext);
 }
@@ -454,7 +448,19 @@ function isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel) {
   }
   const currentPath = currentBuffer._context ? currentBuffer._context.path : null;
   const channelPath = channel._context ? channel._context.path : null;
-  return !!(currentPath && channelPath !== currentPath);
+  if (!currentPath || channelPath === currentPath) {
+    return false;
+  }
+  // A fully linked ancestor lane is already the structural guarantee we need
+  // for an ordered read; do not block it just because the owning template path
+  // differs from the current invocation path.
+  if (
+    isBufferInAncestry(currentBuffer, channel._buffer) &&
+    hasLinkedChannelPathToOwner(currentBuffer, channel._buffer, channel._channelName)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 // Dynamically links the current read buffer into the target channel lane once.
@@ -512,6 +518,7 @@ module.exports = {
   observeInheritanceSharedChannel,
   channelLookup,
   contextOrChannelLookup,
+  contextOrExternLookup,
   contextOrInheritableChannelLookup,
   captureCompositionValue,
   contextOrScriptChannelLookup,

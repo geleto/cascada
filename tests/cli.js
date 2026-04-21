@@ -1,12 +1,14 @@
 (function() {
   'use strict';
 
+  var fs = require('fs');
   var path = require('path');
   var execFile = require('child_process').execFile;
   var expect = require('expect.js');
 
   var rootDir = path.resolve(path.join(__dirname, '..'));
   var precompileBin = path.join(rootDir, 'bin', 'precompile');
+  var distDir = path.join(rootDir, 'dist', 'cjs');
 
   if (process.platform === 'win32') {
     precompileBin += '.cmd';
@@ -28,10 +30,22 @@
       .join('\n');
   }
 
+  function expectMissingBuild(err, stdout, stderr, done) {
+    expect(err).to.be.ok();
+    expect(err.code).to.be(1);
+    expect(stdout).to.equal('');
+    expect(filterDebuggerMessages(stderr)).to.contain('Run `npm run build`');
+    done();
+  }
+
   describe('precompile cli', function() {
     it('should echo a compiled template to stdout', function(done) {
       this.timeout(18000); // execFile can be slow on Windows
       execPrecompile(['tests/templates/item.njk'], function(err, stdout, stderr) {
+        if (!fs.existsSync(distDir)) {
+          expectMissingBuild(err, stdout, stderr, done);
+          return;
+        }
         if (err) {
           done(err);
           return;
@@ -49,6 +63,10 @@
       ];
       this.timeout(18000); // execFile can be slow on Windows
       execPrecompile(args, function(err, stdout, stderr) {
+        if (!fs.existsSync(distDir)) {
+          expectMissingBuild(err, stdout, stderr, done);
+          return;
+        }
         if (err) {
           done(err);
           return;

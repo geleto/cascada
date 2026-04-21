@@ -174,7 +174,7 @@ describe('Template Extends', function () {
       expect(source).to.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
       expect(source).to.contain('blockPayload && blockPayload.originalArgs');
       expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
-      expect(source).to.contain('contract: {"argNames":["user"],"withContext":true}');
+      expect(source).to.contain('contract: {"argNames":["user"],"withContext":false}');
       expect(source).to.not.contain('context.getBlockContract("content")');
       expect(source).to.not.contain('context.createInheritancePayload(');
       expect(source).to.not.contain('blockPayload.localsByTemplate');

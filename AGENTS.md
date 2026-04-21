@@ -112,6 +112,13 @@ Write and modify TypeScript/JavaScript for `cascada-engine`: implement features,
     *   If a loop/conditional/include path is **consuming a value** (awaiting a promise, reading a thenable, iterating an async iterator, evaluating an async condition, etc.), failures belong to normal Cascada error flow. Poison the affected writes/effects and do **not** rethrow from that path.
     *   If the **normal flow itself** throws (invariant violation, bad control-flow contract, unexpected runtime bug, invalid hard precondition), let that error propagate as a real error. Do **not** silently convert it into poison.
     *   Callback-based fire-and-forget runtime boundaries (for example helpers that own async child-buffer cleanup) should still report real errors via `cb(...)` with context, because there may be no awaiting caller on that path.
+*   ✅ **DO:** Treat the current command buffer as the only place where runtime commands are enqueued for an execution point.
+    *   Observable commands (`addSnapshot`, waits, error reads, etc.) and mutating commands must both be added to the current buffer.
+    *   If a value/scope is visible, the current buffer must already have the needed linked channel path. Fix the linking or payload transport; do not jump to a parent/root producer buffer.
+*   ✅ **DO:** Keep ordinary lookup, explicit shared observation, and explicit composition payload capture as separate mechanisms.
+    *   Ordinary bare-name lookup must use the current buffer hierarchy.
+    *   Explicit inheritance/shared observation may use inheritance metadata, but should still enqueue on the current buffer.
+    *   Immediate composition capture (`extends ... with ...`) is not an ordered snapshot read and must stay a narrow dedicated primitive.
 
 *   ❌ **DON'T:** Reflexively make runtime functions `async`. An `async` function always returns Promise, adding overhead. Only use `async` on helper functions needing `await`.
 *   ❌ **DON'T:** Check `isPoison()` **AFTER** `await`. Architecturally impossible for `await somePromise` to return `PoisonedValue`. Check before awaiting; catch `PoisonError` after awaiting.
@@ -121,6 +128,10 @@ Write and modify TypeScript/JavaScript for `cascada-engine`: implement features,
 *   ❌ **DON'T:** Short-circuit error collection. Always await ALL promises and collect ALL errors before returning/throwing (**"Never Miss Any Error"** principle).
 *   ❌ **DON'T:** Use `instanceof` for poison detection. Always use `isPoison()` and `isPoisonError()` helpers.
 *   ❌ **DON'T:** Construct `TemplateError` directly in `catch` blocks. Always use idempotent `runtime.handleError(e, ...)`.
+*   ❌ **DON'T:** “Fix” missing visibility by reading or waiting on the owner/producer buffer directly.
+    *   No ordinary lookup fallback to parent/root buffers.
+    *   No “current position” wait on parent/root buffers.
+    *   If the current buffer cannot observe a value in source order, the real bug is missing linked channels, wrong `currentBuffer`, or missing explicit payload wiring.
 
 ---
 

@@ -77,6 +77,19 @@ class CompilerBaseAsync extends CompilerCommon {
       }
       if (declaredOutput.type === 'var') {
         if (!this.scriptMode && this.inBlock) {
+          if (declaredOutput.shared) {
+            this.emit(
+              `runtime.contextOrInheritableChannelLookup(` +
+              `context, "${name}", ${this.buffer.currentBuffer}, ` +
+              `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }, ` +
+              `inheritanceState)`
+            );
+            return;
+          }
+          if (declaredOutput.extern) {
+            this.emit(`runtime.contextOrExternLookup(context, "${name}")`);
+            return;
+          }
           this.emit(`runtime.channelLookup("${name}", ${this.buffer.currentBuffer})`);
           return;
         }
@@ -640,7 +653,7 @@ class CompilerBaseAsync extends CompilerCommon {
       const errorContextJson = JSON.stringify(this._createErrorContext(node));
       this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${explicitThisDispatch.methodName}", `);
       this._compileAggregate(node.args, null, '[', ']', false, false);
-      this.emit(`, context, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson})`);
+      this.emit(`, context, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson}, { preWaitCurrentPosition: true })`);
       return;
     }
     this._emitAsyncDynamicCall(node, this.buffer.currentBuffer);

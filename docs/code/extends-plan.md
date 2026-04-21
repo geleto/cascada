@@ -6,6 +6,15 @@ architecture described in:
 
 - `docs/code/extends-architecture.md`
 
+Evaluation baseline:
+
+- all future evaluation of the `extends-next` implementation must compare
+  against commit `016801d694a82068a3c8102231ae0636a68a6c42`
+- this is the branch point for `extends-next`
+- do not evaluate against the current state of `master`
+- code added on `master` after that branch point is not part of the target
+  baseline for this work and may be removed entirely during the restart
+
 ## Strategy
 
 - start from `016801d694a82068a3c8102231ae0636a68a6c42` on a fresh branch called extends-next
@@ -757,11 +766,156 @@ Tests:
   - `tests/pasync/extends-template.js` -> `Phase 9 - Template Extends Pre/Post`
   - `tests/pasync/extends-template.js` -> `Phase 9 - Template Inheritance Compiled Shape`
 
-## Phase 10 - Compatibility and Cleanup
+## Phase 10 - Visibility and Current-Buffer Cleanup
 
 Goal:
 
-- preserve non-extends behavior and clean up any remaining architecture drift
+- remove constructor-scope leakage and the runtime workarounds that try to
+  compensate for missing payload/linking by reading from parent/root buffers
+
+Scope:
+
+- make the inheritance visibility model explicit in implementation:
+  - the script/template body is the `__constructor__` method
+  - methods/blocks do not read constructor-local or ancestor-private locals
+  - inherited execution sees only shared channels plus explicit
+    payload/argument/context inputs
+- enforce current-buffer ownership for command emission:
+  - observational commands (`addSnapshot`, waits, error reads, shared
+    observations) are added to the current buffer only
+  - mutating commands are added to the current buffer only
+  - if a value is visible from an execution point, the current buffer must
+    already have the needed linked channel path
+  - missing visibility is a compiler/linking/payload bug, not a reason to jump
+    to a parent/root producer buffer
+- split the three read/capture models cleanly:
+  - ordinary bare-name lookup uses the current buffer hierarchy only
+  - explicit shared/inheritance observation remains a separate runtime path
+  - immediate composition capture for `extends ... with ...` remains a narrow
+    dedicated primitive and is not implemented through ordinary channel lookup
+- remove hacky fixes that tried to work around the scope problem:
+  - producer-buffer / owner-buffer fallback for ordinary lookup
+  - producer-buffer / owner-buffer fallback for current-position waits
+  - broad ancestry/path-heuristic fallback in normal channel resolution
+  - any special boundary-read reopening that exists only to simulate ambient
+    constructor/local visibility instead of fixing payload/linkage
+  - the explicit boundary-read bridge surface itself when it still exists:
+    - `runtime.allowInheritanceBoundaryRead(...)`
+    - `_allowsInheritanceBoundaryRead`
+    - `findBoundaryOwnedChannel(...)` and similar bridge-only ownership
+      helpers if they are only supporting reopened cross-boundary visibility
+- audit compiler/runtime ownership points so the visibility model is structural
+  rather than heuristic:
+  - verify `currentBuffer` is correct for block entry, method entry,
+    constructor admission, caller invocation, component invocation, and async
+    control-flow boundaries
+  - verify linked-channel computation for inherited method/block metadata,
+    caller used-channel metadata, component invocation/shared lanes, and other
+    async boundaries
+  - fix missing `usedChannels` / `mutatedChannels` / linked-channel sets rather
+    than reopening fallback reads
+- restore or keep only the narrow transitional bridges that are still valid:
+  - immediate composition capture for explicit payload construction
+  - explicit shared-channel observation through inheritance metadata
+  - do not preserve any bridge that recreates ambient constructor-scope access
+- align block/method symbol compilation with the final model:
+  - shared names compile to explicit shared/inheritance observation
+  - explicit extern/context visibility compiles through explicit composition
+    context paths
+  - constructor-local values are not discoverable from inherited methods/blocks
+    unless forwarded explicitly in payload or written into shared channels
+- remove remaining ambient inherited-symbol fallback shapes:
+  - inherited block/method bare-name compilation must not rely on broad
+    `context.lookup(...)` fallback for names that are neither shared nor
+    explicit payload/context inputs
+  - if an inherited bare-name read works, it must be because the symbol is
+    explicitly allowed by the architecture and structurally present in the
+    current invocation context or linked shared lanes
+- stop representing explicit inherited extern inputs as ambient runtime
+  channels where that representation reintroduces ordinary channel lookup paths:
+  - inherited/block-time extern visibility should come from explicit
+    composition/extern context first
+  - do not let root extern channel materialization become a reason later code
+    can "discover" externs ambiently through the generic lookup path
+- concrete examples of Phase 10 bugs to remove:
+  - inherited template blocks reading `extern` names such as `theme` or
+    `locale` through ambient channel lookup instead of explicit
+    composition/extern context
+  - inherited template blocks reading undeclared bare names through broad
+    `context.lookup(...)` fallback instead of failing or using explicit
+    shared/payload/context inputs
+  - inherited execution seeing constructor-local values because block entry
+    seeded payload context from `context.getVariables()`
+  - shared channels such as `theme` being visible in ancestry but failing at
+    call time because the current inherited invocation buffer was never linked
+    to the shared lane
+  - non-inheritance composition paths keeping explicit inputs on ambient
+    channel/bridge surfaces, making later inheritance regressions easy to
+    "fix" by reopening visibility instead of repairing payload or linkage
+  - "fixes" that make those cases pass by reading/waiting on owner buffers
+    instead of repairing linkage, payload, or `currentBuffer`
+
+Deliverables:
+
+- runtime lookup/wait paths no longer skip the current buffer in favor of
+  parent/root buffers
+- inherited methods/blocks cannot observe constructor-local values ambiently
+- inherited methods/blocks no longer rely on broad ambient context fallback for
+  undeclared bare names
+- explicit `extends ... with ...` capture still works at execution time without
+  creating later ambient visibility
+- the remaining runtime bridge hooks are narrowed to explicit payload/shared
+  responsibilities only
+
+Tests:
+
+- add or keep focused regressions for:
+  - no inherited access to constructor-local values
+  - no inherited ambient fallback for undeclared bare names
+  - no boundary-read bridge dependency for inherited visibility
+  - no producer-buffer fallback for ordinary lookup
+  - no producer-buffer fallback for current-position waits
+  - `extends ... with ...` captures at execution time, not after later
+    reassignment
+  - shared channels remain visible from inherited methods/blocks
+  - explicit extern/render-context visibility still works only through the
+    intended payload/context mechanisms
+- run:
+  - `tests/pasync/loader.js` targeted `extends with` coverage
+  - `tests/pasync/extends-template.js`
+  - `tests/pasync/extends.js`
+  - `tests/pasync/template-command-buffer.js`
+  - `tests/pasync/component.js` targeted visibility/method tests
+  - `npm run test:quick`
+
+Cleanup pass before closing Phase 10:
+
+- explicitly search for workaround-shaped code added to compensate for missing
+  payload/linkage/current-buffer ownership instead of fixing the real model
+- look for and remove or rewrite:
+  - producer-buffer / owner-buffer reads or waits
+  - fallback reads guarded by ancestry/path heuristics
+  - "if current buffer cannot see it, read from parent/root" logic
+  - ambient inherited bare-name fallback through broad `context.lookup(...)`
+  - inherited block/method entry code that seeds scope from
+    `context.getVariables()` or similarly broad constructor-local maps
+  - bridge markers/flags that reopen cross-boundary visibility
+  - explicit input values represented as ambient channels just to make later
+    lookup succeed
+- when cleaning up, prefer deleting the workaround and exposing the missing
+  payload/linking bug rather than preserving the workaround behind a narrower
+  helper
+- if a workaround cannot yet be removed, add a short comment saying:
+  - what architectural rule it is temporarily violating
+  - what later phase owns removing it
+  - what must not be built on top of it
+
+## Phase 11 - Non-Extends Compatibility and Boundary Cleanup
+
+Goal:
+
+- preserve non-extends behavior and remove leftover boundary/runtime bridges
+  that do not belong to the final visibility model
 
 Scope:
 
@@ -772,133 +926,190 @@ Scope:
 - sync template inheritance untouched for Nunjucks compatibility
 - sequential `!` paths, including inherited-method support once that deferred
   work is taken up
+- revisit root extern/runtime ownership on the non-inheritance composition
+  path:
+  - remove or narrow root extern var-channel materialization if it is no longer
+    needed for include/import/component compatibility
+  - keep explicit extern/composition context as the authoritative model for
+    inherited/non-inherited composition visibility
+- preserve non-extends compatibility without reopening inheritance visibility:
+  - fix `import` / `from import` / `include` / `caller()` regressions by using
+    explicit payload/context or ordinary composition rules
+  - do not repair those regressions by reintroducing ambient inherited lookup
+    or parent-buffer reads
+- clean up remaining low-risk parser/compiler consistency nits that are not
+  worth carrying as architecture work:
+  - parser recovery around `parseCompositionWithClause(...)` consuming a symbol
+    before rejecting object-style trailing named inputs
+  - extract helper-based save/restore for compiler buffer context if the
+    current manual restoration pattern still exists
+- remove compatibility-only shared-channel normalization once all startup paths
+  emit canonical shared var defaults directly:
+  - drop the `null -> undefined` normalization bridge in
+    `declareInheritanceSharedChannel(...)` if it is no longer needed for older
+    compile/output shapes
+- remove leftover bootstrap/API defensive code once the final ownership
+  boundaries are settled:
+  - drop the unreachable `bootstrapInheritanceMetadata(...)` fallback that
+    creates a new inheritance state when the caller already owns creation
+
+Tests:
+
+- `npm run test:quick`
+- targeted non-extends compatibility coverage:
+  - `tests/pasync/loader.js` non-extends import/include groups
+  - `tests/pasync/component.js` compatibility groups
+  - macro/caller coverage that still depends on explicit composition behavior
+
+Cleanup pass before closing Phase 11:
+
+- explicitly search non-extends composition paths for workaround fixes that
+  silently reintroduce inheritance-style ambient visibility
+- look for and remove or rewrite:
+  - compatibility shims that use `allowInheritanceBoundaryRead(...)`-style
+    logic after Phase 10 made visibility structural
+  - include/import/from-import/caller fixes that depend on parent-buffer reads
+    or reopened boundary visibility instead of explicit payload/context
+  - root extern behavior kept alive only because later code expects externs to
+    be ambient channels
+  - compatibility fallbacks that preserve old behavior by broadening lookup
+    rather than passing data explicitly
+  - non-extends fixes that accidentally depend on async-template inheritance
+    internals instead of ordinary composition rules
+- when a compatibility path truly needs a temporary bridge, document:
+  - why it is still needed for non-extends compatibility
+  - why it is not part of the inheritance visibility model
+  - which later phase removes it or formalizes it
+
+## Phase 12 - Dynamic Extends and Runtime Shape Cleanup
+
+Goal:
+
+- finish the transitional runtime/compiler cleanup after the main static model
+  is stable
+
+Scope:
+
 - dynamic `extends` uses normal compiler expression compilation when the parent
   is an expression and literal compilation when static
 - dynamic `extends` waits for parent-name resolution and loading
 - detailed dynamic `extends` work remains deferred until the main static model
   is stable; if the static model is not yet stable by this phase, dynamic
-  `extends` may remain deferred past Phase 10 rather than being forced in here
-  - clean up remaining architecture drift after the main model is stable:
-    - move pending inherited-method/shared dependency discovery off ad hoc AST
-      rescans and onto analysis-owned metadata
-    - remove the temporary compiler rescans in `src/compiler/inheritance.js`:
-      - `collectPendingMethodNames(...)`
-      - `collectPendingSharedNames(...)`
-    - flatten the temporary inheritance registry classes when they no longer add
-      value over plain shared metadata objects and helpers:
-      - `InheritanceMethodRegistry`
-      - `InheritanceSharedRegistry`
-    - revisit buffer-finish completion ownership once component/template
-      lifecycle semantics are fully stable:
-      - redesign or rename `CommandBuffer.getFinishCompletePromise()` if the
-        current "finished plus channel completion promises" contract is still a
-        transitional helper rather than the final runtime boundary
-    - remove leftover bootstrap/API defensive code once the final ownership
-      boundaries are settled:
-      - drop the unreachable `bootstrapInheritanceMetadata(...)` fallback that
-        creates a new inheritance state when the caller already owns creation
-      - remove `runtime.allowInheritanceBoundaryRead(...)` and its remaining
-        compiler/runtime bridge hooks once import/extern/template visibility
-        paths no longer depend on that escape hatch
-      - decide the final cross-boundary read rule for `channelLookup(...)`
-        after template/component/runtime cleanup stabilizes:
-        - either keep the current producer-buffer fallback when there is no
-          fully linked lane path back to the owner buffer
-        - or replace it with a stricter explicit-link / explicit-payload-only
-          model if that better matches the final architecture
-    - collapse the remaining helper-owned admission-buffer scaffolding in
-      `src/runtime/inheritance-call.js` if it still exists after the main
-      caller-side invocation model is stable:
-      - `_createAdmissionBarrier(...)`
-      - `_linkBarrierChannel(...)`
-      - any distinct placeholder/buffer shape that still sits between the
-        caller buffer and the real invocation buffer
-    - clean up remaining low-risk parser/compiler consistency nits that are not
-      worth carrying as architecture work:
-      - parser recovery around `parseCompositionWithClause(...)` consuming a
-        symbol before rejecting object-style trailing named inputs
-      - extract helper-based save/restore for compiler buffer context if the
-        current manual restoration pattern still exists
-    - remove compatibility-only shared-channel normalization once all startup
-      paths emit canonical shared var defaults directly:
-      - drop the `null -> undefined` normalization bridge in
-        `declareInheritanceSharedChannel(...)` if it is no longer needed for
-        older compile/output shapes
-    - rename remaining internal admission/barrier terminology once the shared
-      runtime model is stable across script/template/component dispatch:
-      - revisit `InheritanceAdmissionCommand` and related helper names if they
-        still reflect Phase 7 transitional jargon rather than the final runtime
-        responsibility
-    - simplify component-runtime helper structure once template integration is
-      complete and no temporary cross-phase compatibility shims remain:
-      - revisit component helper/class naming and any runtime-only staging
-        layers that were kept to land Phase 8 incrementally
-      - collapse the current double-resolution path for component method calls
-        if the shared inherited-dispatch API still makes components resolve
-        method metadata once for linked-channel waiting and again for admission
-      - revisit the current component-startup shortcut that awaits
-        `constructorBoundaryPromise` inside `createComponentInstance(...)`
-        before exposing the instance, and collapse it if the later shared
-        caller-side lifecycle model makes that eager wait unnecessary
-      - replace the current component-mode sentinel string
-    - remove remaining async-template-only legacy `Context` helpers and state
-      once dynamic/static compatibility work no longer needs them:
-      - `beginAsyncExtendsBlockRegistration(...)` /
-        `finishAsyncExtendsBlockRegistration(...)`
-      - `Context.getAsyncBlock(...)`
-      - `setExtendsComposition(...)` / `getExtendsComposition(...)`
-      - template-local capture / inheritance-payload helpers still left on
-        `Context`
-      - move the last shared block/export state off `Context` and onto the
-        explicit per-render execution-state object if Phase 9 left that bridge
-        in place for sync/Nunjucks compatibility
-    - decide the final async-template compatibility surface for legacy block
-      registry metadata:
-      - remove or formally keep the empty `AsyncTemplate.blocks` /
-        `AsyncTemplate.blockContracts` surface now that async inheritance no
-        longer uses the old block-registry runtime path
-    - revisit the constructor/script-vs-template callable wrapper duplication
-      in `src/compiler/inheritance.js` and collapse it if the Phase 9 shared
-      callable-entry model is stable enough to support one helper-owned
-      emission path
-    - revisit the remaining async template runtime-shape asymmetries once the
-      final template/component model settles:
-      - decide whether template block invocation should keep snapshotting the
-        full `context.getVariables()` map or move onto the narrower
-        `getCompositionContextVariables()`-style contract used by script
-        methods
-      - decide whether the static-only template `__parentTemplate` declaration
-        remains useful as a shared compiler shape or should be removed once the
-        dynamic/static parent-resolution path is finalized
-      - split `currentCompilingBlock` if it still acts as both "current block
-        body being compiled" state and the sentinel for "top-level block
-        definition vs nested render path"
-      - revisit the promise-wrapped `runtime.markSafe(runtime.invokeSuperMethod(...))`
-        template path before any later text-buffer/safe-string pipeline cleanup
-        changes how promised safe values are flattened
-      - revisit emitted temporary-name readability for shared block payload /
-        context helpers if `_tmpid()`-style names are still making generated
-        async template output harder to inspect
-    - replace the current component-mode sentinel
-      (`componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE`)
-      with a cleaner final marker/API once template integration settles the
-      shared inheritance-state surface
-    - finish the remaining template metadata-source unification if Phase 9
-      still leaves any raw `Block` / `ChannelDeclaration` rescans in place:
-      - remove the `node.findAll(nodes.ChannelDeclaration)` fallback in
-        `CompilerCommon._getSharedDeclarations(...)`
-      - stop switching between transformed method metadata and raw template
-        `Block` nodes when only metadata assembly is needed
-      - decide the final policy for rejected async component declarations that
-        are never observed or invoked by the caller, instead of leaving that
-        behavior to the broader "unused async declaration" fallback
-      - simplify the fully-normalized component payload fast path if the Phase
-        8 validation-heavy branch still survives unchanged
-    - replace the current late-link fallback for newly discovered non-shared
-      inherited-method lanes once finished-buffer ownership is settled across the
-      later component/template phases:
-    - avoid relying on post-close linked-channel registration as the long-term
-      model for inherited non-shared channel visibility
+  `extends` may remain deferred past Phase 12 rather than being forced in here
+- remove dynamic/static parent-selection transition scaffolding once the final
+  model is stable:
+  - `__parentTemplate` temporary-channel handoff where it is no longer needed
+  - `asyncStoreIn` / transformer temp-variable plumbing that exists only to
+    stage parent resolution through legacy shapes
+  - compatibility-only remark:
+    - do not add new inheritance/local-capture/visibility behavior to the
+      `__parentTemplate` or `asyncStoreIn` path
+    - treat this path as transitional parent-resolution scaffolding only
+- move pending inherited-method/shared dependency discovery off ad hoc AST
+  rescans and onto analysis-owned metadata
+- remove the temporary compiler rescans in `src/compiler/inheritance.js`:
+  - `collectPendingMethodNames(...)`
+  - `collectPendingSharedNames(...)`
+- flatten the temporary inheritance registry classes when they no longer add
+  value over plain shared metadata objects and helpers:
+  - `InheritanceMethodRegistry`
+  - `InheritanceSharedRegistry`
+- collapse the remaining helper-owned admission-buffer scaffolding in
+  `src/runtime/inheritance-call.js` if it still exists after the main
+  caller-side invocation model is stable:
+  - `_createAdmissionBarrier(...)`
+  - `_linkBarrierChannel(...)`
+  - any distinct placeholder/buffer shape that still sits between the caller
+    buffer and the real invocation buffer
+- revisit buffer-finish completion ownership once component/template lifecycle
+  semantics are fully stable:
+  - redesign or rename `CommandBuffer.getFinishCompletePromise()` if the
+    current "finished plus channel completion promises" contract is still a
+    transitional helper rather than the final runtime boundary
+  - compatibility-only remark:
+    - do not build new ownership or visibility semantics around
+      `getFinishCompletePromise()`
+- rename remaining internal admission/barrier terminology once the shared
+  runtime model is stable across script/template/component dispatch:
+  - revisit `InheritanceAdmissionCommand` and related helper names if they
+    still reflect Phase 7 transitional jargon rather than the final runtime
+    responsibility
+- simplify component-runtime helper structure once template integration is
+  complete and no temporary cross-phase compatibility shims remain:
+  - revisit component helper/class naming and any runtime-only staging layers
+    that were kept to land Phase 8 incrementally
+  - collapse the current double-resolution path for component method calls if
+    the shared inherited-dispatch API still makes components resolve method
+    metadata once for linked-channel waiting and again for admission
+  - revisit the current component-startup shortcut that awaits
+    `constructorBoundaryPromise` inside `createComponentInstance(...)` before
+    exposing the instance, and collapse it if the later shared caller-side
+    lifecycle model makes that eager wait unnecessary
+  - replace the current component-mode sentinel string
+- remove remaining async-template-only legacy `Context` helpers and state once
+  dynamic/static compatibility work no longer needs them:
+  - `beginAsyncExtendsBlockRegistration(...)` /
+    `finishAsyncExtendsBlockRegistration(...)`
+  - `Context.getAsyncBlock(...)`
+  - `setExtendsComposition(...)` / `getExtendsComposition(...)`
+  - template-local capture / inheritance-payload helpers still left on
+    `Context`
+  - move the last shared block/export state off `Context` and onto the explicit
+    per-render execution-state object if Phase 9 left that bridge in place for
+    sync/Nunjucks compatibility
+- decide the final async-template compatibility surface for legacy block
+  registry metadata:
+  - remove or formally keep the empty `AsyncTemplate.blocks` /
+    `AsyncTemplate.blockContracts` surface now that async inheritance no longer
+    uses the old block-registry runtime path
+  - compatibility-only remark:
+    - do not add new async inheritance behavior to `Context.blocks`,
+      `getBlock(...)`, `blockContracts`, `AsyncTemplate.blocks`, or
+      `AsyncTemplate.blockContracts`
+    - the final async extends model is metadata/method-based, not
+      block-registry-based
+- revisit the constructor/script-vs-template callable wrapper duplication in
+  `src/compiler/inheritance.js` and collapse it if the Phase 9 shared
+  callable-entry model is stable enough to support one helper-owned emission
+  path
+- revisit the remaining async template runtime-shape asymmetries once the
+  final template/component model settles:
+  - decide whether the static-only template `__parentTemplate` declaration
+    remains useful as a shared compiler shape or should be removed once the
+    dynamic/static parent-resolution path is finalized
+  - split `currentCompilingBlock` if it still acts as both "current block body
+    being compiled" state and the sentinel for "top-level block definition vs
+    nested render path"
+  - compatibility-only remark:
+    - do not use `currentCompilingBlock`'s dual role as justification for new
+      template-specific visibility fallback or inherited-scope exceptions
+  - revisit the promise-wrapped
+    `runtime.markSafe(runtime.invokeSuperMethod(...))` template path before any
+    later text-buffer/safe-string pipeline cleanup changes how promised safe
+    values are flattened
+  - revisit emitted temporary-name readability for shared block payload /
+    context helpers if `_tmpid()`-style names are still making generated async
+    template output harder to inspect
+- replace the current component-mode sentinel
+  (`componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE`) with a
+  cleaner final marker/API once template integration settles the shared
+  inheritance-state surface
+- finish the remaining template metadata-source unification if Phase 9 still
+  leaves any raw `Block` / `ChannelDeclaration` rescans in place:
+  - remove the `node.findAll(nodes.ChannelDeclaration)` fallback in
+    `CompilerCommon._getSharedDeclarations(...)`
+  - stop switching between transformed method metadata and raw template
+    `Block` nodes when only metadata assembly is needed
+  - decide the final policy for rejected async component declarations that are
+    never observed or invoked by the caller, instead of leaving that behavior
+    to the broader "unused async declaration" fallback
+  - simplify the fully-normalized component payload fast path if the Phase 8
+    validation-heavy branch still survives unchanged
+- replace the current late-link fallback for newly discovered non-shared
+  inherited-method lanes once finished-buffer ownership is settled across the
+  later component/template phases:
+  - avoid relying on post-close linked-channel registration as the long-term
+    model for inherited non-shared channel visibility
 
 Tests:
 
@@ -906,14 +1117,38 @@ Tests:
 - full test suite
 - re-enable groups:
   - `tests/pasync/extends-foundation.js` ->
-    `Phase 10 - Dynamic Extends Startup Plumbing`
+    `Phase 12 - Dynamic Extends Startup Plumbing`
   - `tests/pasync/extends-foundation.js` ->
-    `Phase 10 - Dynamic Extends Resolution Lifecycle`
+    `Phase 12 - Dynamic Extends Resolution Lifecycle`
   - `tests/pasync/extends-foundation.js` ->
-    `Phase 10 - Composition Payload Shape`
+    `Phase 12 - Composition Payload Shape`
   - keep the sync extends regression in `tests/compiler.js` active throughout
 
-## Phase 11 - Documentation
+Cleanup pass before closing Phase 12:
+
+- explicitly search for transitional compiler/runtime shapes that survived only
+  because earlier phases fixed behavior without yet collapsing the old path
+- look for and remove or rewrite:
+  - `__parentTemplate` staging logic that still carries old root-handoff
+    assumptions
+  - `asyncStoreIn` / transformer temp plumbing that only exists to preserve a
+    legacy parent-selection shape
+  - duplicate async-template/runtime surfaces that mirror the new metadata
+    model but are no longer authoritative
+  - helper/admission/barrier layers that still exist only because older code
+    expected a separate placeholder buffer
+  - naming/API wrappers that hide the fact a path is still transitional
+  - late-link / post-close registration fallbacks that patch over ownership
+    problems instead of resolving the runtime shape cleanly
+  - old async-template block-registry/state paths that remain reachable after
+    the metadata/method-based model is working
+- for each remaining transitional path that cannot yet be removed, add a
+  compatibility-only remark or TODO that states:
+  - this path is not the final architecture
+  - no new behavior should be added there
+  - what exact condition will allow deletion
+
+## Phase 13 - Documentation
 
 Goal:
 
@@ -924,6 +1159,12 @@ Scope:
 
 - update `docs/code/extends-architecture.md` where implementation details or
   final terminology drifted during delivery
+- make the final docs explain the inheritance visibility model explicitly:
+  - the script/template body is the `__constructor__` method, not a special
+    ambient parent scope
+  - methods/blocks do not read constructor-local or ancestor-private locals
+  - inherited execution sees only shared channels plus explicit
+    payload/argument/context inputs
 - update `docs/cascada/script.md` and any agent-facing script docs that
   describe:
   - `shared` declarations

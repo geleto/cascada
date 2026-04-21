@@ -226,10 +226,57 @@ function _collectAllChannelNames(source) {
   return Array.from(linkedChannels);
 }
 
-function _createMethodPayload(methodMeta, args, errorContext, label) {
+function _enqueueCurrentPositionWaits(currentBuffer, runtime, channelNames) {
+  if (
+    !currentBuffer ||
+    !runtime ||
+    typeof runtime.waitForCurrentBufferChannel !== 'function' ||
+    !Array.isArray(channelNames) ||
+    channelNames.length === 0
+  ) {
+    return null;
+  }
+
+  const waits = [];
+  const seen = new Set();
+  for (let i = 0; i < channelNames.length; i++) {
+    const channelName = channelNames[i];
+    if (!channelName || seen.has(channelName)) {
+      continue;
+    }
+    seen.add(channelName);
+    if (
+      currentBuffer &&
+      typeof currentBuffer.isFinished === 'function' &&
+      (currentBuffer.isFinished(channelName) || currentBuffer.finished)
+    ) {
+      continue;
+    }
+    waits.push(runtime.waitForCurrentBufferChannel(currentBuffer, channelName));
+  }
+
+  if (waits.length === 0) {
+    return null;
+  }
+
+  return Promise.all(waits);
+}
+
+function _createMethodPayload(methodMeta, args, errorContext, label, context = null, fallbackToContextOriginalArgs = false) {
   const contract = methodMeta && methodMeta.contract ? methodMeta.contract : { argNames: [], withContext: false };
   const argNames = Array.isArray(contract.argNames) ? contract.argNames : [];
-  const values = Array.isArray(args) ? args : [];
+  let values = Array.isArray(args) ? args : [];
+
+  if (
+    fallbackToContextOriginalArgs &&
+    values.length === 0 &&
+    argNames.length > 0 &&
+    context &&
+    typeof context.getCompositionContextVariables === 'function'
+  ) {
+    const originalArgs = context.getCompositionContextVariables() || {};
+    values = argNames.map((name) => originalArgs[name]);
+  }
 
   if (values.length > argNames.length) {
     throw new RuntimeFatalError(
@@ -353,6 +400,8 @@ class InheritanceAdmissionCommand extends Command {
     this._startPromise = null;
     this._finishedBuffers = false;
     this._resultSettled = false;
+    this.fallbackToContextOriginalArgs = false;
+    this.preWaitPromise = null;
   }
 
   getError() {
@@ -370,6 +419,9 @@ class InheritanceAdmissionCommand extends Command {
 
     this._startPromise = (async () => {
       try {
+        if (this.preWaitPromise && typeof this.preWaitPromise.then === 'function') {
+          await this.preWaitPromise;
+        }
         const methodMeta = _normalizeMethodMeta(await this.resolveMethodEntry());
         this._resolvedMethodMeta = methodMeta;
         const invocationBuffer = this._ensureInvocationBuffer(methodMeta.entry || methodMeta);
@@ -461,7 +513,14 @@ class InheritanceAdmissionCommand extends Command {
       );
     }
 
-    const payload = _createMethodPayload(methodMeta, this.args, this.errorContext, this.label);
+    const payload = _createMethodPayload(
+      methodMeta,
+      this.args,
+      this.errorContext,
+      this.label,
+      this.context,
+      this.fallbackToContextOriginalArgs
+    );
     const renderCtx = methodMeta.contract && methodMeta.contract.withContext &&
       this.context && typeof this.context.getRenderContextVariables === 'function'
       ? this.context.getRenderContextVariables()
@@ -532,7 +591,14 @@ function admitConstructorEntry(context, inheritanceStateValue, methodEntry, args
   return _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels);
 }
 
-function invokeInheritedMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+function invokeInheritedMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null, options = null) {
+  const preWaitChannels =
+    options && options.preWaitCurrentPosition && inheritanceStateValue && inheritanceStateValue.methods &&
+    Object.prototype.hasOwnProperty.call(inheritanceStateValue.methods, methodName) &&
+    !inheritanceState.isPendingInheritanceEntry(inheritanceStateValue.methods[methodName])
+      ? _collectAllChannelNames(inheritanceStateValue.methods[methodName])
+      : [];
+  const preWaitPromise = _enqueueCurrentPositionWaits(currentBuffer, runtime, preWaitChannels);
   const linkedChannels = _getInitialAdmissionChannels(inheritanceStateValue, null);
   const barrierBuffer = _createAdmissionBarrier(context, runtime, currentBuffer, linkedChannels);
   const command = new InheritanceAdmissionCommand({
@@ -550,6 +616,7 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
     currentBuffer,
     errorContext
   });
+  command.preWaitPromise = preWaitPromise;
 
   const admission = _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels);
   if (admission.promise && admission.completion) {
@@ -563,7 +630,25 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
   return admission.promise;
 }
 
-function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, context, env, runtime, cb, currentBuffer, errorContext = null, options = null) {
+  let preWaitChannels = [];
+  if (
+    options &&
+    options.preWaitCurrentPosition &&
+    inheritanceStateValue &&
+    inheritanceStateValue.methods &&
+    Object.prototype.hasOwnProperty.call(inheritanceStateValue.methods, methodName) &&
+    !inheritanceState.isPendingInheritanceEntry(inheritanceStateValue.methods[methodName])
+  ) {
+    const ownerEntry = _findResolvedMethodEntryForOwner(
+      { entry: inheritanceStateValue.methods[methodName] },
+      ownerKey
+    );
+    if (ownerEntry) {
+      preWaitChannels = _collectAllChannelNames(ownerEntry);
+    }
+  }
+  const preWaitPromise = _enqueueCurrentPositionWaits(currentBuffer, runtime, preWaitChannels);
   const linkedChannels = _getInitialAdmissionChannels(inheritanceStateValue, null);
   const barrierBuffer = _createAdmissionBarrier(context, runtime, currentBuffer, linkedChannels);
   const command = new InheritanceAdmissionCommand({
@@ -592,6 +677,8 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
     currentBuffer,
     errorContext
   });
+  command.fallbackToContextOriginalArgs = true;
+  command.preWaitPromise = preWaitPromise;
 
   return _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels).promise;
 }
