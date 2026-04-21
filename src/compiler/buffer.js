@@ -61,6 +61,42 @@ class CompileBuffer {
     return this.currentBuffer;
   }
 
+  withBufferState(stateOverrides, emitFunc) {
+    const previousState = {
+      currentBuffer: this.currentBuffer,
+      currentTextChannelVar: this.currentTextChannelVar,
+      currentTextChannelName: this.currentTextChannelName,
+      currentWaitedChannelName: this.currentWaitedChannelName,
+      currentWaitedOwnerBuffer: this.currentWaitedOwnerBuffer
+    };
+
+    if (Object.prototype.hasOwnProperty.call(stateOverrides, 'currentBuffer')) {
+      this.currentBuffer = stateOverrides.currentBuffer;
+    }
+    if (Object.prototype.hasOwnProperty.call(stateOverrides, 'currentTextChannelVar')) {
+      this.currentTextChannelVar = stateOverrides.currentTextChannelVar;
+    }
+    if (Object.prototype.hasOwnProperty.call(stateOverrides, 'currentTextChannelName')) {
+      this.currentTextChannelName = stateOverrides.currentTextChannelName;
+    }
+    if (Object.prototype.hasOwnProperty.call(stateOverrides, 'currentWaitedChannelName')) {
+      this.currentWaitedChannelName = stateOverrides.currentWaitedChannelName;
+    }
+    if (Object.prototype.hasOwnProperty.call(stateOverrides, 'currentWaitedOwnerBuffer')) {
+      this.currentWaitedOwnerBuffer = stateOverrides.currentWaitedOwnerBuffer;
+    }
+
+    try {
+      return emitFunc();
+    } finally {
+      this.currentBuffer = previousState.currentBuffer;
+      this.currentTextChannelVar = previousState.currentTextChannelVar;
+      this.currentTextChannelName = previousState.currentTextChannelName;
+      this.currentWaitedChannelName = previousState.currentWaitedChannelName;
+      this.currentWaitedOwnerBuffer = previousState.currentWaitedOwnerBuffer;
+    }
+  }
+
   // Scope current waited channel binding for the emitted code region.
   // Pass null to explicitly compile without an own waited channel.
   withOwnWaitedChannel(waitedChannelName, emitFunc) {

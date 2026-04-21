@@ -878,10 +878,6 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
 }
 
 function declareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer) {
-  const normalizedInitializer =
-    channelType === 'var' && initializer === null
-      ? undefined
-      : initializer;
   const existingChannel = buffer && typeof buffer.getOwnChannel === 'function'
     ? buffer.getOwnChannel(channelName)
     : null;
@@ -898,7 +894,7 @@ function declareInheritanceSharedChannel(buffer, channelName, channelType, conte
     return existingChannel;
   }
 
-  return declareBufferChannel(buffer, channelName, channelType, context, normalizedInitializer);
+  return declareBufferChannel(buffer, channelName, channelType, context, initializer);
 }
 
 module.exports = {

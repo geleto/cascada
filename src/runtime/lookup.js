@@ -494,8 +494,10 @@ function hasLinkedChannelPathToOwner(buffer, ownerBuffer, channelName) {
     if (
       typeof current.isLinkedChannel === 'function' &&
       current.isLinkedChannel(channelName) &&
-      typeof parent.isFinished === 'function' &&
-      parent.isFinished(channelName)
+      (
+        (typeof parent.isFinished === 'function' && parent.isFinished(channelName)) ||
+        parent.finished === true
+      )
     ) {
       current = parent;
       continue;

@@ -412,6 +412,8 @@ class CompileInheritance {
         if (needsParentCheck) {
           this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
           this.emit.line(`${id} = parentPromise.then((parent) => {`);
+          // A truthy parent means this top-level child block will be rendered
+          // through the selected parent path instead of dispatching locally.
           this.emit.line('  if (parent) return "";');
           this.emit(`  return runtime.invokeInheritedMethod(inheritanceState, "${node.name.value}", `);
           this.compiler._compileAggregate(explicitBlockArgsNode, null, '[', ']', false, false);
@@ -450,6 +452,9 @@ class CompileInheritance {
       this.emit.line('}');
       return;
     }
+    this.emit.line('if (!inheritanceState) {');
+    this.emit.line('  inheritanceState = runtime.createInheritanceState();');
+    this.emit.line('}');
     this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledMethodsVar}, ${compiledSharedSchemaVar}, ${this.compiler.buffer.currentBuffer}, context);`);
     if (!this.compiler.hasExtends) {
       this.emit.line('inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
@@ -457,27 +462,21 @@ class CompileInheritance {
   }
 
   _withAsyncConstructorEntryState(isTemplateConstructor, emitBody) {
-    const previousBuffer = this.compiler.buffer.currentBuffer;
-    const previousTextChannelVar = this.compiler.buffer.currentTextChannelVar;
-    const previousTextChannelName = this.compiler.buffer.currentTextChannelName;
-    const previousWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
     const previousScopeClosers = this.emit.scopeClosers;
 
-    this.compiler.buffer.currentBuffer = 'output';
-    this.compiler.buffer.currentTextChannelVar = isTemplateConstructor ? 'output_textChannelVar' : null;
-    this.compiler.buffer.currentTextChannelName = isTemplateConstructor ? CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL : null;
-    this.compiler.buffer.currentWaitedChannelName = null;
-    this.emit.scopeClosers = '';
-
-    try {
-      emitBody();
-    } finally {
-      this.compiler.buffer.currentBuffer = previousBuffer;
-      this.compiler.buffer.currentTextChannelVar = previousTextChannelVar;
-      this.compiler.buffer.currentTextChannelName = previousTextChannelName;
-      this.compiler.buffer.currentWaitedChannelName = previousWaitedChannelName;
-      this.emit.scopeClosers = previousScopeClosers;
-    }
+    this.compiler.buffer.withBufferState({
+      currentBuffer: 'output',
+      currentTextChannelVar: isTemplateConstructor ? 'output_textChannelVar' : null,
+      currentTextChannelName: isTemplateConstructor ? CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL : null,
+      currentWaitedChannelName: null
+    }, () => {
+      this.emit.scopeClosers = '';
+      try {
+        emitBody();
+      } finally {
+        this.emit.scopeClosers = previousScopeClosers;
+      }
+    });
   }
 
   compileAsyncConstructorEntry(node) {
@@ -742,6 +741,9 @@ class CompileInheritance {
           ? (block.withContext
             ? '(blockRenderCtx || {})'
             : '{}')
+          // During the composition-context transition, some callers still
+          // expose only render-context variables while newer paths provide a
+          // dedicated composition-context view.
           : '(context.getCompositionContextVariables ? context.getCompositionContextVariables() : (context.getRenderContextVariables ? context.getRenderContextVariables() : {}))'};`
       );
       this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${signatureBaseContextVar}, ${payloadOriginalArgsVar});`);

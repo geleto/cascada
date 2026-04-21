@@ -386,7 +386,7 @@ describe('Extends Foundation', function () {
     it('should let an earlier child-buffer shared default win over a later parent-buffer default', async function () {
       const rootBuffer = runtime.createCommandBuffer(null);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
-      runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, null);
+      runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
       childBuffer.add(new runtime.VarCommand({
         channelName: 'theme',
@@ -411,7 +411,7 @@ describe('Extends Foundation', function () {
     it('should keep shared channel ownership on the child/shared buffer rather than the parent buffer', function () {
       const rootBuffer = runtime.createCommandBuffer(null);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
-      const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, null);
+      const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
       expect(sharedChannel._buffer).to.be(childBuffer);
       expect(rootBuffer.getOwnChannel('theme')).to.be(undefined);
@@ -421,7 +421,7 @@ describe('Extends Foundation', function () {
       const rootBuffer = runtime.createCommandBuffer(null);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
       const parentChannel = runtime.declareBufferChannel(rootBuffer, 'theme', 'var', null, null);
-      const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, null);
+      const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
       expect(sharedChannel).not.to.be(parentChannel);
       expect(childBuffer.getOwnChannel('theme')).to.be(sharedChannel);
@@ -645,18 +645,24 @@ describe('Extends Foundation', function () {
       expect(source).to.not.contain('function __createPendingInheritanceEntry()');
     });
 
-    it('should route inheritance-state creation through bootstrap without a pre-bootstrap guard in the root body', function () {
+    it('should create inheritance state in the root body before bootstrapping metadata', function () {
       const source = new Script(
         'shared var theme = "dark"\nreturn theme',
         env,
         'bootstrap-only.script'
       )._compileSource();
 
+      expect(source).to.contain('if (!inheritanceState) {');
+      expect(source).to.contain('inheritanceState = runtime.createInheritanceState();');
       expect(source).to.contain('inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, __compiledMethods, __compiledSharedSchema, ');
       expect(source).to.contain('__compiledMethods, __compiledSharedSchema, ');
       expect(source).to.contain(', context);');
-      expect(source).to.not.contain('if (!inheritanceState) {');
-      expect(source).to.not.contain('inheritanceState = runtime.createInheritanceState();');
+    });
+
+    it('should fail clearly if bootstrapInheritanceMetadata is called without a state object', function () {
+      expect(function () {
+        runtime.bootstrapInheritanceMetadata(null, {}, {}, null);
+      }).to.throwException(/requires an existing inheritance state/);
     });
 
     it('should preserve the child method entry and wire parent super metadata when parent methods register later', function () {
@@ -954,7 +960,7 @@ describe('Extends Foundation', function () {
       parentScript.compile();
 
       const state = runtime.bootstrapInheritanceMetadata(
-        null,
+        runtime.createInheritanceState(),
         childScript.methods,
         childScript.sharedSchema,
         null
@@ -994,7 +1000,7 @@ describe('Extends Foundation', function () {
       parentScript.compile();
 
       const state = runtime.bootstrapInheritanceMetadata(
-        null,
+        runtime.createInheritanceState(),
         childScript.methods,
         childScript.sharedSchema,
         null
@@ -1019,7 +1025,7 @@ describe('Extends Foundation', function () {
       script.compile();
 
       const state = runtime.bootstrapInheritanceMetadata(
-        null,
+        runtime.createInheritanceState(),
         script.methods,
         script.sharedSchema,
         null
@@ -1051,7 +1057,7 @@ describe('Extends Foundation', function () {
       script.compile();
 
       const state = runtime.bootstrapInheritanceMetadata(
-        null,
+        runtime.createInheritanceState(),
         script.methods,
         script.sharedSchema,
         null
@@ -1091,7 +1097,7 @@ describe('Extends Foundation', function () {
       parentScript.compile();
 
       const state = runtime.bootstrapInheritanceMetadata(
-        null,
+        runtime.createInheritanceState(),
         childScript.methods,
         childScript.sharedSchema,
         null
@@ -1163,7 +1169,7 @@ describe('Extends Foundation', function () {
       parentScript.compile();
 
       const state = runtime.bootstrapInheritanceMetadata(
-        null,
+        runtime.createInheritanceState(),
         childScript.methods,
         childScript.sharedSchema,
         null
@@ -1316,7 +1322,7 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe.skip('Phase 10 - Dynamic Extends Startup Plumbing', function () {
+  describe.skip('Phase 12 - Dynamic Extends Startup Plumbing', function () {
     it('should route dynamic parent startup through composition mode only', async function () {
       if (!inheritanceStartup) {
         this.skip();
@@ -1578,7 +1584,7 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe.skip('Phase 10 - Dynamic Extends Resolution Lifecycle', function () {
+  describe.skip('Phase 12 - Dynamic Extends Resolution Lifecycle', function () {
     it('should keep inheritance-resolution lifecycle state on InheritanceState', async function () {
       const inheritanceState = runtime.createInheritanceState();
 
@@ -1634,7 +1640,7 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe.skip('Phase 10 - Composition Payload Shape', function () {
+  describe.skip('Phase 12 - Composition Payload Shape', function () {
     it('should compile extends-with startup around one explicit composition payload shape', function () {
       const scriptSource = new Script(
         'var theme = "dark"\nextends "A.script" with theme\nreturn null',

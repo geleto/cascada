@@ -439,6 +439,12 @@ class Parser extends Obj {
         }
         sawAny = true;
       } else {
+        if (withValue && nextTok && nextTok.type === lexer.TOKEN_SYMBOL) {
+          this.fail(`${errorPrefix}: named with inputs cannot appear after object-style inputs`,
+            nextTok.lineno,
+            nextTok.colno);
+        }
+
         const nameNode = this.parsePrimary();
         if (!nameNode) {
           break;
@@ -446,12 +452,6 @@ class Parser extends Obj {
 
         if (!(nameNode instanceof nodes.Symbol)) {
           this.fail(`${errorPrefix}: expected variable name after with`,
-            nameNode.lineno,
-            nameNode.colno);
-        }
-
-        if (withValue) {
-          this.fail(`${errorPrefix}: named with inputs cannot appear after object-style inputs`,
             nameNode.lineno,
             nameNode.colno);
         }

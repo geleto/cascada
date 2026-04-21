@@ -6,19 +6,6 @@ const CompilerBaseSync = require('./compiler-base-sync');
 const CompileBuffer = require('./buffer');
 
 class CompilerSync extends CompilerBaseSync {
-  _isStaticExtendsNode(node) {
-    return node instanceof nodes.Extends &&
-      !node.noParentLiteral &&
-      node.template instanceof nodes.Literal &&
-      typeof node.template.value === 'string';
-  }
-
-  _isDynamicExtendsNode(node) {
-    return node instanceof nodes.Extends &&
-      !node.noParentLiteral &&
-      !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
-  }
-
   init(templateName, options) {
     super.init(Object.assign({}, options, { asyncMode: false, templateName }));
   }
@@ -267,23 +254,20 @@ class CompilerSync extends CompilerBaseSync {
     if (this.scriptMode) {
       this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
     }
-    const buffer = this.buffer.currentBuffer;
-    const textChannelVar = this.buffer.currentTextChannelVar;
-    const textChannelName = this.buffer.currentTextChannelName;
     const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
-    this.buffer.currentBuffer = 'output';
-    this.buffer.currentTextChannelVar = 'output_textChannelVar';
-    this.buffer.currentTextChannelName = captureTextOutputName;
     this.emit.line('(function() {');
     this.emit.line('let output = "";');
-    this.emit.withScopedSyntax(() => {
-      this.compile(node.body, frame);
+    this.buffer.withBufferState({
+      currentBuffer: 'output',
+      currentTextChannelVar: 'output_textChannelVar',
+      currentTextChannelName: captureTextOutputName
+    }, () => {
+      this.emit.withScopedSyntax(() => {
+        this.compile(node.body, frame);
+      });
     });
     this.emit.line('return output;');
     this.emit.line('})()');
-    this.buffer.currentBuffer = buffer;
-    this.buffer.currentTextChannelVar = textChannelVar;
-    this.buffer.currentTextChannelName = textChannelName;
   }
 
   compileOutput(node, frame) {

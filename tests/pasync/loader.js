@@ -378,15 +378,35 @@
             {% set explicitUsername = "explicit_user" %}
             {% import "extern-import-object-shadow.njk" as forms with context, { username: explicitUsername } %}
             {{ forms.userField() }}
-          `, {
-            username: 'render_user'
-          });
-          expect(unescape(result.trim())).to.equal('<input name="user" value="explicit_user" />');
+        `, {
+          username: 'render_user'
         });
+        expect(unescape(result.trim())).to.equal('<input name="user" value="explicit_user" />');
+      });
 
-        it('should let explicit from-import inputs shadow render-context properties of the same name', async () => {
-          loader.addTemplate('extern-from-import-shadow.njk', `
-            {% extern username %}
+      it('should allow object-style import inputs with context without exposing parent locals', async () => {
+        loader.addTemplate('extern-import-object-nonleak.njk', `
+          {% extern username %}
+          {% macro show() -%}
+          {{ username }}|{{ renderName }}|{{ localName | default("missing") }}
+          {%- endmacro -%}
+        `);
+
+        const result = await env.renderTemplateString(`
+          {% set localName = "LOCAL" %}
+          {% set explicitUsername = "explicit_user" %}
+          {% import "extern-import-object-nonleak.njk" as forms with context, { username: explicitUsername } %}
+          {{ forms.show() }}
+        `, {
+          renderName: 'RENDER',
+          username: 'render_user'
+        });
+        expect(result.trim()).to.equal('explicit_user|RENDER|missing');
+      });
+
+      it('should let explicit from-import inputs shadow render-context properties of the same name', async () => {
+        loader.addTemplate('extern-from-import-shadow.njk', `
+          {% extern username %}
             {% macro userField() -%}
             <input name="user" value="{{ username }}" />
             {%- endmacro -%}

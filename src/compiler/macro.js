@@ -470,27 +470,26 @@ class CompileMacro {
     const allCallersBufferId = macroNeedsCallerSupport ? compiler._tmpid() : null;
 
     if (node.typename === 'Caller') {
-      const prevBuffer = compiler.buffer.currentBuffer;
-      const prevTextChannelVar = compiler.buffer.currentTextChannelVar;
       const callerTextChannelVar = !compiler.scriptMode ? compiler._tmpid() : null;
       if (!compiler.scriptMode) {
         compiler.emit.line(`let ${callerTextChannelVar} = runtime.declareBufferChannel(macroParentBuffer, "${compiler.buffer.currentTextChannelName}", "text", context, null);`);
       }
-      compiler.buffer.currentBuffer = 'macroParentBuffer';
-      compiler.buffer.currentTextChannelVar = callerTextChannelVar;
-      returnStatement = this._emitCompiledAsyncMacroBody({
-        node,
-        managedFrame: null,
-        bufferId: 'macroParentBuffer',
-        args,
-        kwargs,
-        rawCallerVar,
-        allCallersBufferId,
-        errVar: err,
-        hasCallerSupport: macroNeedsCallerSupport
+      compiler.buffer.withBufferState({
+        currentBuffer: 'macroParentBuffer',
+        currentTextChannelVar: callerTextChannelVar
+      }, () => {
+        returnStatement = this._emitCompiledAsyncMacroBody({
+          node,
+          managedFrame: null,
+          bufferId: 'macroParentBuffer',
+          args,
+          kwargs,
+          rawCallerVar,
+          allCallersBufferId,
+          errVar: err,
+          hasCallerSupport: macroNeedsCallerSupport
+        });
       });
-      compiler.buffer.currentBuffer = prevBuffer;
-      compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     } else {
       compiler.emit.managedBlock(null, false, true, (managedFrame, bufferId) => {
         returnStatement = this._emitCompiledAsyncMacroBody({

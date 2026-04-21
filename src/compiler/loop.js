@@ -216,17 +216,16 @@ class CompileLoop {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const prevBuffer = this.compiler.buffer.currentBuffer;
-    const prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
-    this.compiler.buffer.currentBuffer = 'currentBuffer';
-    this.compiler.buffer.currentTextChannelVar = null;
-
-    const limitedWaitedChannelName = (hasConcurrencyLimit || sequentialLoopBody)
-      ? (node.body && node.body._analysis && node.body._analysis.waitedOutputName)
-      : null;
-    if (limitedWaitedChannelName) {
-      this.compiler.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${limitedWaitedChannelName}", "var", context, null);`);
-    }
+    this.compiler.buffer.withBufferState({
+      currentBuffer: 'currentBuffer',
+      currentTextChannelVar: null
+    }, () => {
+      const limitedWaitedChannelName = (hasConcurrencyLimit || sequentialLoopBody)
+        ? (node.body && node.body._analysis && node.body._analysis.waitedOutputName)
+        : null;
+      if (limitedWaitedChannelName) {
+        this.compiler.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${limitedWaitedChannelName}", "var", context, null);`);
+      }
 
     const compileIterationBody = () => {
       const buffer = this.compiler.buffer.currentBuffer;
@@ -299,8 +298,7 @@ class CompileLoop {
       this.compiler.buffer.withOwnWaitedChannel(limitedWaitedChannelName, compileIterationBody);
     }
 
-    this.compiler.buffer.currentBuffer = prevBuffer;
-    this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
+    });
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit.line('});');
     this.compiler.emit.line('}).bind(context);');

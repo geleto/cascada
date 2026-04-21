@@ -17,19 +17,6 @@ const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
 
 class CompilerAsync extends CompilerBaseAsync {
-  _isStaticExtendsNode(node) {
-    return node instanceof nodes.Extends &&
-      !node.noParentLiteral &&
-      node.template instanceof nodes.Literal &&
-      typeof node.template.value === 'string';
-  }
-
-  _isDynamicExtendsNode(node) {
-    return node instanceof nodes.Extends &&
-      !node.noParentLiteral &&
-      !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
-  }
-
   init(templateName, options) {
     super.init(Object.assign({}, options, { asyncMode: true, templateName }));
   }
@@ -1270,6 +1257,11 @@ class CompilerAsync extends CompilerBaseAsync {
         const hasCtxId = this._tmpid();
         const externCtxVar = this._tmpid();
 
+        // Root externs still become root-local var channels after initialization.
+        // That preserves the language rule that externs behave like ordinary
+        // locals once their explicit input/fallback resolution is done, while
+        // inherited/block-time visibility continues to use explicit extern
+        // context rather than ambient channel lookup.
         this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
         this.emit.line(`const ${externCtxVar} = context.getExternContextVariables();`);
         this.emit.line(`const ${hasCtxId} = Object.prototype.hasOwnProperty.call(${externCtxVar}, "${name}");`);

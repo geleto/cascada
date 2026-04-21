@@ -3,7 +3,10 @@
 const inheritanceState = require('./inheritance-state');
 
 function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, currentBuffer, context = null) {
-  const state = stateValue || inheritanceState.createInheritanceState();
+  if (!stateValue || typeof stateValue !== 'object') {
+    throw new Error('bootstrapInheritanceMetadata requires an existing inheritance state');
+  }
+  const state = stateValue;
   if (!state.sharedRootBuffer) {
     state.sharedRootBuffer = currentBuffer || null;
   }

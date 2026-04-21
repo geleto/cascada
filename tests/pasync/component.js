@@ -539,6 +539,29 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.be('Example|dark|on');
   });
 
+  it('should keep plain component extern initialization compatible with shared observations', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'extern site',
+      'shared text log',
+      'log(site + "|")',
+      'method build(name)',
+      '  log(name)',
+      '  return none',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns with site',
+      'ns.build("Ada")',
+      'return ns.log.snapshot()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', { site: 'Example' });
+    expect(result).to.be('Example|Ada');
+  });
+
   it('should create a usable component instance and read shared vars through ns.x', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);

@@ -120,6 +120,27 @@
       });
     });
 
+    it('should keep caller-visible outer vars available through async call-block work', async () => {
+      env.addGlobal('waitValue', (value) => delay(5).then(() => value));
+
+      const script = `
+        var prefix = waitValue("item-")
+        var suffix = waitValue("|done")
+
+        macro runner()
+          return caller()
+        endmacro
+
+        var result = call runner()
+          return prefix + "Ada" + suffix
+        endcall
+
+        return result`;
+
+      const result = await env.renderScriptString(script);
+      expect(result).to.be('item-Ada|done');
+    });
+
     it('should reject assignment to outer-scope variables inside call blocks', async () => {
       const script = `
         data result

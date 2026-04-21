@@ -803,6 +803,16 @@
       }).to.throwException(/duplicate named input "theme" in with clause/);
     });
 
+    it('should reject named composition inputs after object-style with inputs', function() {
+      expect(function() {
+        parser.parse('{% import "foo/bar.njk" as baz with { user: currentUser }, theme %}');
+      }).to.throwException(/object-style with inputs must be the last item in the with clause/);
+
+      expect(function() {
+        parser.parse('{% component "Card.script" as card with context, { user: currentUser }, theme %}');
+      }).to.throwException(/object-style with inputs must be the last item in the with clause/);
+    });
+
     it('should reject legacy named block with-input lists', function() {
       expect(function() {
         parser.parse('{% block content with user, theme %}{{ user }}{% endblock %}');

@@ -113,6 +113,19 @@ class CompilerCommon extends Obj {
     return 't_' + this.lastId;
   }
 
+  _isStaticExtendsNode(node) {
+    return node instanceof nodes.Extends &&
+      !node.noParentLiteral &&
+      node.template instanceof nodes.Literal &&
+      typeof node.template.value === 'string';
+  }
+
+  _isDynamicExtendsNode(node) {
+    return node instanceof nodes.Extends &&
+      !node.noParentLiteral &&
+      !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
+  }
+
   _makeCallback(res) {
     const err = this._tmpid();
 

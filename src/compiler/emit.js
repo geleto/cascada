@@ -180,8 +180,6 @@ module.exports = class CompileEmit {
 
     let parentBufferId = null;
     let bufferId = null;
-    let prevBuffer = null;
-    let prevTextChannelVar = null;
     let linkedChannels = null;
     if (createScopeRootBuffer) {
       parentBufferId = parentBufferOverride !== undefined
@@ -207,24 +205,22 @@ module.exports = class CompileEmit {
         });
       }
       bufferId = this.compiler._tmpid();
-      prevBuffer = this.compiler.buffer.currentBuffer;
-      prevTextChannelVar = this.compiler.buffer.currentTextChannelVar;
-      this.compiler.buffer.currentBuffer = bufferId;
-      this.compiler.buffer.currentTextChannelVar = `${bufferId}_textChannelVar`;
-      this.compiler.buffer.initManagedBuffer(
-        bufferId,
-        parentBufferId,
-        `${bufferId}_textOutputVar`,
-        linkedChannels
-      );
-    }
-
-    if (typeof emitFunc === 'function') {
+      this.compiler.buffer.withBufferState({
+        currentBuffer: bufferId,
+        currentTextChannelVar: `${bufferId}_textChannelVar`
+      }, () => {
+        this.compiler.buffer.initManagedBuffer(
+          bufferId,
+          parentBufferId,
+          `${bufferId}_textOutputVar`,
+          linkedChannels
+        );
+        if (typeof emitFunc === 'function') {
+          emitFunc(nextFrame, bufferId);
+        }
+      });
+    } else if (typeof emitFunc === 'function') {
       emitFunc(nextFrame, bufferId);
-    }
-    if (createScopeRootBuffer) {
-      this.compiler.buffer.currentBuffer = prevBuffer;
-      this.compiler.buffer.currentTextChannelVar = prevTextChannelVar;
     }
     if (createScope) {
       this.line('frame = frame.pop();');

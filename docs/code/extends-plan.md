@@ -954,7 +954,13 @@ Tests:
 - targeted non-extends compatibility coverage:
   - `tests/pasync/loader.js` non-extends import/include groups
   - `tests/pasync/component.js` compatibility groups
-  - macro/caller coverage that still depends on explicit composition behavior
+  - `tests/pasync/calls.js` macro/caller coverage that still depends on
+    explicit composition behavior
+- postpone exact shared-lane linkage cleanup to Phase 12 if the Phase 11
+  compatibility fix still needs the broader stabilization shape:
+  - do not reopen boundary visibility or owner-buffer fallback as a shortcut
+  - keep the cleanup tracked as "collapse broad shared-lane linking back to
+    exact linkage" rather than letting it disappear into general runtime debt
 
 Cleanup pass before closing Phase 11:
 

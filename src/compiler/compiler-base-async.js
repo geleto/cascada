@@ -24,6 +24,29 @@ class CompilerBaseAsync extends CompilerCommon {
     this.rename = new CompileRename(this);
   }
 
+  _getCurrentBlockBindingOwners(node, name) {
+    return {
+      declarationOwner: this.analysis.findDeclarationOwner(node._analysis, name),
+      blockOwner: this.currentCompilingBlock ? this.currentCompilingBlock._analysis : null,
+      blockBodyOwner: this.currentCompilingBlock && this.currentCompilingBlock.body
+        ? this.currentCompilingBlock.body._analysis
+        : null
+    };
+  }
+
+  _isHiddenFromCurrentBlock(node, name, declaredOutput, opts = {}) {
+    const { includeImported = false } = opts;
+    const { declarationOwner, blockOwner, blockBodyOwner } = this._getCurrentBlockBindingOwners(node, name);
+    const isVisibleFromCurrentBlock = !!(
+      declaredOutput.shared ||
+      declaredOutput.extern ||
+      (includeImported && declaredOutput.imported) ||
+      declarationOwner === blockOwner ||
+      declarationOwner === blockBodyOwner
+    );
+    return !isVisibleFromCurrentBlock;
+  }
+
   analyzeSymbol(node, analysisPass) {
     if (node._analysis?.declarationTarget || node.isCompilerInternal) {
       return {};
@@ -57,32 +80,13 @@ class CompilerBaseAsync extends CompilerCommon {
     const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
     if (declaredOutput) {
       if (this.scriptMode && this.currentCompilingBlock) {
-        const declarationOwner = this.analysis.findDeclarationOwner(node._analysis, name);
-        const blockOwner = this.currentCompilingBlock._analysis;
-        const blockBodyOwner = this.currentCompilingBlock.body ? this.currentCompilingBlock.body._analysis : null;
-        const isMethodVisibleBinding = !!(
-          declaredOutput.shared ||
-          declaredOutput.extern ||
-          declaredOutput.imported ||
-          declarationOwner === blockOwner ||
-          declarationOwner === blockBodyOwner
-        );
-        if (!isMethodVisibleBinding) {
+        if (this._isHiddenFromCurrentBlock(node, name, declaredOutput, { includeImported: true })) {
           this.emit('undefined');
           return;
         }
       }
       if (!this.scriptMode && this.currentCompilingBlock && this.inBlock && declaredOutput.type === 'var') {
-        const declarationOwner = this.analysis.findDeclarationOwner(node._analysis, name);
-        const blockOwner = this.currentCompilingBlock._analysis;
-        const blockBodyOwner = this.currentCompilingBlock.body ? this.currentCompilingBlock.body._analysis : null;
-        const isBlockVisibleBinding = !!(
-          declaredOutput.shared ||
-          declaredOutput.extern ||
-          declarationOwner === blockOwner ||
-          declarationOwner === blockBodyOwner
-        );
-        if (!isBlockVisibleBinding) {
+        if (this._isHiddenFromCurrentBlock(node, name, declaredOutput)) {
           this.emit('undefined');
           return;
         }
@@ -834,10 +838,10 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    const useContextOnlyInheritanceLookup =
+    const useContextOrSharedInheritanceLookup =
       this.inBlock &&
       !this.analysis.findDeclaration(node._analysis, name);
-    if (useContextOnlyInheritanceLookup) {
+    if (useContextOrSharedInheritanceLookup) {
       this.emit(
         `runtime.contextOrSharedLookup(` +
         `context, "${name}", ${this.buffer.currentBuffer}, ` +

@@ -10,19 +10,11 @@ class CompileBoundaries {
     textChannelVar = null,
     textChannelName = bufferCompiler.currentTextChannelName
   }, emitBody) {
-    const prevBuffer = bufferCompiler.currentBuffer;
-    const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
-    const prevTextChannelName = bufferCompiler.currentTextChannelName;
-
-    bufferCompiler.currentBuffer = bufferExpr;
-    bufferCompiler.currentTextChannelVar = textChannelVar;
-    bufferCompiler.currentTextChannelName = textChannelName;
-
-    emitBody();
-
-    bufferCompiler.currentBuffer = prevBuffer;
-    bufferCompiler.currentTextChannelVar = prevTextChannelVar;
-    bufferCompiler.currentTextChannelName = prevTextChannelName;
+    bufferCompiler.withBufferState({
+      currentBuffer: bufferExpr,
+      currentTextChannelVar: textChannelVar,
+      currentTextChannelName: textChannelName
+    }, emitBody);
   }
 
   _emitTextChannelSnapshot(bufferExpr, channelName, positionNode, resultId) {
@@ -34,17 +26,14 @@ class CompileBoundaries {
   compileExpressionControlFlowBoundary(bufferCompiler, node, emitBody) {
     const parentBufferArg = bufferCompiler.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const prevBuffer = bufferCompiler.currentBuffer;
 
     // Reserve a structural child buffer synchronously before any async
     // condition/operand resolution so later sibling operands stay ordered.
     this.compiler.emit(`runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
     this.compiler.emit.asyncClosureDepth++;
-    bufferCompiler.currentBuffer = 'currentBuffer';
-
-    emitBody.call(this.compiler);
-
-    bufferCompiler.currentBuffer = prevBuffer;
+    bufferCompiler.withBufferState({ currentBuffer: 'currentBuffer' }, () => {
+      emitBody.call(this.compiler);
+    });
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit('})');
   }
@@ -59,26 +48,23 @@ class CompileBoundaries {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const prevBuffer = bufferCompiler.currentBuffer;
-    const prevTextChannelVar = bufferCompiler.currentTextChannelVar;
-    bufferCompiler.currentBuffer = 'currentBuffer';
-    bufferCompiler.currentTextChannelVar = null;
-
-    this.compiler.emit.line('try {');
-    this.compiler.emit(`  let ${resultId} = `);
-    emitValue.call(this.compiler, node);
-    this.compiler.emit.line(';');
-    this.compiler.emit.line(`  return await ${resultId};`);
-    this.compiler.emit.line('} catch (e) {');
-    this.compiler.emit.line(
-      `  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`
-    );
-    this.compiler.emit.line('  throw err;');
-    this.compiler.emit.line('}');
-    this.compiler.emit.line('})');
-
-    bufferCompiler.currentBuffer = prevBuffer;
-    bufferCompiler.currentTextChannelVar = prevTextChannelVar;
+    bufferCompiler.withBufferState({
+      currentBuffer: 'currentBuffer',
+      currentTextChannelVar: null
+    }, () => {
+      this.compiler.emit.line('try {');
+      this.compiler.emit(`  let ${resultId} = `);
+      emitValue.call(this.compiler, node);
+      this.compiler.emit.line(';');
+      this.compiler.emit.line(`  return await ${resultId};`);
+      this.compiler.emit.line('} catch (e) {');
+      this.compiler.emit.line(
+        `  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`
+      );
+      this.compiler.emit.line('  throw err;');
+      this.compiler.emit.line('}');
+      this.compiler.emit.line('})');
+    });
     this.compiler.emit.asyncClosureDepth--;
   }
 
@@ -97,28 +83,29 @@ class CompileBoundaries {
     );
     this.compiler.emit.asyncClosureDepth++;
 
-    const prevBuffer = bufferCompiler.currentBuffer;
-    const prevWaitedChannelName = bufferCompiler.currentWaitedChannelName;
-    const prevWaitedOwnerBuffer = bufferCompiler.currentWaitedOwnerBuffer;
-    bufferCompiler.currentBuffer = 'currentBuffer';
-    if (trackAsSingleWaitedUnit) {
-      bufferCompiler.currentWaitedChannelName = controlFlowWaitedChannelName;
-      bufferCompiler.currentWaitedOwnerBuffer = 'currentBuffer';
-      this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
-    }
+    bufferCompiler.withBufferState({
+      currentBuffer: 'currentBuffer',
+      currentWaitedChannelName: trackAsSingleWaitedUnit
+        ? controlFlowWaitedChannelName
+        : bufferCompiler.currentWaitedChannelName,
+      currentWaitedOwnerBuffer: trackAsSingleWaitedUnit
+        ? 'currentBuffer'
+        : bufferCompiler.currentWaitedOwnerBuffer
+    }, () => {
+      if (trackAsSingleWaitedUnit) {
+        this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
+      }
 
-    if (emitFunc) {
-      emitFunc();
-    }
+      if (emitFunc) {
+        emitFunc();
+      }
+    });
     this.compiler.emit.asyncClosureDepth--;
     if (controlFlowWaitedChannelName) {
       this.compiler.emit.line(`}, "${controlFlowWaitedChannelName}");`);
     } else {
       this.compiler.emit.line('});');
     }
-    bufferCompiler.currentBuffer = prevBuffer;
-    bufferCompiler.currentWaitedChannelName = prevWaitedChannelName;
-    bufferCompiler.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
     bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
     return {};
   }
