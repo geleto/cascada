@@ -14,9 +14,9 @@ It uses syntax and language constructs that are instantly familiar to Python and
 
 Cascada inverts the traditional async model:
 
-* ⚡ **Parallel by default**  -  Independent operations execute concurrently without `async`, `await`, or promise management.
+* ⚡ **Parallel by default**  -  Independent operations — variable assignments, function calls, loop iterations — execute concurrently without `async`, `await`, or promise management.
 * 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
-* ➡️ **Explicit sequencing only when needed**  -  A simple marker (`!`) is used to enforce strict ordering for side-effectful operations, without reducing overall parallelism.
+* ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs — the rest of the script stays parallel.
 * 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
 * ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated parallel work to continue safely.
 
@@ -28,6 +28,34 @@ Cascada Script is particularly well suited for:
 * High-throughput I/O coordination
 
 In short, Cascada lets developers **write clear, linear logic** while the engine handles **parallel execution, ordering guarantees, and error propagation** automatically.
+
+**What makes Cascada Script remarkable is how unremarkable it looks.** Despite executing concurrently by default, it uses the same familiar constructs found in Python and JavaScript — no `async`, no `await`, no callbacks, no promise chains. Here's what a real concurrent workflow looks like:
+
+```javascript
+var user  = fetchUser(userId)   // ┐ start immediately,
+var posts = fetchPosts(userId)  // ┘ run in parallel
+
+// evaluates as soon as 'user' resolves — posts may still be fetching
+var role = "admin" if user.isAdmin else "member"
+
+// for loop — every iteration runs concurrently
+data result  // channel: writes are concurrent, output is in source order
+for post in posts
+  var enriched = enrichPost(post)
+  result.posts.push({
+    title:  enriched.title | title,
+    status: "published" if enriched.isLive else "draft"
+  })
+endfor
+
+// ! makes these sequential with each other, without breaking concurrency with the rest
+db!.log("report", userId)
+db!.updateLastSeen(userId)
+
+return { name: user.name, role: role, posts: result.snapshot() }  // snapshot waits for all writes
+```
+
+Every construct above runs exactly as you'd read it — the engine orchestrates all the async concurrency.
 
 ## Read First
 
@@ -57,32 +85,48 @@ In short, Cascada lets developers **write clear, linear logic** while the engine
 
 ## Quick Start
 
- Install Cascada (package name will change):
-  ```bash
-  npm install cascada-engine
-  ```
+```bash
+npm install cascada-engine
+```
 
-Here's a simple example of executing a script.
+### The script
+
+Write plain, familiar logic. Cascada runs independent operations in parallel automatically:
+
+```javascript
+const script = `
+  var user  = fetchUser(userId)
+  var posts = fetchPosts(userId)
+
+  return {
+    name:      user.name,
+    postCount: posts.length
+  }
+`;
+```
+
+No `async`, no `await`. `fetchUser` and `fetchPosts` run in parallel — Cascada handles it.
+
+### Running a script
+
+Pass the script and a context object to `renderScriptString`. Any value in the context can be a promise or an async function:
 
 ```javascript
 import { AsyncEnvironment } from 'cascada-engine';
 
 const env = new AsyncEnvironment();
-const script = `
-  // The 'user' promise resolves automatically
-  return "Hello, " + user.name
-`;
-const context = {
-  // Pass in an async function or a promise
-  user: fetchUser(123)
-};
 
-const result = await env.renderScriptString(script, context);
-// 'Hello, Alice'
+const result = await env.renderScriptString(script, {
+  userId:    123,
+  fetchUser: (id) => db.users.findById(id),
+  fetchPosts: (id) => db.posts.findByUser(id)
+});
+
 console.log(result);
+// { name: 'Alice', postCount: 5 }
 ```
 
-The syntax is familiar, but the execution is fundamentally different. To understand how Cascada achieves effortless concurrency, read the next section on Cascada's execution model.
+To understand how Cascada achieves effortless concurrency, read the next section.
 
 
 ## Cascada's Execution Model
@@ -90,23 +134,23 @@ The syntax is familiar, but the execution is fundamentally different. To underst
 Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts - it explains why the language behaves the way it does and how to leverage its parallel capabilities.
 
 #### ⚡ Parallel by default
-Cascada Script is a scripting language for **JavaScript** and **TypeScript** applications, purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
+Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**. Independent variable assignments, function calls, loop iterations, and macro invocations all run concurrently — no special syntax required.
 
 #### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
-In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
+In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This applies to all constructs: expressions evaluate as soon as their operands resolve, conditionals wait for their condition, loops wait for their iterable, and function calls wait for their arguments. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
 
 #### ✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.
 Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
 #### ➡️ Implicitly Parallel, Explicitly Sequential
-While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the script.**.
+While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical — they sequence only what they touch, without affecting the parallelism of the rest of the script.
 
 #### 📋 Execution is chaotic, but the result is orderly
 While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
 
 #### ☣️ Dataflow Poisoning - Errors that flow like data
-Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. You can detect and repair these errors,  using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
+Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. Poisoning is conservative with control flow: if an `if` condition is an Error Value, neither branch runs and every variable that either branch would have modified becomes poisoned. You can detect and repair these errors using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
 
 #### 💡 Clean, Expressive Syntax
 Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `macros` that support keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
@@ -153,7 +197,7 @@ Everything above is the language you already know. Cascada adds a small set of s
 | `sequence` channel | `sequence name = obj` | Sequential reads and calls on an external object |
 | Sequential operator | `obj!.method()`, `obj!.prop` | Enforce strict execution order on a context object path |
 | Guard | `guard [targets] / recover [err] / endguard` | Transaction-like block: auto-restores channel/sequence state on error |
-| Dataflow error propagation | `value is error`, `value#message` | Failures flow as values that poison  thrown exceptions; inspect with `#` |
+| Dataflow error poisoning | `value is error`, `value#message` | Failures propagate as error values through the dataflow; unrelated operations continue unaffected. Detect with `is error`, inspect with `#` |
 
 ### Core Syntax and Expressions
 
