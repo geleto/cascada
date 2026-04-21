@@ -895,36 +895,10 @@ function declareInheritanceSharedChannel(buffer, channelName, channelType, conte
         context && context.path ? context.path : null
       );
     }
-    existingChannel._allowsInheritanceBoundaryRead = true;
     return existingChannel;
   }
 
-  const channel = declareBufferChannel(buffer, channelName, channelType, context, normalizedInitializer);
-  channel._allowsInheritanceBoundaryRead = true;
-  return channel;
-}
-
-function allowInheritanceBoundaryRead(buffer, channelName) {
-  if (!buffer || typeof buffer.getOwnChannel !== 'function') {
-    return null;
-  }
-  // Transitional visibility bridge: Phase 8 keeps this marker for the
-  // constrained component/import/extern boundary reads that still depend on
-  // channel-level opt-in. Keep the opt-in scoped to the boundary subtree so we
-  // do not silently widen visibility to whichever unrelated channel happens to
-  // win a generic lookup walk.
-  const preferredPath = buffer._context && buffer._context.path
-    ? buffer._context.path
-    : undefined;
-  const channel = buffer.getOwnChannel(channelName) ||
-    (typeof buffer.findBoundaryOwnedChannel === 'function'
-      ? buffer.findBoundaryOwnedChannel(channelName, preferredPath)
-      : null);
-  if (!channel) {
-    return null;
-  }
-  channel._allowsInheritanceBoundaryRead = true;
-  return channel;
+  return declareBufferChannel(buffer, channelName, channelType, context, normalizedInitializer);
 }
 
 module.exports = {
@@ -940,8 +914,7 @@ module.exports = {
   SequenceChannel,
   createSequenceChannel,
   declareBufferChannel,
-  declareInheritanceSharedChannel,
-  allowInheritanceBoundaryRead
+  declareInheritanceSharedChannel
 };
 
 function cloneSnapshotValue(value) {

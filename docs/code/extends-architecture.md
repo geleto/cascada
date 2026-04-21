@@ -80,6 +80,18 @@ Templates follow the same model:
 - blocks are the method form
 - code before `extends` is pre-extends code
 - code after `extends` is post-extends code
+- parent selection happens at the `extends` site itself:
+  - a dynamic parent filename/expression is allowed
+  - imperative control flow that conditionally executes `extends` is not part
+    of this architecture
+  - if a template/script needs a "no parent" branch, it should use
+    `extends none` / `extends null` in the parent-selection expression
+  - `extends none` / `extends null` means the current file becomes the root
+    constructor/root render entry for that render
+  - this avoids fake fallback templates while still keeping parent selection
+    inside the single `extends` site
+  - do not move `extends` into `if`, `switch`, loops, or other
+    constructor-time control flow
 
 Because only `shared` declarations are allowed before `extends`, there is no
 template-local-capture mechanism in this architecture for arbitrary

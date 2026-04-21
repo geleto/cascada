@@ -15,7 +15,7 @@
     StringLoader = window.util.StringLoader;
   }
 
-  describe('Async mode - conditional template inheritance', function () {
+  describe('Async mode - dynamic template inheritance', function () {
     var loader;
     var env;
 
@@ -41,13 +41,11 @@
       });
     });
 
-    describe('Dynamic extends with conditions', function () {
+    describe('Dynamic extends with expressions', function () {
       it('should use parent when condition is true', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}default{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if useParent %}
-			  {% extends "parent.njk" %}
-			{% endif %}
+			{% extends "parent.njk" if useParent else none %}
 			{% block content %}child content{% endblock %}
 		  `);
 
@@ -58,9 +56,7 @@
       it('should not use parent when condition is false', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}default{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if useParent %}
-			  {% extends "parent.njk" %}
-			{% endif %}
+			{% extends "parent.njk" if useParent else none %}
 			{% block content %}child content{% endblock %}
 		  `);
 
@@ -72,11 +68,7 @@
         loader.addTemplate('parent1.njk', 'PARENT1[{% block content %}{% endblock %}]');
         loader.addTemplate('parent2.njk', 'PARENT2[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if choice == 1 %}
-			  {% extends "parent1.njk" %}
-			{% else %}
-			  {% extends "parent2.njk" %}
-			{% endif %}
+			{% extends "parent1.njk" if choice == 1 else "parent2.njk" %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -88,7 +80,7 @@
       });
     });
 
-    describe('Multiple blocks with conditional extends', function () {
+    describe('Multiple blocks with dynamic extends', function () {
       it('should wait for extends before rendering all blocks', async () => {
         loader.addTemplate('parent.njk', `
 			PARENT[
@@ -98,9 +90,7 @@
 			]
 		  `);
         loader.addTemplate('child.njk', `
-			{% if useParent %}
-			  {% extends "parent.njk" %}
-			{% endif %}
+			{% extends "parent.njk" if useParent else none %}
 			{% block header %}child header{% endblock %}
 			{% block content %}child content{% endblock %}
 			{% block footer %}child footer{% endblock %}
@@ -122,7 +112,7 @@
       it('should not duplicate block content', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if useParent %}{% extends "parent.njk" %}{% endif %}
+			{% extends "parent.njk" if useParent else none %}
 			{% block content %}CONTENT{% endblock %}
 		  `);
 
@@ -132,15 +122,11 @@
       });
     });
 
-    describe('Nested conditionals', function () {
-      it('should handle extends in nested if statements', async () => {
+    describe('Nested conditions inside extends expressions', function () {
+      it('should handle nested conditions in the parent expression', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if outer %}
-			  {% if inner %}
-				{% extends "parent.njk" %}
-			  {% endif %}
-			{% endif %}
+			{% extends "parent.njk" if outer and inner else none %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -154,16 +140,11 @@
         expect(result3.trim()).to.equal('content');
       });
 
-      it('should handle extends in switch statement', async () => {
+      it('should handle parent selection by switch-like expression', async () => {
         loader.addTemplate('layout1.njk', 'L1[{% block content %}{% endblock %}]');
         loader.addTemplate('layout2.njk', 'L2[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% switch layout %}
-			  {% case "layout1" %}
-				{% extends "layout1.njk" %}
-			  {% case "layout2" %}
-				{% extends "layout2.njk" %}
-			{% endswitch %}
+			{% extends "layout1.njk" if layout == "layout1" else "layout2.njk" %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -179,9 +160,7 @@
       it('should resolve template name from variable', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if parentName %}
-			  {% extends parentName %}
-			{% endif %}
+			{% extends parentName if parentName else null %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -195,9 +174,7 @@
       it('should work with async function returning template name', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if shouldExtend %}
-			  {% extends getParentTemplate() %}
-			{% endif %}
+			{% extends getParentTemplate() if shouldExtend else null %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -213,15 +190,12 @@
       });
     });
 
-    describe('Mixed static and dynamic extends', function () {
-      it('should handle both static and dynamic extends (dynamic wins)', async () => {
+    describe('Single dynamic parent selection', function () {
+      it('should select between two candidate parents in one extends expression', async () => {
         loader.addTemplate('static-parent.njk', 'STATIC[{% block content %}{% endblock %}]');
         loader.addTemplate('dynamic-parent.njk', 'DYNAMIC[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% extends "static-parent.njk" %}
-			{% if useDynamic %}
-			  {% extends "dynamic-parent.njk" %}
-			{% endif %}
+			{% extends "dynamic-parent.njk" if useDynamic else "static-parent.njk" %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -232,13 +206,11 @@
         expect(resultStatic.trim()).to.equal('STATIC[content]');
       });
 
-      it('should handle conditional that overrides static extends with null', async () => {
+      it('should keep a default parent when the expression selects it', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}{% endblock %}]');
+        loader.addTemplate('alt-parent.njk', 'ALT[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% extends "parent.njk" %}
-			{% if disableExtends %}
-			  {# This case is tricky - we want NO parent #}
-			{% endif %}
+			{% extends "alt-parent.njk" if disableExtends else "parent.njk" %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -248,14 +220,10 @@
     });
 
     describe('Edge cases and error handling', function () {
-      it('should handle extends in for loop (edge case)', async () => {
+      it('should handle parent selection from loop-derived outer state', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% for item in items %}
-			  {% if loop.first %}
-				{% extends "parent.njk" %}
-			  {% endif %}
-			{% endfor %}
+			{% extends "parent.njk" if items|length > 0 else none %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -265,9 +233,7 @@
 
       it('should handle missing parent template gracefully', async () => {
         loader.addTemplate('child.njk', `
-			{% if useParent %}
-			  {% extends "nonexistent.njk" %}
-			{% endif %}
+			{% extends "nonexistent.njk" if useParent else none %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -279,12 +245,10 @@
         }
       });
 
-      it('should work with ignoreMissing on include in conditional extends', async () => {
+      it('should work with ignoreMissing on include in dynamic extends', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if useParent %}
-			  {% extends "parent.njk" %}
-			{% endif %}
+			{% extends "parent.njk" if useParent else none %}
 			{% include "missing.njk" ignore missing %}
 			{% block content %}content{% endblock %}
 		  `);
@@ -293,12 +257,10 @@
         expect(result.trim()).to.equal('P[content]');
       });
 
-      it('should handle super() calls in conditional extends', async () => {
+      it('should handle super() calls in dynamic extends', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}parent content{% endblock %}]');
         loader.addTemplate('child.njk', `
-				{% if useParent %}
-				  {% extends "parent.njk" %}
-			{% endif %}
+			{% extends "parent.njk" if useParent else none %}
 			{% block content %}{{ super() }} + child{% endblock %}
 		  `);
 
@@ -306,7 +268,7 @@
         expect(result.trim()).to.equal('P[parent content + child]');
       });
 
-      it('should handle include inside conditional extends when included child emits no local text', async () => {
+      it('should handle include inside dynamic extends when included child emits no local text', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('empty-logic.njk', `
 				{% extern flag %}
@@ -315,9 +277,7 @@
 				{% endif %}
 			  `);
         loader.addTemplate('child.njk', `
-				{% if useParent %}
-				  {% extends "parent.njk" %}
-				{% endif %}
+				{% extends "parent.njk" if useParent else none %}
 				{% block content %}
 				  {% include "empty-logic.njk" with flag %}
 				  content
@@ -333,12 +293,10 @@
     });
 
     describe('Complex async scenarios', function () {
-      it('should handle multiple async operations with conditional extends', async () => {
+      it('should handle multiple async operations with dynamic extends', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if asyncCheck() %}
-			  {% extends "parent.njk" %}
-			{% endif %}
+			{% extends "parent.njk" if asyncCheck() else none %}
 			{% block content %}{{ asyncValue() }}{% endblock %}
 		  `);
 
@@ -353,12 +311,10 @@
         expect(result.trim()).to.equal('P[async content]');
       });
 
-      it('should maintain correct order with parallel async operations', async () => {
+      it('should maintain correct order with parallel async operations in dynamic extends', async () => {
         loader.addTemplate('parent.njk', 'P[{% block a %}{% endblock %}{% block b %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if shouldExtend %}
-			  {% extends "parent.njk" %}
-			{% endif %}
+			{% extends "parent.njk" if shouldExtend else none %}
 			{% block a %}{{ slowAsync() }}{% endblock %}
 			{% block b %}{{ fastAsync() }}{% endblock %}
 		  `);
@@ -378,33 +334,30 @@
         expect(result.trim()).to.equal('P[slowfast]');
       });
 
-      it('should handle conditional extends with macros', async () => {
+      it('should handle dynamic extends with macros', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('macros.njk', '{% macro test() %}macro content{% endmacro %}');
         loader.addTemplate('child.njk', `
+			{% extends "parent.njk" if useParent else none %}
 			{% import "macros.njk" as m %}
-			{% if useParent %}
-			  {% extends "parent.njk" %}
-			{% endif %}
-			{% block content %}{{ m.test() }}{% endblock %}
+			{% block content %}{% endblock %}
+			{{ m.test() }}
 		  `);
 
-        const result = await env.renderTemplate('child.njk', { useParent: true });
-        expect(result.trim()).to.equal('P[macro content]');
+        const resultWithParent = await env.renderTemplate('child.njk', { useParent: true });
+        expect(resultWithParent.replace(/\s+/g, ' ').trim()).to.equal('P[] macro content');
+
+        const resultStandalone = await env.renderTemplate('child.njk', { useParent: false });
+        expect(resultStandalone.replace(/\s+/g, ' ').trim()).to.equal('macro content');
       });
     });
 
-    describe('Multiple conditional extends scenarios', function () {
-      it('should handle last extends wins when multiple conditionals are true', async () => {
+    describe('Dynamic parent selection precedence', function () {
+      it('should handle expression precedence when multiple conditions are true', async () => {
         loader.addTemplate('parent1.njk', 'P1[{% block content %}{% endblock %}]');
         loader.addTemplate('parent2.njk', 'P2[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if cond1 %}
-			  {% extends "parent1.njk" %}
-			{% endif %}
-			{% if cond2 %}
-			  {% extends "parent2.njk" %}
-			{% endif %}
+			{% extends "parent2.njk" if cond2 else ("parent1.njk" if cond1 else "parent1.njk") %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -412,12 +365,10 @@
         expect(result.trim()).to.equal('P2[content]');
       });
 
-      it('should handle conditional extends with filters', async () => {
+      it('should handle dynamic extends with filters', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('child.njk', `
-			{% if templateName | length > 0 %}
-			  {% extends templateName %}
-			{% endif %}
+			{% extends templateName if templateName | length > 0 else none %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -429,17 +380,16 @@
       });
     });
 
-    describe('Inheritance chain with conditional extends', function () {
-      it('should work with multi-level inheritance and conditional extends', async () => {
+    describe('Inheritance chain with dynamic extends', function () {
+      it('should work with multi-level inheritance and dynamic extends', async () => {
         loader.addTemplate('grandparent.njk', 'GP[{% block content %}{% endblock %}]');
         loader.addTemplate('parent.njk', `
 			{% extends "grandparent.njk" %}
 			{% block content %}P-{% block inner %}{% endblock %}{% endblock %}
 		  `);
+        loader.addTemplate('standalone-parent.njk', '{% block inner %}{% endblock %}');
         loader.addTemplate('child.njk', `
-			{% if useParent %}
-			  {% extends "parent.njk" %}
-			{% endif %}
+			{% extends "parent.njk" if useParent else "standalone-parent.njk" %}
 			{% block inner %}child{% endblock %}
 		  `);
 
@@ -447,12 +397,11 @@
         expect(result.trim()).to.equal('GP[P-child]');
       });
 
-      it('should handle conditional extends in middle of inheritance chain', async () => {
+      it('should handle dynamic extends in middle of inheritance chain', async () => {
         loader.addTemplate('grandparent.njk', 'GP[{% block content %}{% endblock %}]');
+        loader.addTemplate('parent-shell.njk', '{% block content %}{% endblock %}');
         loader.addTemplate('parent.njk', `
-			{% if extendGrandparent %}
-			  {% extends "grandparent.njk" %}
-			{% endif %}
+			{% extends "grandparent.njk" if extendGrandparent else "parent-shell.njk" %}
 			{% block content %}P[{% block inner %}{% endblock %}]{% endblock %}
 		  `);
         loader.addTemplate('child.njk', `

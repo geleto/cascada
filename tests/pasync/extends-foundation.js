@@ -404,17 +404,17 @@ describe('Extends Foundation', function () {
       childBuffer.markFinishedAndPatchLinks();
       rootBuffer.markFinishedAndPatchLinks();
 
-      const result = await rootBuffer.getChannel('theme').finalSnapshot();
+      const result = await childBuffer.getOwnChannel('theme').finalSnapshot();
       expect(result).to.be('dark');
     });
 
-    it('should mark shared channels as explicitly readable across inheritance boundaries', function () {
+    it('should keep shared channel ownership on the child/shared buffer rather than the parent buffer', function () {
       const rootBuffer = runtime.createCommandBuffer(null);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
       const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, null);
 
-      expect(sharedChannel._allowsInheritanceBoundaryRead).to.be(true);
-      expect(rootBuffer.getChannel('theme')._allowsInheritanceBoundaryRead).to.be(true);
+      expect(sharedChannel._buffer).to.be(childBuffer);
+      expect(rootBuffer.getOwnChannel('theme')).to.be(undefined);
     });
 
     it('should keep shared declarations owned by the shared buffer instead of reusing an unrelated parent channel', function () {
@@ -1622,7 +1622,7 @@ describe('Extends Foundation', function () {
 
     it('should compile dynamic extends against the inheritanceState runtime lifecycle surface', function () {
       const source = new AsyncTemplate(
-        '{% if useParent %}{% extends parent %}{% endif %}{% block body %}x{% endblock %}',
+        '{% extends parent if useParent else none %}{% block body %}x{% endblock %}',
         env,
         'dynamic-child.njk'
       )._compileSource();
@@ -1642,7 +1642,7 @@ describe('Extends Foundation', function () {
         'payload-shape.script'
       )._compileSource();
       const dynamicTemplateSource = new AsyncTemplate(
-        '{% set theme = "dark" %}{% if useParent %}{% extends parent with theme %}{% endif %}{% block body %}x{% endblock %}',
+        '{% set theme = "dark" %}{% extends parent with theme if useParent else none %}{% block body %}x{% endblock %}',
         env,
         'payload-shape.njk'
       )._compileSource();

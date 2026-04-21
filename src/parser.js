@@ -706,6 +706,7 @@ class Parser extends Obj {
 
     const node = new nodes.Extends(tag.lineno, tag.colno);
     node.template = this.parseExpression();
+    node.noParentLiteral = node.template instanceof nodes.Literal && node.template.value === null;
     const compositionInputs = this.parseCompositionWithClause('parseExtends', { allowWithoutContext: true });
     node.withContext = compositionInputs.withContext;
     node.withVars = compositionInputs.withVars;

@@ -204,17 +204,6 @@ async function _memberLookupScriptComplex(obj, val, errorContext) {
   }
 }
 
-/**
- * Async template symbol lookup through declared channels first, then context.
- */
-function contextOrChannelLookup(_context, name, currentBuffer) {
-  const channelRead = channelLookup(name, currentBuffer);
-  if (channelRead !== undefined) {
-    return channelRead;
-  }
-  return _context.lookup(name);
-}
-
 function contextOrExternLookup(_context, name) {
   const externContext = _context && typeof _context.getExternContextVariables === 'function'
     ? _context.getExternContextVariables()
@@ -225,14 +214,10 @@ function contextOrExternLookup(_context, name) {
   return _context.lookup(name);
 }
 
-function contextOrInheritableChannelLookup(_context, name, currentBuffer, errorContext = null, inheritanceStateValue = null) {
+function contextOrSharedLookup(_context, name, currentBuffer, errorContext = null, inheritanceStateValue = null) {
   const contextValue = _context.lookup(name);
-  if (contextValue !== undefined) {
+  if (contextValue !== undefined || !inheritanceStateValue) {
     return contextValue;
-  }
-
-  if (!inheritanceStateValue) {
-    return contextOrChannelLookup(_context, name, currentBuffer);
   }
 
   return Promise.resolve(
@@ -246,7 +231,7 @@ function contextOrInheritableChannelLookup(_context, name, currentBuffer, errorC
     )
   ).catch((error) => {
     if (error && error.code === inheritanceState.ERR_SHARED_CHANNEL_NOT_FOUND) {
-      return contextOrChannelLookup(_context, name, currentBuffer);
+      return undefined;
     }
     throw error;
   });
@@ -267,7 +252,7 @@ function _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, request
         currentBuffer && currentBuffer._context ? currentBuffer._context.path : null
       );
     }
-    if (LOOKUP_DYNAMIC_CHANNEL_LINKING || channel._allowsInheritanceBoundaryRead) {
+    if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
       ensureReadChannelLink(currentBuffer, channel, requestedName);
     }
   }
@@ -437,13 +422,10 @@ function captureCompositionScriptValue(context, name, currentBuffer, errorContex
   return context.lookupScript(name, errorContext);
 }
 
-// Temporary Step C fence until later payload work removes the need for linked
-// buffers to act as a source of ordinary bare-name lookup across templates.
+// Ordinary var-channel lookup must not turn mere ancestry into ambient
+// cross-template visibility. Shared channels use explicit observation helpers.
 function isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel) {
   if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
-    return false;
-  }
-  if (channel._allowsInheritanceBoundaryRead) {
     return false;
   }
   const currentPath = currentBuffer._context ? currentBuffer._context.path : null;
@@ -502,10 +484,23 @@ function hasLinkedChannelPathToOwner(buffer, ownerBuffer, channelName) {
     if (!parent || typeof parent.hasLinkedBuffer !== 'function') {
       return false;
     }
-    if (!parent.hasLinkedBuffer(current, channelName)) {
-      return false;
+    if (parent.hasLinkedBuffer(current, channelName)) {
+      current = parent;
+      continue;
     }
-    current = parent;
+    // Late child buffers can be created after an ancestor shared lane has
+    // already finished. In that case the parent cannot accept a new buffer
+    // edge, so the runtime records the link on the child buffer instead.
+    if (
+      typeof current.isLinkedChannel === 'function' &&
+      current.isLinkedChannel(channelName) &&
+      typeof parent.isFinished === 'function' &&
+      parent.isFinished(channelName)
+    ) {
+      current = parent;
+      continue;
+    }
+    return false;
   }
   return current === ownerBuffer;
 }
@@ -517,9 +512,8 @@ module.exports = {
   memberLookupScript,
   observeInheritanceSharedChannel,
   channelLookup,
-  contextOrChannelLookup,
+  contextOrSharedLookup,
   contextOrExternLookup,
-  contextOrInheritableChannelLookup,
   captureCompositionValue,
   contextOrScriptChannelLookup,
   captureCompositionScriptValue,

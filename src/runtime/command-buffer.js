@@ -468,44 +468,6 @@ class CommandBuffer {
     );
   }
 
-  _findAncestryOwnedChannel(resolvedChannelName, preferredPath = undefined, options = undefined) {
-    const allowFallback = !options || options.allowFallback !== false;
-    let current = this;
-    let fallbackChannel;
-    while (current) {
-      const linkedChannel = current._findLinkedChildOwnedChannel(resolvedChannelName, preferredPath);
-      if (linkedChannel) {
-        return linkedChannel;
-      }
-
-      if (current._ownedChannels && current._ownedChannels[resolvedChannelName]) {
-        const ownedChannel = current._ownedChannels[resolvedChannelName];
-        const ownedPath = ownedChannel && ownedChannel._context ? ownedChannel._context.path : null;
-        if (ownedPath === preferredPath) {
-          return ownedChannel;
-        }
-        if (allowFallback && !fallbackChannel) {
-          fallbackChannel = ownedChannel;
-        }
-      }
-
-      if (allowFallback && !fallbackChannel) {
-        const linkedFallback = current._findLinkedChildOwnedChannel(resolvedChannelName);
-        if (linkedFallback) {
-          fallbackChannel = linkedFallback;
-        }
-      }
-      current = current.parent;
-    }
-
-    return fallbackChannel;
-  }
-
-  findBoundaryOwnedChannel(channelName = 'text', preferredPath = undefined, options = undefined) {
-    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    return this._findAncestryOwnedChannel(resolvedChannelName, preferredPath, options);
-  }
-
   findChannel(channelName = 'text') {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     let current = this;
@@ -513,45 +475,9 @@ class CommandBuffer {
       if (current._ownedChannels && current._ownedChannels[resolvedChannelName]) {
         return current._ownedChannels[resolvedChannelName];
       }
-      const linkedChannel = current._findLinkedChildOwnedChannel(resolvedChannelName);
-      if (linkedChannel) {
-        return linkedChannel;
-      }
       current = current.parent;
     }
-    if (!this._channels) {
-      return undefined;
-    }
-    return this._channels.get(resolvedChannelName);
-  }
-
-  _findLinkedChildOwnedChannel(channelName, preferredPath = undefined) {
-    const lane = this.arrays && this.arrays[channelName];
-    if (!Array.isArray(lane)) {
-      return undefined;
-    }
-    let fallback = undefined;
-    for (let i = lane.length - 1; i >= 0; i--) {
-      const entry = lane[i];
-      if (!isCommandBuffer(entry)) {
-        continue;
-      }
-      if (entry._ownedChannels && entry._ownedChannels[channelName]) {
-        const ownedChannel = entry._ownedChannels[channelName];
-        const ownedPath = ownedChannel && ownedChannel._context ? ownedChannel._context.path : null;
-        if (preferredPath === undefined || ownedPath === preferredPath) {
-          return ownedChannel;
-        }
-        if (!fallback) {
-          fallback = ownedChannel;
-        }
-      }
-      const nested = entry._findLinkedChildOwnedChannel(channelName, preferredPath);
-      if (nested) {
-        return nested;
-      }
-    }
-    return preferredPath === undefined ? fallback : undefined;
+    return undefined;
   }
 
   _setChannelAliases(map) {

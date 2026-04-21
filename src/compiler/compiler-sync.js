@@ -6,6 +6,19 @@ const CompilerBaseSync = require('./compiler-base-sync');
 const CompileBuffer = require('./buffer');
 
 class CompilerSync extends CompilerBaseSync {
+  _isStaticExtendsNode(node) {
+    return node instanceof nodes.Extends &&
+      !node.noParentLiteral &&
+      node.template instanceof nodes.Literal &&
+      typeof node.template.value === 'string';
+  }
+
+  _isDynamicExtendsNode(node) {
+    return node instanceof nodes.Extends &&
+      !node.noParentLiteral &&
+      !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
+  }
+
   init(templateName, options) {
     super.init(Object.assign({}, options, { asyncMode: false, templateName }));
   }
@@ -362,9 +375,11 @@ class CompilerSync extends CompilerBaseSync {
       this.fail('compileRoot: root node can\'t have frame', node.lineno, node.colno, node);
     }
 
-    this.hasStaticExtends = node.children.some(child => child instanceof nodes.Extends);
-    this.hasDynamicExtends = false;
-    this.hasExtends = this.hasStaticExtends;
+    this.hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
+    this.hasDynamicExtends = node.children.some((child) =>
+      this._isDynamicExtendsNode(child)
+    );
+    this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
     const blocks = this._compileSyncRoot(node, new Frame());
 
     this.emit.line('return {');

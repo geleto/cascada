@@ -1271,32 +1271,29 @@
       finish(done);
     });
 
-    it('should conditionally inherit templates', function (done) {
+    it('should select inherited templates through extends expressions', function (done) {
       equal(
-        '{% if false %}{% extends "base.njk" %}{% endif %}' +
-        '{% block block1 %}BAR{% endblock %}',
-        'BAR');
-
-      equal(
-        '{% if true %}{% extends "base.njk" %}{% endif %}' +
+        '{% extends none if false else "base.njk" %}' +
         '{% block block1 %}BAR{% endblock %}',
         'FooBARBazFizzle');
 
       equal(
-        '{% if true %}' +
-        '{% extends "base.njk" %}' +
-        '{% else %}' +
-        '{% extends "base2.njk" %}' +
-        '{% endif %}' +
+        '{% extends "base.njk" if true else null %}' +
+        '{% block block1 %}BAR{% endblock %}',
+        'FooBARBazFizzle');
+
+      equal(
+        '{% extends "base.njk" if false else none %}' +
+        '{% block block1 %}BAR{% endblock %}',
+        'BAR');
+
+      equal(
+        '{% extends "base.njk" if true else "base2.njk" %}' +
         '{% block block1 %}HELLO{% endblock %}',
         'FooHELLOBazFizzle');
 
       equal(
-        '{% if false %}' +
-        '{% extends "base.njk" %}' +
-        '{% else %}' +
-        '{% extends "base2.njk" %}' +
-        '{% endif %}' +
+        '{% extends "base.njk" if false else "base2.njk" %}' +
         '{% block item %}hello{{ item }}{% endblock %}',
         'hello1hello2');
 

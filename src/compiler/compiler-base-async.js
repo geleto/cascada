@@ -72,18 +72,28 @@ class CompilerBaseAsync extends CompilerCommon {
           return;
         }
       }
+      if (!this.scriptMode && this.currentCompilingBlock && this.inBlock && declaredOutput.type === 'var') {
+        const declarationOwner = this.analysis.findDeclarationOwner(node._analysis, name);
+        const blockOwner = this.currentCompilingBlock._analysis;
+        const blockBodyOwner = this.currentCompilingBlock.body ? this.currentCompilingBlock.body._analysis : null;
+        const isBlockVisibleBinding = !!(
+          declaredOutput.shared ||
+          declaredOutput.extern ||
+          declarationOwner === blockOwner ||
+          declarationOwner === blockBodyOwner
+        );
+        if (!isBlockVisibleBinding) {
+          this.emit('undefined');
+          return;
+        }
+      }
       if (node.sequential || node.sequentialRepair) {
         this._failNonContextSequenceRoot(node, declaredOutput);
       }
       if (declaredOutput.type === 'var') {
         if (!this.scriptMode && this.inBlock) {
           if (declaredOutput.shared) {
-            this.emit(
-              `runtime.contextOrInheritableChannelLookup(` +
-              `context, "${name}", ${this.buffer.currentBuffer}, ` +
-              `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }, ` +
-              `inheritanceState)`
-            );
+            this._emitSharedChannelObservation(name, node, 'snapshot', true);
             return;
           }
           if (declaredOutput.extern) {
@@ -829,14 +839,15 @@ class CompilerBaseAsync extends CompilerCommon {
       !this.analysis.findDeclaration(node._analysis, name);
     if (useContextOnlyInheritanceLookup) {
       this.emit(
-        `runtime.contextOrInheritableChannelLookup(` +
+        `runtime.contextOrSharedLookup(` +
         `context, "${name}", ${this.buffer.currentBuffer}, ` +
         `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }, ` +
         `inheritanceState)`
       );
-    } else {
-      this.emit(`runtime.contextOrChannelLookup(context, "${name}", ${this.buffer.currentBuffer})`);
+      return;
     }
+
+    this.emit(`context.lookup("${name}")`);
   }
 
   _compileAsyncBinOpShortCircuit(node, isOr) {

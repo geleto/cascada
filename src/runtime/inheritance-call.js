@@ -468,7 +468,16 @@ class InheritanceAdmissionCommand extends Command {
   }
 
   _ensureInvocationBuffer(methodMetaOrEntry) {
-    const linkedChannels = _collectAllChannelNames(methodMetaOrEntry);
+    const methodChannels = _collectAllChannelNames(methodMetaOrEntry);
+    const sharedSchema =
+      this.inheritanceState && this.inheritanceState.sharedSchema && typeof this.inheritanceState.sharedSchema === 'object'
+        ? this.inheritanceState.sharedSchema
+        : null;
+    const sharedChannels = sharedSchema ? Object.keys(sharedSchema) : [];
+    const linkedChannels = Array.from(new Set([
+      ...methodChannels,
+      ...sharedChannels
+    ]));
     for (let i = 0; i < linkedChannels.length; i++) {
       _linkBarrierChannel(this.currentBuffer, this.barrierBuffer, linkedChannels[i]);
     }

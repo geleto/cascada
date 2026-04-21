@@ -534,8 +534,8 @@ Scope:
   - remove the temporary script-method visibility/linking bridge in
     `src/compiler/inheritance.js` before the phase is considered complete:
     - `_getMethodVisibleRootBindingNames(...)`
-    - the `runtime.allowInheritanceBoundaryRead(currentBuffer.parent, ...)`
-      emission inside `compileAsyncBlockEntry(...)`
+    - any temporary boundary-read or visibility-reopening emission inside
+      `compileAsyncBlockEntry(...)`
     - reliance on method-entry-local `blockLinkedChannels` as the final
       inherited dispatch linkage set
   - if the Phase 6 helper still back-fills `entry.linkedChannels`, treat that
@@ -580,15 +580,12 @@ Scope:
 
 - `component ... as ns`
 - `compositionPayload`
-- decide whether `runtime.allowInheritanceBoundaryRead(...)` remains part of
-  the explicit component-binding model:
-  - keep it only if component `ns.x` / method wiring still needs an explicit
-    boundary-read escape hatch
-  - otherwise treat it as leftover script/template bridge scaffolding and
-    schedule its removal in Phase 10 rather than carrying it forward by default
-  - this decision should cover both sides of the current bridge:
-    - compiler-side emission sites such as `_emitValueImportBinding(...)`
-    - the runtime-side channel flag / lookup behavior that honors that marker
+- keep component `ns.x` / method wiring on explicit shared observation and
+  payload/context rules:
+  - do not reintroduce channel-level boundary-read escape hatches on the
+    component path
+  - treat any attempt to reopen visibility there as leftover script/template
+    bridge scaffolding rather than valid component architecture
 - decide the ownership of `src/runtime/inheritance-inputs.js` on the component
   path:
   - remove the leftover Phase 4/5 shared-input preload helper once explicit
@@ -799,11 +796,9 @@ Scope:
   - broad ancestry/path-heuristic fallback in normal channel resolution
   - any special boundary-read reopening that exists only to simulate ambient
     constructor/local visibility instead of fixing payload/linkage
-  - the explicit boundary-read bridge surface itself when it still exists:
-    - `runtime.allowInheritanceBoundaryRead(...)`
-    - `_allowsInheritanceBoundaryRead`
-    - `findBoundaryOwnedChannel(...)` and similar bridge-only ownership
-      helpers if they are only supporting reopened cross-boundary visibility
+  - any attempt to reintroduce the removed explicit boundary-read bridge
+    surface, such as channel flags or bridge-only ownership helpers that exist
+    only to reopen cross-boundary visibility
 - audit compiler/runtime ownership points so the visibility model is structural
   rather than heuristic:
   - verify `currentBuffer` is correct for block entry, method entry,
@@ -966,8 +961,9 @@ Cleanup pass before closing Phase 11:
 - explicitly search non-extends composition paths for workaround fixes that
   silently reintroduce inheritance-style ambient visibility
 - look for and remove or rewrite:
-  - compatibility shims that use `allowInheritanceBoundaryRead(...)`-style
-    logic after Phase 10 made visibility structural
+  - compatibility shims that recreate removed boundary-read opt-ins or other
+    channel-level visibility escape hatches after Phase 10 made visibility
+    structural
   - include/import/from-import/caller fixes that depend on parent-buffer reads
     or reopened boundary visibility instead of explicit payload/context
   - root extern behavior kept alive only because later code expects externs to
@@ -993,6 +989,19 @@ Scope:
 - dynamic `extends` uses normal compiler expression compilation when the parent
   is an expression and literal compilation when static
 - dynamic `extends` waits for parent-name resolution and loading
+- dynamic `extends` remains a single parent-selection expression:
+  - support expression-based parent choice at the `extends` site
+  - do not preserve or reintroduce `if`/`switch`/loop-driven execution of
+    `extends`
+  - add explicit `extends none` / `extends null` support for the "no parent"
+    branch instead of fake fallback templates
+  - when the chosen parent is `none` / `null`, the current template/script is
+    the root file for that render
+  - migration rule for older conditional-extends cases:
+    - if the old behavior chose between two real parents, rewrite it as a
+      dynamic parent filename/expression
+    - if the old behavior chose between "inherit from this parent" and "have
+      no parent", rewrite it as `extends ... if ... else none/null`
 - detailed dynamic `extends` work remains deferred until the main static model
   is stable; if the static model is not yet stable by this phase, dynamic
   `extends` may remain deferred past Phase 12 rather than being forced in here
@@ -1005,6 +1014,17 @@ Scope:
     - do not add new inheritance/local-capture/visibility behavior to the
       `__parentTemplate` or `asyncStoreIn` path
     - treat this path as transitional parent-resolution scaffolding only
+- remove the remaining plain-extends composition-capture bridge once the final
+  explicit payload model no longer needs channel-side "latest assigned value"
+  escape hatches:
+  - `captureCompositionValue(...)`
+  - `captureCompositionScriptValue(...)`
+  - `CommandBuffer._recordTemporaryCompositionAssignedValue(...)`
+  - `recordTemporaryCompositionAssignedValue(...)` /
+    `getTemporaryCompositionAssignedValue(...)` on channels
+  - compatibility-only remark:
+    - do not add new payload or visibility behavior to this bridge
+    - treat it as temporary execution-time capture scaffolding only
 - move pending inherited-method/shared dependency discovery off ad hoc AST
   rescans and onto analysis-owned metadata
 - remove the temporary compiler rescans in `src/compiler/inheritance.js`:
@@ -1074,6 +1094,12 @@ Scope:
   path
 - revisit the remaining async template runtime-shape asymmetries once the
   final template/component model settles:
+  - deduplicate the shared extends-shape classifier helpers if they still
+    exist in both async and sync compilers:
+    - `_isStaticExtendsNode(...)`
+    - `_isDynamicExtendsNode(...)`
+    - keep one shared compiler-common definition so sync/async parent-shape
+      detection cannot drift
   - decide whether the static-only template `__parentTemplate` declaration
     remains useful as a shared compiler shape or should be removed once the
     dynamic/static parent-resolution path is finalized
@@ -1081,8 +1107,11 @@ Scope:
     being compiled" state and the sentinel for "top-level block definition vs
     nested render path"
   - compatibility-only remark:
-    - do not use `currentCompilingBlock`'s dual role as justification for new
-      template-specific visibility fallback or inherited-scope exceptions
+    - treat `currentCompilingBlock`'s dual role as overloaded transitional
+      state, not as final architecture
+    - do not use that dual role as justification for new template-specific
+      visibility fallback, inherited-scope exceptions, or block-definition
+      behavior shims
   - revisit the promise-wrapped
     `runtime.markSafe(runtime.invokeSuperMethod(...))` template path before any
     later text-buffer/safe-string pipeline cleanup changes how promised safe
@@ -1110,6 +1139,12 @@ Scope:
   later component/template phases:
   - avoid relying on post-close linked-channel registration as the long-term
     model for inherited non-shared channel visibility
+- collapse any broad "link every shared lane from sharedSchema" behavior back
+  to exact linkage once the final invocation/runtime shape is stable:
+  - inherited entry and invocation buffers should not keep linking all shared
+    lanes just because it is a convenient stabilization shortcut
+  - the final model should link exactly the shared lanes that are structurally
+    needed by the current entry/call site
 
 Tests:
 
@@ -1133,6 +1168,15 @@ Cleanup pass before closing Phase 12:
     assumptions
   - `asyncStoreIn` / transformer temp plumbing that only exists to preserve a
     legacy parent-selection shape
+  - the temporary composition-capture bridge that reads "latest assigned
+    value" off channels instead of using the final explicit payload model
+  - generic mixed lookup helpers that blur explicit context with structural
+    channel visibility again, such as bringing back `contextOrChannelLookup`-
+    style behavior for template bare-name resolution
+  - broad `findChannel()`-style descendant or registry scans that make a
+    channel appear visible just because it exists somewhere in the hierarchy,
+    instead of because the current buffer owns it or reaches its owner through
+    the parent chain
   - duplicate async-template/runtime surfaces that mirror the new metadata
     model but are no longer authoritative
   - helper/admission/barrier layers that still exist only because older code
@@ -1168,6 +1212,8 @@ Scope:
 - update `docs/cascada/script.md` and any agent-facing script docs that
   describe:
   - `shared` declarations
+  - `extends none` / `extends null` as the explicit "no parent" form in
+    dynamic parent-selection expressions
   - `method ... endmethod`
   - inherited dispatch via `this.method(...)`
   - `super()`

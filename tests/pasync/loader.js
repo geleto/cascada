@@ -1281,20 +1281,24 @@
         expect(result.trim()).to.equal('Async Outer Async Inner');
       });
 
-      it('should handle blocks within loops with async data', async () => {
+      it('should handle blocks within loops without exposing loop-local values into block scope', async () => {
         const context = {
           async getItems() {
             await delay(3);
             return ['a', 'b', 'c'];
           },
-          async processItem(item) {
+          async getPrefix() {
             await delay(1);
-            return `Processed ${item.toUpperCase()}`;
+            return 'Processed';
+          },
+          async getLabel() {
+            await delay(1);
+            return 'Block';
           }
         };
-        const template = '{% for item in getItems() %}{% block item %}{{ processItem(item) }}{% endblock %}{% endfor %}';
+        const template = '{% for item in getItems() %}{% block item %}{{ getPrefix() }} {{ getLabel() }}{% endblock %}{% endfor %}';
         const result = await env.renderTemplateString(template, context);
-        expect(result.trim()).to.equal('Processed AProcessed BProcessed C');
+        expect(result.trim()).to.equal('Processed BlockProcessed BlockProcessed Block');
       });
 
       it('should handle async functions within blocks and as block parameters', async () => {
@@ -1540,28 +1544,28 @@
         expect(result.trim()).to.equal('Grace / Base Ada');
       });
 
-      it('should preserve same-template top-level locals alongside explicit block arguments', async () => {
+      it('should keep same-template top-level locals out of explicit block-argument scope', async () => {
         const template = '{% set suffix = "local" %}{% block content(user) %}{{ user }} {{ suffix }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, { user: 'Ada' });
-        expect(result.trim()).to.equal('Ada local');
+        expect(result.trim()).to.equal('Ada');
       });
 
-      it('should preserve child top-level locals alongside inherited explicit block arguments', async () => {
+      it('should keep child top-level locals out of inherited explicit block-argument scope', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% set suffix = "child" %}{% block content(user) %}{{ user }} {{ suffix }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
-        expect(result.trim()).to.equal('Ada child');
+        expect(result.trim()).to.equal('Ada');
       });
 
-      it('should preserve template-local values across a multi-level super chain with explicit block arguments', async () => {
+      it('should keep template-local values out of a multi-level super chain with explicit block arguments', async () => {
         loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
         loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% set parentLabel = "parent" %}{% block content(user) %}Parent {{ parentLabel }} {{ super() }}{% endblock %}');
         const childTemplate = '{% extends "parent.njk" %}{% set childLabel = "child" %}{% block content(user) %}Child {{ childLabel }} {{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
-        expect(result.trim()).to.equal('Child child Parent parent Grand Ada');
+        expect(result.trim()).to.equal('Child  Parent  Grand Ada');
       });
 
       it('should keep original block arguments through a three-level super chain when the middle block rebinds them', async () => {
@@ -1597,15 +1601,15 @@
         expect(result.trim()).to.equal('ExplicitUser');
       });
 
-      it('should handle blocks inside a for loop with async content', async () => {
+      it('should handle blocks inside a for loop without exposing loop-local values into block scope', async () => {
         const context = {
           async getItems() {
             await delay(4);
             return ['apple', 'banana', 'cherry'];
           },
-          async processItem(item) {
+          async getLabel() {
             await delay(5);
-            return item.toUpperCase();
+            return 'BLOCK';
           },
           async getPrefix() {
             await delay(3);
@@ -1616,15 +1620,15 @@
         const template = `
             {% for item in getItems() -%}
               {%- block item_block -%}
-                {{ getPrefix() }} {{ processItem(item) }}
+                {{ getPrefix() }} {{ getLabel() }}
               {% endblock -%}
             {% endfor %}
           `;
 
         const result = await env.renderTemplateString(template, context);
-        expect(result.trim()).to.equal(`Item: APPLE
-              Item: BANANA
-              Item: CHERRY`);
+        expect(result.trim()).to.equal(`Item: BLOCK
+              Item: BLOCK
+              Item: BLOCK`);
       });
 
       it('should handle async conditionals within blocks', async () => {
@@ -1643,7 +1647,7 @@
         expect(result.trim()).to.equal('Conditional Content');
       });
 
-      it('should resolve if-local symbols inside blocks', async () => {
+      it('should keep if-local symbols out of block scope', async () => {
         const context = {
           enabled: true,
           async getScopedValue() {
@@ -1660,7 +1664,7 @@
         `;
 
         const result = await env.renderTemplateString(template, context);
-        expect(result.trim()).to.equal('if-local');
+        expect(result.trim()).to.equal('');
       });
 
       it('should configure base externs through extends with explicit named inputs', async () => {
@@ -1671,12 +1675,12 @@
         expect(result.trim()).to.equal('Child Base Ada / dark');
       });
 
-      it('should copy extends with values when extends executes, not after later reassignment', async () => {
+      it('should keep extends-with capture stable without exposing later constructor-local reassignment to inherited blocks', async () => {
         loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
         const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% set theme = "changed" %}{% block content(user) %}{{ super() }} / {{ theme }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
-        expect(result.trim()).to.equal('Base Ada / dark / changed');
+        expect(result.trim()).to.equal('Base Ada / dark /');
       });
 
       it('should let extends with context expose render-context values to base externs while explicit names still win', async () => {

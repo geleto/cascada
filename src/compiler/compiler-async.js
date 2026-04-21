@@ -17,6 +17,19 @@ const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
 
 class CompilerAsync extends CompilerBaseAsync {
+  _isStaticExtendsNode(node) {
+    return node instanceof nodes.Extends &&
+      !node.noParentLiteral &&
+      node.template instanceof nodes.Literal &&
+      typeof node.template.value === 'string';
+  }
+
+  _isDynamicExtendsNode(node) {
+    return node instanceof nodes.Extends &&
+      !node.noParentLiteral &&
+      !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
+  }
+
   init(templateName, options) {
     super.init(Object.assign({}, options, { asyncMode: true, templateName }));
   }
@@ -1258,11 +1271,6 @@ class CompilerAsync extends CompilerBaseAsync {
         const externCtxVar = this._tmpid();
 
         this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
-        // Keep the explicit boundary-read marker for extern root bindings while
-        // Phase 8 components and the remaining composition paths still share
-        // the constrained visibility bridge. The plan schedules the final
-        // removal once that bridge is no longer needed anywhere.
-        this.emit.line(`runtime.allowInheritanceBoundaryRead(${this.buffer.currentBuffer}, "${name}");`);
         this.emit.line(`const ${externCtxVar} = context.getExternContextVariables();`);
         this.emit.line(`const ${hasCtxId} = Object.prototype.hasOwnProperty.call(${externCtxVar}, "${name}");`);
         this.emit.line(`let ${valueId};`);
@@ -1297,7 +1305,7 @@ class CompilerAsync extends CompilerBaseAsync {
     for (const name of sequenceLocks) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
-    if (!this.scriptMode && this.hasStaticExtends && !this.hasDynamicExtends) {
+    if (!this.scriptMode && this.hasExtends) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
     }
     this._emitRootExternInitialization(node);
@@ -1343,12 +1351,18 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileRoot(node) {
-    this.hasStaticExtends = node.children.some(child => child instanceof nodes.Extends);
-    this.hasDynamicExtends = node.children.some(child =>
-      child instanceof nodes.Set &&
-      child.targets[0] &&
-      child.targets[0].value === '__parentTemplate'
+    this.hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
+    this.hasDeferredDynamicExtends = node.children.some((child) =>
+      this._isDynamicExtendsNode(child) && !!child.asyncStoreIn
     );
+    this.hasDynamicExtends = node.children.some((child) => {
+      if (this._isDynamicExtendsNode(child)) {
+        return true;
+      }
+      return child instanceof nodes.Set &&
+        child.targets[0] &&
+        child.targets[0].value === '__parentTemplate';
+    });
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
     this.pendingInheritanceMethodNames = this.inheritance.collectPendingMethodNames(node);
     this.pendingInheritanceSharedNames = this.inheritance.collectPendingSharedNames(node);
@@ -1396,7 +1410,7 @@ class CompilerAsync extends CompilerBaseAsync {
       declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
     }
 
-    const hasExtendsNode = node.children.some((child) => child instanceof nodes.Extends);
+    const hasExtendsNode = node.children.some((child) => child instanceof nodes.Extends && !child.noParentLiteral);
     const hasParentTemplateDeclaration = node.children.some((child) =>
       child instanceof nodes.Set &&
       child.varType === 'declaration' &&

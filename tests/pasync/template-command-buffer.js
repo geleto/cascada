@@ -79,11 +79,11 @@
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
       loader.addTemplate(
         'child.njk',
-        '{% extends "base.njk" %}{% import "macros.njk" as m %}{% block body %}{% include "part.njk" with value %} {{ m.hi(user) }}{% endblock %}'
+        '{% extends "base.njk" %}{% import "macros.njk" as m %}{% block body %}{% include "part.njk" with value %}{% endblock %} {{ m.hi(user) }}'
       );
 
       const result = await env.renderTemplate('child.njk', { value: 'V', user: 'U' });
-      expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i> Hi U]');
+      expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i>] Hi U');
     });
 
     it('should keep canonical include input keys for duplicated branch-local vars', function () {
@@ -344,7 +344,7 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.channelLookup("foo", t_8)');
+      expect(source).to.match(/runtime\.channelLookup\("foo", t_\d+\)/);
       expect(source).to.not.contain('currentBuffer.addSnapshot("foo"');
     });
 
@@ -360,7 +360,7 @@
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.channelLookup("m", t_6)');
+      expect(source).to.match(/runtime\.channelLookup\("m", t_\d+\)/);
       expect(source).to.not.contain('currentBuffer.addSnapshot("m"');
     });
 
