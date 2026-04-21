@@ -5,7 +5,6 @@ let AsyncEnvironment;
 let StringLoader;
 let runtimeModule;
 let InheritanceState;
-let InheritanceMethodRegistry;
 let inheritanceStateModule;
 let ComponentInstance;
 let ComponentOperationCommand;
@@ -28,11 +27,9 @@ if (typeof require !== 'undefined') {
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
     InheritanceState = inheritanceStateModule.InheritanceState;
-    InheritanceMethodRegistry = inheritanceStateModule.InheritanceMethodRegistry;
   } catch (err) {
     void err;
     InheritanceState = null;
-    InheritanceMethodRegistry = null;
   }
 } else {
   expect = window.expect;
@@ -40,7 +37,6 @@ if (typeof require !== 'undefined') {
   StringLoader = window.util.StringLoader;
   runtimeModule = nunjucks.runtime;
   InheritanceState = null;
-  InheritanceMethodRegistry = null;
   ComponentInstance = null;
   ComponentOperationCommand = null;
 }
@@ -296,7 +292,7 @@ describe('Phase 8 - Component Method Calls', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       const events = [];
-      const originalRegisterCompiledMethods = InheritanceMethodRegistry.prototype.registerCompiled;
+      const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
       const originalEnsureInvocationBuffer = runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
       let buildInvocationCreatedAt = -1;
 
@@ -308,11 +304,11 @@ describe('Phase 8 - Component Method Calls', function () {
         return originalEnsureInvocationBuffer.apply(this, arguments);
       };
 
-      InheritanceMethodRegistry.prototype.registerCompiled = function(methods) {
+      inheritanceStateModule.registerInheritanceMethods = function(state, methods) {
         if (methods && methods.build && methods.build.ownerKey === 'A.script') {
           events.push({ type: 'parent-build-registered' });
         }
-        return originalRegisterCompiledMethods.apply(this, arguments);
+        return originalRegisterInheritanceMethods.apply(this, arguments);
       };
 
       loader.addTemplate('A.script', [
@@ -336,7 +332,7 @@ describe('Phase 8 - Component Method Calls', function () {
         expect(parentRegisteredAt).to.be.greaterThan(-1);
         expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
       } finally {
-        InheritanceMethodRegistry.prototype.registerCompiled = originalRegisterCompiledMethods;
+        inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
         runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
       }
     });

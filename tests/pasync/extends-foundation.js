@@ -12,8 +12,6 @@ let scriptTranspiler;
 let runtime;
 let inheritanceBootstrap;
 let inheritanceStartup;
-let inheritanceMethodRegistry;
-let inheritanceSharedRegistry;
 let StringLoader;
 let inheritanceStateModule;
 
@@ -43,12 +41,8 @@ if (typeof require !== 'undefined') {
   }
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
-    inheritanceMethodRegistry = inheritanceStateModule.InheritanceMethodRegistry;
-    inheritanceSharedRegistry = inheritanceStateModule.InheritanceSharedRegistry;
   } catch (err) {
     void err;
-    inheritanceMethodRegistry = null;
-    inheritanceSharedRegistry = null;
   }
   StringLoader = require('../util').StringLoader;
 } else {
@@ -64,8 +58,6 @@ if (typeof require !== 'undefined') {
   runtime = nunjucks.runtime;
   inheritanceBootstrap = null;
   inheritanceStartup = null;
-  inheritanceMethodRegistry = null;
-  inheritanceSharedRegistry = null;
   StringLoader = window.util.StringLoader;
 }
 
@@ -1322,274 +1314,73 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe.skip('Phase 12 - Dynamic Extends Startup Plumbing', function () {
-    it('should route dynamic parent startup through composition mode only', async function () {
-      if (!inheritanceStartup) {
+  describe('Phase 12 - Dynamic Extends Startup Plumbing', function () {
+    it('should stop rewriting nested dynamic extends into asyncStoreIn staging nodes', function () {
+      if (!transformer) {
         this.skip();
         return;
       }
 
-      const currentBuffer = runtime.createCommandBuffer({ path: 'Child.script' });
-      const inheritanceState = runtime.createInheritanceState();
-      const registrationContext = {
-        path: 'Child.script',
-        getRenderContextVariables() {
-          return { siteName: 'Example' };
-        },
-        forkForComposition(nextPath, ctx, renderCtx, externCtx) {
-          return { path: nextPath, ctx, renderCtx, externCtx };
-        },
-        forkForPath(nextPath) {
-          return { path: nextPath };
-        }
-      };
-      const compositionPayload = {
-        explicitInputValues: { theme: 'dark' },
-        explicitInputNames: ['theme'],
-        rootContext: { theme: 'dark', siteName: 'Example' },
-        externContext: { theme: 'dark' }
-      };
-      const calls = [];
-      const expectedCompletion = Promise.resolve('dynamic-finished');
-      const parentTemplate = {
-        path: 'Parent.script',
-        hasDynamicExtends: true,
-        rootRenderFunc(envArg, contextArg, runtimeArg, cbArg, compositionMode, parentBufferArg, inheritanceStateArg) {
-          calls.push({
-            envArg,
-            contextArg,
-            runtimeArg,
-            cbArg,
-            compositionMode,
-            parentBufferArg,
-            inheritanceStateArg
-          });
-          return {
-            getFinishedPromise() {
-              return expectedCompletion;
+      const ast = transformer.transform(
+        parser.parse('{% if useParent %}{% extends parent %}{% endif %}{% block body %}x{% endblock %}'),
+        [],
+        'dynamic-nested.njk',
+        {
+          asyncMode: true,
+          scriptMode: false,
+          idPool: {
+            value: 0,
+            next() {
+              this.value += 1;
+              return this.value;
             }
-          };
+          }
         }
-      };
-
-      const completion = inheritanceStartup.startParentConstructor(
-        parentTemplate,
-        registrationContext,
-        compositionPayload,
-        inheritanceState,
-        { envName: 'env' },
-        runtime,
-        () => {},
-        currentBuffer,
-        { lineno: 1, colno: 1, path: 'Child.script' },
-        true
+      );
+      const extendsNodes = ast.findAll(nodes.Extends);
+      const parentTemplateSets = ast.findAll(nodes.Set).filter((setNode) =>
+        setNode.targets &&
+        setNode.targets[0] &&
+        setNode.targets[0].value === '__parentTemplate'
       );
 
-      expect(calls).to.have.length(1);
-      expect(calls[0].compositionMode).to.be(true);
-      expect(calls[0].parentBufferArg).to.be(currentBuffer);
-      expect(calls[0].inheritanceStateArg).to.be(inheritanceState);
-      expect(calls[0].contextArg).to.eql({
-        path: 'Parent.script',
-        ctx: compositionPayload.rootContext,
-        renderCtx: { siteName: 'Example' },
-        externCtx: compositionPayload.externContext
-      });
-      expect(completion).to.be(expectedCompletion);
-      expect(await completion).to.be('dynamic-finished');
+      expect(extendsNodes).to.have.length(1);
+      expect(Object.prototype.hasOwnProperty.call(extendsNodes[0], 'asyncStoreIn')).to.be(false);
+      expect(parentTemplateSets).to.have.length(0);
     });
 
-    it('should route static parent startup through bootstrap and shared-link installation', function () {
-      if (!inheritanceStartup || !inheritanceBootstrap) {
-        this.skip();
-        return;
-      }
+    it('should compile nested dynamic extends without the old top-level staging temp path', function () {
+      const source = new AsyncTemplate(
+        '{% if useParent %}{% extends parent %}{% endif %}{% block body %}x{% endblock %}',
+        env,
+        'dynamic-nested.njk'
+      )._compileSource();
 
-      const currentBuffer = runtime.createCommandBuffer({ path: 'Child.script' });
-      const inheritanceState = runtime.createInheritanceState();
-      const registrationContext = {
-        path: 'Child.script',
-        getRenderContextVariables() {
-          return {};
-        },
-        forkForComposition(nextPath, ctx, renderCtx, externCtx) {
-          return { path: nextPath, ctx, renderCtx, externCtx };
-        },
-        forkForPath(nextPath) {
-          return { path: nextPath };
-        }
-      };
-      const parentTemplate = {
-        hasDynamicExtends: false,
-        path: 'Parent.script',
-        methods: {
-          __constructor__: {
-            fn() {
-              return null;
-            },
-            kind: 'method',
-            contract: { argNames: [], withContext: false },
-            ownerKey: 'Parent.script',
-            linkedChannels: []
-          }
-        },
-        sharedSchema: [{ name: 'theme', type: 'var' }],
-        rootRenderFunc() {
-          throw new Error('dynamic parent startup should not run for static parents');
-        }
-      };
-      const originalBootstrap = inheritanceBootstrap.bootstrapInheritanceMetadata;
-      const originalEnsureLinks = inheritanceBootstrap.ensureCurrentBufferSharedLinks;
-      const seen = [];
-
-      inheritanceBootstrap.bootstrapInheritanceMetadata = function(inheritanceStateArg, methodsArg, sharedSchemaArg, bufferArg, contextArg) {
-        seen.push({
-          kind: 'bootstrap',
-          inheritanceStateArg,
-          methodsArg,
-          sharedSchemaArg,
-          bufferArg,
-          contextArg
-        });
-        return originalBootstrap.apply(this, arguments);
-      };
-      inheritanceBootstrap.ensureCurrentBufferSharedLinks = function(sharedSchemaArg, bufferArg) {
-        seen.push({
-          kind: 'links',
-          sharedSchemaArg,
-          bufferArg
-        });
-        return originalEnsureLinks.apply(this, arguments);
-      };
-
-      try {
-        const completion = inheritanceStartup.startParentConstructor(
-          parentTemplate,
-          registrationContext,
-          null,
-          inheritanceState,
-          { envName: 'env' },
-          runtime,
-          () => {},
-          currentBuffer,
-          { lineno: 1, colno: 1, path: 'Child.script' },
-          false
-        );
-
-        expect(completion).to.be(null);
-        expect(seen.map((entry) => entry.kind)).to.eql(['bootstrap', 'links']);
-        expect(seen[0].inheritanceStateArg).to.be(inheritanceState);
-        expect(seen[0].bufferArg).to.be(currentBuffer);
-        expect(seen[0].contextArg).to.be(registrationContext);
-        expect(seen[1].bufferArg).to.be(currentBuffer);
-      } finally {
-        inheritanceBootstrap.bootstrapInheritanceMetadata = originalBootstrap;
-        inheritanceBootstrap.ensureCurrentBufferSharedLinks = originalEnsureLinks;
-      }
+      expect(source).to.contain('channelName: \'__parentTemplate\'');
+      expect(source).to.not.contain('asyncStoreIn');
+      expect(source).to.not.contain('hole_');
     });
 
-    it('should return static parent constructor completion only after bootstrap, link installation, and admission', async function () {
-      if (!inheritanceStartup || !inheritanceBootstrap) {
-        this.skip();
-        return;
-      }
+    it('should keep top-level dynamic extends on the immediate parent-render boundary path', function () {
+      const source = new AsyncTemplate(
+        '{% extends parent if useParent else none %}{% block body %}x{% endblock %}',
+        env,
+        'dynamic-top-level.njk'
+      )._compileSource();
 
-      const inheritanceCall = require('../../src/runtime/inheritance-call');
-      const currentBuffer = runtime.createCommandBuffer({ path: 'Child.script' });
-      const inheritanceState = runtime.createInheritanceState();
-      const registrationContext = {
-        path: 'Child.script',
-        getRenderContextVariables() {
-          return { siteName: 'Example' };
-        },
-        forkForComposition(nextPath, ctx, renderCtx, externCtx) {
-          return { path: nextPath, ctx, renderCtx, externCtx };
-        },
-        forkForPath(nextPath) {
-          return { path: nextPath };
-        }
-      };
-      const compositionPayload = {
-        explicitInputValues: { theme: 'dark' },
-        explicitInputNames: ['theme'],
-        rootContext: { theme: 'dark', siteName: 'Example' },
-        externContext: { theme: 'dark' }
-      };
-      const parentTemplate = {
-        hasDynamicExtends: false,
-        path: 'Parent.script',
-        methods: {
-          __constructor__: {
-            fn() {
-              return null;
-            },
-            kind: 'method',
-            contract: { argNames: [], withContext: false },
-            ownerKey: 'Parent.script',
-            linkedChannels: []
-          }
-        },
-        sharedSchema: [{ name: 'theme', type: 'var' }]
-      };
-      const expectedCompletion = Promise.resolve('static-finished');
-      const originalBootstrap = inheritanceBootstrap.bootstrapInheritanceMetadata;
-      const originalEnsureLinks = inheritanceBootstrap.ensureCurrentBufferSharedLinks;
-      const originalAdmitConstructorEntry = inheritanceCall.admitConstructorEntry;
-      const seen = [];
-
-      inheritanceBootstrap.bootstrapInheritanceMetadata = function() {
-        seen.push('bootstrap');
-        return originalBootstrap.apply(this, arguments);
-      };
-      inheritanceBootstrap.ensureCurrentBufferSharedLinks = function() {
-        seen.push('links');
-        return originalEnsureLinks.apply(this, arguments);
-      };
-      inheritanceCall.admitConstructorEntry = function(parentContext) {
-        seen.push('admit');
-        expect(parentContext).to.eql({
-          path: 'Parent.script',
-          ctx: compositionPayload.rootContext,
-          renderCtx: { siteName: 'Example' },
-          externCtx: compositionPayload.externContext
-        });
-        return {
-          promise: Promise.resolve(null),
-          completion: expectedCompletion
-        };
-      };
-
-      try {
-        const completion = inheritanceStartup.startParentConstructor(
-          parentTemplate,
-          registrationContext,
-          compositionPayload,
-          inheritanceState,
-          { envName: 'env' },
-          runtime,
-          () => {},
-          currentBuffer,
-          { lineno: 1, colno: 1, path: 'Child.script' },
-          true
-        );
-
-        expect(seen).to.eql(['bootstrap', 'links', 'admit']);
-        expect(completion).to.be(expectedCompletion);
-        expect(await completion).to.be('static-finished');
-      } finally {
-        inheritanceBootstrap.bootstrapInheritanceMetadata = originalBootstrap;
-        inheritanceBootstrap.ensureCurrentBufferSharedLinks = originalEnsureLinks;
-        inheritanceCall.admitConstructorEntry = originalAdmitConstructorEntry;
-      }
+      expect(source).to.contain('runtime.runControlFlowBoundary(');
+      expect(source).to.contain('channelName: \'__parentTemplate\'');
+      expect(source).to.not.contain('asyncStoreIn');
     });
   });
 
-  describe.skip('Phase 12 - Dynamic Extends Resolution Lifecycle', function () {
-    it('should keep inheritance-resolution lifecycle state on InheritanceState', async function () {
+  describe('Phase 12 - Dynamic Extends Resolution Lifecycle', function () {
+    it('should keep inheritance resolution state on InheritanceState while methods use a plain helper-backed table', async function () {
       const inheritanceState = runtime.createInheritanceState();
 
-      expect(inheritanceState.methods).to.be.an(inheritanceMethodRegistry);
-      expect(inheritanceState.sharedSchema).to.be.an(inheritanceSharedRegistry);
+      expect(Object.getPrototypeOf(inheritanceState.methods)).to.be(null);
+      expect(typeof inheritanceState.methods.registerCompiled).to.be('function');
+      expect(typeof inheritanceState.methods.getChain).to.be('function');
       expect(inheritanceState.resolution).to.be.ok();
       expect(inheritanceState.resolution.await()).to.be(null);
 
@@ -1626,39 +1417,56 @@ describe('Extends Foundation', function () {
       expect(Context.prototype.finishInheritanceResolution).to.be(undefined);
     });
 
-    it('should compile dynamic extends against the inheritanceState runtime lifecycle surface', function () {
+    it('should compile dynamic extends without the old lifecycle bridge helpers', function () {
       const source = new AsyncTemplate(
         '{% extends parent if useParent else none %}{% block body %}x{% endblock %}',
         env,
         'dynamic-child.njk'
       )._compileSource();
 
-      expect(source).to.contain('runtime.beginInheritanceResolution(inheritanceState);');
-      expect(source).to.contain('runtime.finishInheritanceResolution(inheritanceState);');
-      expect(source).to.contain('runtime.bridgeDynamicParentTemplate(inheritanceState,');
-      expect(source).to.contain('runtime.renderDynamicTopLevelBlock(');
+      expect(source).to.contain('runtime.channelLookup("__parentTemplate"');
+      expect(source).to.not.contain('runtime.beginInheritanceResolution(');
+      expect(source).to.not.contain('runtime.finishInheritanceResolution(');
+      expect(source).to.not.contain('runtime.bridgeDynamicParentTemplate(');
     });
   });
 
-  describe.skip('Phase 12 - Composition Payload Shape', function () {
-    it('should compile extends-with startup around one explicit composition payload shape', function () {
+  describe('Phase 12 - Composition Payload Shape', function () {
+    it('should compile script and template extends-with startup around one explicit payload object shape', function () {
       const scriptSource = new Script(
-        'var theme = "dark"\nextends "A.script" with theme\nreturn null',
+        'shared var theme = "dark"\nextends "A.script" with theme\nreturn null',
         env,
         'payload-shape.script'
       )._compileSource();
       const dynamicTemplateSource = new AsyncTemplate(
-        '{% set theme = "dark" %}{% extends parent with theme if useParent else none %}{% block body %}x{% endblock %}',
+        '{% set theme = "dark" %}{% extends (parent if useParent else none) with theme %}{% block body %}x{% endblock %}',
         env,
         'payload-shape.njk'
       )._compileSource();
 
-      expect(scriptSource).to.contain('runtime.createExtendsCompositionPayload(');
-      expect(scriptSource).to.contain('.explicitInputValues');
-      expect(scriptSource).to.contain('runtime.startParentConstructor(');
-      expect(dynamicTemplateSource).to.contain('runtime.createExtendsCompositionPayload(');
-      expect(dynamicTemplateSource).to.contain('runtime.setExtendsComposition(inheritanceState,');
-      expect(dynamicTemplateSource).to.contain('.explicitInputNames');
+      expect(scriptSource).to.contain('explicitInputValues');
+      expect(scriptSource).to.contain('explicitInputNames');
+      expect(scriptSource).to.contain('rootContext');
+      expect(scriptSource).to.contain('externContext');
+      expect(scriptSource).to.not.contain('runtime.startParentConstructor(');
+
+      expect(dynamicTemplateSource).to.contain('explicitInputValues');
+      expect(dynamicTemplateSource).to.contain('explicitInputNames');
+      expect(dynamicTemplateSource).to.contain('rootContext');
+      expect(dynamicTemplateSource).to.contain('externContext');
+      expect(dynamicTemplateSource).to.not.contain('runtime.setExtendsComposition(');
+    });
+
+    it('should capture template extends-with inputs through ordered visibility instead of the latest-assigned bridge', function () {
+      const dynamicTemplateSource = new AsyncTemplate(
+        '{% set theme = "dark" %}{% extends (parent if useParent else none) with theme %}{% block body %}x{% endblock %}',
+        env,
+        'payload-observation.njk'
+      )._compileSource();
+
+      expect(dynamicTemplateSource).to.contain('runtime.captureCompositionValue(');
+      expect(dynamicTemplateSource).to.not.contain('captureCompositionScriptValue');
+      expect(dynamicTemplateSource).to.not.contain('recordTemporaryCompositionAssignedValue');
     });
   });
 });

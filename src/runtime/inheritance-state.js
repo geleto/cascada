@@ -60,40 +60,46 @@ function isPendingInheritanceEntry(entry) {
 
 function ensureInheritanceMethodsTable(state) {
   if (!state.methods || typeof state.methods !== 'object') {
-    state.methods = new InheritanceMethodRegistry();
+    state.methods = createInheritanceMethodsTable();
   }
   return state.methods;
 }
 
 function ensureInheritanceSharedSchemaTable(state) {
   if (!state.sharedSchema || typeof state.sharedSchema !== 'object') {
-    state.sharedSchema = new InheritanceSharedRegistry();
+    state.sharedSchema = Object.create(null);
   }
   return state.sharedSchema;
 }
 
-class InheritanceMethodRegistry {
-  registerCompiled(methods) {
-    registerInheritanceMethods({ methods: this }, methods);
-    return this;
-  }
-
-  getChain(name) {
-    const chain = [];
-    let entry = this[name];
-    while (entry && !isPendingInheritanceEntry(entry)) {
-      chain.push(entry);
-      entry = entry.super;
+function createInheritanceMethodsTable() {
+  const table = Object.create(null);
+  Object.defineProperties(table, {
+    registerCompiled: {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value(methods) {
+        registerInheritanceMethods({ methods: table }, methods);
+        return table;
+      }
+    },
+    getChain: {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value(name) {
+        const chain = [];
+        let entry = table[name];
+        while (entry && !isPendingInheritanceEntry(entry)) {
+          chain.push(entry);
+          entry = entry.super;
+        }
+        return chain;
+      }
     }
-    return chain;
-  }
-}
-
-class InheritanceSharedRegistry {
-  registerSchema(sharedSchema, context = null) {
-    registerInheritanceSharedSchema({ sharedSchema: this }, sharedSchema, context);
-    return this;
-  }
+  });
+  return table;
 }
 
 class InheritanceResolutionState {
@@ -135,8 +141,8 @@ class InheritanceResolutionState {
 
 class InheritanceState {
   constructor() {
-    this.methods = new InheritanceMethodRegistry();
-    this.sharedSchema = new InheritanceSharedRegistry();
+    this.methods = createInheritanceMethodsTable();
+    this.sharedSchema = Object.create(null);
     this.resolution = new InheritanceResolutionState();
     this.sharedRootBuffer = null;
     this.compositionPayload = null;
@@ -478,9 +484,8 @@ function finalizeInheritanceSharedSchema(state, context = null) {
 
 module.exports = {
   InheritanceState,
-  InheritanceMethodRegistry,
-  InheritanceSharedRegistry,
   InheritanceResolutionState,
+  createInheritanceMethodsTable,
   createInheritanceState,
   createPendingInheritanceEntry,
   cloneInheritanceMethodEntry,

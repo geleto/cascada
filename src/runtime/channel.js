@@ -412,17 +412,6 @@ class VarChannel extends Channel {
   _getCurrentResult() {
     return this._target;
   }
-
-  // Temporary Step C bridge for `extends ... with ...`.
-  // Remove this once immediate composition capture no longer needs a dedicated
-  // "latest assigned value" primitive.
-  recordTemporaryCompositionAssignedValue(value) {
-    this._latestAssignedValue = value;
-  }
-
-  getTemporaryCompositionAssignedValue() {
-    return this._latestAssignedValue;
-  }
 }
 
 class SequentialPathChannel extends Channel {

@@ -1011,35 +1011,37 @@ Scope:
 - detailed dynamic `extends` work remains deferred until the main static model
   is stable; if the static model is not yet stable by this phase, dynamic
   `extends` may remain deferred past Phase 12 rather than being forced in here
-- remove dynamic/static parent-selection transition scaffolding once the final
-  model is stable:
-  - `__parentTemplate` temporary-channel handoff where it is no longer needed
-  - `asyncStoreIn` / transformer temp-variable plumbing that exists only to
-    stage parent resolution through legacy shapes
+- keep one explicit runtime handoff channel for deferred dynamic parent
+  selection:
+  - nested or otherwise deferred dynamic `extends` writes the chosen parent
+    selection to `__parentTemplate`
+  - direct top-level dynamic `extends` still renders the selected parent at the
+    `extends` site
+  - remove `asyncStoreIn` / transformer temp-variable staging and do not
+    reintroduce it
   - compatibility-only remark:
-    - do not add new inheritance/local-capture/visibility behavior to the
-      `__parentTemplate` or `asyncStoreIn` path
-    - treat this path as transitional parent-resolution scaffolding only
-- remove the remaining plain-extends composition-capture bridge once the final
-  explicit payload model no longer needs channel-side "latest assigned value"
-  escape hatches:
-  - `captureCompositionValue(...)`
-  - `captureCompositionScriptValue(...)`
-  - `CommandBuffer._recordTemporaryCompositionAssignedValue(...)`
-  - `recordTemporaryCompositionAssignedValue(...)` /
-    `getTemporaryCompositionAssignedValue(...)` on channels
+    - `__parentTemplate` is now the deliberate dynamic-parent handoff surface,
+      not a place to add new inheritance/local-capture/visibility behavior
+- keep one explicit ordered composition-capture primitive for `extends ... with
+  ...`:
+  - `captureCompositionValue(...)` remains the template/script startup capture
+    helper
+  - remove the old "latest assigned value" escape hatches and script-specific
+    variants:
+    - `captureCompositionScriptValue(...)`
+    - `CommandBuffer._recordTemporaryCompositionAssignedValue(...)`
+    - `recordTemporaryCompositionAssignedValue(...)` /
+      `getTemporaryCompositionAssignedValue(...)` on channels
   - compatibility-only remark:
-    - do not add new payload or visibility behavior to this bridge
-    - treat it as temporary execution-time capture scaffolding only
-- move pending inherited-method/shared dependency discovery off ad hoc AST
-  rescans and onto analysis-owned metadata
-- remove the temporary compiler rescans in `src/compiler/inheritance.js`:
-  - `collectPendingMethodNames(...)`
-  - `collectPendingSharedNames(...)`
-- flatten the temporary inheritance registry classes when they no longer add
-  value over plain shared metadata objects and helpers:
-  - `InheritanceMethodRegistry`
-  - `InheritanceSharedRegistry`
+    - `captureCompositionValue(...)` is an explicit ordered capture primitive,
+      not a general lookup fallback
+- move pending inherited-method/shared dependency discovery onto analysis-owned
+  metadata and remove the old compiler rescans in
+  `src/compiler/inheritance.js`
+- flatten temporary inheritance registry wrappers into plain helper-backed
+  method/shared tables:
+  - remove `InheritanceMethodRegistry`
+  - remove `InheritanceSharedRegistry`
 - collapse the remaining helper-owned admission-buffer scaffolding in
   `src/runtime/inheritance-call.js` if it still exists after the main
   caller-side invocation model is stable:
@@ -1085,9 +1087,9 @@ Scope:
     sync/Nunjucks compatibility
 - decide the final async-template compatibility surface for legacy block
   registry metadata:
-  - remove or formally keep the empty `AsyncTemplate.blocks` /
-    `AsyncTemplate.blockContracts` surface now that async inheritance no longer
-    uses the old block-registry runtime path
+  - formally keep the empty `AsyncTemplate.blocks` /
+    `AsyncTemplate.blockContracts` surface as compatibility-only API shape now
+    that async inheritance no longer uses the old block-registry runtime path
   - compatibility-only remark:
     - do not add new async inheritance behavior to `Context.blocks`,
       `getBlock(...)`, `blockContracts`, `AsyncTemplate.blocks`, or
@@ -1106,16 +1108,16 @@ Scope:
     - `_isDynamicExtendsNode(...)`
     - keep one shared compiler-common definition so sync/async parent-shape
       detection cannot drift
-  - decide whether the static-only template `__parentTemplate` declaration
-    remains useful as a shared compiler shape or should be removed once the
-    dynamic/static parent-resolution path is finalized
-  - split `currentCompilingBlock` if it still acts as both "current block body
-    being compiled" state and the sentinel for "top-level block definition vs
-    nested render path"
+  - keep the shared `__parentTemplate` declaration shape for any template root
+    that contains real `extends`, including nested dynamic cases that still
+    require the runtime guard path
+  - split the old overloaded block-compilation sentinel into separate compiler
+    state:
+    - `currentCallableDefinition`
+    - `isCompilingCallableEntry`
   - compatibility-only remark:
-    - treat `currentCompilingBlock`'s dual role as overloaded transitional
-      state, not as final architecture
-    - do not use that dual role as justification for new template-specific
+    - do not use callable-entry tracking as justification for new
+      template-specific
       visibility fallback, inherited-scope exceptions, or block-definition
       behavior shims
   - revisit the promise-wrapped
@@ -1156,7 +1158,7 @@ Tests:
 
 - `npm run test:quick`
 - full test suite
-- re-enable groups:
+- keep active groups:
   - `tests/pasync/extends-foundation.js` ->
     `Phase 12 - Dynamic Extends Startup Plumbing`
   - `tests/pasync/extends-foundation.js` ->
@@ -1170,12 +1172,11 @@ Cleanup pass before closing Phase 12:
 - explicitly search for transitional compiler/runtime shapes that survived only
   because earlier phases fixed behavior without yet collapsing the old path
 - look for and remove or rewrite:
-  - `__parentTemplate` staging logic that still carries old root-handoff
-    assumptions
-  - `asyncStoreIn` / transformer temp plumbing that only exists to preserve a
-    legacy parent-selection shape
-  - the temporary composition-capture bridge that reads "latest assigned
-    value" off channels instead of using the final explicit payload model
+  - any reintroduction of `asyncStoreIn` / transformer temp plumbing or
+    equivalent parent-staging nodes
+  - any attempt to turn `captureCompositionValue(...)` back into a fallback
+    that reads "latest assigned value" off channels instead of doing ordered
+    structural capture
   - generic mixed lookup helpers that blur explicit context with structural
     channel visibility again, such as bringing back `contextOrChannelLookup`-
     style behavior for template bare-name resolution
@@ -1198,7 +1199,130 @@ Cleanup pass before closing Phase 12:
   - no new behavior should be added there
   - what exact condition will allow deletion
 
-## Phase 13 - Documentation
+## Phase 13 - Architectural Residue Cleanup
+
+Goal:
+
+- remove or isolate the remaining compiler/runtime surfaces that still work but
+  are not part of the final architecture described in
+  `docs/code/extends-architecture.md`
+
+Scope:
+
+- remove dead or test-only inheritance state that is no longer part of the
+  runtime contract:
+  - `InheritanceResolutionState`
+  - `inheritanceState.resolution`
+  - any runtime export/helpers that only exist to expose that state
+- collapse or remove lifecycle/mode fields that were introduced as
+  implementation scaffolding rather than as final shared-metadata shape:
+  - `constructorBoundaryPromise`
+  - `componentCompositionMode`
+  - if a full removal is not yet possible, move that state off the final
+    shared metadata object or narrow it behind one explicit lifecycle helper
+    with a clear compatibility note
+- remove broad shared-lane linking and late repair behavior where the runtime
+  still links or patches more than the architecture requires:
+  - `ensureCurrentBufferSharedLinks(...)`
+  - broad `Object.keys(sharedSchema)` linkage in inherited admission/invocation
+  - child-side `_registerLinkedChannel(...)` fallback used as a structural fix
+    after a parent lane is already finished
+  - final model should link exactly the lanes needed by the current
+    constructor/method/shared observation path
+- revisit the dynamic-parent staging surface and remove any compiler/runtime
+  variable that exists only as transitional deferred-parent plumbing:
+  - `__parentTemplate`
+  - any compiled `VarCommand`/channel path whose only purpose is carrying the
+    chosen parent through an ambient lane rather than through the final
+    `extends` dispatch model
+- finish metadata-source unification so the transformed inheritance metadata is
+  authoritative:
+  - remove `CompilerCommon._getSharedDeclarations(...)` fallback to raw
+    `node.findAll(nodes.ChannelDeclaration)`
+  - remove root rescans such as
+    `_collectPendingInheritanceMethodNames(...)` once analysis-owned metadata
+    is sufficient
+- collapse helper/buffer layers that still exist only as transitional
+  invocation staging if the final runtime shape can express them directly:
+  - `_createAdmissionBarrier(...)`
+  - `_linkBarrierChannel(...)`
+  - `InheritanceAdmissionCommand`
+  - any separate placeholder/admission buffer that is no longer required once
+    exact helper-driven linking is in place
+- re-evaluate remaining legacy block-registry compatibility surfaces against
+  the final metadata/method architecture:
+  - `Context.blocks`
+  - `Context.addBlock(...)`
+  - `Context.getBlock(...)`
+  - `parentTemplate.blocks`
+  - `Template.blockContracts` / `AsyncTemplate.blockContracts`
+  - if sync/Nunjucks compatibility still needs them, isolate them from the
+    async extends path and mark them as compatibility-only rather than letting
+    them remain part of the active inheritance model
+- carry forward the remaining Phase 12 cleanup gaps that are still live in the
+  staged implementation:
+  - keep `AsyncTemplate.blockContracts` as an empty compatibility surface
+    unless and until this phase makes an explicit final decision to remove it:
+    - do not let it drift back into active async inheritance behavior
+    - if it is removed later, that should be a deliberate compatibility/API
+      change justified in this phase rather than an incidental side effect of
+      cleanup
+  - async inheritance still uses the legacy block-registry runtime path for
+    active dispatch:
+    - `context.getBlock(...)`
+    - `context.addBlock(...)`
+    - `parentTemplate.blocks`
+  - admission/barrier staging is still a first-class runtime dependency:
+    - `_createAdmissionBarrier(...)`
+    - `_linkBarrierChannel(...)`
+    - `InheritanceAdmissionCommand`
+    - exported admission/testing surfaces that still expose that layer
+  - metadata-source unification is still incomplete:
+    - `_collectPendingInheritanceMethodNames(...)`
+    - `CompilerCommon._getSharedDeclarations(...)` raw AST fallback
+    - keep the `_getSharedDeclarations(...)` fallback comment marked as
+      transitional until the fallback is actually removed; do not normalize
+      that dual-source path as if it were final architecture
+  - broad shared-lane linking and late-link repair are still active:
+    - `ensureCurrentBufferSharedLinks(...)`
+    - `Object.keys(sharedSchema)` linkage in inheritance bootstrap/call paths
+    - child-side `_registerLinkedChannel(...)` fallback after finished parent
+      lanes
+  - lifecycle/mode shim state still survives on the active inheritance path:
+    - `constructorBoundaryPromise`
+    - `componentCompositionMode`
+    - `CommandBuffer.getFinishCompletePromise()` revisit/rename/removal
+
+Tests:
+
+- `npm run test:quick`
+- targeted regression suites for each removed surface
+- add focused regression coverage for any behavior that previously depended on
+  a transitional field/helper so removal is protected by tests instead of by
+  keeping the helper alive
+
+Cleanup pass before closing Phase 13:
+
+- explicitly search for new properties, locals, helper names, compiled channel
+  declarations, or temporary runtime markers that were added only to make an
+  earlier workaround function
+- look especially for code that:
+  - carries inheritance lifecycle state on the shared metadata object even
+    though the architecture does not require that field
+  - repairs missing linkage at runtime instead of requiring the current buffer
+    to already have the correct structural path
+  - stores parent-selection state in ambient channels/variables instead of
+    resolving it at the `extends` site
+  - reintroduces raw AST rescans/fallback metadata paths after metadata was
+    already made explicit
+  - preserves old block-registry/template surfaces on the async extends path
+    even though the final model is method/metadata-based
+- for anything that still cannot be removed, add an explicit note stating:
+  - it is not part of the final architecture
+  - no new behavior should be added there
+  - what exact future condition would allow deletion
+
+## Phase 14 - Documentation
 
 Goal:
 

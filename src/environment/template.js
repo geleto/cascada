@@ -281,7 +281,12 @@ class Template extends Obj {
       props = func(globalRuntime);
     }
 
-    this.blockContracts = this._getCompiledBlockContracts(props);
+    const compiledBlockContracts = this._getCompiledBlockContracts(props);
+    if (compiledBlockContracts != null) {
+      this.blockContracts = compiledBlockContracts;
+    } else {
+      delete this.blockContracts;
+    }
     this.blocks = this._getCompiledBlocks(props);
     this.externSpec = props.externSpec || [];
     this.methods = props.methods || {};
@@ -398,6 +403,8 @@ class AsyncTemplate extends Template {
   }
 
   _getCompiledBlockContracts() {
+    // Keep the async compatibility surface present-but-empty until the later
+    // cleanup phase makes a deliberate final decision about removing it.
     return {};
   }
 

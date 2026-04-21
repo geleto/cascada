@@ -10,8 +10,8 @@ function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, current
   if (!state.sharedRootBuffer) {
     state.sharedRootBuffer = currentBuffer || null;
   }
-  inheritanceState.ensureInheritanceSharedSchemaTable(state).registerSchema(sharedSchema, context);
-  inheritanceState.ensureInheritanceMethodsTable(state).registerCompiled(methods);
+  inheritanceState.registerInheritanceSharedSchema(state, sharedSchema, context);
+  inheritanceState.registerInheritanceMethods(state, methods);
   ensureCurrentBufferSharedLinks(state.sharedSchema, currentBuffer);
   return state;
 }

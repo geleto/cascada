@@ -27,9 +27,9 @@ class CompilerBaseAsync extends CompilerCommon {
   _getCurrentBlockBindingOwners(node, name) {
     return {
       declarationOwner: this.analysis.findDeclarationOwner(node._analysis, name),
-      blockOwner: this.currentCompilingBlock ? this.currentCompilingBlock._analysis : null,
-      blockBodyOwner: this.currentCompilingBlock && this.currentCompilingBlock.body
-        ? this.currentCompilingBlock.body._analysis
+      blockOwner: this.currentCallableDefinition ? this.currentCallableDefinition._analysis : null,
+      blockBodyOwner: this.currentCallableDefinition && this.currentCallableDefinition.body
+        ? this.currentCallableDefinition.body._analysis
         : null
     };
   }
@@ -79,13 +79,13 @@ class CompilerBaseAsync extends CompilerCommon {
     }
     const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
     if (declaredOutput) {
-      if (this.scriptMode && this.currentCompilingBlock) {
+      if (this.scriptMode && this.currentCallableDefinition) {
         if (this._isHiddenFromCurrentBlock(node, name, declaredOutput, { includeImported: true })) {
           this.emit('undefined');
           return;
         }
       }
-      if (!this.scriptMode && this.currentCompilingBlock && this.inBlock && declaredOutput.type === 'var') {
+      if (!this.scriptMode && this.currentCallableDefinition && this.inBlock && declaredOutput.type === 'var') {
         if (this._isHiddenFromCurrentBlock(node, name, declaredOutput)) {
           this.emit('undefined');
           return;

@@ -77,13 +77,7 @@ class CompileInheritance {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     withVars.forEach((nameNode) => {
       const externName = this.compiler.analysis.getBaseChannelName(nameNode.value);
-      const helperName = this.compiler.scriptMode
-        ? 'captureCompositionScriptValue'
-        : 'captureCompositionValue';
-      this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = runtime.${helperName}(context, ${JSON.stringify(externName)}, ${this.compiler.buffer.currentBuffer}`);
-      if (this.compiler.scriptMode) {
-        this.emit(`, { lineno: ${nameNode.lineno}, colno: ${nameNode.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, nameNode))}, path: context.path }`);
-      }
+      this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = runtime.captureCompositionValue(context, ${JSON.stringify(externName)}, ${this.compiler.buffer.currentBuffer}`);
       this.emit.line(');');
     });
   }
@@ -388,9 +382,10 @@ class CompileInheritance {
     // We cannot use `!this.compiler.inBlock` here: async root compilation now
     // emits callable entries before the template body runs, so top-level block
     // definitions are already visited under the root-entry setup path. The
-    // currentCompilingBlock sentinel is the reliable "we are defining a block
-    // entry vs rendering inside one" discriminator on the shared callable-entry path.
-    const isTopLevelTemplateBlock = !this.compiler.scriptMode && !this.compiler.currentCompilingBlock;
+    // `isCompilingCallableEntry` answers whether we are compiling the callable
+    // entry body itself, while `currentCallableDefinition` tracks the callable
+    // owner used for visibility and super() validation inside that body.
+    const isTopLevelTemplateBlock = !this.compiler.scriptMode && !this.compiler.isCompilingCallableEntry;
     // If we are at the top level of a template (`!this.inBlock`) that has a
     // static `extends` tag, this block is a definition-only. We can safely
     // skip compiling any rendering code for it, as the parent template is
@@ -762,12 +757,15 @@ class CompileInheritance {
       declaredBlockArgNames,
       payloadOriginalArgsVar
     });
-    const previousCompilingBlock = this.compiler.currentCompilingBlock;
-    this.compiler.currentCompilingBlock = block;
+    const previousCallableDefinition = this.compiler.currentCallableDefinition;
+    const previousCompilingCallableEntry = this.compiler.isCompilingCallableEntry;
+    this.compiler.currentCallableDefinition = block;
+    this.compiler.isCompilingCallableEntry = true;
     try {
       this.compiler.compile(block.body, null);
     } finally {
-      this.compiler.currentCompilingBlock = previousCompilingBlock;
+      this.compiler.currentCallableDefinition = previousCallableDefinition;
+      this.compiler.isCompilingCallableEntry = previousCompilingCallableEntry;
     }
     if (isScriptMethod) {
       const resultVar = this.compiler._tmpid();
@@ -853,13 +851,11 @@ class CompileInheritance {
     return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, usedChannels: ${usedChannels}, mutatedChannels: ${mutatedChannels}, super: ${superExpr}, contract: ${contractExpr}, ownerKey: ${ownerKey} }`;
   }
 
-  compileSharedSchemaLiteral(node, pendingSharedNames = []) {
+  compileSharedSchemaLiteral(node) {
     const fragments = ['{'];
     const sharedDeclarations = this.compiler._getSharedDeclarations(node);
-    const emittedNames = new Set();
     let needsComma = false;
     sharedDeclarations.forEach((child) => {
-      emittedNames.add(child.name.value);
       if (needsComma) {
         fragments.push(', ');
       }
@@ -874,62 +870,8 @@ class CompileInheritance {
       fragments.push(' }');
       needsComma = true;
     });
-    pendingSharedNames.forEach((name) => {
-      if (emittedNames.has(name)) {
-        return;
-      }
-      if (needsComma) {
-        fragments.push(', ');
-      }
-      fragments.push(`${JSON.stringify(name)}: __createPendingInheritanceEntry()`);
-      needsComma = true;
-    });
     fragments.push('}');
     return fragments.join('');
-  }
-
-  compileBlockContractsLiteral(blocks) {
-    if (this.compiler.scriptMode || !Array.isArray(blocks) || blocks.length === 0) {
-      return '{}';
-    }
-
-    const fragments = blocks.map((block) => {
-      const signature = this.getBlockSignature(block);
-      return `${JSON.stringify(block.name.value)}: ${JSON.stringify({
-        argNames: signature.argNames,
-        withContext: !!block.withContext
-      })}`;
-    });
-
-    return `{ ${fragments.join(', ')} }`;
-  }
-
-  collectPendingMethodNames(node) {
-    // Temporary bridge until pending inherited dependency discovery is moved
-    // onto analysis-owned metadata instead of ad hoc AST rescans.
-    const localMethodNames = new Set(
-      (this.compiler.scriptMode ? this.compiler._getMethodDefinitions(node) : node.findAll(nodes.Block))
-        .map((block) => block.name.value)
-    );
-    const pendingNames = new Set();
-    const calls = node.findAll(nodes.FunCall);
-    calls.forEach((callNode) => {
-      const facts = this.compiler._getExplicitThisDispatchFacts(callNode.name);
-      if (!facts || localMethodNames.has(facts.methodName)) {
-        return;
-      }
-      pendingNames.add(facts.methodName);
-    });
-    return Array.from(pendingNames);
-  }
-
-  collectPendingSharedNames(node) {
-    // `extends ... with ...` passes explicit composition inputs, not implicit
-    // shared-channel declarations. Treating those names as pending shared
-    // channels creates false unresolved shared-schema entries and can stall
-    // inheritance startup while waiting for channels that are never declared.
-    void node;
-    return [];
   }
 
   blockUsesSuper(block) {
@@ -1103,11 +1045,12 @@ class CompileInheritance {
     this.emit.line(`  return { template: resolvedParentTemplate, compositionPayload: ${compositionPayloadVar} };`);
     this.emit.line('});');
     if (this.compiler.hasDynamicExtends) {
-      if (node.asyncStoreIn) {
-        this.emit.line(`let ${node.asyncStoreIn} = ${deferredSelectionVar};`);
+      const isTopLevelDynamicExtends =
+        !!(this.compiler.topLevelDynamicExtends && this.compiler.topLevelDynamicExtends.has(node));
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${deferredSelectionVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
+      if (!isTopLevelDynamicExtends) {
         return;
       }
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${deferredSelectionVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
       const linkedChannelsArg = '["__text__"]';
       this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
       const resolvedSelectionVar = this.compiler._tmpid();
@@ -1123,12 +1066,7 @@ class CompileInheritance {
       this.emit.line('});');
       return;
     }
-    if (node.asyncStoreIn) {
-      this.emit.line(`let ${node.asyncStoreIn} = Promise.resolve(${deferredSelectionVar});`);
-    }
-    if (!node.asyncStoreIn) {
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${deferredSelectionVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
-    }
+    this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${deferredSelectionVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
     const linkedChannelsArg = '["__text__"]';
     this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
     const resolvedSelectionVar = this.compiler._tmpid();
@@ -1174,7 +1112,7 @@ class CompileInheritance {
     const id = node.symbol ? node.symbol.value : null;
     const positionalArgsNode = this._getPositionalSuperArgsNode(node);
     const args = positionalArgsNode.children;
-    const compilingBlock = this.compiler.currentCompilingBlock;
+    const compilingBlock = this.compiler.currentCallableDefinition;
     const knownArgNames = compilingBlock ? this.getBlockArgNames(compilingBlock) : [];
     const isScriptMethod = this.compiler.scriptMode && this._isScriptMethodEntry(compilingBlock);
 

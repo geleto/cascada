@@ -276,10 +276,10 @@ class TemplateRef extends Node {
 
 class Extends extends TemplateRef {
   get typename() { return 'Extends'; }
-  get fields() { return ['template', 'withContext', 'withVars', 'noParentLiteral', 'asyncStoreIn']; }
+  get fields() { return ['template', 'withContext', 'withVars', 'noParentLiteral']; }
 
-  init(lineno, colno, template, withContext, withVars, noParentLiteral, asyncStoreIn) {
-    super.init(lineno, colno, template, withContext, withVars || new NodeList(), !!noParentLiteral, asyncStoreIn);
+  init(lineno, colno, template, withContext, withVars, noParentLiteral) {
+    super.init(lineno, colno, template, withContext, withVars || new NodeList(), !!noParentLiteral);
   }
 }
 

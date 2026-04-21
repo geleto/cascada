@@ -1113,10 +1113,28 @@ class CompilerAsync extends CompilerBaseAsync {
 
   finalizeAnalyzeRoot(node) {
     const externSpec = this._collectRootExternSpec(node);
+    const pendingInheritanceMethodNames = this._collectPendingInheritanceMethodNames(node);
     validateScriptExtendsSourceOrder(this, node);
     this._validateRootExternFallbackOrder(node, externSpec);
     this._validateRootExternCycles(node);
-    return { externSpec };
+    return { externSpec, pendingInheritanceMethodNames };
+  }
+
+  _collectPendingInheritanceMethodNames(node) {
+    const localMethodNames = new Set(
+      (this.scriptMode ? this._getMethodDefinitions(node) : node.findAll(nodes.Block))
+        .map((block) => block.name.value)
+    );
+    const pendingNames = new Set();
+    const calls = node.findAll(nodes.FunCall);
+    calls.forEach((callNode) => {
+      const facts = this._getExplicitThisDispatchFacts(callNode.name);
+      if (!facts || localMethodNames.has(facts.methodName)) {
+        return;
+      }
+      pendingNames.add(facts.methodName);
+    });
+    return Array.from(pendingNames);
   }
 
   emitDeclareReturnChannel(bufferExpr) {
@@ -1343,38 +1361,34 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileRoot(node) {
-    this.hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
-    this.hasDeferredDynamicExtends = node.children.some((child) =>
-      this._isDynamicExtendsNode(child) && !!child.asyncStoreIn
+    const extendsNodes = node.findAll(nodes.Extends).filter((child) => !child.noParentLiteral);
+    this.topLevelDynamicExtends = new Set(
+      node.children.filter((child) => this._isDynamicExtendsNode(child))
     );
-    this.hasDynamicExtends = node.children.some((child) => {
-      if (this._isDynamicExtendsNode(child)) {
-        return true;
-      }
-      return child instanceof nodes.Set &&
-        child.targets[0] &&
-        child.targets[0].value === '__parentTemplate';
-    });
+    this.hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
+    this.hasDynamicExtends = extendsNodes.some((child) => this._isDynamicExtendsNode(child));
+    this.hasDeferredDynamicExtends = extendsNodes.some((child) =>
+      this._isDynamicExtendsNode(child) && !this.topLevelDynamicExtends.has(child)
+    );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
-    this.pendingInheritanceMethodNames = this.inheritance.collectPendingMethodNames(node);
-    this.pendingInheritanceSharedNames = this.inheritance.collectPendingSharedNames(node);
+    this.pendingInheritanceMethodNames = Array.isArray(node._analysis && node._analysis.pendingInheritanceMethodNames)
+      ? node._analysis.pendingInheritanceMethodNames
+      : [];
     const methodDefinitions = this.scriptMode ? this._getMethodDefinitions(node) : node.findAll(nodes.Block);
     this.needsInheritanceState = !!(
       this.hasExtends ||
       (this.scriptMode && this._getSharedDeclarations(node).length > 0) ||
       methodDefinitions.length > 0 ||
-      this.pendingInheritanceMethodNames.length > 0 ||
-      this.pendingInheritanceSharedNames.length > 0
+      this.pendingInheritanceMethodNames.length > 0
     );
     const blocks = this._compileAsyncRoot(node);
     const methods = this.inheritance.collectCompiledMethods(node, blocks, this.pendingInheritanceMethodNames);
-    const blockContracts = this.inheritance.compileBlockContractsLiteral(blocks);
 
-    if (this.pendingInheritanceMethodNames.length > 0 || this.pendingInheritanceSharedNames.length > 0 || this.inheritance.hasMethodSuperDependencies(blocks)) {
+    if (this.pendingInheritanceMethodNames.length > 0 || this.inheritance.hasMethodSuperDependencies(blocks)) {
       this.inheritance.emitPendingInheritanceEntryFactory();
     }
     this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);
-    this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node, this.pendingInheritanceSharedNames)};`);
+    this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
     this.emit.line('return {');
     blocks.forEach((block) => {
       const blockName = `b_${block.name.value}`;
@@ -1382,7 +1396,6 @@ class CompilerAsync extends CompilerBaseAsync {
     });
     this.emit.line(`b___constructor__: b___constructor__,`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
-    this.emit.line(`blockContracts: ${blockContracts},`);
     this.emit.line(`methods: ${COMPILED_METHODS_VAR},`);
     this.emit.line(`sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
     this.emit.line('root: root\n};');
@@ -1402,15 +1415,8 @@ class CompilerAsync extends CompilerBaseAsync {
       declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
     }
 
-    const hasExtendsNode = node.children.some((child) => child instanceof nodes.Extends && !child.noParentLiteral);
-    const hasParentTemplateDeclaration = node.children.some((child) =>
-      child instanceof nodes.Set &&
-      child.varType === 'declaration' &&
-      child.targets &&
-      child.targets[0] &&
-      child.targets[0].value === '__parentTemplate'
-    );
-    if (!this.scriptMode && hasExtendsNode && !hasParentTemplateDeclaration) {
+    const hasExtendsNode = node.findAll(nodes.Extends).some((child) => !child.noParentLiteral);
+    if (!this.scriptMode && hasExtendsNode) {
       declares.push({ name: '__parentTemplate', type: 'var', initializer: null, internal: true });
     }
 

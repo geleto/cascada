@@ -7,7 +7,6 @@ let Context;
 let StringLoader;
 let runtime;
 let InheritanceState;
-let InheritanceMethodRegistry;
 let inheritanceStateModule;
 
 if (typeof require !== 'undefined') {
@@ -21,11 +20,9 @@ if (typeof require !== 'undefined') {
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
     InheritanceState = inheritanceStateModule.InheritanceState;
-    InheritanceMethodRegistry = inheritanceStateModule.InheritanceMethodRegistry;
   } catch (err) {
     void err;
     InheritanceState = null;
-    InheritanceMethodRegistry = null;
   }
 } else {
   expect = window.expect;
@@ -35,7 +32,6 @@ if (typeof require !== 'undefined') {
   StringLoader = window.util.StringLoader;
   runtime = nunjucks.runtime;
   InheritanceState = null;
-  InheritanceMethodRegistry = null;
 }
 
 describe('Extends Runtime', function () {
@@ -622,7 +618,7 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         const events = [];
-        const originalRegisterCompiledMethods = InheritanceMethodRegistry.prototype.registerCompiled;
+        const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
         const originalEnsureInvocationBuffer = runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
         let buildInvocationCreatedAt = -1;
 
@@ -634,11 +630,11 @@ describe('Extends Runtime', function () {
           return originalEnsureInvocationBuffer.apply(this, arguments);
         };
 
-        InheritanceMethodRegistry.prototype.registerCompiled = function(methods) {
+        inheritanceStateModule.registerInheritanceMethods = function(state, methods) {
           if (methods && methods.build && methods.build.ownerKey === 'A.script') {
             events.push({ type: 'parent-build-registered' });
           }
-          return originalRegisterCompiledMethods.apply(this, arguments);
+          return originalRegisterInheritanceMethods.apply(this, arguments);
         };
 
         loader.addTemplate('A.script', [
@@ -667,7 +663,7 @@ describe('Extends Runtime', function () {
           expect(buildInvocationCreatedAt).to.be.greaterThan(-1);
           expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
         } finally {
-          InheritanceMethodRegistry.prototype.registerCompiled = originalRegisterCompiledMethods;
+          inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
           runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
         }
       });

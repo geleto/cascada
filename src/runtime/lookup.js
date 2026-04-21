@@ -9,7 +9,6 @@ const {
   RuntimePromise,
   collectErrors,
 } = require('./errors');
-const { LOOKUP_DYNAMIC_CHANNEL_LINKING } = require('../feature-flags');
 const inheritanceCall = require('./inheritance-call');
 const inheritanceState = require('./inheritance-state');
 
@@ -252,44 +251,17 @@ function _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, request
         currentBuffer && currentBuffer._context ? currentBuffer._context.path : null
       );
     }
-    if (LOOKUP_DYNAMIC_CHANNEL_LINKING) {
-      ensureReadChannelLink(currentBuffer, channel, requestedName);
-    }
   }
 }
 
-/**
- * Capture the current template symbol value for an explicit composition
- * boundary such as `extends ... with ...`.
- *
- * Unlike channelLookup(), this does not perform an ordered snapshot read.
- * It captures the value that exists at the current source position so the
- * caller can pass that plain value (or promise) through an explicit
- * composition payload.
- */
 function captureCompositionValue(_context, name, currentBuffer) {
-  const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
-    ? currentBuffer.findChannel(name)
-    : null;
-  if (channel) {
-    const captured = getCurrentCompositionChannelValue(channel);
-    if (captured !== COMPOSITION_CAPTURE_UNAVAILABLE) {
-      return captured;
-    }
+  const channelRead = currentBuffer && typeof currentBuffer.findChannel === 'function'
+    ? channelLookup(name, currentBuffer)
+    : undefined;
+  if (channelRead !== undefined) {
+    return channelRead;
   }
   return _context.lookup(name);
-}
-
-const COMPOSITION_CAPTURE_UNAVAILABLE = Symbol('COMPOSITION_CAPTURE_UNAVAILABLE');
-
-function getCurrentCompositionChannelValue(channel) {
-  if (!channel) {
-    return COMPOSITION_CAPTURE_UNAVAILABLE;
-  }
-  if (typeof channel.getTemporaryCompositionAssignedValue === 'function') {
-    return channel.getTemporaryCompositionAssignedValue();
-  }
-  return COMPOSITION_CAPTURE_UNAVAILABLE;
 }
 
 function _getObservationPosition(errorContext) {
@@ -409,19 +381,6 @@ function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext
   return context.lookupScript(name, errorContext);
 }
 
-function captureCompositionScriptValue(context, name, currentBuffer, errorContext = null) {
-  const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
-    ? currentBuffer.findChannel(name)
-    : null;
-  if (channel) {
-    const captured = getCurrentCompositionChannelValue(channel);
-    if (captured !== COMPOSITION_CAPTURE_UNAVAILABLE) {
-      return captured;
-    }
-  }
-  return context.lookupScript(name, errorContext);
-}
-
 // Ordinary var-channel lookup must not turn mere ancestry into ambient
 // cross-template visibility. Shared channels use explicit observation helpers.
 function isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel) {
@@ -443,21 +402,6 @@ function isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel) {
     return false;
   }
   return true;
-}
-
-// Dynamically links the current read buffer into the target channel lane once.
-// This is used only when LOOKUP_DYNAMIC_CHANNEL_LINKING is enabled.
-function ensureReadChannelLink(currentBuffer, channel, channelName) {
-  if (channel._buffer === currentBuffer) {
-    return;
-  }
-  const parent = currentBuffer.parent;
-  currentBuffer._readChannelLinks = currentBuffer._readChannelLinks || Object.create(null);
-  if (currentBuffer._readChannelLinks[channelName]) {
-    return;
-  }
-  parent.addBuffer(currentBuffer, channelName);
-  currentBuffer._readChannelLinks[channelName] = true;
 }
 
 // Returns true when `ancestor` is on the parent chain of `buffer`.
@@ -518,5 +462,4 @@ module.exports = {
   contextOrExternLookup,
   captureCompositionValue,
   contextOrScriptChannelLookup,
-  captureCompositionScriptValue,
 };

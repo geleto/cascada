@@ -335,7 +335,7 @@ function _createAdmissionBarrier(context, runtime, currentBuffer, linkedChannels
 function _linkBarrierChannel(currentBuffer, barrierBuffer, channelName) {
   if (!channelName || !currentBuffer || !barrierBuffer || barrierBuffer === currentBuffer) {
     // `barrierBuffer === currentBuffer` only occurs in the pre-seeded
-    // invocation-buffer compatibility hook used by later-phase tests.
+    // invocation-buffer hook used by focused tests.
     if (barrierBuffer && channelName) {
       barrierBuffer._registerLinkedChannel(channelName);
     }
@@ -492,8 +492,8 @@ class InheritanceAdmissionCommand extends Command {
       return this.invocationBuffer;
     }
 
-    // Compatibility hook for tests and later cleanup phases: when a caller
-    // pre-seeds an invocation buffer, we only finish the late channel wiring.
+    // Focused tests may pre-seed an invocation buffer; in that case we only
+    // need to finish the late channel wiring here.
     if (this.invocationBuffer !== this.barrierBuffer && this.barrierBuffer) {
       for (let i = 0; i < linkedChannels.length; i++) {
         const channelName = linkedChannels[i];

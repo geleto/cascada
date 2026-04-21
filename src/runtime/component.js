@@ -400,9 +400,8 @@ async function createComponentInstance(
   const constructorBoundaryPromise =
     componentInheritanceState && componentInheritanceState.constructorBoundaryPromise;
   if (constructorBoundaryPromise && typeof constructorBoundaryPromise.then === 'function') {
-    // Phase 8 keeps component construction on the conservative side by waiting
-    // for constructor startup to settle before exposing the instance. Revisit
-    // this eager wait once the later shared caller-side lifecycle model lands.
+    // Components are only exposed after constructor startup settles so callers
+    // never observe a half-initialized instance.
     await constructorBoundaryPromise;
   }
 

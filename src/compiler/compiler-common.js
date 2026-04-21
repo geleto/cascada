@@ -40,7 +40,8 @@ class CompilerCommon extends Obj {
     this.templateName = typeof options.templateName === 'string' ? options.templateName : undefined;
     this.hasExtends = false;
     this.inBlock = false;
-    this.currentCompilingBlock = null;
+    this.currentCallableDefinition = null;
+    this.isCompilingCallableEntry = false;
     this.sequential = new CompileSequential(this);
     this.emit = new CompileEmit(this);
     this.async = null;
@@ -541,10 +542,10 @@ class CompilerCommon extends Obj {
     if (!node || typeof node.findAll !== 'function') {
       return [];
     }
-    // Temporary bridge while some async template/shared-declaration paths still
-    // surface raw ChannelDeclaration nodes instead of a single transformed
-    // inheritance-metadata source. The cleanup plan removes this dual-source
-    // lookup once templates and scripts share one metadata pipeline.
+    // Transitional bridge: some async-template paths still surface shared
+    // declarations directly on the raw AST instead of through one
+    // authoritative transformed inheritance-metadata source. Keep this narrow
+    // and metadata-only until the later cleanup phase removes the fallback.
     return node.findAll(nodes.ChannelDeclaration).filter((child) => !!(child && child.isShared));
   }
 

@@ -271,9 +271,8 @@ module.exports = {
   createCommandBuffer: buffer.createCommandBuffer,
   waitForCurrentBufferChannel: buffer.waitForCurrentBufferChannel,
   InheritanceState: inheritanceState.InheritanceState,
-  InheritanceMethodRegistry: inheritanceState.InheritanceMethodRegistry,
-  InheritanceSharedRegistry: inheritanceState.InheritanceSharedRegistry,
   InheritanceResolutionState: inheritanceState.InheritanceResolutionState,
+  createInheritanceMethodsTable: inheritanceState.createInheritanceMethodsTable,
   createInheritanceState: inheritanceState.createInheritanceState,
   createPendingInheritanceEntry: inheritanceState.createPendingInheritanceEntry,
   isPendingInheritanceEntry: inheritanceState.isPendingInheritanceEntry,
@@ -307,7 +306,6 @@ module.exports = {
   contextOrExternLookup: lookup.contextOrExternLookup,
   captureCompositionValue: lookup.captureCompositionValue,
   contextOrScriptChannelLookup: lookup.contextOrScriptChannelLookup,
-  captureCompositionScriptValue: lookup.captureCompositionScriptValue,
 
   isArray: lib.isArray,
   keys: lib.keys,

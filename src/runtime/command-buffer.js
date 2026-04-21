@@ -196,7 +196,6 @@ class CommandBuffer {
     if (!this.arrays[resolvedChannelName]) {
       this.arrays[resolvedChannelName] = [];
     }
-    this._recordTemporaryCompositionAssignedValue(resolvedChannelName, value);
     const target = this.arrays[resolvedChannelName];
     target.push(value);
     const slot = target.length - 1;
@@ -451,21 +450,6 @@ class CommandBuffer {
   getOwnChannel(channelName = 'text') {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     return this._ownedChannels[resolvedChannelName];
-  }
-
-  _recordTemporaryCompositionAssignedValue(resolvedChannelName, value) {
-    const ownedChannel = this._ownedChannels[resolvedChannelName];
-    if (!ownedChannel || typeof ownedChannel.recordTemporaryCompositionAssignedValue !== 'function') {
-      return;
-    }
-    if (!(value instanceof VarCommand)) {
-      return;
-    }
-    ownedChannel.recordTemporaryCompositionAssignedValue(
-      Array.isArray(value.arguments) && value.arguments.length > 0
-        ? value.arguments[0]
-        : undefined
-    );
   }
 
   findChannel(channelName = 'text') {
