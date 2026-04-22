@@ -510,14 +510,11 @@ class CompileInheritance {
 
   emitScriptRootLeafResult(node) {
     const returnVar = this.compiler._tmpid();
-    if (this.compiler.hasExtends) {
-      // The boundary promise gates root-buffer finalization. `getFinishedPromise()`
-      // also waits on child buffers, but we must not mark the root buffer finished
-      // until the extends boundary has linked the parent work into the tree.
-      this.emit.line(`    if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
-      this.emit.line(`      await ${INHERITANCE_STARTUP_PROMISE_VAR};`);
-      this.emit.line('    }');
-    }
+    // Startup work can now come from more than just extends-parent loading, so
+    // root finalization must key off the actual pending startup promise.
+    this.emit.line(`    if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
+    this.emit.line(`      await ${INHERITANCE_STARTUP_PROMISE_VAR};`);
+    this.emit.line('    }');
     this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, node, returnVar);
     this.emit.line(`    await ${this.compiler.buffer.currentBuffer}.getFinishedPromise();`);
     this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) {`);
@@ -528,11 +525,9 @@ class CompileInheritance {
   }
 
   emitAsyncTemplateRootLeafResult() {
-    if (this.compiler.hasExtends) {
-      this.emit.line(`    if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
-      this.emit.line(`      await ${INHERITANCE_STARTUP_PROMISE_VAR};`);
-      this.emit.line('    }');
-    }
+    this.emit.line(`    if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
+    this.emit.line(`      await ${INHERITANCE_STARTUP_PROMISE_VAR};`);
+    this.emit.line('    }');
     if (this.compiler.hasDeferredDynamicExtends) {
       this._emitDynamicTemplateParentRender(`    `);
     }
@@ -542,8 +537,11 @@ class CompileInheritance {
   }
 
   _emitParentRootRender({ indent = '', templateExpr, compositionPayloadExpr, currentBufferExpr }) {
+    const helperName = this.compiler.scriptMode
+      ? 'bootstrapInheritanceParentScript'
+      : 'renderInheritanceParentRoot';
     this.emit.line(
-      `${indent}await runtime.renderInheritanceParentRoot(` +
+      `${indent}await runtime.${helperName}(` +
       `${templateExpr}, ${compositionPayloadExpr}, context, env, runtime, cb, ${currentBufferExpr}, inheritanceState);`
     );
   }
@@ -570,40 +568,36 @@ class CompileInheritance {
     this.emit.line(`} else if (compositionMode === runtime.COMPONENT_COMPOSITION_MODE) {`);
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('} else {');
-    if (this.compiler.hasExtends) {
-      this.emit.line(`  if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
-      this.emit.line(`    ${INHERITANCE_STARTUP_PROMISE_VAR} = ${INHERITANCE_STARTUP_PROMISE_VAR}.then(async () => {`);
-      if (this.compiler.hasDeferredDynamicExtends) {
-        this._emitDynamicTemplateParentRender(`      `);
-      }
+    this.emit.line(`  if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
+    this.emit.line(`    ${INHERITANCE_STARTUP_PROMISE_VAR} = ${INHERITANCE_STARTUP_PROMISE_VAR}.then(async () => {`);
+    if (this.compiler.hasDeferredDynamicExtends) {
+      this._emitDynamicTemplateParentRender(`      `);
+    }
+    this.emit.line(`      ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
+    this.emit.line('    }).catch((e) => {');
+    this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
+    this.emit.line('      cb(err);');
+    this.emit.line('    });');
+    this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${INHERITANCE_STARTUP_PROMISE_VAR});`);
+    this.emit.line('  } else {');
+    if (this.compiler.hasDeferredDynamicExtends) {
+      const finishPromiseVar = this.compiler._tmpid();
+      this.emit.line(`    const ${finishPromiseVar} = (async () => {`);
+      this._emitDynamicTemplateParentRender(`      `);
       this.emit.line(`      ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
       this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
-      this.emit.line('    }).catch((e) => {');
+      this.emit.line('    })();');
+      this.emit.line(`    ${INHERITANCE_STARTUP_PROMISE_VAR} = ${finishPromiseVar};`);
+      this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${finishPromiseVar});`);
+      this.emit.line(`    ${finishPromiseVar}.catch((e) => {`);
       this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
       this.emit.line('      cb(err);');
       this.emit.line('    });');
-      this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${INHERITANCE_STARTUP_PROMISE_VAR});`);
-      this.emit.line('  } else {');
-      if (this.compiler.hasDeferredDynamicExtends) {
-        const finishPromiseVar = this.compiler._tmpid();
-        this.emit.line(`    const ${finishPromiseVar} = (async () => {`);
-        this._emitDynamicTemplateParentRender(`      `);
-        this.emit.line(`      ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
-        this.emit.line('    })();');
-        this.emit.line(`    ${INHERITANCE_STARTUP_PROMISE_VAR} = ${finishPromiseVar};`);
-        this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${finishPromiseVar});`);
-        this.emit.line(`    ${finishPromiseVar}.catch((e) => {`);
-        this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
-        this.emit.line('      cb(err);');
-        this.emit.line('    });');
-      } else {
-        this.emit.line(`    ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      }
-      this.emit.line('  }');
     } else {
-      this.emit.line(`  ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      this.emit.line(`    ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
     }
+    this.emit.line('  }');
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('}');
   }

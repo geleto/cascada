@@ -1025,6 +1025,53 @@ describe('Extends Foundation', function () {
       expect(methodSource).to.contain('runtime.bootstrapInheritanceMetadata(');
     });
 
+    it('should wait for late startup work before finalizing a plain root that uses inheritance startup', async function () {
+      const originalRunCompiledRootStartup = runtime.runCompiledRootStartup;
+
+      runtime.runCompiledRootStartup = function(setupRenderFunc, compiledMethods, inheritanceStateArg, envArg, contextArg, runtimeArg, cbArg, outputArg, extendsStateArg, optionsArg) {
+        const startupPromise = originalRunCompiledRootStartup(
+          setupRenderFunc,
+          compiledMethods,
+          inheritanceStateArg,
+          envArg,
+          contextArg,
+          runtimeArg,
+          cbArg,
+          outputArg,
+          extendsStateArg,
+          optionsArg
+        );
+
+        const latePromise = Promise.resolve(startupPromise).then(() => new Promise((resolve, reject) => {
+          setTimeout(() => {
+            try {
+              outputArg.add(new runtimeArg.VarCommand({
+                channelName: '__return__',
+                args: ['late'],
+                pos: { lineno: 1, colno: 0 }
+              }), '__return__');
+              resolve('late');
+            } catch (error) {
+              reject(error);
+            }
+          }, 10);
+        }));
+
+        return runtimeArg.mergeInheritanceStartupPromise(inheritanceStateArg, latePromise, startupPromise);
+      };
+
+      try {
+        const result = await env.renderScriptString(
+          'method noop()\n  return none\nendmethod\nreturn "early"',
+          {}
+        );
+
+        expect(result).to.be('late');
+      } finally {
+        runtime.runCompiledRootStartup = originalRunCompiledRootStartup;
+      }
+    });
+
     it('should reuse the existing inheritance state when a parent root renders for composition', async function () {
       const childScript = new Script('extends "A.script"\nreturn this.build("Ada")', env, 'C.script');
       const parentScript = new Script('method build(name)\n  return "A:" + name\nendmethod\nreturn null', env, 'A.script');

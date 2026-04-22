@@ -7,6 +7,7 @@
   var Context;
   var StringLoader;
   var DEFAULT_TEMPLATE_TEXT_OUTPUT;
+  var runtime;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -16,12 +17,14 @@
     Context = envModule.Context;
     StringLoader = require('../util').StringLoader;
     DEFAULT_TEMPLATE_TEXT_OUTPUT = require('../../src/compiler/buffer').DEFAULT_TEMPLATE_TEXT_OUTPUT;
+    runtime = require('../../src/runtime/runtime');
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     AsyncTemplate = nunjucks.AsyncTemplate;
     Context = nunjucks.Context;
     StringLoader = window.util.StringLoader;
+    runtime = nunjucks.runtime;
   }
 
   describe('Async template command buffering parity', function () {
@@ -157,30 +160,55 @@
       expect(source).to.contain('context.setVariable("theme"');
     });
 
-    it('should resolve deferred exports without emitting visibility-link compatibility calls', function () {
+    it('should resolve deferred exports through the normal render path', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
 
-      const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'deferred-export-producer-records.njk');
-      const source = tmpl._compileSource();
-
-      expect(source).to.contain('context.addDeferredExport("m", "m", output);');
-      expect(source).to.contain('context.resolveExports();');
-      expect(source).to.not.contain('context.linkDeferredExportsToBuffer(');
-      expect(source).to.not.contain('linkVisibleChannel(');
+      const result = await env.renderTemplateString('{% import "macros.njk" as m %}{{ m.hi("x") }}');
+      expect(result).to.be('Hi x');
     });
 
-    it('should guard template deferred export resolution when rendering in component mode', function () {
+    it('should skip deferred export resolution when rendering in component mode', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
 
       const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'component-mode-export-guard.njk');
-      const source = tmpl._compileSource();
+      tmpl.compile();
 
-      expect(source).to.contain('if (!runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE)) {');
-      expect(source).to.contain('  context.resolveExports();');
+      const context = tmpl._createContext({});
+      let resolveCount = 0;
+      context.resolveExports = function () {
+        resolveCount += 1;
+        throw new Error('resolveExports should be skipped in component mode');
+      };
+      const buffer = runtime.createCommandBuffer(context, null, null, null);
+      runtime.declareBufferChannel(buffer, DEFAULT_TEMPLATE_TEXT_OUTPUT, 'text', context, null);
+      const inheritanceState = runtime.createInheritanceState();
+      inheritanceState.sharedRootBuffer = buffer;
+      runtime.setInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE);
+
+      let callbackError = null;
+      tmpl.rootRenderFunc(
+        env,
+        context,
+        runtime,
+        function (err) {
+          callbackError = err || null;
+        },
+        runtime.COMPONENT_COMPOSITION_MODE,
+        buffer,
+        inheritanceState
+      );
+
+      const startupPromise = runtime.awaitInheritanceStartup(inheritanceState);
+      if (startupPromise && typeof startupPromise.then === 'function') {
+        await startupPromise;
+      }
+
+      expect(resolveCount).to.be(0);
+      expect(callbackError).to.be(null);
     });
 
     it('should assert when a deferred export is missing its explicit producer record', function () {

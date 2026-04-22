@@ -1351,18 +1351,10 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
     this.emit.line(`const extendsState = ${(!this.scriptMode && this.hasDynamicExtends) ? '{ parentSelection: null }' : 'null'};`);
     this.emit.line(
-      `${INHERITANCE_STARTUP_PROMISE_VAR} = b___setup__(` +
-      `env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, extendsState);`
+      `${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.runCompiledRootStartup(` +
+      `b___setup__, ${COMPILED_METHODS_VAR}, inheritanceState, env, context, runtime, cb, ${this.buffer.currentBuffer}, ` +
+      `${this.scriptMode ? 'null' : 'extendsState'}, { resolveExports: true });`
     );
-    this.emit.line(
-      `${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.startInheritanceRootConstructor(` +
-      `${COMPILED_METHODS_VAR}, inheritanceState, env, context, runtime, cb, ${this.buffer.currentBuffer}, ` +
-      `${this.scriptMode ? 'null' : 'extendsState'}, ` +
-      `${INHERITANCE_STARTUP_PROMISE_VAR});`
-    );
-    this.emit.line('if (!runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE)) {');
-    this.emit.line('  context.resolveExports();');
-    this.emit.line('}');
     this.inheritance.emitAsyncRootCompletion(node);
   }
 
@@ -1460,6 +1452,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
     this.emit.line('return {');
+    this.emit.line('setup: b___setup__,');
     blocks.forEach((block) => {
       const blockName = `b_${block.name.value}`;
       this.emit.line(`${blockName}: ${blockName},`);
@@ -1468,6 +1461,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line(`methods: ${COMPILED_METHODS_VAR},`);
     this.emit.line(`sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
+    this.emit.line(`hasExtends: ${this.hasExtends ? 'true' : 'false'},`);
     this.emit.line('root: root\n};');
   }
 

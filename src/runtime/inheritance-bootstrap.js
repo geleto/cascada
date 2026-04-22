@@ -95,6 +95,67 @@ async function renderInheritanceParentRoot(
   return parentOutputBuffer;
 }
 
+async function bootstrapInheritanceParentScript(
+  scriptOrPromise,
+  compositionPayload,
+  context,
+  env,
+  runtimeApi,
+  cb,
+  currentBuffer,
+  inheritanceStateValue
+) {
+  const parentScript = await runtimeApi.resolveSingle(scriptOrPromise);
+  if (parentScript === null || parentScript === undefined) {
+    return null;
+  }
+
+  parentScript.compile();
+
+  const parentContext = compositionPayload
+    ? context.forkForComposition(
+        parentScript.path,
+        compositionPayload.rootContext || {},
+        context.getRenderContextVariables(),
+        compositionPayload.externContext || {}
+      )
+    : context.forkForPath(parentScript.path);
+
+  if (typeof parentScript.setupRenderFunc !== 'function') {
+    throw new Error('Parent script did not expose a compiled setupRenderFunc');
+  }
+
+  runtimeApi.bootstrapInheritanceMetadata(
+    inheritanceStateValue,
+    parentScript.methods || {},
+    parentScript.sharedSchema || {},
+    currentBuffer,
+    parentContext
+  );
+  if (!parentScript.hasExtends) {
+    runtimeApi.finalizeInheritanceMetadata(inheritanceStateValue, parentContext);
+  }
+
+  const startupPromise = runtimeApi.runCompiledRootStartup(
+    parentScript.setupRenderFunc,
+    parentScript.methods || {},
+    inheritanceStateValue,
+    env,
+    parentContext,
+    runtimeApi,
+    cb,
+    currentBuffer,
+    null,
+    { resolveExports: true }
+  );
+
+  if (startupPromise && typeof startupPromise.then === 'function') {
+    await startupPromise;
+  }
+
+  return currentBuffer;
+}
+
 function getLocalRootConstructorEntry(compiledMethods) {
   const methods = compiledMethods && typeof compiledMethods === 'object' ? compiledMethods : null;
   return methods && Object.prototype.hasOwnProperty.call(methods, '__constructor__')
@@ -138,6 +199,52 @@ function startInheritanceRootConstructor(
   return currentStartupPromise && typeof currentStartupPromise.then === 'function'
     ? currentStartupPromise
     : null;
+}
+
+function runCompiledRootStartup(
+  setupRenderFunc,
+  compiledMethods,
+  inheritanceStateValue,
+  env,
+  context,
+  runtime,
+  cb,
+  output,
+  extendsState = null,
+  options = null
+) {
+  const opts = options && typeof options === 'object' ? options : {};
+  let startupPromise = null;
+
+  if (typeof setupRenderFunc === 'function') {
+    startupPromise = setupRenderFunc(
+      env,
+      context,
+      runtime,
+      cb,
+      output,
+      inheritanceStateValue,
+      extendsState
+    );
+  }
+
+  startupPromise = startInheritanceRootConstructor(
+    compiledMethods,
+    inheritanceStateValue,
+    env,
+    context,
+    runtime,
+    cb,
+    output,
+    extendsState,
+    startupPromise
+  );
+
+  if (opts.resolveExports && !runtime.isInheritanceCompositionMode(inheritanceStateValue, runtime.COMPONENT_COMPOSITION_MODE)) {
+    context.resolveExports();
+  }
+
+  return startupPromise;
 }
 
 function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames) {
@@ -191,8 +298,10 @@ function finalizeInheritanceMetadata(state, context = null) {
 
 module.exports = {
   bootstrapInheritanceMetadata,
+  bootstrapInheritanceParentScript,
   invokeLocalRootConstructor,
   startInheritanceRootConstructor,
+  runCompiledRootStartup,
   renderInheritanceParentRoot,
   waitForParentRootRender,
   linkCurrentBufferToParentChannels,
