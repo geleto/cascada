@@ -2,28 +2,33 @@
 
 let expect;
 let AsyncEnvironment;
+let Script;
 let StringLoader;
 let runtimeModule;
 let InheritanceState;
 let inheritanceStateModule;
 let ComponentInstance;
 let ComponentOperationCommand;
+let ObserveSharedChannelCommand;
 let inheritanceCallModule;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
+  Script = environment.Script;
   StringLoader = require('../util').StringLoader;
   runtimeModule = require('../../src/runtime/runtime');
   try {
     const componentRuntime = require('../../src/runtime/component');
     ComponentInstance = componentRuntime.ComponentInstance;
     ComponentOperationCommand = componentRuntime.ComponentOperationCommand;
+    ObserveSharedChannelCommand = componentRuntime.ObserveSharedChannelCommand;
   } catch (err) {
     void err;
     ComponentInstance = null;
     ComponentOperationCommand = null;
+    ObserveSharedChannelCommand = null;
   }
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
@@ -41,11 +46,13 @@ if (typeof require !== 'undefined') {
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
+  Script = null;
   StringLoader = window.util.StringLoader;
   runtimeModule = nunjucks.runtime;
   InheritanceState = null;
   ComponentInstance = null;
   ComponentOperationCommand = null;
+  ObserveSharedChannelCommand = null;
   inheritanceCallModule = null;
 }
 
@@ -301,11 +308,11 @@ describe('Phase 8 - Component Method Calls', function () {
       const env = new AsyncEnvironment(loader);
       const events = [];
       const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
-      const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+      const originalEnsureInvocationBuffer = inheritanceCallModule.invocationInternals.ensureInvocationBuffer;
       let buildInvocationCreatedAt = -1;
 
-      inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
-        if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
+      inheritanceCallModule.invocationInternals.ensureInvocationBuffer = function(command, methodMeta) {
+        if (command.name === 'build' && methodMeta && methodMeta.ownerKey === 'A.script') {
           buildInvocationCreatedAt = events.length;
           events.push({ type: 'build-invocation-buffer-created' });
         }
@@ -341,11 +348,11 @@ describe('Phase 8 - Component Method Calls', function () {
         expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
       } finally {
         inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
-        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+        inheritanceCallModule.invocationInternals.ensureInvocationBuffer = originalEnsureInvocationBuffer;
       }
     });
 
-    it('should create unresolved component invocation buffers with the resolved method entry linkedChannels', async function () {
+    it('should create unresolved component invocation buffers with the resolved callable merged channels', async function () {
       if (!inheritanceCallModule) {
         this.skip();
         return;
@@ -353,15 +360,15 @@ describe('Phase 8 - Component Method Calls', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       let seenLinkedChannels = null;
-      const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+      const originalEnsureInvocationBuffer = inheritanceCallModule.invocationInternals.ensureInvocationBuffer;
 
-      inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+      inheritanceCallModule.invocationInternals.ensureInvocationBuffer = function(command, methodMeta) {
         const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
-        if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
+        if (command.name === 'build' && methodMeta && methodMeta.ownerKey === 'A.script') {
           seenLinkedChannels = {
-            methodLinkedChannels: Array.from(new Set([
-              ...(Array.isArray(methodEntry.usedChannels) ? methodEntry.usedChannels : []),
-              ...(Array.isArray(methodEntry.mutatedChannels) ? methodEntry.mutatedChannels : [])
+            mergedLinkedChannels: Array.from(new Set([
+              ...(Array.isArray(methodMeta.mergedUsedChannels) ? methodMeta.mergedUsedChannels : []),
+              ...(Array.isArray(methodMeta.mergedMutatedChannels) ? methodMeta.mergedMutatedChannels : [])
             ])),
             late: invocationBuffer.isLinkedChannel('late'),
             trace: invocationBuffer.isLinkedChannel('trace')
@@ -392,12 +399,12 @@ describe('Phase 8 - Component Method Calls', function () {
         const result = await env.renderScript('Main.script', {});
         expect(result).to.be('done');
         expect(seenLinkedChannels).to.be.ok();
-        expect(seenLinkedChannels.methodLinkedChannels).to.contain('trace');
-        expect(seenLinkedChannels.methodLinkedChannels).to.contain('late');
+        expect(seenLinkedChannels.mergedLinkedChannels).to.contain('trace');
+        expect(seenLinkedChannels.mergedLinkedChannels).to.contain('late');
         expect(seenLinkedChannels.trace).to.be(true);
         expect(seenLinkedChannels.late).to.be(true);
       } finally {
-        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+        inheritanceCallModule.invocationInternals.ensureInvocationBuffer = originalEnsureInvocationBuffer;
       }
     });
 
@@ -451,7 +458,7 @@ describe('Phase 8 - Component Method Calls', function () {
       expect(result).to.be('from-parent-ctor');
     });
 
-    it('should resolve parent-only shared error observations through isError() and getError()', async function () {
+    it('should resolve parent-only shared error observations through `is error` and `#`', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
@@ -470,8 +477,8 @@ describe('Phase 8 - Component Method Calls', function () {
       loader.addTemplate('Main.script', [
         'component "C.script" as ns',
         'var result = ns.breakStatus()',
-        'var hasError = ns.status.isError()',
-        'var err = ns.status.getError()',
+        'var hasError = ns.status is error',
+        'var err = ns.status#',
         'return [result, hasError, err.message]'
       ].join('\n'));
 
@@ -581,6 +588,22 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.be('dark');
   });
 
+  it('should let component methods read shared vars as ordinary declared names', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'shared var theme = "dark"',
+      'method readTheme()',
+      '  return theme',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', 'component "Component.script" as ns\nreturn ns.readTheme()');
+
+    const result = await env.renderScript('Main.script', {});
+    expect(result).to.be('dark');
+  });
+
   it('should read shared vars at the caller current position', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
@@ -624,7 +647,28 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.be('boot|call|');
   });
 
-  it('should observe shared var poison through component isError() and getError()', async function () {
+  it('should compile component shared observations through explicit observational commands', function () {
+    if (!Script) {
+      this.skip();
+      return;
+    }
+
+    const env = new AsyncEnvironment();
+    const script = new Script([
+      'component "Component.script" as ns',
+      'var snap = ns.log.snapshot()',
+      'var hasError = ns.status is error',
+      'var err = ns.status#',
+      'return [snap, hasError, err]'
+    ].join('\n'), env, 'Main.script');
+    const source = script._compileSource();
+
+    expect(source).to.contain('runtime.observeComponentChannel("ns", output, new runtime.SnapshotCommand({ channelName: "log"');
+    expect(source).to.contain('runtime.observeComponentChannel("ns", output, new runtime.IsErrorCommand({ channelName: "status"');
+    expect(source).to.contain('runtime.observeComponentChannel("ns", output, new runtime.GetErrorCommand({ channelName: "status"');
+  });
+
+  it('should observe shared var poison through component `is error` and `#`', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -639,14 +683,88 @@ describe('Phase 8 - Component Observations', function () {
     loader.addTemplate('Main.script', [
       'component "Component.script" as ns',
       'ns.breakStatus()',
-      'var hasError = ns.status.isError()',
-      'var err = ns.status.getError()',
+      'var hasError = ns.status is error',
+      'var err = ns.status#',
       'return [hasError, err.message]'
     ].join('\n'));
 
     const result = await env.renderScript('Main.script', {});
     expect(result[0]).to.be(true);
     expect(result[1]).to.contain('bad status');
+  });
+
+  it('should enqueue the exact observation command on the component shared root', async function () {
+    if (!ObserveSharedChannelCommand) {
+      this.skip();
+      return;
+    }
+
+    const makeContext = (path) => ({
+      path,
+      forkForComposition(nextPath) {
+        return makeContext(nextPath);
+      }
+    });
+
+    const ownerContext = makeContext('Main.script');
+    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
+
+    const sharedRootBuffer = runtimeModule.createCommandBuffer(makeContext('Component.script'), null, null, null);
+    runtimeModule.declareBufferChannel(sharedRootBuffer, 'status', 'var', ownerContext, null);
+    sharedRootBuffer.add(new runtimeModule.VarCommand({
+      channelName: 'status',
+      args: ['ok'],
+      pos: { lineno: 1, colno: 1 }
+    }), 'status');
+
+    const inheritanceState = runtimeModule.createInheritanceState();
+    inheritanceState.sharedRootBuffer = sharedRootBuffer;
+    inheritanceState.sharedSchema.status = 'var';
+
+    const componentInstance = new ComponentInstance({
+      context: makeContext('Component.script'),
+      rootBuffer: sharedRootBuffer,
+      inheritanceState,
+      template: null,
+      ownerBuffer
+    });
+
+    ownerBuffer.add(new runtimeModule.VarCommand({
+      channelName: 'nsBinding',
+      args: [componentInstance],
+      pos: { lineno: 1, colno: 1 }
+    }), 'nsBinding');
+
+    const seenAdds = [];
+    const originalAdd = sharedRootBuffer.add.bind(sharedRootBuffer);
+    sharedRootBuffer.add = function(value, channelName) {
+      seenAdds.push({ value, channelName });
+      return originalAdd(value, channelName);
+    };
+
+    const observationPromise = runtimeModule.observeComponentChannel(
+      'nsBinding',
+      ownerBuffer,
+      new runtimeModule.SnapshotCommand({
+        channelName: 'status',
+        pos: { lineno: 2, colno: 1 }
+      }),
+      { lineno: 2, colno: 1, path: 'Main.script' },
+      true
+    );
+
+    const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    ownerBuffer.markFinishedAndPatchLinks();
+    await bindingSnapshot;
+    const observed = await observationPromise;
+
+    sharedRootBuffer.add = originalAdd;
+
+    expect(observed).to.be('ok');
+    expect(seenAdds.length).to.be.greaterThan(0);
+    expect(seenAdds[0].channelName).to.be('status');
+    expect(seenAdds[0].value).to.be.a(runtimeModule.SnapshotCommand);
   });
 
   it('should keep two component instances isolated', async function () {
@@ -786,6 +904,30 @@ describe('Phase 8 - Component Observations', function () {
       expect(String(error)).to.match(/component binding 'ns' only supports/);
     }
   });
+
+  it('should reject component-only observation aliases and require `is error` / `#` syntax', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'shared var status = "ok"'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'var bad1 = ns.status.isError()',
+      'var bad2 = ns.status.getError()',
+      'return [bad1, bad2]'
+    ].join('\n'));
+
+    try {
+      await env.getScript('Main.script', true);
+      expect().fail('Expected component observation alias compile to fail');
+    } catch (error) {
+      expect(String(error)).to.match(/component binding 'ns' only supports/);
+      expect(String(error)).to.contain('ns.x is error');
+      expect(String(error)).to.contain('ns.x#');
+    }
+  });
 });
 
 describe('Phase 8 - Component Lifecycle', function () {
@@ -809,6 +951,49 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     const result = await env.renderScript('Main.script', {});
     expect(result).to.be('ctor|one|two|');
+  });
+
+  it('should start a component through an ancestor constructor when the child has no local constructor body', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('A.script', [
+      'shared text log',
+      'log("A|")'
+    ].join('\n'));
+    loader.addTemplate('C.script', [
+      'extends "A.script"'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "C.script" as ns',
+      'return ns.log.snapshot()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', {});
+    expect(result).to.be('A|');
+  });
+
+  it('should skip a constructorless middle component level and still run the ancestor constructor', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('A.script', [
+      'shared text log',
+      'log("A|")'
+    ].join('\n'));
+    loader.addTemplate('B.script', [
+      'extends "A.script"'
+    ].join('\n'));
+    loader.addTemplate('C.script', [
+      'extends "B.script"'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "C.script" as ns',
+      'return ns.log.snapshot()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', {});
+    expect(result).to.be('A|');
   });
 
   it('should keep the component shared root open until slow side-channel work finishes', async function () {
@@ -917,6 +1102,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       runtimeModule,
       () => {},
       ownerBuffer,
+      'nsBinding',
       { lineno: 1, colno: 1, path: 'Main.script' }
     );
 
@@ -929,7 +1115,6 @@ describe('Phase 8 - Component Lifecycle', function () {
     const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
     ownerBuffer.markFinishedAndPatchLinks();
     await bindingSnapshot;
-    await ownerBuffer.getFinishCompletePromise();
 
     expect(() => componentInstance.callMethod(
       'build',

@@ -2,10 +2,11 @@
 
 const { Command } = require('./commands');
 const { resolveSingle } = require('./resolve');
-const lookup = require('./lookup');
-const inheritanceCall = require('./inheritance-call');
+const {
+  ensureInheritanceSharedSchemaTable
+} = require('./inheritance-state');
 const inheritanceState = require('./inheritance-state');
-const { createCommandBuffer, waitForCurrentBufferChannel } = require('./command-buffer');
+const { createCommandBuffer } = require('./command-buffer');
 const { RuntimeFatalError } = require('./errors');
 
 const COMPONENT_COMPOSITION_MODE = Object.freeze({ kind: 'component-composition-mode' });
@@ -67,58 +68,6 @@ function _throwIfClosed(instance, errorContext) {
   throw _createComponentError('Component instance cannot accept new operations', errorContext);
 }
 
-async function _waitForComponentSharedChannels(sharedRootBuffer, stateValue, channelNames, errorContext = null) {
-  if (!sharedRootBuffer || !Array.isArray(channelNames) || channelNames.length === 0) {
-    return;
-  }
-
-  const pos = errorContext && typeof errorContext === 'object'
-    ? {
-      lineno: typeof errorContext.lineno === 'number' ? errorContext.lineno : 0,
-      colno: typeof errorContext.colno === 'number' ? errorContext.colno : 0
-    }
-    : { lineno: 0, colno: 0 };
-  const seen = new Set();
-  const waits = [];
-
-  for (let i = 0; i < channelNames.length; i++) {
-    const channelName = channelNames[i];
-    if (!channelName || channelName === '__return__' || seen.has(channelName)) {
-      continue;
-    }
-    seen.add(channelName);
-
-    let channel = typeof sharedRootBuffer.findChannel === 'function'
-      ? sharedRootBuffer.findChannel(channelName)
-      : null;
-    if (!channel) {
-      const sharedSchema = stateValue && stateValue.sharedSchema && typeof stateValue.sharedSchema === 'object'
-        ? stateValue.sharedSchema
-        : null;
-      if (sharedSchema && Object.prototype.hasOwnProperty.call(sharedSchema, channelName)) {
-        await inheritanceCall.resolveInheritanceSharedChannel(stateValue, channelName, errorContext);
-        channel = typeof sharedRootBuffer.findChannel === 'function'
-          ? sharedRootBuffer.findChannel(channelName)
-          : null;
-        if (!channel) {
-          throw _createComponentError(
-            `Shared channel '${channelName}' was registered without an observable runtime channel`,
-            errorContext
-          );
-        }
-      } else {
-        continue;
-      }
-    }
-
-    waits.push(waitForCurrentBufferChannel(sharedRootBuffer, channelName, pos));
-  }
-
-  if (waits.length > 0) {
-    await Promise.all(waits);
-  }
-}
-
 class ComponentInstance {
   constructor({
     context,
@@ -158,7 +107,7 @@ class ComponentInstance {
   callMethod(methodName, args, runtime, cb, errorContext = null) {
     this._throwIfUnavailable(errorContext);
     const sharedRootBuffer = this._getSharedRootBuffer();
-    const result = runtime.invokeInheritedMethod(
+    return runtime.invokeInheritedMethod(
       this.inheritanceState,
       methodName,
       Array.isArray(args) ? args : [],
@@ -168,41 +117,6 @@ class ComponentInstance {
       cb,
       sharedRootBuffer,
       errorContext
-    );
-    // `invokeInheritedMethod(...)` returns the observable method result promise
-    // and exposes `result.completion` plus `result.resolvedMethodMeta` for
-    // callers that must also wait for admission teardown and then observe the
-    // resolved linked-channel set without re-running inheritance resolution.
-    if (
-      result &&
-      typeof result.then === 'function' &&
-      result.completion &&
-      typeof result.completion.then === 'function' &&
-      result.resolvedMethodMeta &&
-      typeof result.resolvedMethodMeta.then === 'function'
-    ) {
-      return result.completion.then(() => result.resolvedMethodMeta).then((methodMeta) => {
-        return _waitForComponentSharedChannels(
-          sharedRootBuffer,
-          this.inheritanceState,
-          methodMeta && methodMeta.linkedChannels,
-          errorContext
-        );
-      }).then(() => result);
-    }
-    return result;
-  }
-
-  observeChannel(channelName, runtime, errorContext = null, mode = 'snapshot', implicitVarRead = false) {
-    this._throwIfUnavailable(errorContext);
-    const sharedRootBuffer = this._getSharedRootBuffer();
-    return lookup.observeInheritanceSharedChannel(
-      channelName,
-      sharedRootBuffer,
-      errorContext,
-      this.inheritanceState,
-      mode,
-      implicitVarRead
     );
   }
 
@@ -217,29 +131,55 @@ class ComponentInstance {
   }
 }
 
+function _validateSharedObservationCommand(observationCommand, errorContext = null) {
+  if (
+    !observationCommand ||
+    typeof observationCommand !== 'object' ||
+    !observationCommand.isSnapshotCommand ||
+    !observationCommand.channelName
+  ) {
+    throw _createComponentError('Component shared observation requires an observational channel command', errorContext);
+  }
+  return observationCommand;
+}
+
+function _enqueueSharedObservation(instance, observationCommand, errorContext = null, implicitVarRead = false) {
+  instance._throwIfUnavailable(errorContext);
+  const command = _validateSharedObservationCommand(observationCommand, errorContext);
+  const channelName = command.channelName;
+  const sharedSchema = ensureInheritanceSharedSchemaTable(instance.inheritanceState || {});
+  const channelType = Object.prototype.hasOwnProperty.call(sharedSchema, channelName)
+    ? sharedSchema[channelName]
+    : null;
+
+  if (!channelType) {
+    throw _createComponentError(`Shared channel '${channelName}' was not found`, errorContext);
+  }
+  if (implicitVarRead && channelType !== 'var') {
+    throw _createComponentError(
+      `Shared channel '${channelName}' cannot be used as a bare symbol. Use '${channelName}.snapshot()' instead.`,
+      errorContext
+    );
+  }
+
+  const sharedRootBuffer = instance._getSharedRootBuffer();
+  sharedRootBuffer.add(command, channelName);
+  return command.promise;
+}
+
 class ComponentOperationCommand extends Command {
   constructor({
-    channelName,
     operation,
     methodName = null,
-    channelToObserve = null,
-    mode = 'snapshot',
-    implicitVarRead = false,
     args = null,
-    env = null,
     runtime = null,
     cb = null,
     errorContext = null
   }) {
     super({ withDeferredResult: operation !== 'close' });
-    this.channelName = channelName;
     this.operation = operation;
     this.methodName = methodName;
-    this.channelToObserve = channelToObserve;
-    this.mode = mode;
-    this.implicitVarRead = !!implicitVarRead;
     this.args = Array.isArray(args) ? args : [];
-    this.env = env;
     this.runtime = runtime;
     this.cb = cb;
     this.errorContext = errorContext;
@@ -286,14 +226,6 @@ class ComponentOperationCommand extends Command {
           this.cb,
           this.errorContext
         );
-      } else if (this.operation === 'observe') {
-        result = instance.observeChannel(
-          this.channelToObserve,
-          this.runtime,
-          this.errorContext,
-          this.mode,
-          this.implicitVarRead
-        );
       } else {
         throw _createComponentError(`Unknown component operation '${this.operation}'`, this.errorContext);
       }
@@ -301,6 +233,52 @@ class ComponentOperationCommand extends Command {
       const resolvedResult = await result;
       this.resolveResult(resolvedResult);
       return resolvedResult;
+    } catch (error) {
+      this.rejectResult(error);
+      throw error;
+    }
+  }
+}
+
+class ObserveSharedChannelCommand extends Command {
+  constructor({
+    observationCommand,
+    errorContext = null,
+    implicitVarRead = false
+  }) {
+    super({ withDeferredResult: true });
+    this.observationCommand = observationCommand;
+    this.errorContext = errorContext;
+    this.implicitVarRead = !!implicitVarRead;
+    this.isObservable = false;
+  }
+
+  async _resolveComponentInstance(bindingValue) {
+    const resolvedValue = await resolveSingle(bindingValue);
+    if (!(resolvedValue instanceof ComponentInstance)) {
+      throw _createComponentError('Component binding is not a component instance', this.errorContext);
+    }
+    return resolvedValue;
+  }
+
+  apply(outputChannel) {
+    const bindingValue = outputChannel && typeof outputChannel._getTarget === 'function'
+      ? outputChannel._getTarget()
+      : undefined;
+    return this._run(bindingValue);
+  }
+
+  async _run(bindingValue) {
+    try {
+      const instance = await this._resolveComponentInstance(bindingValue);
+      const result = await _enqueueSharedObservation(
+        instance,
+        this.observationCommand,
+        this.errorContext,
+        this.implicitVarRead
+      );
+      this.resolveResult(result);
+      return result;
     } catch (error) {
       this.rejectResult(error);
       throw error;
@@ -316,8 +294,14 @@ async function createComponentInstance(
   runtime,
   cb,
   ownerBuffer,
+  bindingName = null,
   errorContext = null
 ) {
+  if (bindingName && typeof bindingName === 'object' && errorContext === null) {
+    errorContext = bindingName;
+    bindingName = null;
+  }
+
   const template = await resolveSingle(templateOrPromise);
   if (!template) {
     throw _createComponentError('Component target did not resolve to a script or template', errorContext);
@@ -397,24 +381,27 @@ async function createComponentInstance(
     }
   }
 
-  const constructorBoundaryPromise =
-    inheritanceState.getInheritanceConstructorBoundaryPromise(componentInheritanceState);
-  if (constructorBoundaryPromise && typeof constructorBoundaryPromise.then === 'function') {
-    // Components are only exposed after constructor startup settles so callers
-    // never observe a half-initialized instance.
+  // Components are only exposed after constructor startup settles so callers
+  // never observe a half-initialized instance.
+  const constructorBoundaryPromise = runtime.awaitInheritanceConstructorBoundary(componentInheritanceState);
+  if (constructorBoundaryPromise) {
     await constructorBoundaryPromise;
   }
 
-  let ownerCompletionPromise = null;
-  if (ownerBuffer) {
-    if (typeof ownerBuffer.getFinishCompletePromise !== 'function') {
-      throw new Error('Component owner buffer must expose getFinishCompletePromise()');
+  let ownerBindingSnapshot = null;
+  if (
+    ownerBuffer &&
+    bindingName &&
+    typeof ownerBuffer.getChannel === 'function'
+  ) {
+    const bindingChannel = ownerBuffer.getChannel(bindingName);
+    if (bindingChannel && typeof bindingChannel.finalSnapshot === 'function') {
+      ownerBindingSnapshot = bindingChannel.finalSnapshot();
     }
-    ownerCompletionPromise = ownerBuffer.getFinishCompletePromise();
   }
 
-  if (ownerCompletionPromise && typeof ownerCompletionPromise.then === 'function') {
-    ownerCompletionPromise.then(() => {
+  if (ownerBindingSnapshot && typeof ownerBindingSnapshot.then === 'function') {
+    ownerBindingSnapshot.then(() => {
       instance.close();
     }, () => {
       instance.close();
@@ -432,13 +419,11 @@ function _enqueueComponentOperation(command, currentBuffer, bindingName) {
   return command.promise;
 }
 
-function callComponentMethod(bindingName, currentBuffer, methodName, args, env, runtime, cb, errorContext = null) {
+function callComponentMethod(bindingName, currentBuffer, methodName, args, runtime, cb, errorContext = null) {
   const command = new ComponentOperationCommand({
-    channelName: bindingName,
     operation: 'method',
     methodName,
     args,
-    env,
     runtime,
     cb,
     errorContext
@@ -446,23 +431,23 @@ function callComponentMethod(bindingName, currentBuffer, methodName, args, env, 
   return _enqueueComponentOperation(command, currentBuffer, bindingName);
 }
 
-function observeComponentChannel(bindingName, currentBuffer, channelName, runtime, errorContext = null, mode = 'snapshot', implicitVarRead = false) {
-  const command = new ComponentOperationCommand({
-    channelName: bindingName,
-    operation: 'observe',
-    channelToObserve: channelName,
-    mode,
-    implicitVarRead,
-    runtime,
-    errorContext
+function observeComponentChannel(bindingName, currentBuffer, observationCommand, errorContext = null, implicitVarRead = false) {
+  const observationChannelName = observationCommand && observationCommand.channelName
+    ? observationCommand.channelName
+    : null;
+  const command = new ObserveSharedChannelCommand({
+    observationCommand,
+    errorContext,
+    implicitVarRead
   });
-  return _enqueueComponentOperation(command, currentBuffer, bindingName);
+  return _enqueueComponentOperation(command, currentBuffer, bindingName || observationChannelName);
 }
 
 module.exports = {
   COMPONENT_COMPOSITION_MODE,
   ComponentInstance,
   ComponentOperationCommand,
+  ObserveSharedChannelCommand,
   createComponentInstance,
   callComponentMethod,
   observeComponentChannel

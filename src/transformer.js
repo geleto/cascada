@@ -78,6 +78,49 @@ function depthWalk(ast, func) {
   return walk(ast, func, true);
 }
 
+function liftMethodLikeSuperCalls(bodyNode, blockName) {
+  if (!bodyNode) {
+    return bodyNode;
+  }
+
+  const superNodes = [];
+
+  const rewrittenBody = walk(bodyNode, (node) => {
+    if (node instanceof nodes.FunCall && node.name && node.name.value === 'super') {
+      const args = node.args && node.args.children ? node.args.children : [];
+      if (args.length > 0) {
+        return new nodes.Super(
+          node.lineno,
+          node.colno,
+          blockName,
+          null,
+          node.args || new nodes.NodeList(node.lineno, node.colno)
+        );
+      }
+      const symbol = gensym();
+      const tempSymbolNode = new nodes.Symbol(node.lineno, node.colno, symbol);
+      tempSymbolNode.isCompilerInternal = true;
+      const superNodeInternalSymbol = new nodes.Symbol(node.lineno, node.colno, symbol);
+      superNodeInternalSymbol.isCompilerInternal = true;
+      superNodes.push(new nodes.Super(
+        node.lineno,
+        node.colno,
+        blockName,
+        superNodeInternalSymbol,
+        node.args || new nodes.NodeList(node.lineno, node.colno)
+      ));
+      return tempSymbolNode;
+    }
+    return undefined;
+  });
+
+  if (superNodes.length > 0 && rewrittenBody && Array.isArray(rewrittenBody.children)) {
+    rewrittenBody.children.unshift(...superNodes);
+  }
+
+  return rewrittenBody;
+}
+
 function _liftFilters(node, asyncFilters, prop) {
   var children = [];
 
@@ -146,39 +189,7 @@ function liftSuper(ast) {
       return;
     }
 
-    const superNodes = [];
-
-    blockNode.body = walk(blockNode.body, (node) => {
-      if (node instanceof nodes.FunCall && node.name.value === 'super') {
-        const args = node.args && node.args.children ? node.args.children : [];
-        if (args.length > 0) {
-          return new nodes.Super(
-            node.lineno,
-            node.colno,
-            blockNode.name,
-            null,
-            node.args || new nodes.NodeList(node.lineno, node.colno)
-          );
-        }
-        const symbol = gensym();
-        const tempSymbolNode = new nodes.Symbol(node.lineno, node.colno, symbol);
-        tempSymbolNode.isCompilerInternal = true;
-        const superNodeInternalSymbol = new nodes.Symbol(node.lineno, node.colno, symbol);
-        superNodeInternalSymbol.isCompilerInternal = true;
-        superNodes.push(new nodes.Super(
-          node.lineno,
-          node.colno,
-          blockNode.name,
-          superNodeInternalSymbol,
-          node.args || new nodes.NodeList(node.lineno, node.colno)
-        ));
-        return tempSymbolNode;
-      }
-    });
-
-    if (superNodes.length > 0) {
-      blockNode.body.children.unshift(...superNodes);
-    }
+    blockNode.body = liftMethodLikeSuperCalls(blockNode.body, blockNode.name);
   });
 }
 
@@ -237,6 +248,45 @@ function normalizeAsyncCompilerNodes(ast) {
     }
     return undefined;
   });
+}
+
+function isRootConstructorDefinitionNode(node) {
+  return (
+    node instanceof nodes.Block ||
+    node instanceof nodes.Macro ||
+    node instanceof nodes.Extern
+  );
+}
+
+function createSyntheticConstructorMethod(constructorChildren, fallbackNode) {
+  if (!Array.isArray(constructorChildren) || constructorChildren.length === 0) {
+    return null;
+  }
+
+  const firstNode = constructorChildren[0] || fallbackNode;
+  const constructorMethod = new nodes.MethodDefinition(
+    firstNode ? firstNode.lineno : 0,
+    firstNode ? firstNode.colno : 0,
+    new nodes.Symbol(
+      firstNode ? firstNode.lineno : 0,
+      firstNode ? firstNode.colno : 0,
+      '__constructor__'
+    ),
+    new nodes.NodeList(
+      firstNode ? firstNode.lineno : 0,
+      firstNode ? firstNode.colno : 0,
+      []
+    ),
+    new nodes.NodeList(
+      firstNode ? firstNode.lineno : 0,
+      firstNode ? firstNode.colno : 0,
+      constructorChildren
+    ),
+    false
+  );
+  constructorMethod.isSyntheticConstructor = true;
+  constructorMethod.body = liftMethodLikeSuperCalls(constructorMethod.body, constructorMethod.name);
+  return constructorMethod;
 }
 
 // @todo - do this after analysis, rename both AST nodes and analysis nodes
@@ -411,7 +461,7 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
   }
   const methodNodes = [];
   const sharedDeclarations = [];
-  const remainingChildren = [];
+  const executableChildren = [];
 
   (ast.children || []).forEach((child) => {
     if (scriptMode && child instanceof nodes.Block) {
@@ -429,8 +479,35 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
       sharedDeclarations.push(child);
       return;
     }
+    executableChildren.push(child);
+  });
+
+  let extendsIndex = -1;
+  for (let i = 0; i < executableChildren.length; i++) {
+    if (executableChildren[i] instanceof nodes.Extends) {
+      extendsIndex = i;
+      break;
+    }
+  }
+
+  const remainingChildren = [];
+  const constructorChildren = [];
+
+  executableChildren.forEach((child, index) => {
+    const shouldLiftIntoConstructor = extendsIndex !== -1 &&
+      index > extendsIndex &&
+      !isRootConstructorDefinitionNode(child);
+    if (shouldLiftIntoConstructor) {
+      constructorChildren.push(child);
+      return;
+    }
     remainingChildren.push(child);
   });
+
+  const constructorMethod = createSyntheticConstructorMethod(constructorChildren, ast);
+  if (constructorMethod) {
+    methodNodes.push(constructorMethod);
+  }
 
   ast.children = remainingChildren;
   ast.inheritanceMetadata = new nodes.InheritanceMetadata(

@@ -49,18 +49,16 @@ function linkCurrentBufferToResolvedParentSharedChannels(inheritanceStateValue, 
   return currentBuffer;
 }
 
-function linkCurrentBufferToParentSharedChannels(inheritanceStateValue, parentBuffer, currentBuffer) {
-  if (!inheritanceStateValue || !parentBuffer || !currentBuffer || parentBuffer === currentBuffer) {
+function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames) {
+  if (!parentBuffer || !currentBuffer || parentBuffer === currentBuffer || !Array.isArray(channelNames)) {
     return currentBuffer;
   }
 
-  const sharedSchema = inheritanceStateValue.sharedSchema && typeof inheritanceStateValue.sharedSchema === 'object'
-    ? inheritanceStateValue.sharedSchema
-    : null;
-  const channelNames = sharedSchema ? Object.keys(sharedSchema) : [];
-
   for (let i = 0; i < channelNames.length; i++) {
     const channelName = channelNames[i];
+    if (!channelName) {
+      continue;
+    }
     if (
       typeof parentBuffer.hasLinkedBuffer === 'function' &&
       parentBuffer.hasLinkedBuffer(currentBuffer, channelName)
@@ -103,7 +101,7 @@ function finalizeInheritanceMetadata(state, context = null) {
 module.exports = {
   bootstrapInheritanceMetadata,
   linkCurrentBufferToResolvedParentSharedChannels,
-  linkCurrentBufferToParentSharedChannels,
+  linkCurrentBufferToParentChannels,
   getInheritanceSharedBuffer,
   finalizeInheritanceMetadata
 };

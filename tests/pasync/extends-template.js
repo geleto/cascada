@@ -105,6 +105,23 @@ describe('Template Extends', function () {
       expect(result).to.be('Base[dark]');
     });
 
+    it('should let child templates read parent-only shared vars as bare symbols', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate(
+        'base.njk',
+        '{% shared var theme = "light" %}{% set theme = "dark" %}Base[{% block body %}{{ theme }}{% endblock %}]'
+      );
+      loader.addTemplate(
+        'child.njk',
+        '{% extends "base.njk" %}{% block body %}child={{ theme }}{% endblock %}'
+      );
+
+      const result = await env.renderTemplate('child.njk', {});
+      expect(result).to.be('Base[child=dark]');
+    });
+
     it('should preserve async ordering across pre-extends, parent render, and post-extends code', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
@@ -131,6 +148,61 @@ describe('Template Extends', function () {
 
       const result = await env.renderTemplate('child.njk', { layout: 'grand.njk' });
       expect(result).to.be('child-pre|parent-pre|Grand[child>parent>grand]|parent-post|child-post');
+    });
+
+    it('should pass extends-with payload through intermediate template parents unchanged', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block body %}Base[{{ theme }}]{% endblock %}');
+      loader.addTemplate('parent.njk', '{% extends "base.njk" %}{% block body %}{{ super() }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% set theme = "dark" %}{% extends "parent.njk" with theme %}{% block body %}{{ super() }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+      expect(result).to.be('Base[dark]');
+    });
+
+    it('should render through an ancestor template constructor when the child has no local constructor body', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', 'base-pre|Base[{% block body %}base{% endblock %}]|base-post');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+      expect(result).to.be('base-pre|Base[base]|base-post');
+    });
+
+    it('should skip a constructorless middle template and still render the ancestor constructor body', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('grand.njk', 'grand-pre|Grand[{% block body %}grand{% endblock %}]|grand-post');
+      loader.addTemplate('parent.njk', '{% extends "grand.njk" %}');
+      loader.addTemplate('child.njk', '{% extends "parent.njk" %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+      expect(result).to.be('grand-pre|Grand[grand]|grand-post');
+    });
+
+    it('should let dynamic extends without a local constructor body fall through to the selected parent', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', 'Base[ok]');
+      loader.addTemplate('child.njk', '{% extends layout if useParent else none %}');
+
+      const withParent = await env.renderTemplate('child.njk', {
+        useParent: true,
+        layout: 'base.njk'
+      });
+      const withoutParent = await env.renderTemplate('child.njk', {
+        useParent: false,
+        layout: 'base.njk'
+      });
+
+      expect(withParent).to.be('Base[ok]');
+      expect(withoutParent).to.be('');
     });
 
     it('should fail cleanly when a static parent template cannot be loaded', async function () {
@@ -170,11 +242,15 @@ describe('Template Extends', function () {
       const source = tmpl._compileSource();
 
       expect(source).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null) {');
+      expect(source).to.contain('runtime.mergeInheritanceConstructorBoundaryPromise(inheritanceState,');
+      expect(source).to.not.contain('Promise.all([__constructorBoundaryPromise,');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null, methodData) {');
       expect(source).to.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
       expect(source).to.contain('blockPayload && blockPayload.originalArgs');
       expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
-      expect(source).to.contain('contract: {"argNames":["user"],"withContext":false}');
+      expect(source).to.contain('runtime.linkCurrentBufferToParentChannels(parentBuffer, output');
+      expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');
+      expect(source).to.contain('signature: {"argNames":["user"],"withContext":false}');
       expect(source).to.not.contain('context.getBlockContract("content")');
       expect(source).to.not.contain('context.createInheritancePayload(');
       expect(source).to.not.contain('blockPayload.localsByTemplate');
@@ -193,9 +269,11 @@ describe('Template Extends', function () {
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null) {');
+      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null, methodData) {');
       expect(source).to.contain('context.forkForComposition("child-inherited-block-inputs.njk"');
       expect(source).to.not.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
+      expect(source).to.contain('runtime.linkCurrentBufferToParentChannels(parentBuffer, output');
+      expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');
       expect(source).to.not.contain('context.getBlockContract("content")');
       expect(source).to.not.contain('context.getAsyncBlock(');
     });
@@ -228,7 +306,7 @@ describe('Template Extends', function () {
       const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'imported-member-boundary.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.memberLookupAsync((runtime.channelLookup("m", currentBuffer)),"hi"');
+      expect(source).to.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("m"');
       expect(source).to.contain('runtime.callWrapAsync(');
     });
   });

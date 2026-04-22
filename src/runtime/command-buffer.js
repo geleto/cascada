@@ -88,23 +88,6 @@ class CommandBuffer {
     return this._finishedPromise;
   }
 
-  getFinishCompletePromise() {
-    return Promise.resolve(this.getFinishedPromise()).then(() => {
-      const completions = [];
-      const channelNames = this._collectKnownChannelNames();
-      for (let i = 0; i < channelNames.length; i++) {
-        const channel = this.findChannel(channelNames[i]);
-        if (channel && channel._completionPromise) {
-          completions.push(channel._completionPromise);
-        }
-      }
-      if (completions.length === 0) {
-        return undefined;
-      }
-      return Promise.all(completions).then(() => undefined);
-    });
-  }
-
   //@todo - rename this, maybe to finishBufferAndLetIteratorsExit
   markFinishedAndPatchLinks() {
     this._finishAllChannelsRequested = true;

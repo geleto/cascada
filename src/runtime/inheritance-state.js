@@ -16,7 +16,7 @@ function withInheritanceErrorCode(error, code) {
   return error;
 }
 
-function createPendingInheritanceEntry() {
+function createPendingInheritanceEntry(linkedChannels = null) {
   let settled = false;
   let settleResolve = null;
   let settleReject = null;
@@ -27,6 +27,7 @@ function createPendingInheritanceEntry() {
 
   const entry = {
     promise,
+    linkedChannels: Array.isArray(linkedChannels) ? linkedChannels.slice() : [],
     resolve(value) {
       if (settled) {
         return value;
@@ -111,11 +112,6 @@ function createInheritanceState() {
   return new InheritanceState();
 }
 
-function getInheritanceConstructorBoundaryPromise(state) {
-  const internalState = ensureInheritanceInternalState(state);
-  return internalState ? internalState.constructorBoundaryPromise : null;
-}
-
 function setInheritanceConstructorBoundaryPromise(state, promise) {
   const internalState = ensureInheritanceInternalState(state);
   if (internalState) {
@@ -124,9 +120,30 @@ function setInheritanceConstructorBoundaryPromise(state, promise) {
   return promise;
 }
 
-function getInheritanceCompositionMode(state) {
+function awaitInheritanceConstructorBoundary(state) {
   const internalState = ensureInheritanceInternalState(state);
-  return internalState ? internalState.compositionMode : null;
+  const promise = internalState ? internalState.constructorBoundaryPromise : null;
+  return promise && typeof promise.then === 'function' ? promise : null;
+}
+
+function mergeInheritanceConstructorBoundaryPromise(state, promise, currentPromise = null) {
+  const normalizedCurrent = currentPromise && typeof currentPromise.then === 'function'
+    ? currentPromise
+    : awaitInheritanceConstructorBoundary(state);
+  const normalizedNext = promise && typeof promise.then === 'function'
+    ? promise
+    : null;
+
+  if (!normalizedNext) {
+    return normalizedCurrent;
+  }
+
+  const merged = normalizedCurrent
+    ? Promise.all([normalizedCurrent, normalizedNext]).then((results) => results[1])
+    : normalizedNext;
+
+  setInheritanceConstructorBoundaryPromise(state, merged);
+  return merged;
 }
 
 function setInheritanceCompositionMode(state, mode) {
@@ -138,7 +155,8 @@ function setInheritanceCompositionMode(state, mode) {
 }
 
 function isInheritanceCompositionMode(state, mode) {
-  return getInheritanceCompositionMode(state) === mode;
+  const internalState = ensureInheritanceInternalState(state);
+  return !!internalState && internalState.compositionMode === mode;
 }
 
 function cloneInheritanceMethodEntry(entry, clones = new Map()) {
@@ -149,30 +167,33 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
     return clones.get(entry);
   }
   if (isPendingInheritanceEntry(entry)) {
-    const pendingClone = createPendingInheritanceEntry();
+    const pendingClone = createPendingInheritanceEntry(entry.linkedChannels);
     clones.set(entry, pendingClone);
     return pendingClone;
   }
 
   const clonedEntry = Object.assign({}, entry);
   clones.set(entry, clonedEntry);
-  clonedEntry.usedChannels = Array.isArray(entry.usedChannels)
-    ? entry.usedChannels.slice()
+  clonedEntry.ownUsedChannels = Array.isArray(entry.ownUsedChannels)
+    ? entry.ownUsedChannels.slice()
     : [];
-  clonedEntry.mutatedChannels = Array.isArray(entry.mutatedChannels)
-    ? entry.mutatedChannels.slice()
+  clonedEntry.ownMutatedChannels = Array.isArray(entry.ownMutatedChannels)
+    ? entry.ownMutatedChannels.slice()
     : [];
-  clonedEntry.contract = entry.contract && typeof entry.contract === 'object'
+  clonedEntry.sharedLookupCandidates = Array.isArray(entry.sharedLookupCandidates)
+    ? entry.sharedLookupCandidates.slice()
+    : [];
+  clonedEntry.signature = entry.signature && typeof entry.signature === 'object'
     ? {
-      argNames: Array.isArray(entry.contract.argNames)
-        ? entry.contract.argNames.slice()
+      argNames: Array.isArray(entry.signature.argNames)
+        ? entry.signature.argNames.slice()
         : [],
-      withContext: !!entry.contract.withContext
+      withContext: !!entry.signature.withContext
     }
     : { argNames: [], withContext: false };
   clonedEntry.super = cloneInheritanceMethodEntry(entry.super, clones);
-  delete clonedEntry._resolvedInheritanceMethodMeta;
-  delete clonedEntry._resolvedInheritanceMethodMetaPromise;
+  delete clonedEntry._resolvedMethodData;
+  delete clonedEntry._resolvedMethodDataPromise;
   return clonedEntry;
 }
 
@@ -191,43 +212,25 @@ function cloneInheritanceMethods(localMethods) {
   return clonedMethods;
 }
 
-function cloneInheritanceSharedEntry(entry, clones = new Map()) {
-  if (!entry || typeof entry !== 'object') {
-    return entry;
-  }
-  if (clones.has(entry)) {
-    return clones.get(entry);
-  }
-  if (isPendingInheritanceEntry(entry)) {
-    const pendingClone = createPendingInheritanceEntry();
-    clones.set(entry, pendingClone);
-    return pendingClone;
-  }
-
-  const clonedEntry = Object.assign({}, entry);
-  clones.set(entry, clonedEntry);
-  return clonedEntry;
-}
-
-function cloneInheritanceSharedSchema(localSharedSchema) {
-  if (!localSharedSchema || typeof localSharedSchema !== 'object') {
-    return localSharedSchema;
-  }
-
-  const clonedSharedSchema = Object.create(null);
-  const clones = new Map();
-  const names = Object.keys(localSharedSchema);
-  for (let i = 0; i < names.length; i++) {
-    const name = names[i];
-    clonedSharedSchema[name] = cloneInheritanceSharedEntry(localSharedSchema[name], clones);
-  }
-  return clonedSharedSchema;
-}
-
-function _formatInheritanceContract(name, contract) {
-  const args = Array.isArray(contract && contract.argNames) ? contract.argNames.join(', ') : '';
-  const contextSuffix = contract && contract.withContext ? ' with context' : '';
+function _formatInheritanceSignature(name, signature) {
+  const args = Array.isArray(signature && signature.argNames) ? signature.argNames.join(', ') : '';
+  const contextSuffix = signature && signature.withContext ? ' with context' : '';
   return `${name}(${args})${contextSuffix}`;
+}
+
+function createEmptyConstructorEntry(context = null) {
+  const ownerKey = context && context.path ? String(context.path) : '__anonymous__';
+  return {
+    fn() {
+      return null;
+    },
+    ownUsedChannels: [],
+    ownMutatedChannels: [],
+    sharedLookupCandidates: [],
+    super: null,
+    signature: { argNames: [], withContext: false },
+    ownerKey
+  };
 }
 
 function validateInheritanceContractCompatibility(name, overridingEntry, parentEntry) {
@@ -235,27 +238,27 @@ function validateInheritanceContractCompatibility(name, overridingEntry, parentE
     return;
   }
 
-  const overridingContract = overridingEntry && overridingEntry.contract;
-  const parentContract = parentEntry && parentEntry.contract;
-  if (!overridingContract || !parentContract) {
+  const overridingSignature = overridingEntry && overridingEntry.signature;
+  const parentSignature = parentEntry && parentEntry.signature;
+  if (!overridingSignature || !parentSignature) {
     return;
   }
 
-  const overridingNames = Array.isArray(overridingContract.argNames) ? overridingContract.argNames : [];
-  const parentNames = Array.isArray(parentContract.argNames) ? parentContract.argNames : [];
-  const overridingOmittedSignature = overridingNames.length === 0 && !overridingContract.withContext;
+  const overridingNames = Array.isArray(overridingSignature.argNames) ? overridingSignature.argNames : [];
+  const parentNames = Array.isArray(parentSignature.argNames) ? parentSignature.argNames : [];
+  const overridingOmittedSignature = overridingNames.length === 0 && !overridingSignature.withContext;
   if (overridingOmittedSignature) {
     return;
   }
   const sameLength = overridingNames.length === parentNames.length;
   const sameNames = sameLength && overridingNames.every((value, index) => value === parentNames[index]);
-  const sameContextMode = !!overridingContract.withContext === !!parentContract.withContext;
+  const sameContextMode = !!overridingSignature.withContext === !!parentSignature.withContext;
   if (sameNames && sameContextMode) {
     return;
   }
 
   throw new RuntimeFatalError(
-    `block "${name}" signature mismatch: overriding block declares ${_formatInheritanceContract(name, overridingContract)} but parent declares ${_formatInheritanceContract(name, parentContract)}`,
+    `block "${name}" signature mismatch: overriding block declares ${_formatInheritanceSignature(name, overridingSignature)} but parent declares ${_formatInheritanceSignature(name, parentSignature)}`,
     0,
     0,
     null,
@@ -351,16 +354,10 @@ function registerInheritanceSharedSchema(state, localSharedSchema, context = nul
   if (!localSharedSchema || typeof localSharedSchema !== 'object') {
     return sharedSchema;
   }
-  const isolatedLocalSharedSchema = cloneInheritanceSharedSchema(localSharedSchema);
-
-  const names = Object.keys(isolatedLocalSharedSchema);
+  const names = Object.keys(localSharedSchema);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    const localEntry = isolatedLocalSharedSchema[name];
-    if (!localEntry) {
-      continue;
-    }
-
+    const localEntry = localSharedSchema[name];
     const currentEntry = sharedSchema[name];
     if (!currentEntry) {
       sharedSchema[name] = localEntry;
@@ -369,26 +366,13 @@ function registerInheritanceSharedSchema(state, localSharedSchema, context = nul
     if (currentEntry === localEntry) {
       continue;
     }
-    if (isPendingInheritanceEntry(currentEntry)) {
-      if (isPendingInheritanceEntry(localEntry)) {
-        continue;
-      }
-      currentEntry.resolve(localEntry);
-      sharedSchema[name] = localEntry;
-      continue;
-    }
-    if (isPendingInheritanceEntry(localEntry)) {
-      continue;
-    }
-    if (currentEntry.type !== localEntry.type) {
-      throw new RuntimeFatalError(
-        `shared channel '${name}' was declared as '${currentEntry.type}' and '${localEntry.type}'`,
-        0,
-        0,
-        null,
-        context && context.path ? context.path : null
-      );
-    }
+    throw new RuntimeFatalError(
+      `shared channel '${name}' was declared as '${currentEntry}' and '${localEntry}'`,
+      0,
+      0,
+      null,
+      context && context.path ? context.path : null
+    );
   }
 
   return sharedSchema;
@@ -397,22 +381,17 @@ function registerInheritanceSharedSchema(state, localSharedSchema, context = nul
 function finalizeInheritanceMethods(state, context = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
   const names = Object.keys(sharedMethods);
+  let emptyConstructorEntry = null;
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
     const entry = sharedMethods[name];
     if (isPendingInheritanceEntry(entry)) {
       if (name === '__constructor__') {
-        const emptyConstructor = {
-          fn() {
-            return null;
-          },
-          usedChannels: [],
-          mutatedChannels: [],
-          super: null,
-          ownerKey: '__synthetic__'
-        };
-        entry.resolve(emptyConstructor);
-        sharedMethods[name] = emptyConstructor;
+        if (!emptyConstructorEntry) {
+          emptyConstructorEntry = createEmptyConstructorEntry(context);
+        }
+        entry.resolve(emptyConstructorEntry);
+        sharedMethods[name] = emptyConstructorEntry;
         continue;
       }
       entry.reject(withInheritanceErrorCode(
@@ -432,6 +411,13 @@ function finalizeInheritanceMethods(state, context = null) {
       superEntry = superEntry.super;
     }
     if (isPendingInheritanceEntry(superEntry)) {
+      if (name === '__constructor__') {
+        if (!emptyConstructorEntry) {
+          emptyConstructorEntry = createEmptyConstructorEntry(context);
+        }
+        superEntry.resolve(emptyConstructorEntry);
+        continue;
+      }
       superEntry.reject(withInheritanceErrorCode(
         new RuntimeFatalError(
           `super() for method '${name}' was not found`,
@@ -448,41 +434,20 @@ function finalizeInheritanceMethods(state, context = null) {
 }
 
 function finalizeInheritanceSharedSchema(state, context = null) {
-  const sharedSchema = ensureInheritanceSharedSchemaTable(state);
-  const names = Object.keys(sharedSchema);
-  for (let i = 0; i < names.length; i++) {
-    const name = names[i];
-    const entry = sharedSchema[name];
-    if (!isPendingInheritanceEntry(entry)) {
-      continue;
-    }
-    entry.reject(withInheritanceErrorCode(
-      new RuntimeFatalError(
-        `Shared channel '${name}' was not found`,
-        0,
-        0,
-        null,
-        context && context.path ? context.path : null
-      ),
-      ERR_SHARED_CHANNEL_NOT_FOUND
-    ));
-  }
-  return sharedSchema;
+  return ensureInheritanceSharedSchemaTable(state);
 }
 
 module.exports = {
   InheritanceState,
   createInheritanceState,
-  getInheritanceConstructorBoundaryPromise,
   setInheritanceConstructorBoundaryPromise,
-  getInheritanceCompositionMode,
+  awaitInheritanceConstructorBoundary,
+  mergeInheritanceConstructorBoundaryPromise,
   setInheritanceCompositionMode,
   isInheritanceCompositionMode,
   createPendingInheritanceEntry,
   cloneInheritanceMethodEntry,
   cloneInheritanceMethods,
-  cloneInheritanceSharedEntry,
-  cloneInheritanceSharedSchema,
   isPendingInheritanceEntry,
   ensureInheritanceMethodsTable,
   ensureInheritanceSharedSchemaTable,
@@ -492,6 +457,7 @@ module.exports = {
   registerInheritanceSharedSchema,
   finalizeInheritanceMethods,
   finalizeInheritanceSharedSchema,
+  createEmptyConstructorEntry,
   ERR_INHERITED_METHOD_NOT_FOUND,
   ERR_SUPER_METHOD_NOT_FOUND,
   ERR_SHARED_CHANNEL_NOT_FOUND,

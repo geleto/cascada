@@ -103,7 +103,7 @@ module.exports = class CompileEmit {
       } else {
         this.line(
           `let ${this.compiler.buffer.currentBuffer} = ` +
-          `(compositionMode === runtime.COMPONENT_COMPOSITION_MODE && parentBuffer)` +
+          `(compositionMode && parentBuffer)` +
           ` ? parentBuffer` +
           ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
         );

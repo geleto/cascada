@@ -2383,7 +2383,7 @@ The top-level body of every script in the chain is its **constructor**. When the
 1. The most-derived child's constructor runs first.
 2. Each ancestor's constructor runs in turn as `super()` is reached.
 
-If a script's constructor body is empty, `super()` is called implicitly — the parent constructor runs automatically. If the body contains code, the parent constructor only runs when the body explicitly calls `super()`:
+If a script has executable body code after `extends`, that code becomes the local constructor body. Parent constructor execution is never automatic inside a real constructor body: it only happens when the body explicitly calls `super()`. If there is no executable body after `extends`, no local constructor is created and normal inherited lookup finds an ancestor constructor if one exists:
 
 ```cascada
 // child.script
@@ -2391,7 +2391,7 @@ shared var greeting = "Hello"
 
 extends "base.script"
 
-// Non-empty constructor body: super() must be called explicitly.
+// Local constructor body: super() must be called explicitly.
 var processed = doSomething()
 super()                       // parent constructor runs here
 result.extra = processed      // runs after the parent constructor completes

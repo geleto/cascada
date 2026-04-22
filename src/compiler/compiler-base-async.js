@@ -95,11 +95,11 @@ class CompilerBaseAsync extends CompilerCommon {
         this._failNonContextSequenceRoot(node, declaredOutput);
       }
       if (declaredOutput.type === 'var') {
+        if (declaredOutput.shared) {
+          this._emitSharedChannelObservation(name, node, 'snapshot', true);
+          return;
+        }
         if (!this.scriptMode && this.inBlock) {
-          if (declaredOutput.shared) {
-            this._emitSharedChannelObservation(name, node, 'snapshot', true);
-            return;
-          }
           if (declaredOutput.extern) {
             this.emit(`runtime.contextOrExternLookup(context, "${name}")`);
             return;
@@ -205,6 +205,16 @@ class CompilerBaseAsync extends CompilerCommon {
     const errorContext = this._generateErrorContext(node, node.right);
 
     if (testName === 'error') {
+      const componentBindingRoot = this._getComponentBindingRoot(node.left);
+      if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
+        this._emitComponentChannelObservation({
+          bindingName: componentBindingRoot.bindingName,
+          channelName: componentBindingRoot.staticPath[1],
+          mode: 'isError',
+          implicitVarRead: false
+        }, node.left);
+        return;
+      }
       const channelName = this._getObservedChannelName(node.left);
       if (channelName) {
         const channelDecl = this.analysis.findDeclaration(node.left._analysis, channelName);
@@ -246,6 +256,16 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compilePeekError(node) {
+    const componentBindingRoot = this._getComponentBindingRoot(node.target);
+    if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
+      this._emitComponentChannelObservation({
+        bindingName: componentBindingRoot.bindingName,
+        channelName: componentBindingRoot.staticPath[1],
+        mode: 'getError',
+        implicitVarRead: false
+      }, node.target);
+      return;
+    }
     const channelName = this._getObservedChannelName(node.target);
     if (channelName) {
       const channelDecl = this.analysis.findDeclaration(node.target._analysis, channelName);
@@ -294,8 +314,9 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     if (
+      forCall &&
       staticPath.length === 3 &&
-      (staticPath[2] === 'snapshot' || staticPath[2] === 'isError' || staticPath[2] === 'getError')
+      staticPath[2] === 'snapshot'
     ) {
       return {
         bindingName,
@@ -418,18 +439,14 @@ class CompilerBaseAsync extends CompilerCommon {
     const componentBindingRoot = this._getComponentBindingRoot(node);
     const componentBindingFacts = this._getComponentBindingFacts(node);
     if (componentBindingFacts && componentBindingFacts.kind === 'shared-read') {
-      const errorContextJson = JSON.stringify(this._createErrorContext(node));
-      this.emit(
-        `runtime.observeComponentChannel(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, ` +
-        `${JSON.stringify(componentBindingFacts.channelName)}, runtime, ${errorContextJson}, "snapshot", true)`
-      );
+      this._emitComponentChannelObservation(componentBindingFacts, node);
       return;
     }
     if (componentBindingRoot) {
       this._failUnsupportedComponentBindingUsage(
         node,
         componentBindingRoot.bindingName,
-        '`ns.x` reads, `ns.x.snapshot()/isError()/getError()` observations, and `ns.method(...)` calls'
+        '`ns.x` reads, `ns.x.snapshot()` observations, `ns.x is error`, `ns.x#`, and `ns.method(...)` calls'
       );
     }
 
@@ -603,29 +620,25 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     if (componentBindingFacts) {
-      const errorContextJson = JSON.stringify(this._createErrorContext(node));
       if (componentBindingFacts.kind === 'method-call') {
+        const errorContextJson = JSON.stringify(this._createErrorContext(node));
         this.emit(
           `runtime.callComponentMethod(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, ` +
           `${JSON.stringify(componentBindingFacts.methodName)}, `
         );
         this._compileAggregate(node.args, null, '[', ']', false, false);
-        this.emit(`, env, runtime, cb, ${errorContextJson})`);
+        this.emit(`, runtime, cb, ${errorContextJson})`);
         return;
       }
 
-      this.emit(
-        `runtime.observeComponentChannel(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, ` +
-        `${JSON.stringify(componentBindingFacts.channelName)}, runtime, ${errorContextJson}, ` +
-        `${JSON.stringify(componentBindingFacts.mode || 'snapshot')}, ${componentBindingFacts.implicitVarRead ? 'true' : 'false'})`
-      );
+      this._emitComponentChannelObservation(componentBindingFacts, node);
       return;
     }
     if (componentBindingRoot) {
       this._failUnsupportedComponentBindingUsage(
         node.name,
         componentBindingRoot.bindingName,
-        '`ns.method(...)` calls and `ns.x.snapshot()/isError()/getError()` observations'
+        '`ns.method(...)` calls, `ns.x.snapshot()` observations, and `ns.x is error` / `ns.x#` error observations'
       );
     }
 
@@ -682,10 +695,37 @@ class CompilerBaseAsync extends CompilerCommon {
       const errorContextJson = JSON.stringify(this._createErrorContext(node));
       this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${explicitThisDispatch.methodName}", `);
       this._compileAggregate(node.args, null, '[', ']', false, false);
-      this.emit(`, context, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson}, { preWaitCurrentPosition: true })`);
+      this.emit(`, context, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson})`);
       return;
     }
     this._emitAsyncDynamicCall(node, this.buffer.currentBuffer);
+  }
+
+  _emitComponentObservationCommand(channelName, node, mode = 'snapshot') {
+    const posLiteral = this.buffer._emitPositionLiteral(node);
+    const channelNameJson = JSON.stringify(channelName);
+    if (mode === 'snapshot') {
+      this.emit(`new runtime.SnapshotCommand({ channelName: ${channelNameJson}, pos: ${posLiteral} })`);
+      return;
+    }
+    if (mode === 'isError') {
+      this.emit(`new runtime.IsErrorCommand({ channelName: ${channelNameJson}, pos: ${posLiteral} })`);
+      return;
+    }
+    if (mode === 'getError') {
+      this.emit(`new runtime.GetErrorCommand({ channelName: ${channelNameJson}, pos: ${posLiteral} })`);
+      return;
+    }
+    throw new Error(`Unsupported component observation mode '${mode}'`);
+  }
+
+  _emitComponentChannelObservation(componentBindingFacts, node) {
+    const errorContextJson = JSON.stringify(this._createErrorContext(node));
+    this.emit(
+      `runtime.observeComponentChannel(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, `
+    );
+    this._emitComponentObservationCommand(componentBindingFacts.channelName, node, componentBindingFacts.mode || 'snapshot');
+    this.emit(`, ${errorContextJson}, ${componentBindingFacts.implicitVarRead ? 'true' : 'false'})`);
   }
 
   compileFilter(node) {
@@ -840,7 +880,8 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('runtime.contextOrScriptChannelLookup(' +
       'context, "' + name + '", ' +
       `${this.buffer.currentBuffer}, ` +
-      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
+      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }, ` +
+      `${this._emitInheritanceStateReference()}` +
       ')');
   }
 

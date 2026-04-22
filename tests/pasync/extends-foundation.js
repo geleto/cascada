@@ -370,11 +370,8 @@ describe('Extends Foundation', function () {
       script.compile();
 
       expect(Object.keys(script.sharedSchema).sort()).to.eql(['log', 'theme']);
-      expect(script.sharedSchema.theme.type).to.be('var');
-      expect(typeof script.sharedSchema.theme.defaultValue).to.be('function');
-      expect(script.sharedSchema.theme.defaultValue()).to.be('dark');
-      expect(script.sharedSchema.log.type).to.be('text');
-      expect(script.sharedSchema.log.defaultValue).to.be(null);
+      expect(script.sharedSchema.theme).to.be('var');
+      expect(script.sharedSchema.log).to.be('text');
     });
   });
 
@@ -391,6 +388,15 @@ describe('Extends Foundation', function () {
 
       expect(declarationOnly).to.be(undefined);
       expect(assigned).to.be('light');
+    });
+
+    it('should let script methods read local shared vars as ordinary declared names', async function () {
+      const result = await env.renderScriptString(
+        'shared var theme = "dark"\nmethod readTheme()\n  return theme\nendmethod\nreturn this.readTheme()',
+        {}
+      );
+
+      expect(result).to.be('dark');
     });
 
     it('should let an earlier child-buffer shared default win over a later parent-buffer default', async function () {
@@ -539,10 +545,10 @@ describe('Extends Foundation', function () {
       expect(script.methods).to.be.ok();
       expect(script.methods.build).to.be.ok();
       expect(typeof script.methods.build.fn).to.be('function');
-      expect(script.methods.build.usedChannels).to.be.an(Array);
-      expect(script.methods.build.mutatedChannels).to.be.an(Array);
+      expect(script.methods.build.ownUsedChannels).to.be.an(Array);
+      expect(script.methods.build.ownMutatedChannels).to.be.an(Array);
       expect(script.methods.build.super).to.be(null);
-      expect(script.methods.build.contract).to.eql({ argNames: ['user'], withContext: false });
+      expect(script.methods.build.signature).to.eql({ argNames: ['user'], withContext: false });
       expect(script.methods.build.ownerKey).to.be('method-metadata.script');
     });
 
@@ -554,26 +560,34 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(script.methods.build.usedChannels).to.contain('theme');
-      expect(script.methods.build.usedChannels).to.contain('trace');
-      expect(script.methods.build.mutatedChannels).to.contain('trace');
-      expect(script.methods.build.mutatedChannels).not.to.contain('theme');
+      expect(script.methods.build.ownUsedChannels).to.contain('theme');
+      expect(script.methods.build.ownUsedChannels).to.contain('trace');
+      expect(script.methods.build.ownMutatedChannels).to.contain('trace');
+      expect(script.methods.build.ownMutatedChannels).not.to.contain('theme');
     });
 
     it('should expose __constructor__ in the compiled methods map with internal metadata', function () {
-      const script = new Script('shared text trace\ntrace("x")\nreturn null', env, 'constructor-metadata.script');
+      const script = new Script('shared text trace\nextends "A.script"\ntrace("x")\nreturn null', env, 'constructor-metadata.script');
       script.compile();
 
       expect(script.methods).to.be.ok();
       expect(script.methods.__constructor__).to.be.ok();
       expect(typeof script.methods.__constructor__.fn).to.be('function');
-      expect(script.methods.__constructor__.usedChannels).to.be.an(Array);
-      expect(script.methods.__constructor__.mutatedChannels).to.be.an(Array);
-      expect(script.methods.__constructor__.usedChannels).to.contain('trace');
-      expect(script.methods.__constructor__.mutatedChannels).to.contain('trace');
+      expect(script.methods.__constructor__.ownUsedChannels).to.be.an(Array);
+      expect(script.methods.__constructor__.ownMutatedChannels).to.be.an(Array);
+      expect(script.methods.__constructor__.ownUsedChannels).to.contain('trace');
+      expect(script.methods.__constructor__.ownMutatedChannels).to.contain('trace');
       expect(script.methods.__constructor__.super).to.be(null);
-      expect(script.methods.__constructor__.contract).to.eql({ argNames: [], withContext: false });
+      expect(script.methods.__constructor__.signature).to.eql({ argNames: [], withContext: false });
       expect(script.methods.__constructor__.ownerKey).to.be('constructor-metadata.script');
+    });
+
+    it('should omit __constructor__ from the compiled methods map when there is no constructor body', function () {
+      const script = new Script('extends "A.script"', env, 'no-constructor-metadata.script');
+      script.compile();
+
+      expect(script.methods).to.be.ok();
+      expect(Object.prototype.hasOwnProperty.call(script.methods, '__constructor__')).to.be(false);
     });
 
     it('should reject __constructor__ as a user-declared method name', function () {
@@ -642,6 +656,18 @@ describe('Extends Foundation', function () {
       script.compile();
 
       expect(runtime.isPendingInheritanceEntry(script.methods.lookup)).to.be(true);
+    });
+
+    it('should attach local shared-lane hints to pending inherited method entries', function () {
+      const script = new Script(
+        'shared text trace\nshared var late = "x"\nreturn this.lookup()',
+        env,
+        'pending-helper-linked-channels.script'
+      );
+      script.compile();
+
+      expect(runtime.isPendingInheritanceEntry(script.methods.lookup)).to.be(true);
+      expect(script.methods.lookup.linkedChannels).to.eql(['trace', 'late']);
     });
 
     it('should alias the pending-entry helper from runtime instead of inlining a local factory', function () {
@@ -759,6 +785,28 @@ describe('Extends Foundation', function () {
       }
     });
 
+    it('should resolve unresolved constructor super metadata to a root-only empty constructor at the topmost root', async function () {
+      const script = new Script(
+        'shared text trace\nextends "A.script"\nsuper()\ntrace("done")\nreturn null',
+        env,
+        'missing-constructor-super.script'
+      );
+      script.compile();
+
+      expect(script.methods.__constructor__).to.be.ok();
+      expect(runtime.isPendingInheritanceEntry(script.methods.__constructor__.super)).to.be(true);
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, null);
+      const pendingSuper = inheritanceState.methods.__constructor__.super.promise;
+      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-constructor-super.script' });
+
+      const resolvedSuper = await pendingSuper;
+      expect(resolvedSuper).to.be.ok();
+      expect(resolvedSuper.signature).to.eql({ argNames: [], withContext: false });
+      expect(resolvedSuper.ownerKey).to.be('missing-constructor-super.script');
+    });
+
     it('should register only real shared channels from parents, not extends input placeholders', function () {
       const childScript = new Script('extends "A.script" with theme\nreturn null', env, 'C.script');
       const parentScript = new Script('shared var theme = "light"\nreturn null', env, 'A.script');
@@ -773,7 +821,7 @@ describe('Extends Foundation', function () {
 
       runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null);
       expect(inheritanceState.sharedSchema.theme).to.be.ok();
-      expect(inheritanceState.sharedSchema.theme.type).to.be('var');
+      expect(inheritanceState.sharedSchema.theme).to.be('var');
     });
 
     it('should reject conflicting shared channel types across the inheritance chain', function () {
@@ -807,20 +855,17 @@ describe('Extends Foundation', function () {
       }
     });
 
-    it('should finalize a missing pending __constructor__ entry to the allowed empty constructor', async function () {
+    it('should resolve an unresolved pending __constructor__ entry to a root-only empty constructor at the topmost root', async function () {
       const inheritanceState = runtime.createInheritanceState();
       const pendingConstructor = runtime.createPendingInheritanceEntry();
       inheritanceState.methods.__constructor__ = pendingConstructor;
 
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'root.script' });
 
-      expect(runtime.isPendingInheritanceEntry(inheritanceState.methods.__constructor__)).to.be(false);
-      expect(typeof inheritanceState.methods.__constructor__.fn).to.be('function');
-      expect(inheritanceState.methods.__constructor__.usedChannels).to.eql([]);
-      expect(inheritanceState.methods.__constructor__.mutatedChannels).to.eql([]);
-      expect(inheritanceState.methods.__constructor__.ownerKey).to.be('__synthetic__');
-      expect(await pendingConstructor.promise).to.be(inheritanceState.methods.__constructor__);
-      expect(inheritanceState.methods.__constructor__.fn()).to.be(null);
+      const resolvedConstructor = await pendingConstructor.promise;
+      expect(resolvedConstructor).to.be.ok();
+      expect(resolvedConstructor.signature).to.eql({ argNames: [], withContext: false });
+      expect(resolvedConstructor.ownerKey).to.be('root.script');
     });
 
     it('should register shared schema before constructor work begins', async function () {
@@ -867,7 +912,7 @@ describe('Extends Foundation', function () {
     });
 
     it('should compile script constructor metadata to a dedicated function target', function () {
-      const script = new Script('shared text trace\ntrace("x")\nreturn trace.snapshot()', env, 'constructor-metadata.script');
+      const script = new Script('shared text trace\nextends "A.script"\ntrace("x")\nreturn trace.snapshot()', env, 'constructor-metadata.script');
       script.compile();
 
       expect(script.methods.__constructor__).to.be.ok();
@@ -975,7 +1020,7 @@ describe('Extends Foundation', function () {
         childScript.sharedSchema,
         null
       );
-      const pendingBuild = runtime.resolveInheritanceMethod(state, 'build');
+      const pendingBuild = runtime.getMethodData(state, 'build');
       const reusedState = runtime.bootstrapInheritanceMetadata(
         state,
         parentScript.methods,
@@ -987,8 +1032,8 @@ describe('Extends Foundation', function () {
 
       expect(reusedState).to.be(state);
       expect(resolvedBuild).to.be.ok();
-      expect(resolvedBuild.entry.ownerKey).to.be('A.script');
-      expect(resolvedBuild.contract).to.eql({ argNames: ['name'], withContext: false });
+      expect(resolvedBuild.ownerKey).to.be('A.script');
+      expect(resolvedBuild.signature).to.eql({ argNames: ['name'], withContext: false });
     });
 
     it('should keep repeated bootstrap of the same owner idempotent', function () {
@@ -1025,9 +1070,44 @@ describe('Extends Foundation', function () {
       const resolvedTheme = await runtime.resolveInheritanceSharedChannel(state, 'theme');
 
       expect(resolvedTheme).to.be.ok();
-      expect(resolvedTheme.type).to.be('var');
-      expect(typeof resolvedTheme.defaultValue).to.be('function');
-      expect(resolvedTheme.defaultValue()).to.be('light');
+      expect(resolvedTheme).to.be('var');
+    });
+
+    it('should merge constructor boundary promises through the runtime helper', async function () {
+      const state = runtime.createInheritanceState();
+      let resolveFirst;
+      let resolveSecond;
+      const first = new Promise((resolve) => {
+        resolveFirst = resolve;
+      });
+      const second = new Promise((resolve) => {
+        resolveSecond = resolve;
+      });
+      const events = [];
+
+      runtime.mergeInheritanceConstructorBoundaryPromise(state, first);
+      const merged = runtime.mergeInheritanceConstructorBoundaryPromise(state, second);
+
+      first.then(() => {
+        events.push('first');
+      });
+      second.then(() => {
+        events.push('second');
+      });
+      merged.then(() => {
+        events.push('merged');
+      });
+
+      resolveSecond('second-value');
+      await Promise.resolve();
+      expect(events).to.eql(['second']);
+
+      resolveFirst('first-value');
+      const mergedValue = await merged;
+
+      expect(mergedValue).to.be('second-value');
+      expect(events).to.eql(['second', 'first', 'merged']);
+      expect(runtime.awaitInheritanceConstructorBoundary(state)).to.be(merged);
     });
 
     it('should preserve the root rejection path when inherited method resolution fails later', async function () {
@@ -1040,7 +1120,7 @@ describe('Extends Foundation', function () {
         script.sharedSchema,
         null
       );
-      const pendingBuild = runtime.resolveInheritanceMethod(state, 'build', {
+      const pendingBuild = runtime.getMethodData(state, 'build', {
         lineno: 8,
         colno: 3,
         path: 'dispatch.script',
@@ -1112,8 +1192,8 @@ describe('Extends Foundation', function () {
         childScript.sharedSchema,
         null
       );
-      const pendingBuildA = runtime.resolveInheritanceMethod(state, 'build');
-      const pendingBuildB = runtime.resolveInheritanceMethod(state, 'build');
+      const pendingBuildA = runtime.getMethodData(state, 'build');
+      const pendingBuildB = runtime.getMethodData(state, 'build');
 
       runtime.bootstrapInheritanceMetadata(
         state,
@@ -1126,8 +1206,8 @@ describe('Extends Foundation', function () {
       const resolvedBuildB = await pendingBuildB;
 
       expect(resolvedBuildA).to.be(resolvedBuildB);
-      expect(resolvedBuildA.entry._resolvedInheritanceMethodMeta).to.be(resolvedBuildA);
-      expect(resolvedBuildA.entry._resolvedInheritanceMethodMetaPromise).to.be.ok();
+      expect(state.methods.build._resolvedMethodData).to.be(resolvedBuildA);
+      expect(state.methods.build._resolvedMethodDataPromise).to.be.ok();
     });
 
     it('should resolve inherited method metadata through a multi-hop pending entry chain', async function () {
@@ -1138,16 +1218,16 @@ describe('Extends Foundation', function () {
         fn() {
           return null;
         },
-        usedChannels: ['theme'],
-        mutatedChannels: ['trace'],
+        ownUsedChannels: ['theme'],
+        ownMutatedChannels: ['trace'],
         super: null,
-        contract: { argNames: ['name'], withContext: false },
+        signature: { argNames: ['name'], withContext: false },
         ownerKey: 'A.script'
       };
 
       state.methods.build = childPending;
 
-      const pendingBuild = runtime.resolveInheritanceMethod(state, 'build');
+      const pendingBuild = runtime.getMethodData(state, 'build');
 
       childPending.resolve(parentPending);
       parentPending.resolve(finalEntry);
@@ -1155,12 +1235,13 @@ describe('Extends Foundation', function () {
       const resolvedBuild = await pendingBuild;
 
       expect(resolvedBuild).to.be.ok();
-      expect(resolvedBuild.entry).to.be(finalEntry);
-      expect(resolvedBuild.contract).to.eql({ argNames: ['name'], withContext: false });
-      expect(resolvedBuild.usedChannels).to.eql(['theme']);
-      expect(resolvedBuild.mutatedChannels).to.eql(['trace']);
-      expect(resolvedBuild.linkedChannels).to.contain('theme');
-      expect(resolvedBuild.linkedChannels).to.contain('trace');
+      expect(resolvedBuild.fn).to.be(finalEntry.fn);
+      expect(resolvedBuild.ownerKey).to.be('A.script');
+      expect(resolvedBuild.signature).to.eql({ argNames: ['name'], withContext: false });
+      expect(resolvedBuild.ownUsedChannels).to.eql(['theme']);
+      expect(resolvedBuild.ownMutatedChannels).to.eql(['trace']);
+      expect(resolvedBuild.mergedUsedChannels).to.contain('theme');
+      expect(resolvedBuild.mergedMutatedChannels).to.contain('trace');
     });
 
     it('should memoize merged inherited method metadata on the resolved entry', async function () {
@@ -1184,7 +1265,7 @@ describe('Extends Foundation', function () {
         childScript.sharedSchema,
         null
       );
-      const pendingBuild = runtime.resolveInheritanceMethod(state, 'build');
+      const pendingBuild = runtime.getMethodData(state, 'build');
 
       runtime.bootstrapInheritanceMetadata(
         state,
@@ -1194,19 +1275,19 @@ describe('Extends Foundation', function () {
       );
 
       const resolvedBuild = await pendingBuild;
-      const resolvedAgain = await runtime.resolveInheritanceMethod(state, 'build');
+      const resolvedAgain = await runtime.getMethodData(state, 'build');
 
       expect(resolvedAgain).to.be(resolvedBuild);
-      expect(resolvedBuild.entry._resolvedInheritanceMethodMeta).to.be(resolvedBuild);
-      expect(resolvedBuild.entry._resolvedInheritanceMethodMetaPromise).to.be.ok();
-      expect(resolvedBuild.linkedChannels).to.contain('trace');
+      expect(state.methods.build._resolvedMethodData).to.be(resolvedBuild);
+      expect(state.methods.build._resolvedMethodDataPromise).to.be.ok();
+      expect(resolvedBuild.mergedMutatedChannels).to.contain('trace');
     });
 
     it('should mark missing inherited-method failures with a structural error code', async function () {
       const state = runtime.createInheritanceState();
 
       try {
-        await runtime.resolveInheritanceMethod(state, 'missing', {
+        await runtime.getMethodData(state, 'missing', {
           lineno: 2,
           colno: 4,
           path: 'dispatch.script',
@@ -1224,9 +1305,9 @@ describe('Extends Foundation', function () {
         this.skip();
         return;
       }
-      const command = new inheritanceCallModule.InheritanceAdmissionCommand({
+      const command = new inheritanceCallModule.createInheritanceInvocationCommand({
         name: 'build',
-        resolveMethodEntry: () => Promise.resolve(null),
+        getMethodData: () => Promise.resolve(null),
         normalizeError: (error) => error,
         args: [],
         context: {},
@@ -1234,20 +1315,20 @@ describe('Extends Foundation', function () {
         env: env,
         runtime: runtime,
         cb: () => {},
-        barrierBuffer: null,
+        invocationBuffer: null,
         currentBuffer: null,
         errorContext: null
       });
 
       try {
-        await command._start();
+        await command.apply();
         expect().fail('Expected invalid inherited method entry to fail');
       } catch (error) {
         expect(String(error)).to.contain('Inherited dispatch resolved to an invalid method entry');
       }
     });
 
-    it('should not double-settle the inherited-call result when cleanup fails after resolution', async function () {
+    it('should reject the inherited-call promise once when cleanup fails after resolution', async function () {
       if (!inheritanceCallModule) {
         this.skip();
         return;
@@ -1263,15 +1344,17 @@ describe('Extends Foundation', function () {
         _registerLinkedChannel() {},
         markFinishedAndPatchLinks() {}
       };
-      const command = new inheritanceCallModule.InheritanceAdmissionCommand({
+      const command = new inheritanceCallModule.createInheritanceInvocationCommand({
         name: '__constructor__',
-        resolveMethodEntry: () => Promise.resolve({
+        getMethodData: () => Promise.resolve({
           fn() {
             return 'ok';
           },
-          contract: { argNames: [], withContext: false },
-          usedChannels: [],
-          mutatedChannels: [],
+          signature: { argNames: [], withContext: false },
+          ownUsedChannels: [],
+          ownMutatedChannels: [],
+          mergedUsedChannels: [],
+          mergedMutatedChannels: [],
           super: null,
           ownerKey: 'A.script'
         }),
@@ -1282,27 +1365,32 @@ describe('Extends Foundation', function () {
         env: env,
         runtime: runtime,
         cb: () => {},
-        barrierBuffer: fakeBuffer,
         invocationBuffer: fakeBuffer,
         currentBuffer: fakeBuffer,
         errorContext: null
       });
       const cleanupError = new Error('cleanup failed');
 
-      command._finishAdmissionBuffers = function() {
+      const originalFinishInvocationBuffer = inheritanceCallModule.invocationInternals.finishInvocationBuffer;
+      inheritanceCallModule.invocationInternals.finishInvocationBuffer = function() {
         throw cleanupError;
       };
+      const completionPromise = command.apply();
 
-      const resultPromise = command.promise;
-      const completionPromise = command._start();
-
-      expect(await resultPromise).to.be('ok');
+      try {
+        await command.promise;
+        expect().fail('Expected inherited-call promise to reject when cleanup fails');
+      } catch (error) {
+        expect(error).to.be(cleanupError);
+      }
 
       try {
         await completionPromise;
-        expect().fail('Expected completion to reject when cleanup fails');
+        expect().fail('Expected invocation start to reject when cleanup fails');
       } catch (error) {
         expect(error).to.be(cleanupError);
+      } finally {
+        inheritanceCallModule.invocationInternals.finishInvocationBuffer = originalFinishInvocationBuffer;
       }
     });
 

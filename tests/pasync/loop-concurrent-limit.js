@@ -2514,7 +2514,7 @@
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% include "inc.njk" with loop %}{% endfor %}', env);
       const source = tmpl._compileSource();
-      expect(source).to.contain('t_15["loop"] = runtime.channelLookup("loop#');
+      expect(source).to.contain('t_15["loop"] = currentBuffer.addSnapshot("loop#');
       expect(source).to.not.contain('t_15["loop#');
     });
 
@@ -2525,7 +2525,7 @@
         env
       );
       const source = tmpl._compileSource();
-      const includeLoopSnapshots = Array.from(source.matchAll(/\["loop"\]\s*=\s*runtime\.channelLookup\("(loop#\d+)"/g))
+      const includeLoopSnapshots = Array.from(source.matchAll(/\["loop"\]\s*=\s*currentBuffer\.addSnapshot\("(loop#\d+)"/g))
         .map((match) => match[1]);
 
       expect(includeLoopSnapshots).to.have.length(2);

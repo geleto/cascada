@@ -67,15 +67,39 @@ function _normalizeInheritedMethodInvocationError(error, methodName, errorContex
   return _normalizeResolutionError(error, errorContext);
 }
 
-function _findResolvedMethodEntryForOwner(methodMeta, ownerKey) {
-  let current = methodMeta && methodMeta.entry ? methodMeta.entry : null;
-  while (current && !inheritanceState.isPendingInheritanceEntry(current)) {
-    if (current.ownerKey === ownerKey) {
-      return current;
-    }
-    current = current.super;
+function _addChannelNames(target, names) {
+  if (!Array.isArray(names)) {
+    return;
   }
-  return null;
+
+  for (let i = 0; i < names.length; i++) {
+    if (names[i]) {
+      target.add(names[i]);
+    }
+  }
+}
+
+function _mergeChannelNames() {
+  const merged = new Set();
+  for (let i = 0; i < arguments.length; i++) {
+    _addChannelNames(merged, arguments[i]);
+  }
+  return Array.from(merged);
+}
+
+function _filterSharedLookupChannels(sharedLookupCandidates, sharedSchema) {
+  if (!Array.isArray(sharedLookupCandidates) || sharedLookupCandidates.length === 0 || !sharedSchema) {
+    return [];
+  }
+
+  const filtered = [];
+  for (let i = 0; i < sharedLookupCandidates.length; i++) {
+    const name = sharedLookupCandidates[i];
+    if (name && Object.prototype.hasOwnProperty.call(sharedSchema, name)) {
+      filtered.push(name);
+    }
+  }
+  return filtered;
 }
 
 async function _resolvePendingInheritanceEntryChain(entry, normalizeError) {
@@ -91,70 +115,102 @@ async function _resolvePendingInheritanceEntryChain(entry, normalizeError) {
   return current;
 }
 
-async function _resolveEffectiveInheritanceMethodFromEntry(entry, errorContext) {
+function _normalizeMethodSignature(signature, inheritedSignature = null) {
+  let normalizedSignature = signature && typeof signature === 'object'
+    ? {
+      argNames: Array.isArray(signature.argNames) ? signature.argNames.slice() : [],
+      withContext: !!signature.withContext
+    }
+    : { argNames: [], withContext: false };
+
+  if (!inheritedSignature) {
+    return normalizedSignature;
+  }
+
+  const localArgNames = normalizedSignature.argNames;
+  const inheritedArgNames = Array.isArray(inheritedSignature.argNames)
+    ? inheritedSignature.argNames
+    : [];
+
+  if (localArgNames.length === 0 && inheritedArgNames.length > 0) {
+    normalizedSignature = {
+      argNames: inheritedArgNames.slice(),
+      withContext: !!(normalizedSignature.withContext || inheritedSignature.withContext)
+    };
+  } else if (!normalizedSignature.withContext && inheritedSignature.withContext) {
+    normalizedSignature = {
+      argNames: localArgNames.slice(),
+      withContext: true
+    };
+  }
+
+  return normalizedSignature;
+}
+
+function _createResolvedMethodData(entry, sharedSchema = null, superData = null) {
+  if (!entry || typeof entry !== 'object' || typeof entry.fn !== 'function') {
+    throw new RuntimeFatalError(
+      'Inherited dispatch resolved to an invalid method entry',
+      0,
+      0,
+      null,
+      null
+    );
+  }
+
+  const ownUsedChannels = _mergeChannelNames(entry.ownUsedChannels);
+  const ownMutatedChannels = _mergeChannelNames(entry.ownMutatedChannels);
+  const sharedLookupChannels = _filterSharedLookupChannels(entry.sharedLookupCandidates, sharedSchema);
+  const mergedUsedChannels = _mergeChannelNames(
+    ownUsedChannels,
+    sharedLookupChannels,
+    superData ? superData.mergedUsedChannels : null
+  );
+  const mergedMutatedChannels = _mergeChannelNames(
+    ownMutatedChannels,
+    superData ? superData.mergedMutatedChannels : null
+  );
+
+  return {
+    fn: entry.fn,
+    ownerKey: entry.ownerKey || null,
+    signature: _normalizeMethodSignature(entry.signature, superData ? superData.signature : null),
+    ownUsedChannels,
+    ownMutatedChannels,
+    mergedUsedChannels,
+    mergedMutatedChannels,
+    super: superData || null
+  };
+}
+
+async function _getMethodDataFromEntry(entry, sharedSchema, errorContext) {
   const resolvedEntry = await _resolvePendingInheritanceEntryChain(
     entry,
     (error) => _normalizeResolutionError(error, errorContext)
   );
 
-  if (resolvedEntry._resolvedInheritanceMethodMeta) {
-    return resolvedEntry._resolvedInheritanceMethodMeta;
+  if (resolvedEntry._resolvedMethodData) {
+    return resolvedEntry._resolvedMethodData;
   }
-  if (resolvedEntry._resolvedInheritanceMethodMetaPromise) {
-    return resolvedEntry._resolvedInheritanceMethodMetaPromise;
+  if (resolvedEntry._resolvedMethodDataPromise) {
+    return resolvedEntry._resolvedMethodDataPromise;
   }
 
-  resolvedEntry._resolvedInheritanceMethodMetaPromise = (async () => {
-    const usedChannels = new Set(Array.isArray(resolvedEntry.usedChannels) ? resolvedEntry.usedChannels : []);
-    const mutatedChannels = new Set(Array.isArray(resolvedEntry.mutatedChannels) ? resolvedEntry.mutatedChannels : []);
-    let contract = resolvedEntry.contract || { argNames: [], withContext: false };
-
-    if (resolvedEntry.super) {
-      const superMeta = await _resolveEffectiveInheritanceMethodFromEntry(
-        resolvedEntry.super,
-        errorContext
-      );
-      superMeta.usedChannels.forEach((name) => usedChannels.add(name));
-      superMeta.mutatedChannels.forEach((name) => mutatedChannels.add(name));
-
-      const localArgNames = Array.isArray(contract.argNames) ? contract.argNames : [];
-      const superArgNames = Array.isArray(superMeta.contract && superMeta.contract.argNames)
-        ? superMeta.contract.argNames
-        : [];
-      if (localArgNames.length === 0 && superArgNames.length > 0) {
-        contract = {
-          argNames: superArgNames.slice(),
-          withContext: !!(contract.withContext || (superMeta.contract && superMeta.contract.withContext))
-        };
-      } else if (!contract.withContext && superMeta.contract && superMeta.contract.withContext) {
-        contract = {
-          argNames: localArgNames.slice(),
-          withContext: true
-        };
-      }
-    }
-
-    const linkedChannels = Array.from(new Set([
-      ...usedChannels,
-      ...mutatedChannels
-    ]));
-    const effectiveMeta = {
-      entry: resolvedEntry,
-      usedChannels: Array.from(usedChannels),
-      mutatedChannels: Array.from(mutatedChannels),
-      linkedChannels,
-      contract
-    };
-
-    resolvedEntry._resolvedInheritanceMethodMeta = effectiveMeta;
-    return effectiveMeta;
+  resolvedEntry._resolvedMethodDataPromise = (async () => {
+    const superData = resolvedEntry.super
+      ? await _getMethodDataFromEntry(resolvedEntry.super, sharedSchema, errorContext)
+      : null;
+    const resolvedData = _createResolvedMethodData(resolvedEntry, sharedSchema, superData);
+    resolvedEntry._resolvedMethodData = resolvedData;
+    return resolvedData;
   })();
 
-  return resolvedEntry._resolvedInheritanceMethodMetaPromise;
+  return resolvedEntry._resolvedMethodDataPromise;
 }
 
-function resolveInheritanceMethod(state, methodName, errorContext = null) {
+function getMethodData(state, methodName, errorContext = null) {
   const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(state || {});
   if (!Object.prototype.hasOwnProperty.call(methods, methodName)) {
     return Promise.reject(_createInheritanceFatalError(
       `Inherited method '${methodName}' was not found`,
@@ -163,7 +219,7 @@ function resolveInheritanceMethod(state, methodName, errorContext = null) {
     ));
   }
 
-  return _resolveEffectiveInheritanceMethodFromEntry(methods[methodName], errorContext);
+  return _getMethodDataFromEntry(methods[methodName], sharedSchema, errorContext);
 }
 
 function resolveInheritanceSharedChannel(state, channelName, errorContext = null) {
@@ -176,14 +232,67 @@ function resolveInheritanceSharedChannel(state, channelName, errorContext = null
     ));
   }
 
-  return _resolvePendingInheritanceEntryChain(
-    sharedSchema[channelName],
-    (error) => _normalizeResolutionError(error, errorContext)
+  return Promise.resolve(sharedSchema[channelName]);
+}
+
+function _findMethodDataForOwner(methodData, ownerKey) {
+  let current = methodData || null;
+  while (current) {
+    if (current.ownerKey === ownerKey) {
+      return current;
+    }
+    current = current.super;
+  }
+  return null;
+}
+
+function _getMethodLinkedChannels(methodData) {
+  return _mergeChannelNames(
+    methodData && methodData.mergedUsedChannels,
+    methodData && methodData.mergedMutatedChannels
   );
 }
 
-function _normalizeMethodMeta(methodMetaOrEntry) {
-  if (!methodMetaOrEntry || typeof methodMetaOrEntry !== 'object') {
+function _findKnownMethodEntryForOwner(entry, ownerKey) {
+  let current = entry || null;
+  while (current && !inheritanceState.isPendingInheritanceEntry(current)) {
+    if (current.ownerKey === ownerKey) {
+      return current;
+    }
+    current = current.super;
+  }
+  return null;
+}
+
+function _collectKnownEntryChannels(entry) {
+  if (!entry || inheritanceState.isPendingInheritanceEntry(entry)) {
+    return [];
+  }
+
+  return _mergeChannelNames(
+    entry.ownUsedChannels,
+    entry.ownMutatedChannels,
+    _collectKnownEntryChannels(entry.super)
+  );
+}
+
+function _getInitialInvocationChannels(entry) {
+  if (inheritanceState.isPendingInheritanceEntry(entry)) {
+    if (Array.isArray(entry.linkedChannels) && entry.linkedChannels.length > 0) {
+      return entry.linkedChannels.slice();
+    }
+    return ['__return__'];
+  }
+
+  if (!entry) {
+    return ['__return__'];
+  }
+
+  return _collectKnownEntryChannels(entry);
+}
+
+function _assertResolvedMethodData(methodData) {
+  if (!methodData || typeof methodData !== 'object' || typeof methodData.fn !== 'function') {
     throw new RuntimeFatalError(
       'Inherited dispatch resolved to an invalid method entry',
       0,
@@ -192,79 +301,12 @@ function _normalizeMethodMeta(methodMetaOrEntry) {
       null
     );
   }
-
-  const entry = methodMetaOrEntry.entry || methodMetaOrEntry;
-
-  return {
-    entry,
-    contract: methodMetaOrEntry.contract || (entry && entry.contract) || { argNames: [], withContext: false },
-    linkedChannels: _collectAllChannelNames(methodMetaOrEntry),
-    usedChannels: Array.isArray(methodMetaOrEntry.usedChannels) ? methodMetaOrEntry.usedChannels.slice() : [],
-    mutatedChannels: Array.isArray(methodMetaOrEntry.mutatedChannels) ? methodMetaOrEntry.mutatedChannels.slice() : []
-  };
+  return methodData;
 }
 
-function _addChannelNames(target, names) {
-  if (!Array.isArray(names)) {
-    return;
-  }
-
-  for (let i = 0; i < names.length; i++) {
-    if (names[i]) {
-      target.add(names[i]);
-    }
-  }
-}
-
-function _collectAllChannelNames(source) {
-  const linkedChannels = new Set();
-
-  _addChannelNames(linkedChannels, source && source.linkedChannels);
-  _addChannelNames(linkedChannels, source && source.usedChannels);
-  _addChannelNames(linkedChannels, source && source.mutatedChannels);
-
-  return Array.from(linkedChannels);
-}
-
-function _enqueueCurrentPositionWaits(currentBuffer, runtime, channelNames) {
-  if (
-    !currentBuffer ||
-    !runtime ||
-    typeof runtime.waitForCurrentBufferChannel !== 'function' ||
-    !Array.isArray(channelNames) ||
-    channelNames.length === 0
-  ) {
-    return null;
-  }
-
-  const waits = [];
-  const seen = new Set();
-  for (let i = 0; i < channelNames.length; i++) {
-    const channelName = channelNames[i];
-    if (!channelName || seen.has(channelName)) {
-      continue;
-    }
-    seen.add(channelName);
-    if (
-      currentBuffer &&
-      typeof currentBuffer.isFinished === 'function' &&
-      (currentBuffer.isFinished(channelName) || currentBuffer.finished)
-    ) {
-      continue;
-    }
-    waits.push(runtime.waitForCurrentBufferChannel(currentBuffer, channelName));
-  }
-
-  if (waits.length === 0) {
-    return null;
-  }
-
-  return Promise.all(waits);
-}
-
-function _createMethodPayload(methodMeta, args, errorContext, label, context = null, fallbackToContextOriginalArgs = false) {
-  const contract = methodMeta && methodMeta.contract ? methodMeta.contract : { argNames: [], withContext: false };
-  const argNames = Array.isArray(contract.argNames) ? contract.argNames : [];
+function _createMethodPayload(methodData, args, errorContext, label, context = null, fallbackToContextOriginalArgs = false) {
+  const signature = methodData && methodData.signature ? methodData.signature : { argNames: [], withContext: false };
+  const argNames = Array.isArray(signature.argNames) ? signature.argNames : [];
   let values = Array.isArray(args) ? args : [];
 
   if (
@@ -298,71 +340,112 @@ function _createMethodPayload(methodMeta, args, errorContext, label, context = n
   };
 }
 
-function _getInitialAdmissionChannels(inheritanceStateValue, methodMetaOrEntry = null) {
-  const methodLinkedChannels =
-    methodMetaOrEntry && typeof methodMetaOrEntry === 'object'
-      ? _collectAllChannelNames(methodMetaOrEntry)
-      : [];
-  const sharedSchema = inheritanceStateValue && inheritanceStateValue.sharedSchema && typeof inheritanceStateValue.sharedSchema === 'object'
-    ? inheritanceStateValue.sharedSchema
-    : null;
-  const sharedChannelNames = sharedSchema ? Object.keys(sharedSchema) : [];
-  return Array.from(new Set([
-    ...methodLinkedChannels,
-    ...sharedChannelNames,
-    '__return__'
-  ]));
-}
-
-function _getPrimaryAdmissionChannel(channelNames) {
-  // Any linked lane can host the admission command; keep the choice stable by
-  // using the first lane in the already-computed link set.
-  return Array.isArray(channelNames) && channelNames.length > 0
-    ? channelNames[0]
-    : '__return__';
-}
-
-function _createAdmissionBarrier(context, runtime, currentBuffer, linkedChannels) {
-  if (!currentBuffer) {
-    throw new Error('Inheritance admission requires a current buffer');
-  }
-  if (!runtime || typeof runtime.createCommandBuffer !== 'function') {
-    throw new Error('Inheritance admission requires runtime.createCommandBuffer');
-  }
-  return runtime.createCommandBuffer(context, currentBuffer, linkedChannels, currentBuffer);
-}
-
-function _linkBarrierChannel(currentBuffer, barrierBuffer, channelName) {
-  if (!channelName || !currentBuffer || !barrierBuffer || barrierBuffer === currentBuffer) {
-    // `barrierBuffer === currentBuffer` only occurs in the pre-seeded
-    // invocation-buffer hook used by focused tests.
-    if (barrierBuffer && channelName) {
-      barrierBuffer._registerLinkedChannel(channelName);
+function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channelName) {
+  if (!channelName || !currentBuffer || !invocationBuffer || currentBuffer === invocationBuffer) {
+    if (invocationBuffer && channelName) {
+      invocationBuffer._registerLinkedChannel(channelName);
     }
     return;
   }
-  if (barrierBuffer.isLinkedChannel(channelName)) {
+  if (
+    typeof currentBuffer.hasLinkedBuffer === 'function' &&
+    currentBuffer.hasLinkedBuffer(invocationBuffer, channelName)
+  ) {
     return;
   }
-  if (currentBuffer.isFinished(channelName) || currentBuffer.finished) {
-    barrierBuffer._registerLinkedChannel(channelName);
+  if (
+    typeof currentBuffer.isFinished === 'function' &&
+    (currentBuffer.isFinished(channelName) || currentBuffer.finished)
+  ) {
+    invocationBuffer._registerLinkedChannel(channelName);
     return;
   }
-  currentBuffer.addBuffer(barrierBuffer, channelName);
+  currentBuffer.addBuffer(invocationBuffer, channelName);
 }
 
 function _markBufferFinish(buffer) {
-  if (!buffer) {
+  if (!buffer || typeof buffer.markFinishedAndPatchLinks !== 'function') {
     return;
   }
   buffer.markFinishedAndPatchLinks();
 }
 
-class InheritanceAdmissionCommand extends Command {
-  constructor({
+const invocationInternals = {
+  ensureInvocationBuffer(command, methodData) {
+    const linkedChannels = _getMethodLinkedChannels(methodData);
+    const sharedRootBuffer =
+      command.inheritanceState && command.inheritanceState.sharedRootBuffer
+        ? command.inheritanceState.sharedRootBuffer
+        : command.currentBuffer;
+
+    if (!command.invocationBuffer) {
+      command.invocationBuffer = command.runtime.createCommandBuffer(
+        command.context,
+        sharedRootBuffer,
+        null,
+        command.currentBuffer
+      );
+    }
+    for (let i = 0; i < linkedChannels.length; i++) {
+      _registerInvocationChannelLink(command.currentBuffer, command.invocationBuffer, linkedChannels[i]);
+    }
+    return command.invocationBuffer;
+  },
+
+  invokeResolvedMethodData(command, methodData, invocationBuffer) {
+    if (command.name === '__constructor__') {
+      return methodData.fn(
+        command.env,
+        command.context,
+        command.runtime,
+        command.cb,
+        invocationBuffer,
+        command.inheritanceState
+      );
+    }
+
+    const payload = _createMethodPayload(
+      methodData,
+      command.args,
+      command.errorContext,
+      command.label,
+      command.context,
+      command.fallbackToContextOriginalArgs
+    );
+    const renderCtx = methodData.signature && methodData.signature.withContext &&
+      command.context && typeof command.context.getRenderContextVariables === 'function'
+      ? command.context.getRenderContextVariables()
+      : undefined;
+
+    return methodData.fn(
+      command.env,
+      command.context,
+      command.runtime,
+      command.cb,
+      invocationBuffer,
+      payload,
+      renderCtx,
+      command.inheritanceState,
+      methodData
+    );
+  },
+
+  async finishInvocationBuffer(invocationBuffer) {
+    if (!invocationBuffer) {
+      return;
+    }
+    _markBufferFinish(invocationBuffer);
+    if (typeof invocationBuffer.getFinishedPromise === 'function') {
+      await invocationBuffer.getFinishedPromise();
+    }
+  }
+};
+
+function createInheritanceInvocationCommand(spec) {
+  const {
     name,
     label = null,
-    resolveMethodEntry,
+    getMethodData,
     normalizeError,
     args,
     context,
@@ -370,73 +453,71 @@ class InheritanceAdmissionCommand extends Command {
     env,
     runtime,
     cb,
-    barrierBuffer,
-    invocationBuffer = null,
     currentBuffer,
+    invocationBuffer,
     errorContext = null
-  }) {
-    super({ withDeferredResult: true });
-    this.name = name;
-    this.label = label || `Inherited method '${name}'`;
-    this.resolveMethodEntry = resolveMethodEntry;
-    this.normalizeError = typeof normalizeError === 'function'
-      ? normalizeError
-      : (error) => _normalizeResolutionError(error, errorContext);
-    this.args = Array.isArray(args) ? args : [];
-    this.context = context;
-    this.inheritanceState = inheritanceStateValue;
-    this.env = env;
-    this.runtime = runtime;
-    this.cb = cb;
-    this.barrierBuffer = barrierBuffer;
-    this.invocationBuffer = invocationBuffer;
-    this.currentBuffer = currentBuffer;
-    this.errorContext = errorContext;
-    this.isObservable = true;
-    this.completion = null;
-    this.resolvedMethodMetaPromise = null;
-    this._resolvedMethodMeta = null;
-    this._normalizedError = null;
-    this._startPromise = null;
-    this._finishedBuffers = false;
-    this._resultSettled = false;
-    this.fallbackToContextOriginalArgs = false;
-    this.preWaitPromise = null;
-  }
+  } = spec;
+  const command = new Command({ withDeferredResult: true });
+  command.name = name;
+  command.label = label || `Inherited method '${name}'`;
+  command.getMethodData = getMethodData;
+  command.normalizeError = typeof normalizeError === 'function'
+    ? normalizeError
+    : (error) => _normalizeResolutionError(error, errorContext);
+  command.args = Array.isArray(args) ? args : [];
+  command.context = context;
+  command.inheritanceState = inheritanceStateValue;
+  command.env = env;
+  command.runtime = runtime;
+  command.cb = cb;
+  command.currentBuffer = currentBuffer;
+  command.invocationBuffer = invocationBuffer || null;
+  command.errorContext = errorContext;
+  command.isObservable = false;
+  command.fallbackToContextOriginalArgs = false;
+  command._normalizedError = null;
+  command._startPromise = null;
+  command._resultSettled = false;
 
-  getError() {
-    return this._normalizedError;
-  }
+  command.getError = function() {
+    return command._normalizedError;
+  };
 
-  apply() {
-    return this._start();
-  }
+  command._resolveResult = function(value) {
+    if (command._resultSettled) {
+      return;
+    }
+    command._resultSettled = true;
+    command.resolveResult(value);
+  };
 
-  _start() {
-    if (this._startPromise) {
-      return this._startPromise;
+  command._rejectResult = function(error) {
+    if (command._resultSettled) {
+      return;
+    }
+    command._resultSettled = true;
+    command.rejectResult(error);
+  };
+
+  command.apply = function() {
+    if (command._startPromise) {
+      return command._startPromise;
     }
 
-    this._startPromise = (async () => {
+    command._startPromise = (async () => {
       try {
-        if (this.preWaitPromise && typeof this.preWaitPromise.then === 'function') {
-          await this.preWaitPromise;
-        }
-        const methodMeta = _normalizeMethodMeta(await this.resolveMethodEntry());
-        this._resolvedMethodMeta = methodMeta;
-        const invocationBuffer = this._ensureInvocationBuffer(methodMeta.entry || methodMeta);
-        const result = await this._invokeResolvedMethodMeta(methodMeta, invocationBuffer);
-        this._resolveObservableResult(result);
-        this._finishAdmissionBuffers(invocationBuffer);
+        const methodData = _assertResolvedMethodData(await command.getMethodData());
+        const ensuredInvocationBuffer = invocationInternals.ensureInvocationBuffer(command, methodData);
+        const result = await invocationInternals.invokeResolvedMethodData(command, methodData, ensuredInvocationBuffer);
+        await invocationInternals.finishInvocationBuffer(ensuredInvocationBuffer);
+        command._resolveResult(result);
         return result;
       } catch (error) {
-        const normalizedError = this.normalizeError(error);
-        this._normalizedError = normalizedError;
-        this._rejectObservableResult(normalizedError);
+        const normalizedError = command.normalizeError(error);
+        command._normalizedError = normalizedError;
+        command._rejectResult(normalizedError);
         try {
-          // Preserve the primary invocation error if best-effort buffer cleanup
-          // also fails while unwinding.
-          this._finishAdmissionBuffers(this.invocationBuffer);
+          await invocationInternals.finishInvocationBuffer(command.invocationBuffer);
         } catch (finishError) {
           void finishError;
         }
@@ -444,147 +525,38 @@ class InheritanceAdmissionCommand extends Command {
       }
     })();
 
-    this.completion = this._startPromise;
-    this.completion.catch(() => {});
-    this.resolvedMethodMetaPromise = this._startPromise.then(() => this._resolvedMethodMeta);
-    this.resolvedMethodMetaPromise.catch(() => {});
-    return this._startPromise;
-  }
+    return command._startPromise;
+  };
 
-  _resolveObservableResult(value) {
-    if (this._resultSettled) {
-      return;
-    }
-    this._resultSettled = true;
-    this.resolveResult(value);
-  }
-
-  _rejectObservableResult(error) {
-    if (this._resultSettled) {
-      return;
-    }
-    this._resultSettled = true;
-    this.rejectResult(error);
-  }
-
-  _ensureInvocationBuffer(methodMetaOrEntry) {
-    const methodChannels = _collectAllChannelNames(methodMetaOrEntry);
-    const sharedSchema =
-      this.inheritanceState && this.inheritanceState.sharedSchema && typeof this.inheritanceState.sharedSchema === 'object'
-        ? this.inheritanceState.sharedSchema
-        : null;
-    const sharedChannels = sharedSchema ? Object.keys(sharedSchema) : [];
-    const linkedChannels = Array.from(new Set([
-      ...methodChannels,
-      ...sharedChannels
-    ]));
-    for (let i = 0; i < linkedChannels.length; i++) {
-      _linkBarrierChannel(this.currentBuffer, this.barrierBuffer, linkedChannels[i]);
-    }
-
-    if (!this.invocationBuffer) {
-      this.invocationBuffer = this.runtime.createCommandBuffer(
-        this.context,
-        this.barrierBuffer,
-        linkedChannels,
-        this.barrierBuffer
-      );
-      return this.invocationBuffer;
-    }
-
-    // Focused tests may pre-seed an invocation buffer; in that case we only
-    // need to finish the late channel wiring here.
-    if (this.invocationBuffer !== this.barrierBuffer && this.barrierBuffer) {
-      for (let i = 0; i < linkedChannels.length; i++) {
-        const channelName = linkedChannels[i];
-        if (!this.invocationBuffer.isLinkedChannel(channelName)) {
-          if (this.barrierBuffer.isFinished(channelName) || this.barrierBuffer.finished) {
-            this.invocationBuffer._registerLinkedChannel(channelName);
-          } else {
-            this.barrierBuffer.addBuffer(this.invocationBuffer, channelName);
-          }
-        }
-      }
-    }
-
-    return this.invocationBuffer;
-  }
-
-  _invokeResolvedMethodMeta(methodMeta, invocationBuffer) {
-    if (this.name === '__constructor__') {
-      return methodMeta.entry.fn(
-        this.env,
-        this.context,
-        this.runtime,
-        this.cb,
-        invocationBuffer,
-        this.inheritanceState
-      );
-    }
-
-    const payload = _createMethodPayload(
-      methodMeta,
-      this.args,
-      this.errorContext,
-      this.label,
-      this.context,
-      this.fallbackToContextOriginalArgs
-    );
-    const renderCtx = methodMeta.contract && methodMeta.contract.withContext &&
-      this.context && typeof this.context.getRenderContextVariables === 'function'
-      ? this.context.getRenderContextVariables()
-      : undefined;
-
-    // Script methods return through the synthetic `__return__` channel; the
-    // admission path owns finishing the invocation/barrier buffers afterwards.
-    return methodMeta.entry.fn(
-      this.env,
-      this.context,
-      this.runtime,
-      this.cb,
-      invocationBuffer,
-      payload,
-      renderCtx,
-      this.inheritanceState
-    );
-  }
-
-  _finishAdmissionBuffers(invocationBuffer) {
-    if (this._finishedBuffers) {
-      return;
-    }
-    this._finishedBuffers = true;
-
-    _markBufferFinish(invocationBuffer);
-    if (this.barrierBuffer && this.barrierBuffer !== invocationBuffer) {
-      _markBufferFinish(this.barrierBuffer);
-    }
-  }
+  return command;
 }
 
-function _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels) {
-  const targetBuffer = barrierBuffer || command.currentBuffer;
-  const primaryChannel = _getPrimaryAdmissionChannel(linkedChannels);
-  targetBuffer.add(command, primaryChannel);
-  // Start resolution immediately so ancestry lookup and late link wiring can
-  // overlap with surrounding buffer work before the iterator reaches this slot.
-  command._start();
-  return {
-    // `promise` is the observable method return value. `completion` also
-    // includes admission-buffer teardown and is only needed by constructor
-    // startup paths that must wait for the full admission lifecycle.
-    promise: command.promise,
-    completion: command.completion
-  };
+function _enqueueInvocationCommand(command, invocationBuffer) {
+  invocationBuffer.add(command, '__invoke__');
+  command.apply();
+  return command.promise;
 }
 
 function admitConstructorEntry(context, inheritanceStateValue, methodEntry, args, env, runtime, cb, currentBuffer, errorContext = null) {
-  const linkedChannels = _getInitialAdmissionChannels(inheritanceStateValue, methodEntry);
-  const barrierBuffer = _createAdmissionBarrier(context, runtime, currentBuffer, linkedChannels);
-  const command = new InheritanceAdmissionCommand({
+  const initialChannels = _getInitialInvocationChannels(methodEntry);
+  const sharedRootBuffer =
+    inheritanceStateValue && inheritanceStateValue.sharedRootBuffer
+      ? inheritanceStateValue.sharedRootBuffer
+      : currentBuffer;
+  const invocationBuffer = runtime.createCommandBuffer(
+    context,
+    sharedRootBuffer,
+    initialChannels,
+    currentBuffer
+  );
+  const command = module.exports.createInheritanceInvocationCommand({
     name: '__constructor__',
     label: 'Parent constructor',
-    resolveMethodEntry: () => Promise.resolve(methodEntry),
+    getMethodData: () => _getMethodDataFromEntry(
+      methodEntry,
+      inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue || {}),
+      errorContext
+    ),
     normalizeError: (error) => _normalizeResolutionError(error, errorContext),
     args,
     context,
@@ -592,28 +564,36 @@ function admitConstructorEntry(context, inheritanceStateValue, methodEntry, args
     env,
     runtime,
     cb,
-    barrierBuffer,
     currentBuffer,
+    invocationBuffer,
     errorContext
   });
 
-  return _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels);
+  return _enqueueInvocationCommand(command, invocationBuffer);
 }
 
-function invokeInheritedMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null, options = null) {
-  const preWaitChannels =
-    options && options.preWaitCurrentPosition && inheritanceStateValue && inheritanceStateValue.methods &&
-    Object.prototype.hasOwnProperty.call(inheritanceStateValue.methods, methodName) &&
-    !inheritanceState.isPendingInheritanceEntry(inheritanceStateValue.methods[methodName])
-      ? _collectAllChannelNames(inheritanceStateValue.methods[methodName])
-      : [];
-  const preWaitPromise = _enqueueCurrentPositionWaits(currentBuffer, runtime, preWaitChannels);
-  const linkedChannels = _getInitialAdmissionChannels(inheritanceStateValue, null);
-  const barrierBuffer = _createAdmissionBarrier(context, runtime, currentBuffer, linkedChannels);
-  const command = new InheritanceAdmissionCommand({
+function invokeInheritedMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+  const initialEntry =
+    inheritanceStateValue &&
+    inheritanceStateValue.methods &&
+    Object.prototype.hasOwnProperty.call(inheritanceStateValue.methods, methodName)
+      ? inheritanceStateValue.methods[methodName]
+      : null;
+  const initialChannels = _getInitialInvocationChannels(initialEntry);
+  const sharedRootBuffer =
+    inheritanceStateValue && inheritanceStateValue.sharedRootBuffer
+      ? inheritanceStateValue.sharedRootBuffer
+      : currentBuffer;
+  const invocationBuffer = runtime.createCommandBuffer(
+    context,
+    sharedRootBuffer,
+    initialChannels,
+    currentBuffer
+  );
+  const command = module.exports.createInheritanceInvocationCommand({
     name: methodName,
     label: `Inherited method '${methodName}'`,
-    resolveMethodEntry: () => resolveInheritanceMethod(inheritanceStateValue, methodName, errorContext),
+    getMethodData: () => getMethodData(inheritanceStateValue, methodName, errorContext),
     normalizeError: (error) => _normalizeInheritedMethodInvocationError(error, methodName, errorContext),
     args,
     context,
@@ -621,59 +601,48 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
     env,
     runtime,
     cb,
-    barrierBuffer,
     currentBuffer,
+    invocationBuffer,
     errorContext
   });
-  command.preWaitPromise = preWaitPromise;
 
-  const admission = _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels);
-  if (admission.promise && admission.completion) {
-    // Component dispatch uses the shared returned promise surface: `.completion`
-    // waits for full admission teardown, while `.resolvedMethodMeta` exposes
-    // the already-resolved inherited method metadata without triggering a
-    // second ancestry walk just to learn linked channels.
-    admission.promise.completion = admission.completion;
-    admission.promise.resolvedMethodMeta = command.resolvedMethodMetaPromise;
-  }
-  return admission.promise;
+  return _enqueueInvocationCommand(command, invocationBuffer);
 }
 
-function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, context, env, runtime, cb, currentBuffer, errorContext = null, options = null) {
-  let preWaitChannels = [];
-  if (
-    options &&
-    options.preWaitCurrentPosition &&
+function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+  const rootEntry =
     inheritanceStateValue &&
     inheritanceStateValue.methods &&
-    Object.prototype.hasOwnProperty.call(inheritanceStateValue.methods, methodName) &&
-    !inheritanceState.isPendingInheritanceEntry(inheritanceStateValue.methods[methodName])
-  ) {
-    const ownerEntry = _findResolvedMethodEntryForOwner(
-      { entry: inheritanceStateValue.methods[methodName] },
-      ownerKey
-    );
-    if (ownerEntry) {
-      preWaitChannels = _collectAllChannelNames(ownerEntry);
-    }
-  }
-  const preWaitPromise = _enqueueCurrentPositionWaits(currentBuffer, runtime, preWaitChannels);
-  const linkedChannels = _getInitialAdmissionChannels(inheritanceStateValue, null);
-  const barrierBuffer = _createAdmissionBarrier(context, runtime, currentBuffer, linkedChannels);
-  const command = new InheritanceAdmissionCommand({
+    Object.prototype.hasOwnProperty.call(inheritanceStateValue.methods, methodName)
+      ? inheritanceStateValue.methods[methodName]
+      : null;
+  const ownerEntry = _findKnownMethodEntryForOwner(rootEntry, ownerKey);
+  const superEntry = ownerEntry && ownerEntry.super ? ownerEntry.super : null;
+  const initialChannels = _getInitialInvocationChannels(superEntry);
+  const sharedRootBuffer =
+    inheritanceStateValue && inheritanceStateValue.sharedRootBuffer
+      ? inheritanceStateValue.sharedRootBuffer
+      : currentBuffer;
+  const invocationBuffer = runtime.createCommandBuffer(
+    context,
+    sharedRootBuffer,
+    initialChannels,
+    currentBuffer
+  );
+  const command = module.exports.createInheritanceInvocationCommand({
     name: methodName,
     label: `super() for method '${methodName}'`,
-    resolveMethodEntry: async () => {
-      const methodMeta = await resolveInheritanceMethod(inheritanceStateValue, methodName, errorContext);
-      const ownerEntry = _findResolvedMethodEntryForOwner(methodMeta, ownerKey);
-      if (!ownerEntry || !ownerEntry.super) {
+    getMethodData: async () => {
+      const methodData = await getMethodData(inheritanceStateValue, methodName, errorContext);
+      const ownerMethodData = _findMethodDataForOwner(methodData, ownerKey);
+      if (!ownerMethodData || !ownerMethodData.super) {
         throw _createInheritanceFatalError(
           `super() for method '${methodName}' was not found`,
           inheritanceState.ERR_SUPER_METHOD_NOT_FOUND,
           errorContext
         );
       }
-      return _resolveEffectiveInheritanceMethodFromEntry(ownerEntry.super, errorContext);
+      return ownerMethodData.super;
     },
     normalizeError: (error) => _normalizeResolutionError(error, errorContext),
     args,
@@ -682,20 +651,21 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
     env,
     runtime,
     cb,
-    barrierBuffer,
     currentBuffer,
+    invocationBuffer,
     errorContext
   });
   command.fallbackToContextOriginalArgs = true;
-  command.preWaitPromise = preWaitPromise;
 
-  return _enqueueAdmissionCommand(command, barrierBuffer, linkedChannels).promise;
+  return _enqueueInvocationCommand(command, invocationBuffer);
 }
 
 module.exports = {
-  InheritanceAdmissionCommand,
+  createInheritanceInvocationCommand,
+  invocationInternals,
   admitConstructorEntry,
-  resolveInheritanceMethod,
+  getMethodData,
+  getMethodLinkedChannels: _getMethodLinkedChannels,
   resolveInheritanceSharedChannel,
   invokeInheritedMethod,
   invokeSuperMethod

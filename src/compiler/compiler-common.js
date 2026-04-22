@@ -531,7 +531,15 @@ class CompilerCommon extends Obj {
     if (!metadata || !metadata.methods || !Array.isArray(metadata.methods.children)) {
       return [];
     }
-    return metadata.methods.children.filter(Boolean);
+    return metadata.methods.children.filter((child) => child && child.name && child.name.value !== '__constructor__');
+  }
+
+  _getConstructorDefinition(node) {
+    const metadata = this._getInheritanceMetadata(node);
+    if (!metadata || !metadata.methods || !Array.isArray(metadata.methods.children)) {
+      return null;
+    }
+    return metadata.methods.children.find((child) => child && child.name && child.name.value === '__constructor__') || null;
   }
 
   _getSharedDeclarations(node) {

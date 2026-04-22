@@ -213,10 +213,26 @@ function contextOrExternLookup(_context, name) {
   return _context.lookup(name);
 }
 
+function _lookupVisibleContextValue(_context, name) {
+  if (!_context) {
+    return { found: false, value: undefined };
+  }
+  const ctx = _context.ctx || null;
+  const globals = _context.env && _context.env.globals ? _context.env.globals : null;
+
+  if (globals && name in globals && !(ctx && name in ctx)) {
+    return { found: true, value: globals[name] };
+  }
+  if (ctx && name in ctx) {
+    return { found: true, value: ctx[name] };
+  }
+  return { found: false, value: undefined };
+}
+
 function contextOrSharedLookup(_context, name, currentBuffer, errorContext = null, inheritanceStateValue = null) {
-  const contextValue = _context.lookup(name);
-  if (contextValue !== undefined || !inheritanceStateValue) {
-    return contextValue;
+  const contextValue = _lookupVisibleContextValue(_context, name);
+  if (contextValue.found || !inheritanceStateValue) {
+    return contextValue.value;
   }
 
   return Promise.resolve(
@@ -327,8 +343,8 @@ function observeInheritanceSharedChannel(name, currentBuffer, errorContext = nul
 
   const pos = _getObservationPosition(errorContext);
 
-  return inheritanceCall.resolveInheritanceSharedChannel(inheritanceStateValue, name, errorContext).then((channelMeta) => {
-    if (implicitVarRead && channelMeta && channelMeta.type && channelMeta.type !== 'var') {
+  return inheritanceCall.resolveInheritanceSharedChannel(inheritanceStateValue, name, errorContext).then((channelType) => {
+    if (implicitVarRead && channelType && channelType !== 'var') {
       throw new RuntimeFatalError(
         `Shared channel '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
         pos.lineno,
@@ -368,6 +384,7 @@ function channelLookup(name, currentBuffer) {
  * Returns poison for missing names via context.lookupScript.
  */
 function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext = null) {
+  let inheritanceStateValue = arguments.length > 4 ? arguments[4] : null;
   const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
     ? currentBuffer.findChannel(name)
     : null;
@@ -377,6 +394,27 @@ function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext
   const channelRead = channelLookup(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
+  }
+  const contextValue = _lookupVisibleContextValue(context, name);
+  if (contextValue.found) {
+    return contextValue.value;
+  }
+  if (inheritanceStateValue) {
+    return Promise.resolve(
+      observeInheritanceSharedChannel(
+        name,
+        currentBuffer,
+        errorContext,
+        inheritanceStateValue,
+        'snapshot',
+        true
+      )
+    ).catch((error) => {
+      if (error && error.code === inheritanceState.ERR_SHARED_CHANNEL_NOT_FOUND) {
+        return context.lookupScript(name, errorContext);
+      }
+      throw error;
+    });
   }
   return context.lookupScript(name, errorContext);
 }

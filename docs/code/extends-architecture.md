@@ -122,23 +122,27 @@ Unresolved vs resolved entries should keep the smallest possible stable shape:
 Pending method entries and pending shared-channel entries should use the same
 promise-structure shape.
 
-The minimum resolved method-entry shape should stay small:
+The minimum raw compiled method-entry shape should stay small and should be
+emitted directly from the local method/block AST:
 
-- `usedChannels`
-- `mutatedChannels`
-- compiled function
+- `fn`
+- `signature`
+- `ownUsedChannels`
+- `ownMutatedChannels`
 - `super`
+- `ownerKey`
 
-No signatures are part of the first version, though signature compatibility
-may be checked later.
+`super` is optional. If the local method does not use `super()`, the field may
+be omitted or set to `null`. If the local method uses `super()`, the field is a
+pending-entry promise structure until startup registration wires it to the
+local parent method metadata or rejects it at the topmost parent.
 
 The compiler should emit only the channels directly touched by the local method
-body. Channels coming from the `super` chain are unknown at compile time and
-are merged later by the helper.
+body. Channels coming from the `super` chain are not stored in the raw compiled
+entry and are merged later by the resolver helper.
 
-Keep `usedChannels` and `mutatedChannels` separate in the stored method entry,
-but merge conservatively when needed. Treat `usedChannels` as read+write for
-safety if existing compiler behavior is inconsistent.
+Keep `ownUsedChannels` and `ownMutatedChannels` separate in the raw stored
+entry, then merge conservatively when needed.
 
 ### Shared-Channel Entries
 
@@ -256,16 +260,20 @@ metadata object using already-available local metadata:
 - resolve if the current entry is a promise structure
 - wire `super` if a child method uses `super()` and the local parent method
   matches
+- replace the effective method entry for that method name with the child
+  override so later lookup returns the topmost callable first
 
 Each script/template tries to resolve pending methods, pending shared channels,
 and pending method `super` entries using its own local definitions. When the
-root script/template is reached, any still-pending entries are rejected there.
+actual root script/template is reached, any still-pending entries are rejected
+there. At that point there is no parent left that could legally satisfy them.
 
 The parent script resolves all method object / `super` promises that it can and
-replaces the target with the resolved object. It adds its own methods to that
-object for methods that are not already there and passes it to the parent if
-`extends` is used. If no `extends` is used and there are still promise methods
-that have not been resolved, these are rejected.
+replaces the target with the resolved local object. It adds its own methods to
+that object for methods that are not already there and passes it to the parent
+if `extends` is used. If no `extends` is used and there are still pending
+method or `super` entries that have not been resolved, these are rejected as
+fatal errors.
 
 Each script/template adds shared channels to the shared schema when they do not
 exist yet, resolves pending entries when it can, and rejects unresolved ones
@@ -277,11 +285,14 @@ Constructor dispatch should not be a special runtime model. It is compiled as
 an imported call to `__constructor__`, and then resolved and linked exactly
 like any other method call.
 
-The main body is the constructor. If the constructor is empty, `super()` is
-implicit, except at the root level where an empty constructor stays empty. This
-means every non-root level effectively has a constructor. If the constructor is
-not empty, parent-constructor execution is not automatic; it happens only
-through the constructor's own `super()` behavior.
+Code after `extends` is the constructor body. If there is no executable body
+after `extends`, there is no local constructor entry, so normal inherited
+lookup finds an ancestor constructor if one exists. Parent-constructor
+execution inside a real constructor body is not automatic; it happens only
+through the constructor's own `super()` behavior. At the actual topmost root,
+an otherwise-missing constructor resolves to a no-op constructor so
+constructor `super()` from a child does not fail just because the root body is
+empty.
 
 Because the body is just the constructor method, it does not create a separate
 "parent scope" that other methods can read from. Later methods/blocks follow
@@ -347,12 +358,19 @@ point.
 
 ## Helper Model and Late Linking
 
-Do not read `usedChannels` / `mutatedChannels` directly from the raw method
-metadata object. Instead, use a helper that:
+Do not read raw `ownUsedChannels` / `ownMutatedChannels` directly from the
+stored method metadata object. Instead, use one public helper that resolves and
+returns the full callable data needed by side-channel apply. A good name for
+this helper is `getMethodData(...)`.
+
+`getMethodData(...)` should:
 
 - resolves the method entry if it is still pending
-- returns the channel information required for the actually executed call target
-- may memoize merged metadata on the resolved entry as an optimization
+- recursively resolves the complete reachable `super` chain for that callable
+- computes merged channel information for each level from the resolved chain
+- returns the callable data required for the actually executed call target
+- memoize the fully resolved callable data on the resolved raw entry as an
+  optimization
 
 The promise returned by that helper is the actual barrier used by side-channel
 apply. The barrier is not "get the metadata object", but "resolve the effective
@@ -367,13 +385,28 @@ The helper described above is the exact-link-after-load mechanism. It is
 awaited by `apply()` before linking, and it does not resolve until the
 effective method entry is fully available.
 
-The helper should stay as narrow as possible:
+`extends ... with ...` payloads should follow the same chain-through model in
+both templates and scripts:
 
-- it resolves the effective entry for the current call target
-- it resolves the callable metadata chain needed to describe the current
-  callable's inherited effect set
-- `super` should stay part of that resolved callable metadata shape as the next
-  same-shape metadata level, or `null` when there is no parent level
+- the payload object is captured at the `extends` site
+- it may pass unchanged through intermediate parents that do not declare those
+  explicit inputs themselves
+- validation should happen where an include/import-style isolated composition
+  boundary actually consumes externs, not at each intermediate inheritance hop
+
+Internally, the public helper may use one recursive helper that resolves a raw
+entry to resolved callable data:
+
+- if the raw entry has no `super`, the merged channels at that level are just
+  the local `ownUsedChannels` / `ownMutatedChannels`
+- if the raw entry has a pending `super`, await it and replace the raw `super`
+  field with the resolved raw parent entry
+- recurse into the parent entry so the whole `super` chain is resolved
+- build the current level's `mergedUsedChannels` / `mergedMutatedChannels` from
+  the current local channels plus the resolved parent level's merged channels
+
+`super` should stay part of the resolved callable data shape as the next
+same-shape callable-data level, or `null` when there is no parent level.
 
 The resolved callable metadata shape should be explicit, for example:
 
@@ -384,6 +417,12 @@ The resolved callable metadata shape should be explicit, for example:
 - `mergedUsedChannels`
 - `mergedMutatedChannels`
 - `super`
+
+`super` in this resolved callable-data shape is not a pending promise
+structure. It is either:
+
+- the same resolved callable-data shape for the next level
+- or `null`
 
 Current-call linkage uses the current level's merged channel effect set:
 
@@ -413,17 +452,18 @@ resolution/linking can serialize later unrelated shared-channel work and
 violate the architecture's intended concurrency model.
 
 Entry replacement belongs to startup registration, not to the helper. The
-helper may still memoize merged metadata on a resolved entry so repeated calls
-do not redo the same merge work.
+helper may still memoize fully resolved callable data on a resolved raw entry
+so repeated calls do not redo the same recursive merge work.
 
 When apply requests metadata through the helper, it awaits the already-shared
 entry reference. By the time that await resolves, startup replacement has
-already happened. The helper only computes and memoizes derived merged metadata
-such as effective channel sets.
+already happened. The helper only resolves pending parent links, computes the
+resolved callable-data chain, and memoizes derived merged metadata such as the
+effective channel sets.
 
-Call sites should not read `usedChannels` / `mutatedChannels` directly from the
-raw stored entry. They should go through the helper, which resolves the
-effective method target and computes channel metadata for the resolved
+Call sites should not read `ownUsedChannels` / `ownMutatedChannels` directly
+from the raw stored entry. They should go through the helper, which resolves
+the effective method target and computes callable data for the resolved
 callable's inherited effect set. Execution of `super()` remains lazy, but the
 linked/waited channel metadata is conservative for that callable level.
 
@@ -440,6 +480,14 @@ The promise returned by the shared-channel helper is the barrier for
 caller-side shared-channel access. Side-channel apply must await it before
 adding the command that reads from the shared channel.
 
+Unresolved inherited method references that are discovered during analysis
+should be compiled as pending method entries, not as `null` placeholders. Those
+pending entries may carry a narrow structural hint of the locally declared
+shared lanes for that file so the call site can still reserve source-order
+position before the parent method body is known. This is only a local fallback
+for unresolved inherited methods; it must not widen into runtime-wide
+`Object.keys(sharedSchema)` linkage.
+
 Shared channel lookup from the caller script/template mirrors method lookup. It
 uses a dedicated helper that:
 
@@ -454,8 +502,8 @@ to choose and construct the side-channel command.
 Allowed shared-channel operations should stay explicit:
 
 - `snapshot()`
-- `isError()`
-- `getError()`
+- `is error`
+- `#`
 - implicit `var` snapshot when no more specific operation is requested
 
 Any other operation should fail dynamically with a good fatal error if the
@@ -467,9 +515,31 @@ metadata. Shared-channel-lookup side-channel commands await helper-resolved
 shared-channel metadata.
 
 Shared-channel observation remains a current-buffer operation. The caller does
-not receive a stored JS channel object; instead, the corresponding command is
-added against the hierarchy/component shared root from the caller's current
-position.
+not receive a stored JS channel object. Instead:
+
+- the caller/current buffer receives a side-channel observation command
+- that side-channel command already knows the exact shared channel being read
+- it carries the exact observational channel command to run
+- in `apply()`, it enqueues that observational command on the hierarchy or
+  component shared root buffer for the exact shared lane
+- it returns the observational command's deferred result promise
+
+For component access specifically, the side-channel observation command should
+carry the exact observational command instance rather than hardcoding modes. In
+the current model that means:
+
+- the compiler uses the normal `is error` and `#` syntax paths, but
+  special-cases component-bound properties to route them into component shared
+  observation instead of ordinary lookup/peek handling
+- `comp.someVar` uses a `SnapshotCommand` plus implicit-var-read validation
+- `comp.someChannel.snapshot()` uses `SnapshotCommand`
+- `comp.someChannel is error` uses `IsErrorCommand`
+- `comp.someChannel#` uses `GetErrorCommand`
+
+This keeps the side-channel command generic and future-friendly. New
+observational commands can be supported later without changing the shared-root
+enqueue model, as long as they remain safe observational commands rather than
+mutations.
 
 ## Component Model
 
@@ -557,8 +627,9 @@ The default error model should be strict:
 
 - unresolved entries at the topmost parent are fatal and reject
 - helper rejection during apply/link is fatal
-- missing `__constructor__` is the one allowed non-error case and should map to
-  an empty constructor method
+- missing `__constructor__` is only non-fatal when no local constructor exists
+  and normal inherited lookup can continue to an ancestor constructor; an
+  unresolved pending `__constructor__` at the topmost parent is fatal
 
 Topmost-parent rejection becomes observable when apply awaits the helper. If
 that await rejects, apply should report the failure through `cb()` and throw

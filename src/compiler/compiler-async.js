@@ -265,12 +265,14 @@ class CompilerAsync extends CompilerBaseAsync {
     node.targets.forEach((target, i) => {
       const name = target.value;
       const valueId = ids[i];
+      const visibleDeclaration = this.analysis.findDeclaration(node._analysis, name);
+      const isSharedDeclaration = !!(visibleDeclaration && visibleDeclaration.shared);
 
       if (hasAssignedValue) {
         this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
       }
 
-      if (name.charAt(0) !== '_' && hasAssignedValue && exportFromRootScope) {
+      if (name.charAt(0) !== '_' && hasAssignedValue && exportFromRootScope && !isSharedDeclaration) {
         this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.buffer.currentBuffer});`);
       }
     });
@@ -931,6 +933,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('  runtime,');
     this.emit.line('  cb,');
     this.emit.line(`  ${this.buffer.currentBuffer},`);
+    this.emit.line(`  "${targetName}",`);
     this.emit.line(`  ${errorContextJson}`);
     this.emit.line(');');
     this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${targetName}', args: [${instanceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${targetName}');`);
@@ -1154,6 +1157,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _collectRootPendingInheritanceMethodNames(node) {
     const methodDefinitions = this._getMethodDefinitions(node);
+    const constructorDefinition = this._getConstructorDefinition(node);
     const localMethodNames = new Set(methodDefinitions.map((block) => block.name.value));
     const pendingNames = new Set(
       this._collectRootPendingInheritanceMethodNamesForNodeChildren(
@@ -1167,6 +1171,13 @@ class CompilerAsync extends CompilerBaseAsync {
       const methodPendingNames = this._collectPendingInheritanceMethodNamesForOwner(methodNode.body, localMethodNames);
       methodPendingNames.forEach((name) => pendingNames.add(name));
     });
+    if (constructorDefinition && constructorDefinition.body) {
+      const constructorPendingNames = this._collectPendingInheritanceMethodNamesForOwner(
+        constructorDefinition.body,
+        localMethodNames
+      );
+      constructorPendingNames.forEach((name) => pendingNames.add(name));
+    }
 
     return Array.from(pendingNames);
   }
@@ -1354,18 +1365,17 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     this._emitRootExternInitialization(node);
     this.inheritance.emitRootSharedDeclarations(node);
-    if (this.scriptMode) {
-      if (this.hasExtends) {
-        this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, null);`);
-        this.emit.line('runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ' + CONSTRUCTOR_BOUNDARY_PROMISE_VAR + ');');
-      } else {
-        this.emit.line(`b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, null);`);
-        this.emit.line('runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, null);');
-      }
-    } else {
-      this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null'});`);
-      this.emit.line('runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ' + CONSTRUCTOR_BOUNDARY_PROMISE_VAR + ');');
+    if (!this.scriptMode) {
+      this.emit.line(`const extendsState = ${this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null'};`);
     }
+    this._compileChildren(node, null);
+    const constructorResultVar = this._tmpid();
+    this.emit.line(`const ${constructorResultVar} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')});`);
+    this.emit.line(`if (${constructorResultVar} && typeof ${constructorResultVar}.then === 'function') {`);
+    this.emit.line(`  ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = runtime.mergeInheritanceConstructorBoundaryPromise(inheritanceState, ${constructorResultVar}, ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR});`);
+    this.emit.line('} else {');
+    this.emit.line(`  runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR});`);
+    this.emit.line('}');
     this.inheritance.emitAsyncRootCompletion(node);
   }
 
@@ -1408,17 +1418,21 @@ class CompilerAsync extends CompilerBaseAsync {
     this.pendingInheritanceMethodNames = Array.isArray(node._analysis && node._analysis.pendingInheritanceMethodNames)
       ? node._analysis.pendingInheritanceMethodNames
       : [];
+    const constructorDefinition = this._getConstructorDefinition(node);
     const methodDefinitions = this.scriptMode ? this._getMethodDefinitions(node) : node.findAll(nodes.Block);
+    const callableDefinitions = constructorDefinition
+      ? methodDefinitions.concat([constructorDefinition])
+      : methodDefinitions;
     this.needsInheritanceState = !!(
       this.hasExtends ||
       (this.scriptMode && this._getSharedDeclarations(node).length > 0) ||
-      methodDefinitions.length > 0 ||
+      callableDefinitions.length > 0 ||
       this.pendingInheritanceMethodNames.length > 0
     );
     const blocks = this._compileAsyncRoot(node);
     const methods = this.inheritance.collectCompiledMethods(node, blocks, this.pendingInheritanceMethodNames);
 
-    if (this.pendingInheritanceMethodNames.length > 0 || this.inheritance.hasMethodSuperDependencies(blocks)) {
+    if (this.pendingInheritanceMethodNames.length > 0 || this.inheritance.hasMethodSuperDependencies(callableDefinitions)) {
       this.inheritance.emitPendingInheritanceEntryFactory();
     }
     this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);
@@ -1457,6 +1471,9 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeMethodDefinition(node) {
     const analysis = this.analyzeBlock(node);
+    if (node && node.isSyntheticConstructor) {
+      analysis.parentReadOnly = false;
+    }
     analysis.declares = (analysis.declares || []).concat([{
       name: RETURN_CHANNEL_NAME,
       type: 'var',

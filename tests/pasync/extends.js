@@ -62,6 +62,8 @@ describe('Extends Runtime', function () {
       expect(script.methods.__constructor__.fn).to.be.a('function');
       expect(script.methods.__constructor__.fn).not.to.be(script.rootRenderFunc);
       expect(script._compileSource()).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
+      expect(script._compileSource()).to.contain('runtime.mergeInheritanceConstructorBoundaryPromise(inheritanceState,');
+      expect(script._compileSource()).to.not.contain('Promise.all([__constructorBoundaryPromise,');
     });
 
     it('should lower static script extends through a structural child-buffer boundary', function () {
@@ -150,6 +152,18 @@ describe('Extends Runtime', function () {
       const result = await env.renderScript('C.script', {});
       expect(result).to.be(undefined);
     });
+
+    it('should let constructor super() resolve against an empty topmost parent body', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'method noop()\n  return null\nendmethod');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nsuper()\ntrace("C|")\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be('C|');
+    });
+
   });
 
   describe('Phase 5 - Extends Return Rules', function () {
@@ -459,7 +473,7 @@ describe('Extends Runtime', function () {
       }).to.throwException(/bare inherited-method references are not supported/);
     });
 
-    it('should use InheritanceAdmissionCommand as a real observable command barrier', async function () {
+    it('should use one deferred invocation command per inherited call', async function () {
       if (!inheritanceCallModule) {
         this.skip();
         return;
@@ -471,12 +485,13 @@ describe('Extends Runtime', function () {
       runtime.declareBufferChannel(rootBuffer, 'trace', 'var', context, null);
 
       let seenCommand = null;
-      let applyCount = 0;
-      const originalApply = inheritanceCallModule.InheritanceAdmissionCommand.prototype.apply;
-      inheritanceCallModule.InheritanceAdmissionCommand.prototype.apply = function(output) {
-        seenCommand = this;
-        applyCount++;
-        return originalApply.call(this, output);
+      let startCount = 0;
+      const originalCreateInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
+      inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+        const command = originalCreateInvocationCommand(spec);
+        seenCommand = command;
+        startCount++;
+        return command;
       };
 
       try {
@@ -497,9 +512,11 @@ describe('Extends Runtime', function () {
               output.markFinishedAndPatchLinks();
               return 'result';
             },
-            contract: { argNames: [], withContext: false },
+            signature: { argNames: [], withContext: false },
             ownerKey: 'Main.script',
-            linkedChannels: ['trace']
+            ownUsedChannels: [],
+            ownMutatedChannels: ['trace'],
+            super: null
           },
           [],
           env,
@@ -511,24 +528,21 @@ describe('Extends Runtime', function () {
 
         rootBuffer.markFinishedAndPatchLinks();
 
-        const value = await admission.promise;
-        await admission.completion;
+        const value = await admission;
         const trace = await traceSnapshot;
 
         expect(value).to.be('result');
         expect(trace).to.be('done');
-        expect(applyCount).to.be(1);
-        expect(seenCommand).to.be.a(inheritanceCallModule.InheritanceAdmissionCommand);
-        expect(seenCommand.isObservable).to.be(true);
+        expect(startCount).to.be(1);
+        expect(seenCommand.isObservable).to.be(false);
         expect(seenCommand.getError()).to.be(null);
-        expect(admission.promise).to.be(seenCommand.promise);
-        expect(admission.completion).to.be(seenCommand.completion);
+        expect(admission).to.be(seenCommand.promise);
       } finally {
-        inheritanceCallModule.InheritanceAdmissionCommand.prototype.apply = originalApply;
+        inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInvocationCommand;
       }
     });
 
-    it('should expose resolvedMethodMeta on inherited dispatch promises', async function () {
+    it('should resolve inherited method metadata with the callable runtime shape', async function () {
       env = new AsyncEnvironment();
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
       const inheritanceState = runtime.createInheritanceState();
@@ -538,10 +552,10 @@ describe('Extends Runtime', function () {
         fn() {
           return 'done';
         },
-        contract: { argNames: [], withContext: false },
+        signature: { argNames: [], withContext: false },
         ownerKey: 'Main.script',
-        usedChannels: ['theme'],
-        mutatedChannels: ['trace'],
+        ownUsedChannels: ['theme'],
+        ownMutatedChannels: ['trace'],
         super: null
       };
 
@@ -557,24 +571,24 @@ describe('Extends Runtime', function () {
         { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
       );
 
-      expect(admission).to.be.ok();
-      expect(admission.resolvedMethodMeta).to.be.ok();
-      expect(typeof admission.resolvedMethodMeta.then).to.be('function');
+      const methodMeta = await runtime.getMethodData(
+        inheritanceState,
+        'build',
+        { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
+      );
 
       rootBuffer.markFinishedAndPatchLinks();
-
       const value = await admission;
-      const methodMeta = await admission.resolvedMethodMeta;
-      await admission.completion;
 
       expect(value).to.be('done');
       expect(methodMeta).to.be.ok();
-      expect(methodMeta.entry).to.be(inheritanceState.methods.build);
-      expect(methodMeta.linkedChannels).to.contain('theme');
-      expect(methodMeta.linkedChannels).to.contain('trace');
+      expect(methodMeta.fn).to.be(inheritanceState.methods.build.fn);
+      expect(methodMeta.signature).to.eql({ argNames: [], withContext: false });
+      expect(methodMeta.mergedUsedChannels).to.contain('theme');
+      expect(methodMeta.mergedMutatedChannels).to.contain('trace');
     });
 
-    it('should let _finishAdmissionBuffers own sync admission-buffer cleanup', async function () {
+    it('should let finishInvocationBuffer own sync invocation-buffer cleanup', async function () {
       if (!inheritanceCallModule) {
         this.skip();
         return;
@@ -584,7 +598,7 @@ describe('Extends Runtime', function () {
         markFinishedAndPatchLinks() {
           this.finishCount += 1;
         },
-        getFinishCompletePromise() {
+        getFinishedPromise() {
           return Promise.resolve();
         }
       };
@@ -593,15 +607,19 @@ describe('Extends Runtime', function () {
           return {};
         }
       };
-      const command = new inheritanceCallModule.InheritanceAdmissionCommand({
+      const command = inheritanceCallModule.createInheritanceInvocationCommand({
         name: '__constructor__',
-        resolveMethodEntry: () => ({
+        getMethodData: () => ({
           fn() {
             return 'done';
           },
-          contract: { argNames: [], withContext: false },
+          signature: { argNames: [], withContext: false },
           ownerKey: 'Parent.script',
-          linkedChannels: []
+          ownUsedChannels: [],
+          ownMutatedChannels: [],
+          mergedUsedChannels: [],
+          mergedMutatedChannels: [],
+          super: null
         }),
         args: [],
         context,
@@ -617,7 +635,6 @@ describe('Extends Runtime', function () {
       const applied = command.apply();
       const value = applied && typeof applied.then === 'function' ? await applied : applied;
       const promised = await command.promise;
-      await command.completion;
 
       expect(value).to.be('done');
       expect(promised).to.be('done');
@@ -635,11 +652,11 @@ describe('Extends Runtime', function () {
         env = new AsyncEnvironment(loader);
         const events = [];
         const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
-        const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+        const originalEnsureInvocationBuffer = inheritanceCallModule.invocationInternals.ensureInvocationBuffer;
         let buildInvocationCreatedAt = -1;
 
-        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
-          if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
+        inheritanceCallModule.invocationInternals.ensureInvocationBuffer = function(command, methodMeta) {
+          if (command.name === 'build' && methodMeta && methodMeta.ownerKey === 'A.script') {
             buildInvocationCreatedAt = events.length;
             events.push({ type: 'build-invocation-buffer-created' });
           }
@@ -680,11 +697,11 @@ describe('Extends Runtime', function () {
           expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
         } finally {
           inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
-          inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+          inheritanceCallModule.invocationInternals.ensureInvocationBuffer = originalEnsureInvocationBuffer;
         }
       });
 
-      it('should create unresolved inherited invocation buffers with the resolved method entry linkedChannels', async function () {
+      it('should create unresolved inherited invocation buffers with the resolved callable merged channels', async function () {
         if (!inheritanceCallModule) {
           this.skip();
           return;
@@ -692,17 +709,16 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         let seenLinkedChannels = null;
-        const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+        const originalEnsureInvocationBuffer = inheritanceCallModule.invocationInternals.ensureInvocationBuffer;
 
-        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+        inheritanceCallModule.invocationInternals.ensureInvocationBuffer = function(command, methodMeta) {
           const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
-          if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
+          if (command.name === 'build' && methodMeta && methodMeta.ownerKey === 'A.script') {
             seenLinkedChannels = {
-              methodLinkedChannels: Array.from(new Set([
-                ...(Array.isArray(methodEntry.usedChannels) ? methodEntry.usedChannels : []),
-                ...(Array.isArray(methodEntry.mutatedChannels) ? methodEntry.mutatedChannels : [])
+              mergedLinkedChannels: Array.from(new Set([
+                ...(Array.isArray(methodMeta.mergedUsedChannels) ? methodMeta.mergedUsedChannels : []),
+                ...(Array.isArray(methodMeta.mergedMutatedChannels) ? methodMeta.mergedMutatedChannels : [])
               ])),
-              rawEntryLinkedChannels: Array.isArray(methodEntry.linkedChannels) ? methodEntry.linkedChannels.slice() : [],
               late: invocationBuffer.isLinkedChannel('late'),
               trace: invocationBuffer.isLinkedChannel('trace')
             };
@@ -732,13 +748,12 @@ describe('Extends Runtime', function () {
           const result = await env.renderScript('C.script', {});
           expect(result).to.eql(['done', 'before|method|after|']);
           expect(seenLinkedChannels).to.be.ok();
-          expect(seenLinkedChannels.methodLinkedChannels).to.contain('trace');
-          expect(seenLinkedChannels.methodLinkedChannels).to.contain('late');
-          expect(seenLinkedChannels.rawEntryLinkedChannels).to.eql([]);
+          expect(seenLinkedChannels.mergedLinkedChannels).to.contain('trace');
+          expect(seenLinkedChannels.mergedLinkedChannels).to.contain('late');
           expect(seenLinkedChannels.trace).to.be(true);
           expect(seenLinkedChannels.late).to.be(true);
         } finally {
-          inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+          inheritanceCallModule.invocationInternals.ensureInvocationBuffer = originalEnsureInvocationBuffer;
         }
       });
 
@@ -778,14 +793,14 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         let seenInvocationLate = null;
-        const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+        const originalEnsureInvocationBuffer = inheritanceCallModule.invocationInternals.ensureInvocationBuffer;
 
-        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+        inheritanceCallModule.invocationInternals.ensureInvocationBuffer = function(command, methodMeta) {
           const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
-          if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
+          if (command.name === 'build' && methodMeta && methodMeta.ownerKey === 'A.script') {
             seenInvocationLate = {
               late: invocationBuffer ? invocationBuffer.isLinkedChannel('late') : null,
-              usesOwnInvocationBuffer: this.invocationBuffer === invocationBuffer
+              usesOwnInvocationBuffer: command.invocationBuffer === invocationBuffer
             };
           }
           return invocationBuffer;
@@ -818,7 +833,7 @@ describe('Extends Runtime', function () {
             usesOwnInvocationBuffer: true
           });
         } finally {
-          inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+          inheritanceCallModule.invocationInternals.ensureInvocationBuffer = originalEnsureInvocationBuffer;
         }
       });
 

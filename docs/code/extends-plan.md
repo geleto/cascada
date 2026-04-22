@@ -274,8 +274,9 @@ Scope:
 - include internal `__constructor__`
   - in this phase, establish the presence and compiled-object shape of the
     constructor entry
-  - Phase 5 fills in the final constructor body semantics such as implicit
-    `super()`, post-`extends` code movement, and async-boundary behavior
+  - Phase 5 fills in the final constructor body semantics such as post-`extends`
+    code movement, constructor omission when the post-`extends` body is empty,
+    and async-boundary behavior
 - emit `usedChannels` / `mutatedChannels` as plain arrays of channel names
 - compile shared schema metadata with:
   - channel type
@@ -371,8 +372,11 @@ Goal:
 Scope:
 
 - constructor as ordinary method target
-- root-level empty constructor stays empty
-- non-root empty constructor gets implicit `super()`
+- code after `extends` becomes the local constructor body
+- if there is no executable body after `extends`, do not emit a local
+  constructor entry; normal inherited lookup finds an ancestor constructor if
+  one exists
+- `super()` inside a constructor remains explicit
 - `extends` creates the async boundary
 - code after `extends` runs in a later command buffer
 - no executable pre-`extends` constructor code path
@@ -414,7 +418,7 @@ Tests:
 
 - constructor ordering
 - emitted/source-order constructor structure
-- root vs non-root empty constructor behavior
+- constructor omission when there is no executable post-`extends` body
 - full parent-constructor ordering tests land after invocation/linking exists
 - re-enable groups:
   - `tests/pasync/extends.js` -> `Phase 5 - Constructor Model`
@@ -615,8 +619,8 @@ Scope:
 - `ns.x` for `shared var` as a current-buffer observation operation, not a
   stored JS property
 - constrain the component namespace surface:
-  - supported forms are `ns.x`, `ns.x.snapshot()`, `ns.x.isError()`,
-    `ns.x.getError()`, and `ns.method(...)`
+  - supported forms are `ns.x`, `ns.x.snapshot()`, `ns.x is error`,
+    `ns.x#`, and `ns.method(...)`
   - do not allow arbitrary JS-object-style chaining such as `ns.x.y` or
     `ns.method.prop`
 - remove first:
@@ -1350,6 +1354,12 @@ Critical model for this phase:
   lifetime spans all inherited calls and shared-channel work for that instance
 - each inherited call creates exactly one child invocation buffer under that
   shared root after the call target and its exact channel metadata are known
+- template `extends ... with ...` must follow the same payload pass-through
+  rules as script `extends ... with ...`:
+  - capture the payload once at the `extends` site
+  - allow it to pass through intermediate parents unchanged
+  - do not re-validate that payload at each intermediate inheritance hop just
+    because the current parent does not declare the forwarded inputs
 - the caller-side command still originates from the caller's current buffer, but
   the actual inherited method body runs in the per-call child buffer created in
   the shared-root-owned tree
@@ -1359,6 +1369,10 @@ Critical model for this phase:
   - do not separately await "method known" and then "channels known"; channel
     metadata comes from the resolved method metadata
   - do not separately await or pre-resolve unrelated ancestor entries
+  - unresolved inherited methods should exist as pending method-entry structs,
+    not `null` placeholders; those pending entries may carry only the file's
+    locally declared shared-lane hints so the call site can preserve source
+    order before the parent method body resolves
 - the helper result should be one resolved inheritance-callable metadata
   shape, not just two arrays:
   - `fn`
@@ -1731,18 +1745,39 @@ Scope:
 - update `docs/cascada/script.md` and any agent-facing script docs that
   describe:
   - `shared` declarations
+  - shared declaration defaults:
+    - defaults are still part of the language semantics
+    - child shared defaults override parent shared defaults, even when the
+      child default is `none` / `null`
+    - runtime chain schema no longer treats `defaultValue` as required
+      execution metadata, so any older docs that imply `sharedSchema` carries
+      authoritative runtime defaults must be updated
   - `extends none` / `extends null` as the explicit "no parent" form in
     dynamic parent-selection expressions
   - `method ... endmethod`
   - inherited dispatch via `this.method(...)`
   - `super()`
+    - keep this at the normal user-facing method/construction level only
+    - do not add special explanatory rules for constructor `super()` beyond
+      the ordinary visible behavior of the language
   - `component ... as ns`
   - component `with` payload forms
   - the constrained component namespace surface:
-    - allowed: `ns.x`, `ns.x.snapshot()`, `ns.x.isError()`,
-      `ns.x.getError()`, `ns.method(...)`
+    - allowed: `ns.x`, `ns.x.snapshot()`, `ns.x is error`,
+      `ns.x#`, `ns.method(...)`
     - not allowed: arbitrary property chaining or treating `ns` as a plain JS
       object
+  - shared component property observation semantics:
+    - `ns.someVar` means an implicit read of a shared `var` channel value
+    - `ns.someChannel.snapshot()` means an explicit snapshot observation of the
+      shared channel
+    - `ns.someChannel is error` means explicit shared error-state observation
+    - `ns.someChannel#` means explicit shared error peek/observation
+    - `is error` and `#` stay the normal language operators; the compiler only
+      special-cases component-bound properties so they route into the component
+      shared-observation path
+    - these are observational side-channel operations on shared component
+      state, not plain JS property access on a normal object
 - update the new import functionality in the docs too:
   - `import "X" as ns with context`
   - `import "X" as ns with theme, id`
