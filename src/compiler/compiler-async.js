@@ -1370,9 +1370,10 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     this._compileChildren(node, null);
     this.emit.line(
-      `${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.startInheritanceRootConstructor(inheritanceState, () => ` +
-      `b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')}), ` +
-      `${INHERITANCE_STARTUP_PROMISE_VAR});`
+      `${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.startInheritanceRootConstructor(` +
+      `${COMPILED_METHODS_VAR}, inheritanceState, env, context, runtime, cb, ${this.buffer.currentBuffer}, ` +
+      `${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')}, ` +
+      `${INHERITANCE_STARTUP_PROMISE_VAR}, () => b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')}));`
     );
     this.inheritance.emitAsyncRootCompletion(node);
   }

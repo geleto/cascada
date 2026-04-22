@@ -1142,28 +1142,66 @@ describe('Extends Foundation', function () {
       expect(runtime.awaitInheritanceStartup(state)).to.be(merged);
     });
 
-    it('should start root constructor startup through one runtime helper', async function () {
+    it('should invoke root constructor startup through compiled method metadata', async function () {
       const state = runtime.createInheritanceState();
       let resolveConstructor;
       const constructorPromise = new Promise((resolve) => {
         resolveConstructor = resolve;
       });
+      const calls = [];
+      const compiledMethods = {
+        __constructor__: {
+          fn(envArg, contextArg, runtimeArg, cbArg, outputArg, inheritanceStateArg, extendsStateArg) {
+            void envArg;
+            void contextArg;
+            void runtimeArg;
+            void cbArg;
+            void outputArg;
+            void inheritanceStateArg;
+            calls.push(extendsStateArg);
+            return constructorPromise;
+          }
+        }
+      };
 
       const started = runtime.startInheritanceRootConstructor(
+        compiledMethods,
         state,
-        () => constructorPromise
+        null,
+        null,
+        runtime,
+        null,
+        null,
+        'dynamic-extends'
       );
 
       expect(started).to.be.ok();
       expect(runtime.awaitInheritanceStartup(state)).to.be(started);
+      expect(calls).to.eql(['dynamic-extends']);
 
       resolveConstructor('done');
       expect(await started).to.be('done');
 
       const syncState = runtime.createInheritanceState();
-      const syncStarted = runtime.startInheritanceRootConstructor(syncState, () => null);
+      let fallbackInvoked = false;
+      const syncStarted = runtime.startInheritanceRootConstructor(
+        {},
+        syncState,
+        null,
+        null,
+        runtime,
+        null,
+        null,
+        null,
+        null,
+        () => {
+          fallbackInvoked = true;
+          return null;
+        }
+      );
       expect(syncStarted).to.be(null);
       expect(runtime.awaitInheritanceStartup(syncState)).to.be(null);
+      expect(fallbackInvoked).to.be(true);
     });
 
     it('should wait for parent root completion through one runtime helper', async function () {

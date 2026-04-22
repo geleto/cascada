@@ -48,8 +48,42 @@ async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheri
   return parentOutputBuffer;
 }
 
-function startInheritanceRootConstructor(inheritanceStateValue, invokeConstructor, currentStartupPromise = null) {
-  const constructorResult = invokeConstructor();
+function getLocalRootConstructorEntry(compiledMethods) {
+  const methods = compiledMethods && typeof compiledMethods === 'object' ? compiledMethods : null;
+  return methods && Object.prototype.hasOwnProperty.call(methods, '__constructor__')
+    ? methods.__constructor__
+    : null;
+}
+
+function invokeLocalRootConstructor(compiledMethods, env, context, runtime, cb, output, inheritanceStateValue, extendsState = null) {
+  const entry = getLocalRootConstructorEntry(compiledMethods);
+  const fn = entry && entry.fn;
+  if (typeof fn !== 'function') {
+    return null;
+  }
+  return fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState);
+}
+
+function startInheritanceRootConstructor(
+  compiledMethods,
+  inheritanceStateValue,
+  env,
+  context,
+  runtime,
+  cb,
+  output,
+  extendsState = null,
+  currentStartupPromise = null,
+  fallbackInvoke = null
+) {
+  const localEntry = getLocalRootConstructorEntry(compiledMethods);
+  const hasLocalConstructor = !!(localEntry && typeof localEntry.fn === 'function');
+  let constructorResult = hasLocalConstructor
+    ? localEntry.fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState)
+    : null;
+  if (!hasLocalConstructor && typeof fallbackInvoke === 'function') {
+    constructorResult = fallbackInvoke();
+  }
   if (constructorResult && typeof constructorResult.then === 'function') {
     return inheritanceState.mergeInheritanceStartupPromise(
       inheritanceStateValue,
@@ -114,6 +148,7 @@ function finalizeInheritanceMetadata(state, context = null) {
 
 module.exports = {
   bootstrapInheritanceMetadata,
+  invokeLocalRootConstructor,
   startInheritanceRootConstructor,
   waitForParentRootRender,
   linkCurrentBufferToParentChannels,
