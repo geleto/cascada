@@ -560,18 +560,7 @@ class CompileInheritance {
     this.emit.line(`${indent}  : context.forkForPath(${parentTemplateVar}.path);`);
     this.emit.line(`${indent}const ${parentCompositionModeVar} = runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE) ? runtime.COMPONENT_COMPOSITION_MODE : true;`);
     this.emit.line(`${indent}const ${parentOutputVar} = ${parentTemplateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, ${parentCompositionModeVar}, ${currentBufferExpr}, inheritanceState);`);
-    this.emit.line(`${indent}runtime.linkCurrentBufferToResolvedParentSharedChannels(inheritanceState, ${currentBufferExpr}, ${parentOutputVar});`);
-    this.emit.line(`${indent}if (${parentCompositionModeVar} !== runtime.COMPONENT_COMPOSITION_MODE) {`);
-    this.emit.line(`${indent}  if (${parentOutputVar} === ${currentBufferExpr}) {`);
-    const parentConstructorBoundaryVar = this.compiler._tmpid();
-    this.emit.line(`${indent}    const ${parentConstructorBoundaryVar} = runtime.awaitInheritanceConstructorBoundary(inheritanceState);`);
-    this.emit.line(`${indent}    if (${parentConstructorBoundaryVar}) {`);
-    this.emit.line(`${indent}      await ${parentConstructorBoundaryVar};`);
-    this.emit.line(`${indent}    }`);
-    this.emit.line(`${indent}  } else if (${parentOutputVar} && typeof ${parentOutputVar}.getFinishedPromise === 'function') {`);
-    this.emit.line(`${indent}    await ${parentOutputVar}.getFinishedPromise();`);
-    this.emit.line(`${indent}  }`);
-    this.emit.line(`${indent}}`);
+    this.emit.line(`${indent}await runtime.waitForParentRootRender(${parentOutputVar}, ${currentBufferExpr}, inheritanceState, ${parentCompositionModeVar});`);
   }
 
   _emitDynamicTemplateParentRender(indent = '') {

@@ -447,6 +447,24 @@ describe('Extends Foundation', function () {
       expect(rootBuffer.getOwnChannel('theme')).to.be(undefined);
     });
 
+    it('should link newly registered shared lanes from the shared root to the active composition buffer', function () {
+      const sharedRootBuffer = runtime.createCommandBuffer(null);
+      const compositionBuffer = runtime.createCommandBuffer(null, sharedRootBuffer);
+      const state = runtime.createInheritanceState();
+      state.sharedRootBuffer = sharedRootBuffer;
+
+      runtime.bootstrapInheritanceMetadata(
+        state,
+        Object.create(null),
+        { theme: 'var', log: 'text' },
+        compositionBuffer,
+        null
+      );
+
+      expect(sharedRootBuffer.hasLinkedBuffer(compositionBuffer, 'theme')).to.be(true);
+      expect(sharedRootBuffer.hasLinkedBuffer(compositionBuffer, 'log')).to.be(true);
+    });
+
     it('should keep shared declarations owned by the shared buffer instead of reusing an unrelated parent channel', function () {
       const rootBuffer = runtime.createCommandBuffer(null);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
@@ -1122,6 +1140,32 @@ describe('Extends Foundation', function () {
       expect(mergedValue).to.be('second-value');
       expect(events).to.eql(['second', 'first', 'merged']);
       expect(runtime.awaitInheritanceConstructorBoundary(state)).to.be(merged);
+    });
+
+    it('should wait for parent root completion through one runtime helper', async function () {
+      const state = runtime.createInheritanceState();
+      let constructorResolved = false;
+      let parentFinishedWaited = false;
+      const currentBuffer = { label: 'current' };
+      const parentBuffer = {
+        getFinishedPromise() {
+          parentFinishedWaited = true;
+          return Promise.resolve('done');
+        }
+      };
+
+      runtime.setInheritanceConstructorBoundaryPromise(
+        state,
+        Promise.resolve().then(() => {
+          constructorResolved = true;
+        })
+      );
+
+      await runtime.waitForParentRootRender(currentBuffer, currentBuffer, state, true);
+      expect(constructorResolved).to.be(true);
+
+      await runtime.waitForParentRootRender(parentBuffer, currentBuffer, state, true);
+      expect(parentFinishedWaited).to.be(true);
     });
 
     it('should preserve the root rejection path when inherited method resolution fails later', async function () {

@@ -1469,7 +1469,6 @@ Scope:
   - remove or narrow broad-link helpers:
     - `_getInitialAdmissionChannels(...)`
     - `_ensureInvocationBuffer(...)` broad shared-lane union
-    - `linkCurrentBufferToResolvedParentSharedChannels(...)`
     - `linkCurrentBufferToParentSharedChannels(...)` broad linking / late repair
   - remove or collapse the admission/barrier layer if exact side-channel apply
     makes it unnecessary:

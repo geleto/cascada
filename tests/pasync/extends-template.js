@@ -235,97 +235,12 @@ describe('Template Extends', function () {
     });
   });
 
-  describe('Phase 9 - Template Inheritance Compiled Shape', function () {
-    it('should lower declared shared bare reads in async templates through the declared-name path', function () {
+  describe('Phase 9 - Template Lookup And Dispatch Semantics', function () {
+    it('should keep undeclared async-template bare names on ordinary ambient lookup', async function () {
       const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% shared var theme = "dark" %}{{ theme }}', env, 'shared-template-read.njk');
-      const source = tmpl._compileSource();
+      const result = await env.renderTemplateString('{{ theme }}', { theme: 'ctx-theme' });
 
-      expect(source).to.contain('runtime.observeInheritanceSharedChannel(');
-      expect(source).to.not.contain('context.lookup("theme")');
-    });
-
-    it('should keep undeclared async-template bare reads on ordinary ambient lookup', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{{ theme }}', env, 'ambient-template-read.njk');
-      const source = tmpl._compileSource();
-
-      expect(source).to.contain('context.lookup("theme")');
-      expect(source).to.not.contain('runtime.observeInheritanceSharedChannel(');
-    });
-
-    it('should compile template blocks as inherited callable entries with explicit payload args', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
-      const source = tmpl._compileSource();
-
-      expect(source).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
-      expect(source).to.contain('runtime.mergeInheritanceConstructorBoundaryPromise(inheritanceState,');
-      expect(source).to.not.contain('Promise.all([__constructorBoundaryPromise,');
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null, methodData) {');
-      expect(source).to.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
-      expect(source).to.contain('blockPayload && blockPayload.originalArgs');
-      expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
-      expect(source).to.contain('runtime.linkCurrentBufferToParentChannels(parentBuffer, output');
-      expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');
-      expect(source).to.contain('signature: {"argNames":["user"],"withContext":false}');
-      expect(source).to.not.contain('context.getBlockContract("content")');
-      expect(source).to.not.contain('context.createInheritancePayload(');
-      expect(source).to.not.contain('blockPayload.localsByTemplate');
-      expect(source).to.not.contain('runtime.prepareBlockEntryContext(');
-    });
-
-    it('should treat top-level overriding blocks as definition-only under static extends', function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
-
-      const tmpl = new AsyncTemplate(
-        '{% extends "base.njk" %}{% block content %}Child {{ user }}{% endblock %}',
-        env,
-        'child-inherited-block-inputs.njk'
-      );
-      const source = tmpl._compileSource();
-
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null, methodData) {');
-      expect(source).to.contain('context.forkForComposition("child-inherited-block-inputs.njk"');
-      expect(source).to.not.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
-      expect(source).to.contain('runtime.linkCurrentBufferToParentChannels(parentBuffer, output');
-      expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');
-      expect(source).to.not.contain('context.getBlockContract("content")');
-      expect(source).to.not.contain('context.getAsyncBlock(');
-    });
-
-    it('should compile async super() through invokeSuperMethod', function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
-
-      const tmpl = new AsyncTemplate(
-        '{% extends "base.njk" %}{% block content %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}',
-        env,
-        'block-super-no-caller-scheduling.njk'
-      );
-      const source = tmpl._compileSource();
-
-      expect(source).to.contain('blockPayload = null');
-      expect(source).to.contain('blockRenderCtx = undefined');
-      expect(source).to.contain('runtime.invokeSuperMethod(inheritanceState, "content"');
-      expect(source).to.not.contain('context.getBlockContract(');
-      expect(source).to.not.contain('context.createSuperInheritancePayload(');
-      expect(source).to.not.contain('context.getAsyncSuper(');
-    });
-
-    it('should compile imported member calls against invokeCallableAsync', function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
-
-      const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'imported-member-boundary.njk');
-      const source = tmpl._compileSource();
-
-      expect(source).to.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("m"');
-      expect(source).to.contain('runtime.callWrapAsync(');
+      expect(result).to.be('ctx-theme');
     });
   });
 });

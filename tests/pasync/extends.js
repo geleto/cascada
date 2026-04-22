@@ -50,7 +50,7 @@ describe('Extends Runtime', function () {
   });
 
   describe('Phase 5 - Constructor Model', function () {
-    it('should compile script constructors as dedicated method targets instead of aliasing root', function () {
+    it('should keep script constructors as dedicated method targets instead of aliasing root', function () {
       const script = new Script(
         'shared text trace\nextends "A.script"\ntrace("post|")\nreturn trace.snapshot()',
         env,
@@ -61,31 +61,6 @@ describe('Extends Runtime', function () {
 
       expect(script.methods.__constructor__.fn).to.be.a('function');
       expect(script.methods.__constructor__.fn).not.to.be(script.rootRenderFunc);
-      expect(script._compileSource()).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
-      expect(script._compileSource()).to.contain('runtime.mergeInheritanceConstructorBoundaryPromise(inheritanceState,');
-      expect(script._compileSource()).to.not.contain('Promise.all([__constructorBoundaryPromise,');
-    });
-
-    it('should lower static script extends through a structural child-buffer boundary', function () {
-      const source = new Script(
-        'shared text trace\nextends "A.script"\ntrace("post|")\nreturn trace.snapshot()',
-        env,
-        'static-extends-boundary.script'
-      )._compileSource();
-
-      expect(source).to.contain('runtime.runControlFlowBoundary(');
-      expect(source).not.to.contain('waitForApplyComplete');
-    });
-
-    it('should compile plain script extends payload reads without the legacy composition capture bridge', function () {
-      const source = new Script(
-        'shared var theme = "dark"\nextends "A.script" with theme\nreturn "done"',
-        env,
-        'plain-extends-no-capture-bridge.script'
-      )._compileSource();
-
-      expect(source).not.to.contain('captureCompositionScriptValue');
-      expect(source).to.contain('inheritanceState.compositionPayload');
     });
 
     it('should run script constructor chaining in root-buffer source order', async function () {

@@ -11,42 +11,41 @@ function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, current
     state.sharedRootBuffer = currentBuffer || null;
   }
   inheritanceState.registerInheritanceSharedSchema(state, sharedSchema, context);
+  if (
+    state.sharedRootBuffer &&
+    currentBuffer &&
+    state.sharedRootBuffer !== currentBuffer &&
+    sharedSchema &&
+    typeof sharedSchema === 'object'
+  ) {
+    linkCurrentBufferToParentChannels(
+      state.sharedRootBuffer,
+      currentBuffer,
+      Object.keys(sharedSchema)
+    );
+  }
   inheritanceState.registerInheritanceMethods(state, methods);
   return state;
 }
 
-function linkCurrentBufferToResolvedParentSharedChannels(inheritanceStateValue, currentBuffer, parentOutputBuffer) {
-  if (!inheritanceStateValue || !currentBuffer || !parentOutputBuffer) {
-    return currentBuffer;
+async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheritanceStateValue, compositionMode) {
+  if (compositionMode === inheritanceState.COMPONENT_COMPOSITION_MODE) {
+    return parentOutputBuffer;
   }
 
-  const sharedSchema = inheritanceStateValue.sharedSchema && typeof inheritanceStateValue.sharedSchema === 'object'
-    ? inheritanceStateValue.sharedSchema
-    : null;
-  const parentSharedBuffer =
-    inheritanceStateValue.sharedRootBuffer || parentOutputBuffer;
-  const channelNames = sharedSchema ? Object.keys(sharedSchema) : [];
-
-  for (let i = 0; i < channelNames.length; i++) {
-    const channelName = channelNames[i];
-    if (
-      parentOutputBuffer !== currentBuffer &&
-      typeof currentBuffer.hasLinkedBuffer === 'function' &&
-      !currentBuffer.hasLinkedBuffer(parentOutputBuffer, channelName)
-    ) {
-      currentBuffer.addBuffer(parentOutputBuffer, channelName);
+  if (parentOutputBuffer === currentBuffer) {
+    const constructorBoundary = inheritanceState.awaitInheritanceConstructorBoundary(inheritanceStateValue);
+    if (constructorBoundary) {
+      await constructorBoundary;
     }
-    if (
-      parentSharedBuffer &&
-      parentSharedBuffer !== currentBuffer &&
-      typeof parentSharedBuffer.hasLinkedBuffer === 'function' &&
-      !parentSharedBuffer.hasLinkedBuffer(currentBuffer, channelName)
-    ) {
-      parentSharedBuffer.addBuffer(currentBuffer, channelName);
-    }
+    return parentOutputBuffer;
   }
 
-  return currentBuffer;
+  if (parentOutputBuffer && typeof parentOutputBuffer.getFinishedPromise === 'function') {
+    await parentOutputBuffer.getFinishedPromise();
+  }
+
+  return parentOutputBuffer;
 }
 
 function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames) {
@@ -100,7 +99,7 @@ function finalizeInheritanceMetadata(state, context = null) {
 
 module.exports = {
   bootstrapInheritanceMetadata,
-  linkCurrentBufferToResolvedParentSharedChannels,
+  waitForParentRootRender,
   linkCurrentBufferToParentChannels,
   getInheritanceSharedBuffer,
   finalizeInheritanceMetadata
