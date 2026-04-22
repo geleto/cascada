@@ -288,6 +288,7 @@ class Template extends Obj {
     this.sharedSchema = props.sharedSchema || {};
     this.hasExtends = !!props.hasExtends;
     this.setupRenderFunc = props.setup || null;
+    this.scriptBodyRenderFunc = props.scriptBody || props.b___scriptBody__ || null;
     this.rootRenderFunc = props.root;
     this.compiled = true;
   }

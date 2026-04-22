@@ -19,6 +19,33 @@ if (typeof require !== 'undefined') {
 }
 
 describe('Template Extends', function () {
+  describe('Phase 9 - Generic Template Root Equivalence', function () {
+    it('should keep plain-template top-level locals out of plain block scope', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString(
+        '{% set suffix = "local" %}{% block content %}{{ suffix }}{% endblock %}',
+        {}
+      );
+
+      expect(result.trim()).to.be('');
+    });
+
+    it('should keep plain-template top-level locals visible to exported macros', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate(
+        'lib.njk',
+        '{% set label = "plain-label" %}{% macro show() %}{{ label }}{% endmacro %}'
+      );
+      loader.addTemplate('main.njk', '{% import "lib.njk" as lib %}{{ lib.show() }}');
+
+      const result = await env.renderTemplate('main.njk', {});
+      expect(result).to.be('plain-label');
+    });
+  });
+
   describe('Phase 9 - Template Extends Pre/Post', function () {
     it('should run child template code before and after static extends', async function () {
       const loader = new StringLoader();

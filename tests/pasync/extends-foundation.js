@@ -622,6 +622,15 @@ describe('Extends Foundation', function () {
       expect(Object.prototype.hasOwnProperty.call(script.methods, '__constructor__')).to.be(false);
     });
 
+    it('should expose the shared script body helper explicitly without leaking it into compiled blocks', function () {
+      const script = new Script('var label = "ok"\nreturn label', env, 'plain-body.script');
+      script.compile();
+
+      expect(typeof script.scriptBodyRenderFunc).to.be('function');
+      expect(script.blocks).not.to.have.property('__scriptBody__');
+      expect(script.blocks).not.to.have.property('__constructor__');
+    });
+
     it('should reject __constructor__ as a user-declared method name', function () {
       expect(() => {
         new Script('method __constructor__()\n  return null\nendmethod\nreturn null', env, 'reserved-constructor.script')._compileSource();

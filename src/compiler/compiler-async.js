@@ -1501,13 +1501,12 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('return {');
     this.emit.line('setup: b___setup__,');
     if (rootCompileResult.hasGenericScriptBody) {
-      this.emit.line('b___scriptBody__: b___scriptBody__,');
+      this.emit.line('scriptBody: b___scriptBody__,');
     }
     rootCompileResult.blocks.forEach((block) => {
       const blockName = `b_${block.name.value}`;
       this.emit.line(`${blockName}: ${blockName},`);
     });
-    this.emit.line(`b___constructor__: b___constructor__,`);
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line(`methods: ${COMPILED_METHODS_VAR},`);
     this.emit.line(`sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);

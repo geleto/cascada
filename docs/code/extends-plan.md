@@ -928,6 +928,10 @@ Scope:
 - plain scripts/templates without `extends`
 - plain `import`, `from import`, `include` remain on the ordinary composition
   path unless optional code-sharing is useful
+- before moving plain root body fully onto the constructor path, preserve the
+  current plain-script `this.method(...)` deferred call-site ordering semantics;
+  the generic shared-body refactor must not turn a later observation of the
+  call result into `undefined` just because root startup still owns that path
 - `caller()` in macros
 - sync template inheritance untouched for Nunjucks compatibility
 - sequential `!` paths, including inherited-method support once that deferred

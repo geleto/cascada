@@ -323,6 +323,16 @@ describe('Extends Runtime', function () {
   });
 
   describe('Script method invocation scope', function () {
+    it('should keep plain-script top-level locals out of later method scope', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('Plain.script', 'var secret = "A"\nmethod readSecret()\n  return secret\nendmethod\nreturn this.readSecret()');
+
+      const result = await env.renderScript('Plain.script', {});
+      expect(result).to.be(undefined);
+    });
+
     it('should keep constructor-local non-shared vars out of later method invocation scope', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
