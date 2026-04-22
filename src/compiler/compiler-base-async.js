@@ -79,37 +79,29 @@ class CompilerBaseAsync extends CompilerCommon {
     }
     const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
     if (declaredOutput) {
-      if (this.scriptMode && this.currentCallableDefinition) {
-        if (this._isHiddenFromCurrentBlock(node, name, declaredOutput, { includeImported: true })) {
-          this.emit('undefined');
-          return;
-        }
-      }
-      if (!this.scriptMode && this.currentCallableDefinition && this.inBlock && declaredOutput.type === 'var') {
-        if (this._isHiddenFromCurrentBlock(node, name, declaredOutput)) {
-          this.emit('undefined');
-          return;
-        }
-      }
-      if (node.sequential || node.sequentialRepair) {
-        this._failNonContextSequenceRoot(node, declaredOutput);
-      }
-      if (declaredOutput.type === 'var') {
-        if (declaredOutput.shared) {
-          this._emitSharedChannelObservation(name, node, 'snapshot', true);
-          return;
-        }
-        if (!this.scriptMode && this.inBlock) {
-          if (declaredOutput.extern) {
-            this.emit(`runtime.contextOrExternLookup(context, "${name}")`);
-            return;
-          }
-          this.emit(`runtime.channelLookup("${name}", ${this.buffer.currentBuffer})`);
-          return;
-        }
-        this.buffer.emitAddSnapshot(name, node);
+      this._compileDeclaredSymbolLookup(node, name, declaredOutput);
+      return;
+    }
+    this._compileAmbientSymbolLookup(node, name);
+  }
+
+  _compileDeclaredSymbolLookup(node, name, declaredOutput) {
+    if (this.scriptMode && this.currentCallableDefinition) {
+      if (this._isHiddenFromCurrentBlock(node, name, declaredOutput, { includeImported: true })) {
+        this.emit('undefined');
         return;
       }
+    }
+    if (!this.scriptMode && this.currentCallableDefinition && this.inBlock && declaredOutput.type === 'var') {
+      if (this._isHiddenFromCurrentBlock(node, name, declaredOutput)) {
+        this.emit('undefined');
+        return;
+      }
+    }
+    if (node.sequential || node.sequentialRepair) {
+      this._failNonContextSequenceRoot(node, declaredOutput);
+    }
+    if (declaredOutput.type !== 'var') {
       this.fail(
         `Channel '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
         node.lineno,
@@ -117,6 +109,22 @@ class CompilerBaseAsync extends CompilerCommon {
         node
       );
     }
+    if (declaredOutput.shared) {
+      this._emitSharedChannelObservation(name, node, 'snapshot', true);
+      return;
+    }
+    if (!this.scriptMode && this.inBlock) {
+      if (declaredOutput.extern) {
+        this.emit(`runtime.contextOrExternLookup(context, "${name}")`);
+        return;
+      }
+      this.emit(`runtime.channelLookup("${name}", ${this.buffer.currentBuffer})`);
+      return;
+    }
+    this.buffer.emitAddSnapshot(name, node);
+  }
+
+  _compileAmbientSymbolLookup(node, name) {
     if (this.scriptMode) {
       this._compileScriptSymbolLookup(node, name);
       return;
@@ -880,8 +888,7 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('runtime.contextOrScriptChannelLookup(' +
       'context, "' + name + '", ' +
       `${this.buffer.currentBuffer}, ` +
-      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }, ` +
-      `${this._emitInheritanceStateReference()}` +
+      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
       ')');
   }
 
@@ -891,19 +898,6 @@ class CompilerBaseAsync extends CompilerCommon {
     if (nodeStaticPathKey) {
       this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
       this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-      return;
-    }
-
-    const useContextOrSharedInheritanceLookup =
-      this.inBlock &&
-      !this.analysis.findDeclaration(node._analysis, name);
-    if (useContextOrSharedInheritanceLookup) {
-      this.emit(
-        `runtime.contextOrSharedLookup(` +
-        `context, "${name}", ${this.buffer.currentBuffer}, ` +
-        `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }, ` +
-        `inheritanceState)`
-      );
       return;
     }
 

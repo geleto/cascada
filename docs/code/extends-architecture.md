@@ -197,6 +197,29 @@ other methods can inspect later. It is just the `__constructor__` method.
 Constructor-local values therefore do not become ambient inherited state unless
 they are written into shared channels or forwarded explicitly in payload.
 
+For async/script mode, name resolution should stay split into two explicit
+classes:
+
+- declared names
+  - ordinary declared vars
+  - declared shared vars/channels
+  - args / loop vars / declared extern bindings
+- ambient names
+  - undeclared bare names resolved through context/global/render-context rules
+
+That split is important:
+
+- declared shared names opt into shared/inheritance semantics because the file
+  declared them explicitly
+- undeclared bare names do not probe inheritance shared state ambiently
+- component/component-property access from the caller remains a separate
+  restricted observation surface; it is not ordinary in-file symbol lookup
+
+Inside a script/template/component file, declared shared names should behave
+like declared channels for lookup purposes. The compiler may lower them through
+shared-aware observation, but the user-facing rule is still "declared name",
+not a special cross-file ambient lookup.
+
 All shared channels should be declared before any `extends` and before any
 `super()`-driven inherited work that depends on them.
 

@@ -356,6 +356,20 @@ describe('Extends Foundation', function () {
       expect(source).to.contain('initializeIfNotSet: true');
     });
 
+    it('should lower declared shared bare reads through the declared-name path', function () {
+      const source = new Script('shared var theme = "dark"\nreturn theme', env, 'shared-declared-read.casc')._compileSource();
+
+      expect(source).to.contain('runtime.observeInheritanceSharedChannel(');
+      expect(source).to.not.contain('runtime.contextOrScriptChannelLookup(context, "theme"');
+    });
+
+    it('should keep undeclared script bare reads on the ambient lookup path', function () {
+      const source = new Script('return theme', env, 'ambient-read.casc')._compileSource();
+
+      expect(source).to.contain('runtime.contextOrScriptChannelLookup(context, "theme"');
+      expect(source).to.not.contain('runtime.observeInheritanceSharedChannel(');
+    });
+
     it('should lower shared sequence declarations through the normal script compile path', function () {
       const declaredOnly = new Script('shared sequence db\nreturn null', env, 'shared-sequence-decl.casc')._compileSource();
       const initialized = new Script('shared sequence db = makeDb()\nreturn null', env, 'shared-sequence-init.casc')._compileSource();

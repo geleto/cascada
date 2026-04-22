@@ -858,9 +858,14 @@ Deliverables:
 
 - runtime lookup/wait paths no longer skip the current buffer in favor of
   parent/root buffers
+- async/script symbol lowering has an explicit split between:
+  - declared-name lookup
+  - ambient undeclared-name lookup
 - inherited methods/blocks cannot observe constructor-local values ambiently
 - inherited methods/blocks no longer rely on broad ambient context fallback for
   undeclared bare names
+- declared shared names participate only through the declared-name path; they
+  do not broaden the ambient undeclared-name path
 - explicit `extends ... with ...` capture still works at execution time without
   creating later ambient visibility
 - the remaining runtime bridge hooks are narrowed to explicit payload/shared
@@ -871,6 +876,8 @@ Tests:
 - add or keep focused regressions for:
   - no inherited access to constructor-local values
   - no inherited ambient fallback for undeclared bare names
+  - declared shared names still behave like declared names in scripts and
+    async templates
   - no boundary-read bridge dependency for inherited visibility
   - no producer-buffer fallback for ordinary lookup
   - no producer-buffer fallback for current-position waits

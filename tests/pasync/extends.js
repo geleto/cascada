@@ -111,6 +111,21 @@ describe('Extends Runtime', function () {
       expect(result).to.be('dark');
     });
 
+    it('should not treat undeclared parent shared vars as ordinary bare symbols in child scripts', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared var theme = "light"\ntheme = "dark"');
+      loader.addTemplate('C.script', 'extends "A.script"\nmethod readTheme()\n  return theme\nendmethod\nreturn this.readTheme()');
+
+      try {
+        await env.renderScript('C.script', {});
+        expect().fail('Expected undeclared shared bare lookup to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Can not look up unknown variable/function: theme');
+      }
+    });
+
     it('should preserve parent-before-post order through the child-buffer structure', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);

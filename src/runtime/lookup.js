@@ -213,45 +213,6 @@ function contextOrExternLookup(_context, name) {
   return _context.lookup(name);
 }
 
-function _lookupVisibleContextValue(_context, name) {
-  if (!_context) {
-    return { found: false, value: undefined };
-  }
-  const ctx = _context.ctx || null;
-  const globals = _context.env && _context.env.globals ? _context.env.globals : null;
-
-  if (globals && name in globals && !(ctx && name in ctx)) {
-    return { found: true, value: globals[name] };
-  }
-  if (ctx && name in ctx) {
-    return { found: true, value: ctx[name] };
-  }
-  return { found: false, value: undefined };
-}
-
-function contextOrSharedLookup(_context, name, currentBuffer, errorContext = null, inheritanceStateValue = null) {
-  const contextValue = _lookupVisibleContextValue(_context, name);
-  if (contextValue.found || !inheritanceStateValue) {
-    return contextValue.value;
-  }
-
-  return Promise.resolve(
-    observeInheritanceSharedChannel(
-      name,
-      currentBuffer,
-      errorContext,
-      inheritanceStateValue,
-      'snapshot',
-      true
-    )
-  ).catch((error) => {
-    if (error && error.code === inheritanceState.ERR_SHARED_CHANNEL_NOT_FOUND) {
-      return undefined;
-    }
-    throw error;
-  });
-}
-
 function _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, requestedName) {
   if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
     return;
@@ -384,7 +345,6 @@ function channelLookup(name, currentBuffer) {
  * Returns poison for missing names via context.lookupScript.
  */
 function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext = null) {
-  let inheritanceStateValue = arguments.length > 4 ? arguments[4] : null;
   const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
     ? currentBuffer.findChannel(name)
     : null;
@@ -394,27 +354,6 @@ function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext
   const channelRead = channelLookup(name, currentBuffer);
   if (channelRead !== undefined) {
     return channelRead;
-  }
-  const contextValue = _lookupVisibleContextValue(context, name);
-  if (contextValue.found) {
-    return contextValue.value;
-  }
-  if (inheritanceStateValue) {
-    return Promise.resolve(
-      observeInheritanceSharedChannel(
-        name,
-        currentBuffer,
-        errorContext,
-        inheritanceStateValue,
-        'snapshot',
-        true
-      )
-    ).catch((error) => {
-      if (error && error.code === inheritanceState.ERR_SHARED_CHANNEL_NOT_FOUND) {
-        return context.lookupScript(name, errorContext);
-      }
-      throw error;
-    });
   }
   return context.lookupScript(name, errorContext);
 }
@@ -496,7 +435,6 @@ module.exports = {
   memberLookupScript,
   observeInheritanceSharedChannel,
   channelLookup,
-  contextOrSharedLookup,
   contextOrExternLookup,
   captureCompositionValue,
   contextOrScriptChannelLookup,

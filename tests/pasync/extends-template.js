@@ -59,7 +59,7 @@ describe('Template Extends', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', 'Base[{% block body %}{{ theme }}{% endblock %}]');
+      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]');
       loader.addTemplate('child.njk', '{% shared var theme = "light" %}{% set theme = "dark" %}{% extends "base.njk" %}');
 
       const result = await env.renderTemplate('child.njk', {});
@@ -95,7 +95,7 @@ describe('Template Extends', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', 'Base[{% block body %}{{ theme }}{% endblock %}]');
+      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]');
       loader.addTemplate(
         'child.njk',
         '{% shared var theme = "light" %}{% extends "base.njk" %}{% set theme = "dark" %}{% block body %}{{ theme }}{% endblock %}'
@@ -105,7 +105,7 @@ describe('Template Extends', function () {
       expect(result).to.be('Base[dark]');
     });
 
-    it('should let child templates read parent-only shared vars as bare symbols', async function () {
+    it('should not treat undeclared parent shared vars as ordinary bare symbols in child templates', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
@@ -119,7 +119,7 @@ describe('Template Extends', function () {
       );
 
       const result = await env.renderTemplate('child.njk', {});
-      expect(result).to.be('Base[child=dark]');
+      expect(result).to.be('Base[child=]');
     });
 
     it('should preserve async ordering across pre-extends, parent render, and post-extends code', async function () {
@@ -236,6 +236,24 @@ describe('Template Extends', function () {
   });
 
   describe('Phase 9 - Template Inheritance Compiled Shape', function () {
+    it('should lower declared shared bare reads in async templates through the declared-name path', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% shared var theme = "dark" %}{{ theme }}', env, 'shared-template-read.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('runtime.observeInheritanceSharedChannel(');
+      expect(source).to.not.contain('context.lookup("theme")');
+    });
+
+    it('should keep undeclared async-template bare reads on ordinary ambient lookup', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{{ theme }}', env, 'ambient-template-read.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('context.lookup("theme")');
+      expect(source).to.not.contain('runtime.observeInheritanceSharedChannel(');
+    });
+
     it('should compile template blocks as inherited callable entries with explicit payload args', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');

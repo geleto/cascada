@@ -305,7 +305,6 @@ module.exports = {
   memberLookupScript: lookup.memberLookupScript,
   observeInheritanceSharedChannel: lookup.observeInheritanceSharedChannel,
   channelLookup: lookup.channelLookup,
-  contextOrSharedLookup: lookup.contextOrSharedLookup,
   contextOrExternLookup: lookup.contextOrExternLookup,
   captureCompositionValue: lookup.captureCompositionValue,
   contextOrScriptChannelLookup: lookup.contextOrScriptChannelLookup,
