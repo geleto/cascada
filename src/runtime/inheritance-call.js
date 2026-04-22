@@ -537,41 +537,6 @@ function _enqueueInvocationCommand(command, invocationBuffer) {
   return command.promise;
 }
 
-function admitConstructorEntry(context, inheritanceStateValue, methodEntry, args, env, runtime, cb, currentBuffer, errorContext = null) {
-  const initialChannels = _getInitialInvocationChannels(methodEntry);
-  const sharedRootBuffer =
-    inheritanceStateValue && inheritanceStateValue.sharedRootBuffer
-      ? inheritanceStateValue.sharedRootBuffer
-      : currentBuffer;
-  const invocationBuffer = runtime.createCommandBuffer(
-    context,
-    sharedRootBuffer,
-    initialChannels,
-    currentBuffer
-  );
-  const command = module.exports.createInheritanceInvocationCommand({
-    name: '__constructor__',
-    label: 'Parent constructor',
-    getMethodData: () => _getMethodDataFromEntry(
-      methodEntry,
-      inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue || {}),
-      errorContext
-    ),
-    normalizeError: (error) => _normalizeResolutionError(error, errorContext),
-    args,
-    context,
-    inheritanceState: inheritanceStateValue,
-    env,
-    runtime,
-    cb,
-    currentBuffer,
-    invocationBuffer,
-    errorContext
-  });
-
-  return _enqueueInvocationCommand(command, invocationBuffer);
-}
-
 function invokeInheritedMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
   const initialEntry =
     inheritanceStateValue &&
@@ -663,7 +628,6 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
 module.exports = {
   createInheritanceInvocationCommand,
   invocationInternals,
-  admitConstructorEntry,
   getMethodData,
   getMethodLinkedChannels: _getMethodLinkedChannels,
   resolveInheritanceSharedChannel,

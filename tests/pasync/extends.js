@@ -486,29 +486,30 @@ describe('Extends Runtime', function () {
 
       try {
         const traceSnapshot = rootBuffer.getChannel('trace').finalSnapshot();
-        const admission = runtime.admitConstructorEntry(
-          context,
-          inheritanceState,
-          {
-            fn(envArg, contextArg, runtimeArg, cbArg, output) {
-              void envArg;
-              void contextArg;
-              void cbArg;
-              output.add(new runtimeArg.VarCommand({
-                channelName: 'trace',
-                args: ['done'],
-                pos: { lineno: 1, colno: 1 }
-              }), 'trace');
-              output.markFinishedAndPatchLinks();
-              return 'result';
-            },
-            signature: { argNames: [], withContext: false },
-            ownerKey: 'Main.script',
-            ownUsedChannels: [],
-            ownMutatedChannels: ['trace'],
-            super: null
+        inheritanceState.methods.__constructor__ = {
+          fn(envArg, contextArg, runtimeArg, cbArg, output) {
+            void envArg;
+            void contextArg;
+            void cbArg;
+            output.add(new runtimeArg.VarCommand({
+              channelName: 'trace',
+              args: ['done'],
+              pos: { lineno: 1, colno: 1 }
+            }), 'trace');
+            output.markFinishedAndPatchLinks();
+            return 'result';
           },
+          signature: { argNames: [], withContext: false },
+          ownerKey: 'Main.script',
+          ownUsedChannels: [],
+          ownMutatedChannels: ['trace'],
+          super: null
+        };
+        const admission = runtime.invokeInheritedMethod(
+          inheritanceState,
+          '__constructor__',
           [],
+          context,
           env,
           runtime,
           () => {},

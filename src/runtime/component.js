@@ -383,9 +383,9 @@ async function createComponentInstance(
 
   // Components are only exposed after constructor startup settles so callers
   // never observe a half-initialized instance.
-  const constructorBoundaryPromise = runtime.awaitInheritanceConstructorBoundary(componentInheritanceState);
-  if (constructorBoundaryPromise) {
-    await constructorBoundaryPromise;
+  const startupPromise = runtime.awaitInheritanceStartup(componentInheritanceState);
+  if (startupPromise) {
+    await startupPromise;
   }
 
   let ownerBindingSnapshot = null;

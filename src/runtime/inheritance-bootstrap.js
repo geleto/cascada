@@ -34,9 +34,9 @@ async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheri
   }
 
   if (parentOutputBuffer === currentBuffer) {
-    const constructorBoundary = inheritanceState.awaitInheritanceConstructorBoundary(inheritanceStateValue);
-    if (constructorBoundary) {
-      await constructorBoundary;
+    const startupPromise = inheritanceState.awaitInheritanceStartup(inheritanceStateValue);
+    if (startupPromise) {
+      await startupPromise;
     }
     return parentOutputBuffer;
   }

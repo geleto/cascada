@@ -9,7 +9,7 @@ const {
 const CompilerBaseAsync = require('./compiler-base-async');
 const CompileBuffer = require('./buffer');
 const {
-  CONSTRUCTOR_BOUNDARY_PROMISE_VAR
+  INHERITANCE_STARTUP_PROMISE_VAR
 } = require('./inheritance');
 
 const RETURN_CHANNEL_NAME = '__return__';
@@ -1350,7 +1350,7 @@ class CompilerAsync extends CompilerBaseAsync {
   _compileAsyncRootBody(node) {
     this.inheritance.emitAsyncRootStateInitialization(COMPILED_METHODS_VAR, COMPILED_SHARED_SCHEMA_VAR);
     this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
-    this.emit.line(`let ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = null;`);
+    this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
     if (this.scriptMode) {
       this.emitDeclareReturnChannel(this.buffer.currentBuffer);
     }
@@ -1372,9 +1372,9 @@ class CompilerAsync extends CompilerBaseAsync {
     const constructorResultVar = this._tmpid();
     this.emit.line(`const ${constructorResultVar} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')});`);
     this.emit.line(`if (${constructorResultVar} && typeof ${constructorResultVar}.then === 'function') {`);
-    this.emit.line(`  ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = runtime.mergeInheritanceConstructorBoundaryPromise(inheritanceState, ${constructorResultVar}, ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR});`);
+    this.emit.line(`  ${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.mergeInheritanceStartupPromise(inheritanceState, ${constructorResultVar}, ${INHERITANCE_STARTUP_PROMISE_VAR});`);
     this.emit.line('} else {');
-    this.emit.line(`  runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR});`);
+    this.emit.line(`  runtime.setInheritanceStartupPromise(inheritanceState, ${INHERITANCE_STARTUP_PROMISE_VAR});`);
     this.emit.line('}');
     this.inheritance.emitAsyncRootCompletion(node);
   }

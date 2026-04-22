@@ -1105,7 +1105,7 @@ describe('Extends Foundation', function () {
       expect(resolvedTheme).to.be('var');
     });
 
-    it('should merge constructor boundary promises through the runtime helper', async function () {
+    it('should merge inheritance startup promises through the runtime helper', async function () {
       const state = runtime.createInheritanceState();
       let resolveFirst;
       let resolveSecond;
@@ -1117,8 +1117,8 @@ describe('Extends Foundation', function () {
       });
       const events = [];
 
-      runtime.mergeInheritanceConstructorBoundaryPromise(state, first);
-      const merged = runtime.mergeInheritanceConstructorBoundaryPromise(state, second);
+      runtime.mergeInheritanceStartupPromise(state, first);
+      const merged = runtime.mergeInheritanceStartupPromise(state, second);
 
       first.then(() => {
         events.push('first');
@@ -1139,7 +1139,7 @@ describe('Extends Foundation', function () {
 
       expect(mergedValue).to.be('second-value');
       expect(events).to.eql(['second', 'first', 'merged']);
-      expect(runtime.awaitInheritanceConstructorBoundary(state)).to.be(merged);
+      expect(runtime.awaitInheritanceStartup(state)).to.be(merged);
     });
 
     it('should wait for parent root completion through one runtime helper', async function () {
@@ -1154,7 +1154,7 @@ describe('Extends Foundation', function () {
         }
       };
 
-      runtime.setInheritanceConstructorBoundaryPromise(
+      runtime.setInheritanceStartupPromise(
         state,
         Promise.resolve().then(() => {
           constructorResolved = true;

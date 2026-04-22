@@ -1081,7 +1081,7 @@ Scope:
     the shared inherited-dispatch API still makes components resolve method
     metadata once for linked-channel waiting and again for admission
   - revisit the current component-startup shortcut that awaits
-    `constructorBoundaryPromise` inside `createComponentInstance(...)` before
+    inheritance startup inside `createComponentInstance(...)` before
     exposing the instance, and collapse it if the later shared caller-side
     lifecycle model makes that eager wait unnecessary
   - replace the current component-mode sentinel string
@@ -1227,7 +1227,7 @@ Scope:
   - any runtime export/helpers that only exist to expose that state
 - collapse or remove lifecycle/mode fields that were introduced as
   implementation scaffolding rather than as final shared-metadata shape:
-  - `constructorBoundaryPromise`
+  - inheritance startup promise state
   - `componentCompositionMode`
   - if a full removal is not yet possible, move that state off the final
     shared metadata object or narrow it behind one explicit lifecycle helper
@@ -1301,7 +1301,7 @@ Scope:
       just to support tests
   - lifecycle/mode shim state is no longer carried as plain top-level fields
     on the visible inheritance metadata object:
-    - `constructorBoundaryPromise`
+    - inheritance startup promise state
     - `componentCompositionMode`
     - the state survives only behind explicit inheritance-state helpers
   - `CommandBuffer.getFinishCompletePromise()` remains required by the
@@ -1480,9 +1480,9 @@ Scope:
   - remove or narrow lifetime helpers/properties if final snapshot ownership
   makes them unnecessary:
     - `CommandBuffer.getFinishCompletePromise()`
-    - `getInheritanceConstructorBoundaryPromise(...)`
-    - `setInheritanceConstructorBoundaryPromise(...)`
-    - internal `constructorBoundaryPromise` state on inheritance instances
+    - `awaitInheritanceStartup(...)`
+    - `setInheritanceStartupPromise(...)`
+    - internal inheritance startup promise state on inheritance instances
     - any component auto-close/startup path that exists only to mirror the old
       helper-owned finish lifecycle
   - remove any extra promise/metadata surfaces that only exist because

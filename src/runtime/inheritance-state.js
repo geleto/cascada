@@ -90,7 +90,7 @@ function ensureInheritanceInternalState(state) {
       enumerable: false,
       writable: false,
       value: {
-        constructorBoundaryPromise: null,
+        startupPromise: null,
         compositionMode: null
       }
     });
@@ -112,24 +112,24 @@ function createInheritanceState() {
   return new InheritanceState();
 }
 
-function setInheritanceConstructorBoundaryPromise(state, promise) {
+function setInheritanceStartupPromise(state, promise) {
   const internalState = ensureInheritanceInternalState(state);
   if (internalState) {
-    internalState.constructorBoundaryPromise = promise || null;
+    internalState.startupPromise = promise || null;
   }
   return promise;
 }
 
-function awaitInheritanceConstructorBoundary(state) {
+function awaitInheritanceStartup(state) {
   const internalState = ensureInheritanceInternalState(state);
-  const promise = internalState ? internalState.constructorBoundaryPromise : null;
+  const promise = internalState ? internalState.startupPromise : null;
   return promise && typeof promise.then === 'function' ? promise : null;
 }
 
-function mergeInheritanceConstructorBoundaryPromise(state, promise, currentPromise = null) {
+function mergeInheritanceStartupPromise(state, promise, currentPromise = null) {
   const normalizedCurrent = currentPromise && typeof currentPromise.then === 'function'
     ? currentPromise
-    : awaitInheritanceConstructorBoundary(state);
+    : awaitInheritanceStartup(state);
   const normalizedNext = promise && typeof promise.then === 'function'
     ? promise
     : null;
@@ -142,7 +142,7 @@ function mergeInheritanceConstructorBoundaryPromise(state, promise, currentPromi
     ? Promise.all([normalizedCurrent, normalizedNext]).then((results) => results[1])
     : normalizedNext;
 
-  setInheritanceConstructorBoundaryPromise(state, merged);
+  setInheritanceStartupPromise(state, merged);
   return merged;
 }
 
@@ -440,9 +440,9 @@ function finalizeInheritanceSharedSchema(state, context = null) {
 module.exports = {
   InheritanceState,
   createInheritanceState,
-  setInheritanceConstructorBoundaryPromise,
-  awaitInheritanceConstructorBoundary,
-  mergeInheritanceConstructorBoundaryPromise,
+  setInheritanceStartupPromise,
+  awaitInheritanceStartup,
+  mergeInheritanceStartupPromise,
   setInheritanceCompositionMode,
   isInheritanceCompositionMode,
   createPendingInheritanceEntry,

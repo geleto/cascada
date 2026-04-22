@@ -2,7 +2,7 @@
 
 const nodes = require('../nodes');
 const CompileBuffer = require('./buffer');
-const CONSTRUCTOR_BOUNDARY_PROMISE_VAR = '__constructorBoundaryPromise';
+const INHERITANCE_STARTUP_PROMISE_VAR = '__inheritanceStartupPromise';
 
 /**
  * CompileInheritance - Handles template inheritance operations
@@ -481,7 +481,7 @@ class CompileInheritance {
     this._withAsyncConstructorEntryState(isTemplateConstructor, () => {
       this.emit.line('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
       this.emit.line('try {');
-      this.emit.line(`let ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = null;`);
+      this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
       if (isTemplateConstructor) {
         this.emit.line(`let ${this.compiler.buffer.currentTextChannelVar} = output.getChannel("${this.compiler.buffer.currentTextChannelName}");`);
         this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
@@ -502,7 +502,7 @@ class CompileInheritance {
       this.emit.line('if (!runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE)) {');
       this.emit.line('  context.resolveExports();');
       this.emit.line('}');
-      this.emit.line(`return ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR};`);
+      this.emit.line(`return ${INHERITANCE_STARTUP_PROMISE_VAR};`);
       this.emit.closeScopeLevels();
       this.emit.line('} catch (e) {');
       this.emit.line(`  throw runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
@@ -517,8 +517,8 @@ class CompileInheritance {
       // The boundary promise gates root-buffer finalization. `getFinishedPromise()`
       // also waits on child buffers, but we must not mark the root buffer finished
       // until the extends boundary has linked the parent work into the tree.
-      this.emit.line(`    if (${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}) {`);
-      this.emit.line(`      await ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR};`);
+      this.emit.line(`    if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
+      this.emit.line(`      await ${INHERITANCE_STARTUP_PROMISE_VAR};`);
       this.emit.line('    }');
     }
     this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, node, returnVar);
@@ -532,8 +532,8 @@ class CompileInheritance {
 
   emitAsyncTemplateRootLeafResult() {
     if (this.compiler.hasExtends) {
-      this.emit.line(`    if (${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}) {`);
-      this.emit.line(`      await ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR};`);
+      this.emit.line(`    if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
+      this.emit.line(`      await ${INHERITANCE_STARTUP_PROMISE_VAR};`);
       this.emit.line('    }');
     }
     if (this.compiler.hasDeferredDynamicExtends) {
@@ -586,8 +586,8 @@ class CompileInheritance {
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('} else {');
     if (this.compiler.hasExtends) {
-      this.emit.line(`  if (${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}) {`);
-      this.emit.line(`    ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}.then(async () => {`);
+      this.emit.line(`  if (${INHERITANCE_STARTUP_PROMISE_VAR}) {`);
+      this.emit.line(`    ${INHERITANCE_STARTUP_PROMISE_VAR} = ${INHERITANCE_STARTUP_PROMISE_VAR}.then(async () => {`);
       if (this.compiler.hasDeferredDynamicExtends) {
         this._emitDynamicTemplateParentRender(`      `);
       }
@@ -597,7 +597,7 @@ class CompileInheritance {
       this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
       this.emit.line('      cb(err);');
       this.emit.line('    });');
-      this.emit.line(`    runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR});`);
+      this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${INHERITANCE_STARTUP_PROMISE_VAR});`);
       this.emit.line('  } else {');
       if (this.compiler.hasDeferredDynamicExtends) {
         const finishPromiseVar = this.compiler._tmpid();
@@ -606,8 +606,8 @@ class CompileInheritance {
         this.emit.line(`      ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
         this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
         this.emit.line('    })();');
-        this.emit.line(`    ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = ${finishPromiseVar};`);
-        this.emit.line(`    runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ${finishPromiseVar});`);
+        this.emit.line(`    ${INHERITANCE_STARTUP_PROMISE_VAR} = ${finishPromiseVar};`);
+        this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${finishPromiseVar});`);
         this.emit.line(`    ${finishPromiseVar}.catch((e) => {`);
         this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
         this.emit.line('      cb(err);');
@@ -681,7 +681,7 @@ class CompileInheritance {
 
   _emitTemplateExtendsBoundaryFromSelection(deferredSelectionVar) {
     const linkedChannelsArg = '["__text__"]';
-    this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
+    this.emit.line(`${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
     const resolvedSelectionVar = this.compiler._tmpid();
     this.emit.line(`  const ${resolvedSelectionVar} = await runtime.resolveSingle(${deferredSelectionVar});`);
     this.emit.line(`  if (${resolvedSelectionVar}) {`);
@@ -1051,7 +1051,7 @@ class CompileInheritance {
       // child buffer so any post-extends constructor work stays ordered behind
       // the boundary slot for the channels currently known at the call site.
       const linkedChannelsArg = 'Object.keys((inheritanceState && inheritanceState.sharedSchema) || {})';
-      this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
+      this.emit.line(`${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
       this._emitParentRootRender({
         indent: '  ',
         templateExpr: parentTemplateId,
@@ -1256,5 +1256,5 @@ class CompileInheritance {
 }
 
 module.exports = CompileInheritance;
-module.exports.CONSTRUCTOR_BOUNDARY_PROMISE_VAR = CONSTRUCTOR_BOUNDARY_PROMISE_VAR;
+module.exports.INHERITANCE_STARTUP_PROMISE_VAR = INHERITANCE_STARTUP_PROMISE_VAR;
 
