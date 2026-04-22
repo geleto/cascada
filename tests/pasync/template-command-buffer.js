@@ -292,16 +292,19 @@
       }
     });
 
-    it('should keep imported member calls on the imported-callable boundary', function () {
+    it('should keep imported member calls working through imported namespaces', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
 
-      const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'imported-member-boundary.njk');
-      const source = tmpl._compileSource();
+      const tmpl = new AsyncTemplate(
+        '{% import "macros.njk" as m %}{{ m.hi("x") }}',
+        env,
+        'imported-member-boundary.njk'
+      );
+      const result = await tmpl.render({});
 
-      expect(source).to.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("m"');
-      expect(source).to.contain('runtime.callWrapAsync(');
+      expect(result).to.be('Hi x');
     });
 
     it('should not link unrelated locals into an imported namespace call boundary', function () {
@@ -336,7 +339,7 @@
       expect(source).to.not.contain('runtime.runValueBoundary(output, ["hi","scopedValue","__text__"]');
     });
 
-    it('should not treat a macro parameter shadowing a from-import binding as imported callable', function () {
+    it('should not treat a macro parameter shadowing a from-import binding as imported callable', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro foo(name) %}Foo {{ name }}{% endmacro %}');
@@ -346,13 +349,16 @@
         env,
         'shadowed-from-import-call.njk'
       );
-      const source = tmpl._compileSource();
+      const result = await tmpl.render({
+        helper(name) {
+          return 'Helper ' + name;
+        }
+      });
 
-      expect(source).to.match(/t_\d+\.addSnapshot\("foo"/);
-      expect(source).to.not.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("foo"');
+      expect(result).to.be('Helper x');
     });
 
-    it('should not treat a macro parameter shadowing an imported namespace as imported callable', function () {
+    it('should not treat a macro parameter shadowing an imported namespace as imported callable', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
@@ -362,10 +368,13 @@
         env,
         'shadowed-import-namespace-call.njk'
       );
-      const source = tmpl._compileSource();
+      const result = await tmpl.render({
+        helper(name) {
+          return 'Helper ' + name;
+        }
+      });
 
-      expect(source).to.match(/t_\d+\.addSnapshot\("m"/);
-      expect(source).to.not.contain('runtime.memberLookupAsync((currentBuffer.addSnapshot("m"');
+      expect(result).to.be('Helper x');
     });
 
   });

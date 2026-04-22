@@ -15,7 +15,6 @@ const {
 const RETURN_CHANNEL_NAME = '__return__';
 const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
-const DYNAMIC_EXTENDS_STATE_VAR = '__dynamicExtendsState';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(templateName, options) {
@@ -1349,33 +1348,56 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRootBody(node) {
     this.inheritance.emitAsyncRootStateInitialization(COMPILED_METHODS_VAR, COMPILED_SHARED_SCHEMA_VAR);
-    this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
     this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
-    if (this.scriptMode) {
-      this.emitDeclareReturnChannel(this.buffer.currentBuffer);
-    }
-    const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
-      ? node._analysis.sequenceLocks
-      : [];
-    for (const name of sequenceLocks) {
-      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
-    }
-    if (!this.scriptMode && this.hasDynamicExtends) {
-      this.emit.line(`const ${DYNAMIC_EXTENDS_STATE_VAR} = { parentSelection: null };`);
-    }
-    this._emitRootExternInitialization(node);
-    this.inheritance.emitRootSharedDeclarations(node);
-    if (!this.scriptMode) {
-      this.emit.line(`const extendsState = ${this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null'};`);
-    }
-    this._compileChildren(node, null);
+    this.emit.line(`const extendsState = ${(!this.scriptMode && this.hasDynamicExtends) ? '{ parentSelection: null }' : 'null'};`);
+    this.emit.line(
+      `${INHERITANCE_STARTUP_PROMISE_VAR} = b___setup__(` +
+      `env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, extendsState);`
+    );
     this.emit.line(
       `${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.startInheritanceRootConstructor(` +
       `${COMPILED_METHODS_VAR}, inheritanceState, env, context, runtime, cb, ${this.buffer.currentBuffer}, ` +
-      `${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')}, ` +
-      `${INHERITANCE_STARTUP_PROMISE_VAR}, () => b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')}));`
+      `${this.scriptMode ? 'null' : 'extendsState'}, ` +
+      `${INHERITANCE_STARTUP_PROMISE_VAR});`
     );
+    this.emit.line('if (!runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE)) {');
+    this.emit.line('  context.resolveExports();');
+    this.emit.line('}');
     this.inheritance.emitAsyncRootCompletion(node);
+  }
+
+  _compileAsyncRootSetupEntry(node) {
+    const isTemplateRoot = !this.scriptMode;
+
+    this.inheritance._withAsyncConstructorEntryState(isTemplateRoot, () => {
+      this.emit.line('function b___setup__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
+      this.emit.line('try {');
+      this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
+      if (isTemplateRoot) {
+        this.emit.line(`let ${this.buffer.currentTextChannelVar} = output.getChannel("${this.buffer.currentTextChannelName}");`);
+        this.emit.line(`${this.buffer.currentBuffer}._context = context;`);
+        this.emit.line(`${this.buffer.currentTextChannelVar}._context = context;`);
+      }
+      this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+      if (this.scriptMode) {
+        this.emitDeclareReturnChannel(this.buffer.currentBuffer);
+      }
+      const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
+        ? node._analysis.sequenceLocks
+        : [];
+      for (const name of sequenceLocks) {
+        this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
+      }
+      this._emitRootExternInitialization(node);
+      this.inheritance.emitRootSharedDeclarations(node);
+      this._compileChildren(node, null);
+      this.emit.line(`return ${INHERITANCE_STARTUP_PROMISE_VAR};`);
+      this.emit.closeScopeLevels();
+      this.emit.line('} catch (e) {');
+      this.emit.line(`  throw runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`);
+      this.emit.line('}');
+      this.emit.line('}');
+    });
   }
 
   _compileAsyncRoot(node) {
@@ -1383,6 +1405,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this._compileAsyncRootBody(node);
     this.emit.endEntryFunction(node, true);
     this.inBlock = true;
+    this._compileAsyncRootSetupEntry(node);
     this.inheritance.compileAsyncConstructorEntry(node);
     return this.inheritance.compileAsyncBlockEntries(node);
   }

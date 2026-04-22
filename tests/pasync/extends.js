@@ -75,6 +75,29 @@ describe('Extends Runtime', function () {
       expect(result).to.be('A|post-B|post-C|');
     });
 
+    it('should run an ancestor constructor once through a constructorless child script', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be('A|');
+    });
+
+    it('should run an ancestor constructor once through a constructorless middle script', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")');
+      loader.addTemplate('B.script', 'extends "A.script"');
+      loader.addTemplate('C.script', 'shared text trace\nextends "B.script"\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', {});
+      expect(result).to.be('A|');
+    });
+
     it('should expose descendant shared defaults to ancestor constructors', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
@@ -121,6 +144,17 @@ describe('Extends Runtime', function () {
       loader.addTemplate('A.script', 'shared text trace\ntrace(theme)');
       loader.addTemplate('B.script', 'extends "A.script"');
       loader.addTemplate('C.script', 'shared text trace\nextends "B.script" with theme\nreturn trace.snapshot()');
+
+      const result = await env.renderScript('C.script', { theme: 'dark' });
+      expect(result).to.be('dark');
+    });
+
+    it('should make extends-with payload visible to the parent constructor before parent work runs', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared text trace\ntrace(theme)');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script" with theme\nreturn trace.snapshot()');
 
       const result = await env.renderScript('C.script', { theme: 'dark' });
       expect(result).to.be('dark');

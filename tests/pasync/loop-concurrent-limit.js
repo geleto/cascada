@@ -2510,26 +2510,34 @@
       expect(source).to.contain('runtime.validateExternInputs(');
     });
 
-    it('keeps include extern input keys canonical when parent loop vars are renamed', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% include "inc.njk" with loop %}{% endfor %}', env);
-      const source = tmpl._compileSource();
-      expect(source).to.contain('t_15["loop"] = currentBuffer.addSnapshot("loop#');
-      expect(source).to.not.contain('t_15["loop#');
+    it('keeps include loop metadata canonical at runtime under limited loops', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('inc.njk', '{% extern loop %}[{{ loop.index }}/{{ loop.length }}]');
+
+      const result = await env.renderTemplateString(
+        '{% for x in xs of 2 %}{% include "inc.njk" with loop %}{% endfor %}',
+        { xs: [10, 20, 30] }
+      );
+
+      expect(result).to.be('[1/3][2/3][3/3]');
     });
 
-    it('uses distinct runtime loop channel names for nested includes that both pass loop', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate(
-        '{% for outer in xs of 2 %}{% for inner in ys of 2 %}{% include "inner.njk" with loop %}{% endfor %}{% include "outer.njk" with loop %}{% endfor %}',
-        env
-      );
-      const source = tmpl._compileSource();
-      const includeLoopSnapshots = Array.from(source.matchAll(/\["loop"\]\s*=\s*currentBuffer\.addSnapshot\("(loop#\d+)"/g))
-        .map((match) => match[1]);
+    it('keeps nested include loop metadata distinct at runtime under limited loops', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('inner.njk', '{% extern loop %}[inner {{ loop.index }}/{{ loop.length }}]');
+      loader.addTemplate('outer.njk', '{% extern loop %}[outer {{ loop.index }}/{{ loop.length }}]');
 
-      expect(includeLoopSnapshots).to.have.length(2);
-      expect(new Set(includeLoopSnapshots).size).to.be(2);
+      const result = await env.renderTemplateString(
+        '{% for outer in xs of 2 %}{% for inner in ys of 2 %}{% include "inner.njk" with loop %}{% endfor %}{% include "outer.njk" with loop %}{% endfor %}',
+        { xs: ['A', 'B'], ys: [1, 2, 3] }
+      );
+
+      expect(result).to.be(
+        '[inner 1/3][inner 2/3][inner 3/3][outer 1/2]' +
+        '[inner 1/3][inner 2/3][inner 3/3][outer 2/2]'
+      );
     });
 
     it('emits WaitResolveCommand for import boundary completion in limited loops', function () {

@@ -499,9 +499,6 @@ class CompileInheritance {
         this.compiler.currentCallableDefinition = previousCallableDefinition;
         this.compiler.isCompilingCallableEntry = previousCompilingCallableEntry;
       }
-      this.emit.line('if (!runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE)) {');
-      this.emit.line('  context.resolveExports();');
-      this.emit.line('}');
       this.emit.line(`return ${INHERITANCE_STARTUP_PROMISE_VAR};`);
       this.emit.closeScopeLevels();
       this.emit.line('} catch (e) {');
@@ -545,22 +542,10 @@ class CompileInheritance {
   }
 
   _emitParentRootRender({ indent = '', templateExpr, compositionPayloadExpr, currentBufferExpr }) {
-    const parentTemplateVar = this.compiler._tmpid();
-    const parentContextVar = this.compiler._tmpid();
-    const parentOutputVar = this.compiler._tmpid();
-    const parentCompositionModeVar = this.compiler._tmpid();
-
-    this.emit.line(`${indent}const ${parentTemplateVar} = await runtime.resolveSingle(${templateExpr});`);
-    this.emit.line(`${indent}if (${parentTemplateVar} === null || ${parentTemplateVar} === undefined) {`);
-    this.emit.line(`${indent}  return;`);
-    this.emit.line(`${indent}}`);
-    this.emit.line(`${indent}${parentTemplateVar}.compile();`);
-    this.emit.line(`${indent}const ${parentContextVar} = ${compositionPayloadExpr}`);
-    this.emit.line(`${indent}  ? context.forkForComposition(${parentTemplateVar}.path, ${compositionPayloadExpr}.rootContext || {}, context.getRenderContextVariables(), ${compositionPayloadExpr}.externContext || {})`);
-    this.emit.line(`${indent}  : context.forkForPath(${parentTemplateVar}.path);`);
-    this.emit.line(`${indent}const ${parentCompositionModeVar} = runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE) ? runtime.COMPONENT_COMPOSITION_MODE : true;`);
-    this.emit.line(`${indent}const ${parentOutputVar} = ${parentTemplateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, ${parentCompositionModeVar}, ${currentBufferExpr}, inheritanceState);`);
-    this.emit.line(`${indent}await runtime.waitForParentRootRender(${parentOutputVar}, ${currentBufferExpr}, inheritanceState, ${parentCompositionModeVar});`);
+    this.emit.line(
+      `${indent}await runtime.renderInheritanceParentRoot(` +
+      `${templateExpr}, ${compositionPayloadExpr}, context, env, runtime, cb, ${currentBufferExpr}, inheritanceState);`
+    );
   }
 
   _emitDynamicTemplateParentRender(indent = '') {
