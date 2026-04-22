@@ -492,7 +492,9 @@ class CompileInheritance {
       this.compiler.currentCallableDefinition = constructorDefinition;
       this.compiler.isCompilingCallableEntry = !!constructorDefinition;
       try {
-        if (constructorDefinition && constructorDefinition.body) {
+        if (constructorDefinition && constructorDefinition.body && this.compiler.scriptMode) {
+          this.emit.line(`__inheritanceStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
+        } else if (constructorDefinition && constructorDefinition.body) {
           this.compiler._compileChildren(constructorDefinition.body, null);
         }
       } finally {

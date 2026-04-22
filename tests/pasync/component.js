@@ -1075,6 +1075,64 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(result).to.be('before|one|between|two|after|');
   });
 
+  it('should start component constructor work behind earlier caller-side binding-lane waits', async function () {
+    const events = [];
+    const makeContext = (path) => ({
+      path,
+      getRenderContextVariables() {
+        return {};
+      },
+      forkForComposition(nextPath) {
+        return makeContext(nextPath);
+      }
+    });
+
+    const ownerContext = makeContext('Main.script');
+    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
+
+    const gate = new Promise((resolve) => {
+      setTimeout(() => {
+        events.push('gate-resolved');
+        resolve('open');
+      }, 20);
+    });
+
+    ownerBuffer.add(new runtimeModule.WaitResolveCommand({
+      channelName: 'nsBinding',
+      args: [gate],
+      pos: { lineno: 1, colno: 1 }
+    }), 'nsBinding');
+
+    const startupPromise = runtimeModule.startComponentInstance(
+      ownerBuffer,
+      'nsBinding',
+      {
+        compile() {},
+        rootRenderFunc() {
+          events.push('ctor-start');
+        },
+        methods: {},
+        sharedSchema: [],
+        externSpec: [],
+        path: 'Component.script'
+      },
+      {},
+      ownerContext,
+      {},
+      runtimeModule,
+      () => {},
+      { lineno: 2, colno: 1, path: 'Main.script' }
+    );
+
+    const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    ownerBuffer.markFinishedAndPatchLinks();
+    await bindingSnapshot;
+    await startupPromise;
+
+    expect(events).to.eql(['gate-resolved', 'ctor-start']);
+  });
+
   it('should auto-close a component instance when the owner buffer finishes', async function () {
     const makeContext = (path) => ({
       path,

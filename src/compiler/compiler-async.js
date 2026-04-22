@@ -924,15 +924,15 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`  rootContext: ${rootContextVar},`);
     this.emit.line(`  externContext: ${externContextVar}`);
     this.emit.line('};');
-    this.emit.line(`const ${instanceVar} = runtime.createComponentInstance(`);
+    this.emit.line(`const ${instanceVar} = runtime.startComponentInstance(`);
+    this.emit.line(`  ${this.buffer.currentBuffer},`);
+    this.emit.line(`  "${targetName}",`);
     this.emit.line(`  ${componentTemplateVar},`);
     this.emit.line(`  ${payloadVar},`);
     this.emit.line('  context,');
     this.emit.line('  env,');
     this.emit.line('  runtime,');
     this.emit.line('  cb,');
-    this.emit.line(`  ${this.buffer.currentBuffer},`);
-    this.emit.line(`  "${targetName}",`);
     this.emit.line(`  ${errorContextJson}`);
     this.emit.line(');');
     this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${targetName}', args: [${instanceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${targetName}');`);
@@ -1358,8 +1358,49 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance.emitAsyncRootCompletion(node);
   }
 
-  _compileAsyncRootSetupEntry(node) {
+  _getGenericScriptBodySource(node) {
+    if (!this.scriptMode) {
+      return null;
+    }
+    const constructorDefinition = this._getConstructorDefinition(node);
+    if (constructorDefinition && constructorDefinition.body) {
+      return constructorDefinition.body;
+    }
+    if (this.hasExtends) {
+      return null;
+    }
+    return node;
+  }
+
+  _compileAsyncScriptBodyEntry(node) {
+    if (!this.scriptMode) {
+      return false;
+    }
+
+    const bodySource = this._getGenericScriptBodySource(node);
+    if (!bodySource) {
+      return false;
+    }
+
+    this.inheritance._withAsyncConstructorEntryState(false, () => {
+      this.emit.line('function b___scriptBody__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
+      this.emit.line('try {');
+      this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
+      this._compileChildren(bodySource, null);
+      this.emit.line(`return ${INHERITANCE_STARTUP_PROMISE_VAR};`);
+      this.emit.closeScopeLevels();
+      this.emit.line('} catch (e) {');
+      this.emit.line(`  throw runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`);
+      this.emit.line('}');
+      this.emit.line('}');
+    });
+
+    return true;
+  }
+
+  _compileAsyncRootSetupEntry(node, hasGenericScriptBody = false) {
     const isTemplateRoot = !this.scriptMode;
+    const skipGenericSetup = !!(this.scriptMode && this._getConstructorDefinition(node));
 
     this.inheritance._withAsyncConstructorEntryState(isTemplateRoot, () => {
       this.emit.line('function b___setup__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
@@ -1382,7 +1423,11 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       this._emitRootExternInitialization(node);
       this.inheritance.emitRootSharedDeclarations(node);
-      this._compileChildren(node, null);
+      if (this.scriptMode && hasGenericScriptBody && !skipGenericSetup) {
+        this.emit.line(`__inheritanceStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
+      } else {
+        this._compileChildren(node, null);
+      }
       this.emit.line(`return ${INHERITANCE_STARTUP_PROMISE_VAR};`);
       this.emit.closeScopeLevels();
       this.emit.line('} catch (e) {');
@@ -1397,9 +1442,11 @@ class CompilerAsync extends CompilerBaseAsync {
     this._compileAsyncRootBody(node);
     this.emit.endEntryFunction(node, true);
     this.inBlock = true;
-    this._compileAsyncRootSetupEntry(node);
+    const hasGenericScriptBody = this._compileAsyncScriptBodyEntry(node);
+    this._compileAsyncRootSetupEntry(node, hasGenericScriptBody);
     this.inheritance.compileAsyncConstructorEntry(node);
-    return this.inheritance.compileAsyncBlockEntries(node);
+    const blocks = this.inheritance.compileAsyncBlockEntries(node);
+    return { blocks, hasGenericScriptBody };
   }
 
   analyzeRoot(node) {
@@ -1443,8 +1490,8 @@ class CompilerAsync extends CompilerBaseAsync {
       callableDefinitions.length > 0 ||
       this.pendingInheritanceMethodNames.length > 0
     );
-    const blocks = this._compileAsyncRoot(node);
-    const methods = this.inheritance.collectCompiledMethods(node, blocks, this.pendingInheritanceMethodNames);
+    const rootCompileResult = this._compileAsyncRoot(node);
+    const methods = this.inheritance.collectCompiledMethods(node, rootCompileResult.blocks, this.pendingInheritanceMethodNames);
 
     if (this.pendingInheritanceMethodNames.length > 0 || this.inheritance.hasMethodSuperDependencies(callableDefinitions)) {
       this.inheritance.emitPendingInheritanceEntryFactory();
@@ -1453,7 +1500,10 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
     this.emit.line('return {');
     this.emit.line('setup: b___setup__,');
-    blocks.forEach((block) => {
+    if (rootCompileResult.hasGenericScriptBody) {
+      this.emit.line('b___scriptBody__: b___scriptBody__,');
+    }
+    rootCompileResult.blocks.forEach((block) => {
       const blockName = `b_${block.name.value}`;
       this.emit.line(`${blockName}: ${blockName},`);
     });

@@ -240,6 +240,58 @@ class ComponentOperationCommand extends Command {
   }
 }
 
+class StartComponentInstanceCommand extends Command {
+  constructor({
+    templateOrPromise,
+    payload,
+    ownerContext,
+    env,
+    runtime,
+    cb = null,
+    ownerBuffer,
+    bindingName = null,
+    errorContext = null
+  }) {
+    super({ withDeferredResult: true });
+    this.templateOrPromise = templateOrPromise;
+    this.payload = payload;
+    this.ownerContext = ownerContext;
+    this.env = env;
+    this.runtime = runtime;
+    this.cb = cb;
+    this.ownerBuffer = ownerBuffer;
+    this.bindingName = bindingName;
+    this.errorContext = errorContext;
+    this.isObservable = false;
+  }
+
+  apply(outputChannel) {
+    void outputChannel;
+    return this._run();
+  }
+
+  async _run() {
+    try {
+      const instance = await createComponentInstance(
+        this.templateOrPromise,
+        this.payload,
+        this.ownerContext,
+        this.env,
+        this.runtime,
+        this.cb,
+        this.ownerBuffer,
+        this.bindingName,
+        this.errorContext
+      );
+      this.resolveResult(instance);
+      return instance;
+    } catch (error) {
+      this.rejectResult(error);
+      throw error;
+    }
+  }
+}
+
 class ObserveSharedChannelCommand extends Command {
   constructor({
     observationCommand,
@@ -419,6 +471,31 @@ function _enqueueComponentOperation(command, currentBuffer, bindingName) {
   return command.promise;
 }
 
+function startComponentInstance(
+  currentBuffer,
+  bindingName,
+  templateOrPromise,
+  payload,
+  ownerContext,
+  env,
+  runtime,
+  cb,
+  errorContext = null
+) {
+  const command = new StartComponentInstanceCommand({
+    templateOrPromise,
+    payload,
+    ownerContext,
+    env,
+    runtime,
+    cb,
+    ownerBuffer: currentBuffer,
+    bindingName,
+    errorContext
+  });
+  return _enqueueComponentOperation(command, currentBuffer, bindingName);
+}
+
 function callComponentMethod(bindingName, currentBuffer, methodName, args, runtime, cb, errorContext = null) {
   const command = new ComponentOperationCommand({
     operation: 'method',
@@ -447,8 +524,10 @@ module.exports = {
   COMPONENT_COMPOSITION_MODE,
   ComponentInstance,
   ComponentOperationCommand,
+  StartComponentInstanceCommand,
   ObserveSharedChannelCommand,
   createComponentInstance,
+  startComponentInstance,
   callComponentMethod,
   observeComponentChannel
 };
