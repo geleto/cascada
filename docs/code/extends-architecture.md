@@ -370,23 +370,43 @@ effective method entry is fully available.
 The helper should stay as narrow as possible:
 
 - it resolves the effective entry for the current call target
-- it does not eagerly resolve the whole ancestor hierarchy just because that
-  hierarchy exists
-- it does not eagerly resolve the next `super` level merely because the method
-  body contains a `super()` call somewhere
-- if the current method has a `super` entry that is still pending, that
-  `super` slot may remain a promise/pending entry until `super()` is actually
-  invoked at runtime
+- it resolves the callable metadata chain needed to describe the current
+  callable's inherited effect set
+- `super` should stay part of that resolved callable metadata shape as the next
+  same-shape metadata level, or `null` when there is no parent level
 
-Channel metadata should be merged only as far as the actually executed call
-path requires:
+The resolved callable metadata shape should be explicit, for example:
 
-- current-call linkage uses the current call target's own effective channel
-  requirements
-- a conditional `super()` must not force eager resolution or eager linking for
-  an ancestor path that may never execute
-- later `super()` execution resolves its own next target and links its own
-  required channels at that point
+- `fn`
+- `signature`
+- `ownUsedChannels`
+- `ownMutatedChannels`
+- `mergedUsedChannels`
+- `mergedMutatedChannels`
+- `super`
+
+Current-call linkage uses the current level's merged channel effect set:
+
+- `ownUsedChannels` / `ownMutatedChannels` describe the local body only
+- `mergedUsedChannels` / `mergedMutatedChannels` describe the current callable
+  level plus the reachable `super` chain from there
+- because the current callable may execute `super()`, its conservative effect
+  set includes that reachable parent work
+
+So `super()` execution remains lazy, but channel metadata is conservative:
+
+- current-call side-channel apply links using the current level's merged effect
+  set
+- later `super()` execution reuses the already-resolved `super` metadata level
+  rather than doing a second ancestry walk
+- "exact" means exact to the resolved callable's full inherited effect set, not
+  merely to the current level's local body text
+
+This still must not turn into broad unrelated linkage:
+
+- merged callable metadata may include the reachable `super` chain
+- it must not widen into blanket `sharedSchema` / hierarchy-wide linking for
+  channels the callable chain does not touch
 
 This is important for correctness as well as performance: broad eager
 resolution/linking can serialize later unrelated shared-channel work and
@@ -403,8 +423,9 @@ such as effective channel sets.
 
 Call sites should not read `usedChannels` / `mutatedChannels` directly from the
 raw stored entry. They should go through the helper, which resolves the
-effective method target and computes channel metadata only for the actually
-executed call path.
+effective method target and computes channel metadata for the resolved
+callable's inherited effect set. Execution of `super()` remains lazy, but the
+linked/waited channel metadata is conservative for that callable level.
 
 ## Shared-Channel Access
 

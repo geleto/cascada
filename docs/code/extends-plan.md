@@ -1355,16 +1355,40 @@ Critical model for this phase:
   the shared-root-owned tree
 - linking is exact and demand-driven:
   - await the effective method metadata once
-  - use that resolved metadata to get the current call's exact
-    `usedChannels` / `mutatedChannels`
+  - use that resolved metadata to get the current call's exact channel info
   - do not separately await "method known" and then "channels known"; channel
     metadata comes from the resolved method metadata
   - do not separately await or pre-resolve unrelated ancestor entries
+- the helper result should be one resolved inheritance-callable metadata
+  shape, not just two arrays:
+  - `fn`
+  - `signature`
+  - `ownUsedChannels`
+  - `ownMutatedChannels`
+  - `mergedUsedChannels`
+  - `mergedMutatedChannels`
+  - `super`
+  - rename old `contract` terminology to `signature`
+  - do not keep a separate raw `entry` field if `fn` plus the resolved
+    metadata object already expresses the final callable shape
+  - `super` should be either:
+    - the same resolved metadata shape for the next level
+    - or `null` when there is no parent level
 - `super()` remains lazy:
-  - unresolved `super` entries may stay pending/promise-shaped
-  - resolve the next `super` level only when `super()` is actually invoked
-  - conditional `super()` must not force eager ancestor resolution or eager
-    ancestor-channel linking
+  - the helper may still return the resolved parent metadata chain in `super`
+    using the same metadata shape as the current level
+  - each level's `mergedUsedChannels` / `mergedMutatedChannels` describes that
+    level plus the reachable `super` chain from there
+  - current-call linking uses that level's merged channel sets, because the
+    callable effect of the current level includes the reachable `super` work it
+    may perform
+  - `super()` execution is still lazy even though channel metadata is
+    conservative:
+    - the current level links with its merged effect set
+    - later `super()` execution uses the already-resolved `super` metadata level
+      rather than doing a second ancestry walk
+  - "exact" in this phase therefore means exact to the resolved callable's full
+    inherited effect set, not merely to the current level's local body text
 - shared-root lifetime should be explicit:
   - prefer finishing the shared root from the caller-side final
     snapshot/finalSnapshot ownership model rather than from ad hoc lifecycle
@@ -1388,13 +1412,22 @@ Scope:
 
 - inherited-call apply must:
   - resolve the effective current call target
-  - await the exact `usedChannels` / `mutatedChannels` for that call from the
-    resolved method metadata
+  - await the resolved inheritance-callable metadata object once
+  - read the current level's exact merged channel requirements from that
+    resolved metadata
   - create one child invocation buffer for that call under the shared root
   - link only those exact channels plus any truly required call-result lane
     such as `__return__`
   - make that child buffer the method's `currentBuffer`
   - run the method there
+  - if `super()` is later invoked, use the already-resolved `super` metadata
+    object for that next call level rather than doing a second ancestry walk
+- shared-channel side-channel apply must also stay exact:
+  - resolve only the requested shared channel's metadata
+  - add the operation from the caller's current buffer position against the
+    shared root
+  - do not widen shared-channel access into blanket `sharedSchema` linkage just
+    because the shared root owns more channels
 - remove the current broad linkage behavior from inherited startup/call paths:
   - no `Object.keys(sharedSchema)` linkage for ordinary inherited calls
   - no child-side late repair as the normal structural model
@@ -1439,6 +1472,8 @@ Scope:
     - `.resolvedMethodMeta` attachment if exact apply no longer needs it as a
       side surface
     - any duplicate "resolved metadata now, real invocation later" staging state
+    - any old helper result fields/names that only exist because the earlier
+      model returned partial metadata such as raw `entry` / `contract`
 - preserve compatibility-only surfaces as out of scope here:
   - `Context.addBlock(...)`
   - `Context.getBlock(...)`
@@ -1449,7 +1484,14 @@ Method:
 - implement the replacement architecture first, not just negative cleanup
 - drive the replacement from the final side-channel model:
   - caller-side command orders the work
-  - resolved method metadata provides exact channels
+  - resolved inheritance-callable metadata provides:
+    - `fn`
+    - `signature`
+    - own channel metadata
+    - merged channel metadata for that call level
+    - the next resolved `super` metadata level
+  - exact current-call linking uses the current level's merged channel metadata,
+    because that is the callable's conservative full effect set
   - per-call child buffer under the shared root runs the method
   - final snapshot/finalSnapshot owns shared-root finish
 - after each narrowing step, run focused inherited-call/shared-channel tests
@@ -1471,14 +1513,21 @@ Deliverables:
 - broad shared-lane linking is removed from ordinary inherited call setup
 - the per-call invocation buffer is created under the shared root, not behind a
   second helper-owned admission staging layer
-- conditional `super()` no longer causes eager ancestor resolution/linking
+- conditional `super()` no longer causes eager ancestor resolution, even though
+  the current level still links conservatively with its merged channel effect
+  set
+- the inheritance helper returns one resolved callable metadata shape with
+  `fn`, `signature`, own channels, merged channels, and same-shape `super`
+  metadata
+- exact current-call linking uses the current level's own channels; ancestor
+  levels link only when `super()` is actually executed
 - any remaining barrier/lifecycle helper is either removed or justified as a
   direct part of the final model rather than as staging residue
 - shared-root finish ownership is explicit and documented
 - `CommandBuffer.getFinishCompletePromise()` and any lifecycle paths built only
   around it are removed unless the redesign proves they encode a real final
   ownership rule not already covered by snapshot/finalSnapshot completion
-- one awaited resolved-method-metadata step is sufficient for both target
+- one awaited resolved-callable-metadata step is sufficient for both target
   resolution and exact channel-link computation
 - any helper/property/promise surface removed by this redesign is deleted rather
   than left behind as dormant residue
@@ -1490,8 +1539,12 @@ Tests:
 - add regressions that prove:
   - unrelated later shared-channel work is not falsely blocked by an earlier
     inherited call
-  - conditional `super()` does not pre-resolve or pre-link unused ancestor
-    paths
+  - conditional `super()` does not pre-resolve ancestor call targets, even
+    though the current level links conservatively with its merged effect set
+  - exact inherited-call linking uses the current level's merged channels, not
+    broad unrelated `sharedSchema` linkage
+  - shared-channel side-channel access resolves and links only the requested
+    shared lane
   - shared-root lifetime closes only after the final caller-visible snapshot
     semantics are satisfied
   - inherited side-channel apply does not require a second admission-only buffer
