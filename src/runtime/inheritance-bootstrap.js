@@ -12,20 +12,7 @@ function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, current
   }
   inheritanceState.registerInheritanceSharedSchema(state, sharedSchema, context);
   inheritanceState.registerInheritanceMethods(state, methods);
-  ensureCurrentBufferSharedLinks(state.sharedSchema, currentBuffer);
   return state;
-}
-
-function ensureCurrentBufferSharedLinks(sharedSchema, currentBuffer) {
-  if (!sharedSchema || !currentBuffer || !currentBuffer._registerLinkedChannel) {
-    return currentBuffer;
-  }
-
-  const channelNames = Object.keys(sharedSchema);
-  for (let i = 0; i < channelNames.length; i++) {
-    currentBuffer._registerLinkedChannel(channelNames[i]);
-  }
-  return currentBuffer;
 }
 
 function linkCurrentBufferToResolvedParentSharedChannels(inheritanceStateValue, currentBuffer, parentOutputBuffer) {
@@ -115,7 +102,6 @@ function finalizeInheritanceMetadata(state, context = null) {
 
 module.exports = {
   bootstrapInheritanceMetadata,
-  ensureCurrentBufferSharedLinks,
   linkCurrentBufferToResolvedParentSharedChannels,
   linkCurrentBufferToParentSharedChannels,
   getInheritanceSharedBuffer,

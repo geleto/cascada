@@ -8,6 +8,7 @@ let InheritanceState;
 let inheritanceStateModule;
 let ComponentInstance;
 let ComponentOperationCommand;
+let inheritanceCallModule;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -31,6 +32,12 @@ if (typeof require !== 'undefined') {
     void err;
     InheritanceState = null;
   }
+  try {
+    inheritanceCallModule = require('../../src/runtime/inheritance-call');
+  } catch (err) {
+    void err;
+    inheritanceCallModule = null;
+  }
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
@@ -39,6 +46,7 @@ if (typeof require !== 'undefined') {
   InheritanceState = null;
   ComponentInstance = null;
   ComponentOperationCommand = null;
+  inheritanceCallModule = null;
 }
 
 describe('Phase 8 - Component Method Calls', function () {
@@ -284,7 +292,7 @@ describe('Phase 8 - Component Method Calls', function () {
 
   describe('Phase 8 - Late Component Invocation Linking', function () {
     it('should defer unresolved component invocation-buffer creation until the target method entry is current', async function () {
-      if (!InheritanceState) {
+      if (!InheritanceState || !inheritanceCallModule) {
         this.skip();
         return;
       }
@@ -293,10 +301,10 @@ describe('Phase 8 - Component Method Calls', function () {
       const env = new AsyncEnvironment(loader);
       const events = [];
       const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
-      const originalEnsureInvocationBuffer = runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+      const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
       let buildInvocationCreatedAt = -1;
 
-      runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+      inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
         if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
           buildInvocationCreatedAt = events.length;
           events.push({ type: 'build-invocation-buffer-created' });
@@ -333,17 +341,21 @@ describe('Phase 8 - Component Method Calls', function () {
         expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
       } finally {
         inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
-        runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
       }
     });
 
     it('should create unresolved component invocation buffers with the resolved method entry linkedChannels', async function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       let seenLinkedChannels = null;
-      const originalEnsureInvocationBuffer = runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+      const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
 
-      runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+      inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
         const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
         if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
           seenLinkedChannels = {
@@ -385,7 +397,7 @@ describe('Phase 8 - Component Method Calls', function () {
         expect(seenLinkedChannels.trace).to.be(true);
         expect(seenLinkedChannels.late).to.be(true);
       } finally {
-        runtimeModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
       }
     });
 

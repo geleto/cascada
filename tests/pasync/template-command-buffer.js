@@ -179,7 +179,7 @@
       const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'component-mode-export-guard.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('if (!(inheritanceState && inheritanceState.componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE)) {');
+      expect(source).to.contain('if (!runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE)) {');
       expect(source).to.contain('  context.resolveExports();');
     });
 

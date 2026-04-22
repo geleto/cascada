@@ -536,17 +536,10 @@ class CompilerCommon extends Obj {
 
   _getSharedDeclarations(node) {
     const metadata = this._getInheritanceMetadata(node);
-    if (metadata && metadata.sharedDeclarations && Array.isArray(metadata.sharedDeclarations.children)) {
-      return metadata.sharedDeclarations.children.filter(Boolean);
-    }
-    if (!node || typeof node.findAll !== 'function') {
+    if (!metadata || !metadata.sharedDeclarations || !Array.isArray(metadata.sharedDeclarations.children)) {
       return [];
     }
-    // Transitional bridge: some async-template paths still surface shared
-    // declarations directly on the raw AST instead of through one
-    // authoritative transformed inheritance-metadata source. Keep this narrow
-    // and metadata-only until the later cleanup phase removes the fallback.
-    return node.findAll(nodes.ChannelDeclaration).filter((child) => !!(child && child.isShared));
+    return metadata.sharedDeclarations.children.filter(Boolean);
   }
 
   compileNodeList(node, frame) {

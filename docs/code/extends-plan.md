@@ -1221,8 +1221,10 @@ Scope:
   - if a full removal is not yet possible, move that state off the final
     shared metadata object or narrow it behind one explicit lifecycle helper
     with a clear compatibility note
-- remove broad shared-lane linking and late repair behavior where the runtime
-  still links or patches more than the architecture requires:
+- review broad shared-lane linking and late repair behavior where the runtime
+  still links or patches more than the architecture requires; remove it if the
+  final runtime shape no longer needs it, otherwise record the explicit reason
+  it remains internal:
   - `ensureCurrentBufferSharedLinks(...)`
   - broad `Object.keys(sharedSchema)` linkage in inherited admission/invocation
   - child-side `_registerLinkedChannel(...)` fallback used as a structural fix
@@ -1243,7 +1245,9 @@ Scope:
     `_collectPendingInheritanceMethodNames(...)` once analysis-owned metadata
     is sufficient
 - collapse helper/buffer layers that still exist only as transitional
-  invocation staging if the final runtime shape can express them directly:
+  invocation staging if the final runtime shape can express them directly; if
+  the phase concludes they are still required, keep them internal-only and
+  record that decision explicitly:
   - `_createAdmissionBarrier(...)`
   - `_linkBarrierChannel(...)`
   - `InheritanceAdmissionCommand`
@@ -1259,39 +1263,46 @@ Scope:
   - if sync/Nunjucks compatibility still needs them, isolate them from the
     async extends path and mark them as compatibility-only rather than letting
     them remain part of the active inheritance model
-- carry forward the remaining Phase 12 cleanup gaps that are still live in the
-  staged implementation:
-  - keep `AsyncTemplate.blockContracts` as an empty compatibility surface
-    unless and until this phase makes an explicit final decision to remove it:
+- final Phase 13 decisions:
+  - keep `AsyncTemplate.blockContracts` as an empty compatibility surface:
     - do not let it drift back into active async inheritance behavior
-    - if it is removed later, that should be a deliberate compatibility/API
-      change justified in this phase rather than an incidental side effect of
-      cleanup
-  - async inheritance still uses the legacy block-registry runtime path for
-    active dispatch:
+  - keep legacy block-registry/template surfaces isolated to sync/Nunjucks
+    compatibility:
     - `context.getBlock(...)`
     - `context.addBlock(...)`
     - `parentTemplate.blocks`
-  - admission/barrier staging is still a first-class runtime dependency:
+    - async inherited dispatch no longer routes through those surfaces
+  - the following residue was removed in this phase:
+    - `InheritanceResolutionState`
+    - `inheritanceState.resolution`
+    - the root `__parentTemplate` channel/declaration/runtime lookup path
+    - the raw `CompilerCommon._getSharedDeclarations(...)` AST fallback
+    - the broad `ensureCurrentBufferSharedLinks(...)` bootstrap helper
+  - pending inherited-method discovery no longer rescans the whole root as one
+    late compiler step; it now uses explicit analyzed call metadata narrowed to
+    the relevant owner bodies
+  - admission/barrier staging remains as an internal runtime implementation
+    detail after review:
     - `_createAdmissionBarrier(...)`
     - `_linkBarrierChannel(...)`
     - `InheritanceAdmissionCommand`
-    - exported admission/testing surfaces that still expose that layer
-  - metadata-source unification is still incomplete:
-    - `_collectPendingInheritanceMethodNames(...)`
-    - `CompilerCommon._getSharedDeclarations(...)` raw AST fallback
-    - keep the `_getSharedDeclarations(...)` fallback comment marked as
-      transitional until the fallback is actually removed; do not normalize
-      that dual-source path as if it were final architecture
-  - broad shared-lane linking and late-link repair are still active:
-    - `ensureCurrentBufferSharedLinks(...)`
+    - those helpers are no longer exposed through the broad runtime surface
+      just to support tests
+  - lifecycle/mode shim state is no longer carried as plain top-level fields
+    on the visible inheritance metadata object:
+    - `constructorBoundaryPromise`
+    - `componentCompositionMode`
+    - the state survives only behind explicit inheritance-state helpers
+  - `CommandBuffer.getFinishCompletePromise()` remains required by the
+    component auto-close lifecycle and was evaluated/kept rather than treated
+    as dead code
+  - broad shared-lane linking and late-link repair still exist as internal
+    runtime structure for late parent/shared resolution:
     - `Object.keys(sharedSchema)` linkage in inheritance bootstrap/call paths
     - child-side `_registerLinkedChannel(...)` fallback after finished parent
       lanes
-  - lifecycle/mode shim state still survives on the active inheritance path:
-    - `constructorBoundaryPromise`
-    - `componentCompositionMode`
-    - `CommandBuffer.getFinishCompletePromise()` revisit/rename/removal
+    - these were reviewed and kept as live runtime behavior, not dead or
+      compatibility-only code
 
 Tests:
 
@@ -1318,11 +1329,336 @@ Cleanup pass before closing Phase 13:
   - preserves old block-registry/template surfaces on the async extends path
     even though the final model is method/metadata-based
 - for anything that still cannot be removed, add an explicit note stating:
-  - it is not part of the final architecture
-  - no new behavior should be added there
-  - what exact future condition would allow deletion
+  - why it is still required by the ordered runtime model
+  - that no new behavior should be added there
+  - whether it is internal implementation detail or compatibility surface
 
-## Phase 14 - Documentation
+## Phase 14 - Exact Side-Channel Invocation Model
+
+Goal:
+
+- replace the current broad shared-lane linking and admission/barrier staging
+  with the architecture's exact caller-side side-channel invocation model
+- make inherited-call ordering, linking, and shared-root lifetime come from one
+  coherent runtime shape instead of multiple overlapping staging helpers
+
+Critical model for this phase:
+
+- the caller-side side-channel command is the ordering point for inherited
+  method/constructor calls
+- each inheritance/component instance owns one shared root buffer whose
+  lifetime spans all inherited calls and shared-channel work for that instance
+- each inherited call creates exactly one child invocation buffer under that
+  shared root after the call target and its exact channel metadata are known
+- the caller-side command still originates from the caller's current buffer, but
+  the actual inherited method body runs in the per-call child buffer created in
+  the shared-root-owned tree
+- linking is exact and demand-driven:
+  - await the effective method metadata once
+  - use that resolved metadata to get the current call's exact
+    `usedChannels` / `mutatedChannels`
+  - do not separately await "method known" and then "channels known"; channel
+    metadata comes from the resolved method metadata
+  - do not separately await or pre-resolve unrelated ancestor entries
+- `super()` remains lazy:
+  - unresolved `super` entries may stay pending/promise-shaped
+  - resolve the next `super` level only when `super()` is actually invoked
+  - conditional `super()` must not force eager ancestor resolution or eager
+    ancestor-channel linking
+- shared-root lifetime should be explicit:
+  - prefer finishing the shared root from the caller-side final
+    snapshot/finalSnapshot ownership model rather than from ad hoc lifecycle
+    helpers
+  - if final snapshot/finalSnapshot resolves, that is the point where the
+    shared root should be eligible to finish
+  - do not keep separate lifecycle completion helpers if final snapshot
+    ownership already expresses the real finish rule
+
+Overview:
+
+- first, replace broad admission/invocation linking with exact per-call linking
+- then collapse the extra admission/barrier buffer layer if exact caller-side
+  apply now provides the required ordering
+- then re-evaluate shared-root lifetime helpers against the explicit
+  finalSnapshot-owned finish model
+- only after the replacement architecture is in place should the remaining
+  residue be challenged as dead code or workaround-shaped cleanup
+
+Scope:
+
+- inherited-call apply must:
+  - resolve the effective current call target
+  - await the exact `usedChannels` / `mutatedChannels` for that call from the
+    resolved method metadata
+  - create one child invocation buffer for that call under the shared root
+  - link only those exact channels plus any truly required call-result lane
+    such as `__return__`
+  - make that child buffer the method's `currentBuffer`
+  - run the method there
+- remove the current broad linkage behavior from inherited startup/call paths:
+  - no `Object.keys(sharedSchema)` linkage for ordinary inherited calls
+  - no child-side late repair as the normal structural model
+  - no pre-linking of unrelated shared lanes "just in case"
+- replace the current staging layer if exact caller-side apply makes it
+  unnecessary:
+  - `_createAdmissionBarrier(...)`
+  - `_linkBarrierChannel(...)`
+  - `InheritanceAdmissionCommand`
+  - any separate placeholder/admission buffer that only exists because the real
+    invocation buffer is created later
+- re-evaluate shared-root lifetime ownership:
+  - remove `CommandBuffer.getFinishCompletePromise()` if final
+    snapshot/finalSnapshot ownership fully covers the real finish rule
+  - prefer a model where caller-side final snapshot/finalSnapshot resolution
+    closes the shared root once no more legal work may attach
+- concrete removal/narrowing targets in this phase:
+  - remove or narrow broad-link helpers:
+    - `_getInitialAdmissionChannels(...)`
+    - `_ensureInvocationBuffer(...)` broad shared-lane union
+    - `linkCurrentBufferToResolvedParentSharedChannels(...)`
+    - `linkCurrentBufferToParentSharedChannels(...)` broad linking / late repair
+  - remove or collapse the admission/barrier layer if exact side-channel apply
+    makes it unnecessary:
+    - `_createAdmissionBarrier(...)`
+    - `_linkBarrierChannel(...)`
+    - `InheritanceAdmissionCommand`
+    - any distinct barrier/admission/placeholder buffer shape
+    - any helper state or identifiers that exist only to support that layer
+  - remove or narrow lifetime helpers/properties if final snapshot ownership
+  makes them unnecessary:
+    - `CommandBuffer.getFinishCompletePromise()`
+    - `getInheritanceConstructorBoundaryPromise(...)`
+    - `setInheritanceConstructorBoundaryPromise(...)`
+    - internal `constructorBoundaryPromise` state on inheritance instances
+    - any component auto-close/startup path that exists only to mirror the old
+      helper-owned finish lifecycle
+  - remove any extra promise/metadata surfaces that only exist because
+    admission and invocation are split:
+    - `.completion` attachment on inherited-call promises if the final
+      side-channel command already owns full lifetime
+    - `.resolvedMethodMeta` attachment if exact apply no longer needs it as a
+      side surface
+    - any duplicate "resolved metadata now, real invocation later" staging state
+- preserve compatibility-only surfaces as out of scope here:
+  - `Context.addBlock(...)`
+  - `Context.getBlock(...)`
+  - `Template.blockContracts` / `AsyncTemplate.blockContracts`
+
+Method:
+
+- implement the replacement architecture first, not just negative cleanup
+- drive the replacement from the final side-channel model:
+  - caller-side command orders the work
+  - resolved method metadata provides exact channels
+  - per-call child buffer under the shared root runs the method
+  - final snapshot/finalSnapshot owns shared-root finish
+- after each narrowing step, run focused inherited-call/shared-channel tests
+- treat any false serialization of unrelated later shared work as a correctness
+  failure, not as acceptable temporary behavior
+- treat any extra lifecycle helper that becomes unnecessary under the final
+  snapshot-owned finish model as dead code, not as a harmless compatibility shim
+- for each removed staging helper, verify whether it was:
+  - enforcing a real ordering invariant
+  - compensating for broad linking / late repair
+  - or simply dead code
+- if a helper still proves necessary, keep it only in the narrowest form that
+  directly represents the final model above
+
+Deliverables:
+
+- inherited method/constructor calls use one exact caller-side side-channel
+  invocation path
+- broad shared-lane linking is removed from ordinary inherited call setup
+- the per-call invocation buffer is created under the shared root, not behind a
+  second helper-owned admission staging layer
+- conditional `super()` no longer causes eager ancestor resolution/linking
+- any remaining barrier/lifecycle helper is either removed or justified as a
+  direct part of the final model rather than as staging residue
+- shared-root finish ownership is explicit and documented
+- `CommandBuffer.getFinishCompletePromise()` and any lifecycle paths built only
+  around it are removed unless the redesign proves they encode a real final
+  ownership rule not already covered by snapshot/finalSnapshot completion
+- one awaited resolved-method-metadata step is sufficient for both target
+  resolution and exact channel-link computation
+- any helper/property/promise surface removed by this redesign is deleted rather
+  than left behind as dormant residue
+
+Tests:
+
+- `npm run test:quick`
+- focused inherited-dispatch/shared-channel suites after each replacement step
+- add regressions that prove:
+  - unrelated later shared-channel work is not falsely blocked by an earlier
+    inherited call
+  - conditional `super()` does not pre-resolve or pre-link unused ancestor
+    paths
+  - shared-root lifetime closes only after the final caller-visible snapshot
+    semantics are satisfied
+  - inherited side-channel apply does not require a second admission-only buffer
+    layer once exact per-call invocation linking is in place
+
+Cleanup pass before closing Phase 14:
+
+- do one whole-codebase sweep after the replacement architecture is working and
+  tests are green
+- search for anything that became unnecessary because broad linking,
+  admission/barrier staging, or helper-owned lifetime management was removed
+- remove not only the explicitly planned targets above, but also any newly
+  exposed residue such as:
+  - dead helpers
+  - dead identifiers, locals, temporary vars, or compiled declarations
+  - old promise/result surfaces that are no longer observed
+  - compatibility comments that still describe removed staging behavior
+  - tests that patch or assert transitional internal shapes no longer used
+  - fallback branches that only existed to support the removed architecture
+- for every leftover piece of code discovered in that sweep, classify it
+  explicitly:
+  - required by the final exact side-channel model
+  - compatibility-only surface
+  - or dead/workaround residue to delete now
+- do not leave newly orphaned code behind just because it was not named in the
+  original Phase 14 scope list
+- update tests after the sweep so they assert the final exact-invocation shape,
+  not intermediate staging details
+
+## Phase 15 - Residue Validation Sweep
+
+Goal:
+
+- aggressively challenge the remaining compiler/runtime additions that are
+  still "probably not needed by the final design" and determine whether each
+  one is:
+  - removable dead code
+  - a hacky workaround hiding a missing structural fix
+  - or a legitimate internal runtime mechanism still required by the ordered
+    inheritance/component model
+
+Critical rule before any cleanup in this phase:
+
+- inherited-call resolution must stay exact and demand-driven:
+  - resolve the effective method entry for the current call target only
+  - do not eagerly resolve the full ancestor method hierarchy
+  - do not eagerly resolve the next `super` level just because a method body
+    contains `super()` somewhere
+  - unresolved `super` entries may remain pending/promise-shaped until
+    `super()` is actually invoked at runtime
+- inherited-call linking must stay exact as well:
+  - link/wait only the channels required by the actually executed current call
+  - do not widen admission/invocation/shared linkage to unrelated shared lanes
+    just because they exist in `sharedSchema`
+  - conditional `super()` must not pre-link ancestor channels that may never be
+    used
+- if a cleanup attempt reveals that broad linking was hiding false
+  serialization of unrelated later shared work, treat that as a correctness bug
+  and fix it in this phase rather than deferring it again
+
+Overview:
+
+- first, challenge the broad shared-lane linkage and late-link repair paths
+  against the exact-link rule above
+- then, re-evaluate the admission/barrier layer to see whether it is enforcing
+  real source-order guarantees or merely compensating for over-broad linking
+- separately, challenge lifecycle helpers like
+  `CommandBuffer.getFinishCompletePromise()` to determine whether they encode a
+  real ownership rule or patch around an avoidable ordering problem
+- throughout the phase, keep compatibility-only block/template surfaces out of
+  scope unless the change is an explicit compatibility decision
+- each removal attempt must answer:
+  - what exact behavior broke
+  - whether that behavior is required by the architecture
+  - whether the old code was a workaround for missing exact linkage/current
+    buffer ownership
+  - what the narrower structural fix is if the old code proves workaround-shaped
+
+Scope:
+
+- attack the most suspicious remaining runtime additions first:
+  - broad shared-lane linking through `Object.keys(sharedSchema)`
+  - late child-side `_registerLinkedChannel(...)` repair after finished parent
+    lanes
+  - `CommandBuffer.getFinishCompletePromise()` if it only exists to patch
+    lifecycle ordering
+- then re-evaluate the larger internal staging layer:
+  - `_createAdmissionBarrier(...)`
+  - `_linkBarrierChannel(...)`
+  - `InheritanceAdmissionCommand`
+- keep legacy compatibility surfaces separate from workaround hunting:
+  - `Context.addBlock(...)`
+  - `Context.getBlock(...)`
+  - `Template.blockContracts` / `AsyncTemplate.blockContracts`
+  - these should only be removed if the change is a deliberate compatibility
+    decision, not as collateral damage from cleanup
+
+Method:
+
+- remove or narrow one suspicious mechanism at a time
+- run focused regression suites immediately after each removal
+- classify the result explicitly:
+  - if removal reveals that the current buffer never had the structurally
+    required path, the old code was a workaround and the real fix is to wire
+    linkage/current-buffer ownership correctly
+  - if removal breaks source-order guarantees even with structurally correct
+    linkage, the mechanism may be a legitimate runtime requirement
+  - if the mechanism exists only because tests patch internal prototypes or
+    need broad runtime exports, prefer shrinking/internalizing that surface
+    instead of preserving it
+
+Deliverables:
+
+- remove any remaining surface that proves to be dead or workaround-shaped
+- for anything kept, add an explicit note explaining:
+  - what real issue it solves
+  - why it is not just a workaround for a missing structural/compiler fix
+  - whether it is final internal architecture or temporary compatibility
+    machinery
+
+Tests:
+
+- `npm run test:quick`
+- targeted inheritance/component suites after each removal attempt
+- add focused regressions for any newly exposed structural rule so the final
+  reason for keeping/removing a mechanism is enforced by tests
+
+## Phase 16 - Super Return Semantics
+
+Goal:
+
+- define and finish the return-value semantics for `super()` so they are
+  explicit and consistent in both direct-render and component/composition mode
+
+Scope:
+
+- allow `super()` to return a value in both modes when the parent method or
+  parent constructor returns explicitly
+- keep the direct-render script rule:
+  - the topmost child explicit return is the value returned by the script
+- keep the component/composition rule:
+  - `component ... as ns` is not itself a value-returning expression and is not
+    expected to produce a final script result
+  - the topmost child explicit return does not become a caller-visible
+    component result just because the file is instantiated through `component`
+  - `super()` may still observe and return the parent explicit return value
+    when the parent provides one
+- verify the same rule for:
+  - script methods
+  - constructor chaining
+  - standalone/direct render
+  - component/composition render
+- ensure these rules do not reintroduce ambient parent-scope access or blur
+  the distinction between explicit return flow and shared-channel state
+
+Tests:
+
+- direct-render scripts where child and parent both return
+- component/composition scripts where child and parent both return
+- `super()` inside child methods returning parent values in both modes
+- multi-level chains where only some ancestors return
+- regressions proving:
+  - component mode does not expose the topmost child explicit return as a
+    component result
+  - direct render still returns the topmost child explicit return
+
+## Phase 17 - Documentation
 
 Goal:
 

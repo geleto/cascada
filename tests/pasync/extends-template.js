@@ -169,7 +169,7 @@ describe('Template Extends', function () {
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null) {');
+      expect(source).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
       expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null) {');
       expect(source).to.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
       expect(source).to.contain('blockPayload && blockPayload.originalArgs');

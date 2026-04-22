@@ -8,6 +8,7 @@ let StringLoader;
 let runtime;
 let InheritanceState;
 let inheritanceStateModule;
+let inheritanceCallModule;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -24,6 +25,12 @@ if (typeof require !== 'undefined') {
     void err;
     InheritanceState = null;
   }
+  try {
+    inheritanceCallModule = require('../../src/runtime/inheritance-call');
+  } catch (err) {
+    void err;
+    inheritanceCallModule = null;
+  }
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
@@ -32,6 +39,7 @@ if (typeof require !== 'undefined') {
   StringLoader = window.util.StringLoader;
   runtime = nunjucks.runtime;
   InheritanceState = null;
+  inheritanceCallModule = null;
 }
 
 describe('Extends Runtime', function () {
@@ -53,7 +61,7 @@ describe('Extends Runtime', function () {
 
       expect(script.methods.__constructor__.fn).to.be.a('function');
       expect(script.methods.__constructor__.fn).not.to.be(script.rootRenderFunc);
-      expect(script._compileSource()).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null) {');
+      expect(script._compileSource()).to.contain('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
     });
 
     it('should lower static script extends through a structural child-buffer boundary', function () {
@@ -452,6 +460,10 @@ describe('Extends Runtime', function () {
     });
 
     it('should use InheritanceAdmissionCommand as a real observable command barrier', async function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
       env = new AsyncEnvironment();
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
       const inheritanceState = runtime.createInheritanceState();
@@ -460,8 +472,8 @@ describe('Extends Runtime', function () {
 
       let seenCommand = null;
       let applyCount = 0;
-      const originalApply = runtime.InheritanceAdmissionCommand.prototype.apply;
-      runtime.InheritanceAdmissionCommand.prototype.apply = function(output) {
+      const originalApply = inheritanceCallModule.InheritanceAdmissionCommand.prototype.apply;
+      inheritanceCallModule.InheritanceAdmissionCommand.prototype.apply = function(output) {
         seenCommand = this;
         applyCount++;
         return originalApply.call(this, output);
@@ -506,13 +518,13 @@ describe('Extends Runtime', function () {
         expect(value).to.be('result');
         expect(trace).to.be('done');
         expect(applyCount).to.be(1);
-        expect(seenCommand).to.be.a(runtime.InheritanceAdmissionCommand);
+        expect(seenCommand).to.be.a(inheritanceCallModule.InheritanceAdmissionCommand);
         expect(seenCommand.isObservable).to.be(true);
         expect(seenCommand.getError()).to.be(null);
         expect(admission.promise).to.be(seenCommand.promise);
         expect(admission.completion).to.be(seenCommand.completion);
       } finally {
-        runtime.InheritanceAdmissionCommand.prototype.apply = originalApply;
+        inheritanceCallModule.InheritanceAdmissionCommand.prototype.apply = originalApply;
       }
     });
 
@@ -563,6 +575,10 @@ describe('Extends Runtime', function () {
     });
 
     it('should let _finishAdmissionBuffers own sync admission-buffer cleanup', async function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
       const fakeBuffer = {
         finishCount: 0,
         markFinishedAndPatchLinks() {
@@ -577,7 +593,7 @@ describe('Extends Runtime', function () {
           return {};
         }
       };
-      const command = new runtime.InheritanceAdmissionCommand({
+      const command = new inheritanceCallModule.InheritanceAdmissionCommand({
         name: '__constructor__',
         resolveMethodEntry: () => ({
           fn() {
@@ -610,7 +626,7 @@ describe('Extends Runtime', function () {
 
     describe('Phase 7 - Late Inherited Linking', function () {
       it('should defer unresolved inherited invocation-buffer creation until the target method entry is current', async function () {
-        if (!InheritanceState) {
+        if (!InheritanceState || !inheritanceCallModule) {
           this.skip();
           return;
         }
@@ -619,10 +635,10 @@ describe('Extends Runtime', function () {
         env = new AsyncEnvironment(loader);
         const events = [];
         const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
-        const originalEnsureInvocationBuffer = runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+        const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
         let buildInvocationCreatedAt = -1;
 
-        runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
           if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
             buildInvocationCreatedAt = events.length;
             events.push({ type: 'build-invocation-buffer-created' });
@@ -664,17 +680,21 @@ describe('Extends Runtime', function () {
           expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
         } finally {
           inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
-          runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+          inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
         }
       });
 
       it('should create unresolved inherited invocation buffers with the resolved method entry linkedChannels', async function () {
+        if (!inheritanceCallModule) {
+          this.skip();
+          return;
+        }
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         let seenLinkedChannels = null;
-        const originalEnsureInvocationBuffer = runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+        const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
 
-        runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
           const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
           if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
             seenLinkedChannels = {
@@ -718,7 +738,7 @@ describe('Extends Runtime', function () {
           expect(seenLinkedChannels.trace).to.be(true);
           expect(seenLinkedChannels.late).to.be(true);
         } finally {
-          runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+          inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
         }
       });
 
@@ -751,12 +771,16 @@ describe('Extends Runtime', function () {
       });
 
       it('should link late parent-only shared lanes onto the invocation buffer when the method entry resolves', async function () {
+        if (!inheritanceCallModule) {
+          this.skip();
+          return;
+        }
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         let seenInvocationLate = null;
-        const originalEnsureInvocationBuffer = runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
+        const originalEnsureInvocationBuffer = inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer;
 
-        runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
+        inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = function(methodEntry) {
           const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
           if (this.name === 'build' && methodEntry && methodEntry.ownerKey === 'A.script') {
             seenInvocationLate = {
@@ -794,7 +818,7 @@ describe('Extends Runtime', function () {
             usesOwnInvocationBuffer: true
           });
         } finally {
-          runtime.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
+          inheritanceCallModule.InheritanceAdmissionCommand.prototype._ensureInvocationBuffer = originalEnsureInvocationBuffer;
         }
       });
 

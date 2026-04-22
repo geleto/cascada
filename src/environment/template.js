@@ -281,12 +281,7 @@ class Template extends Obj {
       props = func(globalRuntime);
     }
 
-    const compiledBlockContracts = this._getCompiledBlockContracts(props);
-    if (compiledBlockContracts != null) {
-      this.blockContracts = compiledBlockContracts;
-    } else {
-      delete this.blockContracts;
-    }
+    this.blockContracts = this._getCompiledBlockContracts(props);
     this.blocks = this._getCompiledBlocks(props);
     this.externSpec = props.externSpec || [];
     this.methods = props.methods || {};

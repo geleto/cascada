@@ -14,6 +14,7 @@ let inheritanceBootstrap;
 let inheritanceStartup;
 let StringLoader;
 let inheritanceStateModule;
+let inheritanceCallModule;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -44,6 +45,12 @@ if (typeof require !== 'undefined') {
   } catch (err) {
     void err;
   }
+  try {
+    inheritanceCallModule = require('../../src/runtime/inheritance-call');
+  } catch (err) {
+    void err;
+    inheritanceCallModule = null;
+  }
   StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
@@ -58,11 +65,22 @@ if (typeof require !== 'undefined') {
   runtime = nunjucks.runtime;
   inheritanceBootstrap = null;
   inheritanceStartup = null;
+  inheritanceCallModule = null;
   StringLoader = window.util.StringLoader;
 }
 
 describe('Extends Foundation', function () {
   let env;
+
+  function getMethodChain(methods, name) {
+    const chain = [];
+    let entry = methods && methods[name];
+    while (entry && !runtime.isPendingInheritanceEntry(entry)) {
+      chain.push(entry);
+      entry = entry.super;
+    }
+    return chain;
+  }
 
   beforeEach(() => {
     env = new AsyncEnvironment();
@@ -697,7 +715,7 @@ describe('Extends Foundation', function () {
       expect(inheritanceState.methods.build.fn).to.be(childScript.methods.build.fn);
       expect(inheritanceState.methods.build.super.fn).to.be(parentScript.methods.build.fn);
       expect(inheritanceState.methods.build.super.super.fn).to.be(grandparentScript.methods.build.fn);
-      expect(inheritanceState.methods.getChain('build').map((entry) => entry.ownerKey)).to.eql([
+      expect(getMethodChain(inheritanceState.methods, 'build').map((entry) => entry.ownerKey)).to.eql([
         'C.script',
         'B.script',
         'A.script'
@@ -981,7 +999,7 @@ describe('Extends Foundation', function () {
       runtime.bootstrapInheritanceMetadata(state, script.methods, script.sharedSchema, null);
       runtime.bootstrapInheritanceMetadata(state, script.methods, script.sharedSchema, null);
 
-      expect(state.methods.getChain('build').map((entry) => entry.ownerKey)).to.eql(['A.script']);
+      expect(getMethodChain(state.methods, 'build').map((entry) => entry.ownerKey)).to.eql(['A.script']);
     });
 
     it('should resolve registered shared-channel metadata through the shared helper', async function () {
@@ -1202,7 +1220,11 @@ describe('Extends Foundation', function () {
     });
 
     it('should fail clearly when inherited dispatch resolves to an invalid method entry', async function () {
-      const command = new runtime.InheritanceAdmissionCommand({
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
+      const command = new inheritanceCallModule.InheritanceAdmissionCommand({
         name: 'build',
         resolveMethodEntry: () => Promise.resolve(null),
         normalizeError: (error) => error,
@@ -1226,6 +1248,10 @@ describe('Extends Foundation', function () {
     });
 
     it('should not double-settle the inherited-call result when cleanup fails after resolution', async function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
       const fakeBuffer = {
         isLinkedChannel() {
           return false;
@@ -1237,7 +1263,7 @@ describe('Extends Foundation', function () {
         _registerLinkedChannel() {},
         markFinishedAndPatchLinks() {}
       };
-      const command = new runtime.InheritanceAdmissionCommand({
+      const command = new inheritanceCallModule.InheritanceAdmissionCommand({
         name: '__constructor__',
         resolveMethodEntry: () => Promise.resolve({
           fn() {
@@ -1338,15 +1364,8 @@ describe('Extends Foundation', function () {
         }
       );
       const extendsNodes = ast.findAll(nodes.Extends);
-      const parentTemplateSets = ast.findAll(nodes.Set).filter((setNode) =>
-        setNode.targets &&
-        setNode.targets[0] &&
-        setNode.targets[0].value === '__parentTemplate'
-      );
-
       expect(extendsNodes).to.have.length(1);
       expect(Object.prototype.hasOwnProperty.call(extendsNodes[0], 'asyncStoreIn')).to.be(false);
-      expect(parentTemplateSets).to.have.length(0);
     });
 
     it('should compile nested dynamic extends without the old top-level staging temp path', function () {
@@ -1356,7 +1375,7 @@ describe('Extends Foundation', function () {
         'dynamic-nested.njk'
       )._compileSource();
 
-      expect(source).to.contain('channelName: \'__parentTemplate\'');
+      expect(source).to.contain('extendsState.parentSelection');
       expect(source).to.not.contain('asyncStoreIn');
       expect(source).to.not.contain('hole_');
     });
@@ -1369,41 +1388,19 @@ describe('Extends Foundation', function () {
       )._compileSource();
 
       expect(source).to.contain('runtime.runControlFlowBoundary(');
-      expect(source).to.contain('channelName: \'__parentTemplate\'');
+      expect(source).to.contain('extendsState.parentSelection');
       expect(source).to.not.contain('asyncStoreIn');
     });
   });
 
   describe('Phase 12 - Dynamic Extends Resolution Lifecycle', function () {
-    it('should keep inheritance resolution state on InheritanceState while methods use a plain helper-backed table', async function () {
+    it('should keep inheritance state lean while methods use a plain helper-backed table', function () {
       const inheritanceState = runtime.createInheritanceState();
 
       expect(Object.getPrototypeOf(inheritanceState.methods)).to.be(null);
-      expect(typeof inheritanceState.methods.registerCompiled).to.be('function');
-      expect(typeof inheritanceState.methods.getChain).to.be('function');
-      expect(inheritanceState.resolution).to.be.ok();
-      expect(inheritanceState.resolution.await()).to.be(null);
-
-      inheritanceState.resolution.begin();
-      inheritanceState.resolution.begin();
-
-      const registrationWait = inheritanceState.resolution.await();
-      expect(registrationWait && typeof registrationWait.then).to.be('function');
-
-      let settled = false;
-      registrationWait.then(() => {
-        settled = true;
-      });
-
-      inheritanceState.resolution.finish();
-      await Promise.resolve();
-      expect(settled).to.be(false);
-
-      inheritanceState.resolution.finish();
-      await registrationWait;
-
-      expect(settled).to.be(true);
-      expect(inheritanceState.resolution.await()).to.be(null);
+      expect(inheritanceState.resolution).to.be(undefined);
+      expect(typeof inheritanceState.methods.registerCompiled).to.be('undefined');
+      expect(typeof inheritanceState.methods.getChain).to.be('undefined');
     });
 
     it('should remove inheritance-resolution bookkeeping from Context', function () {
@@ -1424,7 +1421,7 @@ describe('Extends Foundation', function () {
         'dynamic-child.njk'
       )._compileSource();
 
-      expect(source).to.contain('runtime.channelLookup("__parentTemplate"');
+      expect(source).to.contain('extendsState.parentSelection');
       expect(source).to.not.contain('runtime.beginInheritanceResolution(');
       expect(source).to.not.contain('runtime.finishInheritanceResolution(');
       expect(source).to.not.contain('runtime.bridgeDynamicParentTemplate(');

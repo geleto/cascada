@@ -23,8 +23,10 @@ Evaluation baseline:
 
 ## Overview
 
-The design assumes a static parent chain. Parent paths are declared statically
-in source and are not computed dynamically.
+The design assumes a single explicit parent-selection site in source. Parent
+selection happens only at `extends`, not through later constructor-time control
+flow. The selected parent may still come from a dynamic expression at that
+site.
 
 Per-template state is the compiled JS shape. Per-instance state is that same
 compiled JS running for one render, resolving method entries, `super`, and
@@ -349,13 +351,12 @@ Do not read `usedChannels` / `mutatedChannels` directly from the raw method
 metadata object. Instead, use a helper that:
 
 - resolves the method entry if it is still pending
-- resolves the `super` chain as needed
-- returns the merged channel information for the effective call target
+- returns the channel information required for the actually executed call target
 - may memoize merged metadata on the resolved entry as an optimization
 
 The promise returned by that helper is the actual barrier used by side-channel
 apply. The barrier is not "get the metadata object", but "resolve the effective
-method data, including merged super-channel data".
+method data needed for the current call".
 
 There are two kinds of side-channel commands:
 
@@ -366,10 +367,30 @@ The helper described above is the exact-link-after-load mechanism. It is
 awaited by `apply()` before linking, and it does not resolve until the
 effective method entry is fully available.
 
-That helper must resolve the full `super` chain recursively when the method
-uses `super()`. Channel metadata is merged only across the actually relevant
-method chain, and the same promise/resolve/reject mechanism is used for the
-`super` entries themselves.
+The helper should stay as narrow as possible:
+
+- it resolves the effective entry for the current call target
+- it does not eagerly resolve the whole ancestor hierarchy just because that
+  hierarchy exists
+- it does not eagerly resolve the next `super` level merely because the method
+  body contains a `super()` call somewhere
+- if the current method has a `super` entry that is still pending, that
+  `super` slot may remain a promise/pending entry until `super()` is actually
+  invoked at runtime
+
+Channel metadata should be merged only as far as the actually executed call
+path requires:
+
+- current-call linkage uses the current call target's own effective channel
+  requirements
+- a conditional `super()` must not force eager resolution or eager linking for
+  an ancestor path that may never execute
+- later `super()` execution resolves its own next target and links its own
+  required channels at that point
+
+This is important for correctness as well as performance: broad eager
+resolution/linking can serialize later unrelated shared-channel work and
+violate the architecture's intended concurrency model.
 
 Entry replacement belongs to startup registration, not to the helper. The
 helper may still memoize merged metadata on a resolved entry so repeated calls
@@ -382,8 +403,8 @@ such as effective channel sets.
 
 Call sites should not read `usedChannels` / `mutatedChannels` directly from the
 raw stored entry. They should go through the helper, which resolves the
-effective method target and merges channel metadata across the relevant `super`
-chain when needed.
+effective method target and computes channel metadata only for the actually
+executed call path.
 
 ## Shared-Channel Access
 

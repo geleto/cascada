@@ -481,6 +481,7 @@ class CompilerBaseAsync extends CompilerCommon {
     let importedCallable = null;
     let directCallerCall = false;
     let directMacroCall = null;
+    let explicitThisDispatchMethodName = null;
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
     node._analysis.sequenceLockLookup = sequenceLockLookup;
     if (sequenceLockLookup) {
@@ -532,6 +533,12 @@ class CompilerBaseAsync extends CompilerCommon {
         }
       }
     }
+    if (this.scriptMode) {
+      const explicitThisDispatch = this._getExplicitThisDispatchFacts(node.name);
+      if (explicitThisDispatch) {
+        explicitThisDispatchMethodName = explicitThisDispatch.methodName;
+      }
+    }
 
     const callFacts =
       this.scriptMode &&
@@ -571,7 +578,15 @@ class CompilerBaseAsync extends CompilerCommon {
       specialChannelCall = callFacts;
     }
 
-    return { uses, mutates, specialChannelCall, importedCallable, directCallerCall, directMacroCall };
+    return {
+      uses,
+      mutates,
+      specialChannelCall,
+      importedCallable,
+      directCallerCall,
+      directMacroCall,
+      explicitThisDispatchMethodName
+    };
   }
 
   compileFunCall(node) {

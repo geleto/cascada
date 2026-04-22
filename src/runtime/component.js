@@ -8,7 +8,7 @@ const inheritanceState = require('./inheritance-state');
 const { createCommandBuffer, waitForCurrentBufferChannel } = require('./command-buffer');
 const { RuntimeFatalError } = require('./errors');
 
-const COMPONENT_COMPOSITION_MODE = '__component__';
+const COMPONENT_COMPOSITION_MODE = Object.freeze({ kind: 'component-composition-mode' });
 
 function _createComponentError(message, errorContext = null) {
   return new RuntimeFatalError(
@@ -352,7 +352,7 @@ async function createComponentInstance(
   const componentInheritanceState = inheritanceState.createInheritanceState();
   componentInheritanceState.sharedRootBuffer = componentRootBuffer;
   componentInheritanceState.compositionPayload = normalizedPayload;
-  componentInheritanceState.componentCompositionMode = COMPONENT_COMPOSITION_MODE;
+  inheritanceState.setInheritanceCompositionMode(componentInheritanceState, COMPONENT_COMPOSITION_MODE);
 
   const instance = new ComponentInstance({
     context: componentContext,
@@ -398,7 +398,7 @@ async function createComponentInstance(
   }
 
   const constructorBoundaryPromise =
-    componentInheritanceState && componentInheritanceState.constructorBoundaryPromise;
+    inheritanceState.getInheritanceConstructorBoundaryPromise(componentInheritanceState);
   if (constructorBoundaryPromise && typeof constructorBoundaryPromise.then === 'function') {
     // Components are only exposed after constructor startup settles so callers
     // never observe a half-initialized instance.

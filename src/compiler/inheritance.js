@@ -390,7 +390,7 @@ class CompileInheritance {
     // static `extends` tag, this block is a definition-only. We can safely
     // skip compiling any rendering code for it, as the parent template is
     // responsible for its execution. The dynamic extends case is handled later
-    // with a runtime check using the __parentTemplate variable.
+    // with a runtime check using the per-render extendsState parent selection.
     if (isTopLevelTemplateBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends) {
       return;
     }
@@ -405,7 +405,7 @@ class CompileInheritance {
         const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
         const needsParentCheck = isTopLevelTemplateBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
         if (needsParentCheck) {
-          this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
+          this.emit.line('const parentPromise = runtime.resolveSingle(extendsState && extendsState.parentSelection);');
           this.emit.line(`${id} = parentPromise.then((parent) => {`);
           // A truthy parent means this top-level child block will be rendered
           // through the selected parent path instead of dispatching locally.
@@ -478,7 +478,7 @@ class CompileInheritance {
     const isTemplateConstructor = !this.compiler.scriptMode;
 
     this._withAsyncConstructorEntryState(isTemplateConstructor, () => {
-      this.emit.line('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null) {');
+      this.emit.line('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
       this.emit.line('try {');
       this.emit.line(`let ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = null;`);
       if (isTemplateConstructor) {
@@ -487,7 +487,7 @@ class CompileInheritance {
         this.emit.line(`${this.compiler.buffer.currentTextChannelVar}._context = context;`);
       }
       this.compiler._compileChildren(node, null);
-      this.emit.line('if (!(inheritanceState && inheritanceState.componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE)) {');
+      this.emit.line('if (!runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE)) {');
       this.emit.line('  context.resolveExports();');
       this.emit.line('}');
       this.emit.line(`return ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR};`);
@@ -547,13 +547,13 @@ class CompileInheritance {
     this.emit.line(`${indent}const ${parentContextVar} = ${compositionPayloadExpr}`);
     this.emit.line(`${indent}  ? context.forkForComposition(${parentTemplateVar}.path, ${compositionPayloadExpr}.rootContext || {}, context.getRenderContextVariables(), ${compositionPayloadExpr}.externContext || {})`);
     this.emit.line(`${indent}  : context.forkForPath(${parentTemplateVar}.path);`);
-    this.emit.line(`${indent}const ${parentCompositionModeVar} = inheritanceState && inheritanceState.componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE ? runtime.COMPONENT_COMPOSITION_MODE : true;`);
+    this.emit.line(`${indent}const ${parentCompositionModeVar} = runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE) ? runtime.COMPONENT_COMPOSITION_MODE : true;`);
     this.emit.line(`${indent}const ${parentOutputVar} = ${parentTemplateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, ${parentCompositionModeVar}, ${currentBufferExpr}, inheritanceState);`);
     this.emit.line(`${indent}runtime.linkCurrentBufferToResolvedParentSharedChannels(inheritanceState, ${currentBufferExpr}, ${parentOutputVar});`);
     this.emit.line(`${indent}if (${parentCompositionModeVar} !== runtime.COMPONENT_COMPOSITION_MODE) {`);
     this.emit.line(`${indent}  if (${parentOutputVar} === ${currentBufferExpr}) {`);
-    this.emit.line(`${indent}    if (inheritanceState && inheritanceState.constructorBoundaryPromise) {`);
-    this.emit.line(`${indent}      await inheritanceState.constructorBoundaryPromise;`);
+    this.emit.line(`${indent}    if (runtime.getInheritanceConstructorBoundaryPromise(inheritanceState)) {`);
+    this.emit.line(`${indent}      await runtime.getInheritanceConstructorBoundaryPromise(inheritanceState);`);
     this.emit.line(`${indent}    }`);
     this.emit.line(`${indent}  } else if (${parentOutputVar} && typeof ${parentOutputVar}.getFinishedPromise === 'function') {`);
     this.emit.line(`${indent}    await ${parentOutputVar}.getFinishedPromise();`);
@@ -567,7 +567,7 @@ class CompileInheritance {
     }
     const parentSelectionVar = this.compiler._tmpid();
     const parentPayloadVar = this.compiler._tmpid();
-    this.emit.line(`${indent}const ${parentSelectionVar} = await runtime.resolveSingle(runtime.channelLookup("__parentTemplate", ${this.compiler.buffer.currentBuffer}));`);
+    this.emit.line(`${indent}const ${parentSelectionVar} = await runtime.resolveSingle(extendsState && extendsState.parentSelection);`);
     this.emit.line(`${indent}if (${parentSelectionVar}) {`);
     this.emit.line(`${indent}  const ${parentPayloadVar} = ${parentSelectionVar}.compositionPayload || (inheritanceState && inheritanceState.compositionPayload) || null;`);
     this._emitTemplateParentRender({
@@ -595,7 +595,7 @@ class CompileInheritance {
       this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
       this.emit.line('      cb(err);');
       this.emit.line('    });');
-      this.emit.line(`    if (inheritanceState) { inheritanceState.constructorBoundaryPromise = ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR}; }`);
+      this.emit.line(`    runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR});`);
       this.emit.line('  } else {');
       if (this.compiler.hasDeferredDynamicExtends) {
         const finishPromiseVar = this.compiler._tmpid();
@@ -605,7 +605,7 @@ class CompileInheritance {
         this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
         this.emit.line('    })();');
         this.emit.line(`    ${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = ${finishPromiseVar};`);
-        this.emit.line(`    if (inheritanceState) { inheritanceState.constructorBoundaryPromise = ${finishPromiseVar}; }`);
+        this.emit.line(`    runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ${finishPromiseVar});`);
         this.emit.line(`    ${finishPromiseVar}.catch((e) => {`);
         this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
         this.emit.line('      cb(err);');
@@ -934,7 +934,7 @@ class CompileInheritance {
     // static `extends` tag, this block is a definition-only. We can safely
     // skip compiling any rendering code for it, as the parent template is
     // responsible for its execution. The dynamic extends case is handled later
-    // with a runtime check using the __parentTemplate variable.
+    // with a runtime check using the per-render extendsState parent selection.
     if (!this.compiler.inBlock && this.compiler.hasStaticExtends && !this.compiler.hasDynamicExtends) {
       return;
     }
@@ -1007,7 +1007,7 @@ class CompileInheritance {
       this.emit.line(`  const ${parentContextVar} = ${compositionPayloadVar}`);
       this.emit.line(`    ? context.forkForComposition(${templateVar}.path, ${compositionPayloadVar}.rootContext || {}, context.getRenderContextVariables(), ${compositionPayloadVar}.externContext || {})`);
       this.emit.line(`    : context.forkForPath(${templateVar}.path);`);
-      this.emit.line(`  const ${parentCompositionModeVar} = inheritanceState && inheritanceState.componentCompositionMode === runtime.COMPONENT_COMPOSITION_MODE ? runtime.COMPONENT_COMPOSITION_MODE : true;`);
+      this.emit.line(`  const ${parentCompositionModeVar} = runtime.isInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE) ? runtime.COMPONENT_COMPOSITION_MODE : true;`);
       this.emit.line(`  const ${parentOutputVar} = ${templateVar}.rootRenderFunc(env, ${parentContextVar}, runtime, cb, ${parentCompositionModeVar}, currentBuffer, inheritanceState);`);
       this.emit.line(`  runtime.linkCurrentBufferToResolvedParentSharedChannels(inheritanceState, currentBuffer, ${parentOutputVar});`);
       this.emit.line(`  if (${parentCompositionModeVar} !== runtime.COMPONENT_COMPOSITION_MODE && ${parentOutputVar} && typeof ${parentOutputVar}.getFinishedPromise === 'function') {`);
@@ -1047,7 +1047,7 @@ class CompileInheritance {
     if (this.compiler.hasDynamicExtends) {
       const isTopLevelDynamicExtends =
         !!(this.compiler.topLevelDynamicExtends && this.compiler.topLevelDynamicExtends.has(node));
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${deferredSelectionVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
+      this.emit.line(`if (extendsState) { extendsState.parentSelection = ${deferredSelectionVar}; }`);
       if (!isTopLevelDynamicExtends) {
         return;
       }
@@ -1066,7 +1066,7 @@ class CompileInheritance {
       this.emit.line('});');
       return;
     }
-    this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '__parentTemplate', args: [${deferredSelectionVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '__parentTemplate');`);
+    this.emit.line(`if (extendsState) { extendsState.parentSelection = ${deferredSelectionVar}; }`);
     const linkedChannelsArg = '["__text__"]';
     this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
     const resolvedSelectionVar = this.compiler._tmpid();

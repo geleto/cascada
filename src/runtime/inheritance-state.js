@@ -5,6 +5,9 @@ const { RuntimeFatalError } = require('./errors');
 const ERR_INHERITED_METHOD_NOT_FOUND = 'ERR_INHERITED_METHOD_NOT_FOUND';
 const ERR_SUPER_METHOD_NOT_FOUND = 'ERR_SUPER_METHOD_NOT_FOUND';
 const ERR_SHARED_CHANNEL_NOT_FOUND = 'ERR_SHARED_CHANNEL_NOT_FOUND';
+const INTERNAL_INHERITANCE_STATE = typeof Symbol === 'function'
+  ? Symbol('cascadaInheritanceInternalState')
+  : '__cascadaInheritanceInternalState__';
 
 function withInheritanceErrorCode(error, code) {
   if (error && code) {
@@ -73,84 +76,69 @@ function ensureInheritanceSharedSchemaTable(state) {
 }
 
 function createInheritanceMethodsTable() {
-  const table = Object.create(null);
-  Object.defineProperties(table, {
-    registerCompiled: {
-      configurable: true,
-      enumerable: false,
-      writable: true,
-      value(methods) {
-        registerInheritanceMethods({ methods: table }, methods);
-        return table;
-      }
-    },
-    getChain: {
-      configurable: true,
-      enumerable: false,
-      writable: true,
-      value(name) {
-        const chain = [];
-        let entry = table[name];
-        while (entry && !isPendingInheritanceEntry(entry)) {
-          chain.push(entry);
-          entry = entry.super;
-        }
-        return chain;
-      }
-    }
-  });
-  return table;
+  return Object.create(null);
 }
 
-class InheritanceResolutionState {
-  constructor() {
-    this._pendingCount = 0;
-    this._pendingPromise = null;
-    this._resolvePending = null;
-  }
-
-  begin() {
-    this._pendingCount += 1;
-    if (!this._pendingPromise) {
-      this._pendingPromise = new Promise((resolve) => {
-        this._resolvePending = resolve;
-      });
-    }
-  }
-
-  finish() {
-    if (this._pendingCount === 0) {
-      return;
-    }
-    this._pendingCount -= 1;
-    if (this._pendingCount === 0 && this._resolvePending) {
-      const resolvePending = this._resolvePending;
-      this._resolvePending = null;
-      const pendingPromise = this._pendingPromise;
-      this._pendingPromise = null;
-      resolvePending();
-      return pendingPromise;
-    }
+function ensureInheritanceInternalState(state) {
+  if (!state || typeof state !== 'object') {
     return null;
   }
-
-  await() {
-    return this._pendingPromise;
+  if (!state[INTERNAL_INHERITANCE_STATE]) {
+    Object.defineProperty(state, INTERNAL_INHERITANCE_STATE, {
+      configurable: true,
+      enumerable: false,
+      writable: false,
+      value: {
+        constructorBoundaryPromise: null,
+        compositionMode: null
+      }
+    });
   }
+  return state[INTERNAL_INHERITANCE_STATE];
 }
 
 class InheritanceState {
   constructor() {
     this.methods = createInheritanceMethodsTable();
     this.sharedSchema = Object.create(null);
-    this.resolution = new InheritanceResolutionState();
     this.sharedRootBuffer = null;
     this.compositionPayload = null;
+    ensureInheritanceInternalState(this);
   }
 }
 
 function createInheritanceState() {
   return new InheritanceState();
+}
+
+function getInheritanceConstructorBoundaryPromise(state) {
+  const internalState = ensureInheritanceInternalState(state);
+  return internalState ? internalState.constructorBoundaryPromise : null;
+}
+
+function setInheritanceConstructorBoundaryPromise(state, promise) {
+  const internalState = ensureInheritanceInternalState(state);
+  if (internalState) {
+    internalState.constructorBoundaryPromise = promise || null;
+  }
+  return promise;
+}
+
+function getInheritanceCompositionMode(state) {
+  const internalState = ensureInheritanceInternalState(state);
+  return internalState ? internalState.compositionMode : null;
+}
+
+function setInheritanceCompositionMode(state, mode) {
+  const internalState = ensureInheritanceInternalState(state);
+  if (internalState) {
+    internalState.compositionMode = mode || null;
+  }
+  return mode;
+}
+
+function isInheritanceCompositionMode(state, mode) {
+  return getInheritanceCompositionMode(state) === mode;
 }
 
 function cloneInheritanceMethodEntry(entry, clones = new Map()) {
@@ -484,9 +472,12 @@ function finalizeInheritanceSharedSchema(state, context = null) {
 
 module.exports = {
   InheritanceState,
-  InheritanceResolutionState,
-  createInheritanceMethodsTable,
   createInheritanceState,
+  getInheritanceConstructorBoundaryPromise,
+  setInheritanceConstructorBoundaryPromise,
+  getInheritanceCompositionMode,
+  setInheritanceCompositionMode,
+  isInheritanceCompositionMode,
   createPendingInheritanceEntry,
   cloneInheritanceMethodEntry,
   cloneInheritanceMethods,

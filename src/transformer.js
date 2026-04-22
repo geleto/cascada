@@ -380,8 +380,8 @@ function renameConflictingDeclarations(ast, idPool) {
 
 function transform(ast, asyncFilters, name, opts) {
   ast = cps(ast, asyncFilters || []);
-  if (opts.asyncMode && opts.scriptMode) {
-    ast = extractScriptInheritanceMetadata(ast);
+  if (opts.asyncMode) {
+    ast = extractAsyncInheritanceMetadata(ast, !!opts.scriptMode);
   }
   if (opts.asyncMode) {
     ast = normalizeAsyncCompilerNodes(ast);
@@ -390,21 +390,23 @@ function transform(ast, asyncFilters, name, opts) {
   return ast;
 }
 
-function extractScriptInheritanceMetadata(ast) {
+function extractAsyncInheritanceMetadata(ast, scriptMode) {
   if (!(ast instanceof nodes.Root)) {
     return ast;
   }
 
-  const hasDirectExtends = (ast.children || []).some((child) => child instanceof nodes.Extends);
-  if (hasDirectExtends) {
-    const violation = getScriptExtendsSourceOrderViolation(ast);
-    if (violation) {
-      const error = new Error(violation.message);
-      if (violation.node) {
-        error.lineno = violation.node.lineno;
-        error.colno = violation.node.colno;
+  if (scriptMode) {
+    const hasDirectExtends = (ast.children || []).some((child) => child instanceof nodes.Extends);
+    if (hasDirectExtends) {
+      const violation = getScriptExtendsSourceOrderViolation(ast);
+      if (violation) {
+        const error = new Error(violation.message);
+        if (violation.node) {
+          error.lineno = violation.node.lineno;
+          error.colno = violation.node.colno;
+        }
+        throw error;
       }
-      throw error;
     }
   }
   const methodNodes = [];
@@ -412,7 +414,7 @@ function extractScriptInheritanceMetadata(ast) {
   const remainingChildren = [];
 
   (ast.children || []).forEach((child) => {
-    if (child instanceof nodes.Block) {
+    if (scriptMode && child instanceof nodes.Block) {
       methodNodes.push(new nodes.MethodDefinition(
         child.lineno,
         child.colno,

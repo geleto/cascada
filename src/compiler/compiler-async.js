@@ -15,6 +15,7 @@ const {
 const RETURN_CHANNEL_NAME = '__return__';
 const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
+const DYNAMIC_EXTENDS_STATE_VAR = '__dynamicExtendsState';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(templateName, options) {
@@ -1083,13 +1084,8 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeExtends(node) {
-    if (this.scriptMode) {
-      return {};
-    }
-    return {
-      uses: ['__parentTemplate'],
-      mutates: ['__parentTemplate']
-    };
+    void node;
+    return {};
   }
 
   compileExtends(node) {
@@ -1113,27 +1109,65 @@ class CompilerAsync extends CompilerBaseAsync {
 
   finalizeAnalyzeRoot(node) {
     const externSpec = this._collectRootExternSpec(node);
-    const pendingInheritanceMethodNames = this._collectPendingInheritanceMethodNames(node);
+    const pendingInheritanceMethodNames = this._collectRootPendingInheritanceMethodNames(node);
     validateScriptExtendsSourceOrder(this, node);
     this._validateRootExternFallbackOrder(node, externSpec);
     this._validateRootExternCycles(node);
     return { externSpec, pendingInheritanceMethodNames };
   }
 
-  _collectPendingInheritanceMethodNames(node) {
-    const localMethodNames = new Set(
-      (this.scriptMode ? this._getMethodDefinitions(node) : node.findAll(nodes.Block))
-        .map((block) => block.name.value)
-    );
+  _collectPendingInheritanceMethodNamesForOwner(ownerNode, localMethodNames) {
     const pendingNames = new Set();
-    const calls = node.findAll(nodes.FunCall);
+    const calls = ownerNode && typeof ownerNode.findAll === 'function'
+      ? ownerNode.findAll(nodes.FunCall)
+      : [];
     calls.forEach((callNode) => {
-      const facts = this._getExplicitThisDispatchFacts(callNode.name);
-      if (!facts || localMethodNames.has(facts.methodName)) {
+      const methodName =
+        callNode &&
+        callNode._analysis &&
+        typeof callNode._analysis.explicitThisDispatchMethodName === 'string'
+          ? callNode._analysis.explicitThisDispatchMethodName
+          : null;
+      if (!methodName || localMethodNames.has(methodName)) {
         return;
       }
-      pendingNames.add(facts.methodName);
+      pendingNames.add(methodName);
     });
+    return Array.from(pendingNames);
+  }
+
+  _collectRootPendingInheritanceMethodNamesForNodeChildren(nodeChildren, localMethodNames, localMethodNodes) {
+    const pendingNames = new Set();
+    const localMethodNodeSet = new Set(localMethodNodes || []);
+    const children = Array.isArray(nodeChildren) ? nodeChildren : [];
+
+    children.forEach((childNode) => {
+      if (!childNode || localMethodNodeSet.has(childNode)) {
+        return;
+      }
+      const childPendingNames = this._collectPendingInheritanceMethodNamesForOwner(childNode, localMethodNames);
+      childPendingNames.forEach((name) => pendingNames.add(name));
+    });
+
+    return Array.from(pendingNames);
+  }
+
+  _collectRootPendingInheritanceMethodNames(node) {
+    const methodDefinitions = this._getMethodDefinitions(node);
+    const localMethodNames = new Set(methodDefinitions.map((block) => block.name.value));
+    const pendingNames = new Set(
+      this._collectRootPendingInheritanceMethodNamesForNodeChildren(
+        node && node.children,
+        localMethodNames,
+        methodDefinitions
+      )
+    );
+
+    methodDefinitions.forEach((methodNode) => {
+      const methodPendingNames = this._collectPendingInheritanceMethodNamesForOwner(methodNode.body, localMethodNames);
+      methodPendingNames.forEach((name) => pendingNames.add(name));
+    });
+
     return Array.from(pendingNames);
   }
 
@@ -1315,22 +1349,22 @@ class CompilerAsync extends CompilerBaseAsync {
     for (const name of sequenceLocks) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
-    if (!this.scriptMode && this.hasExtends) {
-      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "__parentTemplate", "var", context, null);`);
+    if (!this.scriptMode && this.hasDynamicExtends) {
+      this.emit.line(`const ${DYNAMIC_EXTENDS_STATE_VAR} = { parentSelection: null };`);
     }
     this._emitRootExternInitialization(node);
     this.inheritance.emitRootSharedDeclarations(node);
     if (this.scriptMode) {
       if (this.hasExtends) {
-        this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState);`);
-        this.emit.line('if (inheritanceState) { inheritanceState.constructorBoundaryPromise = ' + CONSTRUCTOR_BOUNDARY_PROMISE_VAR + '; }');
+        this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, null);`);
+        this.emit.line('runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ' + CONSTRUCTOR_BOUNDARY_PROMISE_VAR + ');');
       } else {
-        this.emit.line(`b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState);`);
-        this.emit.line('if (inheritanceState) { inheritanceState.constructorBoundaryPromise = null; }');
+        this.emit.line(`b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, null);`);
+        this.emit.line('runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, null);');
       }
     } else {
-      this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState);`);
-      this.emit.line('if (inheritanceState) { inheritanceState.constructorBoundaryPromise = ' + CONSTRUCTOR_BOUNDARY_PROMISE_VAR + '; }');
+      this.emit.line(`${CONSTRUCTOR_BOUNDARY_PROMISE_VAR} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null'});`);
+      this.emit.line('runtime.setInheritanceConstructorBoundaryPromise(inheritanceState, ' + CONSTRUCTOR_BOUNDARY_PROMISE_VAR + ');');
     }
     this.inheritance.emitAsyncRootCompletion(node);
   }
@@ -1414,12 +1448,6 @@ class CompilerAsync extends CompilerBaseAsync {
     } else {
       declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
     }
-
-    const hasExtendsNode = node.findAll(nodes.Extends).some((child) => !child.noParentLiteral);
-    if (!this.scriptMode && hasExtendsNode) {
-      declares.push({ name: '__parentTemplate', type: 'var', initializer: null, internal: true });
-    }
-
     return declares;
   }
 
