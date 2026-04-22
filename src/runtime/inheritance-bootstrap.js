@@ -48,6 +48,21 @@ async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheri
   return parentOutputBuffer;
 }
 
+function startInheritanceRootConstructor(inheritanceStateValue, invokeConstructor, currentStartupPromise = null) {
+  const constructorResult = invokeConstructor();
+  if (constructorResult && typeof constructorResult.then === 'function') {
+    return inheritanceState.mergeInheritanceStartupPromise(
+      inheritanceStateValue,
+      constructorResult,
+      currentStartupPromise
+    );
+  }
+  inheritanceState.setInheritanceStartupPromise(inheritanceStateValue, currentStartupPromise);
+  return currentStartupPromise && typeof currentStartupPromise.then === 'function'
+    ? currentStartupPromise
+    : null;
+}
+
 function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames) {
   if (!parentBuffer || !currentBuffer || parentBuffer === currentBuffer || !Array.isArray(channelNames)) {
     return currentBuffer;
@@ -99,6 +114,7 @@ function finalizeInheritanceMetadata(state, context = null) {
 
 module.exports = {
   bootstrapInheritanceMetadata,
+  startInheritanceRootConstructor,
   waitForParentRootRender,
   linkCurrentBufferToParentChannels,
   getInheritanceSharedBuffer,

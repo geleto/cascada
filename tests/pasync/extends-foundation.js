@@ -1142,6 +1142,30 @@ describe('Extends Foundation', function () {
       expect(runtime.awaitInheritanceStartup(state)).to.be(merged);
     });
 
+    it('should start root constructor startup through one runtime helper', async function () {
+      const state = runtime.createInheritanceState();
+      let resolveConstructor;
+      const constructorPromise = new Promise((resolve) => {
+        resolveConstructor = resolve;
+      });
+
+      const started = runtime.startInheritanceRootConstructor(
+        state,
+        () => constructorPromise
+      );
+
+      expect(started).to.be.ok();
+      expect(runtime.awaitInheritanceStartup(state)).to.be(started);
+
+      resolveConstructor('done');
+      expect(await started).to.be('done');
+
+      const syncState = runtime.createInheritanceState();
+      const syncStarted = runtime.startInheritanceRootConstructor(syncState, () => null);
+      expect(syncStarted).to.be(null);
+      expect(runtime.awaitInheritanceStartup(syncState)).to.be(null);
+    });
+
     it('should wait for parent root completion through one runtime helper', async function () {
       const state = runtime.createInheritanceState();
       let constructorResolved = false;

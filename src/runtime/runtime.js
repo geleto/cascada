@@ -288,6 +288,7 @@ module.exports = {
   finalizeInheritanceSharedSchema: inheritanceState.finalizeInheritanceSharedSchema,
   bootstrapInheritanceMetadata: inheritanceBootstrap.bootstrapInheritanceMetadata,
   waitForParentRootRender: inheritanceBootstrap.waitForParentRootRender,
+  startInheritanceRootConstructor: inheritanceBootstrap.startInheritanceRootConstructor,
   linkCurrentBufferToParentChannels: inheritanceBootstrap.linkCurrentBufferToParentChannels,
   finalizeInheritanceMetadata: inheritanceBootstrap.finalizeInheritanceMetadata,
   getMethodData: inheritanceCall.getMethodData,

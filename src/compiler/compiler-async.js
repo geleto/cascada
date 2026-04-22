@@ -1369,13 +1369,11 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`const extendsState = ${this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null'};`);
     }
     this._compileChildren(node, null);
-    const constructorResultVar = this._tmpid();
-    this.emit.line(`const ${constructorResultVar} = b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')});`);
-    this.emit.line(`if (${constructorResultVar} && typeof ${constructorResultVar}.then === 'function') {`);
-    this.emit.line(`  ${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.mergeInheritanceStartupPromise(inheritanceState, ${constructorResultVar}, ${INHERITANCE_STARTUP_PROMISE_VAR});`);
-    this.emit.line('} else {');
-    this.emit.line(`  runtime.setInheritanceStartupPromise(inheritanceState, ${INHERITANCE_STARTUP_PROMISE_VAR});`);
-    this.emit.line('}');
+    this.emit.line(
+      `${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.startInheritanceRootConstructor(inheritanceState, () => ` +
+      `b___constructor__(env, context, runtime, cb, ${this.buffer.currentBuffer}, inheritanceState, ${this.scriptMode ? 'null' : (this.hasDynamicExtends ? DYNAMIC_EXTENDS_STATE_VAR : 'null')}), ` +
+      `${INHERITANCE_STARTUP_PROMISE_VAR});`
+    );
     this.inheritance.emitAsyncRootCompletion(node);
   }
 
