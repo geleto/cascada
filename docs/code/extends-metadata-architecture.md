@@ -788,6 +788,14 @@ Work:
 - remove the `includeInvokedMethods` boolean flag from method-data resolution
   helpers when direct metadata construction no longer needs a partial catalog
   construction mode
+- decide whether direct-call admission should cache pre-merged invocation-link
+  channels on resolved method metadata instead of recomputing them per call
+- consolidate `invokeInheritedMethod(...)` and `invokeSuperMethod(...)` around
+  one shared direct-admission helper if the remaining differences stay narrow
+- inline or remove `_enqueueInvocationCommand(...)` if it remains only a thin
+  enqueue/start wrapper after command lifecycle cleanup settles
+- collapse the remaining thin `invocationInternals` wrapper if command
+  invocation lifecycle no longer needs that extra namespace boundary
 - consolidate duplicated linked-channel path helpers in the bootstrap and
   invocation-linking modules into one runtime helper
 - remove the legacy async-block `if (parent) return ""` guard if it remains

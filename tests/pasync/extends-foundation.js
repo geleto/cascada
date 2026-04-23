@@ -1775,23 +1775,20 @@ describe('Extends Foundation', function () {
         this.skip();
         return;
       }
-      const command = new inheritanceCallModule.createInheritanceInvocationCommand({
-        name: 'build',
-        getMethodData: () => Promise.resolve(null),
-        normalizeError: (error) => error,
-        args: [],
-        context: {},
-        inheritanceState: runtime.createInheritanceState(),
-        env: env,
-        runtime: runtime,
-        cb: () => {},
-        invocationBuffer: null,
-        currentBuffer: null,
-        errorContext: null
-      });
-
       try {
-        await command.apply();
+        inheritanceCallModule.createInheritanceInvocationCommand({
+          name: 'build',
+          methodData: null,
+          normalizeError: (error) => error,
+          args: [],
+          context: {},
+          inheritanceState: runtime.createInheritanceState(),
+          env: env,
+          runtime: runtime,
+          cb: () => {},
+          invocationBuffer: null,
+          errorContext: null
+        });
         expect().fail('Expected invalid inherited method entry to fail');
       } catch (error) {
         expect(String(error)).to.contain('Inherited dispatch resolved to an invalid method entry');
@@ -1814,9 +1811,9 @@ describe('Extends Foundation', function () {
         _registerLinkedChannel() {},
         markFinishedAndPatchLinks() {}
       };
-      const command = new inheritanceCallModule.createInheritanceInvocationCommand({
+      const command = inheritanceCallModule.createInheritanceInvocationCommand({
         name: '__constructor__',
-        getMethodData: () => Promise.resolve({
+        methodData: {
           fn() {
             return 'ok';
           },
@@ -1827,7 +1824,7 @@ describe('Extends Foundation', function () {
           mergedMutatedChannels: [],
           super: null,
           ownerKey: 'A.script'
-        }),
+        },
         normalizeError: (error) => error,
         args: [],
         context: {},
@@ -1836,7 +1833,6 @@ describe('Extends Foundation', function () {
         runtime: runtime,
         cb: () => {},
         invocationBuffer: fakeBuffer,
-        currentBuffer: fakeBuffer,
         errorContext: null
       });
       const cleanupError = new Error('cleanup failed');

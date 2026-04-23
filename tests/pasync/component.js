@@ -339,7 +339,7 @@ describe('Phase 8 - Component Method Calls', function () {
   });
 
   describe('Phase 8 - Late Component Invocation Linking', function () {
-    it('should defer unresolved component invocation-buffer creation until the target method entry is current', async function () {
+    it('should create component invocation buffers only after direct method metadata is current', async function () {
       if (!InheritanceState || !inheritanceCallModule) {
         this.skip();
         return;
@@ -349,15 +349,15 @@ describe('Phase 8 - Component Method Calls', function () {
       const env = new AsyncEnvironment(loader);
       const events = [];
       const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
-      const originalEnsureInvocationBuffer = inheritanceCallModule.invocationInternals.ensureInvocationBuffer;
+      const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
       let buildInvocationCreatedAt = -1;
 
-      inheritanceCallModule.invocationInternals.ensureInvocationBuffer = function(command, methodMeta) {
-        if (command.name === 'build' && methodMeta && methodMeta.ownerKey === 'A.script') {
+      inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+        if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
           buildInvocationCreatedAt = events.length;
           events.push({ type: 'build-invocation-buffer-created' });
         }
-        return originalEnsureInvocationBuffer.apply(this, arguments);
+        return originalCreateInheritanceInvocationCommand.apply(this, arguments);
       };
 
       inheritanceStateModule.registerInheritanceMethods = function(state, methods) {
@@ -389,11 +389,11 @@ describe('Phase 8 - Component Method Calls', function () {
         expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
       } finally {
         inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
-        inheritanceCallModule.invocationInternals.ensureInvocationBuffer = originalEnsureInvocationBuffer;
+        inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
       }
     });
 
-    it('should create unresolved component invocation buffers with the resolved callable merged channels', async function () {
+    it('should create component invocation buffers with the direct callable merged channels', async function () {
       if (!inheritanceCallModule) {
         this.skip();
         return;
@@ -401,21 +401,21 @@ describe('Phase 8 - Component Method Calls', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       let seenLinkedChannels = null;
-      const originalEnsureInvocationBuffer = inheritanceCallModule.invocationInternals.ensureInvocationBuffer;
+      const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
 
-      inheritanceCallModule.invocationInternals.ensureInvocationBuffer = function(command, methodMeta) {
-        const invocationBuffer = originalEnsureInvocationBuffer.apply(this, arguments);
-        if (command.name === 'build' && methodMeta && methodMeta.ownerKey === 'A.script') {
+      inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+        if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
+          const invocationBuffer = spec.invocationBuffer;
           seenLinkedChannels = {
             mergedLinkedChannels: Array.from(new Set([
-              ...(Array.isArray(methodMeta.mergedUsedChannels) ? methodMeta.mergedUsedChannels : []),
-              ...(Array.isArray(methodMeta.mergedMutatedChannels) ? methodMeta.mergedMutatedChannels : [])
+              ...(Array.isArray(spec.methodData.mergedUsedChannels) ? spec.methodData.mergedUsedChannels : []),
+              ...(Array.isArray(spec.methodData.mergedMutatedChannels) ? spec.methodData.mergedMutatedChannels : [])
             ])),
             late: invocationBuffer.isLinkedChannel('late'),
             trace: invocationBuffer.isLinkedChannel('trace')
           };
         }
-        return invocationBuffer;
+        return originalCreateInheritanceInvocationCommand.apply(this, arguments);
       };
 
       loader.addTemplate('A.script', [
@@ -445,7 +445,7 @@ describe('Phase 8 - Component Method Calls', function () {
         expect(seenLinkedChannels.trace).to.be(true);
         expect(seenLinkedChannels.late).to.be(true);
       } finally {
-        inheritanceCallModule.invocationInternals.ensureInvocationBuffer = originalEnsureInvocationBuffer;
+        inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
       }
     });
 

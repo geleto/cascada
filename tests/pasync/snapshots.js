@@ -116,6 +116,55 @@ describe('channel.finalSnapshot', function () {
     };
   });
 
+  describe('buffer entry cleanup', function () {
+    it('releases applied command entries after finalSnapshot completes', async function () {
+      const buffer = new CommandBuffer(context, null);
+      const channel = createChannel(buffer, 'text', context, 'text');
+
+      buffer.add(new TextCommand({
+        channelName: 'text',
+        args: ['A'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'text');
+      buffer.add(new TextCommand({
+        channelName: 'text',
+        args: ['B'],
+        pos: { lineno: 1, colno: 2 }
+      }), 'text');
+      buffer.markFinishedAndPatchLinks();
+
+      const result = await channel.finalSnapshot();
+      expect(result).to.be('AB');
+      expect(buffer.arrays.text).to.eql([null, null]);
+    });
+
+    it('releases finished child buffers after the iterator leaves them', async function () {
+      const parent = new CommandBuffer(context, null);
+      const child = new CommandBuffer(context, null);
+      const channel = createChannel(parent, 'text', context, 'text');
+
+      child.add(new TextCommand({
+        channelName: 'text',
+        args: ['A'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'text');
+      child.markFinishedAndPatchLinks();
+
+      parent.add(child, 'text');
+      parent.add(new TextCommand({
+        channelName: 'text',
+        args: ['B'],
+        pos: { lineno: 1, colno: 2 }
+      }), 'text');
+      parent.markFinishedAndPatchLinks();
+
+      const result = await channel.finalSnapshot();
+      expect(result).to.be('AB');
+      expect(parent.arrays.text).to.eql([null, null]);
+      expect(child.arrays.text).to.eql([null]);
+    });
+  });
+
   describe('Data Assembly (@put, @push, etc.)', function () {
     it('should handle a simple @data.set command', async function () {
       const buffer = createBuffer([cmd({ channelName: 'data', command: 'set', args: [['user'], { name: 'Alice' }] })], context, 'data');
