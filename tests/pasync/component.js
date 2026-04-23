@@ -146,6 +146,47 @@ describe('Phase 8 - Component Method Calls', function () {
     expect(result).to.eql(['A-Ada', 'ctor|build|Ada|']);
   });
 
+  it.skip('should keep unresolved component method-in-method shared dependencies ordered before a later local method reads them', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('A.script', [
+      'shared text log',
+      'shared var theme = "parent"',
+      'method applyTheme()',
+      '  theme = waitAndGet("dark", 10)',
+      '  log("apply|")',
+      '  return "applied"',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('C.script', [
+      'shared text log',
+      'shared var theme = "light"',
+      'extends "A.script"',
+      'method readTheme()',
+      '  log("read:" + theme + "|")',
+      '  return theme',
+      'endmethod',
+      'method outer()',
+      '  var first = this.applyTheme()',
+      '  var second = this.readTheme()',
+      '  log("result:" + second + "|")',
+      '  return second',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "C.script" as ns',
+      'var result = ns.outer()',
+      'return [result, ns.log.snapshot()]'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', {
+      waitAndGet: (value, delay) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
+    });
+
+    expect(result).to.eql(['dark', 'apply|read:dark|result:dark|']);
+  });
+
   it('should start component method admission before argument resolution completes', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);

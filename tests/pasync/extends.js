@@ -418,6 +418,43 @@ describe('Extends Runtime', function () {
       expect(result).to.be('before|method|Ada|after|done:Ada');
     });
 
+    it.skip('should keep unresolved method-in-method shared dependencies ordered before a later resolved local method reads them', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', [
+        'shared text trace',
+        'shared var theme = "parent"',
+        'method applyTheme()',
+        '  theme = waitAndGet("dark", 10)',
+        '  trace("apply|")',
+        '  return "applied"',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'shared text trace',
+        'shared var theme = "light"',
+        'extends "A.script"',
+        'method readTheme()',
+        '  trace("read:" + theme + "|")',
+        '  return theme',
+        'endmethod',
+        'method outer()',
+        '  var first = this.applyTheme()',
+        '  var second = this.readTheme()',
+        '  trace("result:" + second + "|")',
+        '  return trace.snapshot()',
+        'endmethod',
+        'return this.outer()'
+      ].join('\n'));
+
+      const result = await env.renderScript('C.script', {
+        waitAndGet: (value, delay) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
+      });
+
+      expect(result).to.be('apply|read:dark|result:dark|');
+    });
+
     it('should resume multiple unresolved inherited admissions in source order', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
