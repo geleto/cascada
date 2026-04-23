@@ -22,6 +22,38 @@ The target architecture should be:
 - no runtime-dynamic channel names
 - no command-buffer-level special treatment for "special" channels
 
+## Status Refresh
+
+This document is still the right refactor note, but parts of its earlier
+"current runtime state" description are now stale.
+
+The most important current facts are:
+
+- ordinary `findChannel(...)` is already narrower than this document originally
+  described: it walks ancestor `_ownedChannels` only; it does not recurse into
+  child buffers and it does not use `_channels` for normal lookup
+- `_visibleChannels`, `_findLinkedChildOwnedChannel(...)`,
+  `LOOKUP_DYNAMIC_CHANNEL_LINKING`, `ensureReadChannelLink(...)`, and
+  `_readChannelLinks` are not present in the current runtime anymore
+- `_channels` is still present and still too broad, but its concentrated
+  remaining value is the finished-snapshot fast path and the shared hierarchy
+  registry for channel objects
+- iterator-driven cleanup has moved forward: processed command entries are set
+  to `null`, finished child-buffer slots are set to `null`, whole finished lane
+  arrays are now released with `buffer.arrays[channelName] = null`, and
+  finished iterators dispose their own state
+- `_channelAliases` is now real behavior rather than a speculative future-only
+  mechanism; alias/canonical-name handling must therefore be part of the
+  refactor plan, not treated as an optional afterthought
+- command taxonomy has also moved since some earlier notes: both
+  `WaitResolveCommand` and `WaitCurrentCommand` exist in the runtime, and
+  `SinkRepairCommand` is now part of the mutating command surface
+
+So the overall direction of this document remains valid, but the migration
+sequence should be read as "update from the current narrowed runtime" rather
+than "start from the much broader transitional runtime this document first
+described."
+
 ## Main Conclusions
 
 The refactor should move toward these rules:
@@ -38,9 +70,15 @@ The refactor should move toward these rules:
 Before changing the runtime, it helps to name the structures that currently overlap:
 
 - `_ownedChannels`: channels declared locally in this buffer
-- `_visibleChannels`: channels the buffer can currently resolve directly
 - `_linkedChannels`: bookkeeping for child buffers structurally linked into this buffer's lanes
 - `_channels`: hierarchy-wide registry shared across parent/child buffers
+- `_channelAliases`: narrow alias/canonical-name mapping used for explicit
+  runtime channel binding
+- `arrays`: per-channel lane payload arrays; still created lazily today, but
+  finished iterator cleanup can now set individual entries and whole finished
+  lane arrays to `null`
+- `_visitingIterators`: notification/bookkeeping for iterators currently
+  visiting this buffer's lanes
 
 The refactor is not just about deleting one of these maps. The real problem is that they currently overlap in responsibility:
 
@@ -54,20 +92,16 @@ The target model should separate those concerns much more sharply:
 - one local addressability map for lookup
 - static lane metadata for structure/finish
 - optional ownership metadata only if it remains useful for assertions/debugging
+- alias resolution sequenced before lane/addressability installation
 
 ## Current Problems
 
 ### 1. Ambient visibility
 
-Current `findChannel(...)` in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js) can discover channels through:
+Current `findChannel(...)` in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js) is already simpler than this document originally assumed:
 
 - local `_ownedChannels`
-- local `_visibleChannels`
-- linked child-owned channels
 - ancestor `_ownedChannels`
-- ancestor `_visibleChannels`
-- ancestor-linked child-owned channels
-- fallback `_channels`
 
 That is much broader than the compiler's explicit linking model.
 
@@ -192,15 +226,22 @@ This is important: the outer-scope-owned case does not require a new special run
 
 ### No runtime lookup recursion
 
-The earlier transitional idea of:
+The current runtime has already dropped the older child-buffer discovery path
+from ordinary `findChannel(...)`.
 
-- "channels owned by linked child buffers reachable through this buffer's lane structure"
+That is good progress, but it is not the end state.
 
-should be dropped from ordinary `findChannel(...)`.
+The remaining work is:
 
-If visibility is explicit and complete, `findChannel(...)` should not need to scan child buffers at all.
+- remove the ancestor walk from ordinary `findChannel(...)`
+- make finished-snapshot and shared-observation paths use the same explicit
+  local addressability model
+- stop treating "an ancestor owns some channel of this name" as sufficient
+  runtime evidence that the current buffer may observe that lane
 
-`_findLinkedChildOwnedChannel(...)` should therefore not survive as a soft fallback. During migration it may temporarily become an assertion/debug trap to detect incomplete analysis, but the target state is full removal.
+So the target is still "no runtime rediscovery", but the migration point is now
+"finish removing ancestor/global rediscovery", not "stop scanning child
+buffers."
 
 ## Used Channels, Visible Channels, Owned Channels
 
@@ -226,15 +267,19 @@ In the stricter model, the local addressability map is the runtime form of:
 
 ### Do we need `_visibleChannels`?
 
-As a runtime storage concept, yes, but only as a materialized addressability map.
+Not as an existing structure. The current runtime does not have a live
+`_visibleChannels` map anymore.
 
-It should not mean:
+But it still needs the concept the earlier document was trying to name:
 
-- "ambiently visible because something up the hierarchy had it"
+- one local addressability map
+- populated explicitly from compile-time lane/link information
+- used by `findChannel(...)`, finished snapshots, and shared observation
 
-It should mean:
+So the recommendation remains:
 
-- "this channel is explicitly available to this buffer because compile-time analysis said so"
+- introduce or repurpose one local map for explicit addressability
+- do not reintroduce `_visibleChannels` as a second overlapping runtime system
 
 ### Do we need `_ownedChannels`?
 
@@ -522,7 +567,18 @@ This applies to:
 Related cleanup:
 
 - `targetBuffer._channelTypes[channelName] = channelType` appears to be dead write-only state today
+- `targetBuffer._channelRegistry[channelName] = channel` for sink/sequence
+  channels also appears to be dead write-only state today
 - if lane specs become constructor-time metadata, channel type should live there instead of in a parallel runtime map
+- if sink/sequence-specific registry state is truly unnecessary, it should be
+  removed rather than surviving as a second unused parallel registry
+
+This section is more urgent now than when the document was first drafted:
+
+- the current runtime still does register in both places
+- `declareBufferChannel(...)` already reassigns `channel._buffer` and
+  re-registers, so this is a good concrete cleanup target even before the
+  larger static-lane refactor lands
 
 ## `_channels`
 
@@ -545,6 +601,15 @@ if (!this._channels) {
 in `_registerChannel(...)` is dead code because `_channels` is always initialized in the constructor.
 
 That guard should be deleted even in any intermediate stage.
+
+Current note:
+
+- `_channels` is still load-bearing for finished snapshots and finished raw
+  snapshots in `addSnapshot(...)`, `addRawSnapshot(...)`, and
+  `_runFinishedSnapshotCommand(...)`
+- ordinary lookup no longer uses `_channels`, which means `_channels` removal is
+  now more concentrated and more realistic than when this document was first
+  written
 
 ## Channel Aliases
 
@@ -705,14 +770,14 @@ The refactor should preserve and strengthen invariants such as:
 
 Because the current runtime still tolerates incomplete analysis in a few places, the refactor should introduce stricter invariants in stages:
 
-1. add debug/development assertions around missing lanes, missing linked parent channels, and unexpected child-buffer discovery
+1. add debug/development assertions around missing lanes, missing linked parent channels, and unexpected ambient lookup success
 2. run the focused and full test suites to surface any remaining analysis gaps
 3. remove the old fallback paths once the assertions stop firing
 
 This is especially important for:
 
 - `add()` missing-lane checks
-- removal of `_findLinkedChildOwnedChannel(...)`
+- removal of ancestor/global fallback behavior from lookup and finished snapshots
 
 ## Implementation Plan
 
@@ -833,7 +898,8 @@ Changes:
 
 - make `declareBufferChannel(...)` the single canonical registration path
 - remove registration from `Channel` construction
-- repurpose `_visibleChannels` into the unified local addressability map during migration, so it becomes the single primary runtime lookup structure
+- introduce one unified local addressability map during migration so it becomes
+  the single primary runtime lookup structure
 - install locally declared channel objects into that map
 - install parent-linked channel refs from static analysis into that same map
 - keep `_ownedChannels` only as optional assertions/debug metadata; it must no longer participate in lookup
@@ -853,7 +919,7 @@ Still-unimplemented tests to add here:
 - integration test: a true child lexical scope does not become parent-visible merely because a child buffer exists
 - integration test: outer-scope-owned declarations emitted through async boundaries still resolve correctly without child-buffer discovery
 
-### Step 4. Remove ambient lookup and child-buffer scanning from normal resolution
+### Step 4. Remove ambient lookup from normal resolution
 
 Goal:
 
@@ -867,15 +933,18 @@ Primary files:
 Changes:
 
 - remove ancestor walk from `findChannel(...)`
-- remove `_findLinkedChildOwnedChannel(...)` from the normal lookup path
 - re-evaluate `channelLookup(...)` routing so it uses the local map semantics directly instead of relying on ambient ancestry assumptions
-- during migration, temporarily convert unexpected child-buffer discovery into an assertion/debug trap
+- route shared-observation readability checks through the same explicit local
+  addressability model
+- during migration, temporarily convert any remaining unexpected ambient lookup
+  success into an assertion/debug trap
 
 Clarification:
 
-- Step 4 changes behavior by making lookup local-only and wiring `_findLinkedChildOwnedChannel(...)` out of normal resolution
-- Step 7 is only the dead-code cleanup for disabled dynamic lookup-linking
-- Step 10 is where any surviving `_findLinkedChildOwnedChannel(...)` assertion trap is deleted entirely
+- Step 4 changes behavior by making ordinary lookup local-only and narrowing the
+  remaining helper paths that still rely on ancestry/global knowledge
+- later cleanup steps remove the compatibility scaffolding once those narrowed
+  paths are gone too
 
 Tests for this step:
 
@@ -887,7 +956,7 @@ Tests for this step:
 Still-unimplemented tests to add here:
 
 - integration test: parent lookup cannot see a child-scope-only declaration across an async/control-flow boundary
-- debug/assertion test: if `_findLinkedChildOwnedChannel(...)` would have been needed, the suite fails loudly instead of silently succeeding
+- debug/assertion test: if an ambient lookup would have succeeded without explicit local addressability, the suite fails loudly instead of silently succeeding
 
 ### Step 5. Replace finish discovery with static lane accounting
 
@@ -952,11 +1021,11 @@ Still-unimplemented tests to add here:
 - targeted runtime test: missing lane in `add()` throws immediately
 - targeted runtime test: missing linked parent channel at buffer creation throws immediately
 
-### Step 7. Remove dynamic lookup-time linking and child-buffer discovery fallbacks
+### Step 7. Remove dead transitional runtime state
 
 Goal:
 
-- make lookup stop mutating structure or rescuing incomplete analysis
+- remove dead or redundant transitional state once the earlier structural steps land
 
 Primary files:
 
@@ -965,18 +1034,24 @@ Primary files:
 
 Changes:
 
-- remove dead `LOOKUP_DYNAMIC_CHANNEL_LINKING` support
-- remove dead `ensureReadChannelLink(...)`
-- remove dead `_readChannelLinks`
-- if `_findLinkedChildOwnedChannel(...)` is still present as an assertion trap from Step 4, keep Step 7 limited to the dead dynamic-linking cleanup and defer final trap removal to Step 10
+- remove dead `_channelTypes`
+- remove dead `_channelRegistry` if no runtime reads remain
+- remove the dead `_channels` initialization guard in `_registerChannel(...)`
+- remove any remaining duplicate registration scaffolding once
+  `declareBufferChannel(...)` becomes canonical
+- if temporary migration assertions were added for ambient lookup success, keep
+  this step limited to deleting the dead transitional scaffolding around them,
+  not the assertions themselves
 
 Tests for this step:
 
-- existing parent-variable read tests should remain green; no behavioral change is expected because dynamic lookup linking is already disabled
+- existing declaration/snapshot tests should remain green; no major behavioral
+  change is expected if this step is kept to dead-state cleanup
 
 Still-unimplemented tests to add here:
 
-- no new behavior-focused tests are required here beyond confirming the existing Step 4 tests still pass
+- no new behavior-focused tests are required here beyond confirming the earlier
+  steps still pass
 
 ### Step 8. Remove `_channels` and fix the finished-snapshot fast path
 
@@ -1037,6 +1112,16 @@ Changes:
 - keep `_visitingIterators` only for notifications
 - keep `_ownedChannels` as debug/assert metadata only unless Step 10 proves it is no longer useful
 
+Important dependency:
+
+- `_linkedChannels` / `isLinkedChannel(...)` are currently used by
+  `hasLinkedChannelPathToOwner(...)` in [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+  for the late-linked-child case where an ancestor lane has already finished
+  and the child records the structural link on itself instead
+- Step 9 therefore cannot remove `_linkedChannels` as a `command-buffer.js`
+  only cleanup; the corresponding late-link readability path in `lookup.js`
+  must be replaced or narrowed at the same time
+
 Tests for this step:
 
 - declared-but-unused lanes do not block aggregate finish
@@ -1056,7 +1141,6 @@ Primary files:
 
 Changes:
 
-- delete `_findLinkedChildOwnedChannel(...)` if it survived as a migration-time assertion trap
 - delete any temporary debug-only compatibility paths that are no longer needed
 - make the static-lane / local-lookup invariants unconditional
 - finalize the disposition of `_ownedChannels`:
@@ -1088,7 +1172,7 @@ The refactor should proceed with these goals:
 8. Remove `_linkedChannels`.
 9. Make `declareBufferChannel(...)` the single canonical registration path.
 10. Collapse finish handling once static lane creation guarantees lane existence.
-11. Keep `_channelAliases` as a separate future-facing concern.
+11. Keep `_channelAliases` as an explicit canonical-name concern integrated into the refactor.
 12. Treat all channels uniformly inside command-buffer/runtime logic.
 
 In short:
@@ -1098,3 +1182,319 @@ In short:
 - lookup should be local
 - finish should be lane-based
 - command-buffer logic should stop carrying language-level special cases
+
+## Cleanup Execution Plan
+
+This is the practical cleanup-first sequence to use when implementing the
+remaining runtime cleanup work. It is intentionally narrower than the full
+architectural refactor above and is meant to keep changes reviewable.
+
+### Phase 0. Lock in the current cleanup baseline
+
+Goal:
+
+- preserve the cleanup behavior that already exists before removing more state
+
+Work:
+
+- keep the existing tests that assert:
+  - processed command entries become `null`
+  - finished child-buffer slots become `null`
+  - finished lane arrays become `null`
+  - finished iterators dispose their own state
+  - channel completion promise state is cleared
+  - finished-buffer request bookkeeping is cleared
+  - resolved sink promise state is cleared
+- add or keep at least one focused test that proves linkage/readability still
+  works after lane-array cleanup
+
+Primary files:
+
+- [tests/pasync/snapshots.js](C:\Projects\cascada\tests\pasync\snapshots.js)
+- [tests/pasync/loop-concurrent-limit.js](C:\Projects\cascada\tests\pasync\loop-concurrent-limit.js)
+
+### Phase 1. Remove dead write-only cleanup targets
+
+Goal:
+
+- delete state that is not part of the actual runtime contract
+
+Work:
+
+- remove `_channelTypes`
+- remove `_channelRegistry` if no runtime reads remain
+- remove the dead `if (!this._channels)` initialization guard in
+  `_registerChannel(...)`
+
+Primary files:
+
+- [src/runtime/channel.js](C:\Projects\cascada\src\runtime\channel.js)
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+
+Validation:
+
+- run focused declaration/snapshot tests
+- run any sink/sequence-specific tests that might still depend on hidden
+  registry state
+
+### Phase 2. Clean up duplicate registration
+
+Goal:
+
+- make `declareBufferChannel(...)` the only canonical registration path
+
+Work:
+
+- remove `_buffer._registerChannel(...)` from `Channel` construction
+- make `declareBufferChannel(...)` explicitly take over the
+  `bindToCurrentBuffer()` side effect currently reached through
+  `_registerChannel(...)`, so channel iterators do not silently stop binding to
+  their owning buffer
+- confirm that `declareBufferChannel(...)` still handles all channel kinds:
+  - text
+  - var
+  - data
+  - sink
+  - sequence
+  - sequential path / `sequential_path`
+
+Primary files:
+
+- [src/runtime/channel.js](C:\Projects\cascada\src\runtime\channel.js)
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+
+Validation:
+
+- run snapshot tests
+- run tests that declare channels through normal environment/render entry points
+
+### Phase 3. Introduce static lane metadata without changing behavior yet
+
+Goal:
+
+- prepare the runtime for eager arrays and simpler finish accounting
+
+This phase is mostly plumbing, not new compiler analysis work.
+
+`declaredChannels` already exists on node `_analysis` objects today. The work
+here is to thread that existing information into buffer construction, not to
+create a new analysis pass.
+
+Work:
+
+- add constructor-time lane metadata such as:
+  - `_laneNames`
+  - `_totalLaneCount`
+- keep current behavior temporarily, but assert that runtime-discovered lane
+  names match the static lane metadata
+- add a helper parallel to `getLinkedChannelsArg(...)` for declared lanes
+- thread declared-lane information from compiler analysis into
+  `createCommandBuffer(...)`
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/async-boundaries.js](C:\Projects\cascada\src\runtime\async-boundaries.js)
+- [src/runtime/component.js](C:\Projects\cascada\src\runtime\component.js)
+- [src/runtime/inheritance-call.js](C:\Projects\cascada\src\runtime\inheritance-call.js)
+- [src/compiler/emit.js](C:\Projects\cascada\src\compiler\emit.js)
+- [src/compiler/buffer.js](C:\Projects\cascada\src\compiler\buffer.js)
+- [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
+- [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js)
+
+Validation:
+
+- add focused compile-source tests for declared-lane plumbing
+- keep existing integration suites green
+
+### Phase 4. Make lane creation eager
+
+Goal:
+
+- stop using first write as the mechanism that creates runtime structure
+
+Work:
+
+- eagerly create `arrays[name] = []` for the full static lane set at buffer
+  construction
+- keep alias/canonical-name setup ahead of lane creation
+- preserve the current constructor ordering where `_channelAliases` inheritance
+  happens before lane setup, so eager arrays use canonical/runtime names from
+  the start
+- add assertions for any attempted add/snapshot against a missing lane
+- initially keep the assertion behind a debug/development gate if needed
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- compiler call sites that build buffers
+- root/entry-buffer creation paths as well as child-buffer creation paths
+
+Validation:
+
+- add targeted tests for:
+  - declared-but-unused lanes
+  - missing-lane add failures
+  - missing linked-parent lane failures
+
+### Phase 5. Move finish accounting onto static lane metadata
+
+Goal:
+
+- stop reconstructing lane membership from merged runtime state
+
+Work:
+
+- replace `_collectKnownChannelNames()` as the driver of finish accounting
+- introduce `_finishedLaneCount`
+- make `_markChannelFinished(...)` update counter-based finish state
+- keep `_visitingIterators` only for notifications
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/buffer-iterator.js](C:\Projects\cascada\src\runtime\buffer-iterator.js)
+
+Validation:
+
+- verify `getFinishedPromise()` still resolves correctly
+- verify child buffers still complete correctly under iterator traversal
+
+### Phase 6. Remove `_channels` by converting finished snapshots to local addressability
+
+Goal:
+
+- eliminate the hierarchy-wide channel registry
+
+Work:
+
+- add one explicit local addressability map
+- seed that map in two stages:
+  - linked parent channel refs installed during buffer construction
+  - locally declared channel refs installed when `declareBufferChannel(...)`
+    runs
+- assert when a statically linked parent channel ref cannot be installed, so
+  missing linkage fails at construction time instead of being masked by the
+  old ancestor-walk fallback
+- route `findChannel(...)`, `addSnapshot(...)`, `addRawSnapshot(...)`, and
+  `_runFinishedSnapshotCommand(...)` through that local map
+- remove `_channels`
+
+Clarification:
+
+- this phase introduces the new local map and routes finished snapshots and
+  lookup through it
+- the remaining ancestor-walk fallback in `findChannel(...)` may stay in place
+  temporarily during this phase for migration safety
+- Phase 7 is where that fallback is removed entirely
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+
+Validation:
+
+- keep snapshot suites green
+- add explicit tests for finished snapshot behavior after `_channels` removal
+
+### Phase 7. Remove ambient ancestor lookup
+
+Goal:
+
+- make lookup local-only
+
+Work:
+
+- remove ancestor walk from `findChannel(...)`
+- keep shared observation and readability checks aligned with the same explicit
+  addressability model
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+
+Validation:
+
+- add tests proving parent lookups cannot see child-scope-only declarations
+- keep explicit linked-lane observation tests green
+
+### Phase 8. Remove remaining compatibility finish/link state
+
+Goal:
+
+- delete the old compatibility scaffolding once the new structure owns finish
+  semantics
+
+Work:
+
+- remove `_finishRequestedChannels`
+- remove `_finishAllChannelsRequested`
+- remove `_finishKnownChannelIfRequested(...)`
+- remove `_linkedChannels`
+- remove `_registerLinkedChannel(...)`
+- remove the `_registerLinkedChannel(...)` call from `add()`
+- remove `markChannelFinished(...)` if it is no longer needed
+
+Important coordination:
+
+- `_linkedChannels` / `isLinkedChannel(...)` currently participate in the
+  late-linked-child readability path in
+  [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+- do not remove them until that late-link path has been replaced, narrowed, or
+  proven unnecessary
+- before deleting `_linkedChannels`, add a focused test that exercises the
+  late-linked-child scenario explicitly: a child buffer linked to a parent lane
+  created after the ancestor lane is already finished
+- only remove the fallback once that scenario is either:
+  - handled correctly by eager/local lane installation without
+    `isLinkedChannel(...)`, or
+  - replaced by a narrower explicit mechanism
+
+Primary files:
+
+- [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+
+Validation:
+
+- verify late-linked shared/inheritance cases explicitly
+- add one dedicated late-linked-child regression test before deleting
+  `_linkedChannels`
+- verify aggregate finish still works for buffers with unused eager lanes
+
+### Phase 9. Final cleanup pass
+
+Goal:
+
+- remove any metadata that no longer provides runtime value
+
+Work:
+
+- decide whether `_ownedChannels` remains as assertion/debug metadata or is
+  removed entirely
+- delete any temporary migration assertions or debug-only fallback paths
+- re-audit `parent` vs `linkedParent`
+- confirm that cleanup still nulls:
+  - command entries
+  - child-buffer entries
+  - finished lane arrays
+  - iterator state
+  - completion bookkeeping
+
+Final verification:
+
+- run focused suites:
+  - `tests/pasync/snapshots.js`
+  - `tests/pasync/channels-explicit.js`
+  - `tests/pasync/calls.js`
+  - `tests/pasync/template-command-buffer.js`
+- then run the broader relevant test suite
+
+Deferred scope:
+
+- scope-unique `__return__#<scopeId>` ownership is intentionally deferred from
+  this cleanup-first execution plan
+- it remains part of the larger architectural refactor above, but it is not a
+  prerequisite for the narrower cleanup phases listed here
