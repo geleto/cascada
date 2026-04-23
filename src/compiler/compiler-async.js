@@ -1493,7 +1493,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const rootCompileResult = this._compileAsyncRoot(node);
     const methods = this.inheritance.collectCompiledMethods(node, rootCompileResult.blocks, this.pendingInheritanceMethodNames);
 
-    if (this.pendingInheritanceMethodNames.length > 0 || this.inheritance.hasMethodSuperDependencies(callableDefinitions)) {
+    if (this.pendingInheritanceMethodNames.length > 0) {
       this.inheritance.emitPendingInheritanceEntryFactory();
     }
     this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);

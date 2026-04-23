@@ -166,6 +166,36 @@ describe('Extends Runtime', function () {
       }).to.throwException(/script roots support at most one top-level extends/);
     });
 
+    it('should reject cyclic script extends chains clearly', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'extends "B.script"\nreturn null');
+      loader.addTemplate('B.script', 'extends "A.script"\nreturn null');
+
+      try {
+        await env.renderScript('A.script', {});
+        expect().fail('Expected cyclic extends chain to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Cyclic extends chain detected');
+      }
+    });
+
+    it('should reject cyclic dynamic script extends chains clearly', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'extends parentName\nreturn null');
+      loader.addTemplate('B.script', 'extends "A.script"\nreturn null');
+
+      try {
+        await env.renderScript('A.script', { parentName: 'B.script' });
+        expect().fail('Expected cyclic dynamic extends chain to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Cyclic extends chain detected');
+      }
+    });
+
     it('should keep the root constructor empty when there is no executable top-level body', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);

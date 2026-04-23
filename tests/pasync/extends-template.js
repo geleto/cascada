@@ -232,6 +232,36 @@ describe('Template Extends', function () {
       expect(withoutParent).to.be('');
     });
 
+    it('should reject cyclic template extends chains clearly', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('a.njk', '{% extends "b.njk" %}');
+      loader.addTemplate('b.njk', '{% extends "a.njk" %}');
+
+      try {
+        await env.renderTemplate('a.njk', {});
+        expect().fail('Expected cyclic template extends chain to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Cyclic extends chain detected');
+      }
+    });
+
+    it('should reject cyclic dynamic template extends chains clearly', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('a.njk', '{% extends layout %}');
+      loader.addTemplate('b.njk', '{% extends "a.njk" %}');
+
+      try {
+        await env.renderTemplate('a.njk', { layout: 'b.njk' });
+        expect().fail('Expected cyclic dynamic template extends chain to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Cyclic extends chain detected');
+      }
+    });
+
     it('should fail cleanly when a static parent template cannot be loaded', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);

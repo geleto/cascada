@@ -842,9 +842,7 @@ class CompileInheritance {
         fnExpr: `b_${methodName}`,
         analysis: block.body && block.body._analysis,
         ownerNode: block,
-        superExpr: this.blockUsesSuper(block)
-          ? `__createPendingInheritanceEntry(${pendingLinkedChannelsExpr})`
-          : 'null',
+        superExpr: this.blockUsesSuper(block) ? 'true' : 'false',
         signatureExpr: JSON.stringify({
           argNames: this.getBlockSignature(block).argNames,
           withContext: !!block.withContext
@@ -859,9 +857,7 @@ class CompileInheritance {
         fnExpr: 'b___constructor__',
         analysis: constructorDefinition.body && constructorDefinition.body._analysis,
         ownerNode: constructorDefinition,
-        superExpr: this.blockUsesSuper(constructorDefinition)
-          ? `__createPendingInheritanceEntry(${pendingLinkedChannelsExpr})`
-          : 'null',
+        superExpr: this.blockUsesSuper(constructorDefinition) ? 'true' : 'false',
         signatureExpr: JSON.stringify({ argNames: [], withContext: false }),
         ownerKey
       }));
@@ -927,10 +923,6 @@ class CompileInheritance {
 
   blockUsesSuper(block) {
     return !!(block && block.body && block.body.findAll(nodes.Super).length > 0);
-  }
-
-  hasMethodSuperDependencies(blocks) {
-    return Array.isArray(blocks) && blocks.some((block) => this.blockUsesSuper(block));
   }
 
   emitPendingInheritanceEntryFactory() {

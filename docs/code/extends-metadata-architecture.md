@@ -581,36 +581,48 @@ The big internal change is:
 
 ## Implementation Plan
 
-### Step 1 - Remove Pending Metadata Resolution, No Functional Change
+### Step 1 - Remove Pending `super()` Metadata Resolution, No Functional Change
 
-Convert the current system to blocking chain bootstrap while preserving current
-user-visible behavior.
+Convert the current `super()` metadata path to direct metadata while preserving
+current user-visible constructor/output ordering.
 
 Work:
 
-- load the full inheritance chain before constructor/root execution
+- remove pending promise structs from compiled `super()` metadata
+- compile callable `super` as:
+  - `true` when the callable body contains `super()`
+  - `false` when it does not
 - detect `extends` parent-chain cycles as fatal bootstrap errors
-- register all methods/shared schema for the whole chain
-- build direct resolved `methods` and `sharedSchema`
-- rewrite compiled `super: true` references to direct parent metadata or `null`
-- remove runtime dependence on pending method/shared promise structs in normal
-  execution
+- register methods/shared schema as each chain member loads
+- rewrite compiled `super: true` references to direct parent metadata
+- rewrite root-constructor `super: true` to the root-only empty constructor when
+  no parent constructor exists
+- rewrite unresolved non-constructor `super: true` to a fatal metadata error
+- keep `super: false` callables compatible with the current parent metadata
+  chain used for signature inheritance and the existing merged-channel behavior
 - preserve the current callable metadata fields where possible:
   - `fn`
   - `signature`
   - `ownerKey`
   - own channel arrays
   - `super`
-- change only the structural metadata representation:
-  - `super` becomes direct or `null`
-  - merged channel fields are finalized during bootstrap
-- keep the initial merged-channel behavior equivalent to today's `super()`-chain
-  model until invoked-method metadata is added in the next steps
+- build sync-first method metadata for already-resolved entries
+- finalize/cache merged channel fields for direct entries during metadata
+  finalization
+- publish the inheritance startup promise before constructor execution so an
+  early constructor-local inherited call that reaches unresolved `super: true`
+  can wait for the active chain load and then retry against direct metadata
+- keep pending inherited-method placeholders for unresolved `this.method()` calls
+  as transitional scaffolding until invoked-method metadata replaces them
 
 Goal:
 
-- no promise-based metadata access in normal execution
+- no promise-based `super()` metadata structs
+- no promise-based metadata access for already-resolved direct method entries
 - no intentional behavior change yet
+- known transitional exception: unresolved `this.method()` placeholders and the
+  constructor-time startup-promise retry remain until the invoked-method metadata
+  and direct caller-side admission phases remove them
 
 ### Step 2 - Add Invoked-Method Metadata
 
@@ -663,6 +675,9 @@ Work:
 - compute final merged channel sets during bootstrap
 - report all method/super/invoked-method metadata errors discovered after chain
   loading through the runtime fatal-error path
+- aggregate all structural metadata errors discovered by the Step 3 merge/fixed-
+  point pass before throwing, so multiple missing `super()` or invoked-method
+  targets are reported together instead of stopping at the first error
 
 Goal:
 
@@ -681,6 +696,10 @@ Work:
 - remove the partial unresolved-linked-channel correctness path
 - keep component constructor startup on the caller-side ordered component startup
   path, but ensure metadata bootstrap completes before the startup command runs
+- replace the Step 1 constructor-time startup-promise retry with a true
+  metadata-ready barrier that does not wait for parent output application
+- remove the startup-window channel-hint gap where an unresolved `super: true`
+  currently creates its invocation buffer before final method channels are known
 - keep template text-output ownership separate from metadata bootstrap
 
 Goal:

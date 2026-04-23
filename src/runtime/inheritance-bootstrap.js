@@ -1,6 +1,7 @@
 'use strict';
 
 const inheritanceState = require('./inheritance-state');
+const inheritanceCall = require('./inheritance-call');
 
 function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, currentBuffer, context = null) {
   if (!stateValue || typeof stateValue !== 'object') {
@@ -64,35 +65,57 @@ async function renderInheritanceParentRoot(
   }
 
   parentTemplate.compile();
+  const chainToken = inheritanceState.enterInheritanceChainPath(
+    inheritanceStateValue,
+    parentTemplate.path,
+    context
+  );
 
-  const parentContext = compositionPayload
-    ? context.forkForComposition(
-        parentTemplate.path,
-        compositionPayload.rootContext || {},
-        context.getRenderContextVariables(),
-        compositionPayload.externContext || {}
-      )
-    : context.forkForPath(parentTemplate.path);
-  const parentCompositionMode = inheritanceState.isInheritanceCompositionMode(
-    inheritanceStateValue,
-    runtimeApi.COMPONENT_COMPOSITION_MODE
-  ) ? runtimeApi.COMPONENT_COMPOSITION_MODE : true;
-  const parentOutputBuffer = parentTemplate.rootRenderFunc(
-    env,
-    parentContext,
-    runtimeApi,
-    cb,
-    parentCompositionMode,
-    currentBuffer,
-    inheritanceStateValue
-  );
-  await waitForParentRootRender(
-    parentOutputBuffer,
-    currentBuffer,
-    inheritanceStateValue,
-    parentCompositionMode
-  );
-  return parentOutputBuffer;
+  let leaveChainPathOnReturn = true;
+  try {
+    const parentContext = compositionPayload
+      ? context.forkForComposition(
+          parentTemplate.path,
+          compositionPayload.rootContext || {},
+          context.getRenderContextVariables(),
+          compositionPayload.externContext || {}
+        )
+      : context.forkForPath(parentTemplate.path);
+    const parentCompositionMode = inheritanceState.isInheritanceCompositionMode(
+      inheritanceStateValue,
+      runtimeApi.COMPONENT_COMPOSITION_MODE
+    ) ? runtimeApi.COMPONENT_COMPOSITION_MODE : true;
+    const parentOutputBuffer = parentTemplate.rootRenderFunc(
+      env,
+      parentContext,
+      runtimeApi,
+      cb,
+      parentCompositionMode,
+      currentBuffer,
+      inheritanceStateValue
+    );
+    if (parentCompositionMode === runtimeApi.COMPONENT_COMPOSITION_MODE) {
+      const startupPromise = inheritanceState.awaitInheritanceStartup(inheritanceStateValue);
+      if (startupPromise && typeof startupPromise.then === 'function') {
+        leaveChainPathOnReturn = false;
+        startupPromise.then(
+          () => inheritanceState.leaveInheritanceChainPath(inheritanceStateValue, chainToken),
+          () => inheritanceState.leaveInheritanceChainPath(inheritanceStateValue, chainToken)
+        );
+      }
+    }
+    await waitForParentRootRender(
+      parentOutputBuffer,
+      currentBuffer,
+      inheritanceStateValue,
+      parentCompositionMode
+    );
+    return parentOutputBuffer;
+  } finally {
+    if (leaveChainPathOnReturn) {
+      inheritanceState.leaveInheritanceChainPath(inheritanceStateValue, chainToken);
+    }
+  }
 }
 
 async function bootstrapInheritanceParentScript(
@@ -111,49 +134,58 @@ async function bootstrapInheritanceParentScript(
   }
 
   parentScript.compile();
-
-  const parentContext = compositionPayload
-    ? context.forkForComposition(
-        parentScript.path,
-        compositionPayload.rootContext || {},
-        context.getRenderContextVariables(),
-        compositionPayload.externContext || {}
-      )
-    : context.forkForPath(parentScript.path);
-
-  if (typeof parentScript.setupRenderFunc !== 'function') {
-    throw new Error('Parent script did not expose a compiled setupRenderFunc');
-  }
-
-  runtimeApi.bootstrapInheritanceMetadata(
+  const chainToken = inheritanceState.enterInheritanceChainPath(
     inheritanceStateValue,
-    parentScript.methods || {},
-    parentScript.sharedSchema || {},
-    currentBuffer,
-    parentContext
-  );
-  if (!parentScript.hasExtends) {
-    runtimeApi.finalizeInheritanceMetadata(inheritanceStateValue, parentContext);
-  }
-
-  const startupPromise = runtimeApi.runCompiledRootStartup(
-    parentScript.setupRenderFunc,
-    parentScript.methods || {},
-    inheritanceStateValue,
-    env,
-    parentContext,
-    runtimeApi,
-    cb,
-    currentBuffer,
-    null,
-    { resolveExports: true }
+    parentScript.path,
+    context
   );
 
-  if (startupPromise && typeof startupPromise.then === 'function') {
-    await startupPromise;
-  }
+  try {
+    const parentContext = compositionPayload
+      ? context.forkForComposition(
+          parentScript.path,
+          compositionPayload.rootContext || {},
+          context.getRenderContextVariables(),
+          compositionPayload.externContext || {}
+        )
+      : context.forkForPath(parentScript.path);
 
-  return currentBuffer;
+    if (typeof parentScript.setupRenderFunc !== 'function') {
+      throw new Error('Parent script did not expose a compiled setupRenderFunc');
+    }
+
+    runtimeApi.bootstrapInheritanceMetadata(
+      inheritanceStateValue,
+      parentScript.methods || {},
+      parentScript.sharedSchema || {},
+      currentBuffer,
+      parentContext
+    );
+    if (!parentScript.hasExtends) {
+      runtimeApi.finalizeInheritanceMetadata(inheritanceStateValue, parentContext);
+    }
+
+    const startupPromise = runtimeApi.runCompiledRootStartup(
+      parentScript.setupRenderFunc,
+      parentScript.methods || {},
+      inheritanceStateValue,
+      env,
+      parentContext,
+      runtimeApi,
+      cb,
+      currentBuffer,
+      null,
+      { resolveExports: true }
+    );
+
+    if (startupPromise && typeof startupPromise.then === 'function') {
+      await startupPromise;
+    }
+
+    return currentBuffer;
+  } finally {
+    inheritanceState.leaveInheritanceChainPath(inheritanceStateValue, chainToken);
+  }
 }
 
 function getLocalRootConstructorEntry(compiledMethods) {
@@ -227,6 +259,9 @@ function runCompiledRootStartup(
       extendsState
     );
   }
+  if (startupPromise && typeof startupPromise.then === 'function') {
+    inheritanceState.setInheritanceStartupPromise(inheritanceStateValue, startupPromise);
+  }
 
   startupPromise = startInheritanceRootConstructor(
     compiledMethods,
@@ -293,6 +328,9 @@ function finalizeInheritanceMetadata(state, context = null) {
   }
   inheritanceState.finalizeInheritanceSharedSchema(state, context);
   inheritanceState.finalizeInheritanceMethods(state, context);
+  inheritanceCall.prewarmMethodDataCache(state, {
+    path: context && context.path ? context.path : null
+  });
   return state;
 }
 
