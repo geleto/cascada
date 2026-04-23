@@ -286,6 +286,7 @@ class Template extends Obj {
     this.externSpec = props.externSpec || [];
     this.methods = props.methods || {};
     this.sharedSchema = props.sharedSchema || {};
+    this.invokedMethods = props.invokedMethods || {};
     this.hasExtends = !!props.hasExtends;
     this.setupRenderFunc = props.setup || null;
     this.scriptBodyRenderFunc = props.scriptBody || props.b___scriptBody__ || null;

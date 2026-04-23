@@ -56,6 +56,13 @@ function _createInheritanceFatalError(message, code, errorContext = null) {
   );
 }
 
+function _createInheritanceMetadataInvariantError(message, errorContext = null) {
+  return _contextualizeFatalError(
+    new RuntimeFatalError(message, 0, 0, null, null),
+    errorContext
+  );
+}
+
 function _normalizeInheritedMethodInvocationError(error, methodName, errorContext) {
   if (error && error.code === inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND) {
     return _createInheritanceFatalError(
@@ -147,7 +154,7 @@ function _normalizeMethodSignature(signature, inheritedSignature = null) {
   return normalizedSignature;
 }
 
-function _createResolvedMethodData(entry, sharedSchema = null, superData = null) {
+function _createResolvedMethodData(entry, sharedSchema = null, superData = null, invokedMethods = null) {
   if (!entry || typeof entry !== 'object' || typeof entry.fn !== 'function') {
     throw new RuntimeFatalError(
       'Inherited dispatch resolved to an invalid method entry',
@@ -179,11 +186,63 @@ function _createResolvedMethodData(entry, sharedSchema = null, superData = null)
     ownMutatedChannels,
     mergedUsedChannels,
     mergedMutatedChannels,
-    super: superData || null
+    super: superData || null,
+    invokedMethods: invokedMethods || Object.create(null)
   };
 }
 
-function _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state = null, hasWaitedForStartup = false) {
+function _isResolvedMethodData(value) {
+  return !!(
+    value &&
+    typeof value === 'object' &&
+    typeof value.fn === 'function' &&
+    Array.isArray(value.mergedUsedChannels) &&
+    Array.isArray(value.mergedMutatedChannels) &&
+    value.invokedMethods &&
+    typeof value.invokedMethods === 'object'
+  );
+}
+
+function _createResolvedInvokedMethodsData(invokedMethods, sharedSchema, errorContext, state = null) {
+  const resolved = Object.create(null);
+  if (!invokedMethods || typeof invokedMethods !== 'object') {
+    return resolved;
+  }
+  const names = Object.keys(invokedMethods);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    const entry = invokedMethods[name];
+    if (_isResolvedMethodData(entry)) {
+      resolved[name] = entry;
+      continue;
+    }
+    if (!entry || typeof entry !== 'object' || inheritanceState.isPendingInheritanceEntry(entry)) {
+      throw _createInheritanceFatalError(
+        `Inherited method '${name}' was not found`,
+        inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
+        errorContext
+      );
+    }
+    const methodData = _getMethodDataFromEntry(entry, sharedSchema, errorContext, state, false);
+    if (methodData && typeof methodData.then === 'function') {
+      throw _createInheritanceMetadataInvariantError(
+        `Inherited method metadata for '${name}' was still pending during invoked-method resolution`,
+        errorContext
+      );
+    }
+    resolved[name] = methodData;
+  }
+  return resolved;
+}
+
+function _getMethodDataFromResolvedEntry(
+  resolvedEntry,
+  sharedSchema,
+  errorContext,
+  state = null,
+  hasWaitedForStartup = false,
+  includeInvokedMethods = true
+) {
   if (resolvedEntry === true) {
     throw _createInheritanceFatalError(
       'Inherited dispatch reached unresolved super metadata',
@@ -202,54 +261,72 @@ function _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorConte
     );
   }
 
-  if (resolvedEntry._resolvedMethodData) {
+  if (includeInvokedMethods && resolvedEntry._resolvedMethodData) {
     return resolvedEntry._resolvedMethodData;
   }
-  if (resolvedEntry._resolvedMethodDataPromise) {
+  if (includeInvokedMethods && resolvedEntry._resolvedMethodDataPromise) {
     return resolvedEntry._resolvedMethodDataPromise;
   }
 
   if (resolvedEntry.super === true && !hasWaitedForStartup) {
     const startupPromise = inheritanceState.awaitInheritanceStartup(state);
     if (startupPromise && typeof startupPromise.then === 'function') {
-      resolvedEntry._resolvedMethodDataPromise = startupPromise.then(() => {
+      const startupMethodDataPromise = startupPromise.then(() => {
         delete resolvedEntry._resolvedMethodDataPromise;
-        return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state, true);
+        return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state, true, includeInvokedMethods);
       });
-      return resolvedEntry._resolvedMethodDataPromise;
+      if (includeInvokedMethods) {
+        resolvedEntry._resolvedMethodDataPromise = startupMethodDataPromise;
+      }
+      return startupMethodDataPromise;
     }
   }
 
   const superData = resolvedEntry.super
-    ? _getMethodDataFromEntry(resolvedEntry.super, sharedSchema, errorContext, state)
+    ? _getMethodDataFromEntry(resolvedEntry.super, sharedSchema, errorContext, state, includeInvokedMethods)
     : null;
 
   if (superData && typeof superData.then === 'function') {
-    resolvedEntry._resolvedMethodDataPromise = superData.then((resolvedSuperData) => {
-      const resolvedData = _createResolvedMethodData(resolvedEntry, sharedSchema, resolvedSuperData);
-      resolvedEntry._resolvedMethodData = resolvedData;
-      delete resolvedEntry._resolvedMethodDataPromise;
+    const resolvedMethodDataPromise = superData.then((resolvedSuperData) => {
+      const invokedMethods = includeInvokedMethods
+        ? _createResolvedInvokedMethodsData(resolvedEntry.invokedMethods, sharedSchema, errorContext, state)
+        : Object.create(null);
+      const resolvedData = _createResolvedMethodData(resolvedEntry, sharedSchema, resolvedSuperData, invokedMethods);
+      if (includeInvokedMethods) {
+        resolvedEntry._resolvedMethodData = resolvedData;
+        delete resolvedEntry._resolvedMethodDataPromise;
+      }
       return resolvedData;
     });
-    return resolvedEntry._resolvedMethodDataPromise;
+    if (includeInvokedMethods) {
+      resolvedEntry._resolvedMethodDataPromise = resolvedMethodDataPromise;
+    }
+    return resolvedMethodDataPromise;
   }
 
-  const resolvedData = _createResolvedMethodData(resolvedEntry, sharedSchema, superData);
-  resolvedEntry._resolvedMethodData = resolvedData;
+  const invokedMethods = includeInvokedMethods
+    ? _createResolvedInvokedMethodsData(resolvedEntry.invokedMethods, sharedSchema, errorContext, state)
+    : Object.create(null);
+  const resolvedData = _createResolvedMethodData(resolvedEntry, sharedSchema, superData, invokedMethods);
+  if (includeInvokedMethods) {
+    resolvedEntry._resolvedMethodData = resolvedData;
+  }
   return resolvedData;
 }
 
-function _getMethodDataFromEntry(entry, sharedSchema, errorContext, state = null) {
+function _getMethodDataFromEntry(entry, sharedSchema, errorContext, state = null, includeInvokedMethods = true) {
   const resolvedEntry = _resolvePendingInheritanceEntryChain(
     entry,
     (error) => _normalizeResolutionError(error, errorContext)
   );
 
   if (resolvedEntry && typeof resolvedEntry.then === 'function') {
-    return resolvedEntry.then((entryValue) => _getMethodDataFromResolvedEntry(entryValue, sharedSchema, errorContext, state));
+    return resolvedEntry.then((entryValue) =>
+      _getMethodDataFromResolvedEntry(entryValue, sharedSchema, errorContext, state, false, includeInvokedMethods)
+    );
   }
 
-  return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state);
+  return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state, false, includeInvokedMethods);
 }
 
 function getMethodData(state, methodName, errorContext = null) {
@@ -338,16 +415,79 @@ function prewarmMethodDataCache(state, errorContext = null) {
     }
     const methodData = getMethodData(state, name, errorContext);
     if (methodData && typeof methodData.then === 'function') {
-      throw new RuntimeFatalError(
-        `Expected resolved inheritance metadata for method '${name}' during finalization`,
-        0,
-        0,
-        null,
-        errorContext && errorContext.path ? errorContext.path : null
+      throw _createInheritanceMetadataInvariantError(
+        `Inherited method metadata for '${name}' was still pending during cache prewarm`,
+        errorContext
       );
     }
   }
   return state;
+}
+
+function resolveAndWireInvokedMethodCatalog(state, errorContext = null) {
+  const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
+  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(state || {});
+  const names = Object.keys(invokedMethods);
+  const resolvedCatalog = Object.create(null);
+
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    if (_isResolvedMethodData(invokedMethods[name])) {
+      resolvedCatalog[name] = invokedMethods[name];
+      continue;
+    }
+    const methodData = _getMethodDataFromEntry(invokedMethods[name], sharedSchema, errorContext, state, false);
+    if (methodData && typeof methodData.then === 'function') {
+      throw _createInheritanceMetadataInvariantError(
+        `Inherited method metadata for invoked method '${name}' was still pending during finalization`,
+        errorContext
+      );
+    }
+    resolvedCatalog[name] = methodData;
+  }
+
+  for (let i = 0; i < names.length; i++) {
+    invokedMethods[names[i]] = resolvedCatalog[names[i]];
+  }
+
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const methodNames = Object.keys(methods);
+  for (let i = 0; i < methodNames.length; i++) {
+    const entry = methods[methodNames[i]];
+    if (!entry || typeof entry !== 'object' || inheritanceState.isPendingInheritanceEntry(entry)) {
+      continue;
+    }
+    const localInvoked = entry.invokedMethods && typeof entry.invokedMethods === 'object'
+      ? entry.invokedMethods
+      : Object.create(null);
+    const localNames = Object.keys(localInvoked);
+    const resolvedLocalInvoked = Object.create(null);
+    for (let j = 0; j < localNames.length; j++) {
+      const localName = localNames[j];
+      const methodName = typeof localInvoked[localName] === 'string'
+        ? localInvoked[localName]
+        : localName;
+      if (!Object.prototype.hasOwnProperty.call(invokedMethods, methodName)) {
+        throw _createInheritanceFatalError(
+          `Inherited method '${methodName}' was not found`,
+          inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
+          errorContext
+        );
+      }
+      resolvedLocalInvoked[localName] = invokedMethods[methodName];
+    }
+    entry.invokedMethods = resolvedLocalInvoked;
+    if (Object.prototype.hasOwnProperty.call(invokedMethods, methodNames[i])) {
+      entry._resolvedMethodData = invokedMethods[methodNames[i]];
+      entry._resolvedMethodData.invokedMethods = resolvedLocalInvoked;
+      delete entry._resolvedMethodDataPromise;
+    } else {
+      delete entry._resolvedMethodData;
+      delete entry._resolvedMethodDataPromise;
+    }
+  }
+
+  return invokedMethods;
 }
 
 function _collectKnownEntryChannels(entry) {
@@ -716,6 +856,7 @@ module.exports = {
   invocationInternals,
   getMethodData,
   prewarmMethodDataCache,
+  resolveAndWireInvokedMethodCatalog,
   getMethodLinkedChannels: _getMethodLinkedChannels,
   resolveInheritanceSharedChannel,
   invokeInheritedMethod,

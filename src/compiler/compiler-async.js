@@ -15,6 +15,7 @@ const {
 const RETURN_CHANNEL_NAME = '__return__';
 const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
+const COMPILED_INVOKED_METHODS_VAR = '__compiledInvokedMethods';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(templateName, options) {
@@ -1347,7 +1348,11 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _compileAsyncRootBody(node) {
-    this.inheritance.emitAsyncRootStateInitialization(COMPILED_METHODS_VAR, COMPILED_SHARED_SCHEMA_VAR);
+    this.inheritance.emitAsyncRootStateInitialization(
+      COMPILED_METHODS_VAR,
+      COMPILED_SHARED_SCHEMA_VAR,
+      COMPILED_INVOKED_METHODS_VAR
+    );
     this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
     this.emit.line(`const extendsState = ${(!this.scriptMode && this.hasDynamicExtends) ? '{ parentSelection: null }' : 'null'};`);
     this.emit.line(
@@ -1491,6 +1496,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.pendingInheritanceMethodNames.length > 0
     );
     const rootCompileResult = this._compileAsyncRoot(node);
+    const invokedMethods = this.inheritance.collectCompiledInvokedMethods(node);
     const methods = this.inheritance.collectCompiledMethods(node, rootCompileResult.blocks, this.pendingInheritanceMethodNames);
 
     if (this.pendingInheritanceMethodNames.length > 0) {
@@ -1498,6 +1504,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
+    this.emit.line(`const ${COMPILED_INVOKED_METHODS_VAR} = ${invokedMethods};`);
     this.emit.line('return {');
     this.emit.line('setup: b___setup__,');
     if (rootCompileResult.hasGenericScriptBody) {
@@ -1510,6 +1517,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line(`methods: ${COMPILED_METHODS_VAR},`);
     this.emit.line(`sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
+    this.emit.line(`invokedMethods: ${COMPILED_INVOKED_METHODS_VAR},`);
     this.emit.line(`hasExtends: ${this.hasExtends ? 'true' : 'false'},`);
     this.emit.line('root: root\n};');
   }

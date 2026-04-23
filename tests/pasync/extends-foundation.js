@@ -807,6 +807,116 @@ describe('Extends Foundation', function () {
       }
     });
 
+    it('should resolve file-level and per-callable invoked method metadata during finalization', function () {
+      const childScript = new Script(
+        'method build(name)\n  this.render(name)\n  this.decorate(name)\nendmethod\nmethod decorate(name)\n  return "C:" + name\nendmethod\nreturn this.build("Ada")',
+        env,
+        'C.script'
+      );
+      const parentScript = new Script('method render(name)\n  return "A:" + name\nendmethod\nreturn null', env, 'A.script');
+      childScript.compile();
+      parentScript.compile();
+
+      expect(childScript.invokedMethods.render).to.be('render');
+      expect(childScript.invokedMethods.decorate).to.be('decorate');
+      expect(childScript.invokedMethods.build).to.be('build');
+      expect(childScript.methods.build.invokedMethods.render).to.be('render');
+      expect(childScript.methods.build.invokedMethods.decorate).to.be('decorate');
+      expect(Object.keys(childScript.methods.decorate.invokedMethods)).to.eql([]);
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        childScript.methods,
+        childScript.sharedSchema,
+        childScript.invokedMethods,
+        null,
+        { path: 'C.script' }
+      );
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        parentScript.methods,
+        parentScript.sharedSchema,
+        parentScript.invokedMethods,
+        null,
+        { path: 'A.script' }
+      );
+      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'C.script' });
+
+      expect(inheritanceState.invokedMethods.render.fn).to.be(parentScript.methods.render.fn);
+      expect(inheritanceState.invokedMethods.decorate.fn).to.be(inheritanceState.methods.decorate.fn);
+      expect(inheritanceState.invokedMethods.build).to.be(runtime.getMethodData(inheritanceState, 'build'));
+      expect(inheritanceState.invokedMethods.build.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
+      expect(inheritanceState.invokedMethods.build.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
+      expect(inheritanceState.methods.build.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
+      expect(inheritanceState.methods.build.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
+
+      const buildData = runtime.getMethodData(inheritanceState, 'build');
+      expect(buildData.invokedMethods.render.ownerKey).to.be('A.script');
+      expect(buildData.invokedMethods.decorate.ownerKey).to.be('C.script');
+      expect(Object.keys(runtime.getMethodData(inheritanceState, 'decorate').invokedMethods)).to.eql([]);
+    });
+
+    it('should fail finalization when invoked method metadata cannot resolve a target', function () {
+      const script = new Script('method build()\n  this.missing()\nendmethod\nreturn null', env, 'missing-invoked.script');
+      script.compile();
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        script.methods,
+        script.sharedSchema,
+        script.invokedMethods,
+        null,
+        { path: 'missing-invoked.script' }
+      );
+
+      expect(() => {
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-invoked.script' });
+      }).to.throwException(/Inherited method 'missing' was not found/);
+    });
+
+    it('should resolve cyclic invoked method metadata without recursive expansion', function () {
+      const script = new Script(
+        'method alpha()\n  this.beta()\nendmethod\nmethod beta()\n  this.alpha()\nendmethod\nreturn this.alpha()',
+        env,
+        'cyclic-invoked.script'
+      );
+      script.compile();
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        script.methods,
+        script.sharedSchema,
+        script.invokedMethods,
+        null,
+        { path: 'cyclic-invoked.script' }
+      );
+      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'cyclic-invoked.script' });
+
+      const alphaData = runtime.getMethodData(inheritanceState, 'alpha');
+      const betaData = runtime.getMethodData(inheritanceState, 'beta');
+      expect(inheritanceState.invokedMethods.alpha).to.be(alphaData);
+      expect(inheritanceState.invokedMethods.beta).to.be(betaData);
+      expect(alphaData.invokedMethods.beta).to.be(betaData);
+      expect(betaData.invokedMethods.alpha).to.be(alphaData);
+    });
+
+    it('should keep per-callable invoked method metadata limited to direct calls', function () {
+      const script = new Script(
+        'method build()\n  macro inner()\n    this.hidden()\n  endmacro\n  this.visible()\nendmethod\nmethod visible()\n  return "v"\nendmethod\nreturn null',
+        env,
+        'direct-invoked.script'
+      );
+      script.compile();
+
+      expect(script.invokedMethods.hidden).to.be('hidden');
+      expect(script.invokedMethods.visible).to.be('visible');
+      expect(script.methods.build.invokedMethods.visible).to.be('visible');
+      expect(script.methods.build.invokedMethods.hidden).to.be(undefined);
+    });
+
     it('should reject unresolved super metadata at the topmost root', function () {
       const script = new Script('method build(user)\n  super(user)\nendmethod\nreturn null', env, 'missing-super.script');
       script.compile();
@@ -868,9 +978,13 @@ describe('Extends Foundation', function () {
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, null);
 
-      expect(() => {
-        runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, { path: 'A.script' });
-      }).to.throwException(/shared channel 'theme' was declared as 'var' and 'text'/);
+      try {
+        runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null, { path: 'A.script' });
+        expect().fail('Expected conflicting shared channel type to throw');
+      } catch (error) {
+        expect(error.path).to.be('A.script');
+        expect(String(error)).to.contain("shared channel 'theme' was declared as 'var' and 'text'");
+      }
     });
 
     it('should fail shared helper lookups for extends inputs that never become shared channels', async function () {

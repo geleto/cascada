@@ -512,8 +512,8 @@ describe('Extends Runtime', function () {
       } catch (error) {
         expect(runtime.isPoisonError(error)).to.be(false);
         expect(error.name).to.be('RuntimeFatalError');
-        expect(error.lineno).to.be(2);
-        expect(error.colno).to.be.greaterThan(0);
+        expect(error.lineno).to.be(0);
+        expect(error.path).to.be('C.script');
         expect(String(error)).to.contain("Inherited method 'missing' was not found");
       }
     });
@@ -533,8 +533,8 @@ describe('Extends Runtime', function () {
       } catch (error) {
         expect(runtime.isPoisonError(error)).to.be(false);
         expect(error.name).to.be('RuntimeFatalError');
-        expect(error.lineno).to.be(3);
-        expect(error.colno).to.be.greaterThan(0);
+        expect(error.lineno).to.be(0);
+        expect(error.path).to.be('C.script');
         expect(String(error)).to.contain("Inherited method 'missing' was not found");
       }
     });

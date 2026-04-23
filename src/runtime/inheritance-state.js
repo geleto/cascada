@@ -76,6 +76,13 @@ function ensureInheritanceSharedSchemaTable(state) {
   return state.sharedSchema;
 }
 
+function ensureInheritanceInvokedMethodsTable(state) {
+  if (!state.invokedMethods || typeof state.invokedMethods !== 'object') {
+    state.invokedMethods = Object.create(null);
+  }
+  return state.invokedMethods;
+}
+
 function createInheritanceMethodsTable() {
   return Object.create(null);
 }
@@ -92,7 +99,8 @@ function ensureInheritanceInternalState(state) {
       value: {
         startupPromise: null,
         compositionMode: null,
-        chainPathStack: []
+        chainPathStack: [],
+        invokedMethodOrigins: Object.create(null)
       }
     });
   }
@@ -103,6 +111,7 @@ class InheritanceState {
   constructor() {
     this.methods = createInheritanceMethodsTable();
     this.sharedSchema = Object.create(null);
+    this.invokedMethods = Object.create(null);
     this.sharedRootBuffer = null;
     this.compositionPayload = null;
     ensureInheritanceInternalState(this);
@@ -221,6 +230,7 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
   clonedEntry.sharedLookupCandidates = Array.isArray(entry.sharedLookupCandidates)
     ? entry.sharedLookupCandidates.slice()
     : [];
+  clonedEntry.invokedMethods = cloneInvokedMethodsMap(entry.invokedMethods);
   clonedEntry.signature = entry.signature && typeof entry.signature === 'object'
     ? {
       argNames: Array.isArray(entry.signature.argNames)
@@ -233,6 +243,20 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
   delete clonedEntry._resolvedMethodData;
   delete clonedEntry._resolvedMethodDataPromise;
   return clonedEntry;
+}
+
+function cloneInvokedMethodsMap(invokedMethods) {
+  const cloned = Object.create(null);
+  if (!invokedMethods || typeof invokedMethods !== 'object') {
+    return cloned;
+  }
+  // Values are method-name strings before bootstrap and metadata references
+  // after bootstrap; shallow cloning preserves the intended identity in both cases.
+  const names = Object.keys(invokedMethods);
+  for (let i = 0; i < names.length; i++) {
+    cloned[names[i]] = invokedMethods[names[i]];
+  }
+  return cloned;
 }
 
 function cloneInheritanceMethods(localMethods) {
@@ -265,6 +289,7 @@ function createEmptyConstructorEntry(context = null) {
     ownUsedChannels: [],
     ownMutatedChannels: [],
     sharedLookupCandidates: [],
+    invokedMethods: Object.create(null),
     super: null,
     signature: { argNames: [], withContext: false },
     ownerKey
@@ -440,6 +465,31 @@ function registerInheritanceSharedSchema(state, localSharedSchema, context = nul
   return sharedSchema;
 }
 
+function registerInheritanceInvokedMethods(state, localInvokedMethods, context = null) {
+  const invokedMethods = ensureInheritanceInvokedMethodsTable(state);
+  if (!localInvokedMethods || typeof localInvokedMethods !== 'object') {
+    return invokedMethods;
+  }
+  const internalState = ensureInheritanceInternalState(state);
+  const invokedMethodOrigins = internalState.invokedMethodOrigins;
+  const names = Object.keys(localInvokedMethods);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    if (!name) {
+      continue;
+    }
+    invokedMethods[name] = typeof localInvokedMethods[name] === 'string'
+      ? localInvokedMethods[name]
+      : name;
+    if (!invokedMethodOrigins[name]) {
+      invokedMethodOrigins[name] = {
+        path: context && context.path ? context.path : null
+      };
+    }
+  }
+  return invokedMethods;
+}
+
 function finalizeInheritanceMethods(state, context = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
   const names = Object.keys(sharedMethods);
@@ -527,6 +577,36 @@ function finalizeInheritanceMethods(state, context = null) {
   return sharedMethods;
 }
 
+function finalizeInheritanceInvokedMethods(state, context = null) {
+  const sharedMethods = ensureInheritanceMethodsTable(state);
+  const invokedMethods = ensureInheritanceInvokedMethodsTable(state);
+  const internalState = ensureInheritanceInternalState(state);
+  const invokedMethodOrigins = internalState.invokedMethodOrigins;
+  const invokedNames = Object.keys(invokedMethods);
+
+  for (let i = 0; i < invokedNames.length; i++) {
+    const name = invokedNames[i];
+    const methodName = typeof invokedMethods[name] === 'string' ? invokedMethods[name] : name;
+    const entry = sharedMethods[methodName];
+    if (!entry || isPendingInheritanceEntry(entry)) {
+      const origin = invokedMethodOrigins[name];
+      throw withInheritanceErrorCode(
+        new RuntimeFatalError(
+          `Inherited method '${methodName}' was not found`,
+          0,
+          0,
+          null,
+          origin && origin.path ? origin.path : context && context.path ? context.path : null
+        ),
+        ERR_INHERITED_METHOD_NOT_FOUND
+      );
+    }
+    invokedMethods[name] = entry;
+  }
+
+  return invokedMethods;
+}
+
 function finalizeInheritanceSharedSchema(state, context = null) {
   return ensureInheritanceSharedSchemaTable(state);
 }
@@ -548,11 +628,14 @@ module.exports = {
   isUnresolvedSuperEntry,
   ensureInheritanceMethodsTable,
   ensureInheritanceSharedSchemaTable,
+  ensureInheritanceInvokedMethodsTable,
   resolveInheritanceMethodEntry,
   registerInheritanceMethods,
   wireResolvedSuperEntry,
   registerInheritanceSharedSchema,
+  registerInheritanceInvokedMethods,
   finalizeInheritanceMethods,
+  finalizeInheritanceInvokedMethods,
   finalizeInheritanceSharedSchema,
   createEmptyConstructorEntry,
   ERR_INHERITED_METHOD_NOT_FOUND,

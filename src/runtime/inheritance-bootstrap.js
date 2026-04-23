@@ -3,10 +3,52 @@
 const inheritanceState = require('./inheritance-state');
 const inheritanceCall = require('./inheritance-call');
 
-function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, currentBuffer, context = null) {
+function _looksLikeCommandBuffer(value) {
+  return !!(
+    value &&
+    typeof value === 'object' &&
+    (
+      typeof value.add === 'function' ||
+      typeof value.addBuffer === 'function' ||
+      typeof value.getChannel === 'function'
+    )
+  );
+}
+
+function _normalizeBootstrapArgs(invokedMethodsOrCurrentBuffer, currentBufferOrContext, contextArg) {
+  // Backward compatibility: old callers pass (state, methods, schema, buffer, context);
+  // new callers pass (state, methods, schema, invokedMethods, buffer, context).
+  if (invokedMethodsOrCurrentBuffer === null) {
+    return {
+      invokedMethods: {},
+      currentBuffer: null,
+      context: currentBufferOrContext || null
+    };
+  }
+
+  const isCommandBuffer = _looksLikeCommandBuffer(invokedMethodsOrCurrentBuffer);
+  if (isCommandBuffer) {
+    return {
+      invokedMethods: {},
+      currentBuffer: invokedMethodsOrCurrentBuffer,
+      context: currentBufferOrContext || null
+    };
+  }
+
+  return {
+    invokedMethods: invokedMethodsOrCurrentBuffer || {},
+    currentBuffer: currentBufferOrContext || null,
+    context: contextArg || null
+  };
+}
+
+function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, invokedMethodsOrCurrentBuffer, currentBufferOrContext = null, contextArg = null) {
   if (!stateValue || typeof stateValue !== 'object') {
     throw new Error('bootstrapInheritanceMetadata requires an existing inheritance state');
   }
+  const normalized = _normalizeBootstrapArgs(invokedMethodsOrCurrentBuffer, currentBufferOrContext, contextArg);
+  const currentBuffer = normalized.currentBuffer;
+  const context = normalized.context;
   const state = stateValue;
   if (!state.sharedRootBuffer) {
     state.sharedRootBuffer = currentBuffer || null;
@@ -26,6 +68,7 @@ function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, current
     );
   }
   inheritanceState.registerInheritanceMethods(state, methods);
+  inheritanceState.registerInheritanceInvokedMethods(state, normalized.invokedMethods, context);
   return state;
 }
 
@@ -158,6 +201,7 @@ async function bootstrapInheritanceParentScript(
       inheritanceStateValue,
       parentScript.methods || {},
       parentScript.sharedSchema || {},
+      parentScript.invokedMethods || {},
       currentBuffer,
       parentContext
     );
@@ -328,6 +372,10 @@ function finalizeInheritanceMetadata(state, context = null) {
   }
   inheritanceState.finalizeInheritanceSharedSchema(state, context);
   inheritanceState.finalizeInheritanceMethods(state, context);
+  inheritanceState.finalizeInheritanceInvokedMethods(state, context);
+  inheritanceCall.resolveAndWireInvokedMethodCatalog(state, {
+    path: context && context.path ? context.path : null
+  });
   inheritanceCall.prewarmMethodDataCache(state, {
     path: context && context.path ? context.path : null
   });

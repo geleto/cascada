@@ -678,6 +678,11 @@ Work:
 - aggregate all structural metadata errors discovered by the Step 3 merge/fixed-
   point pass before throwing, so multiple missing `super()` or invoked-method
   targets are reported together instead of stopping at the first error
+- replace the Step 2 immediate missing-invoked-method throw path with the same
+  aggregated structural metadata error collection used by the merge pass
+- improve finalization-time error attribution so invoked-method and `super()`
+  metadata errors can report the original call-site line/column when available,
+  not only the file path
 
 Goal:
 
@@ -736,6 +741,14 @@ After the direct metadata model is in place:
 
 - remove pending-entry metadata resolution helpers from the hot path
 - remove unresolved method-metadata admission logic
+- remove temporary `bootstrapInheritanceMetadata(...)` argument-shape
+  compatibility scaffolding once all internal callers and tests use the
+  explicit invoked-method catalog parameter
+- replace the Step 2 `resolveAndWireInvokedMethodCatalog(...)` bridge that
+  creates method metadata first and patches `invokedMethods` afterward with a
+  single direct metadata construction path
+- remove transitional boolean control-flow flags such as `includeInvokedMethods`
+  and constructor startup-retry guards from internal method-data resolution
 - remove ambiguous shared-name probing paths; shared channels used by a callable
   must come from explicit `shared` declarations in that file
 - remove obsolete tests that only exist for promise-struct metadata behavior

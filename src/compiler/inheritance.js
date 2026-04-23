@@ -440,7 +440,7 @@ class CompileInheritance {
     return !!(this.compiler.scriptMode && node instanceof nodes.MethodDefinition);
   }
 
-  emitAsyncRootStateInitialization(compiledMethodsVar, compiledSharedSchemaVar) {
+  emitAsyncRootStateInitialization(compiledMethodsVar, compiledSharedSchemaVar, compiledInvokedMethodsVar) {
     if (!this.compiler.needsInheritanceState) {
       this.emit.line('if (inheritanceState) {');
       this.emit.line('  inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
@@ -450,7 +450,7 @@ class CompileInheritance {
     this.emit.line('if (!inheritanceState) {');
     this.emit.line('  inheritanceState = runtime.createInheritanceState();');
     this.emit.line('}');
-    this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledMethodsVar}, ${compiledSharedSchemaVar}, ${this.compiler.buffer.currentBuffer}, context);`);
+    this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledMethodsVar}, ${compiledSharedSchemaVar}, ${compiledInvokedMethodsVar}, ${this.compiler.buffer.currentBuffer}, context);`);
     if (!this.compiler.hasExtends) {
       this.emit.line('inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
     }
@@ -843,6 +843,7 @@ class CompileInheritance {
         analysis: block.body && block.body._analysis,
         ownerNode: block,
         superExpr: this.blockUsesSuper(block) ? 'true' : 'false',
+        invokedMethodsExpr: this.compileInvokedMethodsLiteral(this.collectDirectInvokedMethodNamesForCallable(block)),
         signatureExpr: JSON.stringify({
           argNames: this.getBlockSignature(block).argNames,
           withContext: !!block.withContext
@@ -858,6 +859,7 @@ class CompileInheritance {
         analysis: constructorDefinition.body && constructorDefinition.body._analysis,
         ownerNode: constructorDefinition,
         superExpr: this.blockUsesSuper(constructorDefinition) ? 'true' : 'false',
+        invokedMethodsExpr: this.compileInvokedMethodsLiteral(this.collectDirectInvokedMethodNamesForCallable(constructorDefinition)),
         signatureExpr: JSON.stringify({ argNames: [], withContext: false }),
         ownerKey
       }));
@@ -872,7 +874,7 @@ class CompileInheritance {
     return `{ ${methodEntries.join(', ')} }`;
   }
 
-  compileMethodMetadataEntry({ methodName, fnExpr, analysis, ownerNode, superExpr, signatureExpr, ownerKey }) {
+  compileMethodMetadataEntry({ methodName, fnExpr, analysis, ownerNode, superExpr, invokedMethodsExpr, signatureExpr, ownerKey }) {
     const ownUsedChannels = JSON.stringify(this.collectMethodChannelNames(analysis, ownerNode));
     const ownMutatedChannels = JSON.stringify(this.collectMethodChannelNames(
       analysis,
@@ -880,7 +882,87 @@ class CompileInheritance {
       'mutatedChannels'
     ));
     const sharedLookupCandidates = JSON.stringify(this.collectMethodSharedLookupCandidates(ownerNode));
-    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownUsedChannels: ${ownUsedChannels}, ownMutatedChannels: ${ownMutatedChannels}, sharedLookupCandidates: ${sharedLookupCandidates}, super: ${superExpr}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
+    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownUsedChannels: ${ownUsedChannels}, ownMutatedChannels: ${ownMutatedChannels}, sharedLookupCandidates: ${sharedLookupCandidates}, super: ${superExpr}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
+  }
+
+  collectDirectInvokedMethodNamesForCallable(callableNode) {
+    const calls = this.collectDirectFunCallsForCallableBody(this.getCallableBodyNode(callableNode));
+    return this.collectInvokedMethodNamesFromCalls(calls);
+  }
+
+  collectAllInvokedMethodNamesFromNode(sourceNode) {
+    const calls = sourceNode && typeof sourceNode.findAll === 'function'
+      ? sourceNode.findAll(nodes.FunCall)
+      : [];
+    return this.collectInvokedMethodNamesFromCalls(calls);
+  }
+
+  collectInvokedMethodNamesFromCalls(calls) {
+    const names = new Set();
+    calls.forEach((callNode) => {
+      const methodName = this.getExplicitThisDispatchMethodName(callNode);
+      if (methodName) {
+        names.add(methodName);
+      }
+    });
+    return Array.from(names);
+  }
+
+  getExplicitThisDispatchMethodName(callNode) {
+    return callNode &&
+      callNode._analysis &&
+      typeof callNode._analysis.explicitThisDispatchMethodName === 'string'
+      ? callNode._analysis.explicitThisDispatchMethodName
+      : null;
+  }
+
+  getCallableBodyNode(callableNode) {
+    // Keep this helper callable-shaped so future macro metadata can reuse it
+    // without accidentally traversing into nested callable boundaries.
+    if (
+      callableNode instanceof nodes.Block ||
+      callableNode instanceof nodes.MethodDefinition ||
+      callableNode instanceof nodes.Macro
+    ) {
+      return callableNode.body || null;
+    }
+    return callableNode;
+  }
+
+  collectDirectFunCallsForCallableBody(ownerNode, calls = []) {
+    if (!ownerNode) {
+      return calls;
+    }
+    if (Array.isArray(ownerNode)) {
+      ownerNode.forEach((child) => this.collectDirectFunCallsForCallableBody(child, calls));
+      return calls;
+    }
+    if (ownerNode instanceof nodes.Block || ownerNode instanceof nodes.MethodDefinition || ownerNode instanceof nodes.Macro) {
+      return calls;
+    }
+    if (ownerNode instanceof nodes.FunCall) {
+      calls.push(ownerNode);
+    }
+    if (ownerNode instanceof nodes.Node && typeof ownerNode.iterFields === 'function') {
+      ownerNode.iterFields((value) => {
+        this.collectDirectFunCallsForCallableBody(value, calls);
+      });
+    }
+    return calls;
+  }
+
+  collectCompiledInvokedMethods(node) {
+    const names = new Set();
+    this.collectAllInvokedMethodNamesFromNode(node).forEach((name) => names.add(name));
+    return this.compileInvokedMethodsLiteral(Array.from(names));
+  }
+
+  compileInvokedMethodsLiteral(methodNames) {
+    const names = (methodNames || []).filter(Boolean);
+    if (names.length === 0) {
+      return '{}';
+    }
+    return `{ ${names.map((name) => `${JSON.stringify(name)}: ${JSON.stringify(name)}`).join(', ')} }`;
   }
 
   collectMethodSharedLookupCandidates(ownerNode) {
