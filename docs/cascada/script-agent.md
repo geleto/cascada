@@ -1653,10 +1653,6 @@ const html = await env.renderScriptString(`
 `, {}, { output: 'text' });
 // html: "<h1>Title</h1>"
 
-// ✅ Valid: Execute with custom handler
-const result = await env.renderScriptString(script, context, {
-  output: 'custom'
-});
 ```
 
 #### [API-003] renderScriptFile(path, context, opts)
@@ -1783,37 +1779,7 @@ env.addDataMethods({
 
 ```
 
-#### [API-008] addCommandHandler / addCommandHandlerClass
-```javascript
-// RULE: Registers custom output handler for script results
-// DIFFERENTIAL: Class creates new instance per run; instance is singleton
-
-// ✅ Valid: Singleton handler
-const myHandler = {
-  start() { this.output = []; },
-  handleData(path, value) { this.output.push({ path, value }); },
-  finish() { return this.output; }
-};
-env.addCommandHandler('myhandler', myHandler);
-
-// ✅ Valid: Factory class
-class CustomHandler {
-  constructor() { this.data = {}; }
-  start() { /* init */ }
-  handleData(path, value) {
-    this.data[path.join('.')] = value;
-  }
-  finish() { return this.data; }
-}
-env.addCommandHandlerClass('custom', CustomHandler);
-
-// Usage in script:
-const result = await env.renderScriptString(script, context, {
-  output: 'myhandler'
-});
-```
-
-#### [API-009] Precompilation for production
+#### [API-008] Precompilation for production
 ```javascript
 // RULE: precompileScript(path, opts) generates JS string
 // DIFFERENTIAL: Eliminates parsing overhead; load with PrecompiledLoader

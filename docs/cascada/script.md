@@ -74,7 +74,7 @@ Every construct above runs exactly as you'd read it — the engine orchestrates 
 - [Language Fundamentals](#language-fundamentals)
 - [Control Flow](#control-flow)
 - [Channels](#channels)
-- [Managing Side Effects: Sequential Execution](#managing-side-effects-sequential-execution)
+- [Managing Side Effects: Sequential Execution with `!`](#managing-side-effects-sequential-execution-with-)
 - [Functions and Reusable Components](#functions-and-reusable-components)
 - [Error Handling](#error-handling)
 - [Return Statements](#return-statements)
@@ -1244,6 +1244,21 @@ logger.getStatus()
 ```
 
 This is useful for rate-limiting or ordering specific actions (like "append") while keeping the rest of the object non-blocking. Note that unlike object-path sequencing (`obj!.method()`), unmarked calls to the same method (`logger.log()`) will **not** wait for the sequence.
+
+### Ordered External APIs
+
+Use sequential paths for stateful external APIs that need strict ordering. For example, a turtle graphics object can be provided in the render context, and each drawing command can be ordered with `!`:
+
+```javascript
+// `turtle` is provided by the render context.
+turtle!.penDown()
+turtle!.moveTo(10, 10)
+turtle!.lineTo(50, 10)
+turtle!.lineTo(50, 40)
+turtle!.penUp()
+```
+
+Only the `turtle` path is serialized. Other independent work in the script can still run in parallel.
 
 
 ### Context Requirement for Sequential Paths
@@ -2751,7 +2766,7 @@ This roadmap outlines key features and enhancements that are planned or currentl
     Allowing functions that accept arguments by reference such as `function myFunction(var state, sequence seq, db!)`, where caller `var` and `sequence` arguments can be modified from inside the function, and sequential-path arguments (db) can be used in `!` execution paths.
 
 -   **Compound Assignment for Variables (`+=`, `-=`, etc.)**
-    Extending support for compound assignment operators to regular variables.
+    Extending support for compound assignment operators to regular variables (currently only supported for data channels).
 
 -   **Enhanced Error Reporting**
     Improving the debugging experience with detailed syntax and runtime error messages.

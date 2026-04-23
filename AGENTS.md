@@ -478,7 +478,6 @@ const html = await env.renderTemplateString(template, context);
 env.addGlobal('utils', myUtils);
 env.addFilter('myFilter', myFilterFunc);
 env.addDataMethods({ myMethod: myDataMethodFunc });
-env.addCommandHandlerClass('myHandler', MyHandlerClass);
 ```
 
 ### Compiled Template/Script Classes
