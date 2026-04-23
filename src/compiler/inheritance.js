@@ -775,7 +775,12 @@ class CompileInheritance {
       this.emit.line('}');
     }
     this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
-    this.emit.line(`runtime.linkCurrentBufferToParentChannels(parentBuffer, ${this.compiler.buffer.currentBuffer}, runtime.getMethodLinkedChannels(methodData));`);
+    this.emit.line(
+      `runtime.linkCurrentBufferToParentChannels(` +
+      `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
+      `runtime.getCallableBodyLinkedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(block))})` +
+      `);`
+    );
     if (!isScriptMethod) {
       this.emit.line(`${this.compiler.buffer.currentTextChannelVar}._context = context;`);
     }

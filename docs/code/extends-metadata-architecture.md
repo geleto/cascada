@@ -790,12 +790,17 @@ Work:
   construction mode
 - decide whether direct-call admission should cache pre-merged invocation-link
   channels on resolved method metadata instead of recomputing them per call
+- decide whether callable-body linking should cache pre-merged direct body-link
+  channels on resolved method metadata instead of recomputing them per entry
 - consolidate `invokeInheritedMethod(...)` and `invokeSuperMethod(...)` around
   one shared direct-admission helper if the remaining differences stay narrow
 - inline or remove `_enqueueInvocationCommand(...)` if it remains only a thin
   enqueue/start wrapper after command lifecycle cleanup settles
 - collapse the remaining thin `invocationInternals` wrapper if command
   invocation lifecycle no longer needs that extra namespace boundary
+- decide whether `mergeUniqueChannelNames(...)` should remain a public runtime
+  helper or collapse back into the consolidated inheritance-metadata helper
+  layer once direct metadata construction is unified
 - consolidate duplicated linked-channel path helpers in the bootstrap and
   invocation-linking modules into one runtime helper
 - remove the legacy async-block `if (parent) return ""` guard if it remains
@@ -810,9 +815,100 @@ Goal:
 - better finalization-time diagnostics without reintroducing lazy metadata
   resolution
 
-### Step 8 - Remove Now-Redundant Runtime Paths
+### Step 8 - Require Explicit Per-File Shared Declarations
 
-After the direct metadata model is in place:
+After metadata construction/finalization is consolidated, tighten the language
+contract for shared state:
+
+- every file in an inheritance chain must declare every shared var/channel it
+  reads, writes, snapshots, error-checks, or otherwise uses
+- parent-chain visibility alone is no longer enough to authorize shared-state
+  access in a child file
+- undeclared shared-state use becomes a structural error even if some parent or
+  sibling file declared the same shared name
+
+This step intentionally changes the contract. It is not only cleanup.
+
+Why this step exists:
+
+- today, template-block bare-name lookup can still be justified by the merged
+  chain-level `sharedSchema`, even when the current file did not declare that
+  shared name itself
+- that makes shared visibility less local and less explicit than method
+  dispatch, because `this.method()` already depends on explicit metadata while
+  some shared reads can still be rescued by chain-level probing
+- requiring declarations in every file makes the shared-state contract local,
+  predictable, and easy to validate before execution
+
+What this simplifies:
+
+- the compiler/runtime no longer need a "maybe shared" rescue path for template
+  blocks
+- unresolved bare-name reads in blocks no longer need to be preserved as
+  `sharedLookupCandidates` and filtered later against the final chain schema
+- body-local linking logic no longer needs a special decision about whether to
+  include chain-derived `sharedLookupChannels`; the file's own declarations
+  become the only authority for what shared names may be linked from that file
+- structural validation becomes clearer because "missing local declaration" is
+  a direct user error instead of a chain-shape-dependent fallback case
+
+What this changes:
+
+- shared declarations become a per-file interface, not only a chain-level merge
+  input
+- if `child.njk` reads or writes `theme`, `child.njk` must declare
+  `shared var theme` even if `base.njk` already declared it
+- the final chain merge still validates compatibility and chooses the effective
+  shared entry for execution, but that merged schema no longer retroactively
+  authorizes undeclared use in another file
+- ordinary lookup and explicit shared observation remain separate mechanisms:
+  ordinary bare-name/block access may only succeed for names declared as shared
+  in the current file, while explicit shared observation still enqueues on the
+  current buffer and uses inheritance metadata only after that declaration rule
+  is satisfied
+
+Work:
+
+- make per-file shared declarations the required source of truth for all shared
+  usage in constructors, methods, and template blocks
+- reject undeclared shared usage even when the final merged chain-level
+  `sharedSchema` contains that name
+- remove `sharedLookupCandidates` collection from compiled callable metadata
+  once no execution path needs to preserve unresolved "maybe shared" names
+- remove runtime filtering/probing paths such as
+  `_filterSharedLookupChannels(...)` that only exist to rescue undeclared block
+  reads from the chain-level schema
+- make callable body-linking and caller-side linking rely only on explicit
+  per-file shared declarations plus direct method metadata, never on chain-level
+  shared-name discovery
+- add structural errors for:
+  - shared read without local declaration
+  - shared write without local declaration
+  - shared observation/error-read without local declaration
+- update tests so inherited shared access is covered through explicit repeated
+  declarations in each participating file, and add negative coverage for
+  undeclared use
+- document the user-visible rule clearly: shared state is chain-visible at
+  runtime, but each file must still declare the shared names it uses
+
+What this removes:
+
+- ambient chain-level authorization for undeclared shared access
+- the remaining semantic need for `sharedLookupCandidates`
+- the Step 6/7 design question about whether body-local linking should include
+  chain-derived `sharedLookupChannels`; under this rule, undeclared ambient
+  shared-name rescue is simply not allowed
+
+Goal:
+
+- shared-state usage is explicit per file
+- shared linking is driven by declarations, not by fallback probing
+- missing shared declarations fail structurally before execution
+
+### Step 9 - Remove Now-Redundant Runtime Paths
+
+After the direct metadata model is in place and per-file shared declarations are
+enforced:
 
 - remove pending-entry metadata resolution helpers from the hot path
 - remove unresolved method-metadata admission logic
@@ -821,8 +917,6 @@ After the direct metadata model is in place:
   explicit invoked-method catalog parameter
 - remove any remaining transitional boolean control-flow flags from internal
   method-data resolution after direct metadata construction is consolidated
-- remove ambiguous shared-name probing paths; shared channels used by a callable
-  must come from explicit `shared` declarations in that file
 - remove obsolete tests that only exist for promise-struct metadata behavior
 - replace them with integration coverage around blocking bootstrap and full
   invoked-method merging

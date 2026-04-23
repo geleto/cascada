@@ -1894,6 +1894,232 @@ describe('Extends Foundation', function () {
     });
   });
 
+  describe('Step 6 - Direct Callable Body Metadata', function () {
+    it('should link callable bodies from direct super and invoked-method metadata', function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
+
+      const helperData = {
+        fn() {
+          return null;
+        },
+        ownerKey: 'Helper.script',
+        signature: { argNames: [], withContext: false },
+        ownUsedChannels: [],
+        ownMutatedChannels: [],
+        mergedUsedChannels: ['helperRead'],
+        mergedMutatedChannels: ['helperWrite'],
+        super: null,
+        invokedMethods: Object.create(null)
+      };
+      const methodData = {
+        fn() {
+          return null;
+        },
+        ownerKey: 'Main.script',
+        signature: { argNames: [], withContext: false },
+        ownUsedChannels: ['localRead'],
+        ownMutatedChannels: ['localWrite'],
+        mergedUsedChannels: ['unusedMergedRead'],
+        mergedMutatedChannels: ['unusedMergedWrite'],
+        super: {
+          fn() {
+            return null;
+          },
+          ownerKey: 'Parent.script',
+          signature: { argNames: [], withContext: false },
+          ownUsedChannels: [],
+          ownMutatedChannels: [],
+          mergedUsedChannels: ['superRead'],
+          mergedMutatedChannels: ['superWrite'],
+          super: null,
+          invokedMethods: Object.create(null)
+        },
+        invokedMethods: {
+          helper: helperData
+        }
+      };
+
+      const linkedChannels = inheritanceCallModule.getCallableBodyLinkedChannels(methodData, {
+        path: 'Main.script'
+      }).sort();
+
+      expect(linkedChannels).to.eql([
+        'helperRead',
+        'helperWrite',
+        'localRead',
+        'localWrite',
+        'superRead',
+        'superWrite'
+      ]);
+    });
+
+    it('should fail callable-body linking when direct invoked-method metadata is missing', function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
+
+      try {
+        inheritanceCallModule.getCallableBodyLinkedChannels({
+          fn() {
+            return null;
+          },
+          ownerKey: 'Main.script',
+          signature: { argNames: [], withContext: false },
+          ownUsedChannels: ['localRead'],
+          ownMutatedChannels: [],
+          mergedUsedChannels: [],
+          mergedMutatedChannels: [],
+          super: null,
+          invokedMethods: {
+            helper: null
+          }
+        }, {
+          lineno: 4,
+          colno: 2,
+          path: 'Main.script',
+          errorContextString: 'method body linking'
+        });
+        expect().fail('Expected missing direct invoked-method metadata to fail');
+      } catch (error) {
+        expect(error.code).to.be('ERR_INHERITED_METHOD_NOT_FOUND');
+        expect(String(error)).to.contain("Inherited method 'helper' was not found");
+      }
+    });
+
+    it('should fail callable-body linking when direct super metadata is malformed', function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
+
+      try {
+        inheritanceCallModule.getCallableBodyLinkedChannels({
+          fn() {
+            return null;
+          },
+          ownerKey: 'Main.script',
+          signature: { argNames: [], withContext: false },
+          ownUsedChannels: ['localRead'],
+          ownMutatedChannels: [],
+          mergedUsedChannels: [],
+          mergedMutatedChannels: [],
+          super: {
+            ownerKey: 'Parent.script'
+          },
+          invokedMethods: Object.create(null)
+        }, {
+          lineno: 5,
+          colno: 1,
+          path: 'Main.script',
+          errorContextString: 'method body linking'
+        });
+        expect().fail('Expected malformed direct super metadata to fail');
+      } catch (error) {
+        expect(String(error)).to.contain("super() metadata on owner 'Main.script' is invalid");
+      }
+    });
+
+    it('should use direct invoked-method metadata during real callable entry linking', async function () {
+      const originalGetCallableBodyLinkedChannels = runtime.getCallableBodyLinkedChannels;
+      let seenLinkedChannels = null;
+
+      runtime.getCallableBodyLinkedChannels = function(methodData, errorContext) {
+        const channels = originalGetCallableBodyLinkedChannels.apply(this, arguments);
+        if (
+          methodData &&
+          methodData.invokedMethods &&
+          methodData.invokedMethods.readTheme
+        ) {
+          seenLinkedChannels = {
+            channels: channels.slice().sort(),
+            errorContext
+          };
+        }
+        return channels;
+      };
+
+      try {
+        const result = await env.renderScriptString(
+          'shared var theme = "dark"\nmethod readTheme()\n  return theme\nendmethod\nmethod build()\n  return this.readTheme()\nendmethod\nreturn this.build()',
+          {}
+        );
+
+        expect(result).to.be('dark');
+        expect(seenLinkedChannels).to.be.ok();
+        expect(seenLinkedChannels.channels).to.contain('theme');
+      } finally {
+        runtime.getCallableBodyLinkedChannels = originalGetCallableBodyLinkedChannels;
+      }
+    });
+
+    it('should use direct super metadata during real callable entry linking', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      const originalGetCallableBodyLinkedChannels = runtime.getCallableBodyLinkedChannels;
+      let seenLinkedChannels = null;
+
+      runtime.getCallableBodyLinkedChannels = function(methodData, errorContext) {
+        const channels = originalGetCallableBodyLinkedChannels.apply(this, arguments);
+        if (
+          methodData &&
+          methodData.ownerKey === 'C.script' &&
+          methodData.super
+        ) {
+          seenLinkedChannels = {
+            channels: channels.slice().sort(),
+            errorContext
+          };
+        }
+        return channels;
+      };
+
+      loader.addTemplate('A.script', [
+        'shared text trace',
+        'shared var late = "parent-default"',
+        'method build()',
+        '  trace("parent|")',
+        '  late = "from-parent"',
+        '  return "done"',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'extends "A.script"',
+        'method build()',
+        '  return super()',
+        'endmethod',
+        'return this.build()'
+      ].join('\n'));
+
+      try {
+        const result = await env.renderScript('C.script', {});
+
+        expect(result).to.be('done');
+        expect(seenLinkedChannels).to.be.ok();
+        expect(seenLinkedChannels.channels).to.contain('late');
+        expect(seenLinkedChannels.channels).to.contain('trace');
+      } finally {
+        runtime.getCallableBodyLinkedChannels = originalGetCallableBodyLinkedChannels;
+      }
+    });
+
+    it('should compile callable entries to use direct callable-body metadata linking', function () {
+      const script = new Script(
+        'shared var theme = "dark"\nmethod build()\n  return this.readTheme()\nendmethod\nmethod readTheme()\n  return theme\nendmethod\nreturn null',
+        env,
+        'direct-body-linking.casc'
+      );
+
+      const source = script._compileSource();
+
+      expect(source).to.contain('runtime.getCallableBodyLinkedChannels(methodData,');
+      expect(source).to.not.contain('runtime.getMethodLinkedChannels(methodData)');
+    });
+  });
+
   describe('Phase 12 - Dynamic Extends Startup Plumbing', function () {
     it('should stop rewriting nested dynamic extends into asyncStoreIn staging nodes', function () {
       if (!transformer) {

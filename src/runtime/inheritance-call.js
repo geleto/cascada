@@ -94,6 +94,10 @@ function _mergeChannelNames() {
   return Array.from(merged);
 }
 
+function mergeUniqueChannelNames() {
+  return _mergeChannelNames.apply(null, arguments);
+}
+
 function _filterSharedLookupChannels(sharedLookupCandidates, sharedSchema) {
   if (!Array.isArray(sharedLookupCandidates) || sharedLookupCandidates.length === 0 || !sharedSchema) {
     return [];
@@ -231,6 +235,16 @@ function _createInvalidInvokedMetadataError(methodData, invokedName, errorContex
     : '';
   return _createInheritanceMetadataInvariantError(
     `Invoked method '${invokedName}'${ownerSuffix} has invalid metadata: expected fully resolved method data`,
+    errorContext
+  );
+}
+
+function _createInvalidSuperMetadataError(methodData, errorContext = null) {
+  const ownerSuffix = methodData && methodData.ownerKey
+    ? ` on owner '${methodData.ownerKey}'`
+    : '';
+  return _createInheritanceMetadataInvariantError(
+    `super() metadata${ownerSuffix} is invalid: expected fully resolved method data`,
     errorContext
   );
 }
@@ -439,6 +453,45 @@ function _getMethodLinkedChannels(methodData) {
   return _mergeChannelNames(
     methodData && methodData.mergedUsedChannels,
     methodData && methodData.mergedMutatedChannels
+  );
+}
+
+function getCallableBodyLinkedChannels(methodData, errorContext = null) {
+  const resolvedMethodData = _assertResolvedMethodData(methodData);
+  if (resolvedMethodData.super && !_isResolvedMethodData(resolvedMethodData.super)) {
+    throw _createInvalidSuperMetadataError(resolvedMethodData, errorContext);
+  }
+  const invokedMethods = resolvedMethodData.invokedMethods && typeof resolvedMethodData.invokedMethods === 'object'
+    ? resolvedMethodData.invokedMethods
+    : Object.create(null);
+  const invokedNames = Object.keys(invokedMethods);
+  const invokedUsedChannels = [];
+  const invokedMutatedChannels = [];
+
+  for (let i = 0; i < invokedNames.length; i++) {
+    const invokedName = invokedNames[i];
+    const invokedMethodData = invokedMethods[invokedName];
+    if (!invokedMethodData) {
+      throw _createInheritanceFatalError(
+        `Inherited method '${invokedName}' was not found`,
+        inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
+        errorContext
+      );
+    }
+    if (!_isResolvedMethodData(invokedMethodData)) {
+      throw _createInvalidInvokedMetadataError(resolvedMethodData, invokedName, errorContext);
+    }
+    invokedUsedChannels.push(invokedMethodData.mergedUsedChannels);
+    invokedMutatedChannels.push(invokedMethodData.mergedMutatedChannels);
+  }
+
+  return mergeUniqueChannelNames(
+    resolvedMethodData.ownUsedChannels,
+    resolvedMethodData.ownMutatedChannels,
+    resolvedMethodData.super ? resolvedMethodData.super.mergedUsedChannels : null,
+    resolvedMethodData.super ? resolvedMethodData.super.mergedMutatedChannels : null,
+    ...invokedUsedChannels,
+    ...invokedMutatedChannels
   );
 }
 
@@ -976,11 +1029,13 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
 module.exports = {
   createInheritanceInvocationCommand,
   invocationInternals,
+  mergeUniqueChannelNames,
   getMethodData,
   prewarmMethodDataCache,
   resolveAndWireInvokedMethodCatalog,
   finalizeMethodChannelFootprints,
   getMethodLinkedChannels: _getMethodLinkedChannels,
+  getCallableBodyLinkedChannels,
   resolveInheritanceSharedChannel,
   invokeInheritedMethod,
   invokeSuperMethod
