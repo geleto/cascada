@@ -67,7 +67,7 @@ function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, invoked
       Object.keys(sharedSchema)
     );
   }
-  inheritanceState.registerInheritanceMethods(state, methods);
+  inheritanceState.registerInheritanceMethods(state, methods, context);
   inheritanceState.registerInheritanceInvokedMethods(state, normalized.invokedMethods, context);
   return state;
 }
@@ -370,15 +370,28 @@ function finalizeInheritanceMetadata(state, context = null) {
   if (!state || typeof state !== 'object') {
     return state;
   }
+  const structuralErrors = [];
+
+  // Phase 1: validate chain-level structural metadata before building resolved
+  // callable data. Later phases assume missing methods/super targets are known.
   inheritanceState.finalizeInheritanceSharedSchema(state, context);
-  inheritanceState.finalizeInheritanceMethods(state, context);
-  inheritanceState.finalizeInheritanceInvokedMethods(state, context);
-  inheritanceCall.resolveAndWireInvokedMethodCatalog(state, {
+  inheritanceState.finalizeInheritanceMethods(state, context, structuralErrors);
+  inheritanceState.finalizeInheritanceInvokedMethods(state, context, structuralErrors);
+  if (structuralErrors.length > 0) {
+    const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(structuralErrors, context);
+    throw aggregateError || structuralErrors[0];
+  }
+
+  // Phase 2: replace compiled invoked-method names with resolved method data and
+  // warm the method-data cache; channel footprint merging depends on this graph.
+  const errorContext = {
     path: context && context.path ? context.path : null
-  });
-  inheritanceCall.prewarmMethodDataCache(state, {
-    path: context && context.path ? context.path : null
-  });
+  };
+  inheritanceCall.resolveAndWireInvokedMethodCatalog(state, errorContext);
+  inheritanceCall.prewarmMethodDataCache(state, errorContext);
+
+  // Phase 3: compute final transitive channel footprints used by admission.
+  inheritanceCall.finalizeMethodChannelFootprints(state, errorContext);
   return state;
 }
 

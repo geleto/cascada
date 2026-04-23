@@ -16,6 +16,54 @@ function withInheritanceErrorCode(error, code) {
   return error;
 }
 
+function createInheritanceMetadataAggregateError(errors, context = null) {
+  const keySeparator = '\0';
+  const seen = new Set();
+  const normalizedErrors = [];
+  (Array.isArray(errors) ? errors : []).forEach((error) => {
+    if (!error) {
+      return;
+    }
+    const key = [
+      error.code || '',
+      error.path || '',
+      typeof error.lineno === 'number' ? error.lineno : '',
+      typeof error.colno === 'number' ? error.colno : '',
+      error.message || String(error)
+    ].join(keySeparator);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    normalizedErrors.push(error);
+  });
+  if (normalizedErrors.length === 0) {
+    return null;
+  }
+  if (normalizedErrors.length === 1) {
+    return normalizedErrors[0];
+  }
+  const message = `Multiple inheritance metadata errors occurred (${normalizedErrors.length}):\n` +
+    normalizedErrors.map((error, index) => `  ${index + 1}. ${error.message || String(error)}`).join('\n');
+  const aggregate = new RuntimeFatalError(
+    message,
+    context && typeof context.lineno === 'number' ? context.lineno : 0,
+    context && typeof context.colno === 'number' ? context.colno : 0,
+    context && context.errorContextString ? context.errorContextString : null,
+    context && context.path ? context.path : null
+  );
+  aggregate.errors = normalizedErrors;
+  return aggregate;
+}
+
+function collectOrThrowInheritanceMetadataError(error, errors = null) {
+  if (Array.isArray(errors)) {
+    errors.push(error);
+    return error;
+  }
+  throw error;
+}
+
 function createPendingInheritanceEntry(linkedChannels = null) {
   let settled = false;
   let settleResolve = null;
@@ -215,6 +263,9 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
   }
   if (isPendingInheritanceEntry(entry)) {
     const pendingClone = createPendingInheritanceEntry(entry.linkedChannels);
+    if (entry.ownerKey) {
+      pendingClone.ownerKey = entry.ownerKey;
+    }
     clones.set(entry, pendingClone);
     return pendingClone;
   }
@@ -387,7 +438,7 @@ function wireResolvedSuperEntry(targetEntry, parentEntry) {
   return false;
 }
 
-function registerInheritanceMethods(state, localMethods) {
+function registerInheritanceMethods(state, localMethods, context = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
   if (!localMethods || typeof localMethods !== 'object') {
     return sharedMethods;
@@ -400,6 +451,11 @@ function registerInheritanceMethods(state, localMethods) {
     const localEntry = isolatedLocalMethods[name];
     if (!localEntry) {
       continue;
+    }
+    if (isPendingInheritanceEntry(localEntry) && !localEntry.ownerKey) {
+      // Pending placeholders are created at reference sites, so this ownerKey is
+      // an attribution hint rather than a method-definition owner.
+      localEntry.ownerKey = context && context.path ? String(context.path) : null;
     }
 
     const currentEntry = sharedMethods[name];
@@ -490,7 +546,7 @@ function registerInheritanceInvokedMethods(state, localInvokedMethods, context =
   return invokedMethods;
 }
 
-function finalizeInheritanceMethods(state, context = null) {
+function finalizeInheritanceMethods(state, context = null, errors = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
   const names = Object.keys(sharedMethods);
   let emptyConstructorEntry = null;
@@ -506,16 +562,18 @@ function finalizeInheritanceMethods(state, context = null) {
         sharedMethods[name] = emptyConstructorEntry;
         continue;
       }
-      entry.reject(withInheritanceErrorCode(
+      const error = withInheritanceErrorCode(
         new RuntimeFatalError(
           `Inherited method '${name}' was not found`,
           0,
           0,
           null,
-          context && context.path ? context.path : null
+          entry.ownerKey || (context && context.path ? context.path : null)
         ),
         ERR_INHERITED_METHOD_NOT_FOUND
-      ));
+      );
+      entry.reject(error);
+      collectOrThrowInheritanceMetadataError(error, errors);
       continue;
     }
     let superOwner = entry && typeof entry === 'object' ? entry : null;
@@ -540,16 +598,19 @@ function finalizeInheritanceMethods(state, context = null) {
         delete superOwner._resolvedMethodDataPromise;
         continue;
       }
-      superEntry.reject(withInheritanceErrorCode(
+      const error = withInheritanceErrorCode(
         new RuntimeFatalError(
           `super() for method '${name}' was not found`,
           0,
           0,
           null,
-          context && context.path ? context.path : null
+          superOwner.ownerKey || (context && context.path ? context.path : null)
         ),
         ERR_SUPER_METHOD_NOT_FOUND
-      ));
+      );
+      superEntry.reject(error);
+      collectOrThrowInheritanceMetadataError(error, errors);
+      continue;
     } else if (isUnresolvedSuperEntry(superEntry)) {
       if (name === '__constructor__') {
         if (!emptyConstructorEntry) {
@@ -560,16 +621,16 @@ function finalizeInheritanceMethods(state, context = null) {
         delete superOwner._resolvedMethodDataPromise;
         continue;
       }
-      throw withInheritanceErrorCode(
+      collectOrThrowInheritanceMetadataError(withInheritanceErrorCode(
         new RuntimeFatalError(
           `super() for method '${name}' was not found`,
           0,
           0,
           null,
-          context && context.path ? context.path : null
+          superOwner.ownerKey || (context && context.path ? context.path : null)
         ),
         ERR_SUPER_METHOD_NOT_FOUND
-      );
+      ), errors);
     } else if (superOwner && superOwner.super === false) {
       superOwner.super = null;
     }
@@ -577,7 +638,7 @@ function finalizeInheritanceMethods(state, context = null) {
   return sharedMethods;
 }
 
-function finalizeInheritanceInvokedMethods(state, context = null) {
+function finalizeInheritanceInvokedMethods(state, context = null, errors = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
   const invokedMethods = ensureInheritanceInvokedMethodsTable(state);
   const internalState = ensureInheritanceInternalState(state);
@@ -590,7 +651,7 @@ function finalizeInheritanceInvokedMethods(state, context = null) {
     const entry = sharedMethods[methodName];
     if (!entry || isPendingInheritanceEntry(entry)) {
       const origin = invokedMethodOrigins[name];
-      throw withInheritanceErrorCode(
+      collectOrThrowInheritanceMetadataError(withInheritanceErrorCode(
         new RuntimeFatalError(
           `Inherited method '${methodName}' was not found`,
           0,
@@ -599,7 +660,8 @@ function finalizeInheritanceInvokedMethods(state, context = null) {
           origin && origin.path ? origin.path : context && context.path ? context.path : null
         ),
         ERR_INHERITED_METHOD_NOT_FOUND
-      );
+      ), errors);
+      continue;
     }
     invokedMethods[name] = entry;
   }
@@ -638,6 +700,8 @@ module.exports = {
   finalizeInheritanceInvokedMethods,
   finalizeInheritanceSharedSchema,
   createEmptyConstructorEntry,
+  createInheritanceMetadataAggregateError,
+  collectOrThrowInheritanceMetadataError,
   ERR_INHERITED_METHOD_NOT_FOUND,
   ERR_SUPER_METHOD_NOT_FOUND,
   ERR_SHARED_CHANNEL_NOT_FOUND,

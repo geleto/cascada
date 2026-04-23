@@ -203,6 +203,89 @@ function _isResolvedMethodData(value) {
   );
 }
 
+function _channelArraysEqual(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+    return false;
+  }
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function _throwOrReturnOnNewMetadataErrors(localErrors, initialErrorCount, errors, errorContext) {
+  if (localErrors.length <= initialErrorCount) {
+    return false;
+  }
+  if (!Array.isArray(errors)) {
+    throw inheritanceState.createInheritanceMetadataAggregateError(localErrors, errorContext);
+  }
+  return true;
+}
+
+function _createInvalidInvokedMetadataError(methodData, invokedName, errorContext = null) {
+  const ownerSuffix = methodData && methodData.ownerKey
+    ? ` on owner '${methodData.ownerKey}'`
+    : '';
+  return _createInheritanceMetadataInvariantError(
+    `Invoked method '${invokedName}'${ownerSuffix} has invalid metadata: expected fully resolved method data`,
+    errorContext
+  );
+}
+
+function _collectResolvedMethodData(state, errorContext = null, errors = null) {
+  const collected = [];
+  const seen = new Set();
+  const addMethodData = (methodData) => {
+    if (!_isResolvedMethodData(methodData) || seen.has(methodData)) {
+      return;
+    }
+    seen.add(methodData);
+    collected.push(methodData);
+    addMethodData(methodData.super);
+    _collectInvokedMethodData(methodData, errorContext, errors).forEach(addMethodData);
+  };
+
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  Object.keys(methods).forEach((name) => {
+    const entry = methods[name];
+    if (entry && typeof entry === 'object') {
+      addMethodData(entry._resolvedMethodData);
+    }
+  });
+
+  const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
+  Object.keys(invokedMethods).forEach((name) => addMethodData(invokedMethods[name]));
+
+  return collected;
+}
+
+function _collectInvokedMethodData(methodData, errorContext = null, errors = null) {
+  const invoked = methodData && methodData.invokedMethods && typeof methodData.invokedMethods === 'object'
+    ? methodData.invokedMethods
+    : null;
+  if (!invoked) {
+    return [];
+  }
+  const resolved = [];
+  const names = Object.keys(invoked);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    const entry = invoked[name];
+    if (_isResolvedMethodData(entry)) {
+      resolved.push(entry);
+      continue;
+    }
+    inheritanceState.collectOrThrowInheritanceMetadataError(
+      _createInvalidInvokedMetadataError(methodData, name, errorContext),
+      errors
+    );
+  }
+  return resolved;
+}
+
 function _createResolvedInvokedMethodsData(invokedMethods, sharedSchema, errorContext, state = null) {
   const resolved = Object.create(null);
   if (!invokedMethods || typeof invokedMethods !== 'object') {
@@ -215,6 +298,13 @@ function _createResolvedInvokedMethodsData(invokedMethods, sharedSchema, errorCo
     if (_isResolvedMethodData(entry)) {
       resolved[name] = entry;
       continue;
+    }
+    if (typeof entry === 'string') {
+      const catalog = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
+      if (_isResolvedMethodData(catalog[entry])) {
+        resolved[name] = catalog[entry];
+        continue;
+      }
     }
     if (!entry || typeof entry !== 'object' || inheritanceState.isPendingInheritanceEntry(entry)) {
       throw _createInheritanceFatalError(
@@ -488,6 +578,48 @@ function resolveAndWireInvokedMethodCatalog(state, errorContext = null) {
   }
 
   return invokedMethods;
+}
+
+function finalizeMethodChannelFootprints(state, errorContext = null, errors = null) {
+  const localErrors = Array.isArray(errors) ? errors : [];
+  const initialErrorCount = localErrors.length;
+  const methodDataList = _collectResolvedMethodData(state, errorContext, localErrors);
+  if (_throwOrReturnOnNewMetadataErrors(localErrors, initialErrorCount, errors, errorContext)) {
+    return state;
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < methodDataList.length; i++) {
+      const methodData = methodDataList[i];
+      const invokedMethods = _collectInvokedMethodData(methodData, errorContext, localErrors);
+      // Invalid resolved metadata shapes are impossible for normal compiled
+      // input; Step 6 will consolidate these invariant errors into the final
+      // metadata-construction path.
+      if (_throwOrReturnOnNewMetadataErrors(localErrors, initialErrorCount, errors, errorContext)) {
+        return state;
+      }
+      const nextUsedChannels = _mergeChannelNames(
+        methodData.mergedUsedChannels,
+        methodData.super ? methodData.super.mergedUsedChannels : null,
+        ...invokedMethods.map((entry) => entry.mergedUsedChannels)
+      );
+      const nextMutatedChannels = _mergeChannelNames(
+        methodData.mergedMutatedChannels,
+        methodData.super ? methodData.super.mergedMutatedChannels : null,
+        ...invokedMethods.map((entry) => entry.mergedMutatedChannels)
+      );
+      if (!_channelArraysEqual(methodData.mergedUsedChannels, nextUsedChannels)) {
+        methodData.mergedUsedChannels = nextUsedChannels;
+        changed = true;
+      }
+      if (!_channelArraysEqual(methodData.mergedMutatedChannels, nextMutatedChannels)) {
+        methodData.mergedMutatedChannels = nextMutatedChannels;
+        changed = true;
+      }
+    }
+  }
+  return state;
 }
 
 function _collectKnownEntryChannels(entry) {
@@ -857,6 +989,7 @@ module.exports = {
   getMethodData,
   prewarmMethodDataCache,
   resolveAndWireInvokedMethodCatalog,
+  finalizeMethodChannelFootprints,
   getMethodLinkedChannels: _getMethodLinkedChannels,
   resolveInheritanceSharedChannel,
   invokeInheritedMethod,

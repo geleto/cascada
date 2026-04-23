@@ -797,7 +797,10 @@ describe('Extends Foundation', function () {
 
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, null);
-      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-method.script' });
+
+      expect(() => {
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-method.script' });
+      }).to.throwException(/Inherited method 'build' was not found/);
 
       try {
         await inheritanceState.methods.build.promise;
@@ -878,7 +881,7 @@ describe('Extends Foundation', function () {
 
     it('should resolve cyclic invoked method metadata without recursive expansion', function () {
       const script = new Script(
-        'method alpha()\n  this.beta()\nendmethod\nmethod beta()\n  this.alpha()\nendmethod\nreturn this.alpha()',
+        'shared text alphaTrace\nshared text betaTrace\nmethod alpha()\n  alphaTrace("a")\n  this.beta()\nendmethod\nmethod beta()\n  betaTrace("b")\n  this.alpha()\nendmethod\nreturn this.alpha()',
         env,
         'cyclic-invoked.script'
       );
@@ -901,6 +904,173 @@ describe('Extends Foundation', function () {
       expect(inheritanceState.invokedMethods.beta).to.be(betaData);
       expect(alphaData.invokedMethods.beta).to.be(betaData);
       expect(betaData.invokedMethods.alpha).to.be(alphaData);
+      expect(alphaData.mergedMutatedChannels).to.contain('alphaTrace');
+      expect(alphaData.mergedMutatedChannels).to.contain('betaTrace');
+      expect(betaData.mergedMutatedChannels).to.contain('alphaTrace');
+      expect(betaData.mergedMutatedChannels).to.contain('betaTrace');
+    });
+
+    it('should include invoked method footprints in caller-visible merged channels', function () {
+      const script = new Script(
+        'shared var theme = "light"\nshared text trace\nmethod applyTheme()\n  theme = "dark"\n  trace("apply|")\nendmethod\nmethod readTheme()\n  trace(theme)\n  return theme\nendmethod\nmethod outer()\n  this.applyTheme()\n  return this.readTheme()\nendmethod\nreturn null',
+        env,
+        'invoked-footprint.script'
+      );
+      script.compile();
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        script.methods,
+        script.sharedSchema,
+        script.invokedMethods,
+        null,
+        { path: 'invoked-footprint.script' }
+      );
+      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invoked-footprint.script' });
+
+      const outerData = runtime.getMethodData(inheritanceState, 'outer');
+      expect(outerData.mergedUsedChannels).to.contain('theme');
+      expect(outerData.mergedMutatedChannels).to.contain('theme');
+      expect(outerData.mergedMutatedChannels).to.contain('trace');
+    });
+
+    it('should include invoked method footprints from inherited super methods', function () {
+      const childScript = new Script(
+        'shared text trace\nmethod build()\n  return super()\nendmethod\nreturn null',
+        env,
+        'C.script'
+      );
+      const parentScript = new Script(
+        'shared text trace\nmethod decorate()\n  trace("decorated|")\nendmethod\nmethod build()\n  this.decorate()\n  return "done"\nendmethod\nreturn null',
+        env,
+        'A.script'
+      );
+      childScript.compile();
+      parentScript.compile();
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        childScript.methods,
+        childScript.sharedSchema,
+        childScript.invokedMethods,
+        null,
+        { path: 'C.script' }
+      );
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        parentScript.methods,
+        parentScript.sharedSchema,
+        parentScript.invokedMethods,
+        null,
+        { path: 'A.script' }
+      );
+      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'C.script' });
+
+      const buildData = runtime.getMethodData(inheritanceState, 'build');
+      expect(buildData.ownerKey).to.be('C.script');
+      expect(buildData.super.ownerKey).to.be('A.script');
+      expect(buildData.mergedMutatedChannels).to.contain('trace');
+      expect(buildData.super.mergedMutatedChannels).to.contain('trace');
+    });
+
+    it('should aggregate structural metadata errors discovered during finalization', function () {
+      const script = new Script(
+        'method needsSuper()\n  super()\nendmethod\nmethod needsMissing()\n  this.missing()\nendmethod\nreturn this.needsMissing()',
+        env,
+        'metadata-errors.script'
+      );
+      script.compile();
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        script.methods,
+        script.sharedSchema,
+        script.invokedMethods,
+        null,
+        { path: 'metadata-errors.script' }
+      );
+
+      try {
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'metadata-errors.script' });
+        expect().fail('Expected finalization to aggregate structural metadata errors');
+      } catch (error) {
+        expect(error.name).to.be('RuntimeFatalError');
+        expect(error.errors).to.be.an(Array);
+        expect(error.errors).to.have.length(2);
+        expect(error.errors[0].path).to.be('metadata-errors.script');
+        expect(String(error)).to.contain("super() for method 'needsSuper' was not found");
+        expect(String(error)).to.contain("Inherited method 'missing' was not found");
+      }
+    });
+
+    it('should attribute missing super metadata to the method owner path', function () {
+      const childScript = new Script('return null', env, 'C.script');
+      const parentScript = new Script(
+        'method needsSuper()\n  super()\nendmethod\nreturn null',
+        env,
+        'A.script'
+      );
+      childScript.compile();
+      parentScript.compile();
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        childScript.methods,
+        childScript.sharedSchema,
+        childScript.invokedMethods,
+        null,
+        { path: 'C.script' }
+      );
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        parentScript.methods,
+        parentScript.sharedSchema,
+        parentScript.invokedMethods,
+        null,
+        { path: 'A.script' }
+      );
+
+      try {
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'C.script' });
+        expect().fail('Expected missing super metadata to fail');
+      } catch (error) {
+        expect(error.path).to.be('A.script');
+        expect(String(error)).to.contain("super() for method 'needsSuper' was not found");
+      }
+    });
+
+    it('should reject invalid invoked method metadata during footprint finalization', function () {
+      const script = new Script(
+        'method alpha()\n  this.beta()\nendmethod\nmethod beta()\n  return "b"\nendmethod\nreturn null',
+        env,
+        'invalid-invoked-footprint.script'
+      );
+      script.compile();
+
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        script.methods,
+        script.sharedSchema,
+        script.invokedMethods,
+        null,
+        { path: 'invalid-invoked-footprint.script' }
+      );
+      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invalid-invoked-footprint.script' });
+
+      const alphaData = runtime.getMethodData(inheritanceState, 'alpha');
+      alphaData.invokedMethods.beta = 'beta';
+
+      expect(() => {
+        inheritanceCallModule.finalizeMethodChannelFootprints(
+          inheritanceState,
+          { path: 'invalid-invoked-footprint.script' }
+        );
+      }).to.throwException(/Invoked method 'beta'.*has invalid metadata/);
     });
 
     it('should keep per-callable invoked method metadata limited to direct calls', function () {
@@ -1272,7 +1442,15 @@ describe('Extends Foundation', function () {
         errorContextString: 'calling inherited build'
       });
 
-      runtime.finalizeInheritanceMetadata(state, { path: 'missing-method.script' });
+      try {
+        runtime.finalizeInheritanceMetadata(state, { path: 'missing-method.script' });
+        expect().fail('Expected metadata finalization to reject missing inherited method');
+      } catch (error) {
+        expect(error.path).to.be('missing-method.script');
+        expect(error.lineno).to.be(0);
+        expect(error.colno).to.be(0);
+        expect(String(error)).to.contain("Inherited method 'build' was not found");
+      }
 
       try {
         await pendingBuild;

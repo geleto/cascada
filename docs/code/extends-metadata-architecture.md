@@ -680,18 +680,39 @@ Work:
   targets are reported together instead of stopping at the first error
 - replace the Step 2 immediate missing-invoked-method throw path with the same
   aggregated structural metadata error collection used by the merge pass
-- improve finalization-time error attribution so invoked-method and `super()`
-  metadata errors can report the original call-site line/column when available,
-  not only the file path
 
 Goal:
 
 - caller-side invocation admission gets the full callable footprint
 
-### Step 4 - Use Direct Metadata in Caller-Side Admission
+### Step 4 - Add Metadata Readiness Barrier
 
-Replace current caller-side channel collection with direct use of the new final
-metadata.
+Make inheritance metadata readiness explicit before caller-side admission starts.
+
+Work:
+
+- replace the Step 1 constructor-time startup-promise retry with a true
+  metadata-ready barrier that does not wait for parent output application
+- make pending-placeholder methods participate through direct metadata readiness
+  instead of relying on the Step 1 transitional placeholder path
+- remove the startup-window channel-hint gap where an unresolved `super: true`
+  currently creates its invocation buffer before final method channels are known
+- remove the transitional string-value fallback in invoked-method data resolution
+  that exists only for constructor-time startup retry windows
+- keep component constructor startup on the caller-side ordered component startup
+  path, but ensure metadata bootstrap completes before the startup command runs
+- keep template text-output ownership separate from metadata bootstrap
+
+Goal:
+
+- no inherited invocation starts from a partially resolved metadata graph
+- no constructor-local call path needs a startup-promise retry to discover
+  metadata
+
+### Step 5 - Use Direct Metadata in Caller-Side Admission
+
+After metadata readiness is explicit, replace current caller-side channel
+collection with direct use of the new final metadata.
 
 Work:
 
@@ -699,13 +720,6 @@ Work:
 - use final direct `methodMeta.mergedUsedChannels`
 - use final direct `methodMeta.mergedMutatedChannels`
 - remove the partial unresolved-linked-channel correctness path
-- keep component constructor startup on the caller-side ordered component startup
-  path, but ensure metadata bootstrap completes before the startup command runs
-- replace the Step 1 constructor-time startup-promise retry with a true
-  metadata-ready barrier that does not wait for parent output application
-- remove the startup-window channel-hint gap where an unresolved `super: true`
-  currently creates its invocation buffer before final method channels are known
-- keep template text-output ownership separate from metadata bootstrap
 
 Goal:
 
@@ -714,9 +728,9 @@ Goal:
   - component method inside method
   - constructor followed by later inherited call
 
-### Step 5 - Use Direct Metadata Inside Methods Where Needed
+### Step 6 - Use Direct Metadata Inside Methods Where Needed
 
-Only after Steps 1-4, incorporate the dynamic method-footprint handling inside
+Only after Steps 1-5, incorporate the dynamic method-footprint handling inside
 compiled constructor/method/block bodies.
 
 Work:
@@ -735,7 +749,41 @@ Goal:
 - no split between what caller-side thinks a method touches and what method
   startup later discovers
 
-### Step 6 - Remove Now-Redundant Runtime Paths
+### Step 7 - Consolidate Metadata Finalization
+
+After the direct metadata model is used by admission and method bodies, collapse
+the transitional metadata construction/finalization paths into one direct model.
+
+Work:
+
+- replace the Step 2 `resolveAndWireInvokedMethodCatalog(...)` bridge that
+  creates method metadata first and patches `invokedMethods` afterward with a
+  single direct metadata construction path
+- add source-origin metadata for compiled invoked-method and `super()` references,
+  then use it for finalization-time metadata errors so they can report original
+  call-site line/column instead of only the file path
+- consolidate finalization error aggregation so recoverable structural errors
+  from catalog wiring, cache prewarming, and footprint validation are collected
+  together; immediate throws should remain only for impossible invariants
+- keep impossible invalid-metadata invariant failures explicitly fail-fast, or
+  document any cases that should be promoted into recoverable aggregation
+- add stable structural error codes for invalid inheritance metadata shapes once
+  those errors are part of the consolidated finalization model
+- decide whether the super-chain footprint merge should remain folded into the
+  fixed-point pass or be split into the parent-to-child pass described above;
+  if it stays folded, document that as the intentional implementation model
+- remove the unused caller-supplied `errors` parameter from
+  `finalizeMethodChannelFootprints(...)` if the consolidated finalization path
+  no longer needs it
+
+Goal:
+
+- one direct metadata construction path
+- one structural metadata finalization pass
+- better finalization-time diagnostics without reintroducing lazy metadata
+  resolution
+
+### Step 8 - Remove Now-Redundant Runtime Paths
 
 After the direct metadata model is in place:
 
@@ -744,9 +792,6 @@ After the direct metadata model is in place:
 - remove temporary `bootstrapInheritanceMetadata(...)` argument-shape
   compatibility scaffolding once all internal callers and tests use the
   explicit invoked-method catalog parameter
-- replace the Step 2 `resolveAndWireInvokedMethodCatalog(...)` bridge that
-  creates method metadata first and patches `invokedMethods` afterward with a
-  single direct metadata construction path
 - remove transitional boolean control-flow flags such as `includeInvokedMethods`
   and constructor startup-retry guards from internal method-data resolution
 - remove ambiguous shared-name probing paths; shared channels used by a callable
