@@ -80,8 +80,13 @@ class BufferIterator {
           this._enterChild(item);
         } else {
           const applyResult = this._applyCommand(item);
+          if (item && item.isObservable) {
+            this._releaseProcessedEntry(buffer, nextIndex);
+            continue;
+          }
           if (applyResult && typeof applyResult.then === 'function') {
             Promise.resolve(applyResult).finally(() => {
+              this._releaseProcessedEntry(buffer, nextIndex);
               if (this.finished) {
                 this._isAdvancing = false;
                 return;
@@ -90,6 +95,7 @@ class BufferIterator {
             });
             return;
           }
+          this._releaseProcessedEntry(buffer, nextIndex);
         }
       }
       else if (buffer.isFinished(this.channelName) && this.stack.length > 1) {
@@ -170,8 +176,22 @@ class BufferIterator {
     if (leaving && leaving.buffer) {
       leaving.buffer.onLeaveBuffer(this, this.channelName);
     }
+    if (parentCursor.index >= 0) {
+      this._releaseProcessedEntry(parentCursor.buffer, parentCursor.index);
+    }
 
     this._setCurrentBuffer(parentCursor.buffer, true);
+  }
+
+  _releaseProcessedEntry(buffer, index) {
+    if (!buffer || index < 0 || !this.channelName) {
+      return;
+    }
+    const arr = buffer.arrays[this.channelName];
+    if (!arr || index >= arr.length) {
+      return;
+    }
+    arr[index] = null;
   }
 
   _setCurrentBuffer(buffer, skipLeave = false) {
