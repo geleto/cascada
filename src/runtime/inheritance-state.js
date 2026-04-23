@@ -146,6 +146,17 @@ function ensureInheritanceInternalState(state) {
       writable: false,
       value: {
         startupPromise: null,
+        metadataReadyPromise: null,
+        metadataReadyResolve: null,
+        metadataReadyReject: null,
+        // `settled` tracks resolve or reject; `resolved` is success-only and
+        // is used to make repeated successful finalization cheap.
+        metadataReadySettled: false,
+        metadataReadyResolved: false,
+        metadataReadyYieldPending: false,
+        // Counts registrations only. It is reset on settlement and only drives
+        // whether one post-finalization yield is needed.
+        metadataReadyWaiterCount: 0,
         compositionMode: null,
         chainPathStack: [],
         invokedMethodOrigins: Object.create(null)
@@ -202,6 +213,89 @@ function mergeInheritanceStartupPromise(state, promise, currentPromise = null) {
 
   setInheritanceStartupPromise(state, merged);
   return merged;
+}
+
+function beginInheritanceMetadataReadiness(state) {
+  const internalState = ensureInheritanceInternalState(state);
+  if (!internalState || internalState.metadataReadySettled) {
+    return null;
+  }
+  if (!internalState.metadataReadyPromise) {
+    internalState.metadataReadyPromise = new Promise((resolve, reject) => {
+      internalState.metadataReadyResolve = resolve;
+      internalState.metadataReadyReject = reject;
+    });
+    internalState.metadataReadyPromise.catch(() => {});
+  }
+  return internalState.metadataReadyPromise;
+}
+
+function resolveInheritanceMetadataReadiness(state, value = state) {
+  const internalState = ensureInheritanceInternalState(state);
+  if (!internalState || internalState.metadataReadySettled) {
+    return value;
+  }
+  internalState.metadataReadySettled = true;
+  internalState.metadataReadyResolved = true;
+  if (internalState.metadataReadyResolve) {
+    internalState.metadataReadyResolve(value);
+  }
+  internalState.metadataReadyYieldPending = internalState.metadataReadyWaiterCount > 0;
+  internalState.metadataReadyWaiterCount = 0;
+  internalState.metadataReadyPromise = Promise.resolve(value);
+  internalState.metadataReadyResolve = null;
+  internalState.metadataReadyReject = null;
+  return value;
+}
+
+function rejectInheritanceMetadataReadiness(state, error) {
+  const internalState = ensureInheritanceInternalState(state);
+  if (!internalState || internalState.metadataReadySettled) {
+    return error;
+  }
+  internalState.metadataReadySettled = true;
+  internalState.metadataReadyResolved = false;
+  if (internalState.metadataReadyReject) {
+    internalState.metadataReadyReject(error);
+  }
+  internalState.metadataReadyYieldPending = false;
+  internalState.metadataReadyWaiterCount = 0;
+  internalState.metadataReadyPromise = Promise.reject(error);
+  internalState.metadataReadyPromise.catch(() => {});
+  internalState.metadataReadyResolve = null;
+  internalState.metadataReadyReject = null;
+  return error;
+}
+
+function awaitInheritanceMetadataReadiness(state) {
+  const internalState = ensureInheritanceInternalState(state);
+  if (!internalState || internalState.metadataReadySettled) {
+    return null;
+  }
+  if (
+    internalState.metadataReadyPromise &&
+    typeof internalState.metadataReadyPromise.then === 'function'
+  ) {
+    internalState.metadataReadyWaiterCount += 1;
+    return internalState.metadataReadyPromise;
+  }
+  return null;
+}
+
+function isInheritanceMetadataReadinessResolved(state) {
+  const internalState = ensureInheritanceInternalState(state);
+  return !!(internalState && internalState.metadataReadyResolved);
+}
+
+function consumeInheritanceMetadataReadyYield(state) {
+  // If finalization released constructor/invocation waiters, the next startup
+  // step yields once so those waiters can enqueue their source-order work.
+  const internalState = ensureInheritanceInternalState(state);
+  if (!internalState || !internalState.metadataReadyYieldPending) {
+    return null;
+  }
+  internalState.metadataReadyYieldPending = false;
+  return Promise.resolve();
 }
 
 function setInheritanceCompositionMode(state, mode) {
@@ -679,6 +773,12 @@ module.exports = {
   setInheritanceStartupPromise,
   awaitInheritanceStartup,
   mergeInheritanceStartupPromise,
+  beginInheritanceMetadataReadiness,
+  resolveInheritanceMetadataReadiness,
+  rejectInheritanceMetadataReadiness,
+  awaitInheritanceMetadataReadiness,
+  isInheritanceMetadataReadinessResolved,
+  consumeInheritanceMetadataReadyYield,
   setInheritanceCompositionMode,
   isInheritanceCompositionMode,
   enterInheritanceChainPath,

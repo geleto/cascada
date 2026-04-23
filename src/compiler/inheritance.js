@@ -410,6 +410,7 @@ class CompileInheritance {
           // A truthy parent means this top-level child block will be rendered
           // through the selected parent path instead of dispatching locally.
           this.emit.line('  if (parent) return "";');
+          this.emit.line('  if (inheritanceState) { inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context); }');
           this.emit(`  return runtime.invokeInheritedMethod(inheritanceState, "${node.name.value}", `);
           this.compiler._compileAggregate(explicitBlockArgsNode, null, '[', ']', false, false);
           this.emit.line(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson});`);

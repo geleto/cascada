@@ -50,21 +50,35 @@ function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, invoked
   const currentBuffer = normalized.currentBuffer;
   const context = normalized.context;
   const state = stateValue;
+  inheritanceState.beginInheritanceMetadataReadiness(state);
   if (!state.sharedRootBuffer) {
     state.sharedRootBuffer = currentBuffer || null;
   }
-  inheritanceState.registerInheritanceSharedSchema(state, sharedSchema, context);
-  if (
+  const shouldLinkNewSharedChannels =
     state.sharedRootBuffer &&
     currentBuffer &&
     state.sharedRootBuffer !== currentBuffer &&
     sharedSchema &&
-    typeof sharedSchema === 'object'
-  ) {
+    typeof sharedSchema === 'object';
+  let previousSharedNames = null;
+  if (shouldLinkNewSharedChannels) {
+    const previousSharedSchema = state.sharedSchema && typeof state.sharedSchema === 'object'
+      ? state.sharedSchema
+      : {};
+    previousSharedNames = Object.keys(previousSharedSchema).reduce((acc, name) => {
+      acc[name] = true;
+      return acc;
+    }, Object.create(null));
+  }
+  inheritanceState.registerInheritanceSharedSchema(state, sharedSchema, context);
+  if (shouldLinkNewSharedChannels) {
+    const newlyRegisteredChannels = Object.keys(sharedSchema).filter((name) =>
+      !previousSharedNames || !previousSharedNames[name]
+    );
     linkCurrentBufferToParentChannels(
       state.sharedRootBuffer,
       currentBuffer,
-      Object.keys(sharedSchema)
+      newlyRegisteredChannels
     );
   }
   inheritanceState.registerInheritanceMethods(state, methods, context);
@@ -207,6 +221,9 @@ async function bootstrapInheritanceParentScript(
     );
     if (!parentScript.hasExtends) {
       runtimeApi.finalizeInheritanceMetadata(inheritanceStateValue, parentContext);
+      // Give metadata-ready waiters released by finalization one turn to
+      // enqueue before this parent starts constructor/startup work.
+      await Promise.resolve();
     }
 
     const startupPromise = runtimeApi.runCompiledRootStartup(
@@ -261,9 +278,21 @@ function startInheritanceRootConstructor(
 ) {
   const localEntry = getLocalRootConstructorEntry(compiledMethods);
   const hasLocalConstructor = !!(localEntry && typeof localEntry.fn === 'function');
-  let constructorResult = hasLocalConstructor
-    ? localEntry.fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState)
-    : null;
+  if (!hasLocalConstructor) {
+    inheritanceState.setInheritanceStartupPromise(inheritanceStateValue, currentStartupPromise);
+    return currentStartupPromise && typeof currentStartupPromise.then === 'function'
+      ? currentStartupPromise
+      : null;
+  }
+
+  const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
+  // The readiness `.then` intentionally makes even a synchronous constructor
+  // participate in startup merging when metadata is still being finalized.
+  let constructorResult = metadataReadyPromise && typeof metadataReadyPromise.then === 'function'
+    ? metadataReadyPromise.then(() =>
+        localEntry.fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState)
+      )
+    : localEntry.fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState);
   if (constructorResult && typeof constructorResult.then === 'function') {
     return inheritanceState.mergeInheritanceStartupPromise(
       inheritanceStateValue,
@@ -289,6 +318,22 @@ function runCompiledRootStartup(
   extendsState = null,
   options = null
 ) {
+  const metadataReadyYield = inheritanceState.consumeInheritanceMetadataReadyYield(inheritanceStateValue);
+  if (metadataReadyYield && typeof metadataReadyYield.then === 'function') {
+    return metadataReadyYield.then(() => runCompiledRootStartup(
+      setupRenderFunc,
+      compiledMethods,
+      inheritanceStateValue,
+      env,
+      context,
+      runtime,
+      cb,
+      output,
+      extendsState,
+      options
+    ));
+  }
+
   const opts = options && typeof options === 'object' ? options : {};
   let startupPromise = null;
 
@@ -336,6 +381,9 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
     if (!channelName) {
       continue;
     }
+    if (_isBufferReachableThroughLinkedParents(parentBuffer, currentBuffer, channelName)) {
+      continue;
+    }
     if (
       typeof parentBuffer.hasLinkedBuffer === 'function' &&
       parentBuffer.hasLinkedBuffer(currentBuffer, channelName)
@@ -359,6 +407,25 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
   return currentBuffer;
 }
 
+function _isBufferReachableThroughLinkedParents(rootBuffer, buffer, channelName) {
+  let current = buffer;
+  while (current && current.parent) {
+    const parent = current.parent;
+    if (
+      !parent ||
+      typeof parent.hasLinkedBuffer !== 'function' ||
+      !parent.hasLinkedBuffer(current, channelName)
+    ) {
+      return false;
+    }
+    if (parent === rootBuffer) {
+      return true;
+    }
+    current = parent;
+  }
+  return false;
+}
+
 function getInheritanceSharedBuffer(currentBuffer, inheritanceStateValue) {
   if (inheritanceStateValue && inheritanceStateValue.sharedRootBuffer) {
     return inheritanceStateValue.sharedRootBuffer;
@@ -370,29 +437,38 @@ function finalizeInheritanceMetadata(state, context = null) {
   if (!state || typeof state !== 'object') {
     return state;
   }
-  const structuralErrors = [];
-
-  // Phase 1: validate chain-level structural metadata before building resolved
-  // callable data. Later phases assume missing methods/super targets are known.
-  inheritanceState.finalizeInheritanceSharedSchema(state, context);
-  inheritanceState.finalizeInheritanceMethods(state, context, structuralErrors);
-  inheritanceState.finalizeInheritanceInvokedMethods(state, context, structuralErrors);
-  if (structuralErrors.length > 0) {
-    const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(structuralErrors, context);
-    throw aggregateError || structuralErrors[0];
+  if (inheritanceState.isInheritanceMetadataReadinessResolved(state)) {
+    return state;
   }
+  try {
+    const structuralErrors = [];
 
-  // Phase 2: replace compiled invoked-method names with resolved method data and
-  // warm the method-data cache; channel footprint merging depends on this graph.
-  const errorContext = {
-    path: context && context.path ? context.path : null
-  };
-  inheritanceCall.resolveAndWireInvokedMethodCatalog(state, errorContext);
-  inheritanceCall.prewarmMethodDataCache(state, errorContext);
+    // Phase 1: validate chain-level structural metadata before building resolved
+    // callable data. Later phases assume missing methods/super targets are known.
+    inheritanceState.finalizeInheritanceSharedSchema(state, context);
+    inheritanceState.finalizeInheritanceMethods(state, context, structuralErrors);
+    inheritanceState.finalizeInheritanceInvokedMethods(state, context, structuralErrors);
+    if (structuralErrors.length > 0) {
+      const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(structuralErrors, context);
+      throw aggregateError || structuralErrors[0];
+    }
 
-  // Phase 3: compute final transitive channel footprints used by admission.
-  inheritanceCall.finalizeMethodChannelFootprints(state, errorContext);
-  return state;
+    // Phase 2: replace compiled invoked-method names with resolved method data and
+    // warm the method-data cache; channel footprint merging depends on this graph.
+    const errorContext = {
+      path: context && context.path ? context.path : null
+    };
+    inheritanceCall.resolveAndWireInvokedMethodCatalog(state, errorContext);
+    inheritanceCall.prewarmMethodDataCache(state, errorContext);
+
+    // Phase 3: compute final transitive channel footprints used by admission.
+    inheritanceCall.finalizeMethodChannelFootprints(state, errorContext);
+    inheritanceState.resolveInheritanceMetadataReadiness(state, state);
+    return state;
+  } catch (error) {
+    inheritanceState.rejectInheritanceMetadataReadiness(state, error);
+    throw error;
+  }
 }
 
 module.exports = {

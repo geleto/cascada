@@ -1174,6 +1174,96 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(events).to.eql(['gate-resolved', 'ctor-start']);
   });
 
+  it('should start component constructor only after metadata finalization resolves', async function () {
+    const events = [];
+    const makeContext = (path) => ({
+      path,
+      getRenderContextVariables() {
+        return {};
+      },
+      forkForComposition(nextPath) {
+        return makeContext(nextPath);
+      }
+    });
+
+    const ownerContext = makeContext('Main.script');
+    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
+
+    const compiledMethods = {
+      __constructor__: {
+        fn() {
+          events.push('constructor');
+          return null;
+        },
+        signature: { argNames: [], withContext: false },
+        ownerKey: 'Component.script',
+        ownUsedChannels: [],
+        ownMutatedChannels: [],
+        sharedLookupCandidates: [],
+        super: false,
+        invokedMethods: {}
+      }
+    };
+
+    const startupPromise = runtimeModule.startComponentInstance(
+      ownerBuffer,
+      'nsBinding',
+      {
+        compile() {},
+        rootRenderFunc(env, componentContext, runtime, cb, compositionMode, componentRootBuffer, inheritanceStateValue) {
+          void env;
+          void cb;
+          void compositionMode;
+          events.push('root-render');
+          runtime.bootstrapInheritanceMetadata(
+            inheritanceStateValue,
+            compiledMethods,
+            {},
+            {},
+            componentRootBuffer,
+            componentContext
+          );
+          runtime.runCompiledRootStartup(
+            null,
+            compiledMethods,
+            inheritanceStateValue,
+            {},
+            componentContext,
+            runtime,
+            () => {},
+            componentRootBuffer,
+            null,
+            null
+          );
+          events.push('startup-called');
+          Promise.resolve().then(() => {
+            events.push('finalize');
+            runtime.finalizeInheritanceMetadata(inheritanceStateValue, componentContext);
+          });
+          return componentRootBuffer;
+        },
+        methods: compiledMethods,
+        sharedSchema: {},
+        externSpec: [],
+        path: 'Component.script'
+      },
+      {},
+      ownerContext,
+      {},
+      runtimeModule,
+      () => {},
+      { lineno: 2, colno: 1, path: 'Main.script' }
+    );
+
+    const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    ownerBuffer.markFinishedAndPatchLinks();
+    await bindingSnapshot;
+    await startupPromise;
+
+    expect(events).to.eql(['root-render', 'startup-called', 'finalize', 'constructor']);
+  });
+
   it('should auto-close a component instance when the owner buffer finishes', async function () {
     const makeContext = (path) => ({
       path,

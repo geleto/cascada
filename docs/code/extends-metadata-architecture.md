@@ -720,6 +720,16 @@ Work:
 - use final direct `methodMeta.mergedUsedChannels`
 - use final direct `methodMeta.mergedMutatedChannels`
 - remove the partial unresolved-linked-channel correctness path
+- remove provisional invocation-buffer creation for known direct entries; once
+  readiness is explicit, caller-side admission should create/link buffers from
+  final direct method metadata only
+- remove temporary unresolved-super/provisional-buffer guards that exist only to
+  bridge Step 4 readiness into the old caller-side admission code
+- remove invocation-command metadata-readiness bridge fields
+  (`waitForMetadataReady`, `deferUntilApplied`) once admission always starts
+  from finalized direct method metadata
+- add or update coverage for the script-mode metadata-pending invocation path
+  after the direct admission refactor settles that control flow
 
 Goal:
 
@@ -775,6 +785,15 @@ Work:
 - remove the unused caller-supplied `errors` parameter from
   `finalizeMethodChannelFootprints(...)` if the consolidated finalization path
   no longer needs it
+- remove the `includeInvokedMethods` boolean flag from method-data resolution
+  helpers when direct metadata construction no longer needs a partial catalog
+  construction mode
+- consolidate duplicated linked-channel path helpers in the bootstrap and
+  invocation-linking modules into one runtime helper
+- remove the legacy async-block `if (parent) return ""` guard if it remains
+  dead after finalization moves fully onto the direct metadata path
+- document or simplify the metadata-ready microtask-yield mechanism after the
+  direct admission/body paths no longer depend on transitional startup timing
 
 Goal:
 
@@ -792,8 +811,8 @@ After the direct metadata model is in place:
 - remove temporary `bootstrapInheritanceMetadata(...)` argument-shape
   compatibility scaffolding once all internal callers and tests use the
   explicit invoked-method catalog parameter
-- remove transitional boolean control-flow flags such as `includeInvokedMethods`
-  and constructor startup-retry guards from internal method-data resolution
+- remove any remaining transitional boolean control-flow flags from internal
+  method-data resolution after direct metadata construction is consolidated
 - remove ambiguous shared-name probing paths; shared channels used by a callable
   must come from explicit `shared` declarations in that file
 - remove obsolete tests that only exist for promise-struct metadata behavior

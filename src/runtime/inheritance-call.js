@@ -299,13 +299,6 @@ function _createResolvedInvokedMethodsData(invokedMethods, sharedSchema, errorCo
       resolved[name] = entry;
       continue;
     }
-    if (typeof entry === 'string') {
-      const catalog = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
-      if (_isResolvedMethodData(catalog[entry])) {
-        resolved[name] = catalog[entry];
-        continue;
-      }
-    }
     if (!entry || typeof entry !== 'object' || inheritanceState.isPendingInheritanceEntry(entry)) {
       throw _createInheritanceFatalError(
         `Inherited method '${name}' was not found`,
@@ -330,7 +323,6 @@ function _getMethodDataFromResolvedEntry(
   sharedSchema,
   errorContext,
   state = null,
-  hasWaitedForStartup = false,
   includeInvokedMethods = true
 ) {
   if (resolvedEntry === true) {
@@ -356,20 +348,6 @@ function _getMethodDataFromResolvedEntry(
   }
   if (includeInvokedMethods && resolvedEntry._resolvedMethodDataPromise) {
     return resolvedEntry._resolvedMethodDataPromise;
-  }
-
-  if (resolvedEntry.super === true && !hasWaitedForStartup) {
-    const startupPromise = inheritanceState.awaitInheritanceStartup(state);
-    if (startupPromise && typeof startupPromise.then === 'function') {
-      const startupMethodDataPromise = startupPromise.then(() => {
-        delete resolvedEntry._resolvedMethodDataPromise;
-        return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state, true, includeInvokedMethods);
-      });
-      if (includeInvokedMethods) {
-        resolvedEntry._resolvedMethodDataPromise = startupMethodDataPromise;
-      }
-      return startupMethodDataPromise;
-    }
   }
 
   const superData = resolvedEntry.super
@@ -412,11 +390,11 @@ function _getMethodDataFromEntry(entry, sharedSchema, errorContext, state = null
 
   if (resolvedEntry && typeof resolvedEntry.then === 'function') {
     return resolvedEntry.then((entryValue) =>
-      _getMethodDataFromResolvedEntry(entryValue, sharedSchema, errorContext, state, false, includeInvokedMethods)
+      _getMethodDataFromResolvedEntry(entryValue, sharedSchema, errorContext, state, includeInvokedMethods)
     );
   }
 
-  return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state, false, includeInvokedMethods);
+  return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state, includeInvokedMethods);
 }
 
 function getMethodData(state, methodName, errorContext = null) {
@@ -468,8 +446,8 @@ function _findKnownMethodEntryForOwner(entry, ownerKey) {
   let current = entry || null;
   while (current && !inheritanceState.isPendingInheritanceEntry(current)) {
     if (inheritanceState.isUnresolvedSuperEntry(current)) {
-      // Transitional Step 1 state: startup can hit super metadata before the
-      // active chain load rewrites `true` to the direct parent entry.
+      // Before metadata readiness, `super: true` still means the owner entry
+      // has not been wired to the direct parent entry yet.
       return null;
     }
     if (current.ownerKey === ownerKey) {
@@ -500,8 +478,14 @@ function prewarmMethodDataCache(state, errorContext = null) {
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
     const entry = methods[name];
-    if (!entry || _hasPendingMethodMetadata(entry)) {
+    if (!entry) {
       continue;
+    }
+    if (_hasPendingMethodMetadata(entry)) {
+      throw _createInheritanceMetadataInvariantError(
+        `Inherited method metadata for '${name}' was still pending during cache prewarm`,
+        errorContext
+      );
     }
     const methodData = getMethodData(state, name, errorContext);
     if (methodData && typeof methodData.then === 'function') {
@@ -540,12 +524,9 @@ function resolveAndWireInvokedMethodCatalog(state, errorContext = null) {
     invokedMethods[names[i]] = resolvedCatalog[names[i]];
   }
 
-  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
-  const methodNames = Object.keys(methods);
-  for (let i = 0; i < methodNames.length; i++) {
-    const entry = methods[methodNames[i]];
+  const wireEntry = (entry, methodName, publishCatalogEntry = false) => {
     if (!entry || typeof entry !== 'object' || inheritanceState.isPendingInheritanceEntry(entry)) {
-      continue;
+      return;
     }
     const localInvoked = entry.invokedMethods && typeof entry.invokedMethods === 'object'
       ? entry.invokedMethods
@@ -567,14 +548,29 @@ function resolveAndWireInvokedMethodCatalog(state, errorContext = null) {
       resolvedLocalInvoked[localName] = invokedMethods[methodName];
     }
     entry.invokedMethods = resolvedLocalInvoked;
-    if (Object.prototype.hasOwnProperty.call(invokedMethods, methodNames[i])) {
-      entry._resolvedMethodData = invokedMethods[methodNames[i]];
+    if (publishCatalogEntry && Object.prototype.hasOwnProperty.call(invokedMethods, methodName)) {
+      entry._resolvedMethodData = invokedMethods[methodName];
       entry._resolvedMethodData.invokedMethods = resolvedLocalInvoked;
       delete entry._resolvedMethodDataPromise;
     } else {
       delete entry._resolvedMethodData;
       delete entry._resolvedMethodDataPromise;
     }
+  };
+
+  const visitEntry = (entry, methodName, seen, publishCatalogEntry = false) => {
+    if (!entry || typeof entry !== 'object' || seen.has(entry)) {
+      return;
+    }
+    seen.add(entry);
+    wireEntry(entry, methodName, publishCatalogEntry);
+    visitEntry(entry.super, methodName, seen, false);
+  };
+
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const methodNames = Object.keys(methods);
+  for (let i = 0; i < methodNames.length; i++) {
+    visitEntry(methods[methodNames[i]], methodNames[i], new Set(), true);
   }
 
   return invokedMethods;
@@ -721,6 +717,25 @@ function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channel
   currentBuffer.addBuffer(invocationBuffer, channelName);
 }
 
+function _hasLinkedChannelPath(rootBuffer, buffer, channelName) {
+  let current = buffer;
+  while (current && current.parent) {
+    const parent = current.parent;
+    if (
+      !parent ||
+      typeof parent.hasLinkedBuffer !== 'function' ||
+      !parent.hasLinkedBuffer(current, channelName)
+    ) {
+      return false;
+    }
+    if (parent === rootBuffer) {
+      return true;
+    }
+    current = parent;
+  }
+  return false;
+}
+
 function _markBufferFinish(buffer) {
   if (!buffer || typeof buffer.markFinishedAndPatchLinks !== 'function') {
     return;
@@ -745,7 +760,18 @@ const invocationInternals = {
       );
     }
     for (let i = 0; i < linkedChannels.length; i++) {
+      // The caller link preserves local source order; the shared-root link lets
+      // hierarchy-wide shared observations wait on method output from anywhere
+      // in the composed chain.
       _registerInvocationChannelLink(command.currentBuffer, command.invocationBuffer, linkedChannels[i]);
+      if (
+        sharedRootBuffer &&
+        sharedRootBuffer !== command.currentBuffer &&
+        typeof sharedRootBuffer.addBuffer === 'function' &&
+        !_hasLinkedChannelPath(sharedRootBuffer, command.invocationBuffer, linkedChannels[i])
+      ) {
+        _registerInvocationChannelLink(sharedRootBuffer, command.invocationBuffer, linkedChannels[i]);
+      }
     }
     return command.invocationBuffer;
   },
@@ -804,6 +830,8 @@ function createInheritanceInvocationCommand(spec) {
     name,
     label = null,
     getMethodData,
+    waitForMetadataReady,
+    deferUntilApplied = false,
     normalizeError,
     args,
     context,
@@ -819,6 +847,10 @@ function createInheritanceInvocationCommand(spec) {
   command.name = name;
   command.label = label || `Inherited method '${name}'`;
   command.getMethodData = getMethodData;
+  command.waitForMetadataReady = typeof waitForMetadataReady === 'function'
+    ? waitForMetadataReady
+    : null;
+  command.deferUntilApplied = !!deferUntilApplied;
   command.normalizeError = typeof normalizeError === 'function'
     ? normalizeError
     : (error) => _normalizeResolutionError(error, errorContext);
@@ -864,6 +896,12 @@ function createInheritanceInvocationCommand(spec) {
 
     command._startPromise = (async () => {
       try {
+        if (command.waitForMetadataReady) {
+          const metadataReadyPromise = command.waitForMetadataReady();
+          if (metadataReadyPromise && typeof metadataReadyPromise.then === 'function') {
+            await metadataReadyPromise;
+          }
+        }
         const methodData = _assertResolvedMethodData(await command.getMethodData());
         const ensuredInvocationBuffer = invocationInternals.ensureInvocationBuffer(command, methodData);
         const result = await invocationInternals.invokeResolvedMethodData(command, methodData, ensuredInvocationBuffer);
@@ -891,31 +929,57 @@ function createInheritanceInvocationCommand(spec) {
 
 function _enqueueInvocationCommand(command, invocationBuffer) {
   invocationBuffer.add(command, '__invoke__');
-  command.apply();
+  if (!command.deferUntilApplied) {
+    command.apply();
+  }
   return command.promise;
 }
 
+function _canCreateProvisionalInvocationBuffer(entry) {
+  return !!(
+    entry &&
+    typeof entry === 'object' &&
+    !inheritanceState.isPendingInheritanceEntry(entry)
+  );
+}
+
+function _shouldDeferInvocationUntilApplied(metadataReadyPending, context) {
+  // Template output ordering needs the queued invocation command itself to be
+  // the source-order barrier. Script calls can start immediately because apply()
+  // still waits for metadata readiness before resolving method data. Cascada
+  // contexts set `scriptMode`; missing/unknown mode defaults to template-safe
+  // deferral.
+  return !!(metadataReadyPending && context && !context.scriptMode);
+}
+
 function invokeInheritedMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+  const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
+  const metadataReadyPending = !!(metadataReadyPromise && typeof metadataReadyPromise.then === 'function');
   const initialEntry =
     inheritanceStateValue &&
     inheritanceStateValue.methods &&
     Object.prototype.hasOwnProperty.call(inheritanceStateValue.methods, methodName)
       ? inheritanceStateValue.methods[methodName]
       : null;
-  const initialChannels = _getInitialInvocationChannels(initialEntry);
+  const canCreateInitialBuffer = !metadataReadyPending || _canCreateProvisionalInvocationBuffer(initialEntry);
+  const initialChannels = canCreateInitialBuffer ? _getInitialInvocationChannels(initialEntry) : null;
   const sharedRootBuffer =
     inheritanceStateValue && inheritanceStateValue.sharedRootBuffer
       ? inheritanceStateValue.sharedRootBuffer
       : currentBuffer;
-  const invocationBuffer = runtime.createCommandBuffer(
-    context,
-    sharedRootBuffer,
-    initialChannels,
-    currentBuffer
-  );
+  const invocationBuffer = canCreateInitialBuffer
+    ? runtime.createCommandBuffer(
+        context,
+        sharedRootBuffer,
+        initialChannels,
+        currentBuffer
+      )
+    : null;
   const command = module.exports.createInheritanceInvocationCommand({
     name: methodName,
     label: `Inherited method '${methodName}'`,
+    waitForMetadataReady: () => metadataReadyPromise,
+    deferUntilApplied: _shouldDeferInvocationUntilApplied(metadataReadyPending, context),
     getMethodData: () => getMethodData(inheritanceStateValue, methodName, errorContext),
     normalizeError: (error) => _normalizeInheritedMethodInvocationError(error, methodName, errorContext),
     args,
@@ -929,10 +993,12 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
     errorContext
   });
 
-  return _enqueueInvocationCommand(command, invocationBuffer);
+  return _enqueueInvocationCommand(command, invocationBuffer || currentBuffer);
 }
 
 function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+  const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
+  const metadataReadyPending = !!(metadataReadyPromise && typeof metadataReadyPromise.then === 'function');
   const rootEntry =
     inheritanceStateValue &&
     inheritanceStateValue.methods &&
@@ -941,20 +1007,25 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
       : null;
   const ownerEntry = _findKnownMethodEntryForOwner(rootEntry, ownerKey);
   const superEntry = ownerEntry && ownerEntry.super ? ownerEntry.super : null;
-  const initialChannels = _getInitialInvocationChannels(superEntry);
+  const canCreateInitialBuffer = !metadataReadyPending || _canCreateProvisionalInvocationBuffer(superEntry);
+  const initialChannels = canCreateInitialBuffer ? _getInitialInvocationChannels(superEntry) : null;
   const sharedRootBuffer =
     inheritanceStateValue && inheritanceStateValue.sharedRootBuffer
       ? inheritanceStateValue.sharedRootBuffer
       : currentBuffer;
-  const invocationBuffer = runtime.createCommandBuffer(
-    context,
-    sharedRootBuffer,
-    initialChannels,
-    currentBuffer
-  );
+  const invocationBuffer = canCreateInitialBuffer
+    ? runtime.createCommandBuffer(
+        context,
+        sharedRootBuffer,
+        initialChannels,
+        currentBuffer
+      )
+    : null;
   const command = module.exports.createInheritanceInvocationCommand({
     name: methodName,
     label: `super() for method '${methodName}'`,
+    waitForMetadataReady: () => metadataReadyPromise,
+    deferUntilApplied: _shouldDeferInvocationUntilApplied(metadataReadyPending, context),
     getMethodData: async () => {
       const methodData = await getMethodData(inheritanceStateValue, methodName, errorContext);
       const ownerMethodData = _findMethodDataForOwner(methodData, ownerKey);
@@ -980,7 +1051,7 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
   });
   command.fallbackToContextOriginalArgs = true;
 
-  return _enqueueInvocationCommand(command, invocationBuffer);
+  return _enqueueInvocationCommand(command, invocationBuffer || currentBuffer);
 }
 
 module.exports = {

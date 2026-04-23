@@ -1300,6 +1300,158 @@ describe('Extends Foundation', function () {
     });
   });
 
+  describe('Step 4 - Metadata Readiness Barrier', function () {
+    it('should start the root constructor after metadata is ready without waiting for setup startup to finish', async function () {
+      env = new AsyncEnvironment();
+      const context = new Context({}, {}, env, 'Main.script', true, {}, {});
+      const output = runtime.createCommandBuffer(context);
+      const inheritanceState = runtime.createInheritanceState();
+      const events = [];
+      let finishSetup;
+      const setupPromise = new Promise((resolve) => {
+        finishSetup = () => {
+          events.push('setup-finished');
+          resolve('setup');
+        };
+      });
+      const compiledMethods = {
+        __constructor__: {
+          fn() {
+            events.push('constructor');
+            return null;
+          },
+          signature: { argNames: [], withContext: false },
+          ownerKey: 'Main.script',
+          ownUsedChannels: [],
+          ownMutatedChannels: [],
+          sharedLookupCandidates: [],
+          super: false,
+          invokedMethods: {}
+        }
+      };
+
+      runtime.bootstrapInheritanceMetadata(inheritanceState, compiledMethods, {}, {}, output, context);
+      const startupPromise = runtime.runCompiledRootStartup(
+        () => setupPromise,
+        compiledMethods,
+        inheritanceState,
+        env,
+        context,
+        runtime,
+        () => {},
+        output,
+        null,
+        null
+      );
+
+      await Promise.resolve();
+      expect(events).to.eql([]);
+
+      runtime.finalizeInheritanceMetadata(inheritanceState, context);
+      await Promise.resolve();
+      expect(events).to.eql(['constructor']);
+
+      finishSetup();
+      await startupPromise;
+      expect(events).to.eql(['constructor', 'setup-finished']);
+    });
+
+    it('should not invoke inherited methods before metadata finalization resolves', async function () {
+      env = new AsyncEnvironment();
+      const context = new Context({}, {}, env, 'Main.script', true, {}, {});
+      const output = runtime.createCommandBuffer(context);
+      const inheritanceState = runtime.createInheritanceState();
+      const events = [];
+      const compiledMethods = {
+        build: {
+          fn() {
+            events.push('build');
+            return 'done';
+          },
+          signature: { argNames: [], withContext: false },
+          ownerKey: 'Main.script',
+          ownUsedChannels: [],
+          ownMutatedChannels: [],
+          sharedLookupCandidates: [],
+          super: false,
+          invokedMethods: {}
+        }
+      };
+
+      runtime.bootstrapInheritanceMetadata(inheritanceState, compiledMethods, {}, {}, output, context);
+      const invocationPromise = runtime.invokeInheritedMethod(
+        inheritanceState,
+        'build',
+        [],
+        context,
+        env,
+        runtime,
+        () => {},
+        output,
+        { lineno: 1, colno: 1, path: 'Main.script' }
+      );
+
+      await Promise.resolve();
+      expect(events).to.eql([]);
+
+      runtime.finalizeInheritanceMetadata(inheritanceState, context);
+      const result = await invocationPromise;
+      expect(result).to.be('done');
+      expect(events).to.eql(['build']);
+    });
+
+    it('should not rebuild finalized invoked-method metadata on repeated finalization', function () {
+      env = new AsyncEnvironment();
+      const context = new Context({}, {}, env, 'Main.script', true, {}, {});
+      const output = runtime.createCommandBuffer(context);
+      const inheritanceState = runtime.createInheritanceState();
+      const compiledMethods = {
+        build: {
+          fn() {
+            return 'build';
+          },
+          signature: { argNames: [], withContext: false },
+          ownerKey: 'Main.script',
+          ownUsedChannels: [],
+          ownMutatedChannels: [],
+          sharedLookupCandidates: [],
+          super: false,
+          invokedMethods: { helper: 'helper' }
+        },
+        helper: {
+          fn() {
+            return 'helper';
+          },
+          signature: { argNames: [], withContext: false },
+          ownerKey: 'Main.script',
+          ownUsedChannels: [],
+          ownMutatedChannels: [],
+          sharedLookupCandidates: [],
+          super: false,
+          invokedMethods: {}
+        }
+      };
+
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        compiledMethods,
+        {},
+        { helper: 'helper' },
+        output,
+        context
+      );
+
+      runtime.finalizeInheritanceMetadata(inheritanceState, context);
+      const resolvedCatalogEntry = inheritanceState.invokedMethods.helper;
+      const resolvedLocalEntry = inheritanceState.methods.build.invokedMethods.helper;
+
+      runtime.finalizeInheritanceMetadata(inheritanceState, context);
+
+      expect(inheritanceState.invokedMethods.helper).to.be(resolvedCatalogEntry);
+      expect(inheritanceState.methods.build.invokedMethods.helper).to.be(resolvedLocalEntry);
+    });
+  });
+
   describe('Phase 6 - Helper and Resolution Lifecycle', function () {
     it('should only bootstrap inheritance state for roots that need inheritance features', function () {
       const plainScript = new Script('var x = 1\nreturn x', env, 'plain.script');
