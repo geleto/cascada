@@ -104,9 +104,7 @@ class BufferIterator {
         this.stack.pop();
         this._setCurrentBuffer(null);
         this.finished = true;
-        if (this.output) {
-          this.output._onIteratorFinished();
-        }
+        this._finalizeFinishedIterator();
         this._isAdvancing = false;
         return;
       } else {
@@ -141,9 +139,13 @@ class BufferIterator {
     if (!promise || typeof promise.then !== 'function') {
       return;
     }
-    this._pendingObservables.add(promise);
+    if (this._pendingObservables) {
+      this._pendingObservables.add(promise);
+    }
     promise.finally(() => {
-      this._pendingObservables.delete(promise);
+      if (this._pendingObservables) {
+        this._pendingObservables.delete(promise);
+      }
     });
   }
 
@@ -151,7 +153,7 @@ class BufferIterator {
     if (!cmd || !this.output) {
       return;
     }
-    if (this._pendingObservables.size === 0) {
+    if (!this._pendingObservables || this._pendingObservables.size === 0) {
       return this.output._applyCommand(cmd);
     }
 
@@ -175,6 +177,7 @@ class BufferIterator {
 
     if (leaving && leaving.buffer) {
       leaving.buffer.onLeaveBuffer(this, this.channelName);
+      this._releaseFinishedLane(leaving.buffer);
     }
     if (parentCursor.index >= 0) {
       this._releaseProcessedEntry(parentCursor.buffer, parentCursor.index);
@@ -194,6 +197,16 @@ class BufferIterator {
     arr[index] = null;
   }
 
+  _releaseFinishedLane(buffer) {
+    if (!buffer || !this.channelName || !buffer.arrays) {
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(buffer.arrays, this.channelName)) {
+      return;
+    }
+    buffer.arrays[this.channelName] = null;
+  }
+
   _setCurrentBuffer(buffer, skipLeave = false) {
     if (!skipLeave && this._enteredBuffer && this.channelName) {
       this._enteredBuffer.onLeaveBuffer(this, this.channelName);
@@ -206,6 +219,27 @@ class BufferIterator {
 
   _currentCursor() {
     return this.stack.length > 0 ? this.stack[this.stack.length - 1] : null;
+  }
+
+  _finalizeFinishedIterator() {
+    const output = this.output;
+    if (output && output._buffer) {
+      this._releaseFinishedLane(output._buffer);
+    }
+    if (output) {
+      output._onIteratorFinished();
+      if (output._iterator === this) {
+        output._iterator = null;
+      }
+    }
+    this.stack = null;
+    this._enteredBuffer = null;
+    if (this._pendingObservables) {
+      this._pendingObservables.clear();
+    }
+    this._pendingObservables = null;
+    this.output = null;
+    this._needsAdvance = false;
   }
 
   get channelName() {

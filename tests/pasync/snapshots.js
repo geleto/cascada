@@ -135,7 +135,7 @@ describe('channel.finalSnapshot', function () {
 
       const result = await channel.finalSnapshot();
       expect(result).to.be('AB');
-      expect(buffer.arrays.text).to.eql([null, null]);
+      expect(buffer.arrays.text).to.be(null);
     });
 
     it('releases finished child buffers after the iterator leaves them', async function () {
@@ -160,8 +160,88 @@ describe('channel.finalSnapshot', function () {
 
       const result = await channel.finalSnapshot();
       expect(result).to.be('AB');
-      expect(parent.arrays.text).to.eql([null, null]);
-      expect(child.arrays.text).to.eql([null]);
+      expect(parent.arrays.text).to.be(null);
+      expect(child.arrays.text).to.be(null);
+      expect(parent.hasLinkedBuffer(child, 'text')).to.be(true);
+    });
+
+    it('disposes finished iterator state after completion', async function () {
+      const buffer = new CommandBuffer(context, null);
+      const channel = createChannel(buffer, 'text', context, 'text');
+      const iterator = channel._iterator;
+
+      buffer.add(new TextCommand({
+        channelName: 'text',
+        args: ['A'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'text');
+      buffer.markFinishedAndPatchLinks();
+
+      const first = await channel.finalSnapshot();
+      const second = await channel.finalSnapshot();
+
+      expect(first).to.be('A');
+      expect(second).to.be('A');
+      expect(channel._iterator).to.be(null);
+      expect(iterator.finished).to.be(true);
+      expect(iterator.stack).to.be(null);
+      expect(iterator.output).to.be(null);
+      expect(iterator._pendingObservables).to.be(null);
+    });
+
+    it('clears channel completion promise state after completion', async function () {
+      const buffer = new CommandBuffer(context, null);
+      const channel = createChannel(buffer, 'text', context, 'text');
+
+      buffer.add(new TextCommand({
+        channelName: 'text',
+        args: ['A'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'text');
+      buffer.markFinishedAndPatchLinks();
+
+      const result = await channel.finalSnapshot();
+
+      expect(result).to.be('A');
+      expect(channel._completionResolved).to.be(true);
+      expect(channel._completionPromise).to.be(null);
+      expect(channel._resolveCompletion).to.be(null);
+    });
+
+    it('clears finished-buffer request bookkeeping once finished', async function () {
+      const buffer = new CommandBuffer(context, null);
+      const channel = createChannel(buffer, 'text', context, 'text');
+
+      buffer.add(new TextCommand({
+        channelName: 'text',
+        args: ['A'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'text');
+      buffer.markFinishedAndPatchLinks();
+
+      const result = await channel.finalSnapshot();
+
+      expect(result).to.be('A');
+      expect(buffer.finished).to.be(true);
+      expect(buffer._finishRequestedChannels).to.be(null);
+      expect(buffer._finishAllChannelsRequested).to.be(null);
+    });
+
+    it('clears resolved sink promise cache after async sink resolution', async function () {
+      const buffer = new CommandBuffer(context, null);
+      const sinkChannel = createSinkChannel(buffer, 'logger', context, Promise.resolve({
+        snapshot() {
+          return ['ok'];
+        }
+      }));
+
+      buffer.markFinishedAndPatchLinks();
+
+      const result = await sinkChannel.finalSnapshot();
+
+      expect(result).to.eql(['ok']);
+      expect(sinkChannel._sinkReady).to.be(true);
+      expect(sinkChannel._sinkReadyPromise).to.be(null);
     });
   });
 

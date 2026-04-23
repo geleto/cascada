@@ -206,7 +206,11 @@ class Channel {
       return;
     }
     this._completionResolved = true;
-    this._resolveCompletion();
+    if (this._resolveCompletion) {
+      this._resolveCompletion();
+    }
+    this._resolveCompletion = null;
+    this._completionPromise = null;
   }
 
   _getResultOrThrow() {
@@ -653,6 +657,7 @@ class SinkChannel extends Channel {
         .then((resolvedSink) => {
           this._sink = resolvedSink;
           this._sinkReady = true;
+          this._sinkReadyPromise = null;
           return resolvedSink;
         });
     }

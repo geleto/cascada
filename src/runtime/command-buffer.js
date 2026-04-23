@@ -90,6 +90,9 @@ class CommandBuffer {
 
   //@todo - rename this, maybe to finishBufferAndLetIteratorsExit
   markFinishedAndPatchLinks() {
+    if (this.finished) {
+      return;
+    }
     this._finishAllChannelsRequested = true;
     const channelNames = this._collectKnownChannelNames();
     for (let i = 0; i < channelNames.length; i++) {
@@ -100,6 +103,9 @@ class CommandBuffer {
 
   //@todo - rename this, maybe to finishChannelAndLetIteratorExit
   requestChannelFinish(channelName) {
+    if (this.finished) {
+      return;
+    }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!resolvedChannelName) {
       return;
@@ -412,6 +418,8 @@ class CommandBuffer {
       this._finishedResolver = null;
       this._finishedPromise = null;
     }
+    this._finishRequestedChannels = null;
+    this._finishAllChannelsRequested = null;
   }
 
   _notifyChannelFinished(channelName) {
@@ -553,23 +561,26 @@ class CommandBuffer {
       return false;
     }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    const lane = this.arrays && this.arrays[resolvedChannelName];
-    if (!Array.isArray(lane)) {
-      return false;
-    }
-    for (let i = 0; i < lane.length; i++) {
-      if (lane[i] === buffer) {
-        return true;
-      }
-    }
-    return false;
+    return (
+      buffer.parent === this &&
+      typeof buffer.isLinkedChannel === 'function' &&
+      buffer.isLinkedChannel(resolvedChannelName)
+    );
   }
 
   _finishKnownChannelIfRequested(channelName) {
     if (!channelName) {
       return;
     }
-    if (this._finishAllChannelsRequested || this._finishRequestedChannels[channelName]) {
+    if (this.finished) {
+      this._markChannelFinished(channelName);
+      return;
+    }
+    const finishRequested = !!(
+      this._finishRequestedChannels &&
+      this._finishRequestedChannels[channelName]
+    );
+    if (this._finishAllChannelsRequested || finishRequested) {
       this._markChannelFinished(channelName);
     }
   }
