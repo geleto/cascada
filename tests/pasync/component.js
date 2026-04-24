@@ -976,24 +976,59 @@ describe('Phase 8 - Component Observations', function () {
     expect(outcome.error.message).to.contain("Shared channel 'missing' was not found");
   });
 
-  it('should reject unsupported nested component shared-property chaining', async function () {
+  it('should read nested properties from component shared vars', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
     loader.addTemplate('Component.script', [
-      'shared var theme = "dark"'
+      'shared var theme = { value: "dark", nested: { tone: "warm" } }'
     ].join('\n'));
     loader.addTemplate('Main.script', [
       'component "Component.script" as ns',
-      'return ns.theme.value'
+      'return [ns.theme.value, ns.theme.nested.tone]'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', {});
+    expect(result).to.eql(['dark', 'warm']);
+  });
+
+  it('should reject nested component shared-property chaining for non-var channels', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'shared text log',
+      'log("hello")'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'return ns.log.value'
     ].join('\n'));
 
     try {
-      await env.getScript('Main.script', true);
-      expect().fail('Expected component namespace compile to fail');
+      await env.renderScript('Main.script', {});
+      expect().fail('Expected non-var shared channel nested read to fail');
     } catch (error) {
-      expect(String(error)).to.match(/component binding 'ns' only supports/);
+      expect(error).to.be.a(runtimeModule.RuntimeError);
+      expect(error.message).to.contain("Shared channel 'log' cannot be used as a bare symbol");
     }
+  });
+
+  it('should allow explicit snapshot property reads for component non-var shared channels', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'shared text log',
+      'log("hello")'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'return ns.log.snapshot().length'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', {});
+    expect(result).to.be(5);
   });
 
   it('should reject component-only observation aliases and require `is error` / `#` syntax', async function () {

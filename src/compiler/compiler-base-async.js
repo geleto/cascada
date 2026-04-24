@@ -450,11 +450,15 @@ class CompilerBaseAsync extends CompilerCommon {
       this._emitComponentChannelObservation(componentBindingFacts, node);
       return;
     }
+    if (componentBindingRoot && componentBindingRoot.staticPath.length > 2) {
+      this._emitComponentSharedVarNestedLookup(componentBindingRoot, node);
+      return;
+    }
     if (componentBindingRoot) {
       this._failUnsupportedComponentBindingUsage(
         node,
         componentBindingRoot.bindingName,
-        '`ns.x` reads, `ns.x.snapshot()` observations, `ns.x is error`, `ns.x#`, and `ns.method(...)` calls'
+        '`ns.x` / `ns.x.y` shared-var reads, `ns.x.snapshot()` observations, `ns.x is error`, `ns.x#`, and `ns.method(...)` calls'
       );
     }
 
@@ -734,6 +738,25 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(`currentBuffer: ${this.buffer.currentBuffer}, observationCommand: `);
     this._emitComponentObservationCommand(componentBindingFacts.channelName, node, componentBindingFacts.mode || 'snapshot');
     this.emit(`, errorContext: ${errorContextJson}, implicitVarRead: ${componentBindingFacts.implicitVarRead ? 'true' : 'false'} })`);
+  }
+
+  _emitComponentSharedVarNestedLookup(componentBindingRoot, node) {
+    const staticPath = componentBindingRoot.staticPath;
+    const nestedPath = staticPath.slice(2);
+    const errorContextJson = JSON.stringify(this._createErrorContext(node));
+
+    nestedPath.forEach(() => {
+      this.emit('runtime.memberLookupScript((');
+    });
+    this._emitComponentChannelObservation({
+      bindingName: componentBindingRoot.bindingName,
+      kind: 'shared-read',
+      channelName: staticPath[1],
+      implicitVarRead: true
+    }, node);
+    nestedPath.forEach((propertyName) => {
+      this.emit(`), ${JSON.stringify(propertyName)}, ${errorContextJson})`);
+    });
   }
 
   compileFilter(node) {
