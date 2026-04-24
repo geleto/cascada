@@ -124,6 +124,32 @@ describe('Extends Runtime', function () {
       }
     });
 
+    it('should keep undeclared template block names on the ambient lookup path even when parents declare matching shared vars', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.njk', '{% shared var theme = "light" %}{% block body %}parent{% endblock %}');
+      loader.addTemplate('C.njk', '{% extends "A.njk" %}{% block body %}{{ theme }}{% endblock %}');
+
+      const withoutContext = await env.renderTemplate('C.njk', {});
+      const withContext = await env.renderTemplate('C.njk', { theme: 'context' });
+
+      expect(withoutContext).to.be('');
+      expect(withContext).to.be('context');
+    });
+
+    it('should allow template block reads of shared vars with a local declaration', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.njk', '{% shared var theme = "light" %}{% block body %}parent{% endblock %}');
+      loader.addTemplate('C.njk', '{% shared var theme = "dark" %}{% extends "A.njk" %}{% block body %}{{ theme }}{% endblock %}');
+
+      const result = await env.renderTemplate('C.njk', {});
+
+      expect(result).to.be('dark');
+    });
+
     it('should preserve parent-before-post order through the child-buffer structure', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);

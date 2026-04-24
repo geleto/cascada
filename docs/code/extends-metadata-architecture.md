@@ -821,11 +821,12 @@ After metadata construction/finalization is consolidated, tighten the language
 contract for shared state:
 
 - every file in an inheritance chain must declare every shared var/channel it
-  reads, writes, snapshots, error-checks, or otherwise uses
+  wants to read, write, snapshot, error-check, or otherwise use as shared state
 - parent-chain visibility alone is no longer enough to authorize shared-state
   access in a child file
-- undeclared shared-state use becomes a structural error even if some parent or
-  sibling file declared the same shared name
+- an undeclared identifier is not shared-state use. It follows ordinary lookup
+  rules: context object, globals, render/composition payload, and other normal
+  ambient lookup surfaces
 
 This step intentionally changes the contract. It is not only cleanup.
 
@@ -837,8 +838,9 @@ Why this step exists:
 - that makes shared visibility less local and less explicit than method
   dispatch, because `this.method()` already depends on explicit metadata while
   some shared reads can still be rescued by chain-level probing
-- requiring declarations in every file makes the shared-state contract local,
-  predictable, and easy to validate before execution
+- requiring declarations for every shared access makes the shared-state
+  contract local and predictable, while preserving ordinary ambient lookup for
+  undeclared identifiers
 
 What this simplifies:
 
@@ -849,30 +851,32 @@ What this simplifies:
 - body-local linking logic no longer needs a special decision about whether to
   include chain-derived `sharedLookupChannels`; the file's own declarations
   become the only authority for what shared names may be linked from that file
-- structural validation becomes clearer because "missing local declaration" is
-  a direct user error instead of a chain-shape-dependent fallback case
+- lookup semantics become clearer because an undeclared identifier is always
+  ambient lookup and never a chain-shape-dependent shared fallback
 
 What this changes:
 
 - shared declarations become a per-file interface, not only a chain-level merge
   input
-- if `child.njk` reads or writes `theme`, `child.njk` must declare
-  `shared var theme` even if `base.njk` already declared it
+- if `child.njk` wants to read or write the shared channel `theme`,
+  `child.njk` must declare `shared var theme` even if `base.njk` already
+  declared it
+- if `child.njk` uses undeclared `theme`, that remains normal ambient lookup
+  rather than shared-channel access
 - the final chain merge still validates compatibility and chooses the effective
   shared entry for execution, but that merged schema no longer retroactively
-  authorizes undeclared use in another file
+  authorizes undeclared identifiers as shared access in another file
 - ordinary lookup and explicit shared observation remain separate mechanisms:
-  ordinary bare-name/block access may only succeed for names declared as shared
-  in the current file, while explicit shared observation still enqueues on the
-  current buffer and uses inheritance metadata only after that declaration rule
-  is satisfied
+  declared shared access enqueues on the current buffer and uses inheritance
+  metadata, while undeclared bare-name/block access follows ordinary ambient
+  lookup rules
 
 Work:
 
 - make per-file shared declarations the required source of truth for all shared
   usage in constructors, methods, and template blocks
-- reject undeclared shared usage even when the final merged chain-level
-  `sharedSchema` contains that name
+- ensure undeclared identifiers do not probe or link inherited shared state,
+  even when the final merged chain-level `sharedSchema` contains the same name
 - remove `sharedLookupCandidates` collection from compiled callable metadata
   once no execution path needs to preserve unresolved "maybe shared" names
 - remove runtime filtering/probing paths such as
@@ -881,15 +885,12 @@ Work:
 - make callable body-linking and caller-side linking rely only on explicit
   per-file shared declarations plus direct method metadata, never on chain-level
   shared-name discovery
-- add structural errors for:
-  - shared read without local declaration
-  - shared write without local declaration
-  - shared observation/error-read without local declaration
 - update tests so inherited shared access is covered through explicit repeated
-  declarations in each participating file, and add negative coverage for
-  undeclared use
+  declarations in each participating file, and add coverage that undeclared
+  same-named identifiers remain ordinary ambient lookup
 - document the user-visible rule clearly: shared state is chain-visible at
-  runtime, but each file must still declare the shared names it uses
+  runtime, but each file must still declare the shared names it wants to use as
+  shared state. Undeclared identifiers are not shared-state access
 
 What this removes:
 
@@ -897,13 +898,14 @@ What this removes:
 - the remaining semantic need for `sharedLookupCandidates`
 - the Step 6/7 design question about whether body-local linking should include
   chain-derived `sharedLookupChannels`; under this rule, undeclared ambient
-  shared-name rescue is simply not allowed
+  lookup is never shared-name rescue
 
 Goal:
 
 - shared-state usage is explicit per file
 - shared linking is driven by declarations, not by fallback probing
-- missing shared declarations fail structurally before execution
+- undeclared identifiers stay on the ordinary ambient lookup path and never
+  become shared access because of ancestor declarations
 
 ### Step 9 - Remove Now-Redundant Runtime Paths
 

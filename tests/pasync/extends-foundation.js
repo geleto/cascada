@@ -1347,7 +1347,6 @@ describe('Extends Foundation', function () {
           ownerKey: 'Main.script',
           ownUsedChannels: [],
           ownMutatedChannels: [],
-          sharedLookupCandidates: [],
           super: false,
           invokedMethods: {}
         }
@@ -1395,7 +1394,6 @@ describe('Extends Foundation', function () {
           ownerKey: 'Main.script',
           ownUsedChannels: [],
           ownMutatedChannels: [],
-          sharedLookupCandidates: [],
           super: false,
           invokedMethods: {}
         }
@@ -1437,7 +1435,6 @@ describe('Extends Foundation', function () {
           ownerKey: 'Main.script',
           ownUsedChannels: [],
           ownMutatedChannels: [],
-          sharedLookupCandidates: [],
           super: false,
           invokedMethods: { helper: 'helper' }
         },
@@ -1449,7 +1446,6 @@ describe('Extends Foundation', function () {
           ownerKey: 'Main.script',
           ownUsedChannels: [],
           ownMutatedChannels: [],
-          sharedLookupCandidates: [],
           super: false,
           invokedMethods: {}
         }

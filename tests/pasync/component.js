@@ -1200,7 +1200,6 @@ describe('Phase 8 - Component Lifecycle', function () {
         ownerKey: 'Component.script',
         ownUsedChannels: [],
         ownMutatedChannels: [],
-        sharedLookupCandidates: [],
         super: false,
         invokedMethods: {}
       }

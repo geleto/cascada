@@ -226,11 +226,10 @@ like declared channels for lookup purposes. The compiler may lower them through
 shared-aware observation, but the user-facing rule is still "declared name",
 not a special cross-file ambient lookup.
 
-As of the Step 7 metadata consolidation, some template-block compatibility
-paths may still preserve shared lookup candidates and filter them against the
-final chain schema. That is transitional. Step 8 tightens the contract so every
-file must explicitly declare every shared name it reads, writes, snapshots, or
-error-checks.
+Every file must explicitly declare every shared name it wants to access as
+shared state. Parent-chain visibility alone does not authorize shared-state
+access in a child file. An undeclared bare name remains an ordinary
+context/global/composition-payload lookup.
 
 All shared channels should be declared before any `extends` and before any
 `super()`-driven inherited work that depends on them.
@@ -446,9 +445,8 @@ resolution.
 Shared channel access uses finalized direct shared-schema metadata. Normal
 execution should not wait for pending shared-schema entries.
 
-Any remaining compatibility path that filters shared lookup candidates against
-the final chain schema is transitional until Step 8. It must not be used as a
-method-admission or wildcard-linking mechanism.
+Chain-level shared schema is used to validate and execute declared shared
+channels. It does not rescue undeclared ordinary lookups.
 
 The effective shared-channel metadata is used to choose and construct the
 side-channel command. Missing or invalid shared metadata at an execution

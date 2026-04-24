@@ -889,8 +889,7 @@ class CompileInheritance {
       ownerNode,
       'mutatedChannels'
     ));
-    const sharedLookupCandidates = JSON.stringify(this.collectMethodSharedLookupCandidates(ownerNode));
-    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownUsedChannels: ${ownUsedChannels}, ownMutatedChannels: ${ownMutatedChannels}, sharedLookupCandidates: ${sharedLookupCandidates}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
+    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownUsedChannels: ${ownUsedChannels}, ownMutatedChannels: ${ownMutatedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
   }
 
   collectDirectInvokedMethodRefsForCallable(callableNode) {
@@ -986,29 +985,6 @@ class CompileInheritance {
       return 'null';
     }
     return JSON.stringify(this.compiler._createErrorContext(superNodes[0]));
-  }
-
-  collectMethodSharedLookupCandidates(ownerNode) {
-    if (this.compiler.scriptMode || !(ownerNode instanceof nodes.Block) || !ownerNode.body) {
-      return [];
-    }
-
-    const candidates = new Set();
-    ownerNode.body.findAll(nodes.Symbol).forEach((symbolNode) => {
-      if (!symbolNode || symbolNode.isCompilerInternal || (symbolNode._analysis && symbolNode._analysis.declarationTarget)) {
-        return;
-      }
-      const name = symbolNode.value;
-      if (!name) {
-        return;
-      }
-      if (this.compiler.analysis.findDeclaration(symbolNode._analysis, name)) {
-        return;
-      }
-      candidates.add(name);
-    });
-
-    return Array.from(candidates);
   }
 
   compileSharedSchemaLiteral(node) {
