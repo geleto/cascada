@@ -1009,19 +1009,15 @@ describe('Extends Foundation', function () {
     it('should reject invalid invoked method metadata during footprint finalization', function () {
       const inheritanceState = runtime.createInheritanceState();
       inheritanceState.methods.alpha = {
-        _resolvedMethodData: {
-          fn() {
-            return null;
-          },
-          ownerKey: 'invalid-invoked-footprint.script',
-          signature: { argNames: [], withContext: false },
-          ownUsedChannels: [],
-          ownMutatedChannels: [],
-          mergedUsedChannels: [],
-          mergedMutatedChannels: [],
-          super: null,
-          invokedMethods: { beta: 'beta' }
-        }
+        fn() {
+          return null;
+        },
+        ownerKey: 'invalid-invoked-footprint.script',
+        signature: { argNames: [], withContext: false },
+        mergedUsedChannels: [],
+        mergedMutatedChannels: [],
+        super: null,
+        invokedMethods: { beta: 'beta' }
       };
 
       expect(() => {
@@ -1384,12 +1380,13 @@ describe('Extends Foundation', function () {
       );
 
       runtime.finalizeInheritanceMetadata(inheritanceState, context);
-      const resolvedBuildEntry = inheritanceState.methods.build._resolvedMethodData;
+      const resolvedBuildEntry = inheritanceState.methods.build;
 
       runtime.finalizeInheritanceMetadata(inheritanceState, context);
 
       expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
-      expect(inheritanceState.methods.build._resolvedMethodData).to.be(resolvedBuildEntry);
+      expect(inheritanceState.methods.build).to.be(resolvedBuildEntry);
+      expect(inheritanceState.methods.build._resolvedMethodData).to.be(undefined);
     });
   });
 
@@ -1571,7 +1568,7 @@ describe('Extends Foundation', function () {
       }
     });
 
-    it('should share one resolved method metadata object after chain bootstrap', async function () {
+    it('should share one resolved method metadata object before finalization publishes the direct table', async function () {
       const childScript = new Script(
         'shared text trace\nmethod build(name)\n  trace("C|")\n  return super(name)\nendmethod\nreturn null',
         env,
@@ -1606,7 +1603,7 @@ describe('Extends Foundation', function () {
       expect(state.methods.build._resolvedMethodData).to.be(resolvedBuildA);
     });
 
-    it('should memoize merged inherited method metadata on the resolved entry', async function () {
+    it('should publish merged inherited method metadata directly after finalization', async function () {
       const childScript = new Script(
         'shared text trace\nmethod build(name)\n  trace("C|")\n  return super(name)\nendmethod\nreturn null',
         env,
@@ -1634,11 +1631,13 @@ describe('Extends Foundation', function () {
         parentScript.invokedMethods
       );
 
+      runtime.finalizeInheritanceMetadata(state, { path: 'C.script' });
       const resolvedBuild = inheritanceCallModule.getMethodData(state, 'build');
       const resolvedAgain = inheritanceCallModule.getMethodData(state, 'build');
 
       expect(resolvedAgain).to.be(resolvedBuild);
-      expect(state.methods.build._resolvedMethodData).to.be(resolvedBuild);
+      expect(state.methods.build).to.be(resolvedBuild);
+      expect(state.methods.build._resolvedMethodData).to.be(undefined);
       expect(resolvedBuild.mergedMutatedChannels).to.contain('trace');
       expect(Object.keys(resolvedBuild)).not.to.contain('sharedLookupChannels');
     });

@@ -20,7 +20,7 @@ mostly implemented:
 - method metadata is direct and synchronous after finalization
 - shared state usage requires explicit per-file declarations
 - normal execution uses `mergedUsedChannels` / `mergedMutatedChannels`
-- bootstrap-only metadata is pruned after finalization
+- bootstrap-only metadata is released after finalization
 
 The remaining opportunity is not another semantic redesign. It is to reduce the
 surface area around the implementation so the runtime has fewer duplicated
@@ -40,7 +40,7 @@ The most important current facts are:
 - `bootstrapInheritanceMetadata(...)` takes the explicit argument shape:
   `(state, methods, sharedSchema, invokedMethods, currentBuffer, context)`
 - `finalizeInheritanceMetadata(...)` computes final method footprints and then
-  prunes bootstrap-only metadata
+  publishes direct execution method data into `state.methods`
 - finalized resolved method metadata is intentionally lean:
   - `fn`
   - `signature`
@@ -48,8 +48,8 @@ The most important current facts are:
   - `super`
   - `mergedUsedChannels`
   - `mergedMutatedChannels`
-- raw method entries retain `_resolvedMethodData`, but their bootstrap-only
-  fields are deleted after successful finalization
+- raw method entries are bootstrap/finalization input only; after successful
+  finalization, `state.methods[name]` is direct execution method data
 - state-level `invokedMethods` is a bootstrap catalog only and is cleared after
   finalization
 - component instances use the same inheritance metadata model as direct
@@ -128,8 +128,8 @@ Raw compiled method entries are still the bootstrap input shape:
 `super()` source-origin metadata. It should be documented in the architecture
 docs as the implementation name for that origin record.
 
-After finalization, raw entries mostly serve as stable table slots containing
-`_resolvedMethodData`. Bootstrap-only fields are pruned.
+After finalization, raw entries are released from the public/shared method
+table. Normal dispatch does not inspect raw entries or `_resolvedMethodData`.
 
 ### Execution Method Data
 
@@ -248,29 +248,7 @@ The target should be:
 - tests that inspect compiled shape inspect `inheritanceSpec`
 - compatibility getters remain only if they are intentionally public/debug API
 
-### 3. Bootstrap and execution shapes still share table objects
-
-`inheritanceState.methods[name]` is a raw entry table slot with
-`_resolvedMethodData` attached.
-
-This is pragmatic, but it mixes:
-
-- bootstrap chain wiring
-- raw compiled metadata
-- execution metadata cache
-
-The final target could be a separate execution method table:
-
-- bootstrap builds from raw entries
-- finalization publishes direct method data into `state.methods`
-- raw entries can then be discarded completely
-
-That would remove the need for raw-entry pruning and make normal execution
-state easier to inspect. A separate `state.resolvedMethods` table can be used
-only as migration scaffolding; the architecture end state should keep
-`state.methods[name]` as the canonical execution method table.
-
-### 4. Metadata-ready barrier is still visible in hot admission helpers
+### 3. Metadata-ready barrier is still visible in hot admission helpers
 
 `invokeInheritedMethod(...)`, `invokeSuperMethod(...)`, and constructor startup
 still call `awaitInheritanceMetadataReadiness(...)`.
@@ -285,7 +263,7 @@ The target is not necessarily to remove the barrier entirely, but to narrow it:
 - external admission boundaries may guard for diagnostics
 - finalized direct method invocation should not feel promise-driven
 
-### 5. Invocation and component operation commands duplicate lifecycle shape
+### 4. Invocation and component operation commands duplicate lifecycle shape
 
 Inherited method invocation and component method invocation are both expressed
 as commands with deferred results and cleanup behavior.
@@ -300,7 +278,7 @@ layers for:
 There is room to make component method operations thinner wrappers around one
 shared inherited-call admission primitive.
 
-### 6. Shared observation has the right semantics but a wide call surface
+### 5. Shared observation has the right semantics but a wide call surface
 
 Component shared observation currently passes an observation command through a
 side-channel command. That is the right model.
@@ -315,7 +293,7 @@ The remaining complexity is at the compiler/runtime boundary:
 These should remain separate language surfaces, but runtime validation can
 likely be reduced to one "safe observational command" gate.
 
-### 7. Some tests still assert intermediate object structure
+### 6. Some tests still assert intermediate object structure
 
 The test suite has been improved, but a few tests still construct method data
 objects manually with fields that are not part of the final execution shape,
@@ -369,27 +347,25 @@ Execution method data contains only what dispatch needs:
 
 ### Execution table, not raw-entry table
 
-Eventually, `state.methods[name]` should be the canonical execution method data
-itself, not a raw entry with `_resolvedMethodData`.
+`state.methods[name]` is the canonical execution method data itself, not a raw
+entry with `_resolvedMethodData`.
 
-That would make runtime dispatch simpler:
+This makes runtime dispatch simpler:
 
 ```js
 const methodData = state.methods[name];
 ```
 
-instead of:
+The old raw-entry shape required:
 
 ```js
 const methodData = state.methods[name]._resolvedMethodData;
 ```
 
-The raw chain can remain internal to finalization and be released afterward.
-
-A separate resolved-method table is acceptable only as an intermediate
-migration aid. It should not become the final public/shared metadata shape,
-because the broader `extends` architecture defines `methods` as the method
-metadata member of the shared inheritance object.
+The raw chain remains internal to finalization and is released afterward. Do
+not introduce a separate long-lived resolved-method table, because the broader
+`extends` architecture defines `methods` as the method metadata member of the
+shared inheritance object.
 
 ### One admission/linking primitive
 
@@ -498,8 +474,8 @@ Work:
   - pruned execution method data
 - document that `state.invokedMethods` is a bootstrap catalog and is cleared
   after finalization
-- document that raw entries are bootstrap slots and normal execution uses
-  `_resolvedMethodData` only until the direct execution method-table cleanup
+- document that raw entries are bootstrap/finalization slots only and normal
+  execution uses direct `state.methods[name]` entries after Pass B
 - document `superOrigin` as the concrete raw-entry field for `super()` call-site
   source-origin metadata
 - document that `state.methods[name]` remains the canonical execution method
@@ -567,31 +543,34 @@ Goal:
 - separate bootstrap raw entries from normal execution metadata
 - remove `_resolvedMethodData` from the normal runtime path
 
-Work:
+Status:
+
+- completed in Pass B
+
+Completed work:
 
 - make `state.methods[name]` point to execution method data after successful
   finalization
 - keep raw compiled entries private to finalization
-- avoid introducing `state.resolvedMethods`; use a temporary parallel execution
-  table only if the direct `state.methods` migration proves too risky, and
-  delete it before the phase is complete
-- delete raw-entry pruning once raw entries no longer survive finalization
-- update `getMethodData(...)`, `_assertDirectMethodData(...)`, and
+- avoided introducing `state.resolvedMethods`
+- deleted raw-entry pruning once raw entries stopped surviving finalization
+- updated `getMethodData(...)`, `_assertDirectMethodData(...)`, and
   `_assertDirectSuperMethodData(...)` to operate on direct execution data
-- keep a narrow private finalization map for raw-entry graph work only
-- preserve `sharedRootBuffer`, `sharedSchema`, and `compositionPayload`
+- kept a narrow private finalization cache for raw-entry graph work only;
+  storing it on raw entries is acceptable as long as raw entries do not survive
+  into the normal execution method table
+- preserved `sharedRootBuffer`, `sharedSchema`, and `compositionPayload`
   placement while reorganizing methods; method-table cleanup must not reshape
   the rest of the shared metadata object
-- preserve topmost no-op root constructor behavior while replacing the method
+- preserved topmost no-op root constructor behavior while replacing the method
   table shape
 
-Migration sequence:
+Implemented sequence:
 
-1. Current state: `state.methods[name]` is a raw entry with
+1. Before Pass B: `state.methods[name]` was a raw entry with
    `_resolvedMethodData`.
-2. During this phase: finalization builds execution method data from a private
-   raw graph.
-3. End state: `state.methods[name]` is direct execution method data and raw
+2. Finalization builds execution method data from a private raw graph.
+3. Current end state: `state.methods[name]` is direct execution method data and raw
    entries are private finalization input only.
 
 Primary files:
@@ -608,6 +587,13 @@ Validation:
 - focused inheritance metadata tests
 - behavior tests around repeated finalization idempotence
 - constructor `super()` no-op root tests
+- Pass B publishes direct method data into `state.methods`, keeps
+  `_resolvedMethodData` only as a private finalization cache, and leaves
+  `sharedRootBuffer`, `sharedSchema`, and `compositionPayload` unchanged.
+- Pass B review renamed the post-publication cleanup helper from
+  `pruneFinalizedInheritanceMetadata` to
+  `releaseInheritanceBootstrapMetadata`, because method-data pruning now happens
+  while publishing the execution table.
 
 ### Phase 3. Consolidate Inherited and Component Method Admission
 

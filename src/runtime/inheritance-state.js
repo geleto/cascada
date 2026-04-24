@@ -303,41 +303,9 @@ function leaveInheritanceChainPath(state, token) {
   }
 }
 
-function _pruneResolvedMethodData(methodData, seen) {
-  if (!methodData || typeof methodData !== 'object' || seen.has(methodData)) {
-    return;
-  }
-  seen.add(methodData);
-  _pruneResolvedMethodData(methodData.super, seen);
-  delete methodData.ownUsedChannels;
-  delete methodData.ownMutatedChannels;
-  delete methodData.invokedMethods;
-}
-
-function _pruneRawMethodEntry(entry, seenEntries, seenResolved) {
-  if (!entry || typeof entry !== 'object' || seenEntries.has(entry)) {
-    return;
-  }
-  seenEntries.add(entry);
-  _pruneRawMethodEntry(entry.super, seenEntries, seenResolved);
-  _pruneResolvedMethodData(entry._resolvedMethodData, seenResolved);
-  delete entry.ownUsedChannels;
-  delete entry.ownMutatedChannels;
-  delete entry.super;
-  delete entry.superOrigin;
-  delete entry.invokedMethods;
-}
-
-function pruneFinalizedInheritanceMetadata(state) {
+function releaseInheritanceBootstrapMetadata(state) {
   if (!state || typeof state !== 'object') {
     return state;
-  }
-  const methods = ensureInheritanceMethodsTable(state);
-  const names = Object.keys(methods);
-  const seenEntries = new Set();
-  const seenResolved = new Set();
-  for (let i = 0; i < names.length; i++) {
-    _pruneRawMethodEntry(methods[names[i]], seenEntries, seenResolved);
   }
   state.invokedMethods = Object.create(null);
   const internalState = ensureInheritanceInternalState(state);
@@ -673,7 +641,7 @@ module.exports = {
   registerInheritanceSharedSchema,
   registerInheritanceInvokedMethods,
   finalizeInheritanceMethods,
-  pruneFinalizedInheritanceMetadata,
+  releaseInheritanceBootstrapMetadata,
   createEmptyConstructorEntry,
   createInheritanceMetadataAggregateError,
   collectOrThrowInheritanceMetadataError,

@@ -293,7 +293,7 @@ function _collectResolvedMethodData(state, errorContext = null) {
   Object.keys(methods).forEach((name) => {
     const entry = methods[name];
     if (entry && typeof entry === 'object') {
-      addMethodData(entry._resolvedMethodData);
+      addMethodData(_isResolvedMethodData(entry) ? entry : entry._resolvedMethodData);
     }
   });
 
@@ -361,6 +361,10 @@ function _getMethodDataFromResolvedEntry(
   errorContext,
   state = null
 ) {
+  if (_isResolvedMethodData(resolvedEntry)) {
+    return resolvedEntry;
+  }
+
   if (resolvedEntry === true) {
     throw _createInheritanceFatalError(
       'Inherited dispatch reached unresolved super metadata',
@@ -421,6 +425,34 @@ function getMethodData(state, methodName, errorContext = null) {
   }
 
   return _getMethodDataFromResolvedEntry(methods[methodName], errorContext, state);
+}
+
+function _pruneExecutionMethodData(methodData, seen) {
+  if (!methodData || typeof methodData !== 'object' || seen.has(methodData)) {
+    return;
+  }
+  seen.add(methodData);
+  _pruneExecutionMethodData(methodData.super, seen);
+  delete methodData.ownUsedChannels;
+  delete methodData.ownMutatedChannels;
+  delete methodData.invokedMethods;
+}
+
+function _publishExecutionMethodTable(state, errorContext = null) {
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const names = Object.keys(methods);
+  const executionMethods = Object.create(null);
+  const seen = new Set();
+
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    const methodData = _getMethodDataFromResolvedEntry(methods[name], errorContext, state);
+    _pruneExecutionMethodData(methodData, seen);
+    executionMethods[name] = methodData;
+  }
+
+  state.methods = executionMethods;
+  return executionMethods;
 }
 
 function resolveInheritanceSharedChannel(state, channelName, errorContext = null) {
@@ -544,7 +576,8 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
   for (let i = 0; i < methodNames.length; i++) {
     const name = methodNames[i];
     try {
-      // Build and cache methods[name]._resolvedMethodData before the footprint pass.
+      // Build and cache raw methods before the footprint pass. Already-published
+      // execution entries pass through unchanged.
       _getMethodDataFromResolvedEntry(methods[name], errorContext, state);
     } catch (error) {
       if (
@@ -569,6 +602,7 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
     return state;
   }
   _finalizeChannelFootprints(state, errorContext);
+  _publishExecutionMethodTable(state, errorContext);
   return state;
 }
 
