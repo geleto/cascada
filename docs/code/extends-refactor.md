@@ -646,11 +646,25 @@ Goal:
 - keep the barrier for startup correctness without making normal execution look
   metadata-promise-driven
 
-Work:
+Status:
+
+- completed as Pass D for the readiness-yield and settled-promise cleanup
+- constructor startup still keeps its direct startup path; sharing ordinary
+  method admission remains postponed until direct return/output ownership can be
+  modeled explicitly
+
+Completed work:
 
 - audit every `awaitInheritanceMetadataReadiness(...)` call
 - split "startup may still be finalizing" from "invalid runtime call before
   finalization" where useful
+- make the post-finalization startup yield conditional on actual metadata
+  readiness waiters instead of yielding after every successful finalization
+- clear settled metadata-ready promises from internal inheritance state; the
+  durable result is represented by the settled/resolved flags
+
+Remaining work:
+
 - evaluate whether root constructor startup can share the ordinary method
   admission primitive without losing entry-file direct return/output ownership;
   if it can, model those ownership rules explicitly before changing the
@@ -815,6 +829,12 @@ Leave component constructor/payload API cleanup for Pass E.
 Implements:
 
 - Phase 4
+
+Status:
+
+- completed for the readiness-yield narrowing and settled-promise cleanup
+- remaining constructor-startup admission unification stays with the Phase 4
+  follow-up described above
 
 Why this stays separate:
 

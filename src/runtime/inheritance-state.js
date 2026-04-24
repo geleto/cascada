@@ -118,6 +118,7 @@ function ensureInheritanceInternalState(state) {
         // is used to make repeated successful finalization cheap.
         metadataReadySettled: false,
         metadataReadyResolved: false,
+        metadataReadyWaiterCount: 0,
         metadataReadyYieldPending: false,
         compositionMode: null,
         chainPathStack: []
@@ -198,11 +199,13 @@ function resolveInheritanceMetadataReadiness(state, value = state) {
   }
   internalState.metadataReadySettled = true;
   internalState.metadataReadyResolved = true;
+  const hadWaiters = internalState.metadataReadyWaiterCount > 0;
   if (internalState.metadataReadyResolve) {
     internalState.metadataReadyResolve(value);
   }
-  internalState.metadataReadyYieldPending = true;
-  internalState.metadataReadyPromise = Promise.resolve(value);
+  internalState.metadataReadyWaiterCount = 0;
+  internalState.metadataReadyYieldPending = hadWaiters;
+  internalState.metadataReadyPromise = null;
   internalState.metadataReadyResolve = null;
   internalState.metadataReadyReject = null;
   return value;
@@ -218,9 +221,9 @@ function rejectInheritanceMetadataReadiness(state, error) {
   if (internalState.metadataReadyReject) {
     internalState.metadataReadyReject(error);
   }
+  internalState.metadataReadyWaiterCount = 0;
   internalState.metadataReadyYieldPending = false;
-  internalState.metadataReadyPromise = Promise.reject(error);
-  internalState.metadataReadyPromise.catch(() => {});
+  internalState.metadataReadyPromise = null;
   internalState.metadataReadyResolve = null;
   internalState.metadataReadyReject = null;
   return error;
@@ -231,10 +234,14 @@ function awaitInheritanceMetadataReadiness(state) {
   if (!internalState || internalState.metadataReadySettled) {
     return null;
   }
-  return internalState.metadataReadyPromise &&
+  if (
+    internalState.metadataReadyPromise &&
     typeof internalState.metadataReadyPromise.then === 'function'
-    ? internalState.metadataReadyPromise
-    : null;
+  ) {
+    internalState.metadataReadyWaiterCount++;
+    return internalState.metadataReadyPromise;
+  }
+  return null;
 }
 
 function isInheritanceMetadataReadinessResolved(state) {
@@ -245,6 +252,7 @@ function isInheritanceMetadataReadinessResolved(state) {
 function consumeInheritanceMetadataReadyYield(state) {
   // If finalization released constructor/invocation waiters, the next startup
   // step yields once so those waiters can enqueue their source-order work.
+  // When nobody waited on readiness, startup can continue synchronously.
   const internalState = ensureInheritanceInternalState(state);
   if (!internalState || !internalState.metadataReadyYieldPending) {
     return null;

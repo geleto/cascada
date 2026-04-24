@@ -206,9 +206,6 @@ async function bootstrapInheritanceParentScript(
     );
     if (!parentInheritanceSpec.hasExtends) {
       runtimeApi.finalizeInheritanceMetadata(inheritanceStateValue, parentContext);
-      // Give metadata-ready waiters released by finalization one turn to
-      // enqueue before this parent starts constructor/startup work.
-      await Promise.resolve();
     }
 
     const startupPromise = runtimeApi.runCompiledRootStartup(
