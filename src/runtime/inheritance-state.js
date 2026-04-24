@@ -612,10 +612,6 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
   return sharedMethods;
 }
 
-function finalizeInheritanceSharedSchema(state, context = null) {
-  return ensureInheritanceSharedSchemaTable(state);
-}
-
 module.exports = {
   InheritanceState,
   createInheritanceState,
@@ -634,7 +630,6 @@ module.exports = {
   leaveInheritanceChainPath,
   cloneInheritanceMethodEntry,
   cloneInheritanceMethods,
-  isUnresolvedSuperEntry,
   ensureInheritanceMethodsTable,
   ensureInheritanceSharedSchemaTable,
   ensureInheritanceInvokedMethodsTable,
@@ -643,7 +638,6 @@ module.exports = {
   registerInheritanceSharedSchema,
   registerInheritanceInvokedMethods,
   finalizeInheritanceMethods,
-  finalizeInheritanceSharedSchema,
   createEmptyConstructorEntry,
   createInheritanceMetadataAggregateError,
   collectOrThrowInheritanceMetadataError,

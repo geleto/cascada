@@ -391,7 +391,7 @@ function finalizeInheritanceMetadata(state, context = null) {
 
     // Phase 1: validate chain-level structural metadata before building resolved
     // callable data. Later phases assume missing methods/super targets are known.
-    inheritanceState.finalizeInheritanceSharedSchema(state, context);
+    inheritanceState.ensureInheritanceSharedSchemaTable(state);
     inheritanceState.finalizeInheritanceMethods(state, context, structuralErrors);
 
     // Phase 2: build direct resolved method metadata and file-level invoked

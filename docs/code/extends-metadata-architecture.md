@@ -457,7 +457,7 @@ the compiler should emit helper calls inside the compiled method entry that
 append the relevant invoked-method footprints:
 
 ```js
-runtime.mergeUniqueChannelNames(
+_mergeChannelNames(
   ["channel1", "channel2"],
   methodData.invokedMethods.build.mergedUsedChannels,
   methodData.invokedMethods.render.mergedUsedChannels
@@ -467,7 +467,7 @@ runtime.mergeUniqueChannelNames(
 The same pattern applies to mutated-channel lists inside that method:
 
 ```js
-runtime.mergeUniqueChannelNames(
+_mergeChannelNames(
   ["channel1"],
   methodData.invokedMethods.build.mergedMutatedChannels
 )
@@ -747,8 +747,7 @@ Work:
 
 - where callable bodies currently need channel lists, use direct
   `methodData.invokedMethods`
-- use `runtime.mergeUniqueChannelNames(...)` or equivalent direct merged-channel
-  helpers without await
+- use equivalent direct merged-channel helpers without await
 - treat missing `methodData.invokedMethods.foo` as a fatal metadata error, not
   as an empty channel list
 - keep entry-local code simple because bootstrap already did the hard work
@@ -794,13 +793,12 @@ Work:
   channels on resolved method metadata instead of recomputing them per entry
 - consolidate `invokeInheritedMethod(...)` and `invokeSuperMethod(...)` around
   one shared direct-admission helper if the remaining differences stay narrow
-- inline or remove `_enqueueInvocationCommand(...)` if it remains only a thin
-  enqueue/start wrapper after command lifecycle cleanup settles
-- collapse the remaining thin `invocationInternals` wrapper if command
-  invocation lifecycle no longer needs that extra namespace boundary
-- decide whether `mergeUniqueChannelNames(...)` should remain a public runtime
-  helper or collapse back into the consolidated inheritance-metadata helper
-  layer once direct metadata construction is unified
+- keep invocation command enqueue/start inline at the call sites; Step 9 removed
+  the thin `_enqueueInvocationCommand(...)` wrapper
+- keep command invocation lifecycle behind private functions; Step 9 removed the
+  test-only `invocationInternals` export
+- keep merged-channel handling private to the inheritance metadata layer; Step 9
+  removed the public `mergeUniqueChannelNames(...)` runtime export
 - consolidate duplicated linked-channel path helpers in the bootstrap and
   invocation-linking modules into one runtime helper
 - remove the legacy async-block `if (parent) return ""` guard if it remains

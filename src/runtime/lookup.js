@@ -148,13 +148,7 @@ function memberLookupScript(obj, val, errorContext) {
     return val;
   }
 
-  // No errors - proceed with lookup
-  // Let native error throw; it will be caught by the top-level sync try/catch.
-  //return memberLookupScriptRaw(obj, val);
-
-  // The same implementation as memberLookupScript, but returns a poison value instead of throwing an exception
   if (obj === undefined || obj === null) {
-    //unlike in template mode, in script mode we throw an exception
     return createPoison(new Error(`Cannot read property ${val} of ${obj}`));
   }
 

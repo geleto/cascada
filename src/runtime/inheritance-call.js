@@ -86,16 +86,12 @@ function _addChannelNames(target, names) {
   }
 }
 
-function _mergeChannelNames() {
+function _mergeChannelNames(...arrays) {
   const merged = new Set();
-  for (let i = 0; i < arguments.length; i++) {
-    _addChannelNames(merged, arguments[i]);
+  for (let i = 0; i < arrays.length; i++) {
+    _addChannelNames(merged, arrays[i]);
   }
   return Array.from(merged);
-}
-
-function mergeUniqueChannelNames() {
-  return _mergeChannelNames.apply(null, arguments);
 }
 
 function _cloneErrorContext(errorContext) {
@@ -284,7 +280,7 @@ function _createInvalidSuperMetadataError(methodData, errorContext = null) {
   );
 }
 
-function _collectResolvedMethodData(state, errorContext = null, errors = null) {
+function _collectResolvedMethodData(state, errorContext = null) {
   const collected = [];
   const seen = new Set();
   const addMethodData = (methodData) => {
@@ -294,7 +290,7 @@ function _collectResolvedMethodData(state, errorContext = null, errors = null) {
     seen.add(methodData);
     collected.push(methodData);
     addMethodData(methodData.super);
-    _collectInvokedMethodData(methodData, errorContext, errors).forEach(addMethodData);
+    _collectInvokedMethodData(methodData, errorContext).forEach(addMethodData);
   };
 
   const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
@@ -311,7 +307,7 @@ function _collectResolvedMethodData(state, errorContext = null, errors = null) {
   return collected;
 }
 
-function _collectInvokedMethodData(methodData, errorContext = null, errors = null) {
+function _collectInvokedMethodData(methodData, errorContext = null) {
   const invoked = methodData && methodData.invokedMethods && typeof methodData.invokedMethods === 'object'
     ? methodData.invokedMethods
     : null;
@@ -471,8 +467,6 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
     ? resolvedMethodData.invokedMethods
     : Object.create(null);
   const invokedNames = Object.keys(invokedMethods);
-  const invokedUsedChannels = [];
-  const invokedMutatedChannels = [];
 
   for (let i = 0; i < invokedNames.length; i++) {
     const invokedName = invokedNames[i];
@@ -487,26 +481,15 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
     if (!_isResolvedMethodData(invokedMethodData)) {
       throw _createInvalidInvokedMetadataError(resolvedMethodData, invokedName, errorContext);
     }
-    invokedUsedChannels.push(invokedMethodData.mergedUsedChannels);
-    invokedMutatedChannels.push(invokedMethodData.mergedMutatedChannels);
   }
 
-  return mergeUniqueChannelNames(
-    resolvedMethodData.ownUsedChannels,
-    resolvedMethodData.ownMutatedChannels,
-    resolvedMethodData.super ? resolvedMethodData.super.mergedUsedChannels : null,
-    resolvedMethodData.super ? resolvedMethodData.super.mergedMutatedChannels : null,
-    ...invokedUsedChannels,
-    ...invokedMutatedChannels
-  );
+  return _getMethodLinkedChannels(resolvedMethodData);
 }
 
-function _finalizeInvokedMethodCatalog(state, errorContext = null, errors = null) {
+function _finalizeInvokedMethodCatalog(state, errorContext = null, errors) {
   const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
   const names = Object.keys(invokedMethods);
   const resolvedCatalog = Object.create(null);
-  const localErrors = Array.isArray(errors) ? errors : [];
-  const initialErrorCount = localErrors.length;
 
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
@@ -527,7 +510,7 @@ function _finalizeInvokedMethodCatalog(state, errorContext = null, errors = null
           error.code === inheritanceState.ERR_SUPER_METHOD_NOT_FOUND
         )
       ) {
-        inheritanceState.collectOrThrowInheritanceMetadataError(error, localErrors);
+        inheritanceState.collectOrThrowInheritanceMetadataError(error, errors);
         continue;
       }
       throw error;
@@ -539,42 +522,20 @@ function _finalizeInvokedMethodCatalog(state, errorContext = null, errors = null
       invokedMethods[names[i]] = resolvedCatalog[names[i]];
     }
   }
-  if (_hasNewMetadataErrors(localErrors, initialErrorCount)) {
-    if (!Array.isArray(errors)) {
-      _throwCollectedMetadataErrors(localErrors, errorContext);
-    }
-    return invokedMethods;
-  }
-
   return invokedMethods;
 }
 
-function _collectMethodChannelFootprintErrors(state, errorContext = null, errors = null) {
-  const localErrors = Array.isArray(errors) ? errors : [];
-  const initialErrorCount = localErrors.length;
-  const methodDataList = _collectResolvedMethodData(state, errorContext, localErrors);
-  if (_hasNewMetadataErrors(localErrors, initialErrorCount)) {
-    if (!Array.isArray(errors)) {
-      _throwCollectedMetadataErrors(localErrors, errorContext);
-    }
-    return state;
-  }
+function _finalizeChannelFootprints(state, errorContext = null) {
+  const methodDataList = _collectResolvedMethodData(state, errorContext);
   let changed = true;
   while (changed) {
     changed = false;
     for (let i = 0; i < methodDataList.length; i++) {
       const methodData = methodDataList[i];
-      const invokedMethods = _collectInvokedMethodData(methodData, errorContext, localErrors);
-      // Invalid resolved metadata shapes remain fail-fast invariants even after
-      // Step 7 consolidation; only missing structural targets are aggregated.
-      // Super-chain channel growth also stays folded into this same fixed-point
-      // walk so we do not reintroduce a second parent-to-child merge phase.
-      if (_hasNewMetadataErrors(localErrors, initialErrorCount)) {
-        if (!Array.isArray(errors)) {
-          _throwCollectedMetadataErrors(localErrors, errorContext);
-        }
-        return state;
-      }
+      const invokedMethods = _collectInvokedMethodData(methodData, errorContext);
+      // Invalid resolved metadata shapes remain fail-fast invariants. Super-chain
+      // channel growth stays folded into this same fixed-point walk so we do not
+      // reintroduce a second parent-to-child merge phase.
       const nextUsedChannels = _mergeChannelNames(
         methodData.mergedUsedChannels,
         methodData.super ? methodData.super.mergedUsedChannels : null,
@@ -630,10 +591,7 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
     }
     return state;
   }
-  _collectMethodChannelFootprintErrors(state, errorContext, localErrors);
-  if (_hasNewMetadataErrors(localErrors, initialErrorCount) && !Array.isArray(errors)) {
-    _throwCollectedMetadataErrors(localErrors, errorContext);
-  }
+  _finalizeChannelFootprints(state, errorContext);
   return state;
 }
 
@@ -735,55 +693,53 @@ function _markBufferFinish(buffer) {
   buffer.markFinishedAndPatchLinks();
 }
 
-const invocationInternals = {
-  invokeResolvedMethodData(command, methodData, invocationBuffer) {
-    if (command.name === '__constructor__') {
-      return methodData.fn(
-        command.env,
-        command.context,
-        command.runtime,
-        command.cb,
-        invocationBuffer,
-        command.inheritanceState
-      );
-    }
-
-    const payload = _createMethodPayload(
-      methodData,
-      command.args,
-      command.errorContext,
-      command.label,
-      command.context,
-      command.fallbackToContextOriginalArgs
-    );
-    const renderCtx = methodData.signature && methodData.signature.withContext &&
-      command.context && typeof command.context.getRenderContextVariables === 'function'
-      ? command.context.getRenderContextVariables()
-      : undefined;
-
+function _invokeResolvedMethodData(command, methodData, invocationBuffer) {
+  if (command.name === '__constructor__') {
     return methodData.fn(
       command.env,
       command.context,
       command.runtime,
       command.cb,
       invocationBuffer,
-      payload,
-      renderCtx,
-      command.inheritanceState,
-      methodData
+      command.inheritanceState
     );
-  },
-
-  async finishInvocationBuffer(invocationBuffer) {
-    if (!invocationBuffer) {
-      return;
-    }
-    _markBufferFinish(invocationBuffer);
-    if (typeof invocationBuffer.getFinishedPromise === 'function') {
-      await invocationBuffer.getFinishedPromise();
-    }
   }
-};
+
+  const payload = _createMethodPayload(
+    methodData,
+    command.args,
+    command.errorContext,
+    command.label,
+    command.context,
+    command.fallbackToContextOriginalArgs
+  );
+  const renderCtx = methodData.signature && methodData.signature.withContext &&
+    command.context && typeof command.context.getRenderContextVariables === 'function'
+    ? command.context.getRenderContextVariables()
+    : undefined;
+
+  return methodData.fn(
+    command.env,
+    command.context,
+    command.runtime,
+    command.cb,
+    invocationBuffer,
+    payload,
+    renderCtx,
+    command.inheritanceState,
+    methodData
+  );
+}
+
+async function _finishInvocationBuffer(invocationBuffer) {
+  if (!invocationBuffer) {
+    return;
+  }
+  _markBufferFinish(invocationBuffer);
+  if (typeof invocationBuffer.getFinishedPromise === 'function') {
+    await invocationBuffer.getFinishedPromise();
+  }
+}
 
 function createInheritanceInvocationCommand(spec) {
   const {
@@ -855,8 +811,8 @@ function createInheritanceInvocationCommand(spec) {
 
     command._startPromise = (async () => {
       try {
-        const result = await invocationInternals.invokeResolvedMethodData(command, command.methodData, command.invocationBuffer);
-        await invocationInternals.finishInvocationBuffer(command.invocationBuffer);
+        const result = await _invokeResolvedMethodData(command, command.methodData, command.invocationBuffer);
+        await _finishInvocationBuffer(command.invocationBuffer);
         command._resolveResult(result);
         return result;
       } catch (error) {
@@ -864,7 +820,7 @@ function createInheritanceInvocationCommand(spec) {
         command._normalizedError = normalizedError;
         command._rejectResult(normalizedError);
         try {
-          await invocationInternals.finishInvocationBuffer(command.invocationBuffer);
+          await _finishInvocationBuffer(command.invocationBuffer);
         } catch (finishError) {
           void finishError;
         }
@@ -876,12 +832,6 @@ function createInheritanceInvocationCommand(spec) {
   };
 
   return command;
-}
-
-function _enqueueInvocationCommand(command, invocationBuffer) {
-  invocationBuffer.add(command, '__invoke__');
-  command.apply();
-  return command.promise;
 }
 
 function _assertDirectMethodData(inheritanceStateValue, methodName, errorContext = null) {
@@ -966,7 +916,9 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
       errorContext
     });
 
-    return _enqueueInvocationCommand(command, invocationBuffer);
+    invocationBuffer.add(command, '__invoke__');
+    command.apply();
+    return command.promise;
   });
 }
 
@@ -997,14 +949,14 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
       errorContext
     });
 
-    return _enqueueInvocationCommand(command, invocationBuffer);
+    invocationBuffer.add(command, '__invoke__');
+    command.apply();
+    return command.promise;
   });
 }
 
 module.exports = {
   createInheritanceInvocationCommand,
-  invocationInternals,
-  mergeUniqueChannelNames,
   getMethodData,
   finalizeResolvedMethodMetadata,
   hasLinkedChannelPath,

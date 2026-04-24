@@ -11,7 +11,6 @@ let transformer;
 let scriptTranspiler;
 let runtime;
 let inheritanceBootstrap;
-let inheritanceStartup;
 let StringLoader;
 let inheritanceStateModule;
 let inheritanceCallModule;
@@ -33,12 +32,6 @@ if (typeof require !== 'undefined') {
   } catch (err) {
     void err;
     inheritanceBootstrap = null;
-  }
-  try {
-    inheritanceStartup = require('../../src/runtime/inheritance-startup');
-  } catch (err) {
-    void err;
-    inheritanceStartup = null;
   }
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
@@ -64,7 +57,7 @@ if (typeof require !== 'undefined') {
   scriptTranspiler = nunjucks.scriptTranspiler;
   runtime = nunjucks.runtime;
   inheritanceBootstrap = null;
-  inheritanceStartup = null;
+  inheritanceStateModule = null;
   inheritanceCallModule = null;
   StringLoader = window.util.StringLoader;
 }
@@ -667,15 +660,16 @@ describe('Extends Foundation', function () {
       expect(script.methods.build.invokedMethods.lookup.name).to.be('lookup');
     });
 
-    it('should not emit pending inherited method entries for invoked methods', function () {
-      const source = new Script(
+    it('should expose invoked-method metadata without local placeholder methods', function () {
+      const script = new Script(
         'extends "A.script" with theme\nmethod build()\n  super()\nendmethod\nreturn this.lookup()',
         env,
         'pending-helper-source.script'
-      )._compileSource();
+      );
+      script.compile();
 
-      expect(source).to.not.contain('createPendingInheritanceEntry');
-      expect(source).to.contain('__compiledInvokedMethods');
+      expect(script.methods.lookup).to.be(undefined);
+      expect(script.invokedMethods.lookup.name).to.be('lookup');
     });
 
     it('should create inheritance state in the root body before bootstrapping metadata', function () {
@@ -1411,6 +1405,10 @@ describe('Extends Foundation', function () {
     });
 
     it('should wait for late startup work before finalizing a plain root that uses inheritance startup', async function () {
+      if (!inheritanceStateModule) {
+        this.skip();
+        return;
+      }
       const originalRunCompiledRootStartup = runtime.runCompiledRootStartup;
 
       runtime.runCompiledRootStartup = function(setupRenderFunc, compiledMethods, inheritanceStateArg, envArg, contextArg, runtimeArg, cbArg, outputArg, extendsStateArg, optionsArg) {
@@ -1442,7 +1440,7 @@ describe('Extends Foundation', function () {
           }, 10);
         }));
 
-        return runtimeArg.mergeInheritanceStartupPromise(inheritanceStateArg, latePromise, startupPromise);
+        return inheritanceStateModule.mergeInheritanceStartupPromise(inheritanceStateArg, latePromise, startupPromise);
       };
 
       try {
@@ -1700,8 +1698,12 @@ describe('Extends Foundation', function () {
         },
         addBuffer() {},
         _registerLinkedChannel() {},
-        markFinishedAndPatchLinks() {}
+        markFinishedAndPatchLinks() {},
+        getFinishedPromise() {
+          return Promise.reject(cleanupError);
+        }
       };
+      const cleanupError = new Error('cleanup failed');
       const command = inheritanceCallModule.createInheritanceInvocationCommand({
         name: '__constructor__',
         methodData: {
@@ -1726,12 +1728,6 @@ describe('Extends Foundation', function () {
         invocationBuffer: fakeBuffer,
         errorContext: null
       });
-      const cleanupError = new Error('cleanup failed');
-
-      const originalFinishInvocationBuffer = inheritanceCallModule.invocationInternals.finishInvocationBuffer;
-      inheritanceCallModule.invocationInternals.finishInvocationBuffer = function() {
-        throw cleanupError;
-      };
       const completionPromise = command.apply();
 
       try {
@@ -1746,8 +1742,6 @@ describe('Extends Foundation', function () {
         expect().fail('Expected invocation start to reject when cleanup fails');
       } catch (error) {
         expect(error).to.be(cleanupError);
-      } finally {
-        inheritanceCallModule.invocationInternals.finishInvocationBuffer = originalFinishInvocationBuffer;
       }
     });
 
@@ -1813,8 +1807,8 @@ describe('Extends Foundation', function () {
         signature: { argNames: [], withContext: false },
         ownUsedChannels: ['localRead'],
         ownMutatedChannels: ['localWrite'],
-        mergedUsedChannels: ['unusedMergedRead'],
-        mergedMutatedChannels: ['unusedMergedWrite'],
+        mergedUsedChannels: ['localRead', 'superRead', 'helperRead'],
+        mergedMutatedChannels: ['localWrite', 'superWrite', 'helperWrite'],
         super: {
           fn() {
             return null;

@@ -1037,8 +1037,6 @@ class CompileInheritance {
         node
       );
     }
-    //var id = this._tmpid();
-
     // If we are at the top level of a template (`!this.inBlock`) that has a
     // static `extends` tag, this block is a definition-only. We can safely
     // skip compiling any rendering code for it, as the parent template is
