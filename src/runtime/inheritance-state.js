@@ -5,6 +5,7 @@ const { RuntimeFatalError } = require('./errors');
 const ERR_INHERITED_METHOD_NOT_FOUND = 'ERR_INHERITED_METHOD_NOT_FOUND';
 const ERR_SUPER_METHOD_NOT_FOUND = 'ERR_SUPER_METHOD_NOT_FOUND';
 const ERR_SHARED_CHANNEL_NOT_FOUND = 'ERR_SHARED_CHANNEL_NOT_FOUND';
+const ERR_SHARED_METHOD_NAME_COLLISION = 'ERR_SHARED_METHOD_NAME_COLLISION';
 const ERR_INVALID_INVOKED_METHOD_METADATA = 'ERR_INVALID_INVOKED_METHOD_METADATA';
 const ERR_INVALID_SUPER_METADATA = 'ERR_INVALID_SUPER_METADATA';
 const INTERNAL_INHERITANCE_STATE = typeof Symbol === 'function'
@@ -581,6 +582,36 @@ function registerInheritanceInvokedMethods(state, localInvokedMethods, context =
   return invokedMethods;
 }
 
+function validateInheritanceSharedMethodNameCollisions(state, context = null, errors = null) {
+  const methods = ensureInheritanceMethodsTable(state);
+  const sharedSchema = ensureInheritanceSharedSchemaTable(state);
+  const names = Object.keys(sharedSchema);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    if (!Object.prototype.hasOwnProperty.call(methods, name)) {
+      continue;
+    }
+    const methodEntry = methods[name];
+    const path = methodEntry && methodEntry.ownerKey
+      ? methodEntry.ownerKey
+      : context && context.path
+        ? context.path
+        : null;
+    const error = withInheritanceErrorCode(
+      new RuntimeFatalError(
+        `shared channel '${name}' conflicts with inherited method '${name}'`,
+        0,
+        0,
+        null,
+        path
+      ),
+      ERR_SHARED_METHOD_NAME_COLLISION
+    );
+    collectOrThrowInheritanceMetadataError(error, errors);
+  }
+  return state;
+}
+
 function finalizeInheritanceMethods(state, context = null, errors = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
   const names = Object.keys(sharedMethods);
@@ -652,6 +683,7 @@ module.exports = {
   wireResolvedSuperEntry,
   registerInheritanceSharedSchema,
   registerInheritanceInvokedMethods,
+  validateInheritanceSharedMethodNameCollisions,
   finalizeInheritanceMethods,
   releaseInheritanceBootstrapMetadata,
   createEmptyConstructorEntry,
@@ -660,6 +692,7 @@ module.exports = {
   ERR_INHERITED_METHOD_NOT_FOUND,
   ERR_SUPER_METHOD_NOT_FOUND,
   ERR_SHARED_CHANNEL_NOT_FOUND,
+  ERR_SHARED_METHOD_NAME_COLLISION,
   ERR_INVALID_INVOKED_METHOD_METADATA,
   ERR_INVALID_SUPER_METADATA,
   withInheritanceErrorCode

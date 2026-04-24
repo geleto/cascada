@@ -404,6 +404,7 @@ function finalizeInheritanceMetadata(state, context = null) {
     // callable data. Later phases assume missing methods/super targets are known.
     inheritanceState.ensureInheritanceSharedSchemaTable(state);
     inheritanceState.finalizeInheritanceMethods(state, context, structuralErrors);
+    inheritanceState.validateInheritanceSharedMethodNameCollisions(state, context, structuralErrors);
 
     // Phase 2: build direct resolved method metadata and file-level invoked
     // catalogs from one recursive construction path, then compute final

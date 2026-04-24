@@ -1270,13 +1270,16 @@ class CompilerAsync extends CompilerBaseAsync {
     if (sharedNames.size === 0) {
       return;
     }
-    this._getMethodDefinitions(node).forEach((method) => {
+    const methodDefinitions = this.scriptMode
+      ? this._getMethodDefinitions(node)
+      : node.findAll(nodes.Block);
+    methodDefinitions.forEach((method) => {
       const methodName = method && method.name && method.name.value;
       if (!methodName || !sharedNames.has(methodName)) {
         return;
       }
       this.fail(
-        `shared channel '${methodName}' conflicts with inherited method '${methodName}'`,
+        `shared channel '${methodName}' conflicts with method '${methodName}' defined in this file`,
         method.name.lineno,
         method.name.colno,
         method,

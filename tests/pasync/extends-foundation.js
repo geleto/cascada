@@ -702,8 +702,107 @@ describe('Extends Foundation', function () {
         ].join('\n'), {});
         expect().fail('Expected local shared/method collision to fail');
       } catch (error) {
+        expect(String(error)).to.contain("shared channel 'build' conflicts with method 'build' defined in this file");
+      }
+    });
+
+    it('should reject inherited shared and method name collisions during metadata finalization', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      loader.addTemplate('A.script', [
+        'method build()',
+        '  return "parent"',
+        'endmethod',
+        'return null'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'shared var build = "shared"',
+        'extends "A.script"',
+        'return null'
+      ].join('\n'));
+
+      try {
+        await env.renderScript('C.script', {});
+        expect().fail('Expected inherited shared/method collision to fail');
+      } catch (error) {
+        expect(error.code).to.be('ERR_SHARED_METHOD_NAME_COLLISION');
         expect(String(error)).to.contain("shared channel 'build' conflicts with inherited method 'build'");
       }
+    });
+
+    it('should reject local template block and inferred shared-var name collisions', async function () {
+      try {
+        await env.renderTemplateString([
+          '{% block theme %}block{% endblock %}',
+          '{% block body %}{{ this.theme }}{% endblock %}'
+        ].join(''));
+        expect().fail('Expected local template block/shared collision to fail');
+      } catch (error) {
+        expect(String(error)).to.contain("shared channel 'theme' conflicts with method 'theme' defined in this file");
+      }
+    });
+
+    it('should reject inherited template block and inferred shared-var name collisions', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', [
+        '{% block theme %}parent{% endblock %}',
+        '{% block body %}{% endblock %}'
+      ].join(''));
+      loader.addTemplate('child.njk', [
+        '{% extends "base.njk" %}',
+        '{% block body %}{{ this.theme }}{% endblock %}'
+      ].join(''));
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected inherited template block/shared collision to fail');
+      } catch (error) {
+        expect(error.code).to.be('ERR_SHARED_METHOD_NAME_COLLISION');
+        expect(String(error)).to.contain("shared channel 'theme' conflicts with inherited method 'theme'");
+      }
+    });
+
+    it('should reject bare inherited method references from parent metadata', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      loader.addTemplate('A.script', [
+        'method build()',
+        '  return "parent"',
+        'endmethod',
+        'return null'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'extends "A.script"',
+        'return this.build'
+      ].join('\n'));
+
+      try {
+        await env.renderScript('C.script', {});
+        expect().fail('Expected bare inherited method reference to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('bare inherited-method references are not supported');
+        expect(String(error)).to.contain('use this.build(...)');
+      }
+    });
+
+    it('should keep inherited method calls from parent metadata valid', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      loader.addTemplate('A.script', [
+        'method build()',
+        '  return "parent"',
+        'endmethod',
+        'return null'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'extends "A.script"',
+        'return this.build()'
+      ].join('\n'));
+
+      const result = await env.renderScript('C.script', {});
+
+      expect(result).to.be('parent');
     });
 
     it('should reject ! on this.sharedName because ! is context-path only', async function () {
