@@ -381,7 +381,7 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
     if (!channelName) {
       continue;
     }
-    if (_isBufferReachableThroughLinkedParents(parentBuffer, currentBuffer, channelName)) {
+    if (inheritanceCall.hasLinkedChannelPath(parentBuffer, currentBuffer, channelName)) {
       continue;
     }
     if (
@@ -407,25 +407,6 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
   return currentBuffer;
 }
 
-function _isBufferReachableThroughLinkedParents(rootBuffer, buffer, channelName) {
-  let current = buffer;
-  while (current && current.parent) {
-    const parent = current.parent;
-    if (
-      !parent ||
-      typeof parent.hasLinkedBuffer !== 'function' ||
-      !parent.hasLinkedBuffer(current, channelName)
-    ) {
-      return false;
-    }
-    if (parent === rootBuffer) {
-      return true;
-    }
-    current = parent;
-  }
-  return false;
-}
-
 function getInheritanceSharedBuffer(currentBuffer, inheritanceStateValue) {
   if (inheritanceStateValue && inheritanceStateValue.sharedRootBuffer) {
     return inheritanceStateValue.sharedRootBuffer;
@@ -447,22 +428,22 @@ function finalizeInheritanceMetadata(state, context = null) {
     // callable data. Later phases assume missing methods/super targets are known.
     inheritanceState.finalizeInheritanceSharedSchema(state, context);
     inheritanceState.finalizeInheritanceMethods(state, context, structuralErrors);
-    inheritanceState.finalizeInheritanceInvokedMethods(state, context, structuralErrors);
     if (structuralErrors.length > 0) {
       const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(structuralErrors, context);
       throw aggregateError || structuralErrors[0];
     }
 
-    // Phase 2: replace compiled invoked-method names with resolved method data and
-    // warm the method-data cache; channel footprint merging depends on this graph.
+    // Phase 2: build direct resolved method metadata and file-level invoked
+    // catalogs from one recursive construction path, then compute final
+    // transitive channel footprints from that resolved graph.
     const errorContext = {
       path: context && context.path ? context.path : null
     };
-    inheritanceCall.resolveAndWireInvokedMethodCatalog(state, errorContext);
-    inheritanceCall.prewarmMethodDataCache(state, errorContext);
-
-    // Phase 3: compute final transitive channel footprints used by admission.
-    inheritanceCall.finalizeMethodChannelFootprints(state, errorContext);
+    inheritanceCall.finalizeResolvedMethodMetadata(state, errorContext, structuralErrors);
+    if (structuralErrors.length > 0) {
+      const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(structuralErrors, context);
+      throw aggregateError || structuralErrors[0];
+    }
     inheritanceState.resolveInheritanceMetadataReadiness(state, state);
     return state;
   } catch (error) {

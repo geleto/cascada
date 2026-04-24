@@ -5,6 +5,8 @@ const { RuntimeFatalError } = require('./errors');
 const ERR_INHERITED_METHOD_NOT_FOUND = 'ERR_INHERITED_METHOD_NOT_FOUND';
 const ERR_SUPER_METHOD_NOT_FOUND = 'ERR_SUPER_METHOD_NOT_FOUND';
 const ERR_SHARED_CHANNEL_NOT_FOUND = 'ERR_SHARED_CHANNEL_NOT_FOUND';
+const ERR_INVALID_INVOKED_METHOD_METADATA = 'ERR_INVALID_INVOKED_METHOD_METADATA';
+const ERR_INVALID_SUPER_METADATA = 'ERR_INVALID_SUPER_METADATA';
 const INTERNAL_INHERITANCE_STATE = typeof Symbol === 'function'
   ? Symbol('cascadaInheritanceInternalState')
   : '__cascadaInheritanceInternalState__';
@@ -158,8 +160,7 @@ function ensureInheritanceInternalState(state) {
         // whether one post-finalization yield is needed.
         metadataReadyWaiterCount: 0,
         compositionMode: null,
-        chainPathStack: [],
-        invokedMethodOrigins: Object.create(null)
+        chainPathStack: []
       }
     });
   }
@@ -376,6 +377,9 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
     ? entry.sharedLookupCandidates.slice()
     : [];
   clonedEntry.invokedMethods = cloneInvokedMethodsMap(entry.invokedMethods);
+  clonedEntry.superOrigin = entry.superOrigin && typeof entry.superOrigin === 'object'
+    ? Object.assign({}, entry.superOrigin)
+    : null;
   clonedEntry.signature = entry.signature && typeof entry.signature === 'object'
     ? {
       argNames: Array.isArray(entry.signature.argNames)
@@ -399,7 +403,14 @@ function cloneInvokedMethodsMap(invokedMethods) {
   // after bootstrap; shallow cloning preserves the intended identity in both cases.
   const names = Object.keys(invokedMethods);
   for (let i = 0; i < names.length; i++) {
-    cloned[names[i]] = invokedMethods[names[i]];
+    const value = invokedMethods[names[i]];
+    cloned[names[i]] = value && typeof value === 'object'
+      ? Object.assign({}, value, {
+        origin: value.origin && typeof value.origin === 'object'
+          ? Object.assign({}, value.origin)
+          : null
+      })
+      : value;
   }
   return cloned;
 }
@@ -620,28 +631,34 @@ function registerInheritanceInvokedMethods(state, localInvokedMethods, context =
   if (!localInvokedMethods || typeof localInvokedMethods !== 'object') {
     return invokedMethods;
   }
-  const internalState = ensureInheritanceInternalState(state);
-  const invokedMethodOrigins = internalState.invokedMethodOrigins;
   const names = Object.keys(localInvokedMethods);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
     if (!name) {
       continue;
     }
-    invokedMethods[name] = typeof localInvokedMethods[name] === 'string'
-      ? localInvokedMethods[name]
-      : name;
-    if (!invokedMethodOrigins[name]) {
-      invokedMethodOrigins[name] = {
-        path: context && context.path ? context.path : null
-      };
+    const localEntry = localInvokedMethods[name];
+    if (localEntry && typeof localEntry === 'object') {
+      invokedMethods[name] = Object.assign({}, localEntry, {
+        origin: localEntry.origin && typeof localEntry.origin === 'object'
+          ? Object.assign({}, localEntry.origin)
+          : null
+      });
+      continue;
     }
+    invokedMethods[name] = {
+      name: typeof localEntry === 'string' ? localEntry : name,
+      origin: {
+        path: context && context.path ? context.path : null
+      }
+    };
   }
   return invokedMethods;
 }
 
 function finalizeInheritanceMethods(state, context = null, errors = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
+  const invokedMethods = ensureInheritanceInvokedMethodsTable(state);
   const names = Object.keys(sharedMethods);
   let emptyConstructorEntry = null;
   for (let i = 0; i < names.length; i++) {
@@ -656,13 +673,17 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
         sharedMethods[name] = emptyConstructorEntry;
         continue;
       }
+      const invokedReference = invokedMethods[name];
+      const invokedOrigin = invokedReference && typeof invokedReference === 'object' && invokedReference.origin
+        ? invokedReference.origin
+        : null;
       const error = withInheritanceErrorCode(
         new RuntimeFatalError(
           `Inherited method '${name}' was not found`,
-          0,
-          0,
-          null,
-          entry.ownerKey || (context && context.path ? context.path : null)
+          invokedOrigin && typeof invokedOrigin.lineno === 'number' ? invokedOrigin.lineno : 0,
+          invokedOrigin && typeof invokedOrigin.colno === 'number' ? invokedOrigin.colno : 0,
+          invokedOrigin && invokedOrigin.errorContextString ? invokedOrigin.errorContextString : null,
+          invokedOrigin && invokedOrigin.path ? invokedOrigin.path : entry.ownerKey || (context && context.path ? context.path : null)
         ),
         ERR_INHERITED_METHOD_NOT_FOUND
       );
@@ -692,13 +713,16 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
         delete superOwner._resolvedMethodDataPromise;
         continue;
       }
+      const superOrigin = superOwner && superOwner.superOrigin && typeof superOwner.superOrigin === 'object'
+        ? superOwner.superOrigin
+        : null;
       const error = withInheritanceErrorCode(
         new RuntimeFatalError(
           `super() for method '${name}' was not found`,
-          0,
-          0,
-          null,
-          superOwner.ownerKey || (context && context.path ? context.path : null)
+          superOrigin && typeof superOrigin.lineno === 'number' ? superOrigin.lineno : 0,
+          superOrigin && typeof superOrigin.colno === 'number' ? superOrigin.colno : 0,
+          superOrigin && superOrigin.errorContextString ? superOrigin.errorContextString : null,
+          superOrigin && superOrigin.path ? superOrigin.path : superOwner.ownerKey || (context && context.path ? context.path : null)
         ),
         ERR_SUPER_METHOD_NOT_FOUND
       );
@@ -715,13 +739,16 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
         delete superOwner._resolvedMethodDataPromise;
         continue;
       }
+      const superOrigin = superOwner && superOwner.superOrigin && typeof superOwner.superOrigin === 'object'
+        ? superOwner.superOrigin
+        : null;
       collectOrThrowInheritanceMetadataError(withInheritanceErrorCode(
         new RuntimeFatalError(
           `super() for method '${name}' was not found`,
-          0,
-          0,
-          null,
-          superOwner.ownerKey || (context && context.path ? context.path : null)
+          superOrigin && typeof superOrigin.lineno === 'number' ? superOrigin.lineno : 0,
+          superOrigin && typeof superOrigin.colno === 'number' ? superOrigin.colno : 0,
+          superOrigin && superOrigin.errorContextString ? superOrigin.errorContextString : null,
+          superOrigin && superOrigin.path ? superOrigin.path : superOwner.ownerKey || (context && context.path ? context.path : null)
         ),
         ERR_SUPER_METHOD_NOT_FOUND
       ), errors);
@@ -730,37 +757,6 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
     }
   }
   return sharedMethods;
-}
-
-function finalizeInheritanceInvokedMethods(state, context = null, errors = null) {
-  const sharedMethods = ensureInheritanceMethodsTable(state);
-  const invokedMethods = ensureInheritanceInvokedMethodsTable(state);
-  const internalState = ensureInheritanceInternalState(state);
-  const invokedMethodOrigins = internalState.invokedMethodOrigins;
-  const invokedNames = Object.keys(invokedMethods);
-
-  for (let i = 0; i < invokedNames.length; i++) {
-    const name = invokedNames[i];
-    const methodName = typeof invokedMethods[name] === 'string' ? invokedMethods[name] : name;
-    const entry = sharedMethods[methodName];
-    if (!entry || isPendingInheritanceEntry(entry)) {
-      const origin = invokedMethodOrigins[name];
-      collectOrThrowInheritanceMetadataError(withInheritanceErrorCode(
-        new RuntimeFatalError(
-          `Inherited method '${methodName}' was not found`,
-          0,
-          0,
-          null,
-          origin && origin.path ? origin.path : context && context.path ? context.path : null
-        ),
-        ERR_INHERITED_METHOD_NOT_FOUND
-      ), errors);
-      continue;
-    }
-    invokedMethods[name] = entry;
-  }
-
-  return invokedMethods;
 }
 
 function finalizeInheritanceSharedSchema(state, context = null) {
@@ -797,7 +793,6 @@ module.exports = {
   registerInheritanceSharedSchema,
   registerInheritanceInvokedMethods,
   finalizeInheritanceMethods,
-  finalizeInheritanceInvokedMethods,
   finalizeInheritanceSharedSchema,
   createEmptyConstructorEntry,
   createInheritanceMetadataAggregateError,
@@ -805,5 +800,7 @@ module.exports = {
   ERR_INHERITED_METHOD_NOT_FOUND,
   ERR_SUPER_METHOD_NOT_FOUND,
   ERR_SHARED_CHANNEL_NOT_FOUND,
+  ERR_INVALID_INVOKED_METHOD_METADATA,
+  ERR_INVALID_SUPER_METADATA,
   withInheritanceErrorCode
 };

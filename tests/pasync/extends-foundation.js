@@ -580,6 +580,7 @@ describe('Extends Foundation', function () {
       expect(script.methods.build.ownUsedChannels).to.be.an(Array);
       expect(script.methods.build.ownMutatedChannels).to.be.an(Array);
       expect(script.methods.build.super).to.be(false);
+      expect(script.methods.build.superOrigin).to.be(null);
       expect(script.methods.build.signature).to.eql({ argNames: ['user'], withContext: false });
       expect(script.methods.build.ownerKey).to.be('method-metadata.script');
     });
@@ -610,6 +611,7 @@ describe('Extends Foundation', function () {
       expect(script.methods.__constructor__.ownUsedChannels).to.contain('trace');
       expect(script.methods.__constructor__.ownMutatedChannels).to.contain('trace');
       expect(script.methods.__constructor__.super).to.be(false);
+      expect(script.methods.__constructor__.superOrigin).to.be(null);
       expect(script.methods.__constructor__.signature).to.eql({ argNames: [], withContext: false });
       expect(script.methods.__constructor__.ownerKey).to.be('constructor-metadata.script');
     });
@@ -682,6 +684,8 @@ describe('Extends Foundation', function () {
         expect(createCount).to.be(1);
         expect(script.methods.lookup.__fromRuntimeHelper).to.be(true);
         expect(script.methods.build.super).to.be(true);
+        expect(script.methods.build.superOrigin.path).to.be('pending-helper.script');
+        expect(script.methods.build.superOrigin.lineno).to.be(3);
         expect(script.sharedSchema.theme).to.be(undefined);
       } finally {
         runtime.createPendingInheritanceEntry = originalCreatePendingInheritanceEntry;
@@ -820,11 +824,12 @@ describe('Extends Foundation', function () {
       childScript.compile();
       parentScript.compile();
 
-      expect(childScript.invokedMethods.render).to.be('render');
-      expect(childScript.invokedMethods.decorate).to.be('decorate');
-      expect(childScript.invokedMethods.build).to.be('build');
-      expect(childScript.methods.build.invokedMethods.render).to.be('render');
-      expect(childScript.methods.build.invokedMethods.decorate).to.be('decorate');
+      expect(childScript.invokedMethods.render.name).to.be('render');
+      expect(childScript.invokedMethods.decorate.name).to.be('decorate');
+      expect(childScript.invokedMethods.build.name).to.be('build');
+      expect(childScript.methods.build.invokedMethods.render.name).to.be('render');
+      expect(childScript.methods.build.invokedMethods.decorate.name).to.be('decorate');
+      expect(childScript.methods.build.invokedMethods.render.origin.path).to.be('C.script');
       expect(Object.keys(childScript.methods.decorate.invokedMethods)).to.eql([]);
 
       const inheritanceState = runtime.createInheritanceState();
@@ -851,8 +856,8 @@ describe('Extends Foundation', function () {
       expect(inheritanceState.invokedMethods.build).to.be(runtime.getMethodData(inheritanceState, 'build'));
       expect(inheritanceState.invokedMethods.build.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
       expect(inheritanceState.invokedMethods.build.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
-      expect(inheritanceState.methods.build.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
-      expect(inheritanceState.methods.build.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
+      expect(inheritanceState.methods.build._resolvedMethodData.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
+      expect(inheritanceState.methods.build._resolvedMethodData.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
 
       const buildData = runtime.getMethodData(inheritanceState, 'build');
       expect(buildData.invokedMethods.render.ownerKey).to.be('A.script');
@@ -874,9 +879,15 @@ describe('Extends Foundation', function () {
         { path: 'missing-invoked.script' }
       );
 
-      expect(() => {
+      try {
         runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-invoked.script' });
-      }).to.throwException(/Inherited method 'missing' was not found/);
+        expect().fail('Expected missing invoked-method metadata to fail');
+      } catch (error) {
+        expect(error.path).to.be('missing-invoked.script');
+        expect(error.lineno).to.be(2);
+        expect(String(error)).to.contain("Inherited method 'missing' was not found");
+        expect(String(error)).to.contain("doing 'FunCall'");
+      }
     });
 
     it('should resolve cyclic invoked method metadata without recursive expansion', function () {
@@ -1001,6 +1012,7 @@ describe('Extends Foundation', function () {
         expect(error.errors).to.be.an(Array);
         expect(error.errors).to.have.length(2);
         expect(error.errors[0].path).to.be('metadata-errors.script');
+        expect(error.errors[0].lineno).to.be(2);
         expect(String(error)).to.contain("super() for method 'needsSuper' was not found");
         expect(String(error)).to.contain("Inherited method 'missing' was not found");
       }
@@ -1039,6 +1051,8 @@ describe('Extends Foundation', function () {
         expect().fail('Expected missing super metadata to fail');
       } catch (error) {
         expect(error.path).to.be('A.script');
+        expect(error.lineno).to.be(2);
+        expect(String(error)).to.contain("doing 'Super'");
         expect(String(error)).to.contain("super() for method 'needsSuper' was not found");
       }
     });
@@ -1071,6 +1085,15 @@ describe('Extends Foundation', function () {
           { path: 'invalid-invoked-footprint.script' }
         );
       }).to.throwException(/Invoked method 'beta'.*has invalid metadata/);
+      try {
+        inheritanceCallModule.finalizeMethodChannelFootprints(
+          inheritanceState,
+          { path: 'invalid-invoked-footprint.script' }
+        );
+        expect().fail('Expected invalid invoked metadata to fail');
+      } catch (error) {
+        expect(error.code).to.be('ERR_INVALID_INVOKED_METHOD_METADATA');
+      }
     });
 
     it('should keep per-callable invoked method metadata limited to direct calls', function () {
@@ -1081,9 +1104,9 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(script.invokedMethods.hidden).to.be('hidden');
-      expect(script.invokedMethods.visible).to.be('visible');
-      expect(script.methods.build.invokedMethods.visible).to.be('visible');
+      expect(script.invokedMethods.hidden.name).to.be('hidden');
+      expect(script.invokedMethods.visible.name).to.be('visible');
+      expect(script.methods.build.invokedMethods.visible.name).to.be('visible');
       expect(script.methods.build.invokedMethods.hidden).to.be(undefined);
     });
 
@@ -1443,12 +1466,12 @@ describe('Extends Foundation', function () {
 
       runtime.finalizeInheritanceMetadata(inheritanceState, context);
       const resolvedCatalogEntry = inheritanceState.invokedMethods.helper;
-      const resolvedLocalEntry = inheritanceState.methods.build.invokedMethods.helper;
+      const resolvedLocalEntry = inheritanceState.methods.build._resolvedMethodData.invokedMethods.helper;
 
       runtime.finalizeInheritanceMetadata(inheritanceState, context);
 
       expect(inheritanceState.invokedMethods.helper).to.be(resolvedCatalogEntry);
-      expect(inheritanceState.methods.build.invokedMethods.helper).to.be(resolvedLocalEntry);
+      expect(inheritanceState.methods.build._resolvedMethodData.invokedMethods.helper).to.be(resolvedLocalEntry);
     });
   });
 
@@ -1751,6 +1774,7 @@ describe('Extends Foundation', function () {
       expect(state.methods.build._resolvedMethodData).to.be(resolvedBuild);
       expect(state.methods.build._resolvedMethodDataPromise).to.be(undefined);
       expect(resolvedBuild.mergedMutatedChannels).to.contain('trace');
+      expect(Object.keys(resolvedBuild)).not.to.contain('sharedLookupChannels');
     });
 
     it('should mark missing inherited-method failures with a structural error code', async function () {
@@ -2019,6 +2043,7 @@ describe('Extends Foundation', function () {
         });
         expect().fail('Expected malformed direct super metadata to fail');
       } catch (error) {
+        expect(error.code).to.be('ERR_INVALID_SUPER_METADATA');
         expect(String(error)).to.contain("super() metadata on owner 'Main.script' is invalid");
       }
     });

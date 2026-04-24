@@ -779,9 +779,9 @@ Work:
   document any cases that should be promoted into recoverable aggregation
 - add stable structural error codes for invalid inheritance metadata shapes once
   those errors are part of the consolidated finalization model
-- decide whether the super-chain footprint merge should remain folded into the
-  fixed-point pass or be split into the parent-to-child pass described above;
-  if it stays folded, document that as the intentional implementation model
+- keep the super-chain footprint merge folded into the fixed-point pass as the
+  intentional implementation model, and document that so later cleanup does not
+  reintroduce a second parent-to-child merge phase
 - remove the unused caller-supplied `errors` parameter from
   `finalizeMethodChannelFootprints(...)` if the consolidated finalization path
   no longer needs it

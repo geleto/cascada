@@ -3,6 +3,9 @@
 const { Command } = require('./commands');
 const inheritanceState = require('./inheritance-state');
 const { RuntimeFatalError, handleError, isRuntimeFatalError } = require('./errors');
+const INTERNAL_SHARED_LOOKUP_CHANNELS = typeof Symbol === 'function'
+  ? Symbol('cascadaInheritanceSharedLookupChannels')
+  : '__cascadaInheritanceSharedLookupChannels__';
 
 function _contextualizeFatalError(error, errorContext, fallbackMessage = null) {
   const lineno = errorContext && typeof errorContext.lineno === 'number' ? errorContext.lineno : 0;
@@ -113,6 +116,54 @@ function _filterSharedLookupChannels(sharedLookupCandidates, sharedSchema) {
   return filtered;
 }
 
+function _cloneErrorContext(errorContext) {
+  if (!errorContext || typeof errorContext !== 'object') {
+    return null;
+  }
+  return {
+    lineno: typeof errorContext.lineno === 'number' ? errorContext.lineno : 0,
+    colno: typeof errorContext.colno === 'number' ? errorContext.colno : 0,
+    errorContextString: errorContext.errorContextString || null,
+    path: errorContext.path || null
+  };
+}
+
+function _inheritanceMetadataErrorContext(originContext, fallbackContext = null) {
+  if (!originContext && !fallbackContext) {
+    return null;
+  }
+  const origin = _cloneErrorContext(originContext);
+  const fallback = _cloneErrorContext(fallbackContext);
+  if (!origin) {
+    return fallback;
+  }
+  if (origin.path || origin.errorContextString || origin.lineno || origin.colno) {
+    return origin;
+  }
+  origin.path = (fallback && fallback.path) || origin.path;
+  origin.errorContextString = (fallback && fallback.errorContextString) || origin.errorContextString;
+  origin.lineno = origin.lineno || (fallback && fallback.lineno) || 0;
+  origin.colno = origin.colno || (fallback && fallback.colno) || 0;
+  return origin;
+}
+
+function _getInvokedMethodReferenceName(reference, fallbackName) {
+  if (reference && typeof reference === 'object' && typeof reference.name === 'string') {
+    return reference.name;
+  }
+  if (typeof reference === 'string') {
+    return reference;
+  }
+  return fallbackName;
+}
+
+function _getInvokedMethodReferenceOrigin(reference, fallbackContext = null) {
+  return _inheritanceMetadataErrorContext(
+    reference && typeof reference === 'object' ? reference.origin : null,
+    fallbackContext
+  );
+}
+
 function _resolvePendingInheritanceEntryChain(entry, normalizeError) {
   if (inheritanceState.isPendingInheritanceEntry(entry)) {
     return entry.promise.then(
@@ -158,7 +209,7 @@ function _normalizeMethodSignature(signature, inheritedSignature = null) {
   return normalizedSignature;
 }
 
-function _createResolvedMethodData(entry, sharedSchema = null, superData = null, invokedMethods = null) {
+function _buildResolvedMethodDataBase(entry, sharedSchema = null) {
   if (!entry || typeof entry !== 'object' || typeof entry.fn !== 'function') {
     throw new RuntimeFatalError(
       'Inherited dispatch resolved to an invalid method entry',
@@ -172,27 +223,39 @@ function _createResolvedMethodData(entry, sharedSchema = null, superData = null,
   const ownUsedChannels = _mergeChannelNames(entry.ownUsedChannels);
   const ownMutatedChannels = _mergeChannelNames(entry.ownMutatedChannels);
   const sharedLookupChannels = _filterSharedLookupChannels(entry.sharedLookupCandidates, sharedSchema);
-  const mergedUsedChannels = _mergeChannelNames(
-    ownUsedChannels,
-    sharedLookupChannels,
-    superData ? superData.mergedUsedChannels : null
-  );
-  const mergedMutatedChannels = _mergeChannelNames(
-    ownMutatedChannels,
-    superData ? superData.mergedMutatedChannels : null
-  );
-
-  return {
+  const resolvedData = {
     fn: entry.fn,
     ownerKey: entry.ownerKey || null,
-    signature: _normalizeMethodSignature(entry.signature, superData ? superData.signature : null),
+    signature: _normalizeMethodSignature(entry.signature, null),
     ownUsedChannels,
     ownMutatedChannels,
-    mergedUsedChannels,
-    mergedMutatedChannels,
-    super: superData || null,
-    invokedMethods: invokedMethods || Object.create(null)
+    mergedUsedChannels: _mergeChannelNames(ownUsedChannels, sharedLookupChannels),
+    mergedMutatedChannels: _mergeChannelNames(ownMutatedChannels),
+    super: null,
+    invokedMethods: Object.create(null)
   };
+  Object.defineProperty(resolvedData, INTERNAL_SHARED_LOOKUP_CHANNELS, {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value: sharedLookupChannels
+  });
+  return resolvedData;
+}
+
+function _finalizeResolvedMethodData(resolvedData, entry, superData = null, invokedMethods = null) {
+  resolvedData.signature = _normalizeMethodSignature(entry.signature, superData ? superData.signature : null);
+  resolvedData.super = superData || null;
+  resolvedData.invokedMethods = invokedMethods || Object.create(null);
+  resolvedData.mergedUsedChannels = _mergeChannelNames(
+    resolvedData.mergedUsedChannels,
+    superData ? superData.mergedUsedChannels : null
+  );
+  resolvedData.mergedMutatedChannels = _mergeChannelNames(
+    resolvedData.ownMutatedChannels,
+    superData ? superData.mergedMutatedChannels : null
+  );
+  return resolvedData;
 }
 
 function _isResolvedMethodData(value) {
@@ -219,23 +282,30 @@ function _channelArraysEqual(left, right) {
   return true;
 }
 
-function _throwOrReturnOnNewMetadataErrors(localErrors, initialErrorCount, errors, errorContext) {
-  if (localErrors.length <= initialErrorCount) {
-    return false;
-  }
-  if (!Array.isArray(errors)) {
-    throw inheritanceState.createInheritanceMetadataAggregateError(localErrors, errorContext);
-  }
-  return true;
+function _hasNewMetadataErrors(localErrors, initialErrorCount) {
+  return localErrors.length > initialErrorCount;
+}
+
+function _throwCollectedMetadataErrors(localErrors, errorContext) {
+  const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(localErrors, errorContext);
+  throw aggregateError ||
+    localErrors.find(Boolean) ||
+    _createInheritanceMetadataInvariantError(
+      'Inheritance metadata finalization reported errors but produced no concrete error values',
+      errorContext
+    );
 }
 
 function _createInvalidInvokedMetadataError(methodData, invokedName, errorContext = null) {
   const ownerSuffix = methodData && methodData.ownerKey
     ? ` on owner '${methodData.ownerKey}'`
     : '';
-  return _createInheritanceMetadataInvariantError(
-    `Invoked method '${invokedName}'${ownerSuffix} has invalid metadata: expected fully resolved method data`,
-    errorContext
+  return inheritanceState.withInheritanceErrorCode(
+    _createInheritanceMetadataInvariantError(
+      `Invoked method '${invokedName}'${ownerSuffix} has invalid metadata: expected fully resolved method data`,
+      errorContext
+    ),
+    inheritanceState.ERR_INVALID_INVOKED_METHOD_METADATA
   );
 }
 
@@ -243,9 +313,12 @@ function _createInvalidSuperMetadataError(methodData, errorContext = null) {
   const ownerSuffix = methodData && methodData.ownerKey
     ? ` on owner '${methodData.ownerKey}'`
     : '';
-  return _createInheritanceMetadataInvariantError(
-    `super() metadata${ownerSuffix} is invalid: expected fully resolved method data`,
-    errorContext
+  return inheritanceState.withInheritanceErrorCode(
+    _createInheritanceMetadataInvariantError(
+      `super() metadata${ownerSuffix} is invalid: expected fully resolved method data`,
+      errorContext
+    ),
+    inheritanceState.ERR_INVALID_SUPER_METADATA
   );
 }
 
@@ -292,10 +365,7 @@ function _collectInvokedMethodData(methodData, errorContext = null, errors = nul
       resolved.push(entry);
       continue;
     }
-    inheritanceState.collectOrThrowInheritanceMetadataError(
-      _createInvalidInvokedMetadataError(methodData, name, errorContext),
-      errors
-    );
+    throw _createInvalidInvokedMetadataError(methodData, name, errorContext);
   }
   return resolved;
 }
@@ -308,36 +378,41 @@ function _createResolvedInvokedMethodsData(invokedMethods, sharedSchema, errorCo
   const names = Object.keys(invokedMethods);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    const entry = invokedMethods[name];
-    if (_isResolvedMethodData(entry)) {
-      resolved[name] = entry;
-      continue;
-    }
-    if (!entry || typeof entry !== 'object' || inheritanceState.isPendingInheritanceEntry(entry)) {
-      throw _createInheritanceFatalError(
-        `Inherited method '${name}' was not found`,
-        inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
-        errorContext
-      );
-    }
-    const methodData = _getMethodDataFromEntry(entry, sharedSchema, errorContext, state, false);
-    if (methodData && typeof methodData.then === 'function') {
-      throw _createInheritanceMetadataInvariantError(
-        `Inherited method metadata for '${name}' was still pending during invoked-method resolution`,
-        errorContext
-      );
-    }
-    resolved[name] = methodData;
+    resolved[name] = _resolveInvokedMethodReference(invokedMethods[name], name, sharedSchema, errorContext, state);
   }
   return resolved;
+}
+
+function _resolveInvokedMethodReference(reference, fallbackName, sharedSchema, errorContext, state = null) {
+  if (_isResolvedMethodData(reference)) {
+    return reference;
+  }
+
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const targetName = _getInvokedMethodReferenceName(reference, fallbackName);
+  const originContext = _getInvokedMethodReferenceOrigin(reference, errorContext);
+  if (!Object.prototype.hasOwnProperty.call(methods, targetName)) {
+    throw _createInheritanceFatalError(
+      `Inherited method '${targetName}' was not found`,
+      inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
+      originContext
+    );
+  }
+  const methodData = _getMethodDataFromEntry(methods[targetName], sharedSchema, originContext, state);
+  if (methodData && typeof methodData.then === 'function') {
+    throw _createInheritanceMetadataInvariantError(
+      `Inherited method metadata for '${targetName}' was still pending during direct metadata construction`,
+      originContext
+    );
+  }
+  return methodData;
 }
 
 function _getMethodDataFromResolvedEntry(
   resolvedEntry,
   sharedSchema,
   errorContext,
-  state = null,
-  includeInvokedMethods = true
+  state = null
 ) {
   if (resolvedEntry === true) {
     throw _createInheritanceFatalError(
@@ -357,46 +432,68 @@ function _getMethodDataFromResolvedEntry(
     );
   }
 
-  if (includeInvokedMethods && resolvedEntry._resolvedMethodData) {
+  if (resolvedEntry._resolvedMethodData) {
     return resolvedEntry._resolvedMethodData;
   }
-  if (includeInvokedMethods && resolvedEntry._resolvedMethodDataPromise) {
+  if (resolvedEntry._resolvedMethodDataPromise) {
     return resolvedEntry._resolvedMethodDataPromise;
   }
 
+  const resolvedMethodData = _buildResolvedMethodDataBase(resolvedEntry, sharedSchema);
+  // This cached base object exists so recursive super/invoked resolution can
+  // share one identity; the metadata-ready barrier prevents external callers
+  // from observing it before finalization fills in the remaining graph fields.
+  resolvedEntry._resolvedMethodData = resolvedMethodData;
+
   const superData = resolvedEntry.super
-    ? _getMethodDataFromEntry(resolvedEntry.super, sharedSchema, errorContext, state, includeInvokedMethods)
+    ? _getMethodDataFromEntry(
+        resolvedEntry.super,
+        sharedSchema,
+        _inheritanceMetadataErrorContext(resolvedEntry.superOrigin, errorContext),
+        state
+      )
     : null;
 
   if (superData && typeof superData.then === 'function') {
     const resolvedMethodDataPromise = superData.then((resolvedSuperData) => {
-      const invokedMethods = includeInvokedMethods
-        ? _createResolvedInvokedMethodsData(resolvedEntry.invokedMethods, sharedSchema, errorContext, state)
-        : Object.create(null);
-      const resolvedData = _createResolvedMethodData(resolvedEntry, sharedSchema, resolvedSuperData, invokedMethods);
-      if (includeInvokedMethods) {
-        resolvedEntry._resolvedMethodData = resolvedData;
+      try {
+        const invokedMethods = _createResolvedInvokedMethodsData(
+          resolvedEntry.invokedMethods,
+          sharedSchema,
+          errorContext,
+          state
+        );
         delete resolvedEntry._resolvedMethodDataPromise;
+        return _finalizeResolvedMethodData(resolvedMethodData, resolvedEntry, resolvedSuperData, invokedMethods);
+      } catch (error) {
+        delete resolvedEntry._resolvedMethodData;
+        delete resolvedEntry._resolvedMethodDataPromise;
+        throw error;
       }
-      return resolvedData;
+    }, (error) => {
+      delete resolvedEntry._resolvedMethodData;
+      delete resolvedEntry._resolvedMethodDataPromise;
+      throw error;
     });
-    if (includeInvokedMethods) {
-      resolvedEntry._resolvedMethodDataPromise = resolvedMethodDataPromise;
-    }
+    resolvedEntry._resolvedMethodDataPromise = resolvedMethodDataPromise;
     return resolvedMethodDataPromise;
   }
 
-  const invokedMethods = includeInvokedMethods
-    ? _createResolvedInvokedMethodsData(resolvedEntry.invokedMethods, sharedSchema, errorContext, state)
-    : Object.create(null);
-  const resolvedData = _createResolvedMethodData(resolvedEntry, sharedSchema, superData, invokedMethods);
-  if (includeInvokedMethods) {
-    resolvedEntry._resolvedMethodData = resolvedData;
+  try {
+    const invokedMethods = _createResolvedInvokedMethodsData(
+      resolvedEntry.invokedMethods,
+      sharedSchema,
+      errorContext,
+      state
+    );
+    return _finalizeResolvedMethodData(resolvedMethodData, resolvedEntry, superData, invokedMethods);
+  } catch (error) {
+    delete resolvedEntry._resolvedMethodData;
+    throw error;
   }
-  return resolvedData;
 }
 
-function _getMethodDataFromEntry(entry, sharedSchema, errorContext, state = null, includeInvokedMethods = true) {
+function _getMethodDataFromEntry(entry, sharedSchema, errorContext, state = null) {
   const resolvedEntry = _resolvePendingInheritanceEntryChain(
     entry,
     (error) => _normalizeResolutionError(error, errorContext)
@@ -404,11 +501,11 @@ function _getMethodDataFromEntry(entry, sharedSchema, errorContext, state = null
 
   if (resolvedEntry && typeof resolvedEntry.then === 'function') {
     return resolvedEntry.then((entryValue) =>
-      _getMethodDataFromResolvedEntry(entryValue, sharedSchema, errorContext, state, includeInvokedMethods)
+      _getMethodDataFromResolvedEntry(entryValue, sharedSchema, errorContext, state)
     );
   }
 
-  return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state, includeInvokedMethods);
+  return _getMethodDataFromResolvedEntry(resolvedEntry, sharedSchema, errorContext, state);
 }
 
 function getMethodData(state, methodName, errorContext = null) {
@@ -495,129 +592,64 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
   );
 }
 
-function _hasPendingMethodMetadata(entry, seen = new Set()) {
-  if (!entry || typeof entry !== 'object') {
-    return inheritanceState.isUnresolvedSuperEntry(entry);
-  }
-  if (inheritanceState.isPendingInheritanceEntry(entry) || inheritanceState.isUnresolvedSuperEntry(entry)) {
-    return true;
-  }
-  if (seen.has(entry)) {
-    return false;
-  }
-  seen.add(entry);
-  return _hasPendingMethodMetadata(entry.super, seen);
-}
-
-function prewarmMethodDataCache(state, errorContext = null) {
-  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
-  const names = Object.keys(methods);
-  for (let i = 0; i < names.length; i++) {
-    const name = names[i];
-    const entry = methods[name];
-    if (!entry) {
-      continue;
-    }
-    if (_hasPendingMethodMetadata(entry)) {
-      throw _createInheritanceMetadataInvariantError(
-        `Inherited method metadata for '${name}' was still pending during cache prewarm`,
-        errorContext
-      );
-    }
-    const methodData = getMethodData(state, name, errorContext);
-    if (methodData && typeof methodData.then === 'function') {
-      throw _createInheritanceMetadataInvariantError(
-        `Inherited method metadata for '${name}' was still pending during cache prewarm`,
-        errorContext
-      );
-    }
-  }
-  return state;
-}
-
-function resolveAndWireInvokedMethodCatalog(state, errorContext = null) {
+function finalizeInvokedMethodCatalog(state, errorContext = null, errors = null) {
   const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
-  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(state || {});
   const names = Object.keys(invokedMethods);
   const resolvedCatalog = Object.create(null);
+  const localErrors = Array.isArray(errors) ? errors : [];
+  const initialErrorCount = localErrors.length;
+  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(state || {});
 
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    if (_isResolvedMethodData(invokedMethods[name])) {
-      resolvedCatalog[name] = invokedMethods[name];
-      continue;
-    }
-    const methodData = _getMethodDataFromEntry(invokedMethods[name], sharedSchema, errorContext, state, false);
-    if (methodData && typeof methodData.then === 'function') {
-      throw _createInheritanceMetadataInvariantError(
-        `Inherited method metadata for invoked method '${name}' was still pending during finalization`,
-        errorContext
+    const reference = invokedMethods[name];
+    const originContext = _getInvokedMethodReferenceOrigin(reference, errorContext);
+    try {
+      resolvedCatalog[name] = _resolveInvokedMethodReference(
+        reference,
+        name,
+        sharedSchema,
+        originContext,
+        state
       );
+    } catch (error) {
+      if (
+        error &&
+        (
+          error.code === inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND ||
+          error.code === inheritanceState.ERR_SUPER_METHOD_NOT_FOUND
+        )
+      ) {
+        inheritanceState.collectOrThrowInheritanceMetadataError(error, localErrors);
+        continue;
+      }
+      throw error;
     }
-    resolvedCatalog[name] = methodData;
   }
 
   for (let i = 0; i < names.length; i++) {
-    invokedMethods[names[i]] = resolvedCatalog[names[i]];
+    if (Object.prototype.hasOwnProperty.call(resolvedCatalog, names[i])) {
+      invokedMethods[names[i]] = resolvedCatalog[names[i]];
+    }
   }
-
-  const wireEntry = (entry, methodName, publishCatalogEntry = false) => {
-    if (!entry || typeof entry !== 'object' || inheritanceState.isPendingInheritanceEntry(entry)) {
-      return;
+  if (_hasNewMetadataErrors(localErrors, initialErrorCount)) {
+    if (!Array.isArray(errors)) {
+      _throwCollectedMetadataErrors(localErrors, errorContext);
     }
-    const localInvoked = entry.invokedMethods && typeof entry.invokedMethods === 'object'
-      ? entry.invokedMethods
-      : Object.create(null);
-    const localNames = Object.keys(localInvoked);
-    const resolvedLocalInvoked = Object.create(null);
-    for (let j = 0; j < localNames.length; j++) {
-      const localName = localNames[j];
-      const methodName = typeof localInvoked[localName] === 'string'
-        ? localInvoked[localName]
-        : localName;
-      if (!Object.prototype.hasOwnProperty.call(invokedMethods, methodName)) {
-        throw _createInheritanceFatalError(
-          `Inherited method '${methodName}' was not found`,
-          inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
-          errorContext
-        );
-      }
-      resolvedLocalInvoked[localName] = invokedMethods[methodName];
-    }
-    entry.invokedMethods = resolvedLocalInvoked;
-    if (publishCatalogEntry && Object.prototype.hasOwnProperty.call(invokedMethods, methodName)) {
-      entry._resolvedMethodData = invokedMethods[methodName];
-      entry._resolvedMethodData.invokedMethods = resolvedLocalInvoked;
-      delete entry._resolvedMethodDataPromise;
-    } else {
-      delete entry._resolvedMethodData;
-      delete entry._resolvedMethodDataPromise;
-    }
-  };
-
-  const visitEntry = (entry, methodName, seen, publishCatalogEntry = false) => {
-    if (!entry || typeof entry !== 'object' || seen.has(entry)) {
-      return;
-    }
-    seen.add(entry);
-    wireEntry(entry, methodName, publishCatalogEntry);
-    visitEntry(entry.super, methodName, seen, false);
-  };
-
-  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
-  const methodNames = Object.keys(methods);
-  for (let i = 0; i < methodNames.length; i++) {
-    visitEntry(methods[methodNames[i]], methodNames[i], new Set(), true);
+    return invokedMethods;
   }
 
   return invokedMethods;
 }
 
-function finalizeMethodChannelFootprints(state, errorContext = null, errors = null) {
+function _collectMethodChannelFootprintErrors(state, errorContext = null, errors = null) {
   const localErrors = Array.isArray(errors) ? errors : [];
   const initialErrorCount = localErrors.length;
   const methodDataList = _collectResolvedMethodData(state, errorContext, localErrors);
-  if (_throwOrReturnOnNewMetadataErrors(localErrors, initialErrorCount, errors, errorContext)) {
+  if (_hasNewMetadataErrors(localErrors, initialErrorCount)) {
+    if (!Array.isArray(errors)) {
+      _throwCollectedMetadataErrors(localErrors, errorContext);
+    }
     return state;
   }
   let changed = true;
@@ -626,10 +658,14 @@ function finalizeMethodChannelFootprints(state, errorContext = null, errors = nu
     for (let i = 0; i < methodDataList.length; i++) {
       const methodData = methodDataList[i];
       const invokedMethods = _collectInvokedMethodData(methodData, errorContext, localErrors);
-      // Invalid resolved metadata shapes are impossible for normal compiled
-      // input; Step 6 will consolidate these invariant errors into the final
-      // metadata-construction path.
-      if (_throwOrReturnOnNewMetadataErrors(localErrors, initialErrorCount, errors, errorContext)) {
+      // Invalid resolved metadata shapes remain fail-fast invariants even after
+      // Step 7 consolidation; only missing structural targets are aggregated.
+      // Super-chain channel growth also stays folded into this same fixed-point
+      // walk so we do not reintroduce a second parent-to-child merge phase.
+      if (_hasNewMetadataErrors(localErrors, initialErrorCount)) {
+        if (!Array.isArray(errors)) {
+          _throwCollectedMetadataErrors(localErrors, errorContext);
+        }
         return state;
       }
       const nextUsedChannels = _mergeChannelNames(
@@ -651,6 +687,55 @@ function finalizeMethodChannelFootprints(state, errorContext = null, errors = nu
         changed = true;
       }
     }
+  }
+  return state;
+}
+
+function finalizeMethodChannelFootprints(state, errorContext = null) {
+  return _collectMethodChannelFootprintErrors(state, errorContext);
+}
+
+function finalizeResolvedMethodMetadata(state, errorContext = null, errors = null) {
+  const localErrors = Array.isArray(errors) ? errors : [];
+  const initialErrorCount = localErrors.length;
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(state || {});
+  const methodNames = Object.keys(methods);
+  for (let i = 0; i < methodNames.length; i++) {
+    const name = methodNames[i];
+    try {
+      const methodData = _getMethodDataFromEntry(methods[name], sharedSchema, errorContext, state);
+      if (methodData && typeof methodData.then === 'function') {
+        throw _createInheritanceMetadataInvariantError(
+          `Inherited method metadata for '${name}' was still pending during finalization`,
+          errorContext
+        );
+      }
+    } catch (error) {
+      if (
+        error &&
+        (
+          error.code === inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND ||
+          error.code === inheritanceState.ERR_SUPER_METHOD_NOT_FOUND
+        )
+      ) {
+        inheritanceState.collectOrThrowInheritanceMetadataError(error, localErrors);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  finalizeInvokedMethodCatalog(state, errorContext, localErrors);
+  if (_hasNewMetadataErrors(localErrors, initialErrorCount)) {
+    if (!Array.isArray(errors)) {
+      _throwCollectedMetadataErrors(localErrors, errorContext);
+    }
+    return state;
+  }
+  _collectMethodChannelFootprintErrors(state, errorContext, localErrors);
+  if (_hasNewMetadataErrors(localErrors, initialErrorCount) && !Array.isArray(errors)) {
+    _throwCollectedMetadataErrors(localErrors, errorContext);
   }
   return state;
 }
@@ -727,7 +812,7 @@ function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channel
   currentBuffer.addBuffer(invocationBuffer, channelName);
 }
 
-function _hasLinkedChannelPath(rootBuffer, buffer, channelName) {
+function hasLinkedChannelPath(rootBuffer, buffer, channelName) {
   let current = buffer;
   while (current && current.parent) {
     const parent = current.parent;
@@ -947,7 +1032,7 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
       sharedRootBuffer &&
       sharedRootBuffer !== currentBuffer &&
       typeof sharedRootBuffer.addBuffer === 'function' &&
-      !_hasLinkedChannelPath(sharedRootBuffer, invocationBuffer, linkedChannels[i])
+      !hasLinkedChannelPath(sharedRootBuffer, invocationBuffer, linkedChannels[i])
     ) {
       _registerInvocationChannelLink(sharedRootBuffer, invocationBuffer, linkedChannels[i]);
     }
@@ -1031,9 +1116,10 @@ module.exports = {
   invocationInternals,
   mergeUniqueChannelNames,
   getMethodData,
-  prewarmMethodDataCache,
-  resolveAndWireInvokedMethodCatalog,
+  finalizeInvokedMethodCatalog,
+  finalizeResolvedMethodMetadata,
   finalizeMethodChannelFootprints,
+  hasLinkedChannelPath,
   getMethodLinkedChannels: _getMethodLinkedChannels,
   getCallableBodyLinkedChannels,
   resolveInheritanceSharedChannel,
