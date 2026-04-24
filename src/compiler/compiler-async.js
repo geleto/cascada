@@ -132,6 +132,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeSet(node, analysisPass) {
     const declares = [];
+    const uses = [];
     const mutates = [];
     const isDeclaration = node.varType === 'declaration';
     const targets = node.targets;
@@ -149,6 +150,16 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.body) {
       node.body._analysis = { createScope: true };
     }
+    const thisSharedPath = this._getThisSharedSetPathFacts(node, analysisPass);
+    if (thisSharedPath) {
+      uses.push(thisSharedPath.name);
+      mutates.push(thisSharedPath.name);
+      return {
+        declares,
+        uses,
+        mutates
+      };
+    }
     targets.forEach((target) => {
       if (target instanceof nodes.Symbol) {
         target._analysis = { declarationTarget: true };
@@ -165,7 +176,47 @@ class CompilerAsync extends CompilerBaseAsync {
     });
     return {
       declares,
+      uses,
       mutates
+    };
+  }
+
+  _getStaticLiteralPathSegments(pathNode) {
+    if (!pathNode || !(pathNode instanceof nodes.Array) || !Array.isArray(pathNode.children)) {
+      return null;
+    }
+    const segments = [];
+    for (let i = 0; i < pathNode.children.length; i++) {
+      const child = pathNode.children[i];
+      if (!(child instanceof nodes.Literal)) {
+        return null;
+      }
+      segments.push(child.value);
+    }
+    return segments;
+  }
+
+  _getThisSharedSetPathFacts(node, analysisPass = this.analysis) {
+    if (!this.scriptMode || !node || !node.path || !node.targets || node.targets.length !== 1) {
+      return null;
+    }
+    const target = node.targets[0];
+    if (!(target instanceof nodes.Symbol) || target.value !== 'this') {
+      return null;
+    }
+    const segments = this._getStaticLiteralPathSegments(node.path);
+    if (!segments || segments.length === 0) {
+      return null;
+    }
+    const name = segments[0];
+    const declaration = analysisPass.findDeclaration(node._analysis, name);
+    if (!declaration || !declaration.shared) {
+      return null;
+    }
+    return {
+      name,
+      type: declaration.type,
+      path: segments.slice(1)
     };
   }
 
@@ -204,6 +255,12 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileSet(node) {
+    const thisSharedPath = this._getThisSharedSetPathFacts(node);
+    if (thisSharedPath) {
+      this._compileThisSharedSetPath(node, thisSharedPath);
+      return;
+    }
+
     const ids = [];
     const isDeclarationOnly = !!node.declarationOnly;
     const exportFromRootScope = this.analysis.isRootScopeOwner(node._analysis);
@@ -276,6 +333,47 @@ class CompilerAsync extends CompilerBaseAsync {
         this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.buffer.currentBuffer});`);
       }
     });
+  }
+
+  _compileThisSharedSetPath(node, thisSharedPath) {
+    if (node.body) {
+      this.fail('this.<shared> assignment does not support set blocks.', node.lineno, node.colno, node);
+    }
+    if (!node.value) {
+      this.fail('this.<shared> assignment requires a value.', node.lineno, node.colno, node);
+    }
+
+    const valueId = this._tmpid();
+    this.emit(`let ${valueId} = `);
+    this.compileExpression(node.value, null, node.value);
+    this.emit.line(';');
+
+    const pos = `{lineno: ${node.lineno}, colno: ${node.colno}}`;
+    if (thisSharedPath.type === 'var') {
+      let resultId = valueId;
+      if (thisSharedPath.path.length > 0) {
+        resultId = this._tmpid();
+        this.emit(`let ${resultId} = runtime.setPath(`);
+        this.buffer.emitAddRawSnapshot(thisSharedPath.name, node);
+        this.emit(`, ${JSON.stringify(thisSharedPath.path)}, ${valueId})`);
+        this.emit.line(';');
+      }
+      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${thisSharedPath.name}', args: [${resultId}], pos: ${pos} }), '${thisSharedPath.name}');`);
+      return;
+    }
+
+    if (thisSharedPath.type === 'data') {
+      const dataPath = thisSharedPath.path.length > 0 ? thisSharedPath.path : [null];
+      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.DataCommand({ channelName: '${thisSharedPath.name}', command: 'set', args: [${JSON.stringify(dataPath)}, ${valueId}], pos: ${pos} }), '${thisSharedPath.name}');`);
+      return;
+    }
+
+    this.fail(
+      `Channel '${thisSharedPath.name}' cannot be assigned through this.${thisSharedPath.name}.`,
+      node.lineno,
+      node.colno,
+      node
+    );
   }
 
   compileCallAssign(node) {
@@ -1131,7 +1229,37 @@ class CompilerAsync extends CompilerBaseAsync {
     validateScriptExtendsSourceOrder(this, node);
     this._validateRootExternFallbackOrder(node, externSpec);
     this._validateRootExternCycles(node);
+    this._validateLocalSharedMethodNameCollisions(node);
     return { externSpec };
+  }
+
+  _validateLocalSharedMethodNameCollisions(node) {
+    const sharedDeclarations = this._getSharedDeclarations(node);
+    if (!sharedDeclarations || sharedDeclarations.length === 0) {
+      return;
+    }
+    const sharedNames = new Map();
+    sharedDeclarations.forEach((declaration) => {
+      if (declaration && declaration.name && declaration.name.value) {
+        sharedNames.set(declaration.name.value, declaration);
+      }
+    });
+    if (sharedNames.size === 0) {
+      return;
+    }
+    this._getMethodDefinitions(node).forEach((method) => {
+      const methodName = method && method.name && method.name.value;
+      if (!methodName || !sharedNames.has(methodName)) {
+        return;
+      }
+      this.fail(
+        `shared channel '${methodName}' conflicts with inherited method '${methodName}'`,
+        method.name.lineno,
+        method.name.colno,
+        method,
+        sharedNames.get(methodName)
+      );
+    });
   }
 
   emitDeclareReturnChannel(bufferExpr) {

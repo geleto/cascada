@@ -491,6 +491,233 @@ describe('Extends Foundation', function () {
       expect(result).to.be('dark');
     });
 
+    it('should read and write shared vars through this.sharedName', async function () {
+      const result = await env.renderScriptString(
+        'shared var theme = "dark"\nthis.theme = "light"\nreturn this.theme',
+        {}
+      );
+
+      expect(result).to.be('light');
+    });
+
+    it('should let methods read and write shared vars through this.sharedName', async function () {
+      const result = await env.renderScriptString([
+        'shared var theme = "dark"',
+        'method setTheme(nextTheme)',
+        '  this.theme = nextTheme',
+        'endmethod',
+        'method readTheme()',
+        '  return this.theme',
+        'endmethod',
+        'this.setTheme("light")',
+        'return this.readTheme()'
+      ].join('\n'), {});
+
+      expect(result).to.be('light');
+    });
+
+    it('should read nested properties from shared vars through this.sharedName', async function () {
+      const result = await env.renderScriptString(
+        'shared var theme = { nested: { tone: "warm" } }\nreturn this.theme.nested.tone',
+        {}
+      );
+
+      expect(result).to.be('warm');
+    });
+
+    it('should write nested properties on shared vars through this.sharedName', async function () {
+      const result = await env.renderScriptString(
+        'shared var theme = { nested: { tone: "warm" } }\nthis.theme.nested.tone = "cool"\nreturn this.theme',
+        {}
+      );
+
+      expect(result).to.eql({ nested: { tone: 'cool' } });
+    });
+
+    it('should route shared text operations through this.sharedName', async function () {
+      const result = await env.renderScriptString(
+        'shared text log\nthis.log("boot|")\nreturn this.log.snapshot()',
+        {}
+      );
+
+      expect(result).to.be('boot|');
+    });
+
+    it('should route shared data operations through this.sharedName', async function () {
+      const result = await env.renderScriptString(
+        'shared data result\nthis.result.user.name = "Ada"\nreturn this.result.snapshot()',
+        {}
+      );
+
+      expect(result).to.eql({ user: { name: 'Ada' } });
+    });
+
+    it('should route shared data command operations through this.sharedName', async function () {
+      const result = await env.renderScriptString([
+        'shared data result',
+        'this.result.merge({ ok: true })',
+        'this.result.user.merge({ name: "Ada" })',
+        'return this.result.snapshot()'
+      ].join('\n'), {});
+
+      expect(result).to.eql({ ok: true, user: { name: 'Ada' } });
+    });
+
+    it('should let methods write typed shared data through this.sharedName', async function () {
+      const result = await env.renderScriptString([
+        'shared data result',
+        'method update()',
+        '  this.result.user.name = "Ada"',
+        '  this.result.user.merge({ role: "admin" })',
+        'endmethod',
+        'this.update()',
+        'return this.result.snapshot()'
+      ].join('\n'), {});
+
+      expect(result).to.eql({ user: { name: 'Ada', role: 'admin' } });
+    });
+
+    it('should route shared sequence operations through this.sharedName', async function () {
+      env.addGlobal('makeDb', () => {
+        return {
+          events: [],
+          insert(value) {
+            this.events.push(value);
+            return value;
+          },
+          snapshot() {
+            return this.events.slice();
+          }
+        };
+      });
+
+      const result = await env.renderScriptString(
+        'shared sequence db = makeDb()\nthis.db.insert("boot")\nreturn this.db.snapshot()',
+        {}
+      );
+
+      expect(result).to.eql(['boot']);
+    });
+
+    it('should serialize constructor and method calls on the same shared sequence channel', async function () {
+      env.addGlobal('makeDb', () => {
+        const events = [];
+        return {
+          async insert(value) {
+            if (value === 'constructor') {
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            events.push(value);
+            return value;
+          },
+          snapshot() {
+            return events.slice();
+          }
+        };
+      });
+
+      const result = await env.renderScriptString([
+        'shared sequence db = makeDb()',
+        'method writeFromMethod()',
+        '  this.db.insert("method")',
+        'endmethod',
+        'this.db.insert("constructor")',
+        'this.writeFromMethod()',
+        'return this.db.snapshot()'
+      ].join('\n'), {});
+
+      expect(result).to.eql(['constructor', 'method']);
+    });
+
+    it('should observe shared channel errors through this.sharedName', async function () {
+      const result = await env.renderScriptString([
+        'shared data result',
+        'this.result.missingCommand("x")',
+        'return { isError: this.result is error, message: this.result#message }'
+      ].join('\n'), {});
+
+      expect(result.isError).to.be(true);
+      expect(result.message).to.contain("has no method 'missingCommand'");
+    });
+
+    it('should keep parent super writes visible through this.sharedName', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', [
+        'shared var theme',
+        'this.theme = "parent"',
+        'return null'
+      ].join('\n'));
+      loader.addTemplate('C.script', [
+        'shared var theme = "child"',
+        'extends "A.script"',
+        'super()',
+        'return this.theme'
+      ].join('\n'));
+
+      const result = await env.renderScript('C.script', {});
+
+      expect(result).to.be('parent');
+    });
+
+    it('should combine inherited dispatch and this.sharedName reads in one expression', async function () {
+      const result = await env.renderScriptString([
+        'shared var theme = "dark"',
+        'method render(inputTheme)',
+        '  return "[" + inputTheme + "]"',
+        'endmethod',
+        'return this.render(this.theme)'
+      ].join('\n'), {});
+
+      expect(result).to.be('[dark]');
+    });
+
+    it('should reject undeclared this.sharedName access instead of using ambient lookup', async function () {
+      try {
+        await env.renderScriptString('return this.theme', { theme: 'ambient' });
+        expect().fail('Expected undeclared this.theme to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('bare inherited-method references are not supported');
+      }
+    });
+
+    it('should keep bare undeclared names on the ambient lookup path', async function () {
+      const result = await env.renderScriptString('return theme', { theme: 'ambient' });
+
+      expect(result).to.be('ambient');
+    });
+
+    it('should reject local shared and method name collisions', async function () {
+      try {
+        await env.renderScriptString([
+          'shared var build = "shared"',
+          'method build()',
+          '  return "method"',
+          'endmethod',
+          'return this.build()'
+        ].join('\n'), {});
+        expect().fail('Expected local shared/method collision to fail');
+      } catch (error) {
+        expect(String(error)).to.contain("shared channel 'build' conflicts with inherited method 'build'");
+      }
+    });
+
+    it('should reject ! on this.sharedName because ! is context-path only', async function () {
+      env.addGlobal('makeDb', () => ({
+        insert() {
+          return 'ok';
+        }
+      }));
+
+      try {
+        await env.renderScriptString('shared sequence db = makeDb()\nreturn this.db!.insert("x")', {});
+        expect().fail('Expected this.db! to fail');
+      } catch (error) {
+        expect(String(error)).to.match(/sequence marker|context path|bare inherited-method/i);
+      }
+    });
+
     it('should let an earlier child-buffer shared default win over a later parent-buffer default', async function () {
       const rootBuffer = runtime.createCommandBuffer(null);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);

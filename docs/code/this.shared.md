@@ -546,6 +546,76 @@ Expected output:
 This pass can be folded into Pass 1 if doing so keeps the code easier to
 understand.
 
+#### Phase 0 Inventory Results
+
+Phase 0 found that most of the needed behavior already exists for bare shared
+names and component observations. Pass 1 should reuse those paths rather than
+build a parallel implementation.
+
+Existing compiler/runtime paths:
+
+- Shared declaration collection
+  - `CompilerCommon._getSharedDeclarations(...)` reads
+    `InheritanceMetadata.sharedDeclarations`.
+  - `CompileInheritance.compileSharedSchemaLiteral(...)` emits the compiled
+    `sharedSchema` object from explicit declarations.
+  - `CompileInheritance.emitRootSharedDeclarations(...)` emits runtime channel
+    declarations for those shared declarations.
+- Shared default initialization
+  - `compileChannelDeclaration(...)` already routes shared declarations through
+    `runtime.getInheritanceSharedBuffer(...)`.
+  - `runtime.claimInheritanceSharedDefault(...)` controls child-first default
+    claiming.
+  - `runtime.initializeInheritanceSharedChannelDefault(...)` handles shared
+    `sink` / `sequence` initializers.
+- Bare shared `var` reads
+  - `_compileDeclaredSymbolLookup(...)` detects `declaredOutput.shared`.
+  - Shared var reads lower to `_emitSharedChannelObservation(name, node,
+    'snapshot', true)`.
+  - Runtime enforcement lives in
+    `runtime.observeInheritanceSharedChannel(..., implicitVarRead = true)`,
+    which rejects non-var channels used as bare symbols.
+- Shared `is error` and `#`
+  - `compileIs(...)` and `compilePeekError(...)` detect declared shared
+    channels and call `_emitSharedChannelObservation(...)` with `isError` /
+    `getError`.
+- Shared channel calls and snapshots
+  - `analyzeFunCall(...)` already builds `specialChannelCall` from static paths
+    whose root is a declared channel.
+  - `_compileSpecialChannelFunCall(...)` is the likely reuse point for
+    `this.log(...)`, `this.result...`, `this.db.insert(...)`, and
+    `this.channel.snapshot()`.
+- Shared sequence channels
+  - Shared `sequence` channels are ordinary channel declarations with type
+    `sequence`.
+  - Sequence-channel calls should reuse channel-call lowering. The `!` operator
+    is unrelated and must remain context-path-only.
+- Inherited method dispatch
+  - `_getExplicitThisDispatchFacts(...)` recognizes static `this.method`.
+  - `compileFunCall(...)` marks the lookup as an allowed call and lowers it to
+    `runtime.invokeInheritedMethod(...)`.
+  - `compileLookupVal(...)` currently rejects bare `this.method` references.
+- Component observation
+  - `_getComponentBindingFacts(...)` and component observation lowering are a
+    useful local pattern for classifying a static root before lowering.
+  - Do not merge component observation with `this.<shared>`; it is caller-side
+    observation of another instance.
+- Parser / AST shape
+  - Existing code already sees `this.method` as a `LookupVal`, so
+    `this.name` as a bare expression is likely already parsed.
+  - Assignment and channel-call target support still needs confirmation while
+    implementing Pass 1, because `compileSet(...)` currently expects simple
+    symbol targets for ordinary set declarations/assignments.
+
+Implementation implication:
+
+- Add a small shared classifier for script `this.<root>` static paths.
+- Feed the classifier into existing shared symbol/channel lowering paths.
+- Avoid adding runtime commands.
+- Do not extend sequential `!` analysis for shared roots.
+- Template inference will need separate collection because current shared
+  schema generation only reads explicit `sharedDeclarations`.
+
 ### Pass 1: Script Shared Surface
 
 Add script support for `this.<shared>` parity for `var`, `text`, `data`, and
@@ -576,6 +646,10 @@ this.db.insert(row)
 
 should match the existing bare shared behavior.
 
+Calls to `this.<sharedSequence>.method(...)` are ordered by the shared sequence
+channel itself; they do not need, and must not use, the context-path-only `!`
+operator.
+
 Implementation notes:
 
 - add one shared-root recognition path for script `this.<name>` static paths
@@ -604,10 +678,12 @@ Tests:
 
 - script shared-var read parity
 - script shared-var write parity
+- nested script shared-var assignment parity
 - method body reads/writes `this.theme`
 - shared text call and snapshot parity
 - shared data write and snapshot parity
 - shared sequence call parity
+- shared sequence call on an object whose method reads `this`
 - method body can write shared data through `this.result`
 - undeclared `this.missing` fails clearly
 - bare undeclared `missing` still uses ordinary ambient lookup
@@ -618,6 +694,31 @@ Tests:
   `this.render(this.theme)`
 - constructor and method operations on `this.db` serialize on the same shared
   sequence channel
+
+#### Pass 1 Review Findings
+
+Pass 1 is implemented and verified for the primary script surface:
+`this.<shared>` works for shared `var` reads/writes, shared `text` calls,
+shared `data` assignment/commands, shared `sequence` calls, shared snapshots,
+shared `is error` / `#` observations, method-body shared var access,
+method-body typed shared data access, local shared/method collisions,
+constructor-plus-method sequence ordering, and rejection of `!` on
+`this.<shared>`.
+
+Cross-file shared/method collisions remain owned by Pass 3 as planned; template
+inference remains owned by Pass 2.
+
+Deferred cleanup and diagnostics notes:
+
+- improve the local shared/method collision wording so it says the conflicting
+  method is defined in the same file, not inherited
+- improve undeclared `this.<name>` diagnostics so missing shared declarations
+  do not read as bare inherited-method reference errors
+- consider whether the `isThisShared` call marker and the dedicated
+  `this.<shared>` text/data command emitter can be folded back into the generic
+  channel-call path after template inference is implemented
+- consider renaming the `subpath` field in shared call facts to make clear that
+  it contains only the intermediate channel path before the command name
 
 ### Pass 2: Template Shared-Var Inference
 
@@ -703,10 +804,30 @@ Tests:
 
 Update documentation once the behavior is implemented and tested.
 
+The user-facing docs should present `this` as one language concept, not as a
+bolt-on shared-state feature. The main explanation should be:
+
+> `this` is the current inheritance/component instance. It gives access to
+> inherited methods and shared state.
+
+Under that single model:
+
+- `this.method(...)` calls inherited / overridable behavior
+- `this.sharedName` reads or writes shared state
+- `this.sharedChannel(...)` performs a declared shared-channel operation in
+  scripts
+
+Migration notes can mention that shared access used to be bare, but the main
+language explanation should read as if `this` was designed this way from the
+start.
+
 Required updates:
 
 - `docs/cascada/script.md`
-  - make `this.<shared>` the preferred script syntax
+  - introduce `this` once as the inheritance-instance surface
+  - document inherited methods and shared state together under that `this`
+    model
+  - make `this.<shared>` the preferred script shared-access syntax
   - show `var`, `text`, `data`, and `sequence` examples
   - explain that script shared declarations remain required for channel type
     disambiguation
@@ -715,9 +836,15 @@ Required updates:
   - mark bare shared access as transitional / legacy
 
 - `docs/cascada/template.md`
+  - introduce `this` as the async-template inheritance-instance surface
+  - explain inherited method/block dispatch and shared vars under the same
+    `this` concept, where applicable
   - add async-template inherited shared-var access through `this.<name>`
   - explain that templates do not need shared declarations because the access is
     var-only
+  - explicitly contrast this with scripts: scripts need shared declarations
+    because they can access typed shared channels, while templates infer shared
+    `var` roots from static `this.<name>` paths
   - show `{% set this.theme = "light" %}` and `{{ this.theme }}`
   - say typed shared channels are script-only for this surface
 
