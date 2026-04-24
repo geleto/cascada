@@ -98,7 +98,7 @@ describe('Phase 8 - Component Method Calls', function () {
     expect(result).to.eql(['local-A', 'local-B']);
   });
 
-  it('should route component method calls through inherited dispatch', async function () {
+  it('should route component method calls through the shared inherited admission path', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 

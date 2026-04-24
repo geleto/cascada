@@ -283,6 +283,7 @@ module.exports = {
   getCallableBodyLinkedChannels: inheritanceCall.getCallableBodyLinkedChannels,
   invokeInheritedMethod: inheritanceCall.invokeInheritedMethod,
   invokeSuperMethod: inheritanceCall.invokeSuperMethod,
+  invokeComponentMethod: inheritanceCall.invokeComponentMethod,
 
   guard,
 

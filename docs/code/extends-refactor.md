@@ -599,21 +599,33 @@ Validation:
 
 Goal:
 
-- make `this.method(...)`, `super(...)`, `__constructor__`, and component
-  method calls share the same direct admission/linking core
+- make `this.method(...)`, `super(...)`, and component method calls share the
+  same direct admission/linking core
 
-Work:
+Status:
+
+- completed for inherited, `super()`, and component method calls in Pass C
+- constructor startup still resolves `__constructor__` through the existing
+  startup path; that path already enters inherited dispatch for constructor
+  `super()` and remains in scope for later readiness/startup cleanup
+- routing root constructor startup through the ordinary invocation admission
+  helper is deliberately postponed: entry-file constructors own direct
+  return/output startup behavior that ordinary method invocation buffers do not
+  model yet
+
+Completed work:
 
 - extract a private helper that admits already-resolved method data
-- keep lookup differences outside that helper:
+- kept lookup differences outside that helper:
   - ordinary inherited call resolves by method name
   - `super()` resolves by owner key and must remain owner-relative
-  - `__constructor__` resolves as the constructor method name, including the
-    topmost no-op constructor rule
   - component method resolves through the instance inheritance state
-- do not normalize `super()` into ordinary override dispatch
-- keep the helper sync-first; only wait for metadata readiness before calling
+- did not normalize `super()` into ordinary override dispatch
+- kept the helper sync-first; only wait for metadata readiness before calling
   it when a boundary can genuinely run early
+- exposed a narrow `runtime.invokeComponentMethod(...)` wrapper so component
+  operations can reuse the same private admission primitive without duplicating
+  method lookup, buffer admission, or command enqueue logic
 
 Primary files:
 
@@ -639,6 +651,10 @@ Work:
 - audit every `awaitInheritanceMetadataReadiness(...)` call
 - split "startup may still be finalizing" from "invalid runtime call before
   finalization" where useful
+- evaluate whether root constructor startup can share the ordinary method
+  admission primitive without losing entry-file direct return/output ownership;
+  if it can, model those ownership rules explicitly before changing the
+  `__constructor__` startup path
 - consider replacing hot-path readiness waits with assertions after the direct
   execution table is in place
 - preserve the one-shot metadata-ready yield only if `runCompiledRootStartup`
@@ -668,8 +684,8 @@ Work:
 - avoid overloaded positional signatures; prefer a single options object if
   another cleanup pass touches this API
 - keep `ComponentInstance` as the lifecycle owner
-- keep method-operation metadata decisions in inherited-call helpers from
-  Phase 3
+- method-operation metadata decisions now live in inherited-call helpers from
+  Phase 3 / Pass C
 - keep shared observation as a component-specific command only because it is a
   component-specific language surface
 

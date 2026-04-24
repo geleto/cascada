@@ -901,18 +901,54 @@ function _invokeWhenMetadataReady(metadataReadyPromise, invokeFn) {
   return metadataReadyPromise.then(() => invokeFn());
 }
 
+function _admitResolvedMethodInvocation({
+  name,
+  label,
+  methodData,
+  normalizeError,
+  fallbackToContextOriginalArgs = false,
+  args,
+  context,
+  inheritanceState: inheritanceStateValue,
+  env,
+  runtime,
+  cb,
+  currentBuffer,
+  errorContext = null
+}) {
+  const invocationBuffer = _createAdmittedInvocationBuffer(
+    runtime,
+    context,
+    inheritanceStateValue,
+    currentBuffer,
+    methodData
+  );
+  const command = module.exports.createInheritanceInvocationCommand({
+    name,
+    label,
+    methodData,
+    fallbackToContextOriginalArgs,
+    normalizeError,
+    args,
+    context,
+    inheritanceState: inheritanceStateValue,
+    env,
+    runtime,
+    cb,
+    invocationBuffer,
+    errorContext
+  });
+
+  invocationBuffer.add(command, '__invoke__');
+  command.apply();
+  return command.promise;
+}
+
 function invokeInheritedMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
   const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
   return _invokeWhenMetadataReady(metadataReadyPromise, () => {
     const methodData = _assertDirectMethodData(inheritanceStateValue, methodName, errorContext);
-    const invocationBuffer = _createAdmittedInvocationBuffer(
-      runtime,
-      context,
-      inheritanceStateValue,
-      currentBuffer,
-      methodData
-    );
-    const command = module.exports.createInheritanceInvocationCommand({
+    return _admitResolvedMethodInvocation({
       name: methodName,
       label: `Inherited method '${methodName}'`,
       methodData,
@@ -923,13 +959,9 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
       env,
       runtime,
       cb,
-      invocationBuffer,
+      currentBuffer,
       errorContext
     });
-
-    invocationBuffer.add(command, '__invoke__');
-    command.apply();
-    return command.promise;
   });
 }
 
@@ -937,14 +969,7 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
   const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
   return _invokeWhenMetadataReady(metadataReadyPromise, () => {
     const methodData = _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKey, errorContext);
-    const invocationBuffer = _createAdmittedInvocationBuffer(
-      runtime,
-      context,
-      inheritanceStateValue,
-      currentBuffer,
-      methodData
-    );
-    const command = module.exports.createInheritanceInvocationCommand({
+    return _admitResolvedMethodInvocation({
       name: methodName,
       label: `super() for method '${methodName}'`,
       methodData,
@@ -956,13 +981,30 @@ function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, co
       env,
       runtime,
       cb,
-      invocationBuffer,
+      currentBuffer,
       errorContext
     });
+  });
+}
 
-    invocationBuffer.add(command, '__invoke__');
-    command.apply();
-    return command.promise;
+function invokeComponentMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+  const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
+  return _invokeWhenMetadataReady(metadataReadyPromise, () => {
+    const methodData = _assertDirectMethodData(inheritanceStateValue, methodName, errorContext);
+    return _admitResolvedMethodInvocation({
+      name: methodName,
+      label: `Component method '${methodName}'`,
+      methodData,
+      normalizeError: (error) => _normalizeInheritedMethodInvocationError(error, methodName, errorContext),
+      args,
+      context,
+      inheritanceState: inheritanceStateValue,
+      env,
+      runtime,
+      cb,
+      currentBuffer,
+      errorContext
+    });
   });
 }
 
@@ -974,5 +1016,6 @@ module.exports = {
   getCallableBodyLinkedChannels,
   resolveInheritanceSharedChannel,
   invokeInheritedMethod,
-  invokeSuperMethod
+  invokeSuperMethod,
+  invokeComponentMethod
 };

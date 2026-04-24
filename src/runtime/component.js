@@ -92,7 +92,7 @@ class ComponentInstance {
   callMethod(methodName, args, runtime, cb, errorContext = null) {
     this._throwIfUnavailable(errorContext);
     const sharedRootBuffer = this._getSharedRootBuffer();
-    return runtime.invokeInheritedMethod(
+    return runtime.invokeComponentMethod(
       this.inheritanceState,
       methodName,
       Array.isArray(args) ? args : [],
