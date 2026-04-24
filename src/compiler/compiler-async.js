@@ -197,14 +197,12 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _getThisSharedSetPathFacts(node, analysisPass = this.analysis) {
-    if (!this.scriptMode || !node || !node.path || !node.targets || node.targets.length !== 1) {
+    if (!node || !node.targets || node.targets.length !== 1) {
       return null;
     }
-    const target = node.targets[0];
-    if (!(target instanceof nodes.Symbol) || target.value !== 'this') {
-      return null;
-    }
-    const segments = this._getStaticLiteralPathSegments(node.path);
+    const segments = this.scriptMode
+      ? this._getScriptThisSharedSetPathSegments(node)
+      : this._getTemplateThisSharedSetPathSegments(node);
     if (!segments || segments.length === 0) {
       return null;
     }
@@ -218,6 +216,31 @@ class CompilerAsync extends CompilerBaseAsync {
       type: declaration.type,
       path: segments.slice(1)
     };
+  }
+
+  _getScriptThisSharedSetPathSegments(node) {
+    if (!node.path) {
+      return null;
+    }
+    const target = node.targets[0];
+    if (!(target instanceof nodes.Symbol) || target.value !== 'this') {
+      return null;
+    }
+    return this._getStaticLiteralPathSegments(node.path);
+  }
+
+  _getTemplateThisSharedSetPathSegments(node) {
+    // Template set targets carry the full `this.x.y` path in the target
+    // LookupVal; script-mode set_path uses node.path and is handled separately.
+    if (this.scriptMode || node.path) {
+      return null;
+    }
+    const target = node.targets[0];
+    const staticPath = this.sequential._extractStaticPath(target);
+    if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
+      return null;
+    }
+    return staticPath.slice(1);
   }
 
   analyzeExtern(node) {
@@ -1543,6 +1566,22 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeRoot(node) {
     const declares = this._getRootDeclarations(node);
+    const templateUsesInheritanceSurface = !this.scriptMode && this._templateUsesInheritanceSurface(node);
+    this.templateUsesInheritanceSurface = templateUsesInheritanceSurface;
+    node._analysis.templateUsesInheritanceSurface = templateUsesInheritanceSurface;
+    if (templateUsesInheritanceSurface) {
+      const inferredTemplateSharedDeclarations = this._collectInferredTemplateSharedDeclarations(node);
+      node._analysis.inferredTemplateSharedDeclarations = inferredTemplateSharedDeclarations;
+      inferredTemplateSharedDeclarations.forEach((declaration) => {
+        declares.push({
+          name: declaration.name.value,
+          type: 'var',
+          initializer: null,
+          shared: true,
+          inferredTemplateShared: true
+        });
+      });
+    }
     const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
       ? node._analysis.sequenceLocks
       : [];
@@ -1555,6 +1594,54 @@ class CompilerAsync extends CompilerBaseAsync {
       declares,
       textOutput: this._getRootTextOutput()
     };
+  }
+
+  _templateUsesInheritanceSurface(rootNode) {
+    if (this.scriptMode || !rootNode || typeof rootNode.findAll !== 'function') {
+      return false;
+    }
+    return rootNode.findAll(nodes.Extends).length > 0 || rootNode.findAll(nodes.Block).length > 0;
+  }
+
+  _collectInferredTemplateSharedDeclarations(rootNode) {
+    const calleeNodes = new Set();
+    rootNode.findAll(nodes.FunCall).forEach((callNode) => {
+      if (callNode && callNode.name) {
+        calleeNodes.add(callNode.name);
+      }
+    });
+
+    const inferred = new Map();
+    rootNode.findAll(nodes.LookupVal).forEach((lookupNode) => {
+      if (
+        lookupNode.target instanceof nodes.Symbol &&
+        lookupNode.target.value === 'this' &&
+        !(lookupNode.val instanceof nodes.Literal && typeof lookupNode.val.value === 'string')
+      ) {
+        this.fail(
+          'Dynamic this[...] shared access is not supported in templates.',
+          lookupNode.lineno,
+          lookupNode.colno,
+          lookupNode
+        );
+      }
+      if (calleeNodes.has(lookupNode)) {
+        return;
+      }
+      const staticPath = this.sequential._extractStaticPath(lookupNode);
+      if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
+        return;
+      }
+      const name = staticPath[1];
+      if (inferred.has(name)) {
+        return;
+      }
+      const nameNode = new nodes.Symbol(lookupNode.lineno, lookupNode.colno, name);
+      const declaration = new nodes.ChannelDeclaration(lookupNode.lineno, lookupNode.colno, 'var', nameNode, null, true);
+      declaration.inferredTemplateShared = true;
+      inferred.set(name, declaration);
+    });
+    return Array.from(inferred.values());
   }
 
   compileRoot(node) {
@@ -1576,7 +1663,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const invokedMethodRefs = this.inheritance.collectAllInvokedMethodRefsFromNode(node);
     this.needsInheritanceState = !!(
       this.hasExtends ||
-      (this.scriptMode && this._getSharedDeclarations(node).length > 0) ||
+      this._getSharedDeclarations(node).length > 0 ||
       callableDefinitions.length > 0 ||
       Object.keys(invokedMethodRefs).length > 0
     );

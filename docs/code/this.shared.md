@@ -745,8 +745,8 @@ Implementation notes:
 - compile `this.name.path` as shared-var read/observation of `name`, followed
   by ordinary property lookup
 - compile `{% set this.name = value %}` as shared-var assignment
-- first implementation only needs direct-root writes; nested writes remain a
-  separate open decision
+- compile `{% set this.name.path = value %}` as shared-var snapshot, nested
+  path update, and shared-var assignment
 
 Scope limits:
 
@@ -763,6 +763,7 @@ Tests:
 - `{{ this.theme }}` reads shared var without declaration
 - `{% set this.theme = "light" %}` writes shared var
 - `{{ this.user.name }}` reads `user` then performs ordinary property lookup
+- `{% set this.user.name = "Ada" %}` updates a nested path on the shared var
 - dynamic `this[name]` fails clearly
 - sync template behavior remains unchanged
 - render context containing `{ this: { theme: "wrong" } }` does not intercept
@@ -817,8 +818,7 @@ Under that single model:
 - `this.sharedChannel(...)` performs a declared shared-channel operation in
   scripts
 
-Migration notes can mention that shared access used to be bare, but the main
-language explanation should read as if `this` was designed this way from the
+The language explanations should read as if `this` was designed this way from the
 start.
 
 Required updates:
@@ -836,15 +836,15 @@ Required updates:
   - mark bare shared access as transitional / legacy
 
 - `docs/cascada/template.md`
-  - introduce `this` as the async-template inheritance-instance surface
-  - explain inherited method/block dispatch and shared vars under the same
-    `this` concept, where applicable
-  - add async-template inherited shared-var access through `this.<name>`
-  - explain that templates do not need shared declarations because the access is
-    var-only
+  - keep the template docs focused on template-specific differences instead of
+    repeating the full script explanation
+  - explain that async inherited templates can use `this.<name>` for shared
+    `var` state and `this.method(...)` for inherited block/method dispatch
+  - explain that templates do not need shared declarations because template
+    shared access through `this.<name>` is var-only and inferred from static
+    paths
   - explicitly contrast this with scripts: scripts need shared declarations
-    because they can access typed shared channels, while templates infer shared
-    `var` roots from static `this.<name>` paths
+    because they can access typed shared channels
   - show `{% set this.theme = "light" %}` and `{{ this.theme }}`
   - say typed shared channels are script-only for this surface
 
@@ -909,6 +909,12 @@ Review questions:
   ambient lookup staying ambient?
 - Documentation: if user-visible behavior changed in this pass, is the relevant
   doc updated or explicitly deferred to Pass 4?
+- Optional regression depth: if a pass touches shared-schema merging, consider a
+  three-level inheritance test when it would exercise behavior not already
+  covered by a two-level chain.
+- Cleanup naming: low-priority helper names such as
+  `_templateUsesInheritanceSurface` can be revisited during cleanup if a more
+  precise name improves readability without broad churn.
 
 If the review finds a simpler implementation path, take it before starting the
 next pass. The goal is a smaller and clearer compiler/runtime, not merely
@@ -916,7 +922,4 @@ checking off the pass list.
 
 ## Open Decisions
 
-- whether template nested assignment such as
-  `{% set this.user.name = "Ada" %}` should be supported immediately or only if
-  ordinary object-path assignment already supports it
 - whether dynamic template shared access should ever be supported

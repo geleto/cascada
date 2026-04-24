@@ -1,6 +1,7 @@
 'use strict';
 
 let expect;
+let Environment;
 let AsyncEnvironment;
 let AsyncTemplate;
 let Script;
@@ -18,6 +19,7 @@ let inheritanceCallModule;
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
+  Environment = environment.Environment;
   AsyncEnvironment = environment.AsyncEnvironment;
   AsyncTemplate = environment.AsyncTemplate;
   Script = environment.Script;
@@ -47,6 +49,7 @@ if (typeof require !== 'undefined') {
   StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
+  Environment = nunjucks.Environment;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   AsyncTemplate = nunjucks.AsyncTemplate;
   Script = nunjucks.Script;
@@ -716,6 +719,104 @@ describe('Extends Foundation', function () {
       } catch (error) {
         expect(String(error)).to.match(/sequence marker|context path|bare inherited-method/i);
       }
+    });
+
+    it('should infer async-template shared vars across parent and child templates', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% block body %}{{ this.theme }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% set this.theme = "light" %}');
+
+      const result = await env.renderTemplate('child.njk', { this: { theme: 'context' } });
+
+      expect(result).to.be('light');
+    });
+
+    it('should infer template shared vars for nested property reads', async function () {
+      const result = await env.renderTemplateString(
+        '{% set this.user = { name: "Ada" } %}{% block body %}{{ this.user.name }}{% endblock %}',
+        { this: { user: { name: 'context' } } }
+      );
+
+      expect(result).to.be('Ada');
+    });
+
+    it('should infer template shared vars for nested property writes', async function () {
+      const result = await env.renderTemplateString(
+        '{% set this.user = {} %}{% set this.user.name = "Ada" %}{% block body %}{{ this.user.name }}{% endblock %}',
+        {}
+      );
+
+      expect(result).to.be('Ada');
+    });
+
+    it('should infer template shared vars for direct writes and reads without declarations', async function () {
+      const result = await env.renderTemplateString(
+        '{% set this.theme = "light" %}{% block body %}{{ this.theme }}{% endblock %}',
+        {}
+      );
+
+      expect(result).to.be('light');
+    });
+
+    it('should reject dynamic this[...] shared access in templates', async function () {
+      try {
+        await env.renderTemplateString('{% block body %}{{ this[name] }}{% endblock %}', { name: 'theme' });
+        expect().fail('Expected dynamic template this[...] access to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('Dynamic this[...] shared access is not supported in templates');
+      }
+    });
+
+    it('should reject dynamic this[...] shared assignment in templates', async function () {
+      try {
+        await env.renderTemplateString('{% block body %}{% set this[name] = "light" %}{% endblock %}', { name: 'theme' });
+        expect().fail('Expected dynamic template this[...] assignment to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('Dynamic this[...] shared access is not supported in templates');
+      }
+    });
+
+    it('should leave plain async template context-this lookups unchanged', async function () {
+      const result = await env.renderTemplateString('{{ this.theme }}', {
+        this: { theme: 'context' }
+      });
+
+      expect(result).to.be('context');
+    });
+
+    it('should leave plain async template dynamic context-this lookups unchanged', async function () {
+      const result = await env.renderTemplateString('{{ this[key] }}', {
+        key: 'theme',
+        this: { theme: 'context' }
+      });
+
+      expect(result).to.be('context');
+    });
+
+    it('should leave sync template context-this lookups unchanged', function () {
+      const syncEnv = new Environment();
+      const result = syncEnv.renderTemplateString('{{ this.theme }}', {
+        this: { theme: 'context' }
+      });
+
+      expect(result).to.be('context');
+    });
+
+    it('should combine template this.method dispatch and inferred shared-var access', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% block body %}{% endblock %}');
+      loader.addTemplate('child.njk', [
+        '{% extends "base.njk" %}',
+        '{% set this.theme = "light" %}',
+        '{% block label %}theme{% endblock %}',
+        '{% block body %}{{ this.label() }}={{ this.theme }}{% endblock %}'
+      ].join(''));
+
+      const result = await env.renderTemplate('child.njk', { this: { theme: 'context' } });
+
+      expect(result).to.be('theme=light');
     });
 
     it('should let an earlier child-buffer shared default win over a later parent-buffer default', async function () {

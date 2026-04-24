@@ -544,10 +544,14 @@ class CompilerCommon extends Obj {
 
   _getSharedDeclarations(node) {
     const metadata = this._getInheritanceMetadata(node);
+    const inferredSharedDeclarations =
+      node && node._analysis && Array.isArray(node._analysis.inferredTemplateSharedDeclarations)
+        ? node._analysis.inferredTemplateSharedDeclarations
+        : [];
     if (!metadata || !metadata.sharedDeclarations || !Array.isArray(metadata.sharedDeclarations.children)) {
-      return [];
+      return inferredSharedDeclarations;
     }
-    return metadata.sharedDeclarations.children.filter(Boolean);
+    return metadata.sharedDeclarations.children.filter(Boolean).concat(inferredSharedDeclarations);
   }
 
   compileNodeList(node, frame) {

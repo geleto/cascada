@@ -22,6 +22,7 @@ class CompilerBaseAsync extends CompilerCommon {
     super.init(Object.assign({}, options, { asyncMode: true }));
     this.analysis = new CompileAnalysis(this);
     this.rename = new CompileRename(this);
+    this.templateUsesInheritanceSurface = false;
   }
 
   _getCurrentBlockBindingOwners(node, name) {
@@ -314,7 +315,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _getThisSharedAccessFacts(node, analysisPass = this.analysis, analysisNode = null) {
-    if (!this.scriptMode || !node) {
+    if (!node) {
       return null;
     }
     const staticPath = this.sequential._extractStaticPath(node);
@@ -324,6 +325,9 @@ class CompilerBaseAsync extends CompilerCommon {
     const channelName = staticPath[1];
     const channelDecl = analysisPass.findDeclaration(analysisNode || node._analysis, channelName);
     if (!channelDecl || !channelDecl.shared) {
+      return null;
+    }
+    if (!this.scriptMode && channelDecl.type !== 'var') {
       return null;
     }
     const channelPath = [channelName].concat(staticPath.slice(2));
@@ -336,6 +340,10 @@ class CompilerBaseAsync extends CompilerCommon {
       subpath: channelPath.length > 2 ? channelPath.slice(1, -1) : [],
       propertyName: channelPath.length >= 2 ? channelPath[channelPath.length - 1] : null
     };
+  }
+
+  _supportsExplicitThisInheritanceSurface() {
+    return !!(this.scriptMode || this.templateUsesInheritanceSurface);
   }
 
   _getComponentBindingFacts(node, { forCall = false } = {}) {
@@ -440,24 +448,25 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    if (this.scriptMode) {
-      const thisSharedFacts = this._getThisSharedAccessFacts(node, analysisPass);
-      if (thisSharedFacts) {
-        uses.push(thisSharedFacts.channelName);
-        if (
-          thisSharedFacts.channelType === 'sequence' &&
-          thisSharedFacts.channelPath.length >= 2 &&
-          thisSharedFacts.propertyName !== 'snapshot'
-        ) {
-          sequenceChannelLookup = {
-            channelName: thisSharedFacts.channelName,
-            propertyName: thisSharedFacts.propertyName,
-            subpath: thisSharedFacts.subpath
-          };
-        }
-        return { uses, mutates, sequenceChannelLookup };
+    const thisSharedFacts = this._getThisSharedAccessFacts(node, analysisPass);
+    if (thisSharedFacts) {
+      uses.push(thisSharedFacts.channelName);
+      if (
+        this.scriptMode &&
+        thisSharedFacts.channelType === 'sequence' &&
+        thisSharedFacts.channelPath.length >= 2 &&
+        thisSharedFacts.propertyName !== 'snapshot'
+      ) {
+        sequenceChannelLookup = {
+          channelName: thisSharedFacts.channelName,
+          propertyName: thisSharedFacts.propertyName,
+          subpath: thisSharedFacts.subpath
+        };
       }
+      return { uses, mutates, sequenceChannelLookup };
+    }
 
+    if (this.scriptMode) {
       const sequencePath = this.sequential._extractStaticPath(node);
       const lookupFacts =
         sequencePath && sequencePath.length >= 2
@@ -485,6 +494,22 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileLookupVal(node) {
+    if (
+      !this.scriptMode &&
+      this.templateUsesInheritanceSurface &&
+      node.target instanceof nodes.Symbol &&
+      node.target.value === 'this' &&
+      !(node.val instanceof nodes.Literal && typeof node.val.value === 'string')
+    ) {
+      // Analysis rejects this first for inheritance templates; this keeps
+      // direct compile calls on the same structural-error path.
+      this.fail(
+        'Dynamic this[...] shared access is not supported in templates.',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     const thisSharedFacts = this._getThisSharedAccessFacts(node);
     if (thisSharedFacts) {
       const sequenceChannelLookup =
@@ -514,7 +539,9 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    const explicitThisDispatch = this.scriptMode ? this._getExplicitThisDispatchFacts(node) : null;
+    const explicitThisDispatch = this._supportsExplicitThisInheritanceSurface()
+      ? this._getExplicitThisDispatchFacts(node)
+      : null;
     if (explicitThisDispatch && !(node._analysis && node._analysis.allowExplicitThisDispatchCall)) {
       this.fail(
         `bare inherited-method references are not supported; bare this.${explicitThisDispatch.methodName} references are not allowed; use this.${explicitThisDispatch.methodName}(...)`,
@@ -651,7 +678,7 @@ class CompilerBaseAsync extends CompilerCommon {
         }
       }
     }
-    if (this.scriptMode) {
+    if (this._supportsExplicitThisInheritanceSurface()) {
       const explicitThisDispatch = this._getExplicitThisDispatchFacts(node.name);
       const thisSharedDispatch = this._getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
       if (explicitThisDispatch && !thisSharedDispatch) {
@@ -732,7 +759,9 @@ class CompilerBaseAsync extends CompilerCommon {
     const directMacroBinding = directMacroCall ? directMacroCall.binding : null;
     const isDirectMacroCall = !!directMacroCall;
     const importedCallableFacts = node._analysis.importedCallable;
-    const explicitThisDispatch = this.scriptMode ? this._getExplicitThisDispatchFacts(node.name) : null;
+    const explicitThisDispatch = this._supportsExplicitThisInheritanceSurface()
+      ? this._getExplicitThisDispatchFacts(node.name)
+      : null;
     const thisSharedFacts = this._getThisSharedAccessFacts(node.name, this.analysis, node._analysis);
     const componentBindingRoot = this._getComponentBindingRoot(node.name);
     const componentBindingFacts = this._getComponentBindingFacts(node.name, { forCall: true });
@@ -852,9 +881,10 @@ class CompilerBaseAsync extends CompilerCommon {
   _emitThisSharedVarNestedLookup(thisSharedFacts, node) {
     const nestedPath = thisSharedFacts.channelPath.slice(1);
     const errorContextJson = JSON.stringify(this._createErrorContext(node));
+    const memberLookupHelper = this.scriptMode ? 'memberLookupScript' : 'memberLookupAsync';
 
     nestedPath.forEach(() => {
-      this.emit('runtime.memberLookupScript((');
+      this.emit(`runtime.${memberLookupHelper}((`);
     });
     this._emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
     nestedPath.forEach((propertyName) => {
