@@ -118,6 +118,7 @@ directly from the local method/block AST:
 - `ownUsedChannels`
 - `ownMutatedChannels`
 - `super`
+- `superOrigin`
 - `ownerKey`
 - `invokedMethods`
 
@@ -126,6 +127,10 @@ Compiled `super` is `true` when the callable contains `super()` and `false` or
 owner-relative parent metadata object, or to `null` when the no-op root
 constructor rule applies. A non-constructor `super()` without a parent
 implementation is reported as a structural metadata error.
+
+Compiled `superOrigin` carries source-origin metadata for the `super()` call
+site when present. Finalization uses it for diagnostics and does not retain it
+in execution method metadata.
 
 Compiled `invokedMethods` records ordinary inherited method calls such as
 `this.render()`. It is an object map keyed by method name. During bootstrap,
@@ -137,21 +142,35 @@ The compiler should emit only the channels directly touched by the local method
 body. Channels reached through `super()` and ordinary inherited calls are
 computed during metadata finalization.
 
-Finalized method metadata includes:
+Finalization work metadata temporarily includes the graph edges needed to
+compute the transitive callable footprint:
 
 - `fn`
 - `signature`
 - `ownerKey`
-- `ownUsedChannels`
-- `ownMutatedChannels`
 - `super`
 - `invokedMethods`
+- `mergedUsedChannels`
+- `mergedMutatedChannels`
+
+After finalization, normal execution uses the pruned execution method metadata
+shape:
+
+- `fn`
+- `signature`
+- `ownerKey`
+- `super`
 - `mergedUsedChannels`
 - `mergedMutatedChannels`
 
 `mergedUsedChannels` and `mergedMutatedChannels` are the full transitive
 callable footprint: the callable's own channels, its reachable `super()` chain,
 and all ordinary inherited methods it may invoke.
+
+Compiled `ownUsedChannels`, `ownMutatedChannels`, `superOrigin`, and
+callable-local `invokedMethods` are bootstrap/finalization inputs. They are not
+part of the long-lived execution method data once the footprint has been
+computed.
 
 Compiled files expose an `inheritanceSpec` descriptor containing `setup`,
 `methods`, `sharedSchema`, `invokedMethods`, and `hasExtends`. The file-level
@@ -392,8 +411,8 @@ admission. They should use:
 - `mergedMutatedChannels`
 
 Those merged fields are conservative for the full callable footprint, including
-the reachable `super()` chain and ordinary inherited calls represented by
-`invokedMethods`.
+the reachable `super()` chain and ordinary inherited calls that were represented
+by `invokedMethods` during finalization.
 
 There are two kinds of side-channel commands:
 
@@ -416,7 +435,8 @@ both templates and scripts:
 
 Current-call linkage uses the call target's merged channel effect set:
 
-- `ownUsedChannels` / `ownMutatedChannels` describe the local body only
+- compiled `ownUsedChannels` / `ownMutatedChannels` describe the local body only
+  during finalization
 - `mergedUsedChannels` / `mergedMutatedChannels` describe the current callable
   level plus the reachable inherited work from `super()` and `this.method()`
 

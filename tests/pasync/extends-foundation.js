@@ -804,7 +804,11 @@ describe('Extends Foundation', function () {
       expect(buildData.mergedUsedChannels).to.be.an(Array);
       expect(buildData.mergedMutatedChannels).to.be.an(Array);
       expect(buildData.invokedMethods).to.be(undefined);
+      expect(buildData.ownUsedChannels).to.be(undefined);
+      expect(buildData.ownMutatedChannels).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').invokedMethods).to.be(undefined);
+      expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownUsedChannels).to.be(undefined);
+      expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownMutatedChannels).to.be(undefined);
     });
 
     it('should fail finalization when invoked method metadata cannot resolve a target', function () {
@@ -856,6 +860,10 @@ describe('Extends Foundation', function () {
       expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
       expect(alphaData.invokedMethods).to.be(undefined);
       expect(betaData.invokedMethods).to.be(undefined);
+      expect(alphaData.ownUsedChannels).to.be(undefined);
+      expect(alphaData.ownMutatedChannels).to.be(undefined);
+      expect(betaData.ownUsedChannels).to.be(undefined);
+      expect(betaData.ownMutatedChannels).to.be(undefined);
       expect(alphaData.mergedMutatedChannels).to.contain('alphaTrace');
       expect(alphaData.mergedMutatedChannels).to.contain('betaTrace');
       expect(betaData.mergedMutatedChannels).to.contain('alphaTrace');

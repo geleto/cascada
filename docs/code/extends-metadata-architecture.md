@@ -135,8 +135,10 @@ Execution is allowed to assume:
 - `inheritanceState.methods[name]` is either a direct resolved method metadata
   object or missing
 - `methodMeta.super` is either a direct resolved metadata object or `null`
-- `methodMeta.invokedMethods` is a direct map of method name to resolved method
-  metadata
+- `methodMeta.mergedUsedChannels` and `methodMeta.mergedMutatedChannels`
+  already contain the full transitive callable footprint
+- callable-local `invokedMethods` has already been consumed by finalization and
+  is not part of normal execution method data
 
 No normal inherited dispatch path should need to `await` metadata resolution.
 Constructor startup is also delayed until the full inheritance chain has loaded
@@ -144,10 +146,13 @@ and the final metadata graph is built.
 
 ## Method Metadata Shape
 
-The shape should stay the same as the current resolved metadata shape wherever
-possible, but direct and fully built.
+The metadata model now has three explicit shapes:
 
-Resolved method metadata should have at least:
+1. Compiled raw callable metadata.
+2. Finalization work metadata.
+3. Pruned execution method metadata.
+
+Compiled callable metadata should have at least:
 
 - `fn`
 - `signature`
@@ -155,7 +160,25 @@ Resolved method metadata should have at least:
 - `ownUsedChannels`
 - `ownMutatedChannels`
 - `super`
+- `superOrigin`
 - `invokedMethods`
+
+Finalization work metadata temporarily has:
+
+- `fn`
+- `signature`
+- `ownerKey`
+- `super`
+- `invokedMethods`
+- `mergedUsedChannels`
+- `mergedMutatedChannels`
+
+Pruned execution method metadata has:
+
+- `fn`
+- `signature`
+- `ownerKey`
+- `super`
 - `mergedUsedChannels`
 - `mergedMutatedChannels`
 
@@ -173,14 +196,21 @@ Where:
   - bootstrap uses it to resolve owner-relative `super()` targets
   - ordinary `this.foo()` dispatch ignores `ownerKey` and resolves to the final
     overridden method
+- `superOrigin`
+  - compiled source-origin metadata for `super()` diagnostics
+  - finalization uses it when reporting missing or invalid `super()` targets
+  - it is not retained in pruned execution method metadata
 - `invokedMethods`
   - object map
   - key = method name
   - initial compiled value is the method name
-  - after bootstrap, each value is the direct resolved method metadata object
+  - during finalization, each value is the direct resolved method metadata
+    object
   - ordinary calls resolve to the final overridden method, not an owner-relative
     parent entry
   - excludes `super()` because `super()` is already represented by `super`
+  - it is pruned from execution method metadata after the final merged channel
+    footprint is computed
 
 Compiled callable metadata shape:
 
@@ -192,6 +222,7 @@ Compiled callable metadata shape:
   ownUsedChannels: ["trace"],
   ownMutatedChannels: ["theme"],
   super: true,
+  superOrigin: { path: "C.script", lineno: 3, colno: 2 },
   invokedMethods: {
     readTheme: "readTheme",
     applyTheme: "applyTheme"
@@ -199,20 +230,31 @@ Compiled callable metadata shape:
 }
 ```
 
-Bootstrap rewrites that to resolved method metadata before execution:
+Bootstrap/finalization rewrites that to finalization work metadata:
 
 ```js
 {
   fn,
   signature: { argNames: ["name"], withContext: false },
   ownerKey: "C.script",
-  ownUsedChannels: ["trace"],
-  ownMutatedChannels: ["theme"],
   super: parentBuildMeta,
   invokedMethods: {
     readTheme: resolvedReadThemeMeta,
     applyTheme: resolvedApplyThemeMeta
   },
+  mergedUsedChannels: [...],
+  mergedMutatedChannels: [...]
+}
+```
+
+After the fixed-point footprint pass, normal execution retains only:
+
+```js
+{
+  fn,
+  signature: { argNames: ["name"], withContext: false },
+  ownerKey: "C.script",
+  super: parentBuildMeta,
   mergedUsedChannels: [...],
   mergedMutatedChannels: [...]
 }
@@ -273,7 +315,7 @@ inheritanceState.invokedMethods = {
 }
 ```
 
-And finally each method can receive:
+During finalization each method temporarily receives:
 
 ```js
 methodMeta.invokedMethods = {
@@ -281,6 +323,9 @@ methodMeta.invokedMethods = {
   applyTheme: inheritanceState.invokedMethods.applyTheme
 }
 ```
+
+That temporary callable-local map is consumed by the fixed-point footprint pass
+and pruned before normal execution.
 
 This preserves the user-preferred shape:
 
@@ -430,13 +475,12 @@ need to resolve metadata asynchronously.
 Instead:
 
 - `methodData` is already direct and final
-- `methodData.invokedMethods` is already direct and final
 
 So entry startup can:
 
 - link parent/invocation buffers with the final merged channels
-- use `methodData.invokedMethods` immediately where additional dynamic channel
-  lists are needed
+- use `methodData.mergedUsedChannels` and `methodData.mergedMutatedChannels`
+  directly
 
 No separate `resolveMethods(...)` helper is needed in the final execution path
 if the bootstrap phase already built the final direct graph.
@@ -447,52 +491,30 @@ calling a metadata-resolution helper. A small synchronous guard such as
 boundaries, but it should only validate/read direct metadata and throw a runtime
 fatal error for missing or invalid entries.
 
-## Per-Method Compiled Channel-List Helpers
+## Finalized Callable Channel Footprints
 
-Each compiled constructor/method/block entry should incorporate the channel
-footprints of the inherited methods it calls.
+Each compiled constructor/method/block entry emits only the channels directly
+touched by its local body. It should not emit execution-time channel-list
+helpers that read `methodData.invokedMethods.*`.
 
-Instead of emitting only static arrays such as:
+During metadata finalization, the runtime computes the full callable footprint
+from:
 
-```js
-["channel1", "channel2"]
-```
+- the compiled local `ownUsedChannels` / `ownMutatedChannels`
+- the owner-relative `super()` chain
+- ordinary inherited calls represented by finalization-time `invokedMethods`
 
-the compiler should emit helper calls inside the compiled method entry that
-append the relevant invoked-method footprints:
+The result is stored on the execution method data as:
 
-```js
-_mergeChannelNames(
-  ["channel1", "channel2"],
-  methodData.invokedMethods.build.mergedUsedChannels,
-  methodData.invokedMethods.render.mergedUsedChannels
-)
-```
+- `mergedUsedChannels`
+- `mergedMutatedChannels`
 
-The same pattern applies to mutated-channel lists inside that method:
+Caller-side admission and callable body startup read those merged fields
+directly. They do not rediscover invoked methods, call a metadata-resolution
+helper, or fall back to pending entries.
 
-```js
-_mergeChannelNames(
-  ["channel1"],
-  methodData.invokedMethods.build.mergedMutatedChannels
-)
-```
-
-This helper should be sync-only and cheap:
-
-- it concatenates channel-name arrays
-- it removes duplicates
-- it ignores missing/empty arrays
-- it does not resolve metadata or await anything
-
-The important rule is that each callable's compiled channel handling should read
-from that callable's already-resolved `methodData.invokedMethods`. It should not
-rediscover invoked methods, call a metadata-resolution helper, or fall back to
-pending entries.
-
-Missing invoked-method metadata is not an "empty array" case. If compiled code
-references `methodData.invokedMethods.build`, bootstrap must have resolved that
-entry. If it is absent at execution time, that is a runtime fatal metadata error.
+Missing invoked-method metadata remains a finalization-time structural error,
+not an execution-time "empty footprint" case.
 
 ## Shared Schema
 
@@ -750,11 +772,10 @@ compiled constructor/method/block bodies.
 
 Work:
 
-- where callable bodies currently need channel lists, use direct
-  `methodData.invokedMethods`
-- use equivalent direct merged-channel helpers without await
-- treat missing `methodData.invokedMethods.foo` as a fatal metadata error, not
-  as an empty channel list
+- where callable bodies need channel lists, use direct
+  `methodData.mergedUsedChannels` and `methodData.mergedMutatedChannels`
+- treat missing invoked-method metadata as a finalization-time structural error,
+  not as an empty channel list
 - keep entry-local code simple because bootstrap already did the hard work
 
 Goal:

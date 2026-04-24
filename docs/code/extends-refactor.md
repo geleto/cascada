@@ -555,6 +555,10 @@ Validation:
 
 - compile-source shape tests
 - focused extends foundation tests
+- Pass A review found one stale `extends-metadata-architecture.md` execution
+  assumption that still mentioned execution-time `methodMeta.invokedMethods`;
+  fix in Pass A by restating execution assumptions in terms of finalized merged
+  channel footprints.
 
 ### Phase 2. Publish Direct Execution Method Data
 
