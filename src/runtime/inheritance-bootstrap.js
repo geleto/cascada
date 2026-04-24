@@ -14,7 +14,7 @@ function _getCompiledInheritanceSpec(compiledTemplate) {
     ? compiledTemplate.inheritanceSpec
     : compiledTemplate || {};
   return {
-    setup: spec.setup || spec.setupRenderFunc || null,
+    setup: spec.setup || null,
     methods: spec.methods || {},
     sharedSchema: spec.sharedSchema || {},
     invokedMethods: spec.invokedMethods || {},
@@ -193,7 +193,7 @@ async function bootstrapInheritanceParentScript(
 
     const parentInheritanceSpec = _getCompiledInheritanceSpec(parentScript);
     if (typeof parentInheritanceSpec.setup !== 'function') {
-      throw new Error('Parent script did not expose a compiled setupRenderFunc');
+      throw new Error('Parent script did not expose a compiled setup function');
     }
 
     runtimeApi.bootstrapInheritanceMetadata(
@@ -413,6 +413,8 @@ function finalizeInheritanceMetadata(state, context = null) {
       const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(structuralErrors, context);
       throw aggregateError || structuralErrors[0];
     }
+    // Method finalization publishes direct execution entries before bootstrap
+    // metadata is released; callers after readiness must never see raw entries.
     inheritanceState.releaseInheritanceBootstrapMetadata(state);
     inheritanceState.resolveInheritanceMetadataReadiness(state, state);
     return state;

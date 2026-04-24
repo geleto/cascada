@@ -121,13 +121,38 @@ function _validateSharedObservationCommand(observationCommand, errorContext = nu
   if (
     !observationCommand ||
     typeof observationCommand !== 'object' ||
-    !observationCommand.isObservable ||
     !observationCommand.isUniversalObservationCommand ||
     !observationCommand.channelName
   ) {
     throw _createComponentError('Component shared observation requires a universal observational channel command', errorContext);
   }
   return observationCommand;
+}
+
+function _requireComponentOptions(spec, operationName) {
+  if (!spec || typeof spec !== 'object') {
+    throw _createComponentError(`${operationName} requires an options object`);
+  }
+  return spec;
+}
+
+function _requireComponentBuffer(currentBuffer, errorContext = null) {
+  if (!currentBuffer || typeof currentBuffer.add !== 'function') {
+    throw _createComponentError('Component operations require a current buffer', errorContext);
+  }
+}
+
+function _requireComponentBindingName(bindingName, errorContext = null) {
+  if (!bindingName) {
+    throw _createComponentError('Component operations require a binding name', errorContext);
+  }
+}
+
+function _requireComponentRuntime(runtime, operationName, errorContext = null) {
+  if (!runtime || typeof runtime !== 'object') {
+    throw _createComponentError(`${operationName} requires runtime helpers`, errorContext);
+  }
+  return runtime;
 }
 
 function _enqueueSharedObservation(instance, observationCommand, errorContext = null, implicitVarRead = false) {
@@ -305,6 +330,7 @@ class ObserveSharedChannelCommand extends Command {
 }
 
 async function createComponentInstance(spec) {
+  _requireComponentOptions(spec, 'Component instance creation');
   const {
     templateOrPromise,
     payload,
@@ -315,7 +341,8 @@ async function createComponentInstance(spec) {
     ownerBuffer,
     bindingName = null,
     errorContext = null
-  } = spec || {};
+  } = spec;
+  _requireComponentRuntime(runtime, 'Component instance creation', errorContext);
   const template = await resolveSingle(templateOrPromise);
   if (!template) {
     throw _createComponentError('Component target did not resolve to a script or template', errorContext);
@@ -329,6 +356,9 @@ async function createComponentInstance(spec) {
   // Component payload keys are explicit composition inputs, not an import-style
   // "only declared externs may pass" surface. The component path only validates
   // that any required externs are available from the effective extern context.
+  if (typeof runtime.validateExternInputs !== 'function') {
+    throw _createComponentError('Component instance creation requires runtime.validateExternInputs', errorContext);
+  }
   runtime.validateExternInputs(
     template.externSpec || [],
     [],
@@ -395,6 +425,9 @@ async function createComponentInstance(spec) {
 
   // Components are only exposed after constructor startup settles so callers
   // never observe a half-initialized instance.
+  if (typeof runtime.awaitInheritanceStartup !== 'function') {
+    throw _createComponentError('Component instance creation requires runtime.awaitInheritanceStartup', errorContext);
+  }
   const startupPromise = runtime.awaitInheritanceStartup(componentInheritanceState);
   if (startupPromise) {
     await startupPromise;
@@ -424,6 +457,7 @@ async function createComponentInstance(spec) {
 }
 
 function startComponentInstance(spec) {
+  _requireComponentOptions(spec, 'Component startup');
   const {
     currentBuffer,
     bindingName,
@@ -434,7 +468,9 @@ function startComponentInstance(spec) {
     runtime,
     cb,
     errorContext = null
-  } = spec || {};
+  } = spec;
+  _requireComponentBuffer(currentBuffer, errorContext);
+  _requireComponentBindingName(bindingName, errorContext);
   const command = new StartComponentInstanceCommand({
     templateOrPromise,
     payload,
@@ -446,14 +482,12 @@ function startComponentInstance(spec) {
     bindingName,
     errorContext
   });
-  if (!currentBuffer) {
-    throw new Error('Component operations require a current buffer');
-  }
   currentBuffer.add(command, bindingName);
   return command.promise;
 }
 
 function callComponentMethod(spec) {
+  _requireComponentOptions(spec, 'Component method call');
   const {
     bindingName,
     currentBuffer,
@@ -462,7 +496,13 @@ function callComponentMethod(spec) {
     runtime,
     cb,
     errorContext = null
-  } = spec || {};
+  } = spec;
+  _requireComponentBuffer(currentBuffer, errorContext);
+  _requireComponentBindingName(bindingName, errorContext);
+  _requireComponentRuntime(runtime, 'Component method call', errorContext);
+  if (!methodName) {
+    throw _createComponentError('Component method call requires a method name', errorContext);
+  }
   const command = new ComponentOperationCommand({
     methodName,
     args,
@@ -470,21 +510,23 @@ function callComponentMethod(spec) {
     cb,
     errorContext
   });
-  if (!currentBuffer) {
-    throw new Error('Component operations require a current buffer');
-  }
   currentBuffer.add(command, bindingName);
   return command.promise;
 }
 
 function observeComponentChannel(spec) {
+  _requireComponentOptions(spec, 'Component shared observation');
   const {
     bindingName,
     currentBuffer,
     observationCommand,
     errorContext = null,
     implicitVarRead = false
-  } = spec || {};
+  } = spec;
+  _requireComponentBuffer(currentBuffer, errorContext);
+  if (!observationCommand) {
+    throw _createComponentError('Component shared observation requires an observation command', errorContext);
+  }
   const observationChannelName = observationCommand && observationCommand.channelName
     ? observationCommand.channelName
     : null;
@@ -493,9 +535,6 @@ function observeComponentChannel(spec) {
     errorContext,
     implicitVarRead
   });
-  if (!currentBuffer) {
-    throw new Error('Component operations require a current buffer');
-  }
   currentBuffer.add(command, bindingName || observationChannelName);
   return command.promise;
 }

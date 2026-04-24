@@ -36,7 +36,6 @@ class Command {
     this.resolve = null;
     this.reject = null;
     this.isObservable = false;
-    this.isSnapshotCommand = false;
 
     if (opts.withDeferredResult) {
       this.promise = new Promise((resolve, reject) => {
@@ -761,7 +760,6 @@ class SnapshotCommand extends Command {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
-    this.isSnapshotCommand = true;
     this.isUniversalObservationCommand = true;
   }
 
@@ -802,7 +800,6 @@ class RawSnapshotCommand extends Command {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
-    this.isSnapshotCommand = true;
   }
 
   apply(output) {
@@ -831,7 +828,6 @@ class IsErrorCommand extends Command {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
-    this.isSnapshotCommand = true;
     this.isUniversalObservationCommand = true;
   }
 
@@ -868,7 +864,6 @@ class GetErrorCommand extends Command {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
-    this.isSnapshotCommand = true;
     this.isUniversalObservationCommand = true;
   }
 
@@ -905,7 +900,6 @@ class CaptureGuardStateCommand extends Command {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
-    this.isSnapshotCommand = true;
   }
 
   apply(output) {
@@ -977,7 +971,6 @@ class TextCheckpointCommand extends Command {
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
-    this.isSnapshotCommand = true;
   }
 
   apply(output) {

@@ -469,11 +469,15 @@ function wireResolvedSuperEntry(targetEntry, parentEntry) {
   }
   if (current && typeof current === 'object' && isUnresolvedSuperEntry(current.super)) {
     current.super = parentEntry;
+    // Only raw pre-finalization entries carry this cache; publishing replaces
+    // state.methods with direct execution entries that do not need invalidation.
     delete current._resolvedMethodData;
     return true;
   }
   if (current && typeof current === 'object' && !current.super) {
     current.super = parentEntry;
+    // Only raw pre-finalization entries carry this cache; publishing replaces
+    // state.methods with direct execution entries that do not need invalidation.
     delete current._resolvedMethodData;
     return true;
   }

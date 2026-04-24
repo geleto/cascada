@@ -293,6 +293,8 @@ function _collectResolvedMethodData(state, errorContext = null) {
   Object.keys(methods).forEach((name) => {
     const entry = methods[name];
     if (entry && typeof entry === 'object') {
+      // Before the execution table is published, raw entries expose their
+      // in-progress resolved graph through this private finalization cache.
       addMethodData(_isResolvedMethodData(entry) ? entry : entry._resolvedMethodData);
     }
   });
@@ -384,6 +386,8 @@ function _getMethodDataFromResolvedEntry(
   }
 
   if (resolvedEntry._resolvedMethodData) {
+    // Bootstrap/finalization-only cache: after publication, state.methods holds
+    // execution method data directly and returns through the resolved-data path.
     return resolvedEntry._resolvedMethodData;
   }
 
@@ -576,8 +580,8 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
   for (let i = 0; i < methodNames.length; i++) {
     const name = methodNames[i];
     try {
-      // Build and cache raw methods before the footprint pass. Already-published
-      // execution entries pass through unchanged.
+      // Build and cache raw methods before the footprint pass. On a repeated
+      // finalization call, already-published execution entries pass through.
       _getMethodDataFromResolvedEntry(methods[name], errorContext, state);
     } catch (error) {
       if (

@@ -774,8 +774,10 @@ Completed work:
   exports
 - remove the temporary `runtime.invokeComponentMethod(...)` re-export after
   `ComponentInstance` started calling the inherited-call module directly
-- move the component command deferred-result assertion to behavior coverage for
-  supported component operations
+- remove the component command deferred-result white-box assertion; component
+  operation behavior is covered through startup, method, and observation tests
+- add behavior coverage that rejects non-universal component shared observation
+  commands
 
 Remaining work:
 
