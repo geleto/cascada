@@ -146,19 +146,6 @@ function _getInvokedMethodReferenceOrigin(reference, fallbackContext = null) {
   );
 }
 
-function _resolvePendingInheritanceEntryChain(entry, normalizeError) {
-  if (inheritanceState.isPendingInheritanceEntry(entry)) {
-    return entry.promise.then(
-      (resolvedEntry) => _resolvePendingInheritanceEntryChain(resolvedEntry, normalizeError),
-      (error) => {
-        throw normalizeError(error);
-      }
-    );
-  }
-
-  return entry;
-}
-
 function _normalizeMethodSignature(signature, inheritedSignature = null) {
   let normalizedSignature = signature && typeof signature === 'object'
     ? {
@@ -373,13 +360,7 @@ function _resolveInvokedMethodReference(reference, fallbackName, errorContext, s
       originContext
     );
   }
-  const methodData = _getMethodDataFromEntry(methods[targetName], originContext, state);
-  if (methodData && typeof methodData.then === 'function') {
-    throw _createInheritanceMetadataInvariantError(
-      `Inherited method metadata for '${targetName}' was still pending during direct metadata construction`,
-      originContext
-    );
-  }
+  const methodData = _getMethodDataFromResolvedEntry(methods[targetName], originContext, state);
   return methodData;
 }
 
@@ -409,9 +390,6 @@ function _getMethodDataFromResolvedEntry(
   if (resolvedEntry._resolvedMethodData) {
     return resolvedEntry._resolvedMethodData;
   }
-  if (resolvedEntry._resolvedMethodDataPromise) {
-    return resolvedEntry._resolvedMethodDataPromise;
-  }
 
   const resolvedMethodData = _buildResolvedMethodDataBase(resolvedEntry);
   // This cached base object exists so recursive super/invoked resolution can
@@ -420,36 +398,12 @@ function _getMethodDataFromResolvedEntry(
   resolvedEntry._resolvedMethodData = resolvedMethodData;
 
   const superData = resolvedEntry.super
-    ? _getMethodDataFromEntry(
+    ? _getMethodDataFromResolvedEntry(
         resolvedEntry.super,
         _inheritanceMetadataErrorContext(resolvedEntry.superOrigin, errorContext),
         state
       )
     : null;
-
-  if (superData && typeof superData.then === 'function') {
-    const resolvedMethodDataPromise = superData.then((resolvedSuperData) => {
-      try {
-        const invokedMethods = _createResolvedInvokedMethodsData(
-          resolvedEntry.invokedMethods,
-          errorContext,
-          state
-        );
-        delete resolvedEntry._resolvedMethodDataPromise;
-        return _finalizeResolvedMethodData(resolvedMethodData, resolvedEntry, resolvedSuperData, invokedMethods);
-      } catch (error) {
-        delete resolvedEntry._resolvedMethodData;
-        delete resolvedEntry._resolvedMethodDataPromise;
-        throw error;
-      }
-    }, (error) => {
-      delete resolvedEntry._resolvedMethodData;
-      delete resolvedEntry._resolvedMethodDataPromise;
-      throw error;
-    });
-    resolvedEntry._resolvedMethodDataPromise = resolvedMethodDataPromise;
-    return resolvedMethodDataPromise;
-  }
 
   try {
     const invokedMethods = _createResolvedInvokedMethodsData(
@@ -464,21 +418,6 @@ function _getMethodDataFromResolvedEntry(
   }
 }
 
-function _getMethodDataFromEntry(entry, errorContext, state = null) {
-  const resolvedEntry = _resolvePendingInheritanceEntryChain(
-    entry,
-    (error) => _normalizeResolutionError(error, errorContext)
-  );
-
-  if (resolvedEntry && typeof resolvedEntry.then === 'function') {
-    return resolvedEntry.then((entryValue) =>
-      _getMethodDataFromResolvedEntry(entryValue, errorContext, state)
-    );
-  }
-
-  return _getMethodDataFromResolvedEntry(resolvedEntry, errorContext, state);
-}
-
 function getMethodData(state, methodName, errorContext = null) {
   const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
   if (!Object.prototype.hasOwnProperty.call(methods, methodName)) {
@@ -489,20 +428,20 @@ function getMethodData(state, methodName, errorContext = null) {
     );
   }
 
-  return _getMethodDataFromEntry(methods[methodName], errorContext, state);
+  return _getMethodDataFromResolvedEntry(methods[methodName], errorContext, state);
 }
 
 function resolveInheritanceSharedChannel(state, channelName, errorContext = null) {
   const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(state || {});
   if (!Object.prototype.hasOwnProperty.call(sharedSchema, channelName)) {
-    return Promise.reject(_createInheritanceFatalError(
+    throw _createInheritanceFatalError(
       `Shared channel '${channelName}' was not found`,
       inheritanceState.ERR_SHARED_CHANNEL_NOT_FOUND,
       errorContext
-    ));
+    );
   }
 
-  return Promise.resolve(sharedSchema[channelName]);
+  return sharedSchema[channelName];
 }
 
 function _findMethodDataForOwner(methodData, ownerKey) {
@@ -562,7 +501,7 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
   );
 }
 
-function finalizeInvokedMethodCatalog(state, errorContext = null, errors = null) {
+function _finalizeInvokedMethodCatalog(state, errorContext = null, errors = null) {
   const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
   const names = Object.keys(invokedMethods);
   const resolvedCatalog = Object.create(null);
@@ -659,10 +598,6 @@ function _collectMethodChannelFootprintErrors(state, errorContext = null, errors
   return state;
 }
 
-function finalizeMethodChannelFootprints(state, errorContext = null) {
-  return _collectMethodChannelFootprintErrors(state, errorContext);
-}
-
 function finalizeResolvedMethodMetadata(state, errorContext = null, errors = null) {
   const localErrors = Array.isArray(errors) ? errors : [];
   const initialErrorCount = localErrors.length;
@@ -671,13 +606,8 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
   for (let i = 0; i < methodNames.length; i++) {
     const name = methodNames[i];
     try {
-      const methodData = _getMethodDataFromEntry(methods[name], errorContext, state);
-      if (methodData && typeof methodData.then === 'function') {
-        throw _createInheritanceMetadataInvariantError(
-          `Inherited method metadata for '${name}' was still pending during finalization`,
-          errorContext
-        );
-      }
+      // Build and cache methods[name]._resolvedMethodData before the footprint pass.
+      _getMethodDataFromResolvedEntry(methods[name], errorContext, state);
     } catch (error) {
       if (
         error &&
@@ -693,7 +623,7 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
     }
   }
 
-  finalizeInvokedMethodCatalog(state, errorContext, localErrors);
+  _finalizeInvokedMethodCatalog(state, errorContext, localErrors);
   if (_hasNewMetadataErrors(localErrors, initialErrorCount)) {
     if (!Array.isArray(errors)) {
       _throwCollectedMetadataErrors(localErrors, errorContext);
@@ -955,14 +885,7 @@ function _enqueueInvocationCommand(command, invocationBuffer) {
 }
 
 function _assertDirectMethodData(inheritanceStateValue, methodName, errorContext = null) {
-  const methodData = getMethodData(inheritanceStateValue, methodName, errorContext);
-  if (methodData && typeof methodData.then === 'function') {
-    throw _createInheritanceMetadataInvariantError(
-      `Inherited method metadata for '${methodName}' was still async during caller-side admission`,
-      errorContext
-    );
-  }
-  return _assertResolvedMethodData(methodData);
+  return _assertResolvedMethodData(getMethodData(inheritanceStateValue, methodName, errorContext));
 }
 
 function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKey, errorContext = null) {
@@ -1083,9 +1006,7 @@ module.exports = {
   invocationInternals,
   mergeUniqueChannelNames,
   getMethodData,
-  finalizeInvokedMethodCatalog,
   finalizeResolvedMethodMetadata,
-  finalizeMethodChannelFootprints,
   hasLinkedChannelPath,
   getMethodLinkedChannels: _getMethodLinkedChannels,
   getCallableBodyLinkedChannels,

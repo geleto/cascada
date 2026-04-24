@@ -1112,74 +1112,10 @@ class CompilerAsync extends CompilerBaseAsync {
 
   finalizeAnalyzeRoot(node) {
     const externSpec = this._collectRootExternSpec(node);
-    const pendingInheritanceMethodNames = this._collectRootPendingInheritanceMethodNames(node);
     validateScriptExtendsSourceOrder(this, node);
     this._validateRootExternFallbackOrder(node, externSpec);
     this._validateRootExternCycles(node);
-    return { externSpec, pendingInheritanceMethodNames };
-  }
-
-  _collectPendingInheritanceMethodNamesForOwner(ownerNode, localMethodNames) {
-    const pendingNames = new Set();
-    const calls = ownerNode && typeof ownerNode.findAll === 'function'
-      ? ownerNode.findAll(nodes.FunCall)
-      : [];
-    calls.forEach((callNode) => {
-      const methodName =
-        callNode &&
-        callNode._analysis &&
-        typeof callNode._analysis.explicitThisDispatchMethodName === 'string'
-          ? callNode._analysis.explicitThisDispatchMethodName
-          : null;
-      if (!methodName || localMethodNames.has(methodName)) {
-        return;
-      }
-      pendingNames.add(methodName);
-    });
-    return Array.from(pendingNames);
-  }
-
-  _collectRootPendingInheritanceMethodNamesForNodeChildren(nodeChildren, localMethodNames, localMethodNodes) {
-    const pendingNames = new Set();
-    const localMethodNodeSet = new Set(localMethodNodes || []);
-    const children = Array.isArray(nodeChildren) ? nodeChildren : [];
-
-    children.forEach((childNode) => {
-      if (!childNode || localMethodNodeSet.has(childNode)) {
-        return;
-      }
-      const childPendingNames = this._collectPendingInheritanceMethodNamesForOwner(childNode, localMethodNames);
-      childPendingNames.forEach((name) => pendingNames.add(name));
-    });
-
-    return Array.from(pendingNames);
-  }
-
-  _collectRootPendingInheritanceMethodNames(node) {
-    const methodDefinitions = this._getMethodDefinitions(node);
-    const constructorDefinition = this._getConstructorDefinition(node);
-    const localMethodNames = new Set(methodDefinitions.map((block) => block.name.value));
-    const pendingNames = new Set(
-      this._collectRootPendingInheritanceMethodNamesForNodeChildren(
-        node && node.children,
-        localMethodNames,
-        methodDefinitions
-      )
-    );
-
-    methodDefinitions.forEach((methodNode) => {
-      const methodPendingNames = this._collectPendingInheritanceMethodNamesForOwner(methodNode.body, localMethodNames);
-      methodPendingNames.forEach((name) => pendingNames.add(name));
-    });
-    if (constructorDefinition && constructorDefinition.body) {
-      const constructorPendingNames = this._collectPendingInheritanceMethodNamesForOwner(
-        constructorDefinition.body,
-        localMethodNames
-      );
-      constructorPendingNames.forEach((name) => pendingNames.add(name));
-    }
-
-    return Array.from(pendingNames);
+    return { externSpec };
   }
 
   emitDeclareReturnChannel(bufferExpr) {
@@ -1481,27 +1417,22 @@ class CompilerAsync extends CompilerBaseAsync {
       this._isDynamicExtendsNode(child) && !this.topLevelDynamicExtends.has(child)
     );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
-    this.pendingInheritanceMethodNames = Array.isArray(node._analysis && node._analysis.pendingInheritanceMethodNames)
-      ? node._analysis.pendingInheritanceMethodNames
-      : [];
     const constructorDefinition = this._getConstructorDefinition(node);
     const methodDefinitions = this.scriptMode ? this._getMethodDefinitions(node) : node.findAll(nodes.Block);
     const callableDefinitions = constructorDefinition
       ? methodDefinitions.concat([constructorDefinition])
       : methodDefinitions;
+    const invokedMethodRefs = this.inheritance.collectAllInvokedMethodRefsFromNode(node);
     this.needsInheritanceState = !!(
       this.hasExtends ||
       (this.scriptMode && this._getSharedDeclarations(node).length > 0) ||
       callableDefinitions.length > 0 ||
-      this.pendingInheritanceMethodNames.length > 0
+      Object.keys(invokedMethodRefs).length > 0
     );
     const rootCompileResult = this._compileAsyncRoot(node);
-    const invokedMethods = this.inheritance.collectCompiledInvokedMethods(node);
-    const methods = this.inheritance.collectCompiledMethods(node, rootCompileResult.blocks, this.pendingInheritanceMethodNames);
+    const invokedMethods = this.inheritance.compileInvokedMethodsLiteral(invokedMethodRefs);
+    const methods = this.inheritance.collectCompiledMethods(node, rootCompileResult.blocks);
 
-    if (this.pendingInheritanceMethodNames.length > 0) {
-      this.inheritance.emitPendingInheritanceEntryFactory();
-    }
     this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
     this.emit.line(`const ${COMPILED_INVOKED_METHODS_VAR} = ${invokedMethods};`);

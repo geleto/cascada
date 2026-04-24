@@ -3,52 +3,17 @@
 const inheritanceState = require('./inheritance-state');
 const inheritanceCall = require('./inheritance-call');
 
-function _looksLikeCommandBuffer(value) {
-  return !!(
-    value &&
-    typeof value === 'object' &&
-    (
-      typeof value.add === 'function' ||
-      typeof value.addBuffer === 'function' ||
-      typeof value.getChannel === 'function'
-    )
-  );
-}
-
-function _normalizeBootstrapArgs(invokedMethodsOrCurrentBuffer, currentBufferOrContext, contextArg) {
-  // Backward compatibility: old callers pass (state, methods, schema, buffer, context);
-  // new callers pass (state, methods, schema, invokedMethods, buffer, context).
-  if (invokedMethodsOrCurrentBuffer === null) {
-    return {
-      invokedMethods: {},
-      currentBuffer: null,
-      context: currentBufferOrContext || null
-    };
-  }
-
-  const isCommandBuffer = _looksLikeCommandBuffer(invokedMethodsOrCurrentBuffer);
-  if (isCommandBuffer) {
-    return {
-      invokedMethods: {},
-      currentBuffer: invokedMethodsOrCurrentBuffer,
-      context: currentBufferOrContext || null
-    };
-  }
-
-  return {
-    invokedMethods: invokedMethodsOrCurrentBuffer || {},
-    currentBuffer: currentBufferOrContext || null,
-    context: contextArg || null
-  };
-}
-
-function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, invokedMethodsOrCurrentBuffer, currentBufferOrContext = null, contextArg = null) {
+function bootstrapInheritanceMetadata(
+  stateValue,
+  methods,
+  sharedSchema,
+  invokedMethods = Object.create(null),
+  currentBuffer = null,
+  context = null
+) {
   if (!stateValue || typeof stateValue !== 'object') {
     throw new Error('bootstrapInheritanceMetadata requires an existing inheritance state');
   }
-  const normalized = _normalizeBootstrapArgs(invokedMethodsOrCurrentBuffer, currentBufferOrContext, contextArg);
-  const currentBuffer = normalized.currentBuffer;
-  const context = normalized.context;
   const state = stateValue;
   inheritanceState.beginInheritanceMetadataReadiness(state);
   if (!state.sharedRootBuffer) {
@@ -82,7 +47,7 @@ function bootstrapInheritanceMetadata(stateValue, methods, sharedSchema, invoked
     );
   }
   inheritanceState.registerInheritanceMethods(state, methods, context);
-  inheritanceState.registerInheritanceInvokedMethods(state, normalized.invokedMethods, context);
+  inheritanceState.registerInheritanceInvokedMethods(state, invokedMethods, context);
   return state;
 }
 
@@ -428,10 +393,6 @@ function finalizeInheritanceMetadata(state, context = null) {
     // callable data. Later phases assume missing methods/super targets are known.
     inheritanceState.finalizeInheritanceSharedSchema(state, context);
     inheritanceState.finalizeInheritanceMethods(state, context, structuralErrors);
-    if (structuralErrors.length > 0) {
-      const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(structuralErrors, context);
-      throw aggregateError || structuralErrors[0];
-    }
 
     // Phase 2: build direct resolved method metadata and file-level invoked
     // catalogs from one recursive construction path, then compute final

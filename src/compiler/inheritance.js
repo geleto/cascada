@@ -833,16 +833,11 @@ class CompileInheritance {
     return blocks;
   }
 
-  collectCompiledMethods(node, blocks, pendingMethodNames = []) {
-    const localMethodNames = new Set();
+  collectCompiledMethods(node, blocks) {
     const constructorDefinition = this.compiler._getConstructorDefinition(node);
     const ownerKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
-    const pendingLinkedChannelsExpr = JSON.stringify(
-      this.compiler._getSharedDeclarations(node).map((child) => child.name.value)
-    );
     const methodEntries = blocks.map((block) => {
       const methodName = block.name.value;
-      localMethodNames.add(methodName);
       return this.compileMethodMetadataEntry({
         methodName,
         fnExpr: `b_${methodName}`,
@@ -873,12 +868,6 @@ class CompileInheritance {
       }));
     }
 
-    pendingMethodNames.forEach((name) => {
-      if (localMethodNames.has(name) || name === '__constructor__') {
-        return;
-      }
-      methodEntries.push(`${JSON.stringify(name)}: __createPendingInheritanceEntry(${pendingLinkedChannelsExpr})`);
-    });
     return `{ ${methodEntries.join(', ')} }`;
   }
 
@@ -1004,10 +993,6 @@ class CompileInheritance {
 
   blockUsesSuper(block) {
     return !!(block && block.body && block.body.findAll(nodes.Super).length > 0);
-  }
-
-  emitPendingInheritanceEntryFactory() {
-    this.emit.line('const __createPendingInheritanceEntry = runtime.createPendingInheritanceEntry;');
   }
 
   collectMethodChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {

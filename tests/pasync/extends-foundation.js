@@ -75,7 +75,7 @@ describe('Extends Foundation', function () {
   function getMethodChain(methods, name) {
     const chain = [];
     let entry = methods && methods[name];
-    while (entry && !runtime.isPendingInheritanceEntry(entry)) {
+    while (entry) {
       chain.push(entry);
       entry = entry.super;
     }
@@ -457,6 +457,7 @@ describe('Extends Foundation', function () {
         state,
         Object.create(null),
         { theme: 'var', log: 'text' },
+        {},
         compositionBuffer,
         null
       );
@@ -653,46 +654,7 @@ describe('Extends Foundation', function () {
   });
 
   describe('Phase 4 - Method and Shared Startup Registration', function () {
-    it('should build only inherited method placeholders through the runtime helper at compile time', function () {
-      const originalCreatePendingInheritanceEntry = runtime.createPendingInheritanceEntry;
-      let createCount = 0;
-
-      runtime.createPendingInheritanceEntry = function() {
-        createCount++;
-        return {
-          __fromRuntimeHelper: true,
-          promise: Promise.resolve(null),
-          resolve(value) {
-            this.resolvedValue = value;
-            return value;
-          },
-          reject(error) {
-            this.rejectedError = error;
-            return error;
-          }
-        };
-      };
-
-      try {
-        const script = new Script(
-          'extends "A.script" with theme\nmethod build()\n  super()\nendmethod\nreturn this.lookup()',
-          env,
-          'pending-helper.script'
-        );
-        script.compile();
-
-        expect(createCount).to.be(1);
-        expect(script.methods.lookup.__fromRuntimeHelper).to.be(true);
-        expect(script.methods.build.super).to.be(true);
-        expect(script.methods.build.superOrigin.path).to.be('pending-helper.script');
-        expect(script.methods.build.superOrigin.lineno).to.be(3);
-        expect(script.sharedSchema.theme).to.be(undefined);
-      } finally {
-        runtime.createPendingInheritanceEntry = originalCreatePendingInheritanceEntry;
-      }
-    });
-
-    it('should create pending inherited method entries discovered from transformed method bodies', function () {
+    it('should record inherited method references as invoked-method metadata without placeholders', function () {
       const script = new Script(
         'method build()\n  this.lookup()\nendmethod\nreturn null',
         env,
@@ -700,30 +662,20 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(runtime.isPendingInheritanceEntry(script.methods.lookup)).to.be(true);
+      expect(script.methods.lookup).to.be(undefined);
+      expect(script.invokedMethods.lookup.name).to.be('lookup');
+      expect(script.methods.build.invokedMethods.lookup.name).to.be('lookup');
     });
 
-    it('should attach local shared-lane hints to pending inherited method entries', function () {
-      const script = new Script(
-        'shared text trace\nshared var late = "x"\nreturn this.lookup()',
-        env,
-        'pending-helper-linked-channels.script'
-      );
-      script.compile();
-
-      expect(runtime.isPendingInheritanceEntry(script.methods.lookup)).to.be(true);
-      expect(script.methods.lookup.linkedChannels).to.eql(['trace', 'late']);
-    });
-
-    it('should alias the pending-entry helper from runtime instead of inlining a local factory', function () {
+    it('should not emit pending inherited method entries for invoked methods', function () {
       const source = new Script(
         'extends "A.script" with theme\nmethod build()\n  super()\nendmethod\nreturn this.lookup()',
         env,
         'pending-helper-source.script'
       )._compileSource();
 
-      expect(source).to.contain('const __createPendingInheritanceEntry = runtime.createPendingInheritanceEntry;');
-      expect(source).to.not.contain('function __createPendingInheritanceEntry()');
+      expect(source).to.not.contain('createPendingInheritanceEntry');
+      expect(source).to.contain('__compiledInvokedMethods');
     });
 
     it('should create inheritance state in the root body before bootstrapping metadata', function () {
@@ -755,8 +707,8 @@ describe('Extends Foundation', function () {
       expect(childScript.methods.build.super).to.be(true);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, null);
-      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, childScript.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, parentScript.invokedMethods);
 
       expect(inheritanceState.methods.build).not.to.be(childScript.methods.build);
       expect(inheritanceState.methods.build.fn).to.be(childScript.methods.build.fn);
@@ -778,9 +730,9 @@ describe('Extends Foundation', function () {
       expect(parentScript.methods.build.super).to.be(true);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, null);
-      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null);
-      runtime.bootstrapInheritanceMetadata(inheritanceState, grandparentScript.methods, grandparentScript.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, childScript.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, parentScript.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, grandparentScript.methods, grandparentScript.sharedSchema, grandparentScript.invokedMethods);
 
       expect(inheritanceState.methods.build).not.to.be(childScript.methods.build);
       expect(inheritanceState.methods.build.fn).to.be(childScript.methods.build.fn);
@@ -793,25 +745,26 @@ describe('Extends Foundation', function () {
       ]);
     });
 
-    it('should create and reject pending inherited method entries at the topmost root', async function () {
+    it('should reject missing invoked-method metadata at the topmost root', function () {
       const script = new Script('return this.build("Ada")', env, 'missing-method.script');
       script.compile();
 
-      expect(runtime.isPendingInheritanceEntry(script.methods.build)).to.be(true);
+      expect(script.methods.build).to.be(undefined);
+      expect(script.invokedMethods.build.name).to.be('build');
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(
+        inheritanceState,
+        script.methods,
+        script.sharedSchema,
+        script.invokedMethods,
+        null,
+        { path: 'missing-method.script' }
+      );
 
       expect(() => {
         runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-method.script' });
       }).to.throwException(/Inherited method 'build' was not found/);
-
-      try {
-        await inheritanceState.methods.build.promise;
-        expect().fail('Expected unresolved inherited method to reject');
-      } catch (error) {
-        expect(String(error)).to.contain("Inherited method 'build' was not found");
-      }
     });
 
     it('should resolve file-level and per-callable invoked method metadata during finalization', function () {
@@ -1058,38 +1011,28 @@ describe('Extends Foundation', function () {
     });
 
     it('should reject invalid invoked method metadata during footprint finalization', function () {
-      const script = new Script(
-        'method alpha()\n  this.beta()\nendmethod\nmethod beta()\n  return "b"\nendmethod\nreturn null',
-        env,
-        'invalid-invoked-footprint.script'
-      );
-      script.compile();
-
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(
-        inheritanceState,
-        script.methods,
-        script.sharedSchema,
-        script.invokedMethods,
-        null,
-        { path: 'invalid-invoked-footprint.script' }
-      );
-      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invalid-invoked-footprint.script' });
-
-      const alphaData = runtime.getMethodData(inheritanceState, 'alpha');
-      alphaData.invokedMethods.beta = 'beta';
+      inheritanceState.methods.alpha = {
+        _resolvedMethodData: {
+          fn() {
+            return null;
+          },
+          ownerKey: 'invalid-invoked-footprint.script',
+          signature: { argNames: [], withContext: false },
+          ownUsedChannels: [],
+          ownMutatedChannels: [],
+          mergedUsedChannels: [],
+          mergedMutatedChannels: [],
+          super: null,
+          invokedMethods: { beta: 'beta' }
+        }
+      };
 
       expect(() => {
-        inheritanceCallModule.finalizeMethodChannelFootprints(
-          inheritanceState,
-          { path: 'invalid-invoked-footprint.script' }
-        );
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invalid-invoked-footprint.script' });
       }).to.throwException(/Invoked method 'beta'.*has invalid metadata/);
       try {
-        inheritanceCallModule.finalizeMethodChannelFootprints(
-          inheritanceState,
-          { path: 'invalid-invoked-footprint.script' }
-        );
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invalid-invoked-footprint.script' });
         expect().fail('Expected invalid invoked metadata to fail');
       } catch (error) {
         expect(error.code).to.be('ERR_INVALID_INVOKED_METHOD_METADATA');
@@ -1117,7 +1060,7 @@ describe('Extends Foundation', function () {
       expect(script.methods.build.super).to.be(true);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, script.invokedMethods);
 
       expect(() => {
         runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-super.script' });
@@ -1136,7 +1079,7 @@ describe('Extends Foundation', function () {
       expect(script.methods.__constructor__.super).to.be(true);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, script.invokedMethods);
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-constructor-super.script' });
 
       const resolvedSuper = inheritanceState.methods.__constructor__.super;
@@ -1154,10 +1097,10 @@ describe('Extends Foundation', function () {
       expect(childScript.sharedSchema.theme).to.be(undefined);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, childScript.invokedMethods);
       expect(inheritanceState.sharedSchema.theme).to.be(undefined);
 
-      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, parentScript.invokedMethods);
       expect(inheritanceState.sharedSchema.theme).to.be.ok();
       expect(inheritanceState.sharedSchema.theme).to.be('var');
     });
@@ -1169,10 +1112,10 @@ describe('Extends Foundation', function () {
       parentScript.compile();
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.methods, childScript.sharedSchema, childScript.invokedMethods);
 
       try {
-        runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, null, { path: 'A.script' });
+        runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.methods, parentScript.sharedSchema, parentScript.invokedMethods, null, { path: 'A.script' });
         expect().fail('Expected conflicting shared channel type to throw');
       } catch (error) {
         expect(error.path).to.be('A.script');
@@ -1180,34 +1123,18 @@ describe('Extends Foundation', function () {
       }
     });
 
-    it('should fail shared helper lookups for extends inputs that never become shared channels', async function () {
+    it('should fail shared helper lookups for extends inputs that never become shared channels', function () {
       const script = new Script('extends "A.script" with theme\nreturn null', env, 'missing-shared.script');
       script.compile();
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, script.invokedMethods);
 
-      try {
-        await runtime.resolveInheritanceSharedChannel(inheritanceState, 'theme', {
+      expect(() => {
+        runtime.resolveInheritanceSharedChannel(inheritanceState, 'theme', {
           path: 'missing-shared.script'
         });
-        expect().fail('Expected unresolved shared channel to reject');
-      } catch (error) {
-        expect(String(error)).to.contain("Shared channel 'theme' was not found");
-      }
-    });
-
-    it('should resolve an unresolved pending __constructor__ entry to a root-only empty constructor at the topmost root', async function () {
-      const inheritanceState = runtime.createInheritanceState();
-      const pendingConstructor = runtime.createPendingInheritanceEntry();
-      inheritanceState.methods.__constructor__ = pendingConstructor;
-
-      runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'root.script' });
-
-      const resolvedConstructor = await pendingConstructor.promise;
-      expect(resolvedConstructor).to.be.ok();
-      expect(resolvedConstructor.signature).to.eql({ argNames: [], withContext: false });
-      expect(resolvedConstructor.ownerKey).to.be('root.script');
+      }).to.throwException(/Shared channel 'theme' was not found/);
     });
 
     it('should register shared schema before constructor work begins', async function () {
@@ -1530,7 +1457,7 @@ describe('Extends Foundation', function () {
       }
     });
 
-    it('should reuse the existing inheritance state when a parent root renders for composition', async function () {
+    it('should reuse the existing inheritance state when a parent root renders for composition', function () {
       const childScript = new Script('extends "A.script"\nreturn this.build("Ada")', env, 'C.script');
       const parentScript = new Script('method build(name)\n  return "A:" + name\nendmethod\nreturn null', env, 'A.script');
 
@@ -1541,17 +1468,17 @@ describe('Extends Foundation', function () {
         runtime.createInheritanceState(),
         childScript.methods,
         childScript.sharedSchema,
-        null
+        childScript.invokedMethods
       );
-      const pendingBuild = runtime.getMethodData(state, 'build');
       const reusedState = runtime.bootstrapInheritanceMetadata(
         state,
         parentScript.methods,
         parentScript.sharedSchema,
-        null
+        parentScript.invokedMethods
       );
+      runtime.finalizeInheritanceMetadata(state, { path: 'C.script' });
 
-      const resolvedBuild = await pendingBuild;
+      const resolvedBuild = runtime.getMethodData(state, 'build');
 
       expect(reusedState).to.be(state);
       expect(resolvedBuild).to.be.ok();
@@ -1564,13 +1491,13 @@ describe('Extends Foundation', function () {
       script.compile();
 
       const state = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(state, script.methods, script.sharedSchema, null);
-      runtime.bootstrapInheritanceMetadata(state, script.methods, script.sharedSchema, null);
+      runtime.bootstrapInheritanceMetadata(state, script.methods, script.sharedSchema, script.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(state, script.methods, script.sharedSchema, script.invokedMethods);
 
       expect(getMethodChain(state.methods, 'build').map((entry) => entry.ownerKey)).to.eql(['A.script']);
     });
 
-    it('should resolve registered shared-channel metadata through the shared helper', async function () {
+    it('should resolve registered shared-channel metadata through the shared helper', function () {
       const childScript = new Script('extends "A.script" with theme\nreturn null', env, 'C.script');
       const parentScript = new Script('shared var theme = "light"\nreturn null', env, 'A.script');
 
@@ -1581,22 +1508,22 @@ describe('Extends Foundation', function () {
         runtime.createInheritanceState(),
         childScript.methods,
         childScript.sharedSchema,
-        null
+        childScript.invokedMethods
       );
       runtime.bootstrapInheritanceMetadata(
         state,
         parentScript.methods,
         parentScript.sharedSchema,
-        null
+        parentScript.invokedMethods
       );
 
-      const resolvedTheme = await runtime.resolveInheritanceSharedChannel(state, 'theme');
+      const resolvedTheme = runtime.resolveInheritanceSharedChannel(state, 'theme');
 
       expect(resolvedTheme).to.be.ok();
       expect(resolvedTheme).to.be('var');
     });
 
-    it('should preserve the root rejection path when inherited method resolution fails later', async function () {
+    it('should preserve the root rejection path when inherited method resolution fails during finalization', function () {
       const script = new Script('return this.build("Ada")', env, 'missing-method.script');
       script.compile();
 
@@ -1604,39 +1531,21 @@ describe('Extends Foundation', function () {
         runtime.createInheritanceState(),
         script.methods,
         script.sharedSchema,
-        null
+        script.invokedMethods
       );
-      const pendingBuild = runtime.getMethodData(state, 'build', {
-        lineno: 8,
-        colno: 3,
-        path: 'dispatch.script',
-        errorContextString: 'calling inherited build'
-      });
 
       try {
         runtime.finalizeInheritanceMetadata(state, { path: 'missing-method.script' });
         expect().fail('Expected metadata finalization to reject missing inherited method');
       } catch (error) {
         expect(error.path).to.be('missing-method.script');
-        expect(error.lineno).to.be(0);
-        expect(error.colno).to.be(0);
+        expect(error.lineno).to.be(1);
+        expect(error.colno).to.be(21);
         expect(String(error)).to.contain("Inherited method 'build' was not found");
-      }
-
-      try {
-        await pendingBuild;
-        expect().fail('Expected inherited method resolution to reject');
-      } catch (error) {
-        expect(error.path).to.be('missing-method.script');
-        expect(error.lineno).to.be(0);
-        expect(error.colno).to.be(0);
-        expect(String(error)).to.contain("Inherited method 'build' was not found");
-        expect(String(error)).to.contain('missing-method.script');
-        expect(String(error)).to.not.contain('dispatch.script');
       }
     });
 
-    it('should use the helper call-site path when a shared-channel lookup fails immediately', async function () {
+    it('should use the helper call-site path when a shared-channel lookup fails immediately', function () {
       const script = new Script('extends "A.script" with theme\nreturn null', env, 'missing-shared.script');
       script.compile();
 
@@ -1644,18 +1553,16 @@ describe('Extends Foundation', function () {
         runtime.createInheritanceState(),
         script.methods,
         script.sharedSchema,
-        null
+        script.invokedMethods
       );
-      const pendingTheme = runtime.resolveInheritanceSharedChannel(state, 'theme', {
-        lineno: 5,
-        colno: 7,
-        path: 'dispatch.script',
-        errorContextString: 'reading shared theme'
-      });
-
       try {
-        await pendingTheme;
-        expect().fail('Expected shared-channel resolution to reject');
+        runtime.resolveInheritanceSharedChannel(state, 'theme', {
+          lineno: 5,
+          colno: 7,
+          path: 'dispatch.script',
+          errorContextString: 'reading shared theme'
+        });
+        expect().fail('Expected shared-channel resolution to throw');
       } catch (error) {
         expect(error.path).to.be('dispatch.script');
         expect(error.lineno).to.be(5);
@@ -1684,55 +1591,20 @@ describe('Extends Foundation', function () {
         runtime.createInheritanceState(),
         childScript.methods,
         childScript.sharedSchema,
-        null
+        childScript.invokedMethods
       );
       runtime.bootstrapInheritanceMetadata(
         state,
         parentScript.methods,
         parentScript.sharedSchema,
-        null
+        parentScript.invokedMethods
       );
 
-      const resolvedBuildA = await runtime.getMethodData(state, 'build');
-      const resolvedBuildB = await runtime.getMethodData(state, 'build');
+      const resolvedBuildA = runtime.getMethodData(state, 'build');
+      const resolvedBuildB = runtime.getMethodData(state, 'build');
 
       expect(resolvedBuildA).to.be(resolvedBuildB);
       expect(state.methods.build._resolvedMethodData).to.be(resolvedBuildA);
-      expect(state.methods.build._resolvedMethodDataPromise).to.be(undefined);
-    });
-
-    it('should resolve inherited method metadata through a multi-hop pending entry chain', async function () {
-      const state = runtime.createInheritanceState();
-      const childPending = runtime.createPendingInheritanceEntry();
-      const parentPending = runtime.createPendingInheritanceEntry();
-      const finalEntry = {
-        fn() {
-          return null;
-        },
-        ownUsedChannels: ['theme'],
-        ownMutatedChannels: ['trace'],
-        super: null,
-        signature: { argNames: ['name'], withContext: false },
-        ownerKey: 'A.script'
-      };
-
-      state.methods.build = childPending;
-
-      const pendingBuild = runtime.getMethodData(state, 'build');
-
-      childPending.resolve(parentPending);
-      parentPending.resolve(finalEntry);
-
-      const resolvedBuild = await pendingBuild;
-
-      expect(resolvedBuild).to.be.ok();
-      expect(resolvedBuild.fn).to.be(finalEntry.fn);
-      expect(resolvedBuild.ownerKey).to.be('A.script');
-      expect(resolvedBuild.signature).to.eql({ argNames: ['name'], withContext: false });
-      expect(resolvedBuild.ownUsedChannels).to.eql(['theme']);
-      expect(resolvedBuild.ownMutatedChannels).to.eql(['trace']);
-      expect(resolvedBuild.mergedUsedChannels).to.contain('theme');
-      expect(resolvedBuild.mergedMutatedChannels).to.contain('trace');
     });
 
     it('should memoize merged inherited method metadata on the resolved entry', async function () {
@@ -1754,30 +1626,29 @@ describe('Extends Foundation', function () {
         runtime.createInheritanceState(),
         childScript.methods,
         childScript.sharedSchema,
-        null
+        childScript.invokedMethods
       );
       runtime.bootstrapInheritanceMetadata(
         state,
         parentScript.methods,
         parentScript.sharedSchema,
-        null
+        parentScript.invokedMethods
       );
 
-      const resolvedBuild = await runtime.getMethodData(state, 'build');
-      const resolvedAgain = await runtime.getMethodData(state, 'build');
+      const resolvedBuild = runtime.getMethodData(state, 'build');
+      const resolvedAgain = runtime.getMethodData(state, 'build');
 
       expect(resolvedAgain).to.be(resolvedBuild);
       expect(state.methods.build._resolvedMethodData).to.be(resolvedBuild);
-      expect(state.methods.build._resolvedMethodDataPromise).to.be(undefined);
       expect(resolvedBuild.mergedMutatedChannels).to.contain('trace');
       expect(Object.keys(resolvedBuild)).not.to.contain('sharedLookupChannels');
     });
 
-    it('should mark missing inherited-method failures with a structural error code', async function () {
+    it('should mark missing inherited-method failures with a structural error code', function () {
       const state = runtime.createInheritanceState();
 
       try {
-        await runtime.getMethodData(state, 'missing', {
+        runtime.getMethodData(state, 'missing', {
           lineno: 2,
           colno: 4,
           path: 'dispatch.script',

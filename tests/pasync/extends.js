@@ -474,7 +474,7 @@ describe('Extends Runtime', function () {
       expect(result).to.be('before|method|Ada|after|done:Ada');
     });
 
-    it.skip('should keep unresolved method-in-method shared dependencies ordered before a later resolved local method reads them', async function () {
+    it('should keep inherited method-in-method shared dependencies ordered before a later local method reads them', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -701,7 +701,7 @@ describe('Extends Runtime', function () {
         { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
       );
 
-      const methodMeta = await runtime.getMethodData(
+      const methodMeta = runtime.getMethodData(
         inheritanceState,
         'build',
         { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }

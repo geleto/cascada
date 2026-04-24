@@ -26,13 +26,22 @@ function createInheritanceMetadataAggregateError(errors, context = null) {
     if (!error) {
       return;
     }
-    const key = [
-      error.code || '',
-      error.path || '',
-      typeof error.lineno === 'number' ? error.lineno : '',
-      typeof error.colno === 'number' ? error.colno : '',
-      error.message || String(error)
-    ].join(keySeparator);
+    const hasStructuralCode = !!error.code;
+    const key = hasStructuralCode
+      ? [
+        error.code || '',
+        error.path || '',
+        typeof error.lineno === 'number' ? error.lineno : '',
+        typeof error.colno === 'number' ? error.colno : '',
+        error.errorContextString || ''
+      ].join(keySeparator)
+      : [
+        '',
+        error.path || '',
+        typeof error.lineno === 'number' ? error.lineno : '',
+        typeof error.colno === 'number' ? error.colno : '',
+        error.message || String(error)
+      ].join(keySeparator);
     if (seen.has(key)) {
       return;
     }
@@ -64,52 +73,6 @@ function collectOrThrowInheritanceMetadataError(error, errors = null) {
     return error;
   }
   throw error;
-}
-
-function createPendingInheritanceEntry(linkedChannels = null) {
-  let settled = false;
-  let settleResolve = null;
-  let settleReject = null;
-  let promise = new Promise((resolve, reject) => {
-    settleResolve = resolve;
-    settleReject = reject;
-  });
-
-  const entry = {
-    promise,
-    linkedChannels: Array.isArray(linkedChannels) ? linkedChannels.slice() : [],
-    resolve(value) {
-      if (settled) {
-        return value;
-      }
-      settled = true;
-      entry.promise = Promise.resolve(value);
-      settleResolve(value);
-      return value;
-    },
-    reject(error) {
-      if (settled) {
-        return error;
-      }
-      settled = true;
-      entry.promise = Promise.reject(error);
-      entry.promise.catch(() => {});
-      settleReject(error);
-      return error;
-    }
-  };
-
-  return entry;
-}
-
-function isPendingInheritanceEntry(entry) {
-  return !!(
-    entry &&
-    typeof entry === 'object' &&
-    typeof entry.promise?.then === 'function' &&
-    typeof entry.resolve === 'function' &&
-    typeof entry.reject === 'function'
-  );
 }
 
 function ensureInheritanceMethodsTable(state) {
@@ -356,14 +319,6 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
   if (clones.has(entry)) {
     return clones.get(entry);
   }
-  if (isPendingInheritanceEntry(entry)) {
-    const pendingClone = createPendingInheritanceEntry(entry.linkedChannels);
-    if (entry.ownerKey) {
-      pendingClone.ownerKey = entry.ownerKey;
-    }
-    clones.set(entry, pendingClone);
-    return pendingClone;
-  }
 
   const clonedEntry = Object.assign({}, entry);
   clones.set(entry, clonedEntry);
@@ -387,7 +342,6 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
     : { argNames: [], withContext: false };
   clonedEntry.super = cloneInheritanceMethodEntry(entry.super, clones);
   delete clonedEntry._resolvedMethodData;
-  delete clonedEntry._resolvedMethodDataPromise;
   return clonedEntry;
 }
 
@@ -489,26 +443,11 @@ function isUnresolvedSuperEntry(entry) {
   return entry === true;
 }
 
-function resolveInheritanceMethodEntry(sharedMethods, methodName, resolvedEntry) {
-  const methods = sharedMethods && typeof sharedMethods === 'object'
-    ? sharedMethods
-    : Object.create(null);
-  const current = methods[methodName];
-  if (isPendingInheritanceEntry(current)) {
-    current.resolve(resolvedEntry);
-    methods[methodName] = resolvedEntry;
-  } else if (!current) {
-    methods[methodName] = resolvedEntry;
-  }
-  return methods[methodName];
-}
-
 function wireResolvedSuperEntry(targetEntry, parentEntry) {
   let current = targetEntry;
   while (
     current &&
     typeof current === 'object' &&
-    !isPendingInheritanceEntry(current.super) &&
     !isUnresolvedSuperEntry(current.super) &&
     current.super
   ) {
@@ -520,20 +459,11 @@ function wireResolvedSuperEntry(targetEntry, parentEntry) {
   if (current && typeof current === 'object' && isUnresolvedSuperEntry(current.super)) {
     current.super = parentEntry;
     delete current._resolvedMethodData;
-    delete current._resolvedMethodDataPromise;
-    return true;
-  }
-  if (current && isPendingInheritanceEntry(current.super)) {
-    current.super.resolve(parentEntry);
-    current.super = parentEntry;
-    delete current._resolvedMethodData;
-    delete current._resolvedMethodDataPromise;
     return true;
   }
   if (current && typeof current === 'object' && !current.super) {
     current.super = parentEntry;
     delete current._resolvedMethodData;
-    delete current._resolvedMethodDataPromise;
     return true;
   }
   return false;
@@ -553,11 +483,6 @@ function registerInheritanceMethods(state, localMethods, context = null) {
     if (!localEntry) {
       continue;
     }
-    if (isPendingInheritanceEntry(localEntry) && !localEntry.ownerKey) {
-      // Pending placeholders are created at reference sites, so this ownerKey is
-      // an attribution hint rather than a method-definition owner.
-      localEntry.ownerKey = context && context.path ? String(context.path) : null;
-    }
 
     const currentEntry = sharedMethods[name];
     if (!currentEntry) {
@@ -565,17 +490,6 @@ function registerInheritanceMethods(state, localMethods, context = null) {
       continue;
     }
     if (currentEntry === localEntry) {
-      continue;
-    }
-    if (isPendingInheritanceEntry(currentEntry)) {
-      if (isPendingInheritanceEntry(localEntry)) {
-        continue;
-      }
-      currentEntry.resolve(localEntry);
-      sharedMethods[name] = localEntry;
-      continue;
-    }
-    if (isPendingInheritanceEntry(localEntry)) {
       continue;
     }
     if (
@@ -654,85 +568,28 @@ function registerInheritanceInvokedMethods(state, localInvokedMethods, context =
 
 function finalizeInheritanceMethods(state, context = null, errors = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
-  const invokedMethods = ensureInheritanceInvokedMethodsTable(state);
   const names = Object.keys(sharedMethods);
   let emptyConstructorEntry = null;
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
     const entry = sharedMethods[name];
-    if (isPendingInheritanceEntry(entry)) {
-      if (name === '__constructor__') {
-        if (!emptyConstructorEntry) {
-          emptyConstructorEntry = createEmptyConstructorEntry(context);
-        }
-        entry.resolve(emptyConstructorEntry);
-        sharedMethods[name] = emptyConstructorEntry;
-        continue;
-      }
-      const invokedReference = invokedMethods[name];
-      const invokedOrigin = invokedReference && typeof invokedReference === 'object' && invokedReference.origin
-        ? invokedReference.origin
-        : null;
-      const error = withInheritanceErrorCode(
-        new RuntimeFatalError(
-          `Inherited method '${name}' was not found`,
-          invokedOrigin && typeof invokedOrigin.lineno === 'number' ? invokedOrigin.lineno : 0,
-          invokedOrigin && typeof invokedOrigin.colno === 'number' ? invokedOrigin.colno : 0,
-          invokedOrigin && invokedOrigin.errorContextString ? invokedOrigin.errorContextString : null,
-          invokedOrigin && invokedOrigin.path ? invokedOrigin.path : entry.ownerKey || (context && context.path ? context.path : null)
-        ),
-        ERR_INHERITED_METHOD_NOT_FOUND
-      );
-      entry.reject(error);
-      collectOrThrowInheritanceMetadataError(error, errors);
-      continue;
-    }
     let superOwner = entry && typeof entry === 'object' ? entry : null;
     while (
       superOwner &&
       typeof superOwner === 'object' &&
-      !isPendingInheritanceEntry(superOwner.super) &&
       !isUnresolvedSuperEntry(superOwner.super) &&
       superOwner.super
     ) {
       superOwner = superOwner.super;
     }
     const superEntry = superOwner && typeof superOwner === 'object' ? superOwner.super : null;
-    if (isPendingInheritanceEntry(superEntry)) {
-      if (name === '__constructor__') {
-        if (!emptyConstructorEntry) {
-          emptyConstructorEntry = createEmptyConstructorEntry(context);
-        }
-        superEntry.resolve(emptyConstructorEntry);
-        superOwner.super = emptyConstructorEntry;
-        delete superOwner._resolvedMethodData;
-        delete superOwner._resolvedMethodDataPromise;
-        continue;
-      }
-      const superOrigin = superOwner && superOwner.superOrigin && typeof superOwner.superOrigin === 'object'
-        ? superOwner.superOrigin
-        : null;
-      const error = withInheritanceErrorCode(
-        new RuntimeFatalError(
-          `super() for method '${name}' was not found`,
-          superOrigin && typeof superOrigin.lineno === 'number' ? superOrigin.lineno : 0,
-          superOrigin && typeof superOrigin.colno === 'number' ? superOrigin.colno : 0,
-          superOrigin && superOrigin.errorContextString ? superOrigin.errorContextString : null,
-          superOrigin && superOrigin.path ? superOrigin.path : superOwner.ownerKey || (context && context.path ? context.path : null)
-        ),
-        ERR_SUPER_METHOD_NOT_FOUND
-      );
-      superEntry.reject(error);
-      collectOrThrowInheritanceMetadataError(error, errors);
-      continue;
-    } else if (isUnresolvedSuperEntry(superEntry)) {
+    if (isUnresolvedSuperEntry(superEntry)) {
       if (name === '__constructor__') {
         if (!emptyConstructorEntry) {
           emptyConstructorEntry = createEmptyConstructorEntry(context);
         }
         superOwner.super = emptyConstructorEntry;
         delete superOwner._resolvedMethodData;
-        delete superOwner._resolvedMethodDataPromise;
         continue;
       }
       const superOrigin = superOwner && superOwner.superOrigin && typeof superOwner.superOrigin === 'object'
@@ -775,15 +632,12 @@ module.exports = {
   isInheritanceCompositionMode,
   enterInheritanceChainPath,
   leaveInheritanceChainPath,
-  createPendingInheritanceEntry,
   cloneInheritanceMethodEntry,
   cloneInheritanceMethods,
-  isPendingInheritanceEntry,
   isUnresolvedSuperEntry,
   ensureInheritanceMethodsTable,
   ensureInheritanceSharedSchemaTable,
   ensureInheritanceInvokedMethodsTable,
-  resolveInheritanceMethodEntry,
   registerInheritanceMethods,
   wireResolvedSuperEntry,
   registerInheritanceSharedSchema,

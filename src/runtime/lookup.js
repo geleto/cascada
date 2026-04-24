@@ -336,16 +336,19 @@ function observeInheritanceSharedChannel(name, currentBuffer, errorContext = nul
     );
   }
 
-  return inheritanceCall.resolveInheritanceSharedChannel(inheritanceStateValue, name, errorContext).then((channelType) =>
-    _observeResolvedInheritanceSharedChannel(
-      name,
-      currentBuffer,
-      channelType,
-      pos,
-      errorContext,
-      mode,
-      implicitVarRead
-    )
+  const channelType = inheritanceCall.resolveInheritanceSharedChannel(
+    inheritanceStateValue,
+    name,
+    errorContext
+  );
+  return _observeResolvedInheritanceSharedChannel(
+    name,
+    currentBuffer,
+    channelType,
+    pos,
+    errorContext,
+    mode,
+    implicitVarRead
   );
 }
 

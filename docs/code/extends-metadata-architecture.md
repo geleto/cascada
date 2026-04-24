@@ -782,9 +782,9 @@ Work:
 - keep the super-chain footprint merge folded into the fixed-point pass as the
   intentional implementation model, and document that so later cleanup does not
   reintroduce a second parent-to-child merge phase
-- remove the unused caller-supplied `errors` parameter from
-  `finalizeMethodChannelFootprints(...)` if the consolidated finalization path
-  no longer needs it
+- keep footprint finalization private to the single consolidated
+  `finalizeResolvedMethodMetadata(...)` path; there should be no exported
+  partial finalization entry point
 - remove the `includeInvokedMethods` boolean flag from method-data resolution
   helpers when direct metadata construction no longer needs a partial catalog
   construction mode
@@ -910,20 +910,23 @@ Goal:
 ### Step 9 - Remove Now-Redundant Runtime Paths
 
 After the direct metadata model is in place and per-file shared declarations are
-enforced:
+enforced, the remaining promise-era metadata paths are removed.
 
-- remove pending-entry metadata resolution helpers from the hot path
-- remove unresolved method-metadata admission logic
-- remove temporary `bootstrapInheritanceMetadata(...)` argument-shape
-  compatibility scaffolding once all internal callers and tests use the
-  explicit invoked-method catalog parameter
-- remove any remaining transitional boolean control-flow flags from internal
-  method-data resolution after direct metadata construction is consolidated
-- remove obsolete tests that only exist for promise-struct metadata behavior
-- replace them with integration coverage around blocking bootstrap and full
-  invoked-method merging
+Completed cleanup:
 
-Goal:
+- pending-entry method metadata helpers are no longer emitted by the compiler or
+  exported by the runtime
+- unresolved `this.method(...)` references are represented only as
+  `invokedMethods` metadata and resolved during metadata finalization
+- method-data construction is synchronous and direct; it no longer walks pending
+  promise-entry chains or returns promise-shaped structural metadata
+- `bootstrapInheritanceMetadata(...)` now uses the explicit argument shape:
+  `(state, methods, sharedSchema, invokedMethods, currentBuffer, context)`
+- shared-channel metadata lookup is synchronous after bootstrap/finalization
+- obsolete pending-entry tests were replaced with invoked-metadata and
+  method-in-method integration coverage
+
+End state:
 
 - one inheritance metadata model
 - one caller-side linking model

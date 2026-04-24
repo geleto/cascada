@@ -146,7 +146,7 @@ describe('Phase 8 - Component Method Calls', function () {
     expect(result).to.eql(['A-Ada', 'ctor|build|Ada|']);
   });
 
-  it.skip('should keep unresolved component method-in-method shared dependencies ordered before a later local method reads them', async function () {
+  it('should keep component method-in-method shared dependencies ordered before a later local method reads them', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
