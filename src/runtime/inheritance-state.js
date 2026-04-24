@@ -5,6 +5,17 @@ const { RuntimeFatalError } = require('./errors');
 const INTERNAL_INHERITANCE_STATE = typeof Symbol === 'function'
   ? Symbol('cascadaInheritanceInternalState')
   : '__cascadaInheritanceInternalState__';
+const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';
+
+function tagInheritanceMetadataError(error, kind, methodName = null) {
+  if (error && typeof error === 'object') {
+    error[INHERITANCE_METADATA_ERROR_KIND] = {
+      kind,
+      methodName
+    };
+  }
+  return error;
+}
 
 function createInheritanceMetadataAggregateError(errors, context = null) {
   const keySeparator = '\0';
@@ -617,12 +628,16 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
         ? superOwner.superOrigin
         : null;
       collectOrThrowInheritanceMetadataError(
-        new RuntimeFatalError(
-          `super() for method '${name}' was not found`,
-          superOrigin && typeof superOrigin.lineno === 'number' ? superOrigin.lineno : 0,
-          superOrigin && typeof superOrigin.colno === 'number' ? superOrigin.colno : 0,
-          superOrigin && superOrigin.errorContextString ? superOrigin.errorContextString : null,
-          superOrigin && superOrigin.path ? superOrigin.path : superOwner.ownerKey || (context && context.path ? context.path : null)
+        tagInheritanceMetadataError(
+          new RuntimeFatalError(
+            `super() for method '${name}' was not found`,
+            superOrigin && typeof superOrigin.lineno === 'number' ? superOrigin.lineno : 0,
+            superOrigin && typeof superOrigin.colno === 'number' ? superOrigin.colno : 0,
+            superOrigin && superOrigin.errorContextString ? superOrigin.errorContextString : null,
+            superOrigin && superOrigin.path ? superOrigin.path : superOwner.ownerKey || (context && context.path ? context.path : null)
+          ),
+          'missing-super-method',
+          name
         ),
         errors
       );

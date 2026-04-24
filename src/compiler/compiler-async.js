@@ -1581,7 +1581,6 @@ class CompilerAsync extends CompilerBaseAsync {
     const declares = this._getRootDeclarations(node);
     const templateUsesInheritanceSurface = !this.scriptMode && this._templateUsesInheritanceSurface(node);
     this.templateUsesInheritanceSurface = templateUsesInheritanceSurface;
-    node._analysis.templateUsesInheritanceSurface = templateUsesInheritanceSurface;
     if (templateUsesInheritanceSurface) {
       const inferredTemplateSharedDeclarations = this._collectInferredTemplateSharedDeclarations(node);
       node._analysis.inferredTemplateSharedDeclarations = inferredTemplateSharedDeclarations;
@@ -1590,8 +1589,7 @@ class CompilerAsync extends CompilerBaseAsync {
           name: declaration.name.value,
           type: 'var',
           initializer: null,
-          shared: true,
-          inferredTemplateShared: true
+          shared: true
         });
       });
     }
@@ -1651,7 +1649,6 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       const nameNode = new nodes.Symbol(lookupNode.lineno, lookupNode.colno, name);
       const declaration = new nodes.ChannelDeclaration(lookupNode.lineno, lookupNode.colno, 'var', nameNode, null, true);
-      declaration.inferredTemplateShared = true;
       inferred.set(name, declaration);
     });
     return Array.from(inferred.values());

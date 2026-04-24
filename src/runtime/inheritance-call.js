@@ -4,6 +4,8 @@ const { Command } = require('./commands');
 const inheritanceState = require('./inheritance-state');
 const { RuntimeFatalError, handleError, isRuntimeFatalError } = require('./errors');
 
+const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';
+
 function _contextualizeFatalError(error, errorContext, fallbackMessage = null) {
   const lineno = errorContext && typeof errorContext.lineno === 'number' ? errorContext.lineno : 0;
   const colno = errorContext && typeof errorContext.colno === 'number' ? errorContext.colno : 0;
@@ -57,8 +59,36 @@ function _createInheritanceMetadataInvariantError(message, errorContext = null) 
   );
 }
 
-function _normalizeInheritedMethodInvocationError(error, methodName, errorContext) {
-  return _normalizeResolutionError(error, errorContext);
+function _tagInheritanceMetadataError(error, kind, methodName = null) {
+  if (error && typeof error === 'object') {
+    error[INHERITANCE_METADATA_ERROR_KIND] = {
+      kind,
+      methodName
+    };
+  }
+  return error;
+}
+
+function _createMissingInheritedMethodError(methodName, errorContext = null) {
+  return _tagInheritanceMetadataError(
+    _createInheritanceFatalError(
+      `Inherited method '${methodName}' was not found`,
+      errorContext
+    ),
+    'missing-inherited-method',
+    methodName
+  );
+}
+
+function _createMissingSuperMethodError(methodName, errorContext = null) {
+  return _tagInheritanceMetadataError(
+    _createInheritanceFatalError(
+      `super() for method '${methodName}' was not found`,
+      errorContext
+    ),
+    'missing-super-method',
+    methodName
+  );
 }
 
 function _addChannelNames(target, names) {
@@ -258,18 +288,24 @@ function _createInvalidSuperMetadataError(methodData, errorContext = null) {
 }
 
 function _isCollectableInheritanceMetadataError(error) {
-  const message = error && error.message ? error.message : '';
-  return (
-    message.indexOf('Inherited method ') !== -1 ||
-    message.indexOf('super() for method ') !== -1
+  const metadata = error && error[INHERITANCE_METADATA_ERROR_KIND];
+  return !!(
+    metadata &&
+    (
+      metadata.kind === 'missing-inherited-method' ||
+      metadata.kind === 'missing-super-method'
+    )
   );
 }
 
 function _hasCollectedMissingSuperError(errors, methodName) {
-  const expected = `super() for method '${methodName}' was not found`;
   return (Array.isArray(errors) ? errors : []).some((error) => {
-    const message = error && error.message ? error.message : '';
-    return message.indexOf(expected) !== -1;
+    const metadata = error && error[INHERITANCE_METADATA_ERROR_KIND];
+    return !!(
+      metadata &&
+      metadata.kind === 'missing-super-method' &&
+      metadata.methodName === methodName
+    );
   });
 }
 
@@ -345,10 +381,7 @@ function _resolveInvokedMethodReference(reference, fallbackName, errorContext, s
   const targetName = _getInvokedMethodReferenceName(reference, fallbackName);
   const originContext = _getInvokedMethodReferenceOrigin(reference, errorContext);
   if (!Object.prototype.hasOwnProperty.call(methods, targetName)) {
-    throw _createInheritanceFatalError(
-      `Inherited method '${targetName}' was not found`,
-      originContext
-    );
+    throw _createMissingInheritedMethodError(targetName, originContext);
   }
   const methodData = _getMethodDataFromResolvedEntry(methods[targetName], originContext, state, targetName);
   return methodData;
@@ -366,10 +399,7 @@ function _getMethodDataFromResolvedEntry(
 
   if (resolvedEntry === true) {
     const name = methodName || 'unknown';
-    throw _createInheritanceFatalError(
-      `super() for method '${name}' was not found`,
-      errorContext
-    );
+    throw _createMissingSuperMethodError(name, errorContext);
   }
 
   if (!resolvedEntry || typeof resolvedEntry !== 'object') {
@@ -419,10 +449,7 @@ function _getMethodDataFromResolvedEntry(
 function getMethodData(state, methodName, errorContext = null) {
   const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
   if (!Object.prototype.hasOwnProperty.call(methods, methodName)) {
-    throw _createInheritanceFatalError(
-      `Inherited method '${methodName}' was not found`,
-      errorContext
-    );
+    throw _createMissingInheritedMethodError(methodName, errorContext);
   }
 
   return _getMethodDataFromResolvedEntry(methods[methodName], errorContext, state, methodName);
@@ -844,10 +871,7 @@ function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKe
   const methodData = _assertDirectMethodData(inheritanceStateValue, methodName, errorContext);
   const ownerMethodData = _findMethodDataForOwner(methodData, ownerKey);
   if (!ownerMethodData || !ownerMethodData.super) {
-    throw _createInheritanceFatalError(
-      `super() for method '${methodName}' was not found`,
-      errorContext
-    );
+    throw _createMissingSuperMethodError(methodName, errorContext);
   }
   return _assertResolvedMethodData(ownerMethodData.super);
 }
@@ -942,7 +966,7 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
       name: methodName,
       label: `Inherited method '${methodName}'`,
       methodData,
-      normalizeError: (error) => _normalizeInheritedMethodInvocationError(error, methodName, errorContext),
+      normalizeError: (error) => _normalizeResolutionError(error, errorContext),
       args,
       context,
       inheritanceState: inheritanceStateValue,
@@ -985,7 +1009,7 @@ function invokeComponentMethod(inheritanceStateValue, methodName, args, context,
       name: methodName,
       label: `Component method '${methodName}'`,
       methodData,
-      normalizeError: (error) => _normalizeInheritedMethodInvocationError(error, methodName, errorContext),
+      normalizeError: (error) => _normalizeResolutionError(error, errorContext),
       args,
       context,
       inheritanceState: inheritanceStateValue,

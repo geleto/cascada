@@ -710,15 +710,11 @@ inference remains owned by Pass 2.
 
 Deferred cleanup and diagnostics notes:
 
-- improve the local shared/method collision wording so it says the conflicting
-  method is defined in the same file, not inherited
 - improve undeclared `this.<name>` diagnostics so missing shared declarations
   do not read as bare inherited-method reference errors
-- consider whether the `isThisShared` call marker and the dedicated
-  `this.<shared>` text/data command emitter can be folded back into the generic
-  channel-call path after template inference is implemented
-- consider renaming the `subpath` field in shared call facts to make clear that
-  it contains only the intermediate channel path before the command name
+- consider whether the dedicated shared text/data command emitter can be folded
+  back into the generic channel-call path after template inference is
+  implemented
 
 ### Pass 2: Template Shared-Var Inference
 
@@ -867,7 +863,7 @@ Long-term behavior:
 - scripts should use `this.<shared>` for shared access
 - bare identifiers should mean ordinary ambient lookup only
 
-The planned migration sequence was:
+The possible migration sequence before implementation was:
 
 1. update docs and examples to use `this.<shared>`
 2. optionally emit warnings for bare shared access if the warning system can do
@@ -878,6 +874,9 @@ The planned migration sequence was:
    from `sharedName` to `this.sharedName`
 5. remove bare shared access in a breaking/migration release
 6. keep undeclared bare names on the ambient lookup path
+
+The implemented pass skipped warning emission and made the removal directly:
+bare script shared access is no longer a shared-channel operation.
 
 Implementation decision for this pass:
 

@@ -533,6 +533,44 @@ describe('Extends Foundation', function () {
       expect(result).to.be('ambient:x');
     });
 
+    it('should keep bare shared sequence property reads on the ambient lookup path', async function () {
+      const result = await env.renderScriptString(
+        'shared sequence db = makeDb()\nreturn db.label',
+        {
+          makeDb() {
+            return { label: 'shared' };
+          },
+          db: { label: 'ambient' }
+        }
+      );
+
+      expect(result).to.be('ambient');
+    });
+
+    it('should keep bare shared sequence method calls on the ambient lookup path', async function () {
+      const result = await env.renderScriptString(
+        'shared sequence db = makeDb()\nreturn db.get("x")',
+        {
+          makeDb() {
+            return {
+              prefix: 'shared',
+              get(value) {
+                return `${this.prefix}:${value}`;
+              }
+            };
+          },
+          db: {
+            prefix: 'ambient',
+            get(value) {
+              return `${this.prefix}:${value}`;
+            }
+          }
+        }
+      );
+
+      expect(result).to.be('ambient:x');
+    });
+
     it('should keep bare shared error observations on the ambient lookup path', async function () {
       const result = await env.renderScriptString(
         [

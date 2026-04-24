@@ -339,10 +339,8 @@ class CompilerBaseAsync extends CompilerCommon {
     return {
       channelName,
       channelType: channelDecl.type,
-      channelDecl,
-      staticPath,
       channelPath,
-      subpath: channelPath.length > 2 ? channelPath.slice(1, -1) : [],
+      pathPrefix: channelPath.length > 2 ? channelPath.slice(1, -1) : [],
       propertyName: channelPath.length >= 2 ? channelPath[channelPath.length - 1] : null
     };
   }
@@ -465,7 +463,7 @@ class CompilerBaseAsync extends CompilerCommon {
         sequenceChannelLookup = {
           channelName: thisSharedFacts.channelName,
           propertyName: thisSharedFacts.propertyName,
-          subpath: thisSharedFacts.subpath
+          subpath: thisSharedFacts.pathPrefix
         };
       }
       return { uses, mutates, sequenceChannelLookup };
@@ -479,7 +477,7 @@ class CompilerBaseAsync extends CompilerCommon {
             const channelName = sequencePath[0];
             const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
             const propertyName = sequencePath[sequencePath.length - 1];
-            if (!channelDecl || channelDecl.type !== 'sequence' || propertyName === 'snapshot') {
+            if (!channelDecl || channelDecl.shared || channelDecl.type !== 'sequence' || propertyName === 'snapshot') {
               return null;
             }
             return {
@@ -707,8 +705,7 @@ class CompilerBaseAsync extends CompilerCommon {
               channelType: thisSharedFacts.channelType,
               shared: true,
               methodName,
-              subpath: thisSharedFacts.channelPath.length > 2 ? thisSharedFacts.channelPath.slice(1, -1) : [],
-              isThisShared: true,
+              pathPrefix: thisSharedFacts.pathPrefix,
               isObservation:
                 thisSharedFacts.channelPath.length === 2 &&
                 (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
@@ -732,7 +729,7 @@ class CompilerBaseAsync extends CompilerCommon {
             channelType: channelDecl.type,
             shared: !!channelDecl.shared,
             methodName,
-            subpath: sequencePath.slice(1, -1),
+            pathPrefix: sequencePath.slice(1, -1),
             isObservation:
                 sequencePath.length === 2 &&
                 (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
@@ -1145,11 +1142,11 @@ class CompilerBaseAsync extends CompilerCommon {
     if (this._compileSequenceChannelFunCall(node, specialChannelCall)) {
       return true;
     }
-    return this._compileThisSharedChannelStatementFunCall(node, specialChannelCall);
+    return this._compileSharedChannelStatementFunCall(node, specialChannelCall);
   }
 
   _compileChannelObservationFunCall(node, specialChannelCall) {
-    if (specialChannelCall.subpath.length !== 0) {
+    if (specialChannelCall.pathPrefix.length !== 0) {
       return false;
     }
     validateSinkSnapshotInGuard(this, {
@@ -1205,7 +1202,7 @@ class CompilerBaseAsync extends CompilerCommon {
       this.buffer.emitAddSequenceCall(
         specialChannelCall.channelName,
         specialChannelCall.methodName,
-        specialChannelCall.subpath,
+        specialChannelCall.pathPrefix,
         resolvedArgs,
         node
       );
@@ -1214,8 +1211,8 @@ class CompilerBaseAsync extends CompilerCommon {
     return true;
   }
 
-  _compileThisSharedChannelStatementFunCall(node, specialChannelCall) {
-    if (!specialChannelCall.isThisShared || !specialChannelCall.shared) {
+  _compileSharedChannelStatementFunCall(node, specialChannelCall) {
+    if (!specialChannelCall.shared) {
       return false;
     }
     if (specialChannelCall.channelType === 'text') {
@@ -1236,8 +1233,8 @@ class CompilerBaseAsync extends CompilerCommon {
       }
       this.buffer.asyncAddValueToBuffer((resultVar) => {
         this.emit(`${resultVar} = new runtime.DataCommand({ channelName: ${JSON.stringify(specialChannelCall.channelName)}, command: ${JSON.stringify(specialChannelCall.methodName)}, args: `);
-        const pathArg = specialChannelCall.subpath && specialChannelCall.subpath.length > 0
-          ? JSON.stringify(specialChannelCall.subpath)
+        const pathArg = specialChannelCall.pathPrefix && specialChannelCall.pathPrefix.length > 0
+          ? JSON.stringify(specialChannelCall.pathPrefix)
           : 'null';
         this.emit(`[${pathArg}`);
         if (node.args && node.args.children && node.args.children.length > 0) {
