@@ -725,7 +725,6 @@ describe('Extends Foundation', function () {
         await env.renderScript('C.script', {});
         expect().fail('Expected inherited shared/method collision to fail');
       } catch (error) {
-        expect(error.code).to.be('ERR_SHARED_METHOD_NAME_COLLISION');
         expect(String(error)).to.contain("shared channel 'build' conflicts with inherited method 'build'");
       }
     });
@@ -758,7 +757,6 @@ describe('Extends Foundation', function () {
         await env.renderTemplate('child.njk', {});
         expect().fail('Expected inherited template block/shared collision to fail');
       } catch (error) {
-        expect(error.code).to.be('ERR_SHARED_METHOD_NAME_COLLISION');
         expect(String(error)).to.contain("shared channel 'theme' conflicts with inherited method 'theme'");
       }
     });
@@ -1539,7 +1537,8 @@ describe('Extends Foundation', function () {
         runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invalid-invoked-footprint.script' });
         expect().fail('Expected invalid invoked metadata to fail');
       } catch (error) {
-        expect(error.code).to.be('ERR_INVALID_INVOKED_METHOD_METADATA');
+        expect(String(error)).to.contain("Invoked method 'beta'");
+        expect(String(error)).to.contain('has invalid metadata');
       }
     });
 
@@ -2148,7 +2147,7 @@ describe('Extends Foundation', function () {
       expect(Object.keys(resolvedBuild)).not.to.contain('sharedLookupChannels');
     });
 
-    it('should mark missing inherited-method failures with a structural error code', function () {
+    it('should report missing inherited-method failures with a clear message', function () {
       const state = runtime.createInheritanceState();
 
       try {
@@ -2160,7 +2159,6 @@ describe('Extends Foundation', function () {
         });
         expect().fail('Expected missing inherited method lookup to reject');
       } catch (error) {
-        expect(error.code).to.be('ERR_INHERITED_METHOD_NOT_FOUND');
         expect(String(error)).to.contain("Inherited method 'missing' was not found");
       }
     });
@@ -2397,7 +2395,6 @@ describe('Extends Foundation', function () {
         });
         expect().fail('Expected malformed direct super metadata to fail');
       } catch (error) {
-        expect(error.code).to.be('ERR_INVALID_SUPER_METADATA');
         expect(String(error)).to.contain("super() metadata on owner 'Main.script' is invalid");
       }
     });

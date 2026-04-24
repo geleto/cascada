@@ -11,9 +11,6 @@ function _contextualizeFatalError(error, errorContext, fallbackMessage = null) {
   const path = errorContext && errorContext.path ? errorContext.path : null;
   const message = fallbackMessage || (error && error.message) || 'Inherited dispatch failed';
   const contextualError = new RuntimeFatalError(message, lineno, colno, errorContextString, path);
-  if (error && error.code) {
-    contextualError.code = error.code;
-  }
   return contextualError;
 }
 
@@ -46,13 +43,10 @@ function _normalizeResolutionError(error, errorContext) {
   );
 }
 
-function _createInheritanceFatalError(message, code, errorContext = null) {
-  return inheritanceState.withInheritanceErrorCode(
-    _contextualizeFatalError(
-      new RuntimeFatalError(message, 0, 0, null, null),
-      errorContext
-    ),
-    code
+function _createInheritanceFatalError(message, errorContext = null) {
+  return _contextualizeFatalError(
+    new RuntimeFatalError(message, 0, 0, null, null),
+    errorContext
   );
 }
 
@@ -64,13 +58,6 @@ function _createInheritanceMetadataInvariantError(message, errorContext = null) 
 }
 
 function _normalizeInheritedMethodInvocationError(error, methodName, errorContext) {
-  if (error && error.code === inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND) {
-    return _createInheritanceFatalError(
-      `Inherited method '${methodName}' was not found`,
-      inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
-      errorContext
-    );
-  }
   return _normalizeResolutionError(error, errorContext);
 }
 
@@ -254,12 +241,9 @@ function _createInvalidInvokedMetadataError(methodData, invokedName, errorContex
   const ownerSuffix = methodData && methodData.ownerKey
     ? ` on owner '${methodData.ownerKey}'`
     : '';
-  return inheritanceState.withInheritanceErrorCode(
-    _createInheritanceMetadataInvariantError(
-      `Invoked method '${invokedName}'${ownerSuffix} has invalid metadata: expected fully resolved method data`,
-      errorContext
-    ),
-    inheritanceState.ERR_INVALID_INVOKED_METHOD_METADATA
+  return _createInheritanceMetadataInvariantError(
+    `Invoked method '${invokedName}'${ownerSuffix} has invalid metadata: expected fully resolved method data`,
+    errorContext
   );
 }
 
@@ -267,13 +251,26 @@ function _createInvalidSuperMetadataError(methodData, errorContext = null) {
   const ownerSuffix = methodData && methodData.ownerKey
     ? ` on owner '${methodData.ownerKey}'`
     : '';
-  return inheritanceState.withInheritanceErrorCode(
-    _createInheritanceMetadataInvariantError(
-      `super() metadata${ownerSuffix} is invalid: expected fully resolved method data`,
-      errorContext
-    ),
-    inheritanceState.ERR_INVALID_SUPER_METADATA
+  return _createInheritanceMetadataInvariantError(
+    `super() metadata${ownerSuffix} is invalid: expected fully resolved method data`,
+    errorContext
   );
+}
+
+function _isCollectableInheritanceMetadataError(error) {
+  const message = error && error.message ? error.message : '';
+  return (
+    message.indexOf('Inherited method ') !== -1 ||
+    message.indexOf('super() for method ') !== -1
+  );
+}
+
+function _hasCollectedMissingSuperError(errors, methodName) {
+  const expected = `super() for method '${methodName}' was not found`;
+  return (Array.isArray(errors) ? errors : []).some((error) => {
+    const message = error && error.message ? error.message : '';
+    return message.indexOf(expected) !== -1;
+  });
 }
 
 function _collectResolvedMethodData(state, errorContext = null) {
@@ -350,27 +347,27 @@ function _resolveInvokedMethodReference(reference, fallbackName, errorContext, s
   if (!Object.prototype.hasOwnProperty.call(methods, targetName)) {
     throw _createInheritanceFatalError(
       `Inherited method '${targetName}' was not found`,
-      inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
       originContext
     );
   }
-  const methodData = _getMethodDataFromResolvedEntry(methods[targetName], originContext, state);
+  const methodData = _getMethodDataFromResolvedEntry(methods[targetName], originContext, state, targetName);
   return methodData;
 }
 
 function _getMethodDataFromResolvedEntry(
   resolvedEntry,
   errorContext,
-  state = null
+  state = null,
+  methodName = null
 ) {
   if (_isResolvedMethodData(resolvedEntry)) {
     return resolvedEntry;
   }
 
   if (resolvedEntry === true) {
+    const name = methodName || 'unknown';
     throw _createInheritanceFatalError(
-      'Inherited dispatch reached unresolved super metadata',
-      inheritanceState.ERR_SUPER_METHOD_NOT_FOUND,
+      `super() for method '${name}' was not found`,
       errorContext
     );
   }
@@ -401,7 +398,8 @@ function _getMethodDataFromResolvedEntry(
     ? _getMethodDataFromResolvedEntry(
         resolvedEntry.super,
         _inheritanceMetadataErrorContext(resolvedEntry.superOrigin, errorContext),
-        state
+        state,
+        methodName
       )
     : null;
 
@@ -423,12 +421,11 @@ function getMethodData(state, methodName, errorContext = null) {
   if (!Object.prototype.hasOwnProperty.call(methods, methodName)) {
     throw _createInheritanceFatalError(
       `Inherited method '${methodName}' was not found`,
-      inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
       errorContext
     );
   }
 
-  return _getMethodDataFromResolvedEntry(methods[methodName], errorContext, state);
+  return _getMethodDataFromResolvedEntry(methods[methodName], errorContext, state, methodName);
 }
 
 function _pruneExecutionMethodData(methodData, seen) {
@@ -450,7 +447,7 @@ function _publishExecutionMethodTable(state, errorContext = null) {
 
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    const methodData = _getMethodDataFromResolvedEntry(methods[name], errorContext, state);
+    const methodData = _getMethodDataFromResolvedEntry(methods[name], errorContext, state, name);
     _pruneExecutionMethodData(methodData, seen);
     executionMethods[name] = methodData;
   }
@@ -464,7 +461,6 @@ function resolveInheritanceSharedChannel(state, channelName, errorContext = null
   if (!Object.prototype.hasOwnProperty.call(sharedSchema, channelName)) {
     throw _createInheritanceFatalError(
       `Shared channel '${channelName}' was not found`,
-      inheritanceState.ERR_SHARED_CHANNEL_NOT_FOUND,
       errorContext
     );
   }
@@ -516,13 +512,7 @@ function _finalizeInvokedMethodCatalog(state, errorContext = null, errors) {
         state
       );
     } catch (error) {
-      if (
-        error &&
-        (
-          error.code === inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND ||
-          error.code === inheritanceState.ERR_SUPER_METHOD_NOT_FOUND
-        )
-      ) {
+      if (_isCollectableInheritanceMetadataError(error)) {
         inheritanceState.collectOrThrowInheritanceMetadataError(error, errors);
         continue;
       }
@@ -582,15 +572,12 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
     try {
       // Build and cache raw methods before the footprint pass. On a repeated
       // finalization call, already-published execution entries pass through.
-      _getMethodDataFromResolvedEntry(methods[name], errorContext, state);
+      _getMethodDataFromResolvedEntry(methods[name], errorContext, state, name);
     } catch (error) {
-      if (
-        error &&
-        (
-          error.code === inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND ||
-          error.code === inheritanceState.ERR_SUPER_METHOD_NOT_FOUND
-        )
-      ) {
+      if (_isCollectableInheritanceMetadataError(error)) {
+        if (_hasCollectedMissingSuperError(localErrors, name)) {
+          continue;
+        }
         inheritanceState.collectOrThrowInheritanceMetadataError(error, localErrors);
         continue;
       }
@@ -859,7 +846,6 @@ function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKe
   if (!ownerMethodData || !ownerMethodData.super) {
     throw _createInheritanceFatalError(
       `super() for method '${methodName}' was not found`,
-      inheritanceState.ERR_SUPER_METHOD_NOT_FOUND,
       errorContext
     );
   }

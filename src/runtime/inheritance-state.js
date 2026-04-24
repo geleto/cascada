@@ -2,22 +2,9 @@
 
 const { RuntimeFatalError } = require('./errors');
 
-const ERR_INHERITED_METHOD_NOT_FOUND = 'ERR_INHERITED_METHOD_NOT_FOUND';
-const ERR_SUPER_METHOD_NOT_FOUND = 'ERR_SUPER_METHOD_NOT_FOUND';
-const ERR_SHARED_CHANNEL_NOT_FOUND = 'ERR_SHARED_CHANNEL_NOT_FOUND';
-const ERR_SHARED_METHOD_NAME_COLLISION = 'ERR_SHARED_METHOD_NAME_COLLISION';
-const ERR_INVALID_INVOKED_METHOD_METADATA = 'ERR_INVALID_INVOKED_METHOD_METADATA';
-const ERR_INVALID_SUPER_METADATA = 'ERR_INVALID_SUPER_METADATA';
 const INTERNAL_INHERITANCE_STATE = typeof Symbol === 'function'
   ? Symbol('cascadaInheritanceInternalState')
   : '__cascadaInheritanceInternalState__';
-
-function withInheritanceErrorCode(error, code) {
-  if (error && code) {
-    error.code = code;
-  }
-  return error;
-}
 
 function createInheritanceMetadataAggregateError(errors, context = null) {
   const keySeparator = '\0';
@@ -27,22 +14,13 @@ function createInheritanceMetadataAggregateError(errors, context = null) {
     if (!error) {
       return;
     }
-    const hasStructuralCode = !!error.code;
-    const key = hasStructuralCode
-      ? [
-        error.code || '',
-        error.path || '',
-        typeof error.lineno === 'number' ? error.lineno : '',
-        typeof error.colno === 'number' ? error.colno : '',
-        error.errorContextString || ''
-      ].join(keySeparator)
-      : [
-        '',
-        error.path || '',
-        typeof error.lineno === 'number' ? error.lineno : '',
-        typeof error.colno === 'number' ? error.colno : '',
-        error.message || String(error)
-      ].join(keySeparator);
+    const key = [
+      error.path || '',
+      typeof error.lineno === 'number' ? error.lineno : '',
+      typeof error.colno === 'number' ? error.colno : '',
+      error.errorContextString || '',
+      error.message || String(error)
+    ].join(keySeparator);
     if (seen.has(key)) {
       return;
     }
@@ -597,15 +575,12 @@ function validateInheritanceSharedMethodNameCollisions(state, context = null, er
       : context && context.path
         ? context.path
         : null;
-    const error = withInheritanceErrorCode(
-      new RuntimeFatalError(
-        `shared channel '${name}' conflicts with inherited method '${name}'`,
-        0,
-        0,
-        null,
-        path
-      ),
-      ERR_SHARED_METHOD_NAME_COLLISION
+    const error = new RuntimeFatalError(
+      `shared channel '${name}' conflicts with inherited method '${name}'`,
+      0,
+      0,
+      null,
+      path
     );
     collectOrThrowInheritanceMetadataError(error, errors);
   }
@@ -641,7 +616,7 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
       const superOrigin = superOwner && superOwner.superOrigin && typeof superOwner.superOrigin === 'object'
         ? superOwner.superOrigin
         : null;
-      collectOrThrowInheritanceMetadataError(withInheritanceErrorCode(
+      collectOrThrowInheritanceMetadataError(
         new RuntimeFatalError(
           `super() for method '${name}' was not found`,
           superOrigin && typeof superOrigin.lineno === 'number' ? superOrigin.lineno : 0,
@@ -649,8 +624,8 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
           superOrigin && superOrigin.errorContextString ? superOrigin.errorContextString : null,
           superOrigin && superOrigin.path ? superOrigin.path : superOwner.ownerKey || (context && context.path ? context.path : null)
         ),
-        ERR_SUPER_METHOD_NOT_FOUND
-      ), errors);
+        errors
+      );
     } else if (superOwner && superOwner.super === false) {
       superOwner.super = null;
     }
@@ -689,11 +664,4 @@ module.exports = {
   createEmptyConstructorEntry,
   createInheritanceMetadataAggregateError,
   collectOrThrowInheritanceMetadataError,
-  ERR_INHERITED_METHOD_NOT_FOUND,
-  ERR_SUPER_METHOD_NOT_FOUND,
-  ERR_SHARED_CHANNEL_NOT_FOUND,
-  ERR_SHARED_METHOD_NAME_COLLISION,
-  ERR_INVALID_INVOKED_METHOD_METADATA,
-  ERR_INVALID_SUPER_METADATA,
-  withInheritanceErrorCode
 };
