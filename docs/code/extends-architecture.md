@@ -1,10 +1,12 @@
 # `extends` Architecture
 
-This document is a structured rewrite of `extends-architecture-raw.md`.
+This document is the high-level architecture for the current `extends` redesign.
+It incorporates the blocking metadata model from
+`extends-metadata-architecture.md` through Step 7.
 
-It preserves the same semantics and does not intentionally add or remove
-information. The raw document remains the source of truth if anything appears
-ambiguous after restructuring.
+Older notes in `extends-architecture-raw.md` and early revisions of this file
+describe the previous runtime-pending metadata model. Those notes are now
+historical for metadata/finalization behavior.
 
 This architecture is intentionally high level.
 
@@ -29,9 +31,8 @@ flow. The selected parent may still come from a dynamic expression at that
 site.
 
 Per-template state is the compiled JS shape. Per-instance state is that same
-compiled JS running for one render, resolving method entries, `super`, and
-parent arrival through the shared runtime objects passed up the inheritance
-chain.
+compiled JS running for one render after a blocking inheritance bootstrap has
+loaded the full chain and built direct method/shared metadata.
 
 The shared metadata object has the final shape:
 
@@ -103,27 +104,12 @@ pre-`extends` variables.
 
 ### Method Entries
 
-Additionally, collect all parent methods: methods that are either not yet
-defined, or used through `super()`. These are compiled into the block/methods
-object as promises, with `resolve` and `reject` methods, so 3 properties:
-`promise`, `resolve`, `reject`.
+Method metadata is structural. The inheritance chain is loaded and finalized
+before constructor/root execution starts, so normal execution reads direct
+method metadata rather than promise-shaped pending entries.
 
-Once a promise is resolved by the parent, it will be replaced with the value
-object (metadata and function). The `super` properties are also a promise in
-the same way. If there is no definition for a called method, it is added to
-the methods object, not as `super`.
-
-Unresolved vs resolved entries should keep the smallest possible stable shape:
-
-- unresolved entry: promise structure, with `promise`, `resolve`, `reject`
-- resolved entry: actual method object; the promise structure is replaced
-- rejected entry: promise rejects; no extra `state` field is required
-
-Pending method entries and pending shared-channel entries should use the same
-promise-structure shape.
-
-The minimum raw compiled method-entry shape should stay small and should be
-emitted directly from the local method/block AST:
+The minimum compiled method-entry shape should stay small and should be emitted
+directly from the local method/block AST:
 
 - `fn`
 - `signature`
@@ -131,18 +117,44 @@ emitted directly from the local method/block AST:
 - `ownMutatedChannels`
 - `super`
 - `ownerKey`
+- `invokedMethods`
 
-`super` is optional. If the local method does not use `super()`, the field may
-be omitted or set to `null`. If the local method uses `super()`, the field is a
-pending-entry promise structure until startup registration wires it to the
-local parent method metadata or rejects it at the topmost parent.
+Compiled `super` is `true` when the callable contains `super()` and `false` or
+`null` otherwise. During bootstrap, `super: true` is rewritten to the direct
+owner-relative parent metadata object, or to `null` when the no-op root
+constructor rule applies. A non-constructor `super()` without a parent
+implementation is reported as a structural metadata error.
+
+Compiled `invokedMethods` records ordinary inherited method calls such as
+`this.render()`. It is an object map keyed by method name. During bootstrap,
+each value is replaced with the final override-resolved method metadata for
+that name. `super()` is not represented here because it is owner-relative and
+uses the separate `super` field.
 
 The compiler should emit only the channels directly touched by the local method
-body. Channels coming from the `super` chain are not stored in the raw compiled
-entry and are merged later by the resolver helper.
+body. Channels reached through `super()` and ordinary inherited calls are
+computed during metadata finalization.
 
-Keep `ownUsedChannels` and `ownMutatedChannels` separate in the raw stored
-entry, then merge conservatively when needed.
+Finalized method metadata includes:
+
+- `fn`
+- `signature`
+- `ownerKey`
+- `ownUsedChannels`
+- `ownMutatedChannels`
+- `super`
+- `invokedMethods`
+- `mergedUsedChannels`
+- `mergedMutatedChannels`
+
+`mergedUsedChannels` and `mergedMutatedChannels` are the full transitive
+callable footprint: the callable's own channels, its reachable `super()` chain,
+and all ordinary inherited methods it may invoke.
+
+Compiled files also expose a file-level `invokedMethods` catalog containing
+every ordinary inherited method name referenced anywhere in the file. Bootstrap
+resolves that catalog once against the final method table, then gives each
+callable its filtered direct map.
 
 ### Shared-Channel Entries
 
@@ -150,20 +162,14 @@ Also collect all shared channels. The key is the channel name. The value is
 shared-channel metadata including at least the channel type and the local
 default value.
 
-Unknown shared channels use the same promise structure and are replaced in
-place once resolved.
-
 The shared channel schema should stay explicit: key is identifier, value is
 shared-channel metadata containing at least the channel type and local default
 value. This is still needed so each script/template can add channels that are
 not yet present in the shared command buffer.
 
-Shared channel metadata should follow the same model as method metadata. The
-shared schema is a key-value object where the key is the channel name. A known
-channel is stored as its resolved metadata, including at least the channel type
-and the local default value. A not-yet-known channel is stored as a promise
-structure with `promise`, `resolve`, and `reject`, and is replaced with the
-resolved metadata once a parent defines it.
+Shared channel metadata follows the same structural timing as method metadata:
+blocking bootstrap produces a final direct shared schema before execution.
+Normal execution does not depend on pending shared-schema entries.
 
 The resolved shared-channel metadata shape should stay small, but it now needs
 more than just the type:
@@ -220,6 +226,12 @@ like declared channels for lookup purposes. The compiler may lower them through
 shared-aware observation, but the user-facing rule is still "declared name",
 not a special cross-file ambient lookup.
 
+As of the Step 7 metadata consolidation, some template-block compatibility
+paths may still preserve shared lookup candidates and filter them against the
+final chain schema. That is transitional. Step 8 tightens the contract so every
+file must explicitly declare every shared name it reads, writes, snapshots, or
+error-checks.
+
 All shared channels should be declared before any `extends` and before any
 `super()`-driven inherited work that depends on them.
 
@@ -246,15 +258,6 @@ Per-channel-type shared rules stay explicit:
 - `shared sequence db = sinkExpr` initializes the shared sequence
 - `shared sequence db` declares participation without an initializer
 
-Shared channel metadata should be described with the same lifecycle as method
-metadata:
-
-- compiled child access to an unknown shared channel creates a pending entry
-- each parent resolves the entries it can define and replaces them with the
-  actual metadata
-- unresolved entries at the topmost parent are rejected and become fatal on
-  await
-
 Shared channel declaration should only do work when the channel does not yet
 exist. Re-declaring an already existing shared channel with the same type is
 effectively a no-op.
@@ -263,50 +266,48 @@ Re-declaring an existing shared channel with a different type is a
 `RuntimeFatalError` as soon as it is detected, then normal fatal handling
 applies.
 
-## Startup and Registration
+## Bootstrap and Finalization
 
-For scripts/templates that define blocks or methods, the first thing the
-script does at startup is wire its local method metadata into the shared method
-object. That is where child-overrides-parent semantics are established.
+Inheritance metadata is built in a blocking bootstrap before constructor/root
+execution starts.
 
-Startup order should stay simple:
+Bootstrap order should stay deterministic:
 
-- shared-channel register / resolve / reject
-- method register / resolve / reject
-- `super` register / resolve / reject
-- parent call if `extends` is present
+1. Resolve the parent selection at the `extends` site.
+2. Load and compile the full parent chain.
+3. Detect inheritance-chain cycles.
+4. Register shared schema and method metadata for the chain.
+5. Build the final override-resolved method table.
+6. Resolve owner-relative `super()` metadata.
+7. Resolve file-level and per-callable `invokedMethods`.
+8. Compute final `mergedUsedChannels` and `mergedMutatedChannels`.
+9. Finalize shared-root ownership.
 
-Startup register / resolve / reject is synchronous. It only updates the shared
-metadata object using already-available local metadata:
+Parent methods are registered before child methods, then child overrides replace
+the effective method entry for a name. Ordinary `this.method()` dispatch uses
+the final override-resolved method table. `super()` remains owner-relative and
+walks from the current owner to the next parent implementation.
 
-- declare if missing
-- resolve if the current entry is a promise structure
-- wire `super` if a child method uses `super()` and the local parent method
-  matches
-- replace the effective method entry for that method name with the child
-  override so later lookup returns the topmost callable first
+Merged-channel calculation is part of finalization, not runtime lazy
+resolution. The fixed-point pass includes:
 
-Each script/template tries to resolve pending methods, pending shared channels,
-and pending method `super` entries using its own local definitions. When the
-actual root script/template is reached, any still-pending entries are rejected
-there. At that point there is no parent left that could legally satisfy them.
+- each callable's own channels
+- reachable owner-relative `super()` channels
+- transitive channels from ordinary inherited calls in `invokedMethods`
 
-The parent script resolves all method object / `super` promises that it can and
-replaces the target with the resolved local object. It adds its own methods to
-that object for methods that are not already there and passes it to the parent
-if `extends` is used. If no `extends` is used and there are still pending
-method or `super` entries that have not been resolved, these are rejected as
-fatal errors.
+Invoked-method cycles are valid call-graph metadata and are handled by the
+fixed-point merge. Parent-chain cycles are fatal structural bootstrap errors.
 
-Each script/template adds shared channels to the shared schema when they do not
-exist yet, resolves pending entries when it can, and rejects unresolved ones
-when it is the root.
+Finalization collects recoverable structural metadata errors from catalog
+wiring, `super()` resolution, cache prewarming, and footprint validation before
+throwing. Immediate throws should remain for impossible invalid-metadata
+invariants.
 
 ## Constructors and `extends`
 
 Constructor dispatch should not be a special runtime model. It is compiled as
-an imported call to `__constructor__`, and then resolved and linked exactly
-like any other method call.
+an inherited call to `__constructor__`, and then admitted and linked exactly
+like any other method call using finalized direct metadata.
 
 Code after `extends` is the constructor body. If there is no executable body
 after `extends`, there is no local constructor entry, so normal inherited
@@ -332,14 +333,15 @@ There is therefore no split "before-extends context" vs "after-extends
 context" model. Constructor/body execution begins after the `extends`
 boundary.
 
-`extends` creates an async boundary. Code after `extends` executes in a later
-async boundary / command buffer, similar in spirit to how other structural async
-boundaries split execution.
+`extends` creates an async boundary. Metadata bootstrap completes before the
+constructor/body execution for that boundary starts. Code after `extends`
+executes in a later async boundary / command buffer, similar in spirit to how
+other structural async boundaries split execution.
 
 The initial entrypoint is the import-run script/template itself. It executes
 exactly like a normal import-run wrapper, but it receives the shared metadata
-object and uses it for method dispatch and shared-channel access. It returns
-the shared metadata object.
+object after bootstrap and uses it for method dispatch and shared-channel
+access. It returns the shared metadata object.
 
 Imported components should not have a meaningful return value of their own.
 Component constructor return is ignored so one script can still serve both as a
@@ -348,8 +350,7 @@ matters is the shared metadata object.
 
 ## Method Dispatch and `super()`
 
-The method calls reference the method from the method object, which can be
-either the promise structure or a resolved object.
+Method calls reference direct finalized metadata from the inheritance state.
 
 Inherited dispatch is explicit:
 
@@ -364,49 +365,44 @@ Sequential `!` paths inside inherited methods should work like normal Cascada
 sequential paths, but this can be deferred in the implementation plan.
 
 When a child defines the same method name as its parent, child overrides
-parent. If that child method uses `super()`, the child's local startup wiring
-creates a pending `super` entry in the child's `super` property. The parent
-resolves that pending entry during its own startup wiring, so the later helper
-resolution lands on the parent's final resolved method object.
+parent for ordinary `this.method()` dispatch. If that child method uses
+`super()`, bootstrap rewrites its `super` field to the owner-relative parent
+implementation.
 
 `super` should stay part of the resolved method metadata shape rather than
-becoming a separate lookup table. A `super()` call should resolve that `super`
-property through the same helper model, or through a dedicated helper that
-behaves the same way.
+becoming a separate lookup table. A `super()` call uses that already-resolved
+direct metadata object.
 
 Each method call should still create its own child invocation buffer after the
-target metadata is current. That child invocation buffer lives inside the
-shared command-buffer tree. Exact linking is done for that call buffer at that
-point.
+target metadata is finalized. That child invocation buffer lives inside the
+shared command-buffer tree. Linking uses the call target's final
+`mergedUsedChannels` and `mergedMutatedChannels`.
 
-## Helper Model and Late Linking
+## Direct Metadata and Linking
 
-Do not read raw `ownUsedChannels` / `ownMutatedChannels` directly from the
-stored method metadata object. Instead, use one public helper that resolves and
-returns the full callable data needed by side-channel apply. A good name for
-this helper is `getMethodData(...)`.
+Normal execution should not use runtime-pending metadata helpers. Admission and
+method entry startup receive direct method metadata that bootstrap has already
+finalized.
 
-`getMethodData(...)` should:
+Call sites should not read `ownUsedChannels` / `ownMutatedChannels` for
+admission. They should use:
 
-- resolves the method entry if it is still pending
-- recursively resolves the complete reachable `super` chain for that callable
-- computes merged channel information for each level from the resolved chain
-- returns the callable data required for the actually executed call target
-- memoize the fully resolved callable data on the resolved raw entry as an
-  optimization
+- `mergedUsedChannels`
+- `mergedMutatedChannels`
 
-The promise returned by that helper is the actual barrier used by side-channel
-apply. The barrier is not "get the metadata object", but "resolve the effective
-method data needed for the current call".
+Those merged fields are conservative for the full callable footprint, including
+the reachable `super()` chain and ordinary inherited calls represented by
+`invokedMethods`.
 
 There are two kinds of side-channel commands:
 
 - method-call commands
 - shared-channel-lookup commands
 
-The helper described above is the exact-link-after-load mechanism. It is
-awaited by `apply()` before linking, and it does not resolve until the
-effective method entry is fully available.
+Method-call side-channel commands use finalized direct method metadata. A small
+synchronous guard such as `requireMethodData(...)` may still be useful at
+runtime boundaries, but it should only validate direct metadata and throw a
+fatal metadata error for missing or invalid entries.
 
 `extends ... with ...` payloads should follow the same chain-through model in
 both templates and scripts:
@@ -417,56 +413,23 @@ both templates and scripts:
 - validation should happen where an include/import-style isolated composition
   boundary actually consumes externs, not at each intermediate inheritance hop
 
-Internally, the public helper may use one recursive helper that resolves a raw
-entry to resolved callable data:
-
-- if the raw entry has no `super`, the merged channels at that level are just
-  the local `ownUsedChannels` / `ownMutatedChannels`
-- if the raw entry has a pending `super`, await it and replace the raw `super`
-  field with the resolved raw parent entry
-- recurse into the parent entry so the whole `super` chain is resolved
-- build the current level's `mergedUsedChannels` / `mergedMutatedChannels` from
-  the current local channels plus the resolved parent level's merged channels
-
-`super` should stay part of the resolved callable data shape as the next
-same-shape callable-data level, or `null` when there is no parent level.
-
-The resolved callable metadata shape should be explicit, for example:
-
-- `fn`
-- `signature`
-- `ownUsedChannels`
-- `ownMutatedChannels`
-- `mergedUsedChannels`
-- `mergedMutatedChannels`
-- `super`
-
-`super` in this resolved callable-data shape is not a pending promise
-structure. It is either:
-
-- the same resolved callable-data shape for the next level
-- or `null`
-
-Current-call linkage uses the current level's merged channel effect set:
+Current-call linkage uses the call target's merged channel effect set:
 
 - `ownUsedChannels` / `ownMutatedChannels` describe the local body only
 - `mergedUsedChannels` / `mergedMutatedChannels` describe the current callable
-  level plus the reachable `super` chain from there
-- because the current callable may execute `super()`, its conservative effect
-  set includes that reachable parent work
+  level plus the reachable inherited work from `super()` and `this.method()`
 
-So `super()` execution remains lazy, but channel metadata is conservative:
+So inherited execution remains lazy, but channel metadata is conservative:
 
 - current-call side-channel apply links using the current level's merged effect
   set
-- later `super()` execution reuses the already-resolved `super` metadata level
-  rather than doing a second ancestry walk
-- "exact" means exact to the resolved callable's full inherited effect set, not
-  merely to the current level's local body text
+- later `super()` or `this.method()` execution reuses already-resolved metadata
+- "exact" means exact to the resolved callable's full inherited effect set,
+  not merely to the current level's local body text
 
 This still must not turn into broad unrelated linkage:
 
-- merged callable metadata may include the reachable `super` chain
+- merged callable metadata may include reachable inherited calls
 - it must not widen into blanket `sharedSchema` / hierarchy-wide linking for
   channels the callable chain does not touch
 
@@ -474,53 +437,22 @@ This is important for correctness as well as performance: broad eager
 resolution/linking can serialize later unrelated shared-channel work and
 violate the architecture's intended concurrency model.
 
-Entry replacement belongs to startup registration, not to the helper. The
-helper may still memoize fully resolved callable data on a resolved raw entry
-so repeated calls do not redo the same recursive merge work.
-
-When apply requests metadata through the helper, it awaits the already-shared
-entry reference. By the time that await resolves, startup replacement has
-already happened. The helper only resolves pending parent links, computes the
-resolved callable-data chain, and memoizes derived merged metadata such as the
-effective channel sets.
-
-Call sites should not read `ownUsedChannels` / `ownMutatedChannels` directly
-from the raw stored entry. They should go through the helper, which resolves
-the effective method target and computes callable data for the resolved
-callable's inherited effect set. Execution of `super()` remains lazy, but the
-linked/waited channel metadata is conservative for that callable level.
+Optional caches for pre-merged invocation-link channels or body-link channels
+belong on finalized metadata. They should not reintroduce lazy metadata
+resolution.
 
 ## Shared-Channel Access
 
-Shared channel access should use a dedicated helper, analogous to the method
-helper. It:
+Shared channel access uses finalized direct shared-schema metadata. Normal
+execution should not wait for pending shared-schema entries.
 
-- resolves the channel entry if it is still pending
-- returns the effective channel metadata required for command creation
-- may memoize derived metadata on the resolved entry as an optimization
+Any remaining compatibility path that filters shared lookup candidates against
+the final chain schema is transitional until Step 8. It must not be used as a
+method-admission or wildcard-linking mechanism.
 
-The promise returned by the shared-channel helper is the barrier for
-caller-side shared-channel access. Side-channel apply must await it before
-adding the command that reads from the shared channel.
-
-Unresolved inherited method references that are discovered during analysis
-should be compiled as pending method entries, not as `null` placeholders. Those
-pending entries may carry a narrow structural hint of the locally declared
-shared lanes for that file so the call site can still reserve source-order
-position before the parent method body is known. This is only a local fallback
-for unresolved inherited methods; it must not widen into runtime-wide
-`Object.keys(sharedSchema)` linkage.
-
-Shared channel lookup from the caller script/template mirrors method lookup. It
-uses a dedicated helper that:
-
-- waits until the shared schema contains the requested channel
-- returns the effective shared-channel metadata once the channel is known
-- throws if the topmost parent is reached and the channel still does not exist
-
-That shared-channel helper uses the same pending/resolved/rejected model as
-method entries. The helper result is the effective shared-channel metadata used
-to choose and construct the side-channel command.
+The effective shared-channel metadata is used to choose and construct the
+side-channel command. Missing or invalid shared metadata at an execution
+boundary is a fatal metadata error.
 
 Allowed shared-channel operations should stay explicit:
 
@@ -533,9 +465,9 @@ Any other operation should fail dynamically with a good fatal error if the
 channel does not support that access pattern. For non-`var` channels, method
 calls should be used instead.
 
-Method-call side-channel commands await helper-resolved used/mutated channel
-metadata. Shared-channel-lookup side-channel commands await helper-resolved
-shared-channel metadata.
+Method-call side-channel commands use finalized method channel metadata.
+Shared-channel-lookup side-channel commands use finalized shared-channel
+metadata.
 
 Shared-channel observation remains a current-buffer operation. The caller does
 not receive a stored JS channel object. Instead:
@@ -586,15 +518,24 @@ Component semantics apply only to the direct binding introduced by
 `component ... as ns` in the first implementation. Aliasing, passing, or
 returning that component value is out of scope.
 
+Components follow the same blocking inheritance-bootstrap rule. Before a
+component constructor can run, the component's full inheritance chain is loaded,
+compiled, and finalized. Component constructor startup still belongs to the
+caller-side ordered component startup path, but metadata bootstrap completes
+before that startup command runs.
+
+Component creation mirrors import-style deferred availability: the component
+binding is available immediately as a promise-like value, and that value
+resolves to the complete component instance once metadata bootstrap and ordered
+constructor startup have finished.
+
 Components use the same shared metadata object model. On the caller side,
 `apply()` should:
 
 - look up the method in the shared component metadata object
-- create the promise structure if the method is not present yet
-- resolve the effective method data and merged channel metadata through the
-  helper
-- await that helper result when needed
-- perform linking only after that resolution step completes
+- read the finalized direct method metadata
+- perform linking from the method's final `mergedUsedChannels` and
+  `mergedMutatedChannels`
 
 Multiple component instantiations are fully independent instances with separate
 shared roots, shared state, side-channels, and method calls.
@@ -648,15 +589,20 @@ Return semantics stay explicit:
 
 The default error model should be strict:
 
-- unresolved entries at the topmost parent are fatal and reject
-- helper rejection during apply/link is fatal
+- unresolved method, `super()`, invoked-method, or shared-schema metadata found
+  during bootstrap is fatal
+- fatal metadata errors discovered during graph finalization should be
+  aggregated where possible before throwing
+- missing or invalid finalized metadata at an execution boundary is fatal
 - missing `__constructor__` is only non-fatal when no local constructor exists
   and normal inherited lookup can continue to an ancestor constructor; an
-  unresolved pending `__constructor__` at the topmost parent is fatal
+  otherwise-missing topmost constructor resolves to a no-op constructor only for
+  the root-constructor `super()` case
 
-Topmost-parent rejection becomes observable when apply awaits the helper. If
-that await rejects, apply should report the failure through `cb()` and throw
-`RuntimeFatalError`.
+Bootstrap/finalization failures should report through the runtime fatal-error
+path with source-origin metadata when available. Compiled invoked-method and
+`super()` references should carry enough origin data for finalization-time
+errors to point at the original call site rather than only the file path.
 
 Error and poison propagation follow ordinary Cascada rules. This redesign
 changes where work is attached and where shared-root apply may stall; it does
@@ -668,9 +614,11 @@ Static analysis requirements stay narrow:
 
 - shared schema declared by each file
 - upfront method metadata including internal `__constructor__`
+- file-level and per-callable `invokedMethods`
+- source-origin metadata for inherited calls and `super()`
 - override metadata needed for runtime inheritance resolution
 - no caller-side method read/write tracking for component scheduling
-- no wildcard parent-lane linking for unresolved inherited calls
+- no wildcard parent-lane linking for inherited calls
 
 ## Compatibility
 
@@ -695,6 +643,7 @@ The redesign should still enable:
 - component method calls that return values without exposing internal buffers
 
 Dynamic `extends` means the parent target is an expression rather than a
-literal path. It should work through the same composition model rather than a
-separate architecture, and remains deferred until the static model is stable.
-Dynamic `extends` waits for parent-name resolution and loading.
+literal path. It works through the same blocking bootstrap model rather than a
+separate architecture. Dynamic `extends` first waits for parent-name
+resolution, then loads and finalizes the full resolved parent chain before
+constructor/root execution starts.
