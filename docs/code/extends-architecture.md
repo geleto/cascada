@@ -222,33 +222,70 @@ other methods can inspect later. It is just the `__constructor__` method.
 Constructor-local values therefore do not become ambient inherited state unless
 they are written into shared channels or forwarded explicitly in payload.
 
-For async/script mode, name resolution should stay split into two explicit
-classes:
+### Script shared-state access surface
 
-- declared names
-  - ordinary declared vars
-  - declared shared vars/channels
-  - args / loop vars / declared extern bindings
-- ambient names
-  - undeclared bare names resolved through context/global/render-context rules
+Inside a script, shared state is accessed exclusively through `this.<name>`.
+Bare names — even names that are declared as `shared` in the same file — follow
+ordinary ambient lookup only. The compiler maps `this.<name>` to the correct
+shared-channel operation based on the current file's `shared` declaration for
+that name:
 
-That split is important:
+- `this.sharedVar` — shared `var` read (implicit snapshot)
+- `this.sharedVar = value` — shared `var` write
+- `this.sharedVar.nested.prop` — shared `var` read followed by ordinary
+  property lookup on the snapshot value
+- `this.sharedText("msg")` — shared `text` channel append
+- `this.sharedData.path = value` — shared `data` channel `set` command
+- `this.sharedData.command(args)` — shared `data` channel command call
+- `this.sharedChannel.snapshot()` — explicit snapshot of any channel type
+- `this.sharedChannel is error` — error check on any channel type
+- `this.sharedChannel#` — peek error message on any channel type
+- `this.sharedSequence.method(args)` — shared `sequence` channel call
+  (ordered by the channel mechanism; the `!` operator is not used here)
 
-- declared shared names opt into shared/inheritance semantics because the file
-  declared them explicitly
-- undeclared bare names do not probe inheritance shared state ambiently
-- component/component-property access from the caller remains a separate
-  restricted observation surface; it is not ordinary in-file symbol lookup
+Any bare name in a script follows ordinary name resolution — context, globals,
+and composition payload — regardless of whether that name is also declared as
+`shared` in the same file. Bare assignments to a declared shared name produce a
+migration error at compile time.
 
-Inside a script/template/component file, declared shared names should behave
-like declared channels for lookup purposes. The compiler may lower them through
-shared-aware observation, but the user-facing rule is still "declared name",
-not a special cross-file ambient lookup.
+For async/script mode, name resolution stays split into two explicit classes:
 
-Every file must explicitly declare every shared name it wants to access as
-shared state. Parent-chain visibility alone does not authorize shared-state
-access in a child file. An undeclared bare name remains an ordinary
-context/global/composition-payload lookup.
+- declared names: ordinary declared vars, declared shared vars/channels, args,
+  loop vars, declared extern bindings
+- ambient names: undeclared bare names, plus bare names where `this.<name>` is
+  the shared access surface, resolved through context/global/render-context
+
+The `this.` prefix is the gating mechanism:
+
+- `this.<name>` routes through shared/inheritance semantics only when the
+  current file has a matching `shared` declaration for that name
+- bare `<name>` always follows ambient lookup, even when a `shared` declaration
+  exists for that name in the same file
+- component/component-property observation from the caller remains a separate
+  read-only surface; it is not in-file `this.` access
+
+Every file must explicitly declare every shared name it wants to access via
+`this.<name>`. Parent-chain visibility alone does not authorize shared-state
+access in a child file.
+
+### Template shared-state access surface
+
+Async inherited templates use the same `this.<name>` surface for shared vars,
+but with a different compilation model: the compiler infers shared `var` entries
+from static `this.<root>` paths found anywhere in the template AST, without
+requiring explicit `shared` declarations in template source.
+
+Template shared access is var-only. The compiler does not infer shared `text`,
+`data`, or `sequence` channels for templates; those typed channels are a
+script-only concept at this surface.
+
+Template inference applies only when the template uses inheritance nodes
+(`extends` or `block`). A plain async template that does not participate in
+inheritance continues to treat `this` as an ordinary render-context object.
+
+Within an inheritance template, `this` is reserved as the inheritance-instance
+surface and a render-context variable named `this` does not intercept
+`this.<name>` shared-var lookup.
 
 All shared channels should be declared before any `extends` and before any
 `super()`-driven inherited work that depends on them.
@@ -473,16 +510,26 @@ The effective shared-channel metadata is used to choose and construct the
 side-channel command. Missing or invalid shared metadata at an execution
 boundary is a fatal metadata error.
 
-Allowed shared-channel operations should stay explicit:
+Within a script or inherited template, shared channels are accessed through
+`this.<name>` (see Script shared-state access surface and Template
+shared-state access surface above). The `this.` prefix is what routes the
+access through the shared-channel machinery; bare names always follow ambient
+lookup.
 
-- `snapshot()`
-- `is error`
-- `#`
-- implicit `var` snapshot when no more specific operation is requested
+Allowed `this.<name>` operations on a shared channel:
 
-Any other operation should fail dynamically with a good fatal error if the
-channel does not support that access pattern. For non-`var` channels, method
-calls should be used instead.
+- `this.name` — implicit snapshot (var channels only)
+- `this.name.path` — snapshot followed by ordinary property lookup
+- `this.name.snapshot()` — explicit snapshot of any channel type
+- `this.name is error` — error check
+- `this.name#` — peek error message
+- `this.name(...)` — channel operation call (text channels)
+- `this.name.path = value` — channel set command (data and var channels)
+- `this.name.command(args)` — channel command call (data channels)
+- `this.name.method(args)` — sequential channel call (sequence channels)
+
+Any operation that does not match the channel's type should fail with a clear
+error at compile time where possible, or at the execution boundary otherwise.
 
 Method-call side-channel commands use finalized method channel metadata.
 Shared-channel-lookup side-channel commands use finalized shared-channel
@@ -631,7 +678,8 @@ not change poison semantics.
 
 Static analysis requirements stay narrow:
 
-- shared schema declared by each file
+- shared schema declared by each script file, or inferred from static
+  `this.<name>` paths for async inherited templates (var-only)
 - upfront method metadata including internal `__constructor__`
 - file-level and per-callable `invokedMethods`
 - source-origin metadata for inherited calls and `super()`

@@ -2204,7 +2204,7 @@ Plain `import` is good for sharing utility functions, but when you need multiple
 
 Three concepts make this work together:
 
-- **`shared` state** — values that live at the chain level and are visible to every constructor and method across all scripts in the hierarchy. This is the equivalent of instance fields in OOP: state that is set up once and shared by all the moving parts.
+- **`shared` state** — hierarchy-owned values accessible via `this.<name>` from any constructor or method in the chain, regardless of where in the hierarchy the code runs. This is the equivalent of instance fields in OOP.
 - **`method` overrides** — named override points declared in a base script and called via `this.method(...)`. The most-derived child's version always runs, regardless of where the call site is. A child can extend rather than replace the parent's behavior with `super()`.
 - **Constructor** — the script body (everything after `extends`). It runs the setup and orchestration logic for that level of the chain. Parent constructors run only when the child explicitly calls `super()`.
 
@@ -2254,20 +2254,37 @@ When you render `child.script`, the inherited flow runs with the child's overrid
 
 #### `shared`: Shared State
 
-`shared` declares hierarchy-owned state — values that every script in the chain can read and write, from constructors and from method bodies alike. Unlike local `var` declarations, shared values are not tied to a single constructor scope; they live at the chain level and persist across method calls.
+`shared` declares hierarchy-owned state — values accessible via `this.<name>` from any constructor or method in the chain, regardless of where in the hierarchy the code runs. Unlike local `var` declarations, shared values are not tied to a single constructor scope; they live at the chain level and persist across method calls.
 
 `shared` declarations must appear before `extends`.
 
-**Per-file declaration requirement:** Every script that reads or writes a shared channel must declare it in that file. Because each file is compiled independently, the compiler needs to know the channel type at compile time — it cannot look it up from a parent file. A parent declaring `shared var theme` does not make `theme` available as shared state in a child file that has not declared it. An undeclared identifier follows ordinary ambient lookup — context, globals, and composition payload — and does not probe the chain-level shared schema.
+**Accessing shared state**
+
+Inside an inheritance chain or component script, shared state is accessed through `this.<name>`, unifying shared-channel reads and writes with inherited method dispatch under a single prefix. From the outside — when calling a component — shared channels are observed through the component binding instead: `ns.theme`, `ns.log.snapshot()`, etc. (see [`component`](#component-component-instances) below). Bare names always follow ordinary ambient lookup (context, globals, composition payload) even when a matching `shared` declaration exists in the same file. `this.theme` reads the shared channel; bare `theme` reads from context.
+
+| Form | Meaning |
+|---|---|
+| `this.x` | `var`: read (implicit snapshot) |
+| `this.x = value` | `var`: write |
+| `this.x.a.b` | `var`: read, then property lookup on the snapshot |
+| `this.x("msg")` | `text`: append |
+| `this.x.path = value` | `data`: set value at path |
+| `this.x.command(args)` | `data`: command call (`push`, `merge`, etc.) |
+| `this.x.method(args)` | `sequence`: ordered call on the underlying object |
+| `this.x.snapshot()` | any: explicit snapshot of current value |
+| `this.x is error` | any: true if the channel is poisoned |
+| `this.x#` | any: peek the error message |
+
+**Per-file declaration requirement:** Every script that uses `this.<name>` for a shared channel must declare it in that file. Because each file is compiled independently, the compiler needs to know the channel type at compile time — it cannot infer it from a parent file. A parent declaring `shared var theme` does not authorize `this.theme` in a child file that has not declared it. Any bare name — including one that matches a `shared` declaration in the same file — follows ordinary ambient lookup and does not read the shared channel.
 
 **`shared` declaration forms:**
 
 | Declaration | Description |
 |---|---|
-| `shared var x = value` | Shared variable. Readable and assignable across the chain. |
-| `shared data x` | Shared `data` channel. |
-| `shared text x` | Shared `text` channel. |
-| `shared sequence db = sinkExpr` | Shared `sequence` channel with an initializer. |
+| `shared var x = value` | Shared variable. Read and written via `this.x`. |
+| `shared data x` | Shared `data` channel. Operated on via `this.x.command(...)` and `this.x.path = value`. |
+| `shared text x` | Shared `text` channel. Appended via `this.x("msg")`. |
+| `shared sequence db = sinkExpr` | Shared `sequence` channel with an initializer. Called via `this.db.method(args)`. |
 | `shared sequence db` | Declares participation without claiming a default. |
 
 **Default priority rules:**
@@ -2276,12 +2293,14 @@ When you render `child.script`, the inherited flow runs with the child's overrid
 - The first assigned default encountered in child-to-parent startup order wins. Later ancestor defaults for the same channel are not evaluated.
 - A shared default expression can read from composition payload — payload values are available at startup time.
 
+The example below uses both surfaces of `this.`: `this.theme` reads the shared var and `this.buildBody(...)` calls the inherited method.
+
 ```cascada
 // base.script
 shared var theme = "light"
 
 method buildBody(title, user)
-  return "[" + theme + "] " + user.name + ": " + title
+  return "[" + this.theme + "] " + user.name + ": " + title
 endmethod
 
 data result
@@ -2290,7 +2309,7 @@ return result.snapshot()
 ```
 
 ```cascada
-// child.script — must also declare 'theme' to access it as shared state
+// child.script — must also declare 'theme' to use this.theme
 shared var theme = "dark"   // child default wins; base default is not evaluated
 
 extends "base.script"
@@ -2305,8 +2324,9 @@ await env.renderScript("child.script", {
 ```
 
 **`shared` rules:**
-- Every file that reads or writes a shared channel must declare it — parent declarations do not extend to child files.
+- Every file that accesses a shared channel via `this.<name>` must declare it — parent declarations do not extend to child files.
 - Only `shared` declarations are allowed before `extends`. Arbitrary `var` declarations before `extends` are not permitted.
+- Bare assignment to a declared shared name (`theme = value`) is a compile-time error. Use `this.theme = value`.
 - Re-declaring an existing shared channel with a different type is a fatal error. Re-declaring with the same type is a no-op.
 
 #### `method`: Inherited Dispatch
@@ -2345,8 +2365,8 @@ await env.renderScript("child.script", {
 **Method rules:**
 - `this.method(...)` participates in inheritance lookup. `this.method` without a call is a compile-time error.
 - Every overriding method declares its own argument list.
-- Methods return values via `return`. Methods cannot declare local channels, but they can read and write shared channels declared in the same file (including `shared data`, `shared text`, and `shared sequence`). They cannot read constructor-local variables.
-- Inside a method body, visible names are: explicit arguments, declared shared channels, composition payload values (by bare name), and render-context values when the `with context` contract applies (see below).
+- Methods return values via `return`. Shared channels are declared before `extends` at the top of the file; methods read and write them via `this.<name>`. Constructor-local variables (declared after `extends`) are not visible inside method bodies.
+- Composition payload values are accessible by bare name, and render-context values when `with context` applies (see below).
 
 #### `super()` and `super(...)`
 
@@ -2410,7 +2430,7 @@ await env.renderScript("child.script", {
 // "[Child/Acme] Ada: Q1 Report"
 ```
 
-Named arguments take precedence over render-context names when they share the same identifier. The default for a method is "without context" unless the base method explicitly declares `with context`. Child overrides and `super()` calls inherit that render-context visibility automatically — the child does not need to re-declare `with context` on its own signature.
+The default for a method is "without context" unless the base method explicitly declares `with context`. Child overrides and `super()` calls inherit that render-context visibility automatically — the child does not need to re-declare `with context`. Unlike shared channels, which require `this.<name>`, render-context values in a `with context` method are accessible as plain bare names.
 
 #### Direct Render
 

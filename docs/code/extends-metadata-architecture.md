@@ -522,19 +522,47 @@ The same principle applies to shared schema:
 
 - blocking bootstrap should produce final direct shared schema
 - normal execution should not depend on pending shared-schema entries
-- all shared channels used by a constructor, method, or block must be declared
-  as `shared` in that file
-- bare constructor/body channels that are not declared as `shared` are local to
-  that body and are not visible to methods
 
-This keeps method and shared metadata consistent:
-
-- both are structural
-- both are fully known before execution begins
+This keeps method and shared metadata consistent: both are structural and fully
+known before execution begins.
 
 There should be no ambiguous shared-name probing in the final model. A name is
-shared because the current file declares it as shared. It is not shared merely
-because an ancestor declares a channel with the same name.
+shared because the current file contributes it to the schema — either through an
+explicit declaration (scripts) or through compiler inference (templates). It is
+not shared merely because an ancestor declares a channel with the same name.
+
+### Script shared schema
+
+Scripts use explicit, typed per-file declarations:
+
+- every script file that reads or writes a shared channel must contain a
+  `shared` declaration for that name
+- the declaration is required for type disambiguation: the compiler must know
+  whether `this.name` is a `var`, `text`, `data`, or `sequence` channel to
+  emit the correct channel command
+- bare names (without `this.`) always follow ambient lookup in scripts, even
+  when a matching `shared` declaration exists in the same file
+- a bare assignment to a declared shared name is a compile-time error with a
+  migration message pointing to `this.<name> = ...`
+
+### Template shared schema
+
+Async inherited templates use compiler inference instead of explicit
+declarations:
+
+- the compiler scans the template AST for static `this.<root>` paths at
+  analysis time and infers each root name as a declaration-only `shared var`
+  entry
+- inferred entries are var-type only; templates do not expose typed shared
+  channels (`text`, `data`, `sequence`) through the `this.<name>` surface
+- these inferred entries participate in the same shared-schema metadata path as
+  explicit script declarations: they are registered during bootstrap and merged
+  into the chain-level shared schema
+- inference applies only to async templates that contain `extends` or `block`
+  nodes; plain async templates without inheritance nodes continue to treat `this`
+  as an ordinary render-context variable
+- dynamic `this[expression]` access is rejected as a compile-time structural
+  error in inheritance templates; only static string-key paths are inferred
 
 ## Components
 
@@ -574,6 +602,13 @@ Templates should use the same metadata principle:
 
 Text-output ownership still differs from scripts, but metadata resolution
 should not.
+
+Shared schema for async inherited templates is produced by compiler inference
+rather than explicit source declarations (see Script shared schema and Template
+shared schema above). The inferred entries feed into the same bootstrap metadata
+path as explicit script declarations and are registered before execution begins.
+From the runtime's perspective, inferred template shared-var entries and explicit
+script shared declarations are handled identically after bootstrap.
 
 This architecture applies to async templates and scripts only. The synchronous
 Nunjucks-compatible template path should remain unchanged.

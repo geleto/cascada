@@ -51,6 +51,10 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 | **Block Assignment**     | *(not available in scripts)*                               | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
 | **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
 | **Inherited Override**   | `method name(arg1, arg2)`<br>  `...`<br>`endmethod`        | `{% block name(arg1, arg2) %}`<br>  `...`<br>`{% endblock %}`                |
+| **Shared var declaration** | `shared var theme = "dark"`                              | *(inferred automatically — no declaration needed)*                           |
+| **Shared var write**     | `this.theme = "dark"`                                      | `{% set this.theme = "dark" %}`                                              |
+| **Shared var read**      | `this.theme`                                               | `{{ this.theme }}`                                                           |
+| **Nested shared var read** | `this.user.name`                                         | `{{ this.user.name }}`                                                       |
 | **Include**              | *(not supported in scripts)*                               | `{% include "file" %}`                                                       |
 | **Include with inputs**  | *(not supported in scripts)*                               | `{% include "file" with context, var1, var2 %}`                              |
 | **Import namespace**     | `import "file" as lib`                                     | `{% import "file" as lib %}`                                                 |
@@ -185,7 +189,7 @@ The full composition model — `extern`, `with`, `with context`, `extends ... wi
 **Template-specific notes:**
 
 - `include` is supported in templates (it is not available in scripts). It follows the same isolation and `with` rules as `import`.
-- Template inheritance uses `{% block name(args) %}` / `{% endblock %}` where scripts use `method name(args)` / `endmethod`.
+- Template inheritance uses `{% block name(args) %}` / `{% endblock %}` where scripts use `method name(args)` / `endmethod`. Both support `this.blockName(args)` / `this.methodName(args)` for calling an override via inherited dispatch.
 - `extern`, `with` clauses, and the explicit-contract model are **async-only**. In classic Nunjucks (sync) mode, `extern` is a compile error and templates retain implicit access to all parent-scope variables.
 
 ### Inheritance Example
@@ -227,6 +231,32 @@ What this shows:
 - `siteName` is visible inside both blocks because of `with context`, not because it is an explicit argument.
 - `theme` comes from the `extends ... with ...` composition boundary, not from block arguments or render context.
 
+### Shared State in Inherited Templates
+
+In async templates that use `extends` or `block`, the `this.<name>` surface provides shared `var` state across the hierarchy — the template equivalent of `shared var` in scripts.
+
+**Key differences from scripts:**
+
+- No `shared` declarations are needed. The compiler infers shared vars from static `this.<name>` paths in the template source.
+- Templates only have `var`-type values — there are no typed channels. Because the type is always `var`, the compiler can infer it and no declaration is needed.
+- In a plain template that does not contain `extends` or `block`, `this` is an ordinary render-context variable and `this.<name>` is a normal property lookup — inference does not apply.
+- Dynamic `this[expression]` is not supported in inheritance templates.
+
+```nunjucks
+{# base.njk #}
+{% block body %}
+  Theme: {{ this.theme }}
+{% endblock %}
+```
+
+```nunjucks
+{# child.njk #}
+{% extends "base.njk" %}
+{% set this.theme = "dark" %}
+```
+
+The child's `{% set this.theme = "dark" %}` writes the shared var before the constructor runs. The base's `{{ this.theme }}` inside the block reads it. Both templates infer `theme` automatically — no declaration required in either file.
+
 ## Variable Scoping
 
 | Construct | Classic Nunjucks / sync | Async Cascada Template |
@@ -250,7 +280,7 @@ The short version: in async mode every construct that can run concurrently gets 
 ### Template features not available in scripts
 
 * **Implicit text output**: scripts have no implicit text rendering; use a `text` channel and return `t.snapshot()`
-* **Block assignment** (`{% set var %}...{% endset %}`): not available in scripts; use a `text` channel instead
+* **Block assignment** (`{% set var %}...{% endset %}`): not available in scripts; use a `text` channel instead. Note: `{% set this.name = value %}` is distinct — it writes to the hierarchy's shared var `name`, not a block-captured text value.
 * **`{{ }}` interpolation and `{% %}` tags**: script syntax uses no delimiters
 
 ## When to Use Templates vs Script
