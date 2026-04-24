@@ -1273,18 +1273,18 @@ describe('Phase 8 - Component Lifecycle', function () {
             componentRootBuffer,
             componentContext
           );
-          runtime.runCompiledRootStartup(
-            null,
+          runtime.runCompiledRootStartup({
+            setup: null,
             compiledMethods,
-            inheritanceStateValue,
-            {},
-            componentContext,
             runtime,
-            () => {},
-            componentRootBuffer,
-            null,
-            null
-          );
+            env: {},
+            context: componentContext,
+            cb: () => {},
+            output: componentRootBuffer,
+            inheritanceState: inheritanceStateValue,
+            extendsState: null,
+            options: null
+          });
           events.push('startup-called');
           Promise.resolve().then(() => {
             events.push('finalize');
@@ -1560,3 +1560,4 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
   });
 });
+

@@ -323,13 +323,7 @@ class Template extends Obj {
   _getCompiledInheritanceSpec(props) {
     const spec = props.inheritanceSpec && typeof props.inheritanceSpec === 'object'
       ? props.inheritanceSpec
-      : {
-        setup: props.setup || null,
-        methods: props.methods || {},
-        sharedSchema: props.sharedSchema || {},
-        invokedMethods: props.invokedMethods || {},
-        hasExtends: !!props.hasExtends
-      };
+      : {};
     return {
       setup: spec.setup || null,
       methods: spec.methods || {},
@@ -341,26 +335,6 @@ class Template extends Obj {
 
   _getCompiledBlocks(props) {
     return this._getBlocks(props);
-  }
-
-  get setupRenderFunc() {
-    return this.inheritanceSpec ? this.inheritanceSpec.setup : null;
-  }
-
-  get methods() {
-    return this.inheritanceSpec ? this.inheritanceSpec.methods : {};
-  }
-
-  get sharedSchema() {
-    return this.inheritanceSpec ? this.inheritanceSpec.sharedSchema : {};
-  }
-
-  get invokedMethods() {
-    return this.inheritanceSpec ? this.inheritanceSpec.invokedMethods : {};
-  }
-
-  get hasExtends() {
-    return !!(this.inheritanceSpec && this.inheritanceSpec.hasExtends);
   }
 }
 

@@ -1288,11 +1288,18 @@ class CompilerAsync extends CompilerBaseAsync {
     );
     this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
     this.emit.line(`const extendsState = ${(!this.scriptMode && this.hasDynamicExtends) ? '{ parentSelection: null }' : 'null'};`);
-    this.emit.line(
-      `${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.runCompiledRootStartup(` +
-      `b___setup__, ${COMPILED_METHODS_VAR}, inheritanceState, env, context, runtime, cb, ${this.buffer.currentBuffer}, ` +
-      `${this.scriptMode ? 'null' : 'extendsState'}, { resolveExports: true });`
-    );
+    this.emit.line(`${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.runCompiledRootStartup({`);
+    this.emit.line('  setup: b___setup__,');
+    this.emit.line(`  compiledMethods: ${COMPILED_METHODS_VAR},`);
+    this.emit.line('  inheritanceState,');
+    this.emit.line('  env,');
+    this.emit.line('  context,');
+    this.emit.line('  runtime,');
+    this.emit.line('  cb,');
+    this.emit.line(`  output: ${this.buffer.currentBuffer},`);
+    this.emit.line(`  extendsState: ${this.scriptMode ? 'null' : 'extendsState'},`);
+    this.emit.line('  options: { resolveExports: true }');
+    this.emit.line('});');
     this.inheritance.emitAsyncRootCompletion(node);
   }
 

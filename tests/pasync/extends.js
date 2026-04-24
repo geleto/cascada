@@ -59,8 +59,8 @@ describe('Extends Runtime', function () {
 
       script.compile();
 
-      expect(script.methods.__constructor__.fn).to.be.a('function');
-      expect(script.methods.__constructor__.fn).not.to.be(script.rootRenderFunc);
+      expect(script.inheritanceSpec.methods.__constructor__.fn).to.be.a('function');
+      expect(script.inheritanceSpec.methods.__constructor__.fn).not.to.be(script.rootRenderFunc);
     });
 
     it('should run script constructor chaining in root-buffer source order', async function () {
@@ -1131,3 +1131,4 @@ describe('Extends Runtime', function () {
     });
   });
 });
+

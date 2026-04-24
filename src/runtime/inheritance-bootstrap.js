@@ -12,7 +12,7 @@ function _getCompiledInheritanceSpec(compiledTemplate) {
     compiledTemplate.inheritanceSpec &&
     typeof compiledTemplate.inheritanceSpec === 'object'
     ? compiledTemplate.inheritanceSpec
-    : compiledTemplate || {};
+    : {};
   return {
     setup: spec.setup || null,
     methods: spec.methods || {},
@@ -90,16 +90,17 @@ async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheri
   return parentOutputBuffer;
 }
 
-async function renderInheritanceParentRoot(
-  templateOrPromise,
-  compositionPayload,
-  context,
-  env,
-  runtimeApi,
-  cb,
-  currentBuffer,
-  inheritanceStateValue
-) {
+async function renderInheritanceParentRoot(spec) {
+  const {
+    templateOrPromise,
+    compositionPayload,
+    context,
+    env,
+    runtime: runtimeApi,
+    cb,
+    currentBuffer,
+    inheritanceState: inheritanceStateValue
+  } = spec || {};
   const parentTemplate = await runtimeApi.resolveSingle(templateOrPromise);
   if (parentTemplate === null || parentTemplate === undefined) {
     return null;
@@ -159,16 +160,17 @@ async function renderInheritanceParentRoot(
   }
 }
 
-async function bootstrapInheritanceParentScript(
-  scriptOrPromise,
-  compositionPayload,
-  context,
-  env,
-  runtimeApi,
-  cb,
-  currentBuffer,
-  inheritanceStateValue
-) {
+async function bootstrapInheritanceParentScript(spec) {
+  const {
+    scriptOrPromise,
+    compositionPayload,
+    context,
+    env,
+    runtime: runtimeApi,
+    cb,
+    currentBuffer,
+    inheritanceState: inheritanceStateValue
+  } = spec || {};
   const parentScript = await runtimeApi.resolveSingle(scriptOrPromise);
   if (parentScript === null || parentScript === undefined) {
     return null;
@@ -208,18 +210,18 @@ async function bootstrapInheritanceParentScript(
       runtimeApi.finalizeInheritanceMetadata(inheritanceStateValue, parentContext);
     }
 
-    const startupPromise = runtimeApi.runCompiledRootStartup(
-      parentInheritanceSpec.setup,
-      parentInheritanceSpec.methods,
-      inheritanceStateValue,
+    const startupPromise = runtimeApi.runCompiledRootStartup({
+      setup: parentInheritanceSpec.setup,
+      compiledMethods: parentInheritanceSpec.methods,
+      inheritanceState: inheritanceStateValue,
       env,
-      parentContext,
-      runtimeApi,
+      context: parentContext,
+      runtime: runtimeApi,
       cb,
-      currentBuffer,
-      null,
-      { resolveExports: true }
-    );
+      output: currentBuffer,
+      extendsState: null,
+      options: { resolveExports: true }
+    });
 
     if (startupPromise && typeof startupPromise.then === 'function') {
       await startupPromise;
@@ -279,24 +281,25 @@ function startInheritanceRootConstructor(
     : null;
 }
 
-function runCompiledRootStartup(
-  setupRenderFunc,
-  compiledMethods,
-  inheritanceStateValue,
-  env,
-  context,
-  runtime,
-  cb,
-  output,
-  extendsState = null,
-  options = null
-) {
+function runCompiledRootStartup(spec) {
+  const {
+    setup,
+    compiledMethods,
+    inheritanceState: inheritanceStateValue,
+    env,
+    context,
+    runtime,
+    cb,
+    output,
+    extendsState = null,
+    options = null
+  } = spec || {};
   const metadataReadyYield = inheritanceState.consumeInheritanceMetadataReadyYield(inheritanceStateValue);
   if (metadataReadyYield && typeof metadataReadyYield.then === 'function') {
-    return metadataReadyYield.then(() => runCompiledRootStartup(
-      setupRenderFunc,
+    return metadataReadyYield.then(() => runCompiledRootStartup({
+      setup,
       compiledMethods,
-      inheritanceStateValue,
+      inheritanceState: inheritanceStateValue,
       env,
       context,
       runtime,
@@ -304,14 +307,14 @@ function runCompiledRootStartup(
       output,
       extendsState,
       options
-    ));
+    }));
   }
 
   const opts = options && typeof options === 'object' ? options : {};
   let startupPromise = null;
 
-  if (typeof setupRenderFunc === 'function') {
-    startupPromise = setupRenderFunc(
+  if (typeof setup === 'function') {
+    startupPromise = setup(
       env,
       context,
       runtime,

@@ -543,10 +543,17 @@ class CompileInheritance {
     const helperName = this.compiler.scriptMode
       ? 'bootstrapInheritanceParentScript'
       : 'renderInheritanceParentRoot';
-    this.emit.line(
-      `${indent}await runtime.${helperName}(` +
-      `${templateExpr}, ${compositionPayloadExpr}, context, env, runtime, cb, ${currentBufferExpr}, inheritanceState);`
-    );
+    const targetKey = this.compiler.scriptMode ? 'scriptOrPromise' : 'templateOrPromise';
+    this.emit.line(`${indent}await runtime.${helperName}({`);
+    this.emit.line(`${indent}  ${targetKey}: ${templateExpr},`);
+    this.emit.line(`${indent}  compositionPayload: ${compositionPayloadExpr},`);
+    this.emit.line(`${indent}  context,`);
+    this.emit.line(`${indent}  env,`);
+    this.emit.line(`${indent}  runtime,`);
+    this.emit.line(`${indent}  cb,`);
+    this.emit.line(`${indent}  currentBuffer: ${currentBufferExpr},`);
+    this.emit.line(`${indent}  inheritanceState`);
+    this.emit.line(`${indent}});`);
   }
 
   _emitDynamicTemplateParentRender(indent = '') {
