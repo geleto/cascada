@@ -123,14 +123,14 @@ describe('Phase 8 - Component Method Calls', function () {
     loader.addTemplate('A.script', [
       'shared text log',
       'method build(name)',
-      '  log("build|" + name + "|")',
+      '  this.log("build|" + name + "|")',
       '  return "A-" + name',
       'endmethod'
     ].join('\n'));
     loader.addTemplate('C.script', [
       'shared text log',
       'extends "A.script"',
-      'log(waitAndGet("ctor|", 10))'
+      'this.log(waitAndGet("ctor|", 10))'
     ].join('\n'));
     loader.addTemplate('Main.script', [
       'component "C.script" as ns',
@@ -150,8 +150,8 @@ describe('Phase 8 - Component Method Calls', function () {
       'shared text log',
       'shared var theme = "parent"',
       'method applyTheme()',
-      '  theme = waitAndGet("dark", 10)',
-      '  log("apply|")',
+      '  this.theme = waitAndGet("dark", 10)',
+      '  this.log("apply|")',
       '  return "applied"',
       'endmethod'
     ].join('\n'));
@@ -160,13 +160,13 @@ describe('Phase 8 - Component Method Calls', function () {
       'shared var theme = "light"',
       'extends "A.script"',
       'method readTheme()',
-      '  log("read:" + theme + "|")',
-      '  return theme',
+      '  this.log("read:" + this.theme + "|")',
+      '  return this.theme',
       'endmethod',
       'method outer()',
       '  var first = this.applyTheme()',
       '  var second = this.readTheme()',
-      '  log("result:" + second + "|")',
+      '  this.log("result:" + second + "|")',
       '  return second',
       'endmethod'
     ].join('\n'));
@@ -203,8 +203,8 @@ describe('Phase 8 - Component Method Calls', function () {
       'shared text log',
       'method build(name)',
       '  record("method-start")',
-      '  log("start|")',
-      '  log(name)',
+      '  this.log("start|")',
+      '  this.log(name)',
       '  return "done"',
       'endmethod'
     ].join('\n'));
@@ -239,8 +239,8 @@ describe('Phase 8 - Component Method Calls', function () {
       'shared text log',
       'method build(name)',
       '  record("method-start")',
-      '  log("start|")',
-      '  log(name)',
+      '  this.log("start|")',
+      '  this.log(name)',
       '  return "done"',
       'endmethod'
     ].join('\n'));
@@ -418,8 +418,8 @@ describe('Phase 8 - Component Method Calls', function () {
         'shared text trace',
         'shared var late = "parent-default"',
         'method build()',
-        '  trace("method|")',
-        '  late = "from-parent"',
+        '  this.trace("method|")',
+        '  this.late = "from-parent"',
         '  return "done"',
         'endmethod'
       ].join('\n'));
@@ -457,7 +457,7 @@ describe('Phase 8 - Component Method Calls', function () {
       loader.addTemplate('A.script', [
         'shared var late = "parent-default"',
         'method build()',
-        '  late = waitAndGet("from-parent", 10)',
+        '  this.late = waitAndGet("from-parent", 10)',
         '  return "done"',
         'endmethod'
       ].join('\n'));
@@ -481,7 +481,7 @@ describe('Phase 8 - Component Method Calls', function () {
 
       loader.addTemplate('A.script', [
         'shared var late = "parent-default"',
-        'late = "from-parent-ctor"'
+        'this.late = "from-parent-ctor"'
       ].join('\n'));
       loader.addTemplate('C.script', [
         'extends "A.script"'
@@ -504,7 +504,7 @@ describe('Phase 8 - Component Method Calls', function () {
       loader.addTemplate('A.script', [
         'shared var status = "ok"',
         'method breakStatus()',
-        '  status = makePoison("bad parent status")',
+        '  this.status = makePoison("bad parent status")',
         '  return "done"',
         'endmethod'
       ].join('\n'));
@@ -598,9 +598,9 @@ describe('Phase 8 - Component Observations', function () {
     loader.addTemplate('Component.script', [
       'extern site',
       'shared text log',
-      'log(site + "|")',
+      'this.log(site + "|")',
       'method build(name)',
-      '  log(name)',
+      '  this.log(name)',
       '  return none',
       'endmethod'
     ].join('\n'));
@@ -625,14 +625,14 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.be('dark');
   });
 
-  it('should let component methods read shared vars as ordinary declared names', async function () {
+  it('should let component methods read shared vars through this', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
     loader.addTemplate('Component.script', [
       'shared var theme = "dark"',
       'method readTheme()',
-      '  return theme',
+      '  return this.theme',
       'endmethod'
     ].join('\n'));
     loader.addTemplate('Main.script', 'component "Component.script" as ns\nreturn ns.readTheme()');
@@ -648,7 +648,7 @@ describe('Phase 8 - Component Observations', function () {
     loader.addTemplate('Component.script', [
       'shared var theme = "dark"',
       'method setTheme(nextTheme)',
-      '  theme = nextTheme',
+      '  this.theme = nextTheme',
       'endmethod'
     ].join('\n'));
     loader.addTemplate('Main.script', [
@@ -669,9 +669,9 @@ describe('Phase 8 - Component Observations', function () {
 
     loader.addTemplate('Component.script', [
       'shared text log',
-      'log("boot|")',
+      'this.log("boot|")',
       'method add(item)',
-      '  log(item)',
+      '  this.log(item)',
       'endmethod'
     ].join('\n'));
     loader.addTemplate('Main.script', [
@@ -714,7 +714,7 @@ describe('Phase 8 - Component Observations', function () {
     loader.addTemplate('Component.script', [
       'shared var status = "ok"',
       'method breakStatus()',
-      '  status = makePoison("bad status")',
+      '  this.status = makePoison("bad status")',
       'endmethod'
     ].join('\n'));
     loader.addTemplate('Main.script', [
@@ -998,7 +998,7 @@ describe('Phase 8 - Component Observations', function () {
 
     loader.addTemplate('Component.script', [
       'shared text log',
-      'log("hello")'
+      'this.log("hello")'
     ].join('\n'));
     loader.addTemplate('Main.script', [
       'component "Component.script" as ns',
@@ -1020,7 +1020,7 @@ describe('Phase 8 - Component Observations', function () {
 
     loader.addTemplate('Component.script', [
       'shared text log',
-      'log("hello")'
+      'this.log("hello")'
     ].join('\n'));
     loader.addTemplate('Main.script', [
       'component "Component.script" as ns',
@@ -1063,9 +1063,9 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     loader.addTemplate('Component.script', [
       'shared text log',
-      'log("ctor|")',
+      'this.log("ctor|")',
       'method add(item)',
-      '  log(item)',
+      '  this.log(item)',
       'endmethod'
     ].join('\n'));
     loader.addTemplate('Main.script', [
@@ -1085,7 +1085,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     loader.addTemplate('A.script', [
       'shared text log',
-      'log("A|")'
+      'this.log("A|")'
     ].join('\n'));
     loader.addTemplate('C.script', [
       'extends "A.script"'
@@ -1105,7 +1105,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     loader.addTemplate('A.script', [
       'shared text log',
-      'log("A|")'
+      'this.log("A|")'
     ].join('\n'));
     loader.addTemplate('B.script', [
       'extends "A.script"'
@@ -1131,7 +1131,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     loader.addTemplate('Component.script', [
       'shared text log',
       'method add(item)',
-      '  log(waitAndGet(item, 20))',
+      '  this.log(waitAndGet(item, 20))',
       'endmethod'
     ].join('\n'));
     loader.addTemplate('Main.script', [
@@ -1153,7 +1153,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     loader.addTemplate('A.script', [
       'shared var theme = "parent"',
       'shared text log',
-      'log(waitAndGet(incomingTheme + "|", 10))',
+      'this.log(waitAndGet(incomingTheme + "|", 10))',
       'method read()',
       '  return incomingTheme',
       'endmethod'

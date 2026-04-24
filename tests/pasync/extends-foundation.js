@@ -346,18 +346,18 @@ describe('Extends Foundation', function () {
 
   describe('Phase 3 - Shared Channel Metadata and Lowering', function () {
     it('should lower shared declarations through the normal script compile path', function () {
-      const source = new Script('shared var theme = "dark"\nreturn theme', env, 'shared-lowering.casc')._compileSource();
+      const source = new Script('shared var theme = "dark"\nreturn this.theme', env, 'shared-lowering.casc')._compileSource();
 
       expect(source).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "theme", "var", context);');
       expect(source).to.contain('runtime.claimInheritanceSharedDefault(runtime.getInheritanceSharedBuffer(output, inheritanceState), "theme")');
       expect(source).to.contain('initializeIfNotSet: true');
     });
 
-    it('should lower declared shared bare reads through the declared-name path', function () {
+    it('should keep declared shared bare reads on the ambient lookup path', function () {
       const source = new Script('shared var theme = "dark"\nreturn theme', env, 'shared-declared-read.casc')._compileSource();
 
-      expect(source).to.contain('runtime.observeInheritanceSharedChannel(');
-      expect(source).to.not.contain('runtime.contextOrScriptChannelLookup(context, "theme"');
+      expect(source).to.contain('context.lookupScript("theme"');
+      expect(source).to.not.contain('runtime.observeInheritanceSharedChannel(');
     });
 
     it('should keep undeclared script bare reads on the ambient lookup path', function () {
@@ -389,14 +389,14 @@ describe('Extends Foundation', function () {
 
   describe('Phase 4 - Shared Channel Runtime Startup', function () {
     it('should apply a shared var default through normal script rendering', async function () {
-      const result = await env.renderScriptString('shared var theme = "dark"\nreturn theme', {});
+      const result = await env.renderScriptString('shared var theme = "dark"\nreturn this.theme', {});
 
       expect(result).to.be('dark');
     });
 
-    it('should preserve declaration-only shared vars and allow later plain assignment through normal script rendering', async function () {
-      const declarationOnly = await env.renderScriptString('shared var theme\nreturn theme', {});
-      const assigned = await env.renderScriptString('shared var theme\ntheme = "light"\nreturn theme', {});
+    it('should preserve declaration-only shared vars and allow later this.shared assignment through normal script rendering', async function () {
+      const declarationOnly = await env.renderScriptString('shared var theme\nreturn this.theme', {});
+      const assigned = await env.renderScriptString('shared var theme\nthis.theme = "light"\nreturn this.theme', {});
 
       expect(declarationOnly).to.be(undefined);
       expect(assigned).to.be('light');
@@ -433,7 +433,7 @@ describe('Extends Foundation', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
       loader.addTemplate('A.script', 'shared var theme = failDefault()\nreturn null');
-      loader.addTemplate('C.script', 'shared var theme = "child"\nextends "A.script"\nreturn theme');
+      loader.addTemplate('C.script', 'shared var theme = "child"\nextends "A.script"\nreturn this.theme');
 
       const result = await env.renderScript('C.script', {
         failDefault() {
@@ -448,7 +448,7 @@ describe('Extends Foundation', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
       loader.addTemplate('A.script', 'shared sequence db = failDefault()\nreturn null');
-      loader.addTemplate('C.script', 'shared sequence db = makeDb()\nextends "A.script"\nreturn db.get()');
+      loader.addTemplate('C.script', 'shared sequence db = makeDb()\nextends "A.script"\nreturn this.db.get()');
 
       const result = await env.renderScript('C.script', {
         makeDb() {
@@ -485,13 +485,103 @@ describe('Extends Foundation', function () {
       expect(result).to.be('parent-db');
     });
 
-    it('should let script methods read local shared vars as ordinary declared names', async function () {
+    it('should keep script method bare shared reads off the shared lookup path', async function () {
       const result = await env.renderScriptString(
         'shared var theme = "dark"\nmethod readTheme()\n  return theme\nendmethod\nreturn this.readTheme()',
-        {}
+        { theme: 'ambient' }
       );
 
-      expect(result).to.be('dark');
+      expect(result).to.be('ambient');
+    });
+
+    it('should keep top-level bare shared reads on the ambient lookup path', async function () {
+      const fromContext = await env.renderScriptString(
+        'shared var theme = "dark"\nreturn theme',
+        { theme: 'ambient' }
+      );
+
+      expect(fromContext).to.be('ambient');
+
+      try {
+        await env.renderScriptString('shared var theme = "dark"\nreturn theme', {});
+        expect().fail('Expected missing ambient bare shared read to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('Can not look up unknown variable/function: theme');
+      }
+    });
+
+    it('should keep bare shared text calls and snapshots on the ambient lookup path', async function () {
+      const callResult = await env.renderScriptString(
+        'shared text log\nreturn log("x")',
+        { log: (value) => `ambient:${value}` }
+      );
+      const snapshotResult = await env.renderScriptString(
+        'shared text log\nreturn log.snapshot()',
+        { log: { snapshot: () => 'ambient snapshot' } }
+      );
+
+      expect(callResult).to.be('ambient:x');
+      expect(snapshotResult).to.be('ambient snapshot');
+    });
+
+    it('should keep bare shared data operations on the ambient lookup path', async function () {
+      const result = await env.renderScriptString(
+        'shared data result\nreturn result.push("x")',
+        { result: { push: (value) => `ambient:${value}` } }
+      );
+
+      expect(result).to.be('ambient:x');
+    });
+
+    it('should keep bare shared error observations on the ambient lookup path', async function () {
+      const result = await env.renderScriptString(
+        [
+          'shared var status',
+          'this.status = makePoison("bad shared status")',
+          'return [status is error, status#]'
+        ].join('\n'),
+        {
+          status: 'ambient healthy',
+          makePoison: (message) => runtime.createPoison(new Error(message))
+        }
+      );
+
+      expect(result).to.eql([false, null]);
+    });
+
+    it('should reject ! on bare shared sequence names because ! is context-path only', async function () {
+      try {
+        await env.renderScriptString(
+          'shared sequence db = makeDb()\nreturn db!.insert("x")',
+          {
+            makeDb() {
+              return {
+                insert(value) {
+                  return `shared:${value}`;
+                }
+              };
+            },
+            db: {
+              insert(value) {
+                return `ambient:${value}`;
+              }
+            }
+          }
+        );
+        expect().fail('Expected ! on a declared shared sequence name to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+      }
+    });
+
+    it('should reject bare shared assignments in scripts', async function () {
+      try {
+        await env.renderScriptString('shared var theme\ntheme = "light"\nreturn this.theme', {});
+        expect().fail('Expected bare shared assignment to fail');
+      } catch (error) {
+        expect(String(error)).to.contain("Bare shared assignment to 'theme' is not supported");
+        expect(String(error)).to.contain('Use this.theme = ... instead');
+      }
     });
 
     it('should read and write shared vars through this.sharedName', async function () {
@@ -1091,7 +1181,7 @@ describe('Extends Foundation', function () {
 
     it('should record shared-root channel usage in compiled method metadata', function () {
       const script = new Script(
-        'shared var theme = "dark"\nshared text trace\nmethod build()\n  trace(theme)\n  return theme\nendmethod\nreturn null',
+        'shared var theme = "dark"\nshared text trace\nmethod build()\n  this.trace(this.theme)\n  return this.theme\nendmethod\nreturn null',
         env,
         'method-shared-root-metadata.script'
       );
@@ -1104,7 +1194,7 @@ describe('Extends Foundation', function () {
     });
 
     it('should expose __constructor__ in the compiled methods map with internal metadata', function () {
-      const script = new Script('shared text trace\nextends "A.script"\ntrace("x")\nreturn null', env, 'constructor-metadata.script');
+      const script = new Script('shared text trace\nextends "A.script"\nthis.trace("x")\nreturn null', env, 'constructor-metadata.script');
       script.compile();
 
       expect(script.inheritanceSpec.methods).to.be.ok();
@@ -1184,7 +1274,7 @@ describe('Extends Foundation', function () {
 
     it('should create inheritance state in the root body before bootstrapping metadata', function () {
       const source = new Script(
-        'shared var theme = "dark"\nreturn theme',
+        'shared var theme = "dark"\nreturn this.theme',
         env,
         'bootstrap-only.script'
       )._compileSource();
@@ -1348,7 +1438,7 @@ describe('Extends Foundation', function () {
 
     it('should resolve cyclic invoked method metadata without recursive expansion', function () {
       const script = new Script(
-        'shared text alphaTrace\nshared text betaTrace\nmethod alpha()\n  alphaTrace("a")\n  this.beta()\nendmethod\nmethod beta()\n  betaTrace("b")\n  this.alpha()\nendmethod\nreturn this.alpha()',
+        'shared text alphaTrace\nshared text betaTrace\nmethod alpha()\n  this.alphaTrace("a")\n  this.beta()\nendmethod\nmethod beta()\n  this.betaTrace("b")\n  this.alpha()\nendmethod\nreturn this.alpha()',
         env,
         'cyclic-invoked.script'
       );
@@ -1382,7 +1472,7 @@ describe('Extends Foundation', function () {
 
     it('should include invoked method footprints in caller-visible merged channels', function () {
       const script = new Script(
-        'shared var theme = "light"\nshared text trace\nmethod applyTheme()\n  theme = "dark"\n  trace("apply|")\nendmethod\nmethod readTheme()\n  trace(theme)\n  return theme\nendmethod\nmethod outer()\n  this.applyTheme()\n  return this.readTheme()\nendmethod\nreturn null',
+        'shared var theme = "light"\nshared text trace\nmethod applyTheme()\n  this.theme = "dark"\n  this.trace("apply|")\nendmethod\nmethod readTheme()\n  this.trace(this.theme)\n  return this.theme\nendmethod\nmethod outer()\n  this.applyTheme()\n  return this.readTheme()\nendmethod\nreturn null',
         env,
         'invoked-footprint.script'
       );
@@ -1412,7 +1502,7 @@ describe('Extends Foundation', function () {
         'C.script'
       );
       const parentScript = new Script(
-        'shared text trace\nmethod decorate()\n  trace("decorated|")\nendmethod\nmethod build()\n  this.decorate()\n  return "done"\nendmethod\nreturn null',
+        'shared text trace\nmethod decorate()\n  this.trace("decorated|")\nendmethod\nmethod build()\n  this.decorate()\n  return "done"\nendmethod\nreturn null',
         env,
         'A.script'
       );
@@ -1572,7 +1662,7 @@ describe('Extends Foundation', function () {
 
     it('should resolve unresolved constructor super metadata to a root-only empty constructor at the topmost root', function () {
       const script = new Script(
-        'shared text trace\nextends "A.script"\nsuper()\ntrace("done")\nreturn null',
+        'shared text trace\nextends "A.script"\nsuper()\nthis.trace("done")\nreturn null',
         env,
         'missing-constructor-super.script'
       );
@@ -1670,7 +1760,7 @@ describe('Extends Foundation', function () {
     });
 
     it('should compile script constructor metadata to a dedicated function target', function () {
-      const script = new Script('shared text trace\nextends "A.script"\ntrace("x")\nreturn trace.snapshot()', env, 'constructor-metadata.script');
+      const script = new Script('shared text trace\nextends "A.script"\nthis.trace("x")\nreturn this.trace.snapshot()', env, 'constructor-metadata.script');
       script.compile();
 
       expect(script.inheritanceSpec.methods.__constructor__).to.be.ok();
@@ -2075,12 +2165,12 @@ describe('Extends Foundation', function () {
 
     it('should share one resolved method metadata object before finalization publishes the direct table', async function () {
       const childScript = new Script(
-        'shared text trace\nmethod build(name)\n  trace("C|")\n  return super(name)\nendmethod\nreturn null',
+        'shared text trace\nmethod build(name)\n  this.trace("C|")\n  return super(name)\nendmethod\nreturn null',
         env,
         'C.script'
       );
       const parentScript = new Script(
-        'shared text trace\nmethod build(name)\n  trace("A|")\n  return name\nendmethod\nreturn null',
+        'shared text trace\nmethod build(name)\n  this.trace("A|")\n  return name\nendmethod\nreturn null',
         env,
         'A.script'
       );
@@ -2110,12 +2200,12 @@ describe('Extends Foundation', function () {
 
     it('should publish merged inherited method metadata directly after finalization', async function () {
       const childScript = new Script(
-        'shared text trace\nmethod build(name)\n  trace("C|")\n  return super(name)\nendmethod\nreturn null',
+        'shared text trace\nmethod build(name)\n  this.trace("C|")\n  return super(name)\nendmethod\nreturn null',
         env,
         'C.script'
       );
       const parentScript = new Script(
-        'shared text trace\nmethod build(name)\n  trace("A|")\n  return name\nendmethod\nreturn null',
+        'shared text trace\nmethod build(name)\n  this.trace("A|")\n  return name\nendmethod\nreturn null',
         env,
         'A.script'
       );
@@ -2419,7 +2509,7 @@ describe('Extends Foundation', function () {
 
       try {
         const result = await env.renderScriptString(
-          'shared var theme = "dark"\nmethod readTheme()\n  return theme\nendmethod\nmethod build()\n  return this.readTheme()\nendmethod\nreturn this.build()',
+          'shared var theme = "dark"\nmethod readTheme()\n  return this.theme\nendmethod\nmethod build()\n  return this.readTheme()\nendmethod\nreturn this.build()',
           {}
         );
 
@@ -2456,8 +2546,8 @@ describe('Extends Foundation', function () {
         'shared text trace',
         'shared var late = "parent-default"',
         'method build()',
-        '  trace("parent|")',
-        '  late = "from-parent"',
+        '  this.trace("parent|")',
+        '  this.late = "from-parent"',
         '  return "done"',
         'endmethod'
       ].join('\n'));
@@ -2483,7 +2573,7 @@ describe('Extends Foundation', function () {
 
     it('should compile callable entries to use direct callable-body metadata linking', function () {
       const script = new Script(
-        'shared var theme = "dark"\nmethod build()\n  return this.readTheme()\nendmethod\nmethod readTheme()\n  return theme\nendmethod\nreturn null',
+        'shared var theme = "dark"\nmethod build()\n  return this.readTheme()\nendmethod\nmethod readTheme()\n  return this.theme\nendmethod\nreturn null',
         env,
         'direct-body-linking.casc'
       );

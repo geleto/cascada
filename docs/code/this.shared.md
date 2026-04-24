@@ -833,7 +833,9 @@ Required updates:
     disambiguation
   - explain that shared defaults still read payload/context/global values by
     bare ambient lookup
-  - mark bare shared access as transitional / legacy
+  - document that bare shared access has been removed for scripts: bare reads,
+    calls, snapshots, `is error`, and `#` follow ordinary ambient lookup, while
+    bare assignments to a declared shared name fail with a migration message
 
 - `docs/cascada/template.md`
   - keep the template docs focused on template-specific differences instead of
@@ -858,14 +860,14 @@ Required updates:
 
 ### Pass 5: Bare Shared Access Deprecation / Removal
 
-This is a later migration pass, not part of the initial additive feature.
+This is the breaking/migration pass that removes script bare shared access.
 
 Long-term behavior:
 
 - scripts should use `this.<shared>` for shared access
 - bare identifiers should mean ordinary ambient lookup only
 
-Possible migration sequence:
+The planned migration sequence was:
 
 1. update docs and examples to use `this.<shared>`
 2. optionally emit warnings for bare shared access if the warning system can do
@@ -876,6 +878,18 @@ Possible migration sequence:
    from `sharedName` to `this.sharedName`
 5. remove bare shared access in a breaking/migration release
 6. keep undeclared bare names on the ambient lookup path
+
+Implementation decision for this pass:
+
+- script bare reads, calls, snapshots, `is error`, and `#` follow ordinary
+  ambient lookup only; they do not read or observe shared channels
+- `!` remains context-path-only; `db!.insert(...)` where `db` is a declared
+  shared sequence is rejected instead of being interpreted as either shared
+  sequence access or ambient access
+- script bare assignments to a declared shared name fail with a migration
+  message pointing to `this.<shared> = ...`
+- script `this.<shared>` remains the only shared-access surface
+- template `this.<name>` inference remains unchanged
 
 This pass applies to scripts only. Template `this.<name>` shared-var inference
 must remain fully operational and should not be weakened by removing script bare

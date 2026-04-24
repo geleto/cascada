@@ -52,7 +52,7 @@ describe('Extends Runtime', function () {
   describe('Phase 5 - Constructor Model', function () {
     it('should keep script constructors as dedicated method targets instead of aliasing root', function () {
       const script = new Script(
-        'shared text trace\nextends "A.script"\ntrace("post|")\nreturn trace.snapshot()',
+        'shared text trace\nextends "A.script"\nthis.trace("post|")\nreturn this.trace.snapshot()',
         env,
         'constructor-method-target.script'
       );
@@ -67,9 +67,9 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")\nreturn "A"');
-      loader.addTemplate('B.script', 'shared text trace\nextends "A.script"\ntrace("post-B|")');
-      loader.addTemplate('C.script', 'shared text trace\nextends "B.script"\ntrace("post-C|")\nreturn trace.snapshot()');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace("A|")\nreturn "A"');
+      loader.addTemplate('B.script', 'shared text trace\nextends "A.script"\nthis.trace("post-B|")');
+      loader.addTemplate('C.script', 'shared text trace\nextends "B.script"\nthis.trace("post-C|")\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('A|post-B|post-C|');
@@ -79,8 +79,8 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nreturn trace.snapshot()');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace("A|")');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('A|');
@@ -90,9 +90,9 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace("A|")');
       loader.addTemplate('B.script', 'extends "A.script"');
-      loader.addTemplate('C.script', 'shared text trace\nextends "B.script"\nreturn trace.snapshot()');
+      loader.addTemplate('C.script', 'shared text trace\nextends "B.script"\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('A|');
@@ -102,8 +102,8 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared var theme = "light"\nshared text trace\ntrace(theme)');
-      loader.addTemplate('C.script', 'shared var theme = "dark"\nshared text trace\nextends "A.script"\nreturn trace.snapshot()');
+      loader.addTemplate('A.script', 'shared var theme = "light"\nshared text trace\nthis.trace(this.theme)');
+      loader.addTemplate('C.script', 'shared var theme = "dark"\nshared text trace\nextends "A.script"\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('dark');
@@ -113,7 +113,7 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared var theme = "light"\ntheme = "dark"');
+      loader.addTemplate('A.script', 'shared var theme = "light"\nthis.theme = "dark"');
       loader.addTemplate('C.script', 'extends "A.script"\nmethod readTheme()\n  return theme\nendmethod\nreturn this.readTheme()');
 
       try {
@@ -154,8 +154,8 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace(waitAndGet("A|"))');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\ntrace("post|")\nreturn trace.snapshot()');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace(waitAndGet("A|"))');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nthis.trace("post|")\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {
         waitAndGet: (value) => new Promise((resolve) => setTimeout(() => resolve(value), 10))
@@ -167,9 +167,9 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace(theme)');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace(theme)');
       loader.addTemplate('B.script', 'extends "A.script"');
-      loader.addTemplate('C.script', 'shared text trace\nextends "B.script" with theme\nreturn trace.snapshot()');
+      loader.addTemplate('C.script', 'shared text trace\nextends "B.script" with theme\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', { theme: 'dark' });
       expect(result).to.be('dark');
@@ -179,8 +179,8 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace(theme)');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script" with theme\nreturn trace.snapshot()');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace(theme)');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script" with theme\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', { theme: 'dark' });
       expect(result).to.be('dark');
@@ -226,7 +226,7 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace("A|")');
       loader.addTemplate('C.script', 'extends "A.script"');
 
       const result = await env.renderScript('C.script', {});
@@ -238,7 +238,7 @@ describe('Extends Runtime', function () {
       env = new AsyncEnvironment(loader);
 
       loader.addTemplate('A.script', 'method noop()\n  return null\nendmethod');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nsuper()\ntrace("C|")\nreturn trace.snapshot()');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nsuper()\nthis.trace("C|")\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('C|');
@@ -285,8 +285,8 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace("A|")');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\ntrace("C|")');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace("A|")');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nthis.trace("C|")');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be(undefined);
@@ -406,8 +406,8 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\ntrace(this.build("Ada"))');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nmethod build(name)\n  return "child:" + name\nendmethod\nreturn trace.snapshot()');
+      loader.addTemplate('A.script', 'shared text trace\nthis.trace(this.build("Ada"))');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nmethod build(name)\n  return "child:" + name\nendmethod\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('child:Ada');
@@ -417,8 +417,8 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\nmethod build(name)\n  return waitAndGet("parent:" + name)\nendmethod\ntrace("A|")');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nvar label = this.build("Ada")\ntrace("post|")\ntrace(label)\nreturn trace.snapshot()');
+      loader.addTemplate('A.script', 'shared text trace\nmethod build(name)\n  return waitAndGet("parent:" + name)\nendmethod\nthis.trace("A|")');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nvar label = this.build("Ada")\nthis.trace("post|")\nthis.trace(label)\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {
         waitAndGet: (value) => new Promise((resolve) => setTimeout(() => resolve(value), 10))
@@ -467,8 +467,8 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'shared text trace\nmethod build(name)\n  trace("method|" + name + "|")\n  return "done:" + name\nendmethod');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\ntrace("before|")\nvar result = this.build("Ada")\ntrace("after|")\ntrace(result)\nreturn trace.snapshot()');
+      loader.addTemplate('A.script', 'shared text trace\nmethod build(name)\n  this.trace("method|" + name + "|")\n  return "done:" + name\nendmethod');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nthis.trace("before|")\nvar result = this.build("Ada")\nthis.trace("after|")\nthis.trace(result)\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
       expect(result).to.be('before|method|Ada|after|done:Ada');
@@ -482,8 +482,8 @@ describe('Extends Runtime', function () {
         'shared text trace',
         'shared var theme = "parent"',
         'method applyTheme()',
-        '  theme = waitAndGet("dark", 10)',
-        '  trace("apply|")',
+        '  this.theme = waitAndGet("dark", 10)',
+        '  this.trace("apply|")',
         '  return "applied"',
         'endmethod'
       ].join('\n'));
@@ -492,14 +492,14 @@ describe('Extends Runtime', function () {
         'shared var theme = "light"',
         'extends "A.script"',
         'method readTheme()',
-        '  trace("read:" + theme + "|")',
-        '  return theme',
+        '  this.trace("read:" + this.theme + "|")',
+        '  return this.theme',
         'endmethod',
         'method outer()',
         '  var first = this.applyTheme()',
         '  var second = this.readTheme()',
-        '  trace("result:" + second + "|")',
-        '  return trace.snapshot()',
+        '  this.trace("result:" + second + "|")',
+        '  return this.trace.snapshot()',
         'endmethod',
         'return this.outer()'
       ].join('\n'));
@@ -516,7 +516,7 @@ describe('Extends Runtime', function () {
       env = new AsyncEnvironment(loader);
 
       loader.addTemplate('A.script', 'method first()\n  return waitAndGet("first|", 20)\nendmethod\nmethod second()\n  return waitAndGet("second|", 0)\nendmethod');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\ntrace(this.first())\ntrace(this.second())\nreturn trace.snapshot()');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nthis.trace(this.first())\nthis.trace(this.second())\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {
         waitAndGet: (value, delay) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
@@ -550,7 +550,7 @@ describe('Extends Runtime', function () {
       env = new AsyncEnvironment(loader);
 
       loader.addTemplate('A.script', 'shared text trace\nreturn "A"');
-      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\ntrace(this.missing(waitAndGet("Ada")))\nreturn trace.snapshot()');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nthis.trace(this.missing(waitAndGet("Ada")))\nreturn this.trace.snapshot()');
 
       try {
         await env.renderScript('C.script', {
@@ -802,17 +802,17 @@ describe('Extends Runtime', function () {
         loader.addTemplate('A.script', [
           'shared text trace',
           'method build()',
-          '  trace("method|")',
+          '  this.trace("method|")',
           '  return "done"',
           'endmethod'
         ].join('\n'));
         loader.addTemplate('C.script', [
           'shared text trace',
           'extends "A.script"',
-          'trace("before|")',
+          'this.trace("before|")',
           'var result = this.build()',
-          'trace("after|")',
-          'return [result, trace.snapshot()]'
+          'this.trace("after|")',
+          'return [result, this.trace.snapshot()]'
         ].join('\n'));
 
         try {
@@ -859,18 +859,18 @@ describe('Extends Runtime', function () {
           'shared text trace',
           'shared var late = "parent-default"',
           'method build()',
-          '  trace("method|")',
-          '  late = "from-parent"',
+          '  this.trace("method|")',
+          '  this.late = "from-parent"',
           '  return "done"',
           'endmethod'
         ].join('\n'));
         loader.addTemplate('C.script', [
           'shared text trace',
           'extends "A.script"',
-          'trace("before|")',
+          'this.trace("before|")',
           'var result = this.build()',
-          'trace("after|")',
-          'return [result, trace.snapshot()]'
+          'this.trace("after|")',
+          'return [result, this.trace.snapshot()]'
         ].join('\n'));
 
         try {
@@ -921,7 +921,7 @@ describe('Extends Runtime', function () {
         loader.addTemplate('A.script', [
           'shared text trace',
           'method build()',
-          '  trace("parent|")',
+          '  this.trace("parent|")',
           '  return "done"',
           'endmethod'
         ].join('\n'));
@@ -929,13 +929,13 @@ describe('Extends Runtime', function () {
           'shared text trace',
           'extends "A.script"',
           'method build()',
-          '  trace("child-before|")',
+          '  this.trace("child-before|")',
           '  var result = super()',
-          '  trace("child-after|")',
+          '  this.trace("child-after|")',
           '  return result',
           'endmethod',
           'var result = this.build()',
-          'return [result, trace.snapshot()]'
+          'return [result, this.trace.snapshot()]'
         ].join('\n'));
 
         try {
@@ -986,8 +986,8 @@ describe('Extends Runtime', function () {
           'shared text trace',
           'shared var late = "parent-default"',
           'method build()',
-          '  trace("parent|")',
-          '  late = "from-parent"',
+          '  this.trace("parent|")',
+          '  this.late = "from-parent"',
           '  return "done"',
           'endmethod'
         ].join('\n'));
@@ -1020,18 +1020,18 @@ describe('Extends Runtime', function () {
         loader.addTemplate('A.script', [
           'shared text trace',
           'method build()',
-          '  trace(waitAndGet("method|", 10))',
+          '  this.trace(waitAndGet("method|", 10))',
           '  return "done"',
           'endmethod'
         ].join('\n'));
         loader.addTemplate('C.script', [
           'shared text trace',
           'extends "A.script"',
-          'trace("before|")',
+          'this.trace("before|")',
           'var result = this.build()',
-          'trace("after|")',
-          'trace(result)',
-          'return trace.snapshot()'
+          'this.trace("after|")',
+          'this.trace(result)',
+          'return this.trace.snapshot()'
         ].join('\n'));
 
         const result = await env.renderScript('C.script', {
@@ -1066,19 +1066,19 @@ describe('Extends Runtime', function () {
           'shared text trace',
           'shared var late = "parent-default"',
           'method build()',
-          '  late = "from-parent"',
-          '  trace("method|")',
+          '  this.late = "from-parent"',
+          '  this.trace("method|")',
           '  return "done"',
           'endmethod'
         ].join('\n'));
         loader.addTemplate('C.script', [
           'shared text trace',
           'extends "A.script"',
-          'trace("before|")',
+          'this.trace("before|")',
           'var result = this.build()',
-          'trace("after|")',
-          'trace(result)',
-          'return trace.snapshot()'
+          'this.trace("after|")',
+          'this.trace(result)',
+          'return this.trace.snapshot()'
         ].join('\n'));
 
         try {
@@ -1109,13 +1109,13 @@ describe('Extends Runtime', function () {
         try {
           loader.addTemplate('A.script', [
             'shared text trace',
-            'trace(waitAndGet("parent|", 10))',
+            'this.trace(waitAndGet("parent|", 10))',
             'return null'
           ].join('\n'));
           loader.addTemplate('C.script', [
             'shared text trace',
             'extends "A.script"',
-            'return trace.snapshot()'
+            'return this.trace.snapshot()'
           ].join('\n'));
 
           const result = await env.renderScript('C.script', {

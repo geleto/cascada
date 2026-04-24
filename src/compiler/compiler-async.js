@@ -164,9 +164,19 @@ class CompilerAsync extends CompilerBaseAsync {
       if (target instanceof nodes.Symbol) {
         target._analysis = { declarationTarget: true };
         const name = target.value;
+        const declaration = analysisPass.findDeclaration(node._analysis, name);
+        if (this.scriptMode && !isDeclaration && declaration && declaration.shared) {
+          this.fail(
+            `Bare shared assignment to '${name}' is not supported. Use this.${name} = ... instead.`,
+            target.lineno,
+            target.colno,
+            node,
+            target
+          );
+        }
         const shouldDeclareImplicitTemplateVar = !this.scriptMode &&
           !isDeclaration &&
-          !analysisPass.findDeclaration(node._analysis, name);
+          !declaration;
         if (isDeclaration || shouldDeclareImplicitTemplateVar) {
           declares.push({ name, type: 'var', initializer: null, explicit: !!isDeclaration });
         } else {

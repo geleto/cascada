@@ -74,7 +74,8 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    if (analysisPass.findDeclaration(node._analysis, name)) {
+    const declaration = analysisPass.findDeclaration(node._analysis, name);
+    if (declaration && !(this.scriptMode && declaration.shared)) {
       uses.push(name);
     }
 
@@ -88,6 +89,10 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
     const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
+    if (declaredOutput && this.scriptMode && declaredOutput.shared) {
+      this._compileScriptAmbientOnlySymbolLookup(node, name);
+      return;
+    }
     if (declaredOutput) {
       this._compileDeclaredSymbolLookup(node, name, declaredOutput);
       return;
@@ -717,7 +722,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
           const channelName = sequencePath[0];
           const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
-          if (!channelDecl) {
+          if (!channelDecl || channelDecl.shared) {
             return null;
           }
 
@@ -1067,6 +1072,14 @@ class CompilerBaseAsync extends CompilerCommon {
       ')');
   }
 
+  _compileScriptAmbientOnlySymbolLookup(node, name) {
+    this.emit(
+      `context.lookupScript("${name}", ` +
+      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
+      ')'
+    );
+  }
+
   _compileAsyncTemplateSymbolLookup(node, name) {
     const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
     const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
@@ -1291,6 +1304,9 @@ class CompilerBaseAsync extends CompilerCommon {
       const name = targetNode.value;
       const channelDecl = this.analysis.findDeclaration(targetNode._analysis, name);
       if (channelDecl) {
+        if (this.scriptMode && channelDecl.shared) {
+          return null;
+        }
         return name;
       }
       return null;
@@ -1301,6 +1317,9 @@ class CompilerBaseAsync extends CompilerCommon {
       if (candidate) {
         const channelDecl = this.analysis.findDeclaration(targetNode._analysis, candidate);
         if (channelDecl) {
+          if (this.scriptMode && channelDecl.shared) {
+            return null;
+          }
           return candidate;
         }
       }
