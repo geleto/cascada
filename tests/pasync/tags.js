@@ -121,10 +121,10 @@
         ]);
       });
 
-      it('should keep legacy blockContracts as an empty compatibility surface on compiled async templates', () => {
+      it('should not expose legacy blockContracts on compiled async templates', () => {
         const tmpl = new AsyncTemplate('{% block content(user) with context %}{{ user }}{% endblock %}', env);
         tmpl.compile();
-        expect(tmpl.blockContracts).to.eql({});
+        expect(tmpl).not.to.have.property('blockContracts');
       });
 
       it('should reject extern fallbacks that reference later externs', async () => {

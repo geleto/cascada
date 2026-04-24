@@ -5,6 +5,7 @@ let AsyncEnvironment;
 let Script;
 let StringLoader;
 let runtimeModule;
+let componentRuntimeModule;
 let InheritanceState;
 let inheritanceStateModule;
 let ComponentInstance;
@@ -21,11 +22,13 @@ if (typeof require !== 'undefined') {
   runtimeModule = require('../../src/runtime/runtime');
   try {
     const componentRuntime = require('../../src/runtime/component');
+    componentRuntimeModule = componentRuntime;
     ComponentInstance = componentRuntime.ComponentInstance;
     ComponentOperationCommand = componentRuntime.ComponentOperationCommand;
     ObserveSharedChannelCommand = componentRuntime.ObserveSharedChannelCommand;
   } catch (err) {
     void err;
+    componentRuntimeModule = null;
     ComponentInstance = null;
     ComponentOperationCommand = null;
     ObserveSharedChannelCommand = null;
@@ -49,6 +52,7 @@ if (typeof require !== 'undefined') {
   Script = null;
   StringLoader = window.util.StringLoader;
   runtimeModule = nunjucks.runtime;
+  componentRuntimeModule = null;
   InheritanceState = null;
   ComponentInstance = null;
   ComponentOperationCommand = null;
@@ -1275,7 +1279,12 @@ describe('Phase 8 - Component Lifecycle', function () {
     const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
-    const componentInstance = await runtimeModule.createComponentInstance(
+    if (!componentRuntimeModule) {
+      this.skip();
+      return;
+    }
+
+    const componentInstance = await componentRuntimeModule.createComponentInstance(
       {
         compile() {},
         rootRenderFunc() {},
@@ -1367,7 +1376,12 @@ describe('Phase 8 - Component Lifecycle', function () {
     };
     const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
 
-    await runtimeModule.createComponentInstance(
+    if (!componentRuntimeModule) {
+      this.skip();
+      return;
+    }
+
+    await componentRuntimeModule.createComponentInstance(
       {
         compile() {},
         rootRenderFunc() {},
@@ -1382,6 +1396,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       runtimeModule,
       () => {},
       ownerBuffer,
+      null,
       { lineno: 1, colno: 1, path: 'Main.script' }
     );
 
@@ -1405,8 +1420,13 @@ describe('Phase 8 - Component Lifecycle', function () {
     };
     const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
 
+    if (!componentRuntimeModule) {
+      this.skip();
+      return;
+    }
+
     try {
-      await runtimeModule.createComponentInstance(
+      await componentRuntimeModule.createComponentInstance(
         {
           compile() {},
           methods: {},
@@ -1420,6 +1440,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         runtimeModule,
         () => {},
         ownerBuffer,
+        null,
         { lineno: 1, colno: 1, path: 'Main.script' }
       );
       expect().fail('Expected createComponentInstance to reject');
@@ -1442,7 +1463,12 @@ describe('Phase 8 - Component Lifecycle', function () {
     };
     const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
 
-    const componentInstance = await runtimeModule.createComponentInstance(
+    if (!componentRuntimeModule) {
+      this.skip();
+      return;
+    }
+
+    const componentInstance = await componentRuntimeModule.createComponentInstance(
       {
         compile() {},
         rootRenderFunc(envArg, contextArg, runtimeArg, cbArg) {
@@ -1474,6 +1500,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         }
       },
       ownerBuffer,
+      null,
       { lineno: 1, colno: 1, path: 'Main.script' }
     );
 

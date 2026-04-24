@@ -772,8 +772,8 @@ Work:
   then use it for finalization-time metadata errors so they can report original
   call-site line/column instead of only the file path
 - consolidate finalization error aggregation so recoverable structural errors
-  from catalog wiring, cache prewarming, and footprint validation are collected
-  together; immediate throws should remain only for impossible invariants
+  from catalog wiring and footprint validation are collected together; immediate
+  throws should remain only for impossible invariants
 - keep impossible invalid-metadata invariant failures explicitly fail-fast, or
   document any cases that should be promoted into recoverable aggregation
 - add stable structural error codes for invalid inheritance metadata shapes once

@@ -835,7 +835,7 @@ function createInheritanceInvocationCommand(spec) {
 }
 
 function _assertDirectMethodData(inheritanceStateValue, methodName, errorContext = null) {
-  return _assertResolvedMethodData(getMethodData(inheritanceStateValue, methodName, errorContext));
+  return getMethodData(inheritanceStateValue, methodName, errorContext);
 }
 
 function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKey, errorContext = null) {
@@ -960,7 +960,6 @@ module.exports = {
   getMethodData,
   finalizeResolvedMethodMetadata,
   hasLinkedChannelPath,
-  getMethodLinkedChannels: _getMethodLinkedChannels,
   getCallableBodyLinkedChannels,
   resolveInheritanceSharedChannel,
   invokeInheritedMethod,

@@ -281,7 +281,10 @@ class Template extends Obj {
       props = func(globalRuntime);
     }
 
-    this.blockContracts = this._getCompiledBlockContracts(props);
+    const blockContracts = this._getCompiledBlockContracts(props);
+    if (blockContracts !== undefined) {
+      this.blockContracts = blockContracts;
+    }
     this.blocks = this._getCompiledBlocks(props);
     this.externSpec = props.externSpec || [];
     this.methods = props.methods || {};
@@ -289,7 +292,6 @@ class Template extends Obj {
     this.invokedMethods = props.invokedMethods || {};
     this.hasExtends = !!props.hasExtends;
     this.setupRenderFunc = props.setup || null;
-    this.scriptBodyRenderFunc = props.scriptBody || props.b___scriptBody__ || null;
     this.rootRenderFunc = props.root;
     this.compiled = true;
   }
@@ -310,7 +312,7 @@ class Template extends Obj {
       if (k.slice(0, 2) === 'b_') {
         const blockName = k.slice(2);
         blocks[blockName] = props[k];
-        blocks[blockName].blockContract = this.blockContracts[blockName] || null;
+        blocks[blockName].blockContract = (this.blockContracts && this.blockContracts[blockName]) || null;
         blocks[blockName].templatePath = this.path == null ? '__anonymous__' : String(this.path);
       }
     });
@@ -371,7 +373,7 @@ class AsyncTemplate extends Template {
     this.compile();
 
     const context = this._createContext(ctx, renderCtx);
-    this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+    this.rootRenderFunc(this.env, context, globalRuntime, cb, globalRuntime.REGULAR_COMPOSITION_MODE);
 
     const exported = context.getExported();
     const boundExported = {};
@@ -393,19 +395,15 @@ class AsyncTemplate extends Template {
    * Renders the template for composition, returning the output array synchronously.
    * While the output array may not be ready yet, it will be when the
    * composition buffer finishes.
-   * It sets the compositionMode argument of rootRenderFunc to true
+   * It sets the compositionMode argument of rootRenderFunc to regular composition mode.
    */
   _renderForComposition(ctx, cb, renderCtx) {
     this.compile();
     const context = this._createContext(ctx, renderCtx);
-    return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+    return this.rootRenderFunc(this.env, context, globalRuntime, cb, globalRuntime.REGULAR_COMPOSITION_MODE);
   }
 
-  _getCompiledBlockContracts() {
-    // Keep the async compatibility surface present-but-empty until the later
-    // cleanup phase makes a deliberate final decision about removing it.
-    return {};
-  }
+  _getCompiledBlockContracts() {}
 
   _getCompiledBlocks() {
     return {};

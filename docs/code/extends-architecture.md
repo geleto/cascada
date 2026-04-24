@@ -2,7 +2,7 @@
 
 This document is the high-level architecture for the current `extends` redesign.
 It incorporates the blocking metadata model from
-`extends-metadata-architecture.md` through Step 7.
+`extends-metadata-architecture.md` through Step 9.
 
 Older notes in `extends-architecture-raw.md` and early revisions of this file
 describe the previous runtime-pending metadata model. Those notes are now
@@ -298,9 +298,8 @@ Invoked-method cycles are valid call-graph metadata and are handled by the
 fixed-point merge. Parent-chain cycles are fatal structural bootstrap errors.
 
 Finalization collects recoverable structural metadata errors from catalog
-wiring, `super()` resolution, cache prewarming, and footprint validation before
-throwing. Immediate throws should remain for impossible invalid-metadata
-invariants.
+wiring, `super()` resolution, and footprint validation before throwing.
+Immediate throws should remain for impossible invalid-metadata invariants.
 
 ## Constructors and `extends`
 

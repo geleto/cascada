@@ -3,6 +3,10 @@
 const inheritanceState = require('./inheritance-state');
 const inheritanceCall = require('./inheritance-call');
 
+function _isComponentCompositionMode(mode) {
+  return !!(mode && mode.kind === 'component-composition-mode');
+}
+
 function bootstrapInheritanceMetadata(
   stateValue,
   methods,
@@ -52,7 +56,7 @@ function bootstrapInheritanceMetadata(
 }
 
 async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheritanceStateValue, compositionMode) {
-  if (compositionMode === inheritanceState.COMPONENT_COMPOSITION_MODE) {
+  if (_isComponentCompositionMode(compositionMode)) {
     return parentOutputBuffer;
   }
 
@@ -106,7 +110,7 @@ async function renderInheritanceParentRoot(
     const parentCompositionMode = inheritanceState.isInheritanceCompositionMode(
       inheritanceStateValue,
       runtimeApi.COMPONENT_COMPOSITION_MODE
-    ) ? runtimeApi.COMPONENT_COMPOSITION_MODE : true;
+    ) ? runtimeApi.COMPONENT_COMPOSITION_MODE : runtimeApi.REGULAR_COMPOSITION_MODE;
     const parentOutputBuffer = parentTemplate.rootRenderFunc(
       env,
       parentContext,
@@ -219,15 +223,6 @@ function getLocalRootConstructorEntry(compiledMethods) {
   return methods && Object.prototype.hasOwnProperty.call(methods, '__constructor__')
     ? methods.__constructor__
     : null;
-}
-
-function invokeLocalRootConstructor(compiledMethods, env, context, runtime, cb, output, inheritanceStateValue, extendsState = null) {
-  const entry = getLocalRootConstructorEntry(compiledMethods);
-  const fn = entry && entry.fn;
-  if (typeof fn !== 'function') {
-    return null;
-  }
-  return fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState);
 }
 
 function startInheritanceRootConstructor(
@@ -416,11 +411,8 @@ function finalizeInheritanceMetadata(state, context = null) {
 module.exports = {
   bootstrapInheritanceMetadata,
   bootstrapInheritanceParentScript,
-  invokeLocalRootConstructor,
-  startInheritanceRootConstructor,
   runCompiledRootStartup,
   renderInheritanceParentRoot,
-  waitForParentRootRender,
   linkCurrentBufferToParentChannels,
   getInheritanceSharedBuffer,
   finalizeInheritanceMetadata

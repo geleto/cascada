@@ -1438,9 +1438,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`const ${COMPILED_INVOKED_METHODS_VAR} = ${invokedMethods};`);
     this.emit.line('return {');
     this.emit.line('setup: b___setup__,');
-    if (rootCompileResult.hasGenericScriptBody) {
-      this.emit.line('scriptBody: b___scriptBody__,');
-    }
     rootCompileResult.blocks.forEach((block) => {
       const blockName = `b_${block.name.value}`;
       this.emit.line(`${blockName}: ${blockName},`);

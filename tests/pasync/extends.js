@@ -701,7 +701,7 @@ describe('Extends Runtime', function () {
         { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
       );
 
-      const methodMeta = runtime.getMethodData(
+      const methodMeta = inheritanceCallModule.getMethodData(
         inheritanceState,
         'build',
         { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }

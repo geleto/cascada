@@ -9,6 +9,7 @@ const inheritanceState = require('./inheritance-state');
 const { createCommandBuffer } = require('./command-buffer');
 const { RuntimeFatalError } = require('./errors');
 
+const REGULAR_COMPOSITION_MODE = Object.freeze({ kind: 'regular-composition-mode' });
 const COMPONENT_COMPOSITION_MODE = Object.freeze({ kind: 'component-composition-mode' });
 
 function _createComponentError(message, errorContext = null) {
@@ -167,6 +168,14 @@ function _enqueueSharedObservation(instance, observationCommand, errorContext = 
   return command.promise;
 }
 
+async function _resolveComponentInstance(bindingValue, errorContext = null) {
+  const resolvedValue = await resolveSingle(bindingValue);
+  if (!(resolvedValue instanceof ComponentInstance)) {
+    throw _createComponentError('Component binding is not a component instance', errorContext);
+  }
+  return resolvedValue;
+}
+
 class ComponentOperationCommand extends Command {
   constructor({
     operation,
@@ -190,14 +199,6 @@ class ComponentOperationCommand extends Command {
     this.isObservable = false;
   }
 
-  async _resolveComponentInstance(bindingValue) {
-    const resolvedValue = await resolveSingle(bindingValue);
-    if (!(resolvedValue instanceof ComponentInstance)) {
-      throw _createComponentError('Component binding is not a component instance', this.errorContext);
-    }
-    return resolvedValue;
-  }
-
   apply(outputChannel) {
     const bindingValue = outputChannel && typeof outputChannel._getTarget === 'function'
       ? outputChannel._getTarget()
@@ -215,7 +216,7 @@ class ComponentOperationCommand extends Command {
 
   async _run(bindingValue) {
     try {
-      const instance = await this._resolveComponentInstance(bindingValue);
+      const instance = await _resolveComponentInstance(bindingValue, this.errorContext);
       let result;
 
       if (this.operation === 'method') {
@@ -305,14 +306,6 @@ class ObserveSharedChannelCommand extends Command {
     this.isObservable = false;
   }
 
-  async _resolveComponentInstance(bindingValue) {
-    const resolvedValue = await resolveSingle(bindingValue);
-    if (!(resolvedValue instanceof ComponentInstance)) {
-      throw _createComponentError('Component binding is not a component instance', this.errorContext);
-    }
-    return resolvedValue;
-  }
-
   apply(outputChannel) {
     const bindingValue = outputChannel && typeof outputChannel._getTarget === 'function'
       ? outputChannel._getTarget()
@@ -322,7 +315,7 @@ class ObserveSharedChannelCommand extends Command {
 
   async _run(bindingValue) {
     try {
-      const instance = await this._resolveComponentInstance(bindingValue);
+      const instance = await _resolveComponentInstance(bindingValue, this.errorContext);
       const result = await _enqueueSharedObservation(
         instance,
         this.observationCommand,
@@ -349,11 +342,6 @@ async function createComponentInstance(
   bindingName = null,
   errorContext = null
 ) {
-  if (bindingName && typeof bindingName === 'object' && errorContext === null) {
-    errorContext = bindingName;
-    bindingName = null;
-  }
-
   const template = await resolveSingle(templateOrPromise);
   if (!template) {
     throw _createComponentError('Component target did not resolve to a script or template', errorContext);
@@ -463,14 +451,6 @@ async function createComponentInstance(
   return instance;
 }
 
-function _enqueueComponentOperation(command, currentBuffer, bindingName) {
-  if (!currentBuffer) {
-    throw new Error('Component operations require a current buffer');
-  }
-  currentBuffer.add(command, bindingName);
-  return command.promise;
-}
-
 function startComponentInstance(
   currentBuffer,
   bindingName,
@@ -493,7 +473,11 @@ function startComponentInstance(
     bindingName,
     errorContext
   });
-  return _enqueueComponentOperation(command, currentBuffer, bindingName);
+  if (!currentBuffer) {
+    throw new Error('Component operations require a current buffer');
+  }
+  currentBuffer.add(command, bindingName);
+  return command.promise;
 }
 
 function callComponentMethod(bindingName, currentBuffer, methodName, args, runtime, cb, errorContext = null) {
@@ -505,7 +489,11 @@ function callComponentMethod(bindingName, currentBuffer, methodName, args, runti
     cb,
     errorContext
   });
-  return _enqueueComponentOperation(command, currentBuffer, bindingName);
+  if (!currentBuffer) {
+    throw new Error('Component operations require a current buffer');
+  }
+  currentBuffer.add(command, bindingName);
+  return command.promise;
 }
 
 function observeComponentChannel(bindingName, currentBuffer, observationCommand, errorContext = null, implicitVarRead = false) {
@@ -517,10 +505,15 @@ function observeComponentChannel(bindingName, currentBuffer, observationCommand,
     errorContext,
     implicitVarRead
   });
-  return _enqueueComponentOperation(command, currentBuffer, bindingName || observationChannelName);
+  if (!currentBuffer) {
+    throw new Error('Component operations require a current buffer');
+  }
+  currentBuffer.add(command, bindingName || observationChannelName);
+  return command.promise;
 }
 
 module.exports = {
+  REGULAR_COMPOSITION_MODE,
   COMPONENT_COMPOSITION_MODE,
   ComponentInstance,
   ComponentOperationCommand,

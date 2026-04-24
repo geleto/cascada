@@ -618,11 +618,11 @@ describe('Extends Foundation', function () {
       expect(Object.prototype.hasOwnProperty.call(script.methods, '__constructor__')).to.be(false);
     });
 
-    it('should expose the shared script body helper explicitly without leaking it into compiled blocks', function () {
+    it('should keep the shared script body helper out of the public compiled surface', function () {
       const script = new Script('var label = "ok"\nreturn label', env, 'plain-body.script');
       script.compile();
 
-      expect(typeof script.scriptBodyRenderFunc).to.be('function');
+      expect(script).not.to.have.property('scriptBodyRenderFunc');
       expect(script.blocks).not.to.have.property('__scriptBody__');
       expect(script.blocks).not.to.have.property('__constructor__');
     });
@@ -651,7 +651,7 @@ describe('Extends Foundation', function () {
       const script = new Script(
         'method build()\n  this.lookup()\nendmethod\nreturn null',
         env,
-        'pending-helper-method-body.script'
+        'invoked-metadata-method-body.script'
       );
       script.compile();
 
@@ -664,7 +664,7 @@ describe('Extends Foundation', function () {
       const script = new Script(
         'extends "A.script" with theme\nmethod build()\n  super()\nendmethod\nreturn this.lookup()',
         env,
-        'pending-helper-source.script'
+        'invoked-metadata-source.script'
       );
       script.compile();
 
@@ -800,16 +800,16 @@ describe('Extends Foundation', function () {
 
       expect(inheritanceState.invokedMethods.render.fn).to.be(parentScript.methods.render.fn);
       expect(inheritanceState.invokedMethods.decorate.fn).to.be(inheritanceState.methods.decorate.fn);
-      expect(inheritanceState.invokedMethods.build).to.be(runtime.getMethodData(inheritanceState, 'build'));
+      expect(inheritanceState.invokedMethods.build).to.be(inheritanceCallModule.getMethodData(inheritanceState, 'build'));
       expect(inheritanceState.invokedMethods.build.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
       expect(inheritanceState.invokedMethods.build.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
       expect(inheritanceState.methods.build._resolvedMethodData.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
       expect(inheritanceState.methods.build._resolvedMethodData.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
 
-      const buildData = runtime.getMethodData(inheritanceState, 'build');
+      const buildData = inheritanceCallModule.getMethodData(inheritanceState, 'build');
       expect(buildData.invokedMethods.render.ownerKey).to.be('A.script');
       expect(buildData.invokedMethods.decorate.ownerKey).to.be('C.script');
-      expect(Object.keys(runtime.getMethodData(inheritanceState, 'decorate').invokedMethods)).to.eql([]);
+      expect(Object.keys(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').invokedMethods)).to.eql([]);
     });
 
     it('should fail finalization when invoked method metadata cannot resolve a target', function () {
@@ -856,8 +856,8 @@ describe('Extends Foundation', function () {
       );
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'cyclic-invoked.script' });
 
-      const alphaData = runtime.getMethodData(inheritanceState, 'alpha');
-      const betaData = runtime.getMethodData(inheritanceState, 'beta');
+      const alphaData = inheritanceCallModule.getMethodData(inheritanceState, 'alpha');
+      const betaData = inheritanceCallModule.getMethodData(inheritanceState, 'beta');
       expect(inheritanceState.invokedMethods.alpha).to.be(alphaData);
       expect(inheritanceState.invokedMethods.beta).to.be(betaData);
       expect(alphaData.invokedMethods.beta).to.be(betaData);
@@ -887,7 +887,7 @@ describe('Extends Foundation', function () {
       );
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invoked-footprint.script' });
 
-      const outerData = runtime.getMethodData(inheritanceState, 'outer');
+      const outerData = inheritanceCallModule.getMethodData(inheritanceState, 'outer');
       expect(outerData.mergedUsedChannels).to.contain('theme');
       expect(outerData.mergedMutatedChannels).to.contain('theme');
       expect(outerData.mergedMutatedChannels).to.contain('trace');
@@ -926,7 +926,7 @@ describe('Extends Foundation', function () {
       );
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'C.script' });
 
-      const buildData = runtime.getMethodData(inheritanceState, 'build');
+      const buildData = inheritanceCallModule.getMethodData(inheritanceState, 'build');
       expect(buildData.ownerKey).to.be('C.script');
       expect(buildData.super.ownerKey).to.be('A.script');
       expect(buildData.mergedMutatedChannels).to.contain('trace');
@@ -1125,7 +1125,7 @@ describe('Extends Foundation', function () {
       runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, script.invokedMethods);
 
       expect(() => {
-        runtime.resolveInheritanceSharedChannel(inheritanceState, 'theme', {
+        inheritanceCallModule.resolveInheritanceSharedChannel(inheritanceState, 'theme', {
           path: 'missing-shared.script'
         });
       }).to.throwException(/Shared channel 'theme' was not found/);
@@ -1476,7 +1476,7 @@ describe('Extends Foundation', function () {
       );
       runtime.finalizeInheritanceMetadata(state, { path: 'C.script' });
 
-      const resolvedBuild = runtime.getMethodData(state, 'build');
+      const resolvedBuild = inheritanceCallModule.getMethodData(state, 'build');
 
       expect(reusedState).to.be(state);
       expect(resolvedBuild).to.be.ok();
@@ -1515,7 +1515,7 @@ describe('Extends Foundation', function () {
         parentScript.invokedMethods
       );
 
-      const resolvedTheme = runtime.resolveInheritanceSharedChannel(state, 'theme');
+      const resolvedTheme = inheritanceCallModule.resolveInheritanceSharedChannel(state, 'theme');
 
       expect(resolvedTheme).to.be.ok();
       expect(resolvedTheme).to.be('var');
@@ -1554,7 +1554,7 @@ describe('Extends Foundation', function () {
         script.invokedMethods
       );
       try {
-        runtime.resolveInheritanceSharedChannel(state, 'theme', {
+        inheritanceCallModule.resolveInheritanceSharedChannel(state, 'theme', {
           lineno: 5,
           colno: 7,
           path: 'dispatch.script',
@@ -1598,8 +1598,8 @@ describe('Extends Foundation', function () {
         parentScript.invokedMethods
       );
 
-      const resolvedBuildA = runtime.getMethodData(state, 'build');
-      const resolvedBuildB = runtime.getMethodData(state, 'build');
+      const resolvedBuildA = inheritanceCallModule.getMethodData(state, 'build');
+      const resolvedBuildB = inheritanceCallModule.getMethodData(state, 'build');
 
       expect(resolvedBuildA).to.be(resolvedBuildB);
       expect(state.methods.build._resolvedMethodData).to.be(resolvedBuildA);
@@ -1633,8 +1633,8 @@ describe('Extends Foundation', function () {
         parentScript.invokedMethods
       );
 
-      const resolvedBuild = runtime.getMethodData(state, 'build');
-      const resolvedAgain = runtime.getMethodData(state, 'build');
+      const resolvedBuild = inheritanceCallModule.getMethodData(state, 'build');
+      const resolvedAgain = inheritanceCallModule.getMethodData(state, 'build');
 
       expect(resolvedAgain).to.be(resolvedBuild);
       expect(state.methods.build._resolvedMethodData).to.be(resolvedBuild);
@@ -1646,7 +1646,7 @@ describe('Extends Foundation', function () {
       const state = runtime.createInheritanceState();
 
       try {
-        runtime.getMethodData(state, 'missing', {
+        inheritanceCallModule.getMethodData(state, 'missing', {
           lineno: 2,
           colno: 4,
           path: 'dispatch.script',
@@ -2002,6 +2002,8 @@ describe('Extends Foundation', function () {
       const source = script._compileSource();
 
       expect(source).to.contain('runtime.getCallableBodyLinkedChannels(methodData,');
+      // The callable entry must ask for the body-local transitive footprint,
+      // not the invocation-only channel list used for parent dispatch.
       expect(source).to.not.contain('runtime.getMethodLinkedChannels(methodData)');
     });
   });
