@@ -620,10 +620,8 @@ class CompileInheritance {
     this._emitAsyncCompositionRootCompletion(node);
   }
 
-  _emitExtendsCompositionPayload(node, extendsVarsVar, extendsExternInputNamesVar, extendsExternContextVar, extendsRootContextVar, payloadVar) {
+  _emitExtendsCompositionPayload(node, extendsVarsVar, extendsExternContextVar, extendsRootContextVar, payloadVar) {
     this.emit.line(`const ${payloadVar} = inheritanceState && inheritanceState.compositionPayload ? inheritanceState.compositionPayload : {`);
-    this.emit.line(`  explicitInputValues: ${extendsVarsVar},`);
-    this.emit.line(`  explicitInputNames: ${extendsExternInputNamesVar},`);
     this.emit.line(`  rootContext: ${extendsRootContextVar},`);
     this.emit.line(`  externContext: ${extendsExternContextVar}`);
     this.emit.line('};');
@@ -634,19 +632,17 @@ class CompileInheritance {
 
   _prepareAsyncExtendsCompositionPayload(node, emitInputCapture) {
     const extendsVarsVar = this.compiler._tmpid();
-    const extendsExternInputNamesVar = this.compiler._tmpid();
     const extendsExternContextVar = this.compiler._tmpid();
     const extendsRootContextVar = this.compiler._tmpid();
     const compositionPayloadVar = this.compiler._tmpid();
 
     this.emit.line(`const ${extendsVarsVar} = {};`);
     emitInputCapture(extendsVarsVar);
-    this._emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, extendsExternInputNamesVar, !!node.withContext);
+    this._emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, null, !!node.withContext);
     this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
     this._emitExtendsCompositionPayload(
       node,
       extendsVarsVar,
-      extendsExternInputNamesVar,
       extendsExternContextVar,
       extendsRootContextVar,
       compositionPayloadVar
@@ -654,7 +650,6 @@ class CompileInheritance {
 
     return {
       extendsVarsVar,
-      extendsExternInputNamesVar,
       extendsExternContextVar,
       extendsRootContextVar,
       compositionPayloadVar

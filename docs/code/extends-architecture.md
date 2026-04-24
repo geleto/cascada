@@ -30,9 +30,11 @@ selection happens only at `extends`, not through later constructor-time control
 flow. The selected parent may still come from a dynamic expression at that
 site.
 
-Per-template state is the compiled JS shape. Per-instance state is that same
-compiled JS running for one render after a blocking inheritance bootstrap has
-loaded the full chain and built direct method/shared metadata.
+Per-template state is the compiled JS shape. Inheritance-specific compiled
+state lives under `inheritanceSpec` instead of being spread across top-level
+template properties. Per-instance state is that same compiled JS running for one
+render after a blocking inheritance bootstrap has loaded the full chain and
+built direct method/shared metadata.
 
 The shared metadata object has the final shape:
 
@@ -151,10 +153,11 @@ Finalized method metadata includes:
 callable footprint: the callable's own channels, its reachable `super()` chain,
 and all ordinary inherited methods it may invoke.
 
-Compiled files also expose a file-level `invokedMethods` catalog containing
-every ordinary inherited method name referenced anywhere in the file. Bootstrap
-resolves that catalog once against the final method table, then gives each
-callable its filtered direct map.
+Compiled files expose an `inheritanceSpec` descriptor containing `setup`,
+`methods`, `sharedSchema`, `invokedMethods`, and `hasExtends`. The file-level
+`invokedMethods` catalog contains every ordinary inherited method name
+referenced anywhere in the file. Bootstrap resolves that catalog once against
+the final method table, then gives each callable its filtered direct map.
 
 ### Shared-Channel Entries
 

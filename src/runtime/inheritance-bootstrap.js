@@ -7,6 +7,21 @@ function _isComponentCompositionMode(mode) {
   return !!(mode && mode.kind === 'component-composition-mode');
 }
 
+function _getCompiledInheritanceSpec(compiledTemplate) {
+  const spec = compiledTemplate &&
+    compiledTemplate.inheritanceSpec &&
+    typeof compiledTemplate.inheritanceSpec === 'object'
+    ? compiledTemplate.inheritanceSpec
+    : compiledTemplate || {};
+  return {
+    setup: spec.setup || spec.setupRenderFunc || null,
+    methods: spec.methods || {},
+    sharedSchema: spec.sharedSchema || {},
+    invokedMethods: spec.invokedMethods || {},
+    hasExtends: !!spec.hasExtends
+  };
+}
+
 function bootstrapInheritanceMetadata(
   stateValue,
   methods,
@@ -176,19 +191,20 @@ async function bootstrapInheritanceParentScript(
         )
       : context.forkForPath(parentScript.path);
 
-    if (typeof parentScript.setupRenderFunc !== 'function') {
+    const parentInheritanceSpec = _getCompiledInheritanceSpec(parentScript);
+    if (typeof parentInheritanceSpec.setup !== 'function') {
       throw new Error('Parent script did not expose a compiled setupRenderFunc');
     }
 
     runtimeApi.bootstrapInheritanceMetadata(
       inheritanceStateValue,
-      parentScript.methods || {},
-      parentScript.sharedSchema || {},
-      parentScript.invokedMethods || {},
+      parentInheritanceSpec.methods,
+      parentInheritanceSpec.sharedSchema,
+      parentInheritanceSpec.invokedMethods,
       currentBuffer,
       parentContext
     );
-    if (!parentScript.hasExtends) {
+    if (!parentInheritanceSpec.hasExtends) {
       runtimeApi.finalizeInheritanceMetadata(inheritanceStateValue, parentContext);
       // Give metadata-ready waiters released by finalization one turn to
       // enqueue before this parent starts constructor/startup work.
@@ -196,8 +212,8 @@ async function bootstrapInheritanceParentScript(
     }
 
     const startupPromise = runtimeApi.runCompiledRootStartup(
-      parentScript.setupRenderFunc,
-      parentScript.methods || {},
+      parentInheritanceSpec.setup,
+      parentInheritanceSpec.methods,
       inheritanceStateValue,
       env,
       parentContext,

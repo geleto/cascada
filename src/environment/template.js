@@ -287,11 +287,7 @@ class Template extends Obj {
     }
     this.blocks = this._getCompiledBlocks(props);
     this.externSpec = props.externSpec || [];
-    this.methods = props.methods || {};
-    this.sharedSchema = props.sharedSchema || {};
-    this.invokedMethods = props.invokedMethods || {};
-    this.hasExtends = !!props.hasExtends;
-    this.setupRenderFunc = props.setup || null;
+    this.inheritanceSpec = this._getCompiledInheritanceSpec(props);
     this.rootRenderFunc = props.root;
     this.compiled = true;
   }
@@ -321,11 +317,50 @@ class Template extends Obj {
   }
 
   _getCompiledBlockContracts(props) {
-    return props.blockContracts || {};
+    return props.blockContracts;
+  }
+
+  _getCompiledInheritanceSpec(props) {
+    const spec = props.inheritanceSpec && typeof props.inheritanceSpec === 'object'
+      ? props.inheritanceSpec
+      : {
+        setup: props.setup || null,
+        methods: props.methods || {},
+        sharedSchema: props.sharedSchema || {},
+        invokedMethods: props.invokedMethods || {},
+        hasExtends: !!props.hasExtends
+      };
+    return {
+      setup: spec.setup || null,
+      methods: spec.methods || {},
+      sharedSchema: spec.sharedSchema || {},
+      invokedMethods: spec.invokedMethods || {},
+      hasExtends: !!spec.hasExtends
+    };
   }
 
   _getCompiledBlocks(props) {
     return this._getBlocks(props);
+  }
+
+  get setupRenderFunc() {
+    return this.inheritanceSpec ? this.inheritanceSpec.setup : null;
+  }
+
+  get methods() {
+    return this.inheritanceSpec ? this.inheritanceSpec.methods : {};
+  }
+
+  get sharedSchema() {
+    return this.inheritanceSpec ? this.inheritanceSpec.sharedSchema : {};
+  }
+
+  get invokedMethods() {
+    return this.inheritanceSpec ? this.inheritanceSpec.invokedMethods : {};
+  }
+
+  get hasExtends() {
+    return !!(this.inheritanceSpec && this.inheritanceSpec.hasExtends);
   }
 }
 
@@ -402,8 +437,6 @@ class AsyncTemplate extends Template {
     const context = this._createContext(ctx, renderCtx);
     return this.rootRenderFunc(this.env, context, globalRuntime, cb, globalRuntime.REGULAR_COMPOSITION_MODE);
   }
-
-  _getCompiledBlockContracts() {}
 
   _getCompiledBlocks() {
     return {};

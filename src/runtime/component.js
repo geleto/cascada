@@ -25,26 +25,16 @@ function _createComponentError(message, errorContext = null) {
 function _normalizeComponentPayload(payload) {
   if (!payload || typeof payload !== 'object') {
     return {
-      explicitInputValues: {},
-      explicitInputNames: [],
       rootContext: {},
       externContext: {}
     };
   }
 
   if (
-    Object.prototype.hasOwnProperty.call(payload, 'explicitInputValues') ||
-    Object.prototype.hasOwnProperty.call(payload, 'explicitInputNames') ||
     Object.prototype.hasOwnProperty.call(payload, 'rootContext') ||
     Object.prototype.hasOwnProperty.call(payload, 'externContext')
   ) {
     return {
-      explicitInputValues: payload.explicitInputValues && typeof payload.explicitInputValues === 'object'
-        ? payload.explicitInputValues
-        : {},
-      explicitInputNames: Array.isArray(payload.explicitInputNames)
-        ? payload.explicitInputNames.slice()
-        : Object.keys(payload.explicitInputValues || {}),
       rootContext: payload.rootContext && typeof payload.rootContext === 'object'
         ? payload.rootContext
         : {},
@@ -55,8 +45,6 @@ function _normalizeComponentPayload(payload) {
   }
 
   return {
-    explicitInputValues: payload,
-    explicitInputNames: Object.keys(payload),
     rootContext: Object.assign({}, payload),
     externContext: Object.assign({}, payload)
   };
@@ -74,15 +62,11 @@ class ComponentInstance {
     context,
     rootBuffer,
     inheritanceState: inheritanceStateValue,
-    template,
-    ownerBuffer,
     env
   }) {
     this.context = context;
     this.rootBuffer = rootBuffer;
     this.inheritanceState = inheritanceStateValue;
-    this.template = template;
-    this.ownerBuffer = ownerBuffer || null;
     this.env = env || null;
     this.closed = false;
     this.startupError = null;
@@ -382,8 +366,6 @@ async function createComponentInstance(
     context: componentContext,
     rootBuffer: componentRootBuffer,
     inheritanceState: componentInheritanceState,
-    template,
-    ownerBuffer,
     env
   });
 

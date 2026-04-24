@@ -224,8 +224,9 @@ The callable-local `invokedMethods` map cannot be built in isolation.
 
 We also need a file-level catalog during bootstrap.
 
-Each compiled file should expose, in addition to `methods` and `sharedSchema`,
-an inheritance-call catalog for the whole file:
+Each compiled file should expose one `inheritanceSpec` descriptor containing
+`setup`, `methods`, `sharedSchema`, `invokedMethods`, and `hasExtends`.
+The `invokedMethods` member is the inheritance-call catalog for the whole file:
 
 - `invokedMethods`
   - file-level object map of ordinary inherited method names referenced
@@ -248,12 +249,16 @@ Compiled file-level shape:
 
 ```js
 {
-  methods: { ... },
-  sharedSchema: { ... },
-  invokedMethods: {
-    build: "build",
-    readTheme: "readTheme",
-    applyTheme: "applyTheme"
+  inheritanceSpec: {
+    setup: b___setup__,
+    methods: { ... },
+    sharedSchema: { ... },
+    invokedMethods: {
+      build: "build",
+      readTheme: "readTheme",
+      applyTheme: "applyTheme"
+    },
+    hasExtends: true
   }
 }
 ```

@@ -895,7 +895,6 @@ class CompilerAsync extends CompilerBaseAsync {
     const targetName = node.target.value;
     const componentTemplateVar = this.inheritance._compileAsyncGetTemplateOrScript(node, true, false);
     const componentVarsVar = this._tmpid();
-    const explicitInputNamesVar = this._tmpid();
     const externContextVar = this._tmpid();
     const rootContextVar = this._tmpid();
     const payloadVar = this._tmpid();
@@ -909,7 +908,7 @@ class CompilerAsync extends CompilerBaseAsync {
       node,
       componentVarsVar,
       externContextVar,
-      explicitInputNamesVar,
+      null,
       !!node.withContext
     );
     this.inheritance._emitCompositionContextObject(
@@ -920,8 +919,6 @@ class CompilerAsync extends CompilerBaseAsync {
       true
     );
     this.emit.line(`const ${payloadVar} = {`);
-    this.emit.line(`  explicitInputValues: ${componentVarsVar},`);
-    this.emit.line(`  explicitInputNames: ${explicitInputNamesVar},`);
     this.emit.line(`  rootContext: ${rootContextVar},`);
     this.emit.line(`  externContext: ${externContextVar}`);
     this.emit.line('};');
@@ -1437,16 +1434,18 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
     this.emit.line(`const ${COMPILED_INVOKED_METHODS_VAR} = ${invokedMethods};`);
     this.emit.line('return {');
-    this.emit.line('setup: b___setup__,');
     rootCompileResult.blocks.forEach((block) => {
       const blockName = `b_${block.name.value}`;
       this.emit.line(`${blockName}: ${blockName},`);
     });
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
-    this.emit.line(`methods: ${COMPILED_METHODS_VAR},`);
-    this.emit.line(`sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
-    this.emit.line(`invokedMethods: ${COMPILED_INVOKED_METHODS_VAR},`);
-    this.emit.line(`hasExtends: ${this.hasExtends ? 'true' : 'false'},`);
+    this.emit.line('inheritanceSpec: {');
+    this.emit.line('  setup: b___setup__,');
+    this.emit.line(`  methods: ${COMPILED_METHODS_VAR},`);
+    this.emit.line(`  sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
+    this.emit.line(`  invokedMethods: ${COMPILED_INVOKED_METHODS_VAR},`);
+    this.emit.line(`  hasExtends: ${this.hasExtends ? 'true' : 'false'}`);
+    this.emit.line('},');
     this.emit.line('root: root\n};');
   }
 

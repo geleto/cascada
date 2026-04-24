@@ -770,9 +770,7 @@ describe('Phase 8 - Component Observations', function () {
     const componentInstance = new ComponentInstance({
       context: makeContext('Component.script'),
       rootBuffer: sharedRootBuffer,
-      inheritanceState,
-      template: null,
-      ownerBuffer
+      inheritanceState
     });
 
     ownerBuffer.add(new runtimeModule.VarCommand({
@@ -1335,8 +1333,6 @@ describe('Phase 8 - Component Lifecycle', function () {
       context: { path: 'Component.script' },
       rootBuffer: { markFinishedAndPatchLinks() {} },
       inheritanceState: {},
-      template: null,
-      ownerBuffer: null
     });
 
     componentInstance.close();

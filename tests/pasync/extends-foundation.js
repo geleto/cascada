@@ -2109,16 +2109,16 @@ describe('Extends Foundation', function () {
         'payload-shape.njk'
       )._compileSource();
 
-      expect(scriptSource).to.contain('explicitInputValues');
-      expect(scriptSource).to.contain('explicitInputNames');
       expect(scriptSource).to.contain('rootContext');
       expect(scriptSource).to.contain('externContext');
+      expect(scriptSource).to.not.contain('explicitInputValues');
+      expect(scriptSource).to.not.contain('explicitInputNames');
       expect(scriptSource).to.not.contain('runtime.startParentConstructor(');
 
-      expect(dynamicTemplateSource).to.contain('explicitInputValues');
-      expect(dynamicTemplateSource).to.contain('explicitInputNames');
       expect(dynamicTemplateSource).to.contain('rootContext');
       expect(dynamicTemplateSource).to.contain('externContext');
+      expect(dynamicTemplateSource).to.not.contain('explicitInputValues');
+      expect(dynamicTemplateSource).to.not.contain('explicitInputNames');
       expect(dynamicTemplateSource).to.not.contain('runtime.setExtendsComposition(');
     });
 
