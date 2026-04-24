@@ -191,8 +191,6 @@ function _buildResolvedMethodDataBase(entry) {
     fn: entry.fn,
     ownerKey: entry.ownerKey || null,
     signature: _normalizeMethodSignature(entry.signature, null),
-    ownUsedChannels,
-    ownMutatedChannels,
     mergedUsedChannels: ownUsedChannels,
     mergedMutatedChannels: ownMutatedChannels,
     super: null,
@@ -210,7 +208,7 @@ function _finalizeResolvedMethodData(resolvedData, entry, superData = null, invo
     superData ? superData.mergedUsedChannels : null
   );
   resolvedData.mergedMutatedChannels = _mergeChannelNames(
-    resolvedData.ownMutatedChannels,
+    resolvedData.mergedMutatedChannels,
     superData ? superData.mergedMutatedChannels : null
   );
   return resolvedData;
@@ -222,9 +220,7 @@ function _isResolvedMethodData(value) {
     typeof value === 'object' &&
     typeof value.fn === 'function' &&
     Array.isArray(value.mergedUsedChannels) &&
-    Array.isArray(value.mergedMutatedChannels) &&
-    value.invokedMethods &&
-    typeof value.invokedMethods === 'object'
+    Array.isArray(value.mergedMutatedChannels)
   );
 }
 
@@ -462,25 +458,6 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
   const resolvedMethodData = _assertResolvedMethodData(methodData);
   if (resolvedMethodData.super && !_isResolvedMethodData(resolvedMethodData.super)) {
     throw _createInvalidSuperMetadataError(resolvedMethodData, errorContext);
-  }
-  const invokedMethods = resolvedMethodData.invokedMethods && typeof resolvedMethodData.invokedMethods === 'object'
-    ? resolvedMethodData.invokedMethods
-    : Object.create(null);
-  const invokedNames = Object.keys(invokedMethods);
-
-  for (let i = 0; i < invokedNames.length; i++) {
-    const invokedName = invokedNames[i];
-    const invokedMethodData = invokedMethods[invokedName];
-    if (!invokedMethodData) {
-      throw _createInheritanceFatalError(
-        `Inherited method '${invokedName}' was not found`,
-        inheritanceState.ERR_INHERITED_METHOD_NOT_FOUND,
-        errorContext
-      );
-    }
-    if (!_isResolvedMethodData(invokedMethodData)) {
-      throw _createInvalidInvokedMetadataError(resolvedMethodData, invokedName, errorContext);
-    }
   }
 
   return _getMethodLinkedChannels(resolvedMethodData);

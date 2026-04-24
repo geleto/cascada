@@ -408,22 +408,46 @@ class AsyncTemplate extends Template {
     this.compile();
 
     const context = this._createContext(ctx, renderCtx);
-    this.rootRenderFunc(this.env, context, globalRuntime, cb, globalRuntime.REGULAR_COMPOSITION_MODE);
-
-    const exported = context.getExported();
-    const boundExported = {};
-    const macroContext = context;
-
-    for (const name in exported) {
-      const item = exported[name];
-      if (typeof item === 'function' && item.isMacro) {
-        boundExported[name] = item.bind(macroContext);
-      } else {
-        boundExported[name] = item;
+    let rootError = null;
+    const renderCallback = (err) => {
+      if (err) {
+        rootError = err;
+        if (typeof cb === 'function') {
+          cb(err);
+        }
       }
-    }
+    };
+    const output = this.rootRenderFunc(
+      this.env,
+      context,
+      globalRuntime,
+      renderCallback,
+      globalRuntime.REGULAR_COMPOSITION_MODE
+    );
 
-    return boundExported;
+    return (async () => {
+      if (output && typeof output.getFinishedPromise === 'function') {
+        await output.getFinishedPromise();
+      }
+      if (rootError) {
+        throw rootError;
+      }
+
+      const exported = context.getExported();
+      const boundExported = {};
+      const macroContext = context;
+
+      for (const name in exported) {
+        const item = exported[name];
+        if (typeof item === 'function' && item.isMacro) {
+          boundExported[name] = item.bind(macroContext);
+        } else {
+          boundExported[name] = item;
+        }
+      }
+
+      return boundExported;
+    })();
   }
 
   /**

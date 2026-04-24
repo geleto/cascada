@@ -798,18 +798,13 @@ describe('Extends Foundation', function () {
       );
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'C.script' });
 
-      expect(inheritanceState.invokedMethods.render.fn).to.be(parentScript.methods.render.fn);
-      expect(inheritanceState.invokedMethods.decorate.fn).to.be(inheritanceState.methods.decorate.fn);
-      expect(inheritanceState.invokedMethods.build).to.be(inheritanceCallModule.getMethodData(inheritanceState, 'build'));
-      expect(inheritanceState.invokedMethods.build.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
-      expect(inheritanceState.invokedMethods.build.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
-      expect(inheritanceState.methods.build._resolvedMethodData.invokedMethods.render).to.be(inheritanceState.invokedMethods.render);
-      expect(inheritanceState.methods.build._resolvedMethodData.invokedMethods.decorate).to.be(inheritanceState.invokedMethods.decorate);
+      expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
 
       const buildData = inheritanceCallModule.getMethodData(inheritanceState, 'build');
-      expect(buildData.invokedMethods.render.ownerKey).to.be('A.script');
-      expect(buildData.invokedMethods.decorate.ownerKey).to.be('C.script');
-      expect(Object.keys(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').invokedMethods)).to.eql([]);
+      expect(buildData.mergedUsedChannels).to.be.an(Array);
+      expect(buildData.mergedMutatedChannels).to.be.an(Array);
+      expect(buildData.invokedMethods).to.be(undefined);
+      expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').invokedMethods).to.be(undefined);
     });
 
     it('should fail finalization when invoked method metadata cannot resolve a target', function () {
@@ -858,10 +853,9 @@ describe('Extends Foundation', function () {
 
       const alphaData = inheritanceCallModule.getMethodData(inheritanceState, 'alpha');
       const betaData = inheritanceCallModule.getMethodData(inheritanceState, 'beta');
-      expect(inheritanceState.invokedMethods.alpha).to.be(alphaData);
-      expect(inheritanceState.invokedMethods.beta).to.be(betaData);
-      expect(alphaData.invokedMethods.beta).to.be(betaData);
-      expect(betaData.invokedMethods.alpha).to.be(alphaData);
+      expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
+      expect(alphaData.invokedMethods).to.be(undefined);
+      expect(betaData.invokedMethods).to.be(undefined);
       expect(alphaData.mergedMutatedChannels).to.contain('alphaTrace');
       expect(alphaData.mergedMutatedChannels).to.contain('betaTrace');
       expect(betaData.mergedMutatedChannels).to.contain('alphaTrace');
@@ -1076,7 +1070,7 @@ describe('Extends Foundation', function () {
       runtime.bootstrapInheritanceMetadata(inheritanceState, script.methods, script.sharedSchema, script.invokedMethods);
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-constructor-super.script' });
 
-      const resolvedSuper = inheritanceState.methods.__constructor__.super;
+      const resolvedSuper = inheritanceCallModule.getMethodData(inheritanceState, '__constructor__').super;
       expect(resolvedSuper).to.be.ok();
       expect(resolvedSuper.signature).to.eql({ argNames: [], withContext: false });
       expect(resolvedSuper.ownerKey).to.be('missing-constructor-super.script');
@@ -1382,13 +1376,12 @@ describe('Extends Foundation', function () {
       );
 
       runtime.finalizeInheritanceMetadata(inheritanceState, context);
-      const resolvedCatalogEntry = inheritanceState.invokedMethods.helper;
-      const resolvedLocalEntry = inheritanceState.methods.build._resolvedMethodData.invokedMethods.helper;
+      const resolvedBuildEntry = inheritanceState.methods.build._resolvedMethodData;
 
       runtime.finalizeInheritanceMetadata(inheritanceState, context);
 
-      expect(inheritanceState.invokedMethods.helper).to.be(resolvedCatalogEntry);
-      expect(inheritanceState.methods.build._resolvedMethodData.invokedMethods.helper).to.be(resolvedLocalEntry);
+      expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
+      expect(inheritanceState.methods.build._resolvedMethodData).to.be(resolvedBuildEntry);
     });
   });
 
@@ -1841,38 +1834,25 @@ describe('Extends Foundation', function () {
       ]);
     });
 
-    it('should fail callable-body linking when direct invoked-method metadata is missing', function () {
+    it('should use finalized callable-body channels without retained invoked-method metadata', function () {
       if (!inheritanceCallModule) {
         this.skip();
         return;
       }
 
-      try {
-        inheritanceCallModule.getCallableBodyLinkedChannels({
-          fn() {
-            return null;
-          },
-          ownerKey: 'Main.script',
-          signature: { argNames: [], withContext: false },
-          ownUsedChannels: ['localRead'],
-          ownMutatedChannels: [],
-          mergedUsedChannels: [],
-          mergedMutatedChannels: [],
-          super: null,
-          invokedMethods: {
-            helper: null
-          }
-        }, {
-          lineno: 4,
-          colno: 2,
-          path: 'Main.script',
-          errorContextString: 'method body linking'
-        });
-        expect().fail('Expected missing direct invoked-method metadata to fail');
-      } catch (error) {
-        expect(error.code).to.be('ERR_INHERITED_METHOD_NOT_FOUND');
-        expect(String(error)).to.contain("Inherited method 'helper' was not found");
-      }
+      const linkedChannels = inheritanceCallModule.getCallableBodyLinkedChannels({
+        fn() {
+          return null;
+        },
+        ownerKey: 'Main.script',
+        signature: { argNames: [], withContext: false },
+        mergedUsedChannels: ['localRead'],
+        mergedMutatedChannels: ['localWrite'],
+        super: null
+      });
+
+      expect(linkedChannels).to.contain('localRead');
+      expect(linkedChannels).to.contain('localWrite');
     });
 
     it('should fail callable-body linking when direct super metadata is malformed', function () {
@@ -1909,7 +1889,7 @@ describe('Extends Foundation', function () {
       }
     });
 
-    it('should use direct invoked-method metadata during real callable entry linking', async function () {
+    it('should use finalized transitive channels during real callable entry linking', async function () {
       const originalGetCallableBodyLinkedChannels = runtime.getCallableBodyLinkedChannels;
       let seenLinkedChannels = null;
 
@@ -1917,8 +1897,7 @@ describe('Extends Foundation', function () {
         const channels = originalGetCallableBodyLinkedChannels.apply(this, arguments);
         if (
           methodData &&
-          methodData.invokedMethods &&
-          methodData.invokedMethods.readTheme
+          channels.indexOf('theme') !== -1
         ) {
           seenLinkedChannels = {
             channels: channels.slice().sort(),

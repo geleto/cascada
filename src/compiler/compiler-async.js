@@ -1434,10 +1434,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
     this.emit.line(`const ${COMPILED_INVOKED_METHODS_VAR} = ${invokedMethods};`);
     this.emit.line('return {');
-    rootCompileResult.blocks.forEach((block) => {
-      const blockName = `b_${block.name.value}`;
-      this.emit.line(`${blockName}: ${blockName},`);
-    });
     this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line('inheritanceSpec: {');
     this.emit.line('  setup: b___setup__,');

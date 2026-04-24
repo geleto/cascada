@@ -119,9 +119,6 @@ function ensureInheritanceInternalState(state) {
         metadataReadySettled: false,
         metadataReadyResolved: false,
         metadataReadyYieldPending: false,
-        // Counts registrations only. It is reset on settlement and only drives
-        // whether one post-finalization yield is needed.
-        metadataReadyWaiterCount: 0,
         compositionMode: null,
         chainPathStack: []
       }
@@ -204,8 +201,7 @@ function resolveInheritanceMetadataReadiness(state, value = state) {
   if (internalState.metadataReadyResolve) {
     internalState.metadataReadyResolve(value);
   }
-  internalState.metadataReadyYieldPending = internalState.metadataReadyWaiterCount > 0;
-  internalState.metadataReadyWaiterCount = 0;
+  internalState.metadataReadyYieldPending = true;
   internalState.metadataReadyPromise = Promise.resolve(value);
   internalState.metadataReadyResolve = null;
   internalState.metadataReadyReject = null;
@@ -223,7 +219,6 @@ function rejectInheritanceMetadataReadiness(state, error) {
     internalState.metadataReadyReject(error);
   }
   internalState.metadataReadyYieldPending = false;
-  internalState.metadataReadyWaiterCount = 0;
   internalState.metadataReadyPromise = Promise.reject(error);
   internalState.metadataReadyPromise.catch(() => {});
   internalState.metadataReadyResolve = null;
@@ -236,14 +231,10 @@ function awaitInheritanceMetadataReadiness(state) {
   if (!internalState || internalState.metadataReadySettled) {
     return null;
   }
-  if (
-    internalState.metadataReadyPromise &&
+  return internalState.metadataReadyPromise &&
     typeof internalState.metadataReadyPromise.then === 'function'
-  ) {
-    internalState.metadataReadyWaiterCount += 1;
-    return internalState.metadataReadyPromise;
-  }
-  return null;
+    ? internalState.metadataReadyPromise
+    : null;
 }
 
 function isInheritanceMetadataReadinessResolved(state) {
@@ -310,6 +301,50 @@ function leaveInheritanceChainPath(state, token) {
   if (index !== -1) {
     internalState.chainPathStack.splice(index, 1);
   }
+}
+
+function _pruneResolvedMethodData(methodData, seen) {
+  if (!methodData || typeof methodData !== 'object' || seen.has(methodData)) {
+    return;
+  }
+  seen.add(methodData);
+  _pruneResolvedMethodData(methodData.super, seen);
+  delete methodData.ownUsedChannels;
+  delete methodData.ownMutatedChannels;
+  delete methodData.invokedMethods;
+}
+
+function _pruneRawMethodEntry(entry, seenEntries, seenResolved) {
+  if (!entry || typeof entry !== 'object' || seenEntries.has(entry)) {
+    return;
+  }
+  seenEntries.add(entry);
+  _pruneRawMethodEntry(entry.super, seenEntries, seenResolved);
+  _pruneResolvedMethodData(entry._resolvedMethodData, seenResolved);
+  delete entry.ownUsedChannels;
+  delete entry.ownMutatedChannels;
+  delete entry.super;
+  delete entry.superOrigin;
+  delete entry.invokedMethods;
+}
+
+function pruneFinalizedInheritanceMetadata(state) {
+  if (!state || typeof state !== 'object') {
+    return state;
+  }
+  const methods = ensureInheritanceMethodsTable(state);
+  const names = Object.keys(methods);
+  const seenEntries = new Set();
+  const seenResolved = new Set();
+  for (let i = 0; i < names.length; i++) {
+    _pruneRawMethodEntry(methods[names[i]], seenEntries, seenResolved);
+  }
+  state.invokedMethods = Object.create(null);
+  const internalState = ensureInheritanceInternalState(state);
+  if (internalState) {
+    internalState.chainPathStack = [];
+  }
+  return state;
 }
 
 function cloneInheritanceMethodEntry(entry, clones = new Map()) {
@@ -638,6 +673,7 @@ module.exports = {
   registerInheritanceSharedSchema,
   registerInheritanceInvokedMethods,
   finalizeInheritanceMethods,
+  pruneFinalizedInheritanceMetadata,
   createEmptyConstructorEntry,
   createInheritanceMetadataAggregateError,
   collectOrThrowInheritanceMetadataError,

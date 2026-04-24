@@ -416,6 +416,7 @@ function finalizeInheritanceMetadata(state, context = null) {
       const aggregateError = inheritanceState.createInheritanceMetadataAggregateError(structuralErrors, context);
       throw aggregateError || structuralErrors[0];
     }
+    inheritanceState.pruneFinalizedInheritanceMetadata(state);
     inheritanceState.resolveInheritanceMetadataReadiness(state, state);
     return state;
   } catch (error) {
