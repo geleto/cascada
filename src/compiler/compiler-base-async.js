@@ -630,12 +630,12 @@ class CompilerBaseAsync extends CompilerCommon {
     if (componentBindingFacts) {
       if (componentBindingFacts.kind === 'method-call') {
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        this.emit(
-          `runtime.callComponentMethod(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, ` +
-          `${JSON.stringify(componentBindingFacts.methodName)}, `
-        );
+        this.emit('runtime.callComponentMethod({ ');
+        this.emit(`bindingName: ${JSON.stringify(componentBindingFacts.bindingName)}, `);
+        this.emit(`currentBuffer: ${this.buffer.currentBuffer}, `);
+        this.emit(`methodName: ${JSON.stringify(componentBindingFacts.methodName)}, args: `);
         this._compileAggregate(node.args, null, '[', ']', false, false);
-        this.emit(`, runtime, cb, ${errorContextJson})`);
+        this.emit(`, runtime, cb, errorContext: ${errorContextJson} })`);
         return;
       }
 
@@ -729,11 +729,11 @@ class CompilerBaseAsync extends CompilerCommon {
 
   _emitComponentChannelObservation(componentBindingFacts, node) {
     const errorContextJson = JSON.stringify(this._createErrorContext(node));
-    this.emit(
-      `runtime.observeComponentChannel(${JSON.stringify(componentBindingFacts.bindingName)}, ${this.buffer.currentBuffer}, `
-    );
+    this.emit('runtime.observeComponentChannel({ ');
+    this.emit(`bindingName: ${JSON.stringify(componentBindingFacts.bindingName)}, `);
+    this.emit(`currentBuffer: ${this.buffer.currentBuffer}, observationCommand: `);
     this._emitComponentObservationCommand(componentBindingFacts.channelName, node, componentBindingFacts.mode || 'snapshot');
-    this.emit(`, ${errorContextJson}, ${componentBindingFacts.implicitVarRead ? 'true' : 'false'})`);
+    this.emit(`, errorContext: ${errorContextJson}, implicitVarRead: ${componentBindingFacts.implicitVarRead ? 'true' : 'false'} })`);
   }
 
   compileFilter(node) {

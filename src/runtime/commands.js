@@ -762,6 +762,7 @@ class SnapshotCommand extends Command {
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
+    this.isUniversalObservationCommand = true;
   }
 
   apply(output) {
@@ -831,6 +832,7 @@ class IsErrorCommand extends Command {
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
+    this.isUniversalObservationCommand = true;
   }
 
   apply(output) {
@@ -867,6 +869,7 @@ class GetErrorCommand extends Command {
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isObservable = true;
     this.isSnapshotCommand = true;
+    this.isUniversalObservationCommand = true;
   }
 
   apply(output) {

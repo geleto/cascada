@@ -922,17 +922,17 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`  rootContext: ${rootContextVar},`);
     this.emit.line(`  externContext: ${externContextVar}`);
     this.emit.line('};');
-    this.emit.line(`const ${instanceVar} = runtime.startComponentInstance(`);
-    this.emit.line(`  ${this.buffer.currentBuffer},`);
-    this.emit.line(`  "${targetName}",`);
-    this.emit.line(`  ${componentTemplateVar},`);
-    this.emit.line(`  ${payloadVar},`);
-    this.emit.line('  context,');
+    this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
+    this.emit.line(`  currentBuffer: ${this.buffer.currentBuffer},`);
+    this.emit.line(`  bindingName: "${targetName}",`);
+    this.emit.line(`  templateOrPromise: ${componentTemplateVar},`);
+    this.emit.line(`  payload: ${payloadVar},`);
+    this.emit.line('  ownerContext: context,');
     this.emit.line('  env,');
     this.emit.line('  runtime,');
     this.emit.line('  cb,');
-    this.emit.line(`  ${errorContextJson}`);
-    this.emit.line(');');
+    this.emit.line(`  errorContext: ${errorContextJson}`);
+    this.emit.line('});');
     this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${targetName}', args: [${instanceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${targetName}');`);
 
     if (targetName.charAt(0) !== '_' && this.analysis.isRootScopeOwner(node._analysis)) {

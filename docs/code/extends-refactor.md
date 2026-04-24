@@ -291,7 +291,7 @@ The remaining complexity is at the compiler/runtime boundary:
 - `#`
 
 These should remain separate language surfaces, but runtime validation can
-likely be reduced to one "safe observational command" gate.
+likely be reduced to one "universal observational command" gate.
 
 ### 6. Some tests still assert intermediate object structure
 
@@ -623,9 +623,9 @@ Completed work:
 - did not normalize `super()` into ordinary override dispatch
 - kept the helper sync-first; only wait for metadata readiness before calling
   it when a boundary can genuinely run early
-- exposed a narrow `runtime.invokeComponentMethod(...)` wrapper so component
-  operations can reuse the same private admission primitive without duplicating
-  method lookup, buffer admission, or command enqueue logic
+- routed component operations through the same inherited-call admission
+  primitive without duplicating method lookup, buffer admission, or command
+  enqueue logic
 
 Primary files:
 
@@ -660,6 +660,8 @@ Completed work:
   finalization" where useful
 - make the post-finalization startup yield conditional on actual metadata
   readiness waiters instead of yielding after every successful finalization
+- preserve the one-shot metadata-ready yield only for the startup case that
+  still needs released waiters to enqueue source-order work
 - clear settled metadata-ready promises from internal inheritance state; the
   durable result is represented by the settled/resolved flags
 
@@ -671,8 +673,6 @@ Remaining work:
   `__constructor__` startup path
 - consider replacing hot-path readiness waits with assertions after the direct
   execution table is in place
-- preserve the one-shot metadata-ready yield only if `runCompiledRootStartup`
-  still needs it to avoid recursive same-stack constructor execution
 
 Primary files:
 
@@ -692,7 +692,15 @@ Goal:
 - make component creation look like a thin inheritance-instance wrapper after
   method operations have moved onto the shared admission primitive
 
-Work:
+Status:
+
+- completed in Pass E for component operation option objects, safe shared
+  observation validation, private command export cleanup, and removal of the
+  temporary `runtime.invokeComponentMethod(...)` re-export
+- component constructor startup itself remains on the component lifecycle path,
+  as required by the architecture
+
+Completed work:
 
 - audit `createComponentInstance(...)` parameters and call sites
 - avoid overloaded positional signatures; prefer a single options object if
@@ -720,14 +728,20 @@ Goal:
 
 - keep shared observation explicit while reducing mode-specific runtime paths
 
-Work:
+Status:
+
+- completed in Pass E for runtime validation of safe component observation
+  commands
+
+Completed work:
 
 - keep compiler paths for:
   - implicit component var read
   - `.snapshot()`
   - `is error`
   - `#`
-- route all runtime validation through one "safe observational command" check
+- route all runtime validation through one "universal observational command"
+  check
 - ensure missing shared schema still fails as fatal metadata error
 - ensure unsupported mutation-like or channel-incompatible component property
   operations still fail dynamically with a fatal error
@@ -749,7 +763,21 @@ Goal:
 
 - reduce public-looking runtime surface that exists only for brittle tests
 
-Work:
+Status:
+
+- partially completed in Pass E for the component command classes and
+  temporary component method wrapper re-export
+
+Completed work:
+
+- remove the private component command classes from `src/runtime/component.js`
+  exports
+- remove the temporary `runtime.invokeComponentMethod(...)` re-export after
+  `ComponentInstance` started calling the inherited-call module directly
+- move the component command deferred-result assertion to behavior coverage for
+  supported component operations
+
+Remaining work:
 
 - audit exports from:
   - `src/runtime/inheritance-state.js`
@@ -849,6 +877,16 @@ Combines when the diffs remain small:
 - the remaining constructor/payload part of Phase 5
 - Phase 6
 - Phase 7
+
+Status:
+
+- completed for the narrow component/runtime cleanup scope:
+  - component construction and operations use options-object runtime APIs
+  - component shared observations require explicit universal observation
+    commands
+  - private component command classes are no longer exported
+  - `runtime.js` no longer re-exports the component-method admission wrapper
+- broader runtime export auditing remains in Phase 7 follow-up work
 
 Split this pass if shared observation cleanup grows beyond a narrow validation
 change. Runtime export cleanup should remain last inside the pass because

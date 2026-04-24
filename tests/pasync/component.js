@@ -9,8 +9,6 @@ let componentRuntimeModule;
 let InheritanceState;
 let inheritanceStateModule;
 let ComponentInstance;
-let ComponentOperationCommand;
-let ObserveSharedChannelCommand;
 let inheritanceCallModule;
 
 if (typeof require !== 'undefined') {
@@ -24,14 +22,10 @@ if (typeof require !== 'undefined') {
     const componentRuntime = require('../../src/runtime/component');
     componentRuntimeModule = componentRuntime;
     ComponentInstance = componentRuntime.ComponentInstance;
-    ComponentOperationCommand = componentRuntime.ComponentOperationCommand;
-    ObserveSharedChannelCommand = componentRuntime.ObserveSharedChannelCommand;
   } catch (err) {
     void err;
     componentRuntimeModule = null;
     ComponentInstance = null;
-    ComponentOperationCommand = null;
-    ObserveSharedChannelCommand = null;
   }
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
@@ -55,8 +49,6 @@ if (typeof require !== 'undefined') {
   componentRuntimeModule = null;
   InheritanceState = null;
   ComponentInstance = null;
-  ComponentOperationCommand = null;
-  ObserveSharedChannelCommand = null;
   inheritanceCallModule = null;
 }
 
@@ -708,9 +700,9 @@ describe('Phase 8 - Component Observations', function () {
     ].join('\n'), env, 'Main.script');
     const source = script._compileSource();
 
-    expect(source).to.contain('runtime.observeComponentChannel("ns", output, new runtime.SnapshotCommand({ channelName: "log"');
-    expect(source).to.contain('runtime.observeComponentChannel("ns", output, new runtime.IsErrorCommand({ channelName: "status"');
-    expect(source).to.contain('runtime.observeComponentChannel("ns", output, new runtime.GetErrorCommand({ channelName: "status"');
+    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.SnapshotCommand({ channelName: "log"');
+    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.IsErrorCommand({ channelName: "status"');
+    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.GetErrorCommand({ channelName: "status"');
   });
 
   it('should observe shared var poison through component `is error` and `#`', async function () {
@@ -739,7 +731,7 @@ describe('Phase 8 - Component Observations', function () {
   });
 
   it('should enqueue the exact observation command on the component shared root', async function () {
-    if (!ObserveSharedChannelCommand) {
+    if (!ComponentInstance) {
       this.skip();
       return;
     }
@@ -786,16 +778,16 @@ describe('Phase 8 - Component Observations', function () {
       return originalAdd(value, channelName);
     };
 
-    const observationPromise = runtimeModule.observeComponentChannel(
-      'nsBinding',
-      ownerBuffer,
-      new runtimeModule.SnapshotCommand({
+    const observationPromise = runtimeModule.observeComponentChannel({
+      bindingName: 'nsBinding',
+      currentBuffer: ownerBuffer,
+      observationCommand: new runtimeModule.SnapshotCommand({
         channelName: 'status',
         pos: { lineno: 2, colno: 1 }
       }),
-      { lineno: 2, colno: 1, path: 'Main.script' },
-      true
-    );
+      errorContext: { lineno: 2, colno: 1, path: 'Main.script' },
+      implicitVarRead: true
+    });
 
     const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
     ownerBuffer.markFinishedAndPatchLinks();
@@ -808,6 +800,62 @@ describe('Phase 8 - Component Observations', function () {
     expect(seenAdds.length).to.be.greaterThan(0);
     expect(seenAdds[0].channelName).to.be('status');
     expect(seenAdds[0].value).to.be.a(runtimeModule.SnapshotCommand);
+  });
+
+  it('should reject non-observational component shared commands', async function () {
+    if (!ComponentInstance) {
+      this.skip();
+      return;
+    }
+
+    const makeContext = (path) => ({
+      path,
+      forkForComposition(nextPath) {
+        return makeContext(nextPath);
+      }
+    });
+
+    const ownerContext = makeContext('Main.script');
+    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
+
+    const sharedRootBuffer = runtimeModule.createCommandBuffer(makeContext('Component.script'), null, null, null);
+    runtimeModule.declareBufferChannel(sharedRootBuffer, 'status', 'var', ownerContext, null);
+
+    const inheritanceState = runtimeModule.createInheritanceState();
+    inheritanceState.sharedRootBuffer = sharedRootBuffer;
+    inheritanceState.sharedSchema.status = 'var';
+
+    ownerBuffer.add(new runtimeModule.VarCommand({
+      channelName: 'nsBinding',
+      args: [new ComponentInstance({
+        context: makeContext('Component.script'),
+        rootBuffer: sharedRootBuffer,
+        inheritanceState
+      })],
+      pos: { lineno: 1, colno: 1 }
+    }), 'nsBinding');
+
+    const observationPromise = runtimeModule.observeComponentChannel({
+      bindingName: 'nsBinding',
+      currentBuffer: ownerBuffer,
+      observationCommand: new runtimeModule.VarCommand({
+        channelName: 'status',
+        args: ['bad'],
+        pos: { lineno: 2, colno: 1 }
+      }),
+      errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
+    });
+
+    ownerBuffer.markFinishedAndPatchLinks();
+
+    try {
+      await observationPromise;
+      expect().fail('Expected component observation to reject');
+    } catch (error) {
+      expect(error).to.be.a(runtimeModule.RuntimeFatalError);
+      expect(error.message).to.contain('universal observational channel command');
+    }
   });
 
   it('should keep two component instances isolated', async function () {
@@ -1147,10 +1195,10 @@ describe('Phase 8 - Component Lifecycle', function () {
       pos: { lineno: 1, colno: 1 }
     }), 'nsBinding');
 
-    const startupPromise = runtimeModule.startComponentInstance(
-      ownerBuffer,
-      'nsBinding',
-      {
+    const startupPromise = runtimeModule.startComponentInstance({
+      currentBuffer: ownerBuffer,
+      bindingName: 'nsBinding',
+      templateOrPromise: {
         compile() {},
         rootRenderFunc() {
           events.push('ctor-start');
@@ -1160,13 +1208,13 @@ describe('Phase 8 - Component Lifecycle', function () {
         externSpec: [],
         path: 'Component.script'
       },
-      {},
+      payload: {},
       ownerContext,
-      {},
-      runtimeModule,
-      () => {},
-      { lineno: 2, colno: 1, path: 'Main.script' }
-    );
+      env: {},
+      runtime: runtimeModule,
+      cb: () => {},
+      errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
+    });
 
     const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
     ownerBuffer.markFinishedAndPatchLinks();
@@ -1207,10 +1255,10 @@ describe('Phase 8 - Component Lifecycle', function () {
       }
     };
 
-    const startupPromise = runtimeModule.startComponentInstance(
-      ownerBuffer,
-      'nsBinding',
-      {
+    const startupPromise = runtimeModule.startComponentInstance({
+      currentBuffer: ownerBuffer,
+      bindingName: 'nsBinding',
+      templateOrPromise: {
         compile() {},
         rootRenderFunc(env, componentContext, runtime, cb, compositionMode, componentRootBuffer, inheritanceStateValue) {
           void env;
@@ -1249,13 +1297,13 @@ describe('Phase 8 - Component Lifecycle', function () {
         externSpec: [],
         path: 'Component.script'
       },
-      {},
+      payload: {},
       ownerContext,
-      {},
-      runtimeModule,
-      () => {},
-      { lineno: 2, colno: 1, path: 'Main.script' }
-    );
+      env: {},
+      runtime: runtimeModule,
+      cb: () => {},
+      errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
+    });
 
     const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
     ownerBuffer.markFinishedAndPatchLinks();
@@ -1282,8 +1330,8 @@ describe('Phase 8 - Component Lifecycle', function () {
       return;
     }
 
-    const componentInstance = await componentRuntimeModule.createComponentInstance(
-      {
+    const componentInstance = await componentRuntimeModule.createComponentInstance({
+      templateOrPromise: {
         compile() {},
         rootRenderFunc() {},
         methods: {},
@@ -1291,15 +1339,15 @@ describe('Phase 8 - Component Lifecycle', function () {
         externSpec: [],
         path: 'Component.script'
       },
-      {},
+      payload: {},
       ownerContext,
-      {},
-      runtimeModule,
-      () => {},
+      env: {},
+      runtime: runtimeModule,
+      cb: () => {},
       ownerBuffer,
-      'nsBinding',
-      { lineno: 1, colno: 1, path: 'Main.script' }
-    );
+      bindingName: 'nsBinding',
+      errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+    });
 
     ownerBuffer.add(new runtimeModule.VarCommand({
       channelName: 'nsBinding',
@@ -1377,8 +1425,8 @@ describe('Phase 8 - Component Lifecycle', function () {
       return;
     }
 
-    await componentRuntimeModule.createComponentInstance(
-      {
+    await componentRuntimeModule.createComponentInstance({
+      templateOrPromise: {
         compile() {},
         rootRenderFunc() {},
         methods: {},
@@ -1386,15 +1434,14 @@ describe('Phase 8 - Component Lifecycle', function () {
         externSpec: [],
         path: 'Component.script'
       },
-      { theme: 'dark' },
+      payload: { theme: 'dark' },
       ownerContext,
-      {},
-      runtimeModule,
-      () => {},
+      env: {},
+      runtime: runtimeModule,
+      cb: () => {},
       ownerBuffer,
-      null,
-      { lineno: 1, colno: 1, path: 'Main.script' }
-    );
+      errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+    });
 
     expect(seen.nextPath).to.be('Component.script');
     expect(seen.rootContext).not.to.be(seen.externContext);
@@ -1422,23 +1469,22 @@ describe('Phase 8 - Component Lifecycle', function () {
     }
 
     try {
-      await componentRuntimeModule.createComponentInstance(
-        {
+      await componentRuntimeModule.createComponentInstance({
+        templateOrPromise: {
           compile() {},
           methods: {},
           sharedSchema: [],
           externSpec: [],
           path: 'Component.script'
         },
-        {},
+        payload: {},
         ownerContext,
-        {},
-        runtimeModule,
-        () => {},
+        env: {},
+        runtime: runtimeModule,
+        cb: () => {},
         ownerBuffer,
-        null,
-        { lineno: 1, colno: 1, path: 'Main.script' }
-      );
+        errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+      });
       expect().fail('Expected createComponentInstance to reject');
     } catch (error) {
       expect(error).to.be.a(runtimeModule.RuntimeFatalError);
@@ -1464,8 +1510,8 @@ describe('Phase 8 - Component Lifecycle', function () {
       return;
     }
 
-    const componentInstance = await componentRuntimeModule.createComponentInstance(
-      {
+    const componentInstance = await componentRuntimeModule.createComponentInstance({
+      templateOrPromise: {
         compile() {},
         rootRenderFunc(envArg, contextArg, runtimeArg, cbArg) {
           void envArg;
@@ -1486,19 +1532,18 @@ describe('Phase 8 - Component Lifecycle', function () {
         externSpec: [],
         path: 'Component.script'
       },
-      {},
+      payload: {},
       ownerContext,
-      {},
-      runtimeModule,
-      (error) => {
+      env: {},
+      runtime: runtimeModule,
+      cb: (error) => {
         if (error) {
           seenErrors.push(error);
         }
       },
       ownerBuffer,
-      null,
-      { lineno: 1, colno: 1, path: 'Main.script' }
-    );
+      errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+    });
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -1513,30 +1558,5 @@ describe('Phase 8 - Component Lifecycle', function () {
       expect(error).to.be.a(runtimeModule.RuntimeFatalError);
       expect(error.message).to.contain('async startup failed');
     });
-  });
-
-  it('should use Command deferred-result plumbing only for non-close component operations', function () {
-    if (!ComponentOperationCommand) {
-      this.skip();
-      return;
-    }
-
-    const closeCommand = new ComponentOperationCommand({
-      channelName: 'nsBinding',
-      operation: 'close',
-      pos: { lineno: 1, colno: 1, path: 'Main.script' }
-    });
-    const methodCommand = new ComponentOperationCommand({
-      channelName: 'nsBinding',
-      operation: 'method',
-      methodName: 'build',
-      env: {},
-      runtime: runtimeModule,
-      cb: () => {},
-      errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
-    });
-
-    expect(closeCommand.promise).to.be(null);
-    expect(methodCommand.promise && typeof methodCommand.promise.then).to.be('function');
   });
 });

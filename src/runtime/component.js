@@ -6,6 +6,7 @@ const {
   ensureInheritanceSharedSchemaTable
 } = require('./inheritance-state');
 const inheritanceState = require('./inheritance-state');
+const inheritanceCall = require('./inheritance-call');
 const { createCommandBuffer } = require('./command-buffer');
 const { RuntimeFatalError } = require('./errors');
 
@@ -92,7 +93,7 @@ class ComponentInstance {
   callMethod(methodName, args, runtime, cb, errorContext = null) {
     this._throwIfUnavailable(errorContext);
     const sharedRootBuffer = this._getSharedRootBuffer();
-    return runtime.invokeComponentMethod(
+    return inheritanceCall.invokeComponentMethod(
       this.inheritanceState,
       methodName,
       Array.isArray(args) ? args : [],
@@ -120,10 +121,11 @@ function _validateSharedObservationCommand(observationCommand, errorContext = nu
   if (
     !observationCommand ||
     typeof observationCommand !== 'object' ||
-    !observationCommand.isSnapshotCommand ||
+    !observationCommand.isObservable ||
+    !observationCommand.isUniversalObservationCommand ||
     !observationCommand.channelName
   ) {
-    throw _createComponentError('Component shared observation requires an observational channel command', errorContext);
+    throw _createComponentError('Component shared observation requires a universal observational channel command', errorContext);
   }
   return observationCommand;
 }
@@ -162,15 +164,13 @@ async function _resolveComponentInstance(bindingValue, errorContext = null) {
 
 class ComponentOperationCommand extends Command {
   constructor({
-    operation,
     methodName = null,
     args = null,
     runtime = null,
     cb = null,
     errorContext = null
   }) {
-    super({ withDeferredResult: operation !== 'close' });
-    this.operation = operation;
+    super({ withDeferredResult: true });
     this.methodName = methodName;
     this.args = Array.isArray(args) ? args : [];
     this.runtime = runtime;
@@ -188,32 +188,19 @@ class ComponentOperationCommand extends Command {
       ? outputChannel._getTarget()
       : undefined;
 
-    if (this.operation === 'close') {
-      if (bindingValue instanceof ComponentInstance) {
-        bindingValue.close();
-      }
-      return null;
-    }
-
     return this._run(bindingValue);
   }
 
   async _run(bindingValue) {
     try {
       const instance = await _resolveComponentInstance(bindingValue, this.errorContext);
-      let result;
-
-      if (this.operation === 'method') {
-        result = instance.callMethod(
-          this.methodName,
-          this.args,
-          this.runtime,
-          this.cb,
-          this.errorContext
-        );
-      } else {
-        throw _createComponentError(`Unknown component operation '${this.operation}'`, this.errorContext);
-      }
+      const result = instance.callMethod(
+        this.methodName,
+        this.args,
+        this.runtime,
+        this.cb,
+        this.errorContext
+      );
 
       const resolvedResult = await result;
       this.resolveResult(resolvedResult);
@@ -258,15 +245,17 @@ class StartComponentInstanceCommand extends Command {
   async _run() {
     try {
       const instance = await createComponentInstance(
-        this.templateOrPromise,
-        this.payload,
-        this.ownerContext,
-        this.env,
-        this.runtime,
-        this.cb,
-        this.ownerBuffer,
-        this.bindingName,
-        this.errorContext
+        {
+          templateOrPromise: this.templateOrPromise,
+          payload: this.payload,
+          ownerContext: this.ownerContext,
+          env: this.env,
+          runtime: this.runtime,
+          cb: this.cb,
+          ownerBuffer: this.ownerBuffer,
+          bindingName: this.bindingName,
+          errorContext: this.errorContext
+        }
       );
       this.resolveResult(instance);
       return instance;
@@ -315,17 +304,18 @@ class ObserveSharedChannelCommand extends Command {
   }
 }
 
-async function createComponentInstance(
-  templateOrPromise,
-  payload,
-  ownerContext,
-  env,
-  runtime,
-  cb,
-  ownerBuffer,
-  bindingName = null,
-  errorContext = null
-) {
+async function createComponentInstance(spec) {
+  const {
+    templateOrPromise,
+    payload,
+    ownerContext,
+    env,
+    runtime,
+    cb,
+    ownerBuffer,
+    bindingName = null,
+    errorContext = null
+  } = spec || {};
   const template = await resolveSingle(templateOrPromise);
   if (!template) {
     throw _createComponentError('Component target did not resolve to a script or template', errorContext);
@@ -433,17 +423,18 @@ async function createComponentInstance(
   return instance;
 }
 
-function startComponentInstance(
-  currentBuffer,
-  bindingName,
-  templateOrPromise,
-  payload,
-  ownerContext,
-  env,
-  runtime,
-  cb,
-  errorContext = null
-) {
+function startComponentInstance(spec) {
+  const {
+    currentBuffer,
+    bindingName,
+    templateOrPromise,
+    payload,
+    ownerContext,
+    env,
+    runtime,
+    cb,
+    errorContext = null
+  } = spec || {};
   const command = new StartComponentInstanceCommand({
     templateOrPromise,
     payload,
@@ -462,9 +453,17 @@ function startComponentInstance(
   return command.promise;
 }
 
-function callComponentMethod(bindingName, currentBuffer, methodName, args, runtime, cb, errorContext = null) {
+function callComponentMethod(spec) {
+  const {
+    bindingName,
+    currentBuffer,
+    methodName,
+    args,
+    runtime,
+    cb,
+    errorContext = null
+  } = spec || {};
   const command = new ComponentOperationCommand({
-    operation: 'method',
     methodName,
     args,
     runtime,
@@ -478,7 +477,14 @@ function callComponentMethod(bindingName, currentBuffer, methodName, args, runti
   return command.promise;
 }
 
-function observeComponentChannel(bindingName, currentBuffer, observationCommand, errorContext = null, implicitVarRead = false) {
+function observeComponentChannel(spec) {
+  const {
+    bindingName,
+    currentBuffer,
+    observationCommand,
+    errorContext = null,
+    implicitVarRead = false
+  } = spec || {};
   const observationChannelName = observationCommand && observationCommand.channelName
     ? observationCommand.channelName
     : null;
@@ -498,9 +504,6 @@ module.exports = {
   REGULAR_COMPOSITION_MODE,
   COMPONENT_COMPOSITION_MODE,
   ComponentInstance,
-  ComponentOperationCommand,
-  StartComponentInstanceCommand,
-  ObserveSharedChannelCommand,
   createComponentInstance,
   startComponentInstance,
   callComponentMethod,
