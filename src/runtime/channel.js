@@ -602,6 +602,14 @@ class SinkChannel extends Channel {
     return this._sink;
   }
 
+  _setSink(sink) {
+    this._sink = sink;
+    this._sinkReady = false;
+    this._sinkReadyPromise = null;
+    this._setTarget(undefined);
+    return this._sink;
+  }
+
   _repairNow() {
     this._setTarget(undefined);
 
@@ -871,7 +879,34 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
-function declareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer) {
+function _getInheritanceSharedDefaultClaims(buffer) {
+  if (!buffer || (typeof buffer !== 'object' && typeof buffer !== 'function')) {
+    return null;
+  }
+  if (!buffer._inheritanceSharedDefaultClaims) {
+    Object.defineProperty(buffer, '_inheritanceSharedDefaultClaims', {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: Object.create(null)
+    });
+  }
+  return buffer._inheritanceSharedDefaultClaims;
+}
+
+function claimInheritanceSharedDefault(buffer, channelName) {
+  const claims = _getInheritanceSharedDefaultClaims(buffer);
+  if (!claims) {
+    return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(claims, channelName)) {
+    return false;
+  }
+  claims[channelName] = true;
+  return true;
+}
+
+function declareInheritanceSharedChannel(buffer, channelName, channelType, context) {
   const existingChannel = buffer && typeof buffer.getOwnChannel === 'function'
     ? buffer.getOwnChannel(channelName)
     : null;
@@ -888,7 +923,27 @@ function declareInheritanceSharedChannel(buffer, channelName, channelType, conte
     return existingChannel;
   }
 
-  return declareBufferChannel(buffer, channelName, channelType, context, initializer);
+  return declareBufferChannel(buffer, channelName, channelType, context);
+}
+
+// Caller must first win claimInheritanceSharedDefault(...). Keeping the claim
+// separate lets generated code skip evaluating ignored ancestor defaults.
+function initializeInheritanceSharedChannelDefault(buffer, channelName, channelType, context, initializer) {
+  const channel = declareInheritanceSharedChannel(buffer, channelName, channelType, context);
+  if (channelType === 'sink' || channelType === 'sequence') {
+    if (typeof channel._setSink !== 'function') {
+      throw new RuntimeFatalError(
+        `shared channel '${channelName}' cannot be initialized as '${channelType}'`,
+        0,
+        0,
+        null,
+        context && context.path ? context.path : null
+      );
+    }
+    channel._setSink(initializer);
+    return channel;
+  }
+  return channel;
 }
 
 module.exports = {
@@ -904,7 +959,9 @@ module.exports = {
   SequenceChannel,
   createSequenceChannel,
   declareBufferChannel,
-  declareInheritanceSharedChannel
+  declareInheritanceSharedChannel,
+  claimInheritanceSharedDefault,
+  initializeInheritanceSharedChannelDefault
 };
 
 function cloneSnapshotValue(value) {

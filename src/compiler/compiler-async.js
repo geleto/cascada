@@ -1031,13 +1031,20 @@ class CompilerAsync extends CompilerBaseAsync {
       ? `runtime.getInheritanceSharedBuffer(${this.buffer.currentBuffer}, inheritanceState)`
       : this.buffer.currentBuffer;
 
-    this.emit(`runtime.${declareHelperName}(${targetBufferExpr}, "${name}", "${channelType}", context, `);
-    if ((channelType === 'sink' || channelType === 'sequence') && node.initializer) {
+    if (node.isShared && (channelType === 'sink' || channelType === 'sequence') && node.initializer) {
+      this.emit.line(`runtime.declareInheritanceSharedChannel(${targetBufferExpr}, "${name}", "${channelType}", context);`);
+      this.emit.line(`if (runtime.claimInheritanceSharedDefault(${targetBufferExpr}, "${name}")) {`);
+      this.emit(`runtime.initializeInheritanceSharedChannelDefault(${targetBufferExpr}, "${name}", "${channelType}", context, `);
       this.compile(node.initializer, null);
-    } else if (channelType === 'var') {
-      this.emit('undefined');
-    } else {
-      this.emit('null');
+      this.emit.line(');');
+      this.emit.line('}');
+      return;
+    }
+
+    this.emit(`runtime.${declareHelperName}(${targetBufferExpr}, "${name}", "${channelType}", context`);
+    if ((channelType === 'sink' || channelType === 'sequence') && node.initializer) {
+      this.emit(', ');
+      this.compile(node.initializer, null);
     }
     this.emit.line(');');
 
@@ -1047,19 +1054,31 @@ class CompilerAsync extends CompilerBaseAsync {
       const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
       const initValueId = this._tmpid();
       const initIfNotSetFlag = node.isShared ? ', initializeIfNotSet: true' : '';
+      if (node.isShared) {
+        this.emit.line(`if (runtime.claimInheritanceSharedDefault(${targetBufferExpr}, "${name}")) {`);
+      }
       this.emit(`let ${initValueId} = `);
       this.compileExpression(initNode, null, initNode);
       this.emit.line(';');
       if (channelType === 'var') {
         this.emit.line(`${targetBufferExpr}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}]${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        if (node.isShared) {
+          this.emit.line('}');
+        }
         return;
       }
       if (channelType === 'text') {
         this.emit.line(`${targetBufferExpr}.add(new runtime.TextCommand({ channelName: '${name}', command: 'set', args: [${initValueId}], normalizeArgs: true${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        if (node.isShared) {
+          this.emit.line('}');
+        }
         return;
       }
       if (channelType === 'data') {
         this.emit.line(`${targetBufferExpr}.add(new runtime.DataCommand({ channelName: '${name}', command: 'set', args: [null, ${initValueId}]${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
+        if (node.isShared) {
+          this.emit.line('}');
+        }
       }
     }
   }

@@ -345,7 +345,8 @@ describe('Extends Foundation', function () {
     it('should lower shared declarations through the normal script compile path', function () {
       const source = new Script('shared var theme = "dark"\nreturn theme', env, 'shared-lowering.casc')._compileSource();
 
-      expect(source).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "theme", "var", context, undefined);');
+      expect(source).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "theme", "var", context);');
+      expect(source).to.contain('runtime.claimInheritanceSharedDefault(runtime.getInheritanceSharedBuffer(output, inheritanceState), "theme")');
       expect(source).to.contain('initializeIfNotSet: true');
     });
 
@@ -367,8 +368,9 @@ describe('Extends Foundation', function () {
       const declaredOnly = new Script('shared sequence db\nreturn null', env, 'shared-sequence-decl.casc')._compileSource();
       const initialized = new Script('shared sequence db = makeDb()\nreturn null', env, 'shared-sequence-init.casc')._compileSource();
 
-      expect(declaredOnly).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "db", "sequence", context, null);');
-      expect(initialized).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "db", "sequence", context, ');
+      expect(declaredOnly).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "db", "sequence", context);');
+      expect(initialized).to.contain('runtime.claimInheritanceSharedDefault(runtime.getInheritanceSharedBuffer(output, inheritanceState), "db")');
+      expect(initialized).to.contain('runtime.initializeInheritanceSharedChannelDefault(runtime.getInheritanceSharedBuffer(output, inheritanceState), "db", "sequence", context, ');
       expect(initialized).to.contain('makeDb');
     });
 
@@ -395,6 +397,89 @@ describe('Extends Foundation', function () {
 
       expect(declarationOnly).to.be(undefined);
       expect(assigned).to.be('light');
+    });
+
+    it('should not let declaration-only shared participation claim the shared default', async function () {
+      const sharedBuffer = runtime.createCommandBuffer(null);
+      runtime.declareInheritanceSharedChannel(sharedBuffer, 'theme', 'var', null);
+
+      expect(runtime.claimInheritanceSharedDefault(sharedBuffer, 'theme')).to.be(true);
+      expect(runtime.claimInheritanceSharedDefault(sharedBuffer, 'theme')).to.be(false);
+
+      sharedBuffer.add(new runtime.VarCommand({
+        channelName: 'theme',
+        args: ['parent'],
+        initializeIfNotSet: true,
+        pos: { lineno: 1, colno: 1 }
+      }), 'theme');
+      sharedBuffer.markFinishedAndPatchLinks();
+
+      const result = await sharedBuffer.getOwnChannel('theme').finalSnapshot();
+      expect(result).to.be('parent');
+    });
+
+    it('should treat legacy undefined declaration arguments as declaration-only shared participation', function () {
+      const sharedBuffer = runtime.createCommandBuffer(null);
+
+      runtime.declareInheritanceSharedChannel(sharedBuffer, 'theme', 'var', null, undefined);
+
+      expect(runtime.claimInheritanceSharedDefault(sharedBuffer, 'theme')).to.be(true);
+    });
+
+    it('should ignore ancestor shared default expressions after a child assigned default claims the channel', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      loader.addTemplate('A.script', 'shared var theme = failDefault()\nreturn null');
+      loader.addTemplate('C.script', 'shared var theme = "child"\nextends "A.script"\nreturn theme');
+
+      const result = await env.renderScript('C.script', {
+        failDefault() {
+          throw new Error('parent default should not run');
+        }
+      });
+
+      expect(result).to.be('child');
+    });
+
+    it('should ignore ancestor shared sequence default expressions after a child assigned default claims the channel', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+      loader.addTemplate('A.script', 'shared sequence db = failDefault()\nreturn null');
+      loader.addTemplate('C.script', 'shared sequence db = makeDb()\nextends "A.script"\nreturn db.get()');
+
+      const result = await env.renderScript('C.script', {
+        makeDb() {
+          return {
+            get() {
+              return 'child-db';
+            }
+          };
+        },
+        failDefault() {
+          throw new Error('parent sequence default should not run');
+        }
+      });
+
+      expect(result).to.be('child-db');
+    });
+
+    it('should initialize a declaration-only shared sequence through a later claimed default', async function () {
+      const sharedBuffer = runtime.createCommandBuffer(null);
+      runtime.declareInheritanceSharedChannel(sharedBuffer, 'db', 'sequence', null, undefined);
+
+      if (runtime.claimInheritanceSharedDefault(sharedBuffer, 'db')) {
+        runtime.initializeInheritanceSharedChannelDefault(sharedBuffer, 'db', 'sequence', null, {
+          get() {
+            return 'parent-db';
+          }
+        });
+      }
+      sharedBuffer.markFinishedAndPatchLinks();
+
+      const db = await sharedBuffer.getOwnChannel('db').finalSnapshot();
+      const result = db.get();
+
+      expect(result).to.be('parent-db');
     });
 
     it('should let script methods read local shared vars as ordinary declared names', async function () {

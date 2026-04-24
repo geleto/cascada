@@ -181,27 +181,24 @@ the final method table, then gives each callable its filtered direct map.
 ### Shared-Channel Entries
 
 Also collect all shared channels. The key is the channel name. The value is
-shared-channel metadata including at least the channel type and the local
-default value.
+the shared-channel type.
 
-The shared channel schema should stay explicit: key is identifier, value is
-shared-channel metadata containing at least the channel type and local default
-value. This is still needed so each script/template can add channels that are
-not yet present in the shared command buffer.
+The shared channel schema should stay explicit and type-only:
+`sharedSchema[name] = "var" | "text" | "data" | "sequence" | ...`. Local
+default expressions stay in the compiled startup code rather than the metadata
+schema. This is still enough for each script/template to add channels that are
+not yet present in the shared command buffer while keeping default evaluation in
+source order.
 
 Shared channel metadata follows the same structural timing as method metadata:
 blocking bootstrap produces a final direct shared schema before execution.
 Normal execution does not depend on pending shared-schema entries.
 
-The resolved shared-channel metadata shape should stay small, but it now needs
-more than just the type:
-
-- channel type
-- local default value
-
-That is enough to choose the side-channel command shape, detect conflicting
-declarations across scripts/templates, and preserve child-first shared
-defaults.
+The resolved shared-channel metadata shape should stay small: channel type is
+enough to choose the side-channel command shape and detect conflicting
+declarations across scripts/templates. Child-first shared defaults are enforced
+by the shared-buffer startup path, not by storing default values in
+`sharedSchema`.
 
 ## Shared State
 
@@ -264,10 +261,12 @@ Shared defaults follow the inheritance contract:
 
 Shared default handling should stay simple:
 
-- when a shared channel is declared for the first time, its default value is
-  set
-- if that shared channel was already declared earlier in the chain, the new
-  default value is ignored
+- a shared declaration without an initializer only declares participation; it
+  does not claim the channel default
+- the first assigned default in child-to-parent startup order claims the shared
+  channel default
+- if a later ancestor also has an assigned default for that shared channel, its
+  default expression is ignored
 - `with ...` / `compositionPayload` does not override shared defaults, even
   though shared defaults may read values from that payload
 
