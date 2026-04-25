@@ -282,10 +282,7 @@ class Template extends Obj {
     }
 
     const blockContracts = this._getCompiledBlockContracts(props);
-    if (blockContracts !== undefined) {
-      this.blockContracts = blockContracts;
-    }
-    this.blocks = this._getCompiledBlocks(props);
+    this.blocks = this._getCompiledBlocks(props, blockContracts);
     this.externSpec = props.externSpec || [];
     this.inheritanceSpec = this._getCompiledInheritanceSpec(props);
     this.rootRenderFunc = props.root;
@@ -301,14 +298,14 @@ class Template extends Obj {
     );
   }
 
-  _getBlocks(props) {
+  _getBlocks(props, blockContracts) {
     var blocks = {};
 
     lib.keys(props).forEach((k) => {
       if (k.slice(0, 2) === 'b_') {
         const blockName = k.slice(2);
         blocks[blockName] = props[k];
-        blocks[blockName].blockContract = (this.blockContracts && this.blockContracts[blockName]) || null;
+        blocks[blockName].blockContract = (blockContracts && blockContracts[blockName]) || null;
         blocks[blockName].templatePath = this.path == null ? '__anonymous__' : String(this.path);
       }
     });
@@ -333,8 +330,8 @@ class Template extends Obj {
     };
   }
 
-  _getCompiledBlocks(props) {
-    return this._getBlocks(props);
+  _getCompiledBlocks(props, blockContracts) {
+    return this._getBlocks(props, blockContracts);
   }
 }
 
