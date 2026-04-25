@@ -570,30 +570,20 @@ class DataChannel extends Channel {
   }
 }
 
-const BASIC_CHANNEL_FACTORIES = Object.freeze({
-  text(buffer, channelName, context, type) {
-    // Text channel is callable; args are appended to the text buffer.
-    return createCallableChannelFacade(new TextChannel(buffer, channelName, context, type));
-  },
-  var(buffer, channelName, context, type, initializer) {
-    // Var channel is callable; args replace the current value.
-    return createCallableChannelFacade(new VarChannel(buffer, channelName, context, type, initializer));
-  },
-  sequential_path(buffer, channelName, context, type) {
-    return new SequentialPathChannel(buffer, channelName, context, type);
-  },
-  data(buffer, channelName, context, type) {
-    return new DataChannel(buffer, channelName, context, type);
-  }
-});
-
 function _createChannel(buffer, channelName, context, channelType = null, initializer) {
   const type = channelType || channelName;
-  const factory = BASIC_CHANNEL_FACTORIES[type];
-  if (factory) {
-    return factory(buffer, channelName, context, type, initializer);
+  switch (type) {
+    case 'text':
+      return createCallableChannelFacade(new TextChannel(buffer, channelName, context, type));
+    case 'var':
+      return createCallableChannelFacade(new VarChannel(buffer, channelName, context, type, initializer));
+    case 'sequential_path':
+      return new SequentialPathChannel(buffer, channelName, context, type);
+    case 'data':
+      return new DataChannel(buffer, channelName, context, type);
+    default:
+      throw new Error(`Unsupported channel type '${type}'`);
   }
-  throw new Error(`Unsupported channel type '${type}'`);
 }
 
 class SinkChannel extends Channel {
