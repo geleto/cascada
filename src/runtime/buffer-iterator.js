@@ -227,7 +227,7 @@ class BufferIterator {
       this._releaseFinishedLane(output._buffer);
     }
     if (output) {
-      output._onIteratorFinished();
+      output._resolveIteratorCompletion();
       if (output._iterator === this) {
         output._iterator = null;
       }

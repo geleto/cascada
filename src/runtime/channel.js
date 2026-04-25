@@ -178,7 +178,7 @@ class Channel {
     }
   }
 
-  _onIteratorFinished() {
+  _resolveIteratorCompletion() {
     if (this._completionResolved) {
       return;
     }
@@ -235,9 +235,9 @@ class Channel {
   finalSnapshot() {
     try {
       if (this._completionResolved) {
-        return Promise.resolve(this._resolveSnapshotCommandResult());
+        return this._resolveSnapshotCommandResult();
       }
-      return Promise.resolve(this._completionPromise).then(() => this._resolveSnapshotCommandResult());
+      return this._completionPromise.then(() => this._resolveSnapshotCommandResult());
     } catch (err) {
       return Promise.reject(err);
     }
@@ -280,8 +280,8 @@ function createChannelFacade(output, options) {
       if (prop === '_applyCommand') {
         return output._applyCommand.bind(output);
       }
-      if (prop === '_onIteratorFinished') {
-        return output._onIteratorFinished.bind(output);
+      if (prop === '_resolveIteratorCompletion') {
+        return output._resolveIteratorCompletion.bind(output);
       }
       if (prop === '_resolveSnapshotCommandResult') {
         return output._resolveSnapshotCommandResult.bind(output);
