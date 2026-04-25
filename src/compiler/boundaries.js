@@ -69,43 +69,58 @@ class CompileBoundaries {
   }
 
   compileAsyncControlFlowBoundary(bufferCompiler, node, emitFunc = null) {
+    if (bufferCompiler.currentWaitedChannelName) {
+      return this._compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc);
+    }
+
     const parentBufferArg = bufferCompiler.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const trackAsSingleWaitedUnit = !!bufferCompiler.currentWaitedChannelName;
-    const controlFlowWaitedChannelName = trackAsSingleWaitedUnit ? `__waited__${this.compiler._tmpid()}` : null;
     const controlFlowPromiseId = this.compiler._tmpid();
-    const boundaryRunner = controlFlowWaitedChannelName
-      ? 'runtime.runWaitedControlFlowBoundary'
-      : 'runtime.runControlFlowBoundary';
 
     this.compiler.emit(
-      `let ${controlFlowPromiseId} = ${boundaryRunner}(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
     bufferCompiler.withBufferState({
       currentBuffer: 'currentBuffer',
-      currentWaitedChannelName: trackAsSingleWaitedUnit
-        ? controlFlowWaitedChannelName
-        : bufferCompiler.currentWaitedChannelName,
-      currentWaitedOwnerBuffer: trackAsSingleWaitedUnit
-        ? 'currentBuffer'
-        : bufferCompiler.currentWaitedOwnerBuffer
+      currentWaitedChannelName: bufferCompiler.currentWaitedChannelName,
+      currentWaitedOwnerBuffer: bufferCompiler.currentWaitedOwnerBuffer
     }, () => {
-      if (trackAsSingleWaitedUnit) {
-        this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
+      if (emitFunc) {
+        emitFunc();
       }
+    });
+    this.compiler.emit.asyncClosureDepth--;
+    this.compiler.emit.line('});');
+    bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
+    return {};
+  }
+
+  _compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc = null) {
+    const parentBufferArg = bufferCompiler.currentBuffer;
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const controlFlowWaitedChannelName = `__waited__${this.compiler._tmpid()}`;
+    const controlFlowPromiseId = this.compiler._tmpid();
+
+    this.compiler.emit(
+      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
+    );
+    this.compiler.emit.asyncClosureDepth++;
+
+    bufferCompiler.withBufferState({
+      currentBuffer: 'currentBuffer',
+      currentWaitedChannelName: controlFlowWaitedChannelName,
+      currentWaitedOwnerBuffer: 'currentBuffer'
+    }, () => {
+      this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
 
       if (emitFunc) {
         emitFunc();
       }
     });
     this.compiler.emit.asyncClosureDepth--;
-    if (controlFlowWaitedChannelName) {
-      this.compiler.emit.line(`}, "${controlFlowWaitedChannelName}");`);
-    } else {
-      this.compiler.emit.line('});');
-    }
+    this.compiler.emit.line(`}, "${controlFlowWaitedChannelName}");`);
     bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
     return {};
   }
