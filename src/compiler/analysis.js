@@ -61,8 +61,8 @@ class CompileAnalysis {
     this._validateUses(analysis);
     this._validateMutations(analysis);
 
-    this._getTraversalEntries(node).forEach(({ field, child }) => {
-      this._walk(child, node, field);
+    node.fields.forEach((field) => {
+      this._walk(node[field], node, field);
     });
 
     this._finalizeNode(node);
@@ -123,41 +123,6 @@ class CompileAnalysis {
         node._analysis = Object.assign(node._analysis || {}, returned);
       }
     }
-  }
-
-  _getTraversalEntries(node) {
-    if (node instanceof nodes.Root && node.inheritanceMetadata) {
-      return [
-        {
-          field: 'sharedDeclarations',
-          child: node.inheritanceMetadata.sharedDeclarations
-        },
-        {
-          field: 'children',
-          child: node.children
-        },
-        {
-          field: 'methods',
-          child: node.inheritanceMetadata.methods
-        }
-      ];
-    }
-    if (node instanceof nodes.InheritanceMetadata) {
-      return [
-        {
-          field: 'sharedDeclarations',
-          child: node.sharedDeclarations
-        },
-        {
-          field: 'methods',
-          child: node.methods
-        }
-      ];
-    }
-    return node.fields.map((field) => ({
-      field,
-      child: node[field]
-    }));
   }
 
   _extractSymbols(targetNode) {

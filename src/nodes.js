@@ -77,9 +77,33 @@ class NodeList extends Node {
 class Root extends NodeList {
   get typename() { return 'Root'; }
   get fields() {
-    // Keep inheritanceMetadata before children so generic field-based walkers
-    // can see the transformed script inheritance metadata attached at the root.
-    return ['inheritanceMetadata', 'children'];
+    // Inheritance metadata is stored as one object, but root traversal follows
+    // source semantics: shared declarations, root/extends body, then methods.
+    return ['sharedDeclarations', 'children', 'methods'];
+  }
+
+  get sharedDeclarations() {
+    return this.inheritanceMetadata ? this.inheritanceMetadata.sharedDeclarations : null;
+  }
+
+  set sharedDeclarations(value) {
+    if (!value && !this.inheritanceMetadata) {
+      return;
+    }
+    this.inheritanceMetadata = this.inheritanceMetadata || new InheritanceMetadata(this.lineno, this.colno);
+    this.inheritanceMetadata.sharedDeclarations = value;
+  }
+
+  get methods() {
+    return this.inheritanceMetadata ? this.inheritanceMetadata.methods : null;
+  }
+
+  set methods(value) {
+    if (!value && !this.inheritanceMetadata) {
+      return;
+    }
+    this.inheritanceMetadata = this.inheritanceMetadata || new InheritanceMetadata(this.lineno, this.colno);
+    this.inheritanceMetadata.methods = value;
   }
 
   init(lineno, colno, children, inheritanceMetadata) {
