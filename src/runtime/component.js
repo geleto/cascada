@@ -425,10 +425,7 @@ async function createComponentInstance(spec) {
 
   // Components are only exposed after constructor startup settles so callers
   // never observe a half-initialized instance.
-  if (typeof runtime.awaitInheritanceStartup !== 'function') {
-    throw _createComponentError('Component instance creation requires runtime.awaitInheritanceStartup', errorContext);
-  }
-  const startupPromise = runtime.awaitInheritanceStartup(componentInheritanceState);
+  const startupPromise = inheritanceState.awaitInheritanceStartup(componentInheritanceState);
   if (startupPromise) {
     await startupPromise;
   }

@@ -8,6 +8,7 @@
   var StringLoader;
   var DEFAULT_TEMPLATE_TEXT_OUTPUT;
   var runtime;
+  var inheritanceStateRuntime;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -18,6 +19,7 @@
     StringLoader = require('../util').StringLoader;
     DEFAULT_TEMPLATE_TEXT_OUTPUT = require('../../src/compiler/buffer').DEFAULT_TEMPLATE_TEXT_OUTPUT;
     runtime = require('../../src/runtime/runtime');
+    inheritanceStateRuntime = require('../../src/runtime/inheritance-state');
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
@@ -25,6 +27,7 @@
     Context = nunjucks.Context;
     StringLoader = window.util.StringLoader;
     runtime = nunjucks.runtime;
+    inheritanceStateRuntime = null;
   }
 
   describe('Async template command buffering parity', function () {
@@ -299,7 +302,7 @@
       runtime.declareBufferChannel(buffer, DEFAULT_TEMPLATE_TEXT_OUTPUT, 'text', context, null);
       const inheritanceState = runtime.createInheritanceState();
       inheritanceState.sharedRootBuffer = buffer;
-      runtime.setInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE);
+      inheritanceStateRuntime.setInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE);
 
       let callbackError = null;
       tmpl.rootRenderFunc(
@@ -314,7 +317,7 @@
         inheritanceState
       );
 
-      const startupPromise = runtime.awaitInheritanceStartup(inheritanceState);
+      const startupPromise = inheritanceStateRuntime.awaitInheritanceStartup(inheritanceState);
       if (startupPromise && typeof startupPromise.then === 'function') {
         await startupPromise;
       }

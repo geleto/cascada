@@ -340,7 +340,7 @@ function runCompiledRootStartup(spec) {
     startupPromise
   );
 
-  if (opts.resolveExports && !runtime.isInheritanceCompositionMode(inheritanceStateValue, runtime.COMPONENT_COMPOSITION_MODE)) {
+  if (opts.resolveExports && !inheritanceState.isInheritanceCompositionMode(inheritanceStateValue, runtime.COMPONENT_COMPOSITION_MODE)) {
     context.resolveExports();
   }
 
