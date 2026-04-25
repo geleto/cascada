@@ -34,35 +34,22 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
 /**
  * Validate channel declaration statement constraints.
  * @param {Compiler} compiler - The compiler instance
- * @param {object} options
- * @param {Node} options.node - Channel declaration node
- * @param {Node} options.nameNode - Name node
- * @param {string} options.channelType - data|text|var|sink|sequence
- * @param {boolean} options.hasInitializer - Whether initializer exists
- * @param {boolean} options.asyncMode - Compiler async mode
- * @param {boolean} options.scriptMode - Compiler script mode
- * @param {boolean} options.isNameSymbol - Whether nameNode is a Symbol
- * @param {boolean} options.isShared - Whether declaration uses the shared keyword
- * @param {boolean} options.isRootScopeOwner - Whether declaration is in the root scope owner
+ * @param {Node} node - Channel declaration node
  */
-function validateChannelDeclarationNode(compiler, {
-  node,
-  nameNode,
-  channelType,
-  hasInitializer,
-  asyncMode,
-  scriptMode,
-  isNameSymbol,
-  isShared,
-  isRootScopeOwner
-}) {
-  if (!asyncMode) {
+function validateChannelDeclarationNode(compiler, node) {
+  const nameNode = node && node.name;
+  const channelType = node && node.channelType;
+  const hasInitializer = !!(node && node.initializer);
+  const isShared = !!(node && node.isShared);
+  const isRootScopeOwner = compiler.analysis.isRootScopeOwner(node._analysis);
+
+  if (!compiler.asyncMode) {
     compiler.fail('Channel declarations are only supported in async mode', node.lineno, node.colno, node);
   }
-  if (!scriptMode && !isShared) {
+  if (!compiler.scriptMode && !isShared) {
     compiler.fail('Channel declarations are only supported in script mode', node.lineno, node.colno, node);
   }
-  if (!isNameSymbol) {
+  if (!(nameNode instanceof nodes.Symbol)) {
     compiler.fail('Channel declaration name must be a symbol', node.lineno, node.colno, node);
   }
   if (isShared && !isRootScopeOwner) {

@@ -1137,17 +1137,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeChannelDeclaration(node) {
     node.name._analysis = { declarationTarget: true };
-    validateChannelDeclarationNode(this, {
-      node,
-      nameNode: node.name,
-      channelType: node.channelType,
-      hasInitializer: !!node.initializer,
-      asyncMode: this.asyncMode,
-      scriptMode: this.scriptMode,
-      isNameSymbol: node.name instanceof nodes.Symbol,
-      isShared: !!node.isShared,
-      isRootScopeOwner: this.analysis.isRootScopeOwner(node._analysis)
-    });
+    validateChannelDeclarationNode(this, node);
     const name = node.name.value;
     return {
       declares: [{ name, type: node.channelType, initializer: node.initializer || null, shared: !!node.isShared }],
