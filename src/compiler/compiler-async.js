@@ -11,6 +11,9 @@ const CompileBuffer = require('./buffer');
 const {
   ROOT_STARTUP_PROMISE_VAR
 } = require('./inheritance');
+const {
+  CHANNEL_TYPE_FACTS
+} = require('../channel-types');
 
 const RETURN_CHANNEL_NAME = '__return__';
 const COMPILED_METHODS_VAR = '__compiledMethods';
@@ -382,7 +385,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.compileExpression(node.value, null, node.value);
     this.emit.line(';');
 
-    const pos = `{lineno: ${node.lineno}, colno: ${node.colno}}`;
     if (thisSharedPath.type === 'var') {
       let resultId = valueId;
       if (thisSharedPath.path.length > 0) {
@@ -392,13 +394,24 @@ class CompilerAsync extends CompilerBaseAsync {
         this.emit(`, ${JSON.stringify(thisSharedPath.path)}, ${valueId})`);
         this.emit.line(';');
       }
-      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${thisSharedPath.name}', args: [${resultId}], pos: ${pos} }), '${thisSharedPath.name}');`);
+      this.buffer.emitAddChannelCommandByType({
+        channelType: 'var',
+        channelName: thisSharedPath.name,
+        argsExpr: `[${resultId}]`,
+        positionNode: node
+      });
       return;
     }
 
     if (thisSharedPath.type === 'data') {
       const dataPath = thisSharedPath.path.length > 0 ? thisSharedPath.path : [null];
-      this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.DataCommand({ channelName: '${thisSharedPath.name}', command: 'set', args: [${JSON.stringify(dataPath)}, ${valueId}], pos: ${pos} }), '${thisSharedPath.name}');`);
+      this.buffer.emitAddChannelCommandByType({
+        channelType: 'data',
+        channelName: thisSharedPath.name,
+        command: 'set',
+        argsExpr: `[${JSON.stringify(dataPath)}, ${valueId}]`,
+        positionNode: node
+      });
       return;
     }
 
@@ -1147,6 +1160,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileChannelDeclaration(node) {
     const channelType = node.channelType;
+    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
     const name = node.name.value;
     const declareHelperName = node.isShared ? 'declareInheritanceSharedChannel' : 'declareBufferChannel';
     const targetBufferExpr = node.isShared
@@ -1154,7 +1168,7 @@ class CompilerAsync extends CompilerBaseAsync {
       : this.buffer.currentBuffer;
 
     this.emit(`runtime.${declareHelperName}(${targetBufferExpr}, "${name}", "${channelType}", context`);
-    if (!node.isShared && (channelType === 'sink' || channelType === 'sequence') && node.initializer) {
+    if (!node.isShared && channelFacts && channelFacts.requiresInitializer && node.initializer) {
       this.emit(', ');
       this.compile(node.initializer, null);
     }
@@ -1168,14 +1182,15 @@ class CompilerAsync extends CompilerBaseAsync {
       return;
     }
     const channelType = node.channelType;
+    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
     const name = node.name.value;
 
-    if (!node.isShared && (channelType === 'sink' || channelType === 'sequence')) {
+    if (!node.isShared && channelFacts && channelFacts.requiresInitializer) {
       return;
     }
 
     const emitInitializer = () => {
-      if (channelType === 'sink' || channelType === 'sequence') {
+      if (channelFacts && channelFacts.usesInitializerAsTarget) {
         this.emit(`runtime.initializeInheritanceSharedChannelDefault(${targetBufferExpr}, "${name}", "${channelType}", context, `);
         this.compile(node.initializer, null);
         this.emit.line(');');
@@ -1183,25 +1198,19 @@ class CompilerAsync extends CompilerBaseAsync {
       }
 
       const initNode = node.initializer;
-      const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
-      const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
       const initValueId = this._tmpid();
-      const initIfNotSetFlag = node.isShared ? ', initializeIfNotSet: true' : '';
 
       this.emit(`let ${initValueId} = `);
       this.compileExpression(initNode, null, initNode);
       this.emit.line(';');
-      if (channelType === 'var') {
-        this.emit.line(`${targetBufferExpr}.add(new runtime.VarCommand({ channelName: '${name}', args: [${initValueId}]${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
-        return;
-      }
-      if (channelType === 'text') {
-        this.emit.line(`${targetBufferExpr}.add(new runtime.TextCommand({ channelName: '${name}', command: 'set', args: [${initValueId}], normalizeArgs: true${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
-        return;
-      }
-      if (channelType === 'data') {
-        this.emit.line(`${targetBufferExpr}.add(new runtime.DataCommand({ channelName: '${name}', command: 'set', args: [null, ${initValueId}]${initIfNotSetFlag}, pos: {lineno: ${lineno}, colno: ${colno}} }), '${name}');`);
-      }
+      this.buffer.emitAddChannelCommandByType({
+        bufferExpr: targetBufferExpr,
+        channelType,
+        channelName: name,
+        valueExpr: initValueId,
+        positionNode: initNode,
+        initializeIfNotSet: !!node.isShared
+      });
     };
 
     if (!node.isShared) {

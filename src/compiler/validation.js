@@ -1,8 +1,12 @@
 'use strict';
 
 const nodes = require('../nodes');
+const {
+  CHANNEL_TYPES,
+  CHANNEL_TYPE_FACTS
+} = require('../channel-types');
 
-const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence', 'component', 'this', '__return__', '__constructor__']);
+const RESERVED_DECLARATION_NAMES = new Set([...CHANNEL_TYPES, 'value', 'component', 'this', '__return__', '__constructor__']);
 const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
 
 /**
@@ -39,6 +43,7 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
 function validateChannelDeclarationNode(compiler, node) {
   const nameNode = node && node.name;
   const channelType = node && node.channelType;
+  const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
   const hasInitializer = !!(node && node.initializer);
   const isShared = !!(node && node.isShared);
   const isRootScopeOwner = compiler.analysis.isRootScopeOwner(node._analysis);
@@ -55,12 +60,7 @@ function validateChannelDeclarationNode(compiler, node) {
   if (isShared && !isRootScopeOwner) {
     compiler.fail('shared declarations are only allowed at the root scope', node.lineno, node.colno, node);
   }
-  if (isShared && channelType === 'sink') {
-    // The parser already rejects `shared sink`, but keep the compiler-side
-    // guard so manually constructed ASTs fail the same feature gate.
-    compiler.fail('shared sink declarations are not supported', node.lineno, node.colno, node);
-  }
-  if (!isShared && (channelType === 'sink' || channelType === 'sequence') && !hasInitializer) {
+  if (!isShared && channelFacts && channelFacts.requiresInitializer && !hasInitializer) {
     compiler.fail(`${channelType} channels must have an initializer`, node.lineno, node.colno, node);
   }
 }

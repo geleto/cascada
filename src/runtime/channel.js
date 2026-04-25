@@ -10,6 +10,9 @@ const { RESOLVE_MARKER } = require('./resolve');
 const DataChannelTarget = require('../script/data-channel');
 const { BufferIterator } = require('./buffer-iterator');
 const {
+  CHANNEL_TYPE_FACTS
+} = require('../channel-types');
+const {
   PoisonError,
   RuntimeFatalError,
   isPoison,
@@ -18,6 +21,40 @@ const {
   createPoison,
   handleError
 } = require('./errors');
+
+const ENQUEUE_COMMAND_FACTORIES = Object.freeze({
+  text(channelName, command, args) {
+    return new TextCommand({
+      channelName,
+      args,
+      normalizeArgs: true,
+      pos: { lineno: 0, colno: 0 }
+    });
+  },
+  var(channelName, command, args) {
+    return new VarCommand({
+      channelName,
+      args,
+      pos: { lineno: 0, colno: 0 }
+    });
+  },
+  data(channelName, command, args) {
+    return new DataCommand({
+      channelName,
+      command: command || null,
+      args,
+      pos: { lineno: 0, colno: 0 }
+    });
+  },
+  sink(channelName, command, args) {
+    return new SinkCommand({
+      channelName,
+      command: command || null,
+      args,
+      pos: { lineno: 0, colno: 0 }
+    });
+  }
+});
 
 class Channel {
   constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
@@ -48,37 +85,11 @@ class Channel {
 
   _enqueueCommand(command, args) {
     if (!this._buffer) return;
-    let entry;
-    if (this._channelType === 'text') {
-      entry = new TextCommand({
-        channelName: this._channelName,
-        args,
-        normalizeArgs: true,
-        pos: { lineno: 0, colno: 0 }
-      });
-    } else if (this._channelType === 'var') {
-      entry = new VarCommand({
-        channelName: this._channelName,
-        args,
-        pos: { lineno: 0, colno: 0 }
-      });
-    } else if (this._channelType === 'data') {
-      entry = new DataCommand({
-        channelName: this._channelName,
-        command: command || null,
-        args,
-        pos: { lineno: 0, colno: 0 }
-      });
-    } else if (this._channelType === 'sink') {
-      entry = new SinkCommand({
-        channelName: this._channelName,
-        command: command || null,
-        args,
-        pos: { lineno: 0, colno: 0 }
-      });
-    } else {
+    const factory = ENQUEUE_COMMAND_FACTORIES[this._channelType];
+    if (!factory) {
       throw new Error(`Unsupported channel type '${this._channelType}' for command enqueueing`);
     }
+    const entry = factory(this._channelName, command, args);
     this._buffer.add(entry, this._channelName);
   }
 
@@ -558,34 +569,41 @@ class DataChannel extends Channel {
   }
 }
 
-function _createChannel(buffer, channelName, context, channelType = null, initializer) {
-  const type = channelType || channelName;
-  if (type === 'text') {
+const BASIC_CHANNEL_FACTORIES = Object.freeze({
+  text(buffer, channelName, context, type) {
     // Text channel is callable; args are appended to the text buffer.
     return createChannelFacade(new TextChannel(buffer, channelName, context, type), {
       callable: true,
       dynamicCommands: false
     });
-  }
-  if (type === 'var') {
+  },
+  var(buffer, channelName, context, type, initializer) {
     // Var channel is callable; args replace the current value.
     return createChannelFacade(new VarChannel(buffer, channelName, context, type, initializer), {
       callable: true,
       dynamicCommands: false
     });
-  }
-  if (type === 'sequential_path') {
+  },
+  sequential_path(buffer, channelName, context, type) {
     return createChannelFacade(new SequentialPathChannel(buffer, channelName, context, type), {
       callable: false,
       dynamicCommands: false
     });
-  }
-  if (type === 'data') {
+  },
+  data(buffer, channelName, context, type) {
     // Data channel supports arbitrary commands (set, push, merge, etc.).
     return createChannelFacade(new DataChannel(buffer, channelName, context, type), {
       callable: false,
       dynamicCommands: true
     });
+  }
+});
+
+function _createChannel(buffer, channelName, context, channelType = null, initializer) {
+  const type = channelType || channelName;
+  const factory = BASIC_CHANNEL_FACTORIES[type];
+  if (factory) {
+    return factory(buffer, channelName, context, type, initializer);
   }
   throw new Error(`Unsupported channel type '${type}'`);
 }
@@ -850,6 +868,18 @@ function createSequenceChannel(buffer, channelName, context, sink) {
   return _createSequenceChannel(buffer, channelName, context, sink);
 }
 
+const BUFFER_CHANNEL_FACTORIES = Object.freeze({
+  data: _createChannel,
+  sink(buffer, channelName, context, channelType, initializer) {
+    return _createSinkChannel(buffer, channelName, context, initializer);
+  },
+  sequence(buffer, channelName, context, channelType, initializer) {
+    return _createSequenceChannel(buffer, channelName, context, initializer);
+  },
+  text: _createChannel,
+  var: _createChannel
+});
+
 function declareBufferChannel(buffer, channelName, channelType, context, initializer) {
   const targetBuffer = buffer;
   if (!targetBuffer) {
@@ -861,17 +891,15 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   targetBuffer._channelTypes = targetBuffer._channelTypes || Object.create(null);
   targetBuffer._channelTypes[channelName] = channelType;
 
-  const channel = (channelType === 'sink')
-    ? _createSinkChannel(targetBuffer, channelName, context, initializer)
-    : (channelType === 'sequence')
-      ? _createSequenceChannel(targetBuffer, channelName, context, initializer)
-      : _createChannel(targetBuffer, channelName, context, channelType, initializer);
+  const factory = BUFFER_CHANNEL_FACTORIES[channelType] || _createChannel;
+  const channel = factory(targetBuffer, channelName, context, channelType, initializer);
 
   channel._buffer = targetBuffer;
 
   targetBuffer._registerChannel(channelName, channel);
 
-  if (channelType === 'sink' || channelType === 'sequence') {
+  const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+  if (channelFacts && channelFacts.usesInitializerAsTarget) {
     targetBuffer._channelRegistry = targetBuffer._channelRegistry || Object.create(null);
     targetBuffer._channelRegistry[channelName] = channel;
   }
@@ -930,7 +958,8 @@ function declareInheritanceSharedChannel(buffer, channelName, channelType, conte
 // separate lets generated code skip evaluating ignored ancestor defaults.
 function initializeInheritanceSharedChannelDefault(buffer, channelName, channelType, context, initializer) {
   const channel = declareInheritanceSharedChannel(buffer, channelName, channelType, context);
-  if (channelType === 'sink' || channelType === 'sequence') {
+  const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+  if (channelFacts && channelFacts.usesInitializerAsTarget) {
     if (typeof channel._setSink !== 'function') {
       throw new RuntimeFatalError(
         `shared channel '${channelName}' cannot be initialized as '${channelType}'`,

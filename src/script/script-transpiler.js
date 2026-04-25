@@ -72,6 +72,10 @@
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
 const { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES } = require('../compiler/validation');
+const {
+  CHANNEL_TYPES,
+  CHANNEL_TYPE_FACTS
+} = require('../channel-types');
 
 class ScriptTranspiler {
   constructor() {
@@ -92,7 +96,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'component', 'depends', 'var', 'extern', 'return', 'data', 'text', 'sink', 'sequence', 'shared'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'component', 'depends', 'extern', 'return', ...CHANNEL_TYPES, 'shared'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -1239,14 +1243,15 @@ class ScriptTranspiler {
     const trimmed = codeContent.trim();
     const firstWord = this._getFirstWord(trimmed);
     if (!firstWord) return null;
-    if (!(firstWord === 'data' || firstWord === 'text' || firstWord === 'sink' || firstWord === 'sequence')) {
+    const channelFacts = CHANNEL_TYPE_FACTS[firstWord] || null;
+    if (!(channelFacts && channelFacts.channelDeclarationTag)) {
       return null;
     }
 
     const decl = this._parseSingleChannelDeclaration(
       trimmed,
       lineIndex,
-      ['data', 'text', 'sink', 'sequence'],
+      CHANNEL_TYPES,
       'channel declaration'
     );
     return {
@@ -1266,7 +1271,7 @@ class ScriptTranspiler {
     const decl = this._parseSingleChannelDeclaration(
       trimmed.substring(firstWord.length).trim(),
       lineIndex,
-      ['var', 'text', 'data', 'sequence'],
+      CHANNEL_TYPES,
       'shared channel'
     );
     return { channelType: decl.channelType, name: decl.name };
@@ -1303,14 +1308,11 @@ class ScriptTranspiler {
 
   _isChannelDeclarationLine(firstWord, codeContent) {
     if (!firstWord || !codeContent) return false;
-    if (firstWord === 'sink' || firstWord === 'sequence') {
-      // sink/sequence declarations must have an assignment
+    const channelFacts = CHANNEL_TYPE_FACTS[firstWord] || null;
+    if (channelFacts && channelFacts.requiresInitializer) {
       return new RegExp(`^${firstWord}\\s+[A-Za-z_][A-Za-z0-9_]*\\s*=`).test(codeContent);
     }
-    if (firstWord === 'data' || firstWord === 'text') {
-      // Matches variable declarations with optional initialization
-      // Examples: "let myVar", "const foo = 5", "var x = 'hello'"
-      // Pattern: keyword + identifier + optional (= value)
+    if (channelFacts && channelFacts.channelDeclarationTag) {
       return new RegExp(`^${firstWord}\\s+[A-Za-z_][A-Za-z0-9_]*(\\s*=.*)?$`).test(codeContent);
     }
     return false;
@@ -1379,7 +1381,7 @@ class ScriptTranspiler {
       this._processChannelDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {
       // Channel operation was processed
-    } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'sink' || firstWord === 'sequence') &&
+    } else if ((CHANNEL_TYPE_FACTS[firstWord] && CHANNEL_TYPE_FACTS[firstWord].channelDeclarationTag) &&
       this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
     } else if (firstWord === 'endcapture') {

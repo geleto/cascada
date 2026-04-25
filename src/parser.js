@@ -5,6 +5,9 @@ var nodes = require('./nodes');
 var Obj = require('./object').Obj;
 var lib = require('./lib');
 const { RESERVED_DECLARATION_NAMES } = require('./compiler/validation');
+const {
+  CHANNEL_TYPE_FACTS
+} = require('./channel-types');
 
 class Parser extends Obj {
   init(tokens, opts) {
@@ -974,14 +977,15 @@ class Parser extends Obj {
     }
 
     let initializer = null;
-    if (channelType === 'sink' || channelType === 'sequence') {
+    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+    if (channelFacts && channelFacts.requiresInitializer) {
       if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
         this.fail(`parseChannelDeclaration: ${channelType} channels must have an initializer`, tag.lineno, tag.colno);
       }
       initializer = this.parseExpression();
     } else {
       if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-        if (channelType === 'var' || channelType === 'data' || channelType === 'text') {
+        if (channelFacts && channelFacts.supportsValueInitializer) {
           initializer = this.parseExpression();
         } else {
           this.fail(`parseChannelDeclaration: ${channelType} channels cannot have initializers`, tag.lineno, tag.colno);
@@ -1005,7 +1009,8 @@ class Parser extends Obj {
     }
 
     const channelType = channelTypeTok.value;
-    if (channelType !== 'var' && channelType !== 'text' && channelType !== 'data' && channelType !== 'sequence') {
+    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+    if (!channelFacts) {
       this.fail(`parseSharedDeclaration: unsupported shared channel type '${channelType}'`, channelTypeTok.lineno, channelTypeTok.colno);
     }
     this.nextToken();
@@ -1117,7 +1122,8 @@ class Parser extends Obj {
         this.fail('parseChannelCommand: expected channel type', tag.lineno, tag.colno);
       }
       channelType = this.nextToken().value;
-      if (channelType !== 'data' && channelType !== 'text' && channelType !== 'var' && channelType !== 'sink' && channelType !== 'sequence') {
+      const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+      if (!channelFacts) {
         this.fail(`parseChannelCommand: unsupported channel type '${channelType}'`, tag.lineno, tag.colno);
       }
     } else if (!this.skipSymbol('command')) {
@@ -1291,6 +1297,11 @@ class Parser extends Obj {
       return null;
     }
 
+    const channelFacts = CHANNEL_TYPE_FACTS[tok.value] || null;
+    if (channelFacts && channelFacts.channelDeclarationTag) {
+      return this.parseChannelDeclaration();
+    }
+
     switch (tok.value) {
       case 'raw':
         return this.parseRaw();
@@ -1321,11 +1332,6 @@ class Parser extends Obj {
         return this.parseVar();
       case 'extern':
         return this.parseExtern();
-      case 'data':
-      case 'text':
-      case 'sink':
-      case 'sequence':
-        return this.parseChannelDeclaration();
       case 'shared':
         return this.parseSharedDeclaration();
       case 'macro':

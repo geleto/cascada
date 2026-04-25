@@ -1,6 +1,9 @@
 'use strict';
 
 const nodes = require('../nodes');
+const {
+  CHANNEL_TYPES
+} = require('../channel-types');
 
 /**
  * Channel analysis pre-pass.
@@ -521,7 +524,7 @@ class CompileAnalysis {
 
     if (originNode && originNode.typename === 'ChannelCommand') {
       this.compiler.fail(
-        `Unsupported command target '${name}'. Commands must target declared channels (data/text/var/sink/sequence).`,
+        `Unsupported command target '${name}'. Commands must target declared channels (${CHANNEL_TYPES.join('/')}).`,
         lineno,
         colno,
         originNode || undefined

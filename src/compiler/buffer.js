@@ -7,15 +7,11 @@
 
 const nodes = require('../nodes');
 const {
+  CHANNEL_TYPE_FACTS
+} = require('../channel-types');
+const {
   validateChannelObservationCall
 } = require('./validation');
-const CHANNEL_COMMAND_CLASS = {
-  data: 'DataCommand',
-  sink: 'SinkCommand',
-  sequence: 'SequenceCallCommand',
-  text: 'TextCommand',
-  var: 'VarCommand'
-};
 const DEFAULT_TEMPLATE_TEXT_CHANNEL = '__text__';
 const BUFFER_STATE_KEYS = [
   'currentBuffer',
@@ -201,8 +197,8 @@ class CompileBuffer {
       return;
     }
 
-    const commandClass = CHANNEL_COMMAND_CLASS[channelType];
-    if (!commandClass) {
+    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+    if (!(channelFacts && channelFacts.commandClass)) {
       this.compiler.fail(
         `Compiler error: analysis did not resolve a declared channel target for '${channelName}'.`,
         node.lineno,
@@ -210,7 +206,7 @@ class CompileBuffer {
         node
       );
     }
-    this.compiler.emit(`new runtime.${commandClass}({ channelName: '${channelName}', `);
+    this.compiler.emit(`new runtime.${channelFacts.commandClass}({ channelName: '${channelName}', `);
     if (command) {
       this.compiler.emit(`command: '${command}', `);
     }
@@ -260,6 +256,63 @@ class CompileBuffer {
       return;
     }
     this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${channelName}");`);
+  }
+
+  emitAddChannelCommandByType({
+    bufferExpr = this.currentBuffer,
+    channelType,
+    channelName,
+    channelNameExpr = JSON.stringify(channelName),
+    command = null,
+    subpath = null,
+    argsExpr,
+    valueExpr = null,
+    positionNode = null,
+    normalizeArgs = null,
+    initializeIfNotSet = false
+  }) {
+    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+    if (!(channelFacts && channelFacts.commandClass)) {
+      this.compiler.fail(`Unsupported channel command type '${channelType}'.`, 0, 0);
+    }
+    if (argsExpr === undefined && valueExpr !== null) {
+      if (!(channelFacts && channelFacts.supportsValueInitializer)) {
+        this.compiler.fail(`Channel command type '${channelType}' does not support value initializer shorthand.`, 0, 0);
+      }
+      if (channelType === 'var') {
+        argsExpr = `[${valueExpr}]`;
+      } else if (channelType === 'text') {
+        command = command || 'set';
+        argsExpr = `[${valueExpr}]`;
+        normalizeArgs = normalizeArgs === null ? true : normalizeArgs;
+      } else if (channelType === 'data') {
+        command = command || 'set';
+        argsExpr = `[null, ${valueExpr}]`;
+      }
+    }
+    if (argsExpr === undefined) {
+      this.compiler.fail(`Missing args expression for channel command type '${channelType}'.`, 0, 0);
+    }
+    const props = [
+      `channelName: ${channelNameExpr}`,
+      `args: ${argsExpr}`,
+      `pos: ${this._emitPositionLiteral(positionNode)}`
+    ];
+    if (command) {
+      props.splice(1, 0, `command: ${JSON.stringify(command)}`);
+    }
+    if (subpath && subpath.length > 0) {
+      props.splice(command ? 2 : 1, 0, `subpath: ${JSON.stringify(subpath)}`);
+    }
+    if (normalizeArgs !== null) {
+      props.push(`normalizeArgs: ${normalizeArgs ? 'true' : 'false'}`);
+    }
+    if (initializeIfNotSet) {
+      props.push('initializeIfNotSet: true');
+    }
+    this.compiler.emit.line(
+      `${bufferExpr}.add(new runtime.${channelFacts.commandClass}({ ${props.join(', ')} }), ${channelNameExpr});`
+    );
   }
 
   emitOwnWaitedConcurrencyResolve(valueExpr, positionNode = null) {

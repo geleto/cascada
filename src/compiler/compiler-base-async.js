@@ -1246,6 +1246,21 @@ class CompilerBaseAsync extends CompilerCommon {
       }, node, specialChannelCall.channelName);
       return true;
     }
+    if (specialChannelCall.channelType === 'sink') {
+      if (!specialChannelCall.methodName) {
+        this.fail('Invalid sink command syntax: expected this.sinkChannel.method(...)', node.lineno, node.colno, node);
+      }
+      this.buffer.asyncAddValueToBuffer((resultVar) => {
+        this.emit(`${resultVar} = new runtime.SinkCommand({ channelName: ${JSON.stringify(specialChannelCall.channelName)}, command: ${JSON.stringify(specialChannelCall.methodName)}, `);
+        if (specialChannelCall.pathPrefix && specialChannelCall.pathPrefix.length > 0) {
+          this.emit(`subpath: ${JSON.stringify(specialChannelCall.pathPrefix)}, `);
+        }
+        this.emit('args: ');
+        this._compileAggregate(node.args, null, '[', ']', false, true);
+        this.emit(`, pos: ${this.buffer._emitPositionLiteral(node)} })`);
+      }, node, specialChannelCall.channelName);
+      return true;
+    }
     return false;
   }
 

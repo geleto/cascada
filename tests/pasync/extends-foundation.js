@@ -145,10 +145,15 @@ describe('Extends Foundation', function () {
         }).not.to.throwException();
       });
 
-      it('should reject shared sink declarations', function () {
-        expect(() => {
-          parser.parse(scriptTranspiler.scriptToTemplate('shared sink logger = makeLogger()'));
-        }).to.throwException(/unsupported shared channel type 'sink'/);
+      it('should parse shared sink declarations', function () {
+        const template = scriptTranspiler.scriptToTemplate('shared sink logger = makeLogger()');
+        const ast = parser.parse(template);
+        const declaration = ast.findAll(nodes.ChannelDeclaration)[0];
+
+        expect(declaration).to.be.ok();
+        expect(declaration.channelType).to.be('sink');
+        expect(declaration.name.value).to.be('logger');
+        expect(declaration.isShared).to.be(true);
       });
     });
 
@@ -724,6 +729,27 @@ describe('Extends Foundation', function () {
 
       const result = await env.renderScriptString(
         'shared sequence db = makeDb()\nthis.db.insert("boot")\nreturn this.db.snapshot()',
+        {}
+      );
+
+      expect(result).to.eql(['boot']);
+    });
+
+    it('should route shared sink operations through this.sharedName', async function () {
+      env.addGlobal('makeLogger', () => {
+        return {
+          events: [],
+          write(value) {
+            this.events.push(value);
+          },
+          snapshot() {
+            return this.events.slice();
+          }
+        };
+      });
+
+      const result = await env.renderScriptString(
+        'shared sink logger = makeLogger()\nthis.logger.write("boot")\nreturn this.logger.snapshot()',
         {}
       );
 
