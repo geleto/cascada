@@ -19,7 +19,10 @@ const {
   SinkRepairCommand,
   RestoreGuardStateCommand
 } = require('./commands');
-const { checkFinishedBuffer } = require('./checks');
+const {
+  assertChannelLaneAvailable,
+  checkFinishedBuffer
+} = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
 const { markCommandBuffer, isCommandBuffer } = require('./command-buffer-marker');
 
@@ -171,6 +174,7 @@ class CommandBuffer {
   add(value, channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     checkFinishedBuffer(this, resolvedChannelName);
+    assertChannelLaneAvailable(this, resolvedChannelName);
     // Normalize command channel/path keys at ingress so all downstream runtime
     // lookups operate on the resolved runtime channel name. This is why the
     // alias layer lives in CommandBuffer: once a command enters the buffer tree,
@@ -198,9 +202,7 @@ class CommandBuffer {
         // names to the caller-owned runtime channels they were bound to.
         value._inheritChannelAliases(this._channelAliases);
       }
-      if (typeof value._registerLinkedChannel === 'function') {
-        value._registerLinkedChannel(resolvedChannelName);
-      }
+      value._registerLinkedChannel(resolvedChannelName);
     }
 
     this._notifyCommandOrBufferAdded(resolvedChannelName);
@@ -565,7 +567,6 @@ class CommandBuffer {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     return (
       buffer.parent === this &&
-      typeof buffer.isLinkedChannel === 'function' &&
       buffer.isLinkedChannel(resolvedChannelName)
     );
   }

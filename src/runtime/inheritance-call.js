@@ -680,16 +680,10 @@ function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channel
     }
     return;
   }
-  if (
-    typeof currentBuffer.hasLinkedBuffer === 'function' &&
-    currentBuffer.hasLinkedBuffer(invocationBuffer, channelName)
-  ) {
+  if (currentBuffer.hasLinkedBuffer(invocationBuffer, channelName)) {
     return;
   }
-  if (
-    typeof currentBuffer.isFinished === 'function' &&
-    (currentBuffer.isFinished(channelName) || currentBuffer.finished)
-  ) {
+  if (currentBuffer.isFinished(channelName) || currentBuffer.finished) {
     invocationBuffer._registerLinkedChannel(channelName);
     return;
   }
@@ -702,7 +696,6 @@ function hasLinkedChannelPath(rootBuffer, buffer, channelName) {
     const parent = current.parent;
     if (
       !parent ||
-      typeof parent.hasLinkedBuffer !== 'function' ||
       !parent.hasLinkedBuffer(current, channelName)
     ) {
       return false;

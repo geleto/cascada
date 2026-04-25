@@ -204,31 +204,11 @@ async function _memberLookupScriptComplex(obj, val, errorContext) {
 }
 
 function externLookup(_context, name) {
-  const externContext = _context && typeof _context.getExternContextVariables === 'function'
-    ? _context.getExternContextVariables()
-    : null;
+  const externContext = _context.getExternContextVariables();
   if (externContext && Object.prototype.hasOwnProperty.call(externContext, name)) {
     return externContext[name];
   }
   return _context.lookup(name);
-}
-
-function _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, requestedName) {
-  if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
-    return;
-  }
-
-  if (isBufferInAncestry(currentBuffer, channel._buffer)) {
-    if (!hasLinkedChannelPathToOwner(currentBuffer, channel._buffer, requestedName)) {
-      throw new RuntimeFatalError(
-        `Channel '${requestedName}' is visible but not linked to the current buffer`,
-        0,
-        0,
-        null,
-        currentBuffer && currentBuffer._context ? currentBuffer._context.path : null
-      );
-    }
-  }
 }
 
 function _getObservationPosition(errorContext) {
@@ -269,19 +249,6 @@ function _addObservationCommand(targetBuffer, channelName, pos, mode) {
   throw new Error(`Unsupported shared-channel observation mode '${mode}'`);
 }
 
-function _resolveSharedObservationTarget(currentBuffer, name) {
-  const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
-    ? currentBuffer.findChannel(name)
-    : null;
-  if (channel) {
-    _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, name);
-  }
-  return {
-    buffer: currentBuffer,
-    channelName: name
-  };
-}
-
 function _observeResolvedInheritanceSharedChannel(name, currentBuffer, channelType, pos, errorContext, mode, implicitVarRead) {
   if (implicitVarRead && channelType && channelType !== 'var') {
     throw new RuntimeFatalError(
@@ -293,8 +260,7 @@ function _observeResolvedInheritanceSharedChannel(name, currentBuffer, channelTy
     );
   }
 
-  const target = _resolveSharedObservationTarget(currentBuffer, name);
-  return _addObservationCommand(target.buffer, target.channelName, pos, mode);
+  return _addObservationCommand(currentBuffer, name, pos, mode);
 }
 
 function observeInheritanceSharedChannel(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
@@ -342,89 +308,15 @@ function observeInheritanceSharedChannel(name, currentBuffer, errorContext = nul
  * Returns undefined when no channel binding is available.
  *
  * Ordinary lookup never skips to the producer/owner buffer. It issues an
- * ordered snapshot on the current buffer only, and throws if the owning lane
- * is visible but not structurally linked to that current buffer.
+ * ordered snapshot on the current buffer only. CommandBuffer.add owns the
+ * local lane assertion so lookup cannot silently create invisible lanes.
  */
 function channelLookup(name, currentBuffer) {
   const channel = currentBuffer.findChannel(name);
   if (!channel) {
     return undefined;
   }
-  if (isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel)) {
-    return undefined;
-  }
-  _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, name);
   return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
-}
-
-// Ordinary var-channel lookup must not turn mere ancestry into ambient
-// cross-template visibility. Shared channels use explicit observation helpers.
-function isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel) {
-  if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
-    return false;
-  }
-  const currentPath = currentBuffer._context ? currentBuffer._context.path : null;
-  const channelPath = channel._context ? channel._context.path : null;
-  if (!currentPath || channelPath === currentPath) {
-    return false;
-  }
-  // A fully linked ancestor lane is already the structural guarantee we need
-  // for an ordered read; do not block it just because the owning template path
-  // differs from the current invocation path.
-  if (
-    isBufferInAncestry(currentBuffer, channel._buffer) &&
-    hasLinkedChannelPathToOwner(currentBuffer, channel._buffer, channel._channelName)
-  ) {
-    return false;
-  }
-  return true;
-}
-
-// Returns true when `ancestor` is on the parent chain of `buffer`.
-// Used to decide whether an ordered lane snapshot is valid from current buffer.
-function isBufferInAncestry(buffer, ancestor) {
-  let current = buffer;
-  while (current) {
-    if (current === ancestor) {
-      return true;
-    }
-    current = current.parent;
-  }
-  return false;
-}
-
-function hasLinkedChannelPathToOwner(buffer, ownerBuffer, channelName) {
-  // A descendant buffer can only observe an ancestor-owned channel through its
-  // own lane if every parent/child edge on the way back to the owner is linked
-  // for that channel name. Constructor-boundary/template dispatch failures in
-  // Phase 9 showed that mere ancestry is not enough.
-  let current = buffer;
-  while (current && current !== ownerBuffer) {
-    const parent = current.parent;
-    if (!parent || typeof parent.hasLinkedBuffer !== 'function') {
-      return false;
-    }
-    if (parent.hasLinkedBuffer(current, channelName)) {
-      current = parent;
-      continue;
-    }
-    // Late child buffers can be created after an ancestor shared lane has
-    // already finished. In that case the parent cannot accept a new buffer
-    // edge, so the runtime records the link on the child buffer instead.
-    if (
-      typeof current.isLinkedChannel === 'function' &&
-      current.isLinkedChannel(channelName) &&
-      (
-        (typeof parent.isFinished === 'function' && parent.isFinished(channelName)) ||
-        parent.finished === true
-      )
-    ) {
-      current = parent;
-      continue;
-    }
-    return false;
-  }
-  return current === ownerBuffer;
 }
 
 module.exports = {

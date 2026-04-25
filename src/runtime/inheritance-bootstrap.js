@@ -360,24 +360,14 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
     if (inheritanceCall.hasLinkedChannelPath(parentBuffer, currentBuffer, channelName)) {
       continue;
     }
-    if (
-      typeof parentBuffer.hasLinkedBuffer === 'function' &&
-      parentBuffer.hasLinkedBuffer(currentBuffer, channelName)
-    ) {
+    if (parentBuffer.hasLinkedBuffer(currentBuffer, channelName)) {
       continue;
     }
-    if (
-      typeof parentBuffer.isFinished === 'function' &&
-      (parentBuffer.isFinished(channelName) || parentBuffer.finished)
-    ) {
-      if (typeof currentBuffer._registerLinkedChannel === 'function') {
-        currentBuffer._registerLinkedChannel(channelName);
-      }
+    if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
+      currentBuffer._registerLinkedChannel(channelName);
       continue;
     }
-    if (typeof parentBuffer.addBuffer === 'function') {
-      parentBuffer.addBuffer(currentBuffer, channelName);
-    }
+    parentBuffer.addBuffer(currentBuffer, channelName);
   }
 
   return currentBuffer;

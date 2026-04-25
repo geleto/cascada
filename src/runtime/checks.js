@@ -1,5 +1,7 @@
 'use strict';
 
+const { RuntimeFatalError } = require('./errors');
+
 /**
  * Check frame balance when popping.
  * Called when returning to parent frame to validate push/pop balance.
@@ -32,10 +34,7 @@ function checkFrameBalance(frame, parent) {
  * @throws {Error} If buffer is finished
  */
 function checkFinishedBuffer(buffer, channelName = null) {
-  if (!buffer) {
-    return;
-  }
-  const isFinished = (channelName !== null && channelName !== undefined && typeof buffer.isFinished === 'function')
+  const isFinished = (channelName !== null && channelName !== undefined)
     ? buffer.isFinished(channelName)
     : buffer.finished;
   if (isFinished) {
@@ -60,7 +59,32 @@ function ensureSequentialPathChannel(currentBuffer, pathKey) {
   }
 }
 
+function assertChannelLaneAvailable(buffer, channelName) {
+  const channel = buffer._channels ? buffer._channels.get(channelName) : null;
+  if (!channel || channel._buffer === buffer) {
+    return;
+  }
+  if (buffer._ownedChannels && buffer._ownedChannels[channelName]) {
+    return;
+  }
+  if (buffer._linkedChannels && buffer._linkedChannels[channelName] === true) {
+    return;
+  }
+  if (buffer.arrays && Object.prototype.hasOwnProperty.call(buffer.arrays, channelName)) {
+    return;
+  }
+
+  throw new RuntimeFatalError(
+    `Channel '${channelName}' is visible but this buffer has no linked lane for it`,
+    0,
+    0,
+    null,
+    buffer._context ? buffer._context.path : null
+  );
+}
+
 module.exports = {
+  assertChannelLaneAvailable,
   checkFrameBalance,
   checkFinishedBuffer,
   ensureSequentialPathChannel
