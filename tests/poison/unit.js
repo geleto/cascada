@@ -746,6 +746,141 @@
       expect(result).to.eql(['value1', 'value2']);
     });
 
+    it('should expose synchronous resolve fast-path result shapes', () => {
+      const marker = runtime.RESOLVED_VALUE_MARKER;
+
+      const empty = runtime.resolveAll([]);
+      expect(empty[marker]).to.be(true);
+      expect(empty.value).to.eql([]);
+
+      const single = runtime.resolveAll(['value']);
+      expect(single[marker]).to.be(true);
+      expect(single.value).to.eql(['value']);
+
+      const duo = runtime.resolveDuo('left', 'right');
+      expect(duo[marker]).to.be(true);
+      expect(duo.value).to.eql(['left', 'right']);
+
+      const many = runtime.resolveAll([1, 2, 3]);
+      expect(many[marker]).to.be(true);
+      expect(many.value).to.eql([1, 2, 3]);
+
+      const singleValue = runtime.resolveSingle(42);
+      expect(singleValue[marker]).to.be(true);
+      expect(singleValue.value).to.be(42);
+
+      const singleArr = runtime.resolveSingleArr('item');
+      expect(singleArr[marker]).to.be(true);
+      expect(singleArr.value).to.eql(['item']);
+    });
+
+    it('should avoid promise wrapping for synchronous object and argument resolution', () => {
+      const obj = { a: 1 };
+      const resolvedObj = runtime.resolveObjectProperties(obj);
+      expect(resolvedObj).to.be(obj);
+
+      const wrapped = runtime.resolveArguments((left, right) => `${left}:${right}`);
+      const result = wrapped('a', 'b');
+      expect(result).to.be('a:b');
+    });
+
+    it('should preserve rejected-promise contract for resolveArguments sync throws', async () => {
+      const wrapped = runtime.resolveArguments(() => {
+        throw new Error('sync failure');
+      });
+      const result = wrapped();
+      expect(result && typeof result.then).to.be('function');
+
+      try {
+        await result;
+        expect().fail('Should have rejected');
+      } catch (err) {
+        expect(err.message).to.be('sync failure');
+      }
+    });
+
+    it('should resolve marker-backed values through public resolve helpers', async () => {
+      const marker = runtime.RESOLVE_MARKER;
+      const makeLazy = (value) => runtime.createObject({
+        value: Promise.resolve(value)
+      });
+
+      const allSingle = await runtime.resolveAll([makeLazy('all-single')]);
+      expect(allSingle[0].value).to.be('all-single');
+      expect(allSingle[0][marker]).to.be(undefined);
+
+      const duo = await runtime.resolveDuo(makeLazy('duo-left'), makeLazy('duo-right'));
+      expect(duo[0].value).to.be('duo-left');
+      expect(duo[1].value).to.be('duo-right');
+      expect(duo[0][marker]).to.be(undefined);
+      expect(duo[1][marker]).to.be(undefined);
+
+      const many = await runtime.resolveAll([
+        makeLazy('many-a'),
+        makeLazy('many-b'),
+        makeLazy('many-c')
+      ]);
+      expect(many.map(item => item.value)).to.eql(['many-a', 'many-b', 'many-c']);
+      expect(many.some(item => item[marker])).to.be(false);
+
+      const single = await runtime.resolveSingle(makeLazy('single'));
+      expect(single.value).to.be('single');
+      expect(single[marker]).to.be(undefined);
+
+      const singleArr = await runtime.resolveSingleArr(makeLazy('single-arr'));
+      expect(singleArr[0].value).to.be('single-arr');
+      expect(singleArr[0][marker]).to.be(undefined);
+
+      const objectProperties = await runtime.resolveObjectProperties({
+        value: Promise.resolve('object-properties')
+      });
+      expect(objectProperties.value).to.be('object-properties');
+      expect(objectProperties[marker]).to.be(undefined);
+
+      const wrapped = runtime.resolveArguments((item) => item.value);
+      const wrappedResult = await wrapped(makeLazy('arguments'));
+      expect(wrappedResult).to.be('arguments');
+
+      const normalized = await runtime.normalizeFinalPromise(makeLazy('final'));
+      expect(normalized.value).to.be('final');
+      expect(normalized[marker]).to.be(undefined);
+    });
+
+    it('should unwrap resolved-value markers before poison and lazy-marker checks', async () => {
+      const resolvedMarker = runtime.RESOLVED_VALUE_MARKER;
+      const lazyMarker = runtime.RESOLVE_MARKER;
+      const wrapResolved = (value) => ({
+        [resolvedMarker]: true,
+        value,
+        then(onFulfilled) {
+          return onFulfilled ? onFulfilled(value) : value;
+        }
+      });
+
+      const poison = runtime.createPoison(new Error('wrapped poison'));
+      const poisonSingle = runtime.resolveAll([wrapResolved(poison)]);
+      expect(runtime.isPoison(poisonSingle)).to.be(true);
+      expect(poisonSingle.errors[0].message).to.be('wrapped poison');
+
+      const poisonDuo = runtime.resolveDuo(wrapResolved(poison), 'plain');
+      expect(runtime.isPoison(poisonDuo)).to.be(true);
+      expect(poisonDuo.errors[0].message).to.be('wrapped poison');
+
+      const lazy = runtime.createObject({ value: Promise.resolve('wrapped lazy') });
+      const resolvedLazy = await runtime.resolveSingle(wrapResolved(lazy));
+      expect(resolvedLazy.value).to.be('wrapped lazy');
+      expect(resolvedLazy[lazyMarker]).to.be(undefined);
+
+      const lazyArray = await runtime.resolveAll([wrapResolved(runtime.createObject({
+        value: Promise.resolve('wrapped all lazy')
+      }))]);
+      expect(lazyArray[0].value).to.be('wrapped all lazy');
+      expect(lazyArray[0][lazyMarker]).to.be(undefined);
+
+      const normalizedPoison = runtime.normalizeFinalPromise(wrapResolved(poison));
+      expect(runtime.isPoison(normalizedPoison)).to.be(true);
+    });
+
     it('should handle empty errors array in createPoison', () => {
       const poison = runtime.createPoison([]);
 

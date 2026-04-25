@@ -89,10 +89,60 @@ function resolveAll(args) {
     throw new TypeError('resolveAll expects an array of values');
   }
 
-  if (args.length === 0) {
-    return makeResolvedValue([]);
+  switch (args.length) {
+    case 0:
+      return makeResolvedValue([]);
+    case 1:
+      return resolveSingleAsArray(args[0]);
+    case 2:
+      return resolveDuoAsArray(args[0], args[1]);
+    default:
+      return resolveMany(args);
+  }
+}
+
+function needsResolution(value) {
+  return !!(value && (typeof value.then === 'function' || value[RESOLVE_MARKER]));
+}
+
+function resolveSingleAsArray(arg) {
+  const value = unwrapResolvedValue(arg);
+  if (isPoison(value)) {
+    return createPoison(value.errors);
+  }
+  if (needsResolution(value)) {
+    return resolveAllAsync([arg]);
+  }
+  return makeResolvedValue([value]);
+}
+
+function resolveDuoAsArray(leftArg, rightArg) {
+  const left = unwrapResolvedValue(leftArg);
+  const right = unwrapResolvedValue(rightArg);
+  const syncErrors = [];
+
+  if (isPoison(left)) {
+    syncErrors.push(...left.errors);
+  }
+  if (isPoison(right)) {
+    syncErrors.push(...right.errors);
   }
 
+  if (
+    (!isPoison(left) && needsResolution(left)) ||
+    (!isPoison(right) && needsResolution(right))
+  ) {
+    return resolveAllAsync([leftArg, rightArg]);
+  }
+
+  if (syncErrors.length > 0) {
+    return createPoison(syncErrors);
+  }
+
+  return makeResolvedValue([left, right]);
+}
+
+function resolveMany(args) {
   const resolvedArgs = [];
   const syncErrors = [];
 
@@ -134,8 +184,18 @@ async function resolveAllAsync(args) {
 // Resolve one Cascada value far enough to expose its current concrete value:
 // unwrap resolved-value wrappers, await a real promise, and finalize a marker-backed
 // object/array in place if needed.
-async function resolveValueAndMarker(value) {
+function resolveValueAndMarker(value) {
   let resolved = unwrapResolvedValue(value);
+
+  if (resolved && (typeof resolved.then === 'function' || resolved[RESOLVE_MARKER])) {
+    return resolveValueAndMarkerAsync(resolved);
+  }
+
+  return resolved;
+}
+
+async function resolveValueAndMarkerAsync(value) {
+  let resolved = value;
 
   if (resolved && typeof resolved.then === 'function') {
     try {
@@ -165,39 +225,44 @@ async function resolveValueAndMarker(value) {
 // Resolve a plain object's properties by first marking it as a lazy Cascada object and
 // then waiting for that object's own marker. Used when object-property resolution itself
 // is the intended consumption boundary.
-async function resolveObjectProperties(obj) {
+function resolveObjectProperties(obj) {
   const marked = createObject(obj);
   if (marked && marked[RESOLVE_MARKER]) {
-    try {
-      await marked[RESOLVE_MARKER];
-    } catch (err) {
-      if (isPoisonError(err)) {
-        return createPoison(err.errors);
-      }
-      throw err;
+    return resolveObjectPropertiesAsync(marked);
+  }
+  return marked;
+}
+
+async function resolveObjectPropertiesAsync(marked) {
+  try {
+    await marked[RESOLVE_MARKER];
+  } catch (err) {
+    if (isPoisonError(err)) {
+      return createPoison(err.errors);
     }
+    throw err;
   }
   return marked;
 }
 
 // Consume exactly two independent Cascada values with the same "never miss any error"
 // rule as resolveAll(), but keep the hot two-value path explicit.
-function resolveDuo(...args) {
-  if (args.length !== 2) {
-    throw new TypeError(`resolveDuo expects exactly 2 arguments, got ${args.length}`);
+function resolveDuo(left, right) {
+  if (arguments.length !== 2) {
+    throw new TypeError(`resolveDuo expects exactly 2 arguments, got ${arguments.length}`);
   }
-  return resolveAll(args);
+  return resolveDuoAsArray(left, right);
 }
 
 // Consume one top-level Cascada value.
 // - sync values return via a branded resolved-value wrapper for fast-path compatibility
 // - promises are awaited and converted to PoisonedValue on failure
 // - marker-backed objects/arrays are finalized in place and then returned
-async function resolveSingle(...args) {
-  if (args.length !== 1) {
-    throw new TypeError(`resolveSingle expects exactly 1 argument, got ${args.length}`);
+function resolveSingle(value) {
+  if (arguments.length !== 1) {
+    throw new TypeError(`resolveSingle expects exactly 1 argument, got ${arguments.length}`);
   }
-  const value = unwrapResolvedValue(args[0]);
+  value = unwrapResolvedValue(value);
 
   // Synchronous shortcuts
   if (isPoison(value)) {
@@ -208,6 +273,10 @@ async function resolveSingle(...args) {
     return makeResolvedValue(value);
   }
 
+  return resolveSingleAsync(value);
+}
+
+async function resolveSingleAsync(value) {
   // Await promise, convert rejections to poison
   let resolvedValue;
   try {
@@ -272,13 +341,22 @@ async function _resolveSingleArrAsync(value) {
 // Wrap a JS function so its trailing arguments are consumed as Cascada values before the
 // underlying function is called. Used for APIs that explicitly want resolved arguments.
 function resolveArguments(fn, skipArguments = 0) {
-  return async function (...args) {
+  return function (...args) {
     const skippedArgs = args.slice(0, skipArguments);
     const remainingArgs = args.slice(skipArguments);
-    const resolvedArgs = await resolveAll(remainingArgs);
-    const finalArgs = [...skippedArgs, ...resolvedArgs];
+    const resolvedArgs = resolveAll(remainingArgs);
 
-    return fn.apply(this, finalArgs);
+    if (isResolvedValue(resolvedArgs)) {
+      try {
+        return fn.apply(this, skippedArgs.concat(resolvedArgs.value));
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    }
+
+    return Promise.resolve(resolvedArgs).then((finalResolvedArgs) => {
+      return fn.apply(this, skippedArgs.concat(finalResolvedArgs));
+    });
   };
 }
 
