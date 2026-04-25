@@ -213,6 +213,27 @@
       }
     });
 
+    it('should export root script channels through final snapshots', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('channels.script', [
+        'text log',
+        'data result',
+        'log("hello")',
+        'result.user.name = "Ada"'
+      ].join('\n'));
+
+      const rendered = await env.renderScriptString([
+        'import "channels.script" as lib',
+        'return { log: lib.log, result: lib.result }'
+      ].join('\n'));
+
+      expect(rendered).to.eql({
+        log: 'hello',
+        result: { user: { name: 'Ada' } }
+      });
+    });
+
     it('should skip deferred export resolution when rendering in component mode', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);

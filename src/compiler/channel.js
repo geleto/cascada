@@ -183,6 +183,14 @@ class CompileChannel {
     }
     compiler.emit.line(');');
 
+    if (
+      !node.isShared &&
+      name.charAt(0) !== '_' &&
+      compiler.analysis.isRootScopeOwner(node._analysis)
+    ) {
+      compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${targetBufferExpr});`);
+    }
+
     this._emitChannelDeclarationInitializer(node, targetBufferExpr);
   }
 

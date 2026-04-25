@@ -2,7 +2,7 @@
 
 const lib = require('../lib');
 const scriptTranspiler = require('../script/script-transpiler');
-const { Template } = require('./template');
+const { Template, AsyncTemplate } = require('./template');
 
 /**
  * Script class - represents a compiled Cascada script.
@@ -34,6 +34,10 @@ class Script extends Template {
         }
       });
     });
+  }
+
+  getExported(ctx, renderCtx, cb) {
+    return AsyncTemplate.prototype.getExported.call(this, ctx, renderCtx, cb);
   }
 
   _compileSource() {

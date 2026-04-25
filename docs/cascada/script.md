@@ -2070,7 +2070,7 @@ These two composition mechanisms have different contracts: `import` uses a stric
 
 ### Importing Libraries with `import`
 
-Use `import` to share functions across multiple scripts — helper functions, formatters, validators — without duplicating them. The imported script's top-level body does not run in the caller; only its function definitions are exposed.
+Use `import` to share public root-scope declarations across multiple scripts — helper functions, reusable constants, and assembled channel values — without duplicating them. Public declarations are root-scope names that do not start with `_`. Exported non-`shared` channel declarations are exposed through their final snapshots, so importing a `text` or `data` channel gives the assembled value rather than the channel object itself. `shared` declarations belong to `extends`/`component` state and are accessed through `this.<name>`, not through import namespaces.
 
 #### Importing a Namespace with `as`
 
