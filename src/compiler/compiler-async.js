@@ -961,6 +961,12 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
+  analyzeReturn() {
+    return {
+      mutates: [RETURN_CHANNEL_NAME]
+    };
+  }
+
   compileReturn(node) {
     const resultVar = this._tmpid();
     this.emit(`let ${resultVar} = `);
@@ -973,12 +979,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(
       `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${RETURN_CHANNEL_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}");`
     );
-  }
-
-  analyzeReturn() {
-    return {
-      mutates: [RETURN_CHANNEL_NAME]
-    };
   }
 
   analyzeMacro(node) {
@@ -1423,6 +1423,97 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
+  analyzeRoot(node) {
+    const declares = this._getRootDeclarations(node);
+    const templateUsesInheritanceSurface = !this.scriptMode && this._templateUsesInheritanceSurface(node);
+    this.templateUsesInheritanceSurface = templateUsesInheritanceSurface;
+    if (templateUsesInheritanceSurface) {
+      const inferredTemplateSharedDeclarations = this._collectInferredTemplateSharedDeclarations(node);
+      node._analysis.inferredTemplateSharedDeclarations = inferredTemplateSharedDeclarations;
+      inferredTemplateSharedDeclarations.forEach((declaration) => {
+        declares.push({
+          name: declaration.name.value,
+          type: 'var',
+          initializer: null,
+          shared: true
+        });
+      });
+    }
+    const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
+      ? node._analysis.sequenceLocks
+      : [];
+    sequenceLocks.forEach((lockName) => {
+      declares.push({ name: lockName, type: 'sequential_path', initializer: null });
+    });
+    return {
+      createScope: true,
+      scopeBoundary: true,
+      declares,
+      textOutput: this._getRootTextOutput()
+    };
+  }
+
+  _templateUsesInheritanceSurface(rootNode) {
+    if (this.scriptMode || !rootNode || typeof rootNode.findAll !== 'function') {
+      return false;
+    }
+    return rootNode.findAll(nodes.Extends).length > 0 || rootNode.findAll(nodes.Block).length > 0;
+  }
+
+  _collectInferredTemplateSharedDeclarations(rootNode) {
+    const calleeNodes = new Set();
+    rootNode.findAll(nodes.FunCall).forEach((callNode) => {
+      if (callNode && callNode.name) {
+        calleeNodes.add(callNode.name);
+      }
+    });
+
+    const inferred = new Map();
+    rootNode.findAll(nodes.LookupVal).forEach((lookupNode) => {
+      if (
+        lookupNode.target instanceof nodes.Symbol &&
+        lookupNode.target.value === 'this' &&
+        !(lookupNode.val instanceof nodes.Literal && typeof lookupNode.val.value === 'string')
+      ) {
+        this.fail(
+          'Dynamic this[...] shared access is not supported in templates.',
+          lookupNode.lineno,
+          lookupNode.colno,
+          lookupNode
+        );
+      }
+      if (calleeNodes.has(lookupNode)) {
+        return;
+      }
+      const staticPath = this.sequential._extractStaticPath(lookupNode);
+      if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
+        return;
+      }
+      const name = staticPath[1];
+      if (inferred.has(name)) {
+        return;
+      }
+      const nameNode = new nodes.Symbol(lookupNode.lineno, lookupNode.colno, name);
+      const declaration = new nodes.ChannelDeclaration(lookupNode.lineno, lookupNode.colno, 'var', nameNode, null, true);
+      inferred.set(name, declaration);
+    });
+    return Array.from(inferred.values());
+  }
+
+  _getRootDeclarations(node) {
+    const declares = [];
+    if (this.scriptMode) {
+      declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
+    } else {
+      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
+    }
+    return declares;
+  }
+
+  _getRootTextOutput() {
+    return this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
+  }
+
   _emitRootExternInitialization(node) {
     const externNodes = this._getRootExternNodes(node);
 
@@ -1578,83 +1669,6 @@ class CompilerAsync extends CompilerBaseAsync {
     return { blocks, hasGenericScriptBody };
   }
 
-  analyzeRoot(node) {
-    const declares = this._getRootDeclarations(node);
-    const templateUsesInheritanceSurface = !this.scriptMode && this._templateUsesInheritanceSurface(node);
-    this.templateUsesInheritanceSurface = templateUsesInheritanceSurface;
-    if (templateUsesInheritanceSurface) {
-      const inferredTemplateSharedDeclarations = this._collectInferredTemplateSharedDeclarations(node);
-      node._analysis.inferredTemplateSharedDeclarations = inferredTemplateSharedDeclarations;
-      inferredTemplateSharedDeclarations.forEach((declaration) => {
-        declares.push({
-          name: declaration.name.value,
-          type: 'var',
-          initializer: null,
-          shared: true
-        });
-      });
-    }
-    const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
-      ? node._analysis.sequenceLocks
-      : [];
-    sequenceLocks.forEach((lockName) => {
-      declares.push({ name: lockName, type: 'sequential_path', initializer: null });
-    });
-    return {
-      createScope: true,
-      scopeBoundary: true,
-      declares,
-      textOutput: this._getRootTextOutput()
-    };
-  }
-
-  _templateUsesInheritanceSurface(rootNode) {
-    if (this.scriptMode || !rootNode || typeof rootNode.findAll !== 'function') {
-      return false;
-    }
-    return rootNode.findAll(nodes.Extends).length > 0 || rootNode.findAll(nodes.Block).length > 0;
-  }
-
-  _collectInferredTemplateSharedDeclarations(rootNode) {
-    const calleeNodes = new Set();
-    rootNode.findAll(nodes.FunCall).forEach((callNode) => {
-      if (callNode && callNode.name) {
-        calleeNodes.add(callNode.name);
-      }
-    });
-
-    const inferred = new Map();
-    rootNode.findAll(nodes.LookupVal).forEach((lookupNode) => {
-      if (
-        lookupNode.target instanceof nodes.Symbol &&
-        lookupNode.target.value === 'this' &&
-        !(lookupNode.val instanceof nodes.Literal && typeof lookupNode.val.value === 'string')
-      ) {
-        this.fail(
-          'Dynamic this[...] shared access is not supported in templates.',
-          lookupNode.lineno,
-          lookupNode.colno,
-          lookupNode
-        );
-      }
-      if (calleeNodes.has(lookupNode)) {
-        return;
-      }
-      const staticPath = this.sequential._extractStaticPath(lookupNode);
-      if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
-        return;
-      }
-      const name = staticPath[1];
-      if (inferred.has(name)) {
-        return;
-      }
-      const nameNode = new nodes.Symbol(lookupNode.lineno, lookupNode.colno, name);
-      const declaration = new nodes.ChannelDeclaration(lookupNode.lineno, lookupNode.colno, 'var', nameNode, null, true);
-      inferred.set(name, declaration);
-    });
-    return Array.from(inferred.values());
-  }
-
   compileRoot(node) {
     const extendsNodes = node.findAll(nodes.Extends).filter((child) => !child.noParentLiteral);
     this.topLevelDynamicExtends = new Set(
@@ -1701,20 +1715,6 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.emit.capture(() => {
       this.compileExpression(node, null, node, true);
     });
-  }
-
-  _getRootDeclarations(node) {
-    const declares = [];
-    if (this.scriptMode) {
-      declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
-    } else {
-      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
-    }
-    return declares;
-  }
-
-  _getRootTextOutput() {
-    return this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
   }
 
   analyzeMethodDefinition(node) {
