@@ -1,6 +1,6 @@
 'use strict';
 
-const { isPoison, isPoisonError, isRuntimeFatalError, PoisonError, createPoison, handleError } = require('./errors');
+const { isPoison, isPoisonError, isRuntimeFatalError, PoisonError, createPoison, collectErrors, handleError } = require('./errors');
 const { RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue } = require('./resolve');
 const contextualizedOutputErrorCache = new WeakMap();
 let safeOutputApi = null;
@@ -1367,7 +1367,19 @@ function materializeTextCommandArgs(values, output, pos) {
   if (!hasAsyncMaterialization) {
     return normalizedArgs;
   }
-  return Promise.all(normalizedArgs);
+  return materializeTextCommandArgsAsync(normalizedArgs);
+}
+
+async function materializeTextCommandArgsAsync(normalizedArgs) {
+  const errors = await collectErrors(normalizedArgs);
+  if (errors.length > 0) {
+    throw new PoisonError(errors);
+  }
+  const resolvedArgs = [];
+  for (const normalized of normalizedArgs) {
+    resolvedArgs.push(await normalized);
+  }
+  return resolvedArgs;
 }
 
 function normalizeMaterializedTextArg(value, output, pos) {

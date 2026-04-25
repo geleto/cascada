@@ -1,6 +1,7 @@
 'use strict';
 
-const { RuntimeFatalError } = require('./errors');
+const { RuntimeFatalError, isPoison } = require('./errors');
+const { resolveDuo } = require('./resolve');
 
 const INTERNAL_INHERITANCE_STATE = typeof Symbol === 'function'
   ? Symbol('cascadaInheritanceInternalState')
@@ -160,7 +161,17 @@ function mergeInheritanceStartupPromise(state, promise, currentPromise = null) {
   }
 
   const merged = normalizedCurrent
-    ? Promise.all([normalizedCurrent, normalizedNext]).then((results) => results[1])
+    ? resolveDuo(normalizedCurrent, normalizedNext).then((results) => {
+      if (isPoison(results)) {
+        if (results.errors.length === 1) {
+          throw results.errors[0];
+        }
+        if (results.errors.length > 1) {
+          throw createInheritanceMetadataAggregateError(results.errors);
+        }
+      }
+      return results[1];
+    })
     : normalizedNext;
 
   setInheritanceStartupPromise(state, merged);

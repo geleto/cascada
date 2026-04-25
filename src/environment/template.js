@@ -281,7 +281,7 @@ class Template extends Obj {
       props = func(globalRuntime);
     }
 
-    const blockContracts = this._getCompiledBlockContracts(props);
+    const blockContracts = props.blockContracts;
     this.blocks = this._getCompiledBlocks(props, blockContracts);
     this.externSpec = props.externSpec || [];
     this.inheritanceSpec = this._getCompiledInheritanceSpec(props);
@@ -311,10 +311,6 @@ class Template extends Obj {
     });
 
     return blocks;
-  }
-
-  _getCompiledBlockContracts(props) {
-    return props.blockContracts;
   }
 
   _getCompiledInheritanceSpec(props) {
@@ -413,7 +409,12 @@ class AsyncTemplate extends Template {
     const boundExported = {};
     const finalizeExportedValue = (item) => {
       return outputFinished
-        ? Promise.all([item, outputFinished]).then((values) => values[0])
+        ? globalRuntime.resolveAll([item, outputFinished]).then((values) => {
+          if (globalRuntime.isPoison(values)) {
+            throw new globalRuntime.PoisonError(values.errors);
+          }
+          return values[0];
+        })
         : item;
     };
 

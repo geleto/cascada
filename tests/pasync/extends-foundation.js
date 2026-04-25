@@ -2114,6 +2114,25 @@ describe('Extends Foundation', function () {
       }
     });
 
+    it('should aggregate multiple inherited startup failures when merging startup promises', async function () {
+      if (!inheritanceStateModule) {
+        this.skip();
+        return;
+      }
+      const inheritanceState = runtime.createInheritanceState();
+      const currentStartup = Promise.reject(new Error('startup failed A'));
+      const nextStartup = Promise.reject(new Error('startup failed B'));
+
+      try {
+        await inheritanceStateModule.mergeInheritanceStartupPromise(inheritanceState, nextStartup, currentStartup);
+        expect().fail('Expected merged startup promise to reject');
+      } catch (err) {
+        const messages = (err.errors || [err]).map((error) => error.message);
+        expect(messages.some((message) => message.indexOf('startup failed A') !== -1)).to.be(true);
+        expect(messages.some((message) => message.indexOf('startup failed B') !== -1)).to.be(true);
+      }
+    });
+
     it('should reuse the existing inheritance state when a parent root renders for composition', function () {
       const childScript = new Script('extends "A.script"\nreturn this.build("Ada")', env, 'C.script');
       const parentScript = new Script('method build(name)\n  return "A:" + name\nendmethod\nreturn null', env, 'A.script');

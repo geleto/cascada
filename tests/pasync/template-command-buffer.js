@@ -213,6 +213,53 @@
       }
     });
 
+    it('should collect multiple exported value failures before rejecting the exported namespace', async function () {
+      const env = new AsyncEnvironment();
+      env.addGlobal('failA', () => {
+        throw new Error('export failed A');
+      });
+      env.addGlobal('failB', () => {
+        throw new Error('export failed B');
+      });
+      const tmpl = new AsyncTemplate([
+        '{% set a = failA() %}',
+        '{% set b = failB() %}'
+      ].join(''), env, 'multi-failed-deferred-export.njk');
+
+      const exported = tmpl.getExported({});
+
+      try {
+        await exported[runtime.RESOLVE_MARKER];
+        expect().fail('Expected exported namespace marker to reject');
+      } catch (err) {
+        const messages = (err.errors || [err]).map((error) => error.message);
+        expect(messages.some((message) => message.indexOf('export failed A') !== -1)).to.be(true);
+        expect(messages.some((message) => message.indexOf('export failed B') !== -1)).to.be(true);
+      }
+    });
+
+    it('should keep individual resolved exports usable while the exported namespace reports other failures', async function () {
+      const env = new AsyncEnvironment();
+      env.addGlobal('failValue', () => {
+        throw new Error('root export value failed');
+      });
+      const tmpl = new AsyncTemplate([
+        '{% macro ok() %}OK{% endmacro %}',
+        '{% set x = failValue() %}'
+      ].join(''), env, 'resolved-export-with-failed-sibling.njk');
+
+      const exported = tmpl.getExported({});
+      const ok = await exported.ok;
+      expect(typeof ok).to.be('function');
+
+      try {
+        await exported[runtime.RESOLVE_MARKER];
+        expect().fail('Expected exported namespace marker to reject');
+      } catch (err) {
+        expect(err.message).to.contain('root export value failed');
+      }
+    });
+
     it('should export root script channels through final snapshots', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
