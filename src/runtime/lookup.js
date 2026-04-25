@@ -25,6 +25,9 @@ function memberLookup(obj, val) {
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
+  if (value && value.isMacro) {
+    return value;
+  }
   if (typeof value === 'function') {
     return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
   }
@@ -43,6 +46,9 @@ function memberLookupScriptRaw(obj, val) {
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
+  if (value && value.isMacro) {
+    return value;
+  }
   if (typeof value === 'function') {
     return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
   }

@@ -396,30 +396,36 @@ class AsyncTemplate extends Template {
       renderCallback,
       globalRuntime.REGULAR_COMPOSITION_MODE
     );
-    if (output && typeof output.getFinishedPromise === 'function') {
-      output.getFinishedPromise().catch((err) => {
+    const outputFinished = output && typeof output.getFinishedPromise === 'function'
+      ? output.getFinishedPromise()
+      : null;
+    if (outputFinished) {
+      outputFinished.catch((err) => {
         context.rejectExports(err);
       });
     }
 
     if (rootError) {
-      return Promise.reject(rootError);
+      throw rootError;
     }
 
     const exported = context.getExported();
     const boundExported = {};
-    const macroContext = context;
+    const finalizeExportedValue = (item) => {
+      return outputFinished
+        ? Promise.all([item, outputFinished]).then((values) => values[0])
+        : item;
+    };
 
     for (const name in exported) {
-      const item = exported[name];
-      if (typeof item === 'function' && item.isMacro) {
-        boundExported[name] = item.bind(macroContext);
-      } else {
-        boundExported[name] = item;
-      }
+      boundExported[name] = finalizeExportedValue(exported[name]);
     }
 
-    return Promise.resolve(boundExported);
+    const markedExported = globalRuntime.createObject(boundExported);
+    if (markedExported && markedExported[globalRuntime.RESOLVE_MARKER]) {
+      markedExported[globalRuntime.RESOLVE_MARKER].catch(() => {});
+    }
+    return markedExported;
   }
 
   /**

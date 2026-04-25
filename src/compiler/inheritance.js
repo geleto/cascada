@@ -202,7 +202,7 @@ class CompileInheritance {
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
       this.emit.line('  runtime.validateIsolatedExternSpec(resolvedTemplate.externSpec || [], "import");');
-      this.emit.line('  return resolvedTemplate.getExported(null, cb);');
+      this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, cb));');
       this.emit.line('});');
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
       this._emitValueImportBinding(target, exportedId, node);
@@ -221,7 +221,7 @@ class CompileInheritance {
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  runtime.validateExternInputs(resolvedTemplate.externSpec || [], ${importInputNamesVar}, Object.keys(${importContextVar}), "import");`);
-    this.emit.line(`  return resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb);`);
+    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb));`);
     this.emit.line('});');
     this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
@@ -260,7 +260,7 @@ class CompileInheritance {
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
       this.emit.line('  runtime.validateIsolatedExternSpec(resolvedTemplate.externSpec || [], "from-import");');
-      this.emit.line('  return resolvedTemplate.getExported(null, cb);');
+      this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, cb));');
       this.emit.line('});');
 
       node.names.children.forEach((nameNode) => {
@@ -314,7 +314,7 @@ class CompileInheritance {
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  runtime.validateExternInputs(resolvedTemplate.externSpec || [], ${importInputNamesVar}, Object.keys(${importContextVar}), "from-import");`);
-    this.emit.line(`  return resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb);`);
+    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb));`);
     this.emit.line('});');
 
     node.names.children.forEach((nameNode) => {

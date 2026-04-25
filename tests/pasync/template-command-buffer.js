@@ -178,18 +178,21 @@
       env.addGlobal('slowValue', () => pendingValue);
       const tmpl = new AsyncTemplate('{% set x = slowValue() %}', env, 'deferred-export-namespace.njk');
 
-      const exportedPromise = tmpl.getExported({});
+      const exported = tmpl.getExported({});
+      expect(exported).to.have.key('x');
+      expect(typeof exported.then).to.be('undefined');
+      expect(exported[runtime.RESOLVE_MARKER]).to.be.ok();
+
       const first = await Promise.race([
-        exportedPromise.then(() => 'exported'),
+        Promise.resolve().then(() => 'exported'),
         new Promise((resolve) => setTimeout(() => resolve('timeout'), 0))
       ]);
       expect(first).to.be('exported');
 
-      const exported = await exportedPromise;
-      expect(exported).to.have.key('x');
-
       resolveValue('ready');
       expect(await exported.x).to.be('ready');
+      await exported[runtime.RESOLVE_MARKER];
+      expect(exported.x).to.be('ready');
     });
 
     it('should reject an early returned exported value when its channel fails', async function () {
@@ -199,7 +202,7 @@
       });
       const tmpl = new AsyncTemplate('{% set x = failValue() %}', env, 'failed-deferred-export.njk');
 
-      const exported = await tmpl.getExported({});
+      const exported = tmpl.getExported({});
       expect(exported).to.have.key('x');
 
       try {
