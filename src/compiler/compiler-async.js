@@ -4,7 +4,6 @@ const nodes = require('../nodes');
 const {
   collectRootExternSpec,
   validateGuardVariablesDeclared,
-  validateChannelDeclarationNode,
   validateScriptExtendsSourceOrder,
   validateRootExternFallbackOrder,
   validateRootExternCycles,
@@ -15,9 +14,6 @@ const CompileBuffer = require('./buffer');
 const {
   ROOT_STARTUP_PROMISE_VAR
 } = require('./inheritance');
-const {
-  CHANNEL_TYPE_FACTS
-} = require('../channel-types');
 
 const RETURN_CHANNEL_NAME = '__return__';
 const COMPILED_METHODS_VAR = '__compiledMethods';
@@ -157,7 +153,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.body) {
       node.body._analysis = { createScope: true };
     }
-    const thisSharedPath = this._getThisSharedSetPathFacts(node, analysisPass);
+    const thisSharedPath = this.channel.getThisSharedSetPathFacts(node, analysisPass);
     if (thisSharedPath) {
       uses.push(thisSharedPath.name);
       mutates.push(thisSharedPath.name);
@@ -199,68 +195,6 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  _getStaticLiteralPathSegments(pathNode) {
-    if (!pathNode || !(pathNode instanceof nodes.Array) || !Array.isArray(pathNode.children)) {
-      return null;
-    }
-    const segments = [];
-    for (let i = 0; i < pathNode.children.length; i++) {
-      const child = pathNode.children[i];
-      if (!(child instanceof nodes.Literal)) {
-        return null;
-      }
-      segments.push(child.value);
-    }
-    return segments;
-  }
-
-  _getThisSharedSetPathFacts(node, analysisPass = this.analysis) {
-    if (!node || !node.targets || node.targets.length !== 1) {
-      return null;
-    }
-    const segments = this.scriptMode
-      ? this._getScriptThisSharedSetPathSegments(node)
-      : this._getTemplateThisSharedSetPathSegments(node);
-    if (!segments || segments.length === 0) {
-      return null;
-    }
-    const name = segments[0];
-    const declaration = analysisPass.findDeclaration(node._analysis, name);
-    if (!declaration || !declaration.shared) {
-      return null;
-    }
-    return {
-      name,
-      type: declaration.type,
-      path: segments.slice(1)
-    };
-  }
-
-  _getScriptThisSharedSetPathSegments(node) {
-    if (!node.path) {
-      return null;
-    }
-    const target = node.targets[0];
-    if (!(target instanceof nodes.Symbol) || target.value !== 'this') {
-      return null;
-    }
-    return this._getStaticLiteralPathSegments(node.path);
-  }
-
-  _getTemplateThisSharedSetPathSegments(node) {
-    // Template set targets carry the full `this.x.y` path in the target
-    // LookupVal; script-mode set_path uses node.path and is handled separately.
-    if (this.scriptMode || node.path) {
-      return null;
-    }
-    const target = node.targets[0];
-    const staticPath = this.sequential._extractStaticPath(target);
-    if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
-      return null;
-    }
-    return staticPath.slice(1);
-  }
-
   analyzeExtern(node) {
     if (!this.analysis.isRootScopeOwner(node._analysis)) {
       this.fail(
@@ -298,7 +232,7 @@ class CompilerAsync extends CompilerBaseAsync {
   compileSet(node) {
     const thisSharedPath = node._analysis && node._analysis.thisSharedSetPath;
     if (thisSharedPath) {
-      this._compileThisSharedSetPath(node, thisSharedPath);
+      this.channel.compileThisSharedSetPath(node, thisSharedPath);
       return;
     }
 
@@ -374,57 +308,6 @@ class CompilerAsync extends CompilerBaseAsync {
         this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.buffer.currentBuffer});`);
       }
     });
-  }
-
-  _compileThisSharedSetPath(node, thisSharedPath) {
-    if (node.body) {
-      this.fail('this.<shared> assignment does not support set blocks.', node.lineno, node.colno, node);
-    }
-    if (!node.value) {
-      this.fail('this.<shared> assignment requires a value.', node.lineno, node.colno, node);
-    }
-
-    const valueId = this._tmpid();
-    this.emit(`let ${valueId} = `);
-    this.compileExpression(node.value, null, node.value);
-    this.emit.line(';');
-
-    if (thisSharedPath.type === 'var') {
-      let resultId = valueId;
-      if (thisSharedPath.path.length > 0) {
-        resultId = this._tmpid();
-        this.emit(`let ${resultId} = runtime.setPath(`);
-        this.buffer.emitAddRawSnapshot(thisSharedPath.name, node);
-        this.emit(`, ${JSON.stringify(thisSharedPath.path)}, ${valueId})`);
-        this.emit.line(';');
-      }
-      this.buffer.emitAddChannelCommandByType({
-        channelType: 'var',
-        channelName: thisSharedPath.name,
-        argsExpr: `[${resultId}]`,
-        positionNode: node
-      });
-      return;
-    }
-
-    if (thisSharedPath.type === 'data') {
-      const dataPath = thisSharedPath.path.length > 0 ? thisSharedPath.path : [null];
-      this.buffer.emitAddChannelCommandByType({
-        channelType: 'data',
-        channelName: thisSharedPath.name,
-        command: 'set',
-        argsExpr: `[${JSON.stringify(dataPath)}, ${valueId}]`,
-        positionNode: node
-      });
-      return;
-    }
-
-    this.fail(
-      `Channel '${thisSharedPath.name}' cannot be assigned through this.${thisSharedPath.name}.`,
-      node.lineno,
-      node.colno,
-      node
-    );
   }
 
   compileCallAssign(node) {
@@ -1014,6 +897,10 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
+  compileImport(node) {
+    this.inheritance.compileAsyncImport(node);
+  }
+
   analyzeComponent(node) {
     node.target._analysis = { declarationTarget: true };
     return {
@@ -1025,10 +912,6 @@ class CompilerAsync extends CompilerBaseAsync {
         componentBinding: true
       }]
     };
-  }
-
-  compileImport(node) {
-    this.inheritance.compileAsyncImport(node);
   }
 
   compileComponent(node) {
@@ -1153,97 +1036,19 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeChannelDeclaration(node) {
-    node.name._analysis = { declarationTarget: true };
-    validateChannelDeclarationNode(this, node);
-    const name = node.name.value;
-    return {
-      declares: [{ name, type: node.channelType, initializer: node.initializer || null, shared: !!node.isShared }],
-      uses: [name]
-    };
+    return this.channel.analyzeChannelDeclaration(node);
   }
 
   compileChannelDeclaration(node) {
-    const channelType = node.channelType;
-    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
-    const name = node.name.value;
-    const declareHelperName = node.isShared ? 'declareInheritanceSharedChannel' : 'declareBufferChannel';
-    const targetBufferExpr = node.isShared
-      ? `runtime.getInheritanceSharedBuffer(${this.buffer.currentBuffer}, inheritanceState)`
-      : this.buffer.currentBuffer;
-
-    this.emit(`runtime.${declareHelperName}(${targetBufferExpr}, "${name}", "${channelType}", context`);
-    if (!node.isShared && channelFacts && channelFacts.requiresInitializer && node.initializer) {
-      this.emit(', ');
-      this.compile(node.initializer, null);
-    }
-    this.emit.line(');');
-
-    this._emitChannelDeclarationInitializer(node, targetBufferExpr);
-  }
-
-  _emitChannelDeclarationInitializer(node, targetBufferExpr) {
-    if (!node.initializer) {
-      return;
-    }
-    const channelType = node.channelType;
-    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
-    const name = node.name.value;
-
-    if (!node.isShared && channelFacts && channelFacts.requiresInitializer) {
-      return;
-    }
-
-    const emitInitializer = () => {
-      if (channelFacts && channelFacts.usesInitializerAsTarget) {
-        this.emit(`runtime.initializeInheritanceSharedChannelDefault(${targetBufferExpr}, "${name}", "${channelType}", context, `);
-        this.compile(node.initializer, null);
-        this.emit.line(');');
-        return;
-      }
-
-      const initNode = node.initializer;
-      const initValueId = this._tmpid();
-
-      this.emit(`let ${initValueId} = `);
-      this.compileExpression(initNode, null, initNode);
-      this.emit.line(';');
-      this.buffer.emitAddChannelCommandByType({
-        bufferExpr: targetBufferExpr,
-        channelType,
-        channelName: name,
-        valueExpr: initValueId,
-        positionNode: initNode,
-        initializeIfNotSet: !!node.isShared
-      });
-    };
-
-    if (!node.isShared) {
-      emitInitializer();
-      return;
-    }
-
-    this.emit.line(`if (runtime.claimInheritanceSharedDefault(${targetBufferExpr}, "${name}")) {`);
-    emitInitializer();
-    this.emit.line('}');
+    this.channel.compileChannelDeclaration(node);
   }
 
   analyzeChannelCommand(node) {
-    const callNode = node.call instanceof nodes.FunCall ? node.call : null;
-    const path = this.sequential._extractStaticPath(callNode ? callNode.name : node.call);
-    if (!path || path.length === 0) {
-      return {};
-    }
-    const channelName = path[0];
-    const channelDecl = channelName ? this.analysis.findDeclaration(node._analysis, channelName) : null;
-    const isSequenceGet = !callNode && channelDecl && channelDecl.type === 'sequence';
-    const isObservation = isSequenceGet ||
-      (callNode && path.length === 2 &&
-       (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError'));
-    return isObservation ? { uses: [channelName] } : { uses: [channelName], mutates: [channelName] };
+    return this.channel.analyzeChannelCommand(node);
   }
 
   compileChannelCommand(node) {
-    this.buffer.compileChannelCommand(node);
+    this.channel.compileChannelCommand(node);
   }
 
   analyzeExtends(node) {
