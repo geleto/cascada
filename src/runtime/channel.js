@@ -39,6 +39,7 @@ class Channel {
       hasError: false,
       error: null
     };
+    this._inheritanceSharedDefaultClaimed = false;
     this._completionResolved = false;
     this._completionPromise = new Promise((resolve) => {
       this._resolveCompletion = resolve;
@@ -47,16 +48,6 @@ class Channel {
     if (this._buffer) {
       this._buffer._registerChannel(this._channelName, this);
     }
-  }
-
-  _enqueueCommand(command, args) {
-    if (!this._buffer) return;
-    const entry = this._createEnqueuedCommand(command, args);
-    this._buffer.add(entry, this._channelName);
-  }
-
-  _createEnqueuedCommand(command, args) {
-    throw new Error(`Unsupported channel type '${this._channelType}' for command enqueueing`);
   }
 
   _getTarget() {
@@ -293,16 +284,12 @@ class TextChannel extends Channel {
   invoke(...args) {
     if (!this._buffer) return;
     if (args.length === 0) return;
-    this._enqueueCommand(null, args);
-  }
-
-  _createEnqueuedCommand(command, args) {
-    return new TextCommand({
+    this._buffer.add(new TextCommand({
       channelName: this._channelName,
       args,
       normalizeArgs: true,
       pos: { lineno: 0, colno: 0 }
-    });
+    }), this._channelName);
   }
 
   _getCurrentResult() {
@@ -337,15 +324,11 @@ class VarChannel extends Channel {
 
   invoke(value) {
     if (!this._buffer) return;
-    this._enqueueCommand(null, [value]);
-  }
-
-  _createEnqueuedCommand(command, args) {
-    return new VarCommand({
+    this._buffer.add(new VarCommand({
       channelName: this._channelName,
-      args,
+      args: [value],
       pos: { lineno: 0, colno: 0 }
-    });
+    }), this._channelName);
   }
 
   _getCurrentResult() {
@@ -438,15 +421,6 @@ class DataChannel extends Channel {
     return this._target;
   }
 
-  _createEnqueuedCommand(command, args) {
-    return new DataCommand({
-      channelName: this._channelName,
-      command: command || null,
-      args,
-      pos: { lineno: 0, colno: 0 }
-    });
-  }
-
   _installCommandMethods() {
     const methods = this._base && this._base.methods ? this._base.methods : null;
     if (!methods) {
@@ -463,7 +437,15 @@ class DataChannel extends Channel {
         configurable: true,
         enumerable: false,
         writable: true,
-        value: (...args) => this._enqueueCommand(methodName, args)
+        value: (...args) => {
+          if (!this._buffer) return;
+          this._buffer.add(new DataCommand({
+            channelName: this._channelName,
+            command: methodName,
+            args,
+            pos: { lineno: 0, colno: 0 }
+          }), this._channelName);
+        }
       });
     });
   }
@@ -550,15 +532,6 @@ class SinkChannel extends Channel {
 
   _resolveSink() {
     return this._sink;
-  }
-
-  _createEnqueuedCommand(command, args) {
-    return new SinkCommand({
-      channelName: this._channelName,
-      command: command || null,
-      args,
-      pos: { lineno: 0, colno: 0 }
-    });
   }
 
   _setSink(sink) {
@@ -809,18 +782,6 @@ function createSequenceChannel(buffer, channelName, context, sink) {
   return _createSequenceChannel(buffer, channelName, context, sink);
 }
 
-const BUFFER_CHANNEL_FACTORIES = Object.freeze({
-  data: _createChannel,
-  sink(buffer, channelName, context, channelType, initializer) {
-    return _createSinkChannel(buffer, channelName, context, initializer);
-  },
-  sequence(buffer, channelName, context, channelType, initializer) {
-    return _createSequenceChannel(buffer, channelName, context, initializer);
-  },
-  text: _createChannel,
-  var: _createChannel
-});
-
 function declareBufferChannel(buffer, channelName, channelType, context, initializer) {
   const targetBuffer = buffer;
   if (!targetBuffer) {
@@ -832,14 +793,15 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   targetBuffer._channelTypes = targetBuffer._channelTypes || Object.create(null);
   targetBuffer._channelTypes[channelName] = channelType;
 
-  const factory = BUFFER_CHANNEL_FACTORIES[channelType] || _createChannel;
-  const channel = factory(targetBuffer, channelName, context, channelType, initializer);
+  const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+  const channel = channelFacts && channelFacts.usesInitializerAsTarget
+    ? _createInitializedTargetChannel(targetBuffer, channelName, context, channelType, initializer)
+    : _createChannel(targetBuffer, channelName, context, channelType, initializer);
 
   channel._buffer = targetBuffer;
 
   targetBuffer._registerChannel(channelName, channel);
 
-  const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
   if (channelFacts && channelFacts.usesInitializerAsTarget) {
     targetBuffer._channelRegistry = targetBuffer._channelRegistry || Object.create(null);
     targetBuffer._channelRegistry[channelName] = channel;
@@ -848,30 +810,17 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
-function _getInheritanceSharedDefaultClaims(buffer) {
-  if (!buffer || (typeof buffer !== 'object' && typeof buffer !== 'function')) {
-    return null;
-  }
-  if (!buffer._inheritanceSharedDefaultClaims) {
-    Object.defineProperty(buffer, '_inheritanceSharedDefaultClaims', {
-      configurable: true,
-      enumerable: false,
-      writable: true,
-      value: Object.create(null)
-    });
-  }
-  return buffer._inheritanceSharedDefaultClaims;
-}
-
 function claimInheritanceSharedDefault(buffer, channelName) {
-  const claims = _getInheritanceSharedDefaultClaims(buffer);
-  if (!claims) {
+  const channel = buffer && typeof buffer.getOwnChannel === 'function'
+    ? buffer.getOwnChannel(channelName)
+    : null;
+  if (!channel) {
     return false;
   }
-  if (Object.prototype.hasOwnProperty.call(claims, channelName)) {
+  if (channel._inheritanceSharedDefaultClaimed) {
     return false;
   }
-  claims[channelName] = true;
+  channel._inheritanceSharedDefaultClaimed = true;
   return true;
 }
 
@@ -914,6 +863,16 @@ function initializeInheritanceSharedChannelDefault(buffer, channelName, channelT
     return channel;
   }
   return channel;
+}
+
+function _createInitializedTargetChannel(buffer, channelName, context, channelType, initializer) {
+  if (channelType === 'sink') {
+    return _createSinkChannel(buffer, channelName, context, initializer);
+  }
+  if (channelType === 'sequence') {
+    return _createSequenceChannel(buffer, channelName, context, initializer);
+  }
+  throw new Error(`Unsupported initialized-target channel type '${channelType}'`);
 }
 
 module.exports = {
