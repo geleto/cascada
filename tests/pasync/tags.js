@@ -6,6 +6,7 @@
   var AsyncEnvironment;
   var AsyncTemplate;
   var CompilerAsync;
+  var validateRootExternCycles;
   var nodes;
   //var StringLoader;
   //var Environment;
@@ -18,6 +19,7 @@
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
     CompilerAsync = require('../../src/compiler/compiler-async');
+    validateRootExternCycles = require('../../src/compiler/validation').validateRootExternCycles;
     nodes = require('../../src/nodes');
     //Environment = require('../../src/environment/environment').Environment;
     //lexer = require('../../src/lexer');
@@ -30,6 +32,7 @@
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     AsyncTemplate = nunjucks.AsyncTemplate;
     CompilerAsync = (nunjucks.compiler && nunjucks.compiler.CompilerAsync) || null;
+    validateRootExternCycles = null;
     nodes = nunjucks.nodes;
     //StringLoader = window.StringLoader;
     //Environment = nunjucks.Environment;
@@ -146,7 +149,7 @@
       });
 
       it('should reject indirect extern fallback cycles', async () => {
-        if (!CompilerAsync) {
+        if (!CompilerAsync || !validateRootExternCycles) {
           return;
         }
         const compiler = new CompilerAsync('cycle-test.njk', { asyncMode: true, templateName: 'cycle-test.njk' });
@@ -155,7 +158,7 @@
           new nodes.Extern(0, 0, [new nodes.Symbol(0, 0, 'b')], new nodes.Symbol(0, 0, 'a'))
         ]);
 
-        expect(() => compiler._validateRootExternCycles(ast)).to.throwException((err) => {
+        expect(() => validateRootExternCycles(compiler, ast)).to.throwException((err) => {
           expect(err.message).to.contain('extern cycle detected: a -> b -> a');
         });
       });

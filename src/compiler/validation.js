@@ -169,15 +169,156 @@ function validateScriptExtendsSourceOrder(compiler, node) {
   );
 }
 
+function getRootExternNodes(node) {
+  return (node && node.children || []).filter((child) => child instanceof nodes.Extern);
+}
+
+function collectRootExternSpec(node) {
+  return getRootExternNodes(node).map((externNode) => ({
+    names: (externNode.targets || []).map((target) => target.value),
+    required: !externNode.value,
+    hasFallback: !!externNode.value
+  }));
+}
+
+function _getReferencedExternFallbackNames(externNode) {
+  const referencedSymbolNodes = (externNode.value instanceof nodes.Symbol)
+    ? [externNode.value]
+    : externNode.value.findAll(nodes.Symbol);
+  return referencedSymbolNodes
+    .filter((symbolNode) => !(symbolNode._analysis && symbolNode._analysis.declarationTarget))
+    .map((symbolNode) => symbolNode.value);
+}
+
+function validateRootExternFallbackOrder(compiler, node, externSpec) {
+  const orderedExternNames = [];
+  externSpec.forEach((entry) => {
+    (entry.names || []).forEach((name) => orderedExternNames.push(name));
+  });
+  const externIndexByName = new Map();
+  orderedExternNames.forEach((name, index) => externIndexByName.set(name, index));
+
+  getRootExternNodes(node).forEach((externNode) => {
+    if (!externNode.value || !externNode.targets || externNode.targets.length !== 1) {
+      return;
+    }
+
+    const currentName = externNode.targets[0].value;
+    const currentIndex = externIndexByName.get(currentName);
+    _getReferencedExternFallbackNames(externNode).forEach((name) => {
+      if (!externIndexByName.has(name)) {
+        return;
+      }
+      if (externIndexByName.get(name) > currentIndex) {
+        compiler.fail(
+          `extern fallback for '${currentName}' cannot reference later extern '${name}'`,
+          externNode.lineno,
+          externNode.colno,
+          externNode,
+          externNode.value
+        );
+      }
+    });
+  });
+}
+
+function validateRootExternCycles(compiler, node) {
+  const externNodes = getRootExternNodes(node);
+  const dependencyGraph = new Map();
+  const externNames = new Set();
+
+  externNodes.forEach((externNode) => {
+    if (!externNode.targets || externNode.targets.length !== 1 || !externNode.value) {
+      return;
+    }
+    const currentName = externNode.targets[0].value;
+    const referencedNames = _getReferencedExternFallbackNames(externNode);
+    externNames.add(currentName);
+    dependencyGraph.set(currentName, referencedNames);
+  });
+
+  const visited = new Set();
+  const visiting = [];
+
+  const visit = (name, ownerNode) => {
+    if (visiting.includes(name)) {
+      const cycleStart = visiting.indexOf(name);
+      const cycle = visiting.slice(cycleStart).concat(name);
+      compiler.fail(
+        `extern cycle detected: ${cycle.join(' -> ')}`,
+        ownerNode.lineno,
+        ownerNode.colno,
+        ownerNode,
+        ownerNode.value || ownerNode
+      );
+    }
+    if (visited.has(name)) {
+      return;
+    }
+    visited.add(name);
+    visiting.push(name);
+    const deps = dependencyGraph.get(name) || [];
+    deps.forEach((depName) => {
+      if (externNames.has(depName)) {
+        visit(depName, ownerNode);
+      }
+    });
+    visiting.pop();
+  };
+
+  externNodes.forEach((externNode) => {
+    if (!externNode.targets || externNode.targets.length !== 1 || !externNode.value) {
+      return;
+    }
+    visit(externNode.targets[0].value, externNode);
+  });
+}
+
+function validateLocalSharedMethodNameCollisions(compiler, node) {
+  const sharedDeclarations = compiler._getSharedDeclarations(node);
+  if (!sharedDeclarations || sharedDeclarations.length === 0) {
+    return;
+  }
+  const sharedNames = new Map();
+  sharedDeclarations.forEach((declaration) => {
+    if (declaration && declaration.name && declaration.name.value) {
+      sharedNames.set(declaration.name.value, declaration);
+    }
+  });
+  if (sharedNames.size === 0) {
+    return;
+  }
+  const methodDefinitions = compiler.scriptMode
+    ? compiler._getMethodDefinitions(node)
+    : node.findAll(nodes.Block);
+  methodDefinitions.forEach((method) => {
+    const methodName = method && method.name && method.name.value;
+    if (!methodName || !sharedNames.has(methodName)) {
+      return;
+    }
+    compiler.fail(
+      `shared channel '${methodName}' conflicts with method '${methodName}' defined in this file`,
+      method.name.lineno,
+      method.name.colno,
+      method,
+      sharedNames.get(methodName)
+    );
+  });
+}
+
 
 
 module.exports = {
   RESERVED_DECLARATION_NAMES,
   RESERVED_ASYNC_DECLARATION_NAMES,
+  collectRootExternSpec,
   validateGuardVariablesDeclared,
   validateChannelDeclarationNode,
   validateSinkSnapshotInGuard,
   validateChannelObservationCall,
   getScriptExtendsSourceOrderViolation,
-  validateScriptExtendsSourceOrder
+  validateScriptExtendsSourceOrder,
+  validateRootExternFallbackOrder,
+  validateRootExternCycles,
+  validateLocalSharedMethodNameCollisions
 };
