@@ -22,40 +22,6 @@ const {
   handleError
 } = require('./errors');
 
-const ENQUEUE_COMMAND_FACTORIES = Object.freeze({
-  text(channelName, command, args) {
-    return new TextCommand({
-      channelName,
-      args,
-      normalizeArgs: true,
-      pos: { lineno: 0, colno: 0 }
-    });
-  },
-  var(channelName, command, args) {
-    return new VarCommand({
-      channelName,
-      args,
-      pos: { lineno: 0, colno: 0 }
-    });
-  },
-  data(channelName, command, args) {
-    return new DataCommand({
-      channelName,
-      command: command || null,
-      args,
-      pos: { lineno: 0, colno: 0 }
-    });
-  },
-  sink(channelName, command, args) {
-    return new SinkCommand({
-      channelName,
-      command: command || null,
-      args,
-      pos: { lineno: 0, colno: 0 }
-    });
-  }
-});
-
 class Channel {
   constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
     this._channelName = channelName;
@@ -85,12 +51,12 @@ class Channel {
 
   _enqueueCommand(command, args) {
     if (!this._buffer) return;
-    const factory = ENQUEUE_COMMAND_FACTORIES[this._channelType];
-    if (!factory) {
-      throw new Error(`Unsupported channel type '${this._channelType}' for command enqueueing`);
-    }
-    const entry = factory(this._channelName, command, args);
+    const entry = this._createEnqueuedCommand(command, args);
     this._buffer.add(entry, this._channelName);
+  }
+
+  _createEnqueuedCommand(command, args) {
+    throw new Error(`Unsupported channel type '${this._channelType}' for command enqueueing`);
   }
 
   _getTarget() {
@@ -389,6 +355,15 @@ class TextChannel extends Channel {
     this._enqueueCommand(null, args);
   }
 
+  _createEnqueuedCommand(command, args) {
+    return new TextCommand({
+      channelName: this._channelName,
+      args,
+      normalizeArgs: true,
+      pos: { lineno: 0, colno: 0 }
+    });
+  }
+
   _getCurrentResult() {
     if (!Array.isArray(this._target) || this._target.length === 0) {
       this._setTarget(['']);
@@ -422,6 +397,14 @@ class VarChannel extends Channel {
   invoke(value) {
     if (!this._buffer) return;
     this._enqueueCommand(null, [value]);
+  }
+
+  _createEnqueuedCommand(command, args) {
+    return new VarCommand({
+      channelName: this._channelName,
+      args,
+      pos: { lineno: 0, colno: 0 }
+    });
   }
 
   _getCurrentResult() {
@@ -511,6 +494,15 @@ class DataChannel extends Channel {
 
   _getCurrentResult() {
     return this._target;
+  }
+
+  _createEnqueuedCommand(command, args) {
+    return new DataCommand({
+      channelName: this._channelName,
+      command: command || null,
+      args,
+      pos: { lineno: 0, colno: 0 }
+    });
   }
 
   _resolveSnapshotCommandResult() {
@@ -618,6 +610,15 @@ class SinkChannel extends Channel {
 
   _resolveSink() {
     return this._sink;
+  }
+
+  _createEnqueuedCommand(command, args) {
+    return new SinkCommand({
+      channelName: this._channelName,
+      command: command || null,
+      args,
+      pos: { lineno: 0, colno: 0 }
+    });
   }
 
   _setSink(sink) {

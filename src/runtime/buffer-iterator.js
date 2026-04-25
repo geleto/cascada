@@ -104,7 +104,7 @@ class BufferIterator {
         this.stack.pop();
         this._setCurrentBuffer(null);
         this.finished = true;
-        this._finalizeFinishedIterator();
+        this._releaseFinishedIterator();
         this._isAdvancing = false;
         return;
       } else {
@@ -221,7 +221,7 @@ class BufferIterator {
     return this.stack.length > 0 ? this.stack[this.stack.length - 1] : null;
   }
 
-  _finalizeFinishedIterator() {
+  _releaseFinishedIterator() {
     const output = this.output;
     if (output && output._buffer) {
       this._releaseFinishedLane(output._buffer);
