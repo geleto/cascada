@@ -260,15 +260,10 @@ const CHANNEL_API_PROPS = new Set([
   '_completionResolved'
 ]);
 
-// Create a facade that can be callable (text/var) or dynamic-command (data).
-// The proxy makes _target/_base/_buffer read/write-through to the Channel instance
-// so the flattener's writes are visible to snapshot().
-function createChannelFacade(output, options) {
-  const { callable, dynamicCommands } = options;
-  const target = callable
-    ? (...args) => output.invoke(...args)
-    : output;
-
+// Create a callable facade for channels that are invoked like functions
+// from compiled/user code, e.g. log("text") or x(value).
+function createCallableChannelFacade(output) {
+  const target = (...args) => output.invoke(...args);
   return new Proxy(target, {
     get: (proxyTarget, prop) => {
       if (prop === 'finalSnapshot') {
@@ -322,14 +317,6 @@ function createChannelFacade(output, options) {
           return value.bind(output);
         }
         return value;
-      }
-      if (dynamicCommands) {
-        if (prop === 'snapshot' || prop === 'isError' || prop === 'getError') {
-          return undefined;
-        }
-        // Proxy allows arbitrary channel commands (e.g., channel.set(...)) without
-        // predefining methods on the class. It preserves the dynamic command API.
-        return (...args) => output._enqueueCommand(prop, args);
       }
       return proxyTarget[prop];
     },
@@ -490,6 +477,7 @@ class DataChannel extends Channel {
       base
     );
     this._snapshotShared = false;
+    this._installCommandMethods();
   }
 
   _getCurrentResult() {
@@ -502,6 +490,27 @@ class DataChannel extends Channel {
       command: command || null,
       args,
       pos: { lineno: 0, colno: 0 }
+    });
+  }
+
+  _installCommandMethods() {
+    const methods = this._base && this._base.methods ? this._base.methods : null;
+    if (!methods) {
+      return;
+    }
+    Object.keys(methods).forEach((methodName) => {
+      if (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError') {
+        return;
+      }
+      if (Object.prototype.hasOwnProperty.call(this, methodName) || typeof this[methodName] !== 'undefined') {
+        return;
+      }
+      Object.defineProperty(this, methodName, {
+        configurable: true,
+        enumerable: false,
+        writable: true,
+        value: (...args) => this._enqueueCommand(methodName, args)
+      });
     });
   }
 
@@ -564,30 +573,17 @@ class DataChannel extends Channel {
 const BASIC_CHANNEL_FACTORIES = Object.freeze({
   text(buffer, channelName, context, type) {
     // Text channel is callable; args are appended to the text buffer.
-    return createChannelFacade(new TextChannel(buffer, channelName, context, type), {
-      callable: true,
-      dynamicCommands: false
-    });
+    return createCallableChannelFacade(new TextChannel(buffer, channelName, context, type));
   },
   var(buffer, channelName, context, type, initializer) {
     // Var channel is callable; args replace the current value.
-    return createChannelFacade(new VarChannel(buffer, channelName, context, type, initializer), {
-      callable: true,
-      dynamicCommands: false
-    });
+    return createCallableChannelFacade(new VarChannel(buffer, channelName, context, type, initializer));
   },
   sequential_path(buffer, channelName, context, type) {
-    return createChannelFacade(new SequentialPathChannel(buffer, channelName, context, type), {
-      callable: false,
-      dynamicCommands: false
-    });
+    return new SequentialPathChannel(buffer, channelName, context, type);
   },
   data(buffer, channelName, context, type) {
-    // Data channel supports arbitrary commands (set, push, merge, etc.).
-    return createChannelFacade(new DataChannel(buffer, channelName, context, type), {
-      callable: false,
-      dynamicCommands: true
-    });
+    return new DataChannel(buffer, channelName, context, type);
   }
 });
 
