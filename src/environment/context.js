@@ -12,6 +12,13 @@ function createContextStructuralState() {
   };
 }
 
+function assignContextStructuralState(context, structuralState) {
+  context._sharedStructuralState = structuralState;
+  context.blocks = structuralState.blocks;
+  context.exportResolveFunctions = structuralState.exportResolveFunctions;
+  context.exportChannels = structuralState.exportChannels;
+}
+
 class Context extends Obj {
   init(ctx, blocks, env, path, scriptMode = false, renderCtx, externCtx = undefined) {
     // Has to be tied to an environment so we can tap into its globals.
@@ -37,7 +44,7 @@ class Context extends Obj {
     this.compositionCtx = lib.extend({}, ctx);
     this.externCtx = externCtx === undefined ? null : lib.extend({}, externCtx);
 
-    this._sharedStructuralState = createContextStructuralState();
+    assignContextStructuralState(this, createContextStructuralState());
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -215,7 +222,7 @@ class Context extends Obj {
     // Keep the remaining shared structural state limited to deferred exports
     // and sync-template block registry data until the explicit execution-state
     // object replaces this bridge in the later cleanup phase.
-    newContext._sharedStructuralState = this._sharedStructuralState;
+    assignContextStructuralState(newContext, this._sharedStructuralState);
 
     // Set the ONLY property that should be different.
     newContext.path = newPath;
@@ -230,35 +237,12 @@ class Context extends Obj {
     // turning them back into ambient shared scope.
     const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx, externCtx);
 
-    newContext._sharedStructuralState = this._sharedStructuralState;
+    assignContextStructuralState(newContext, this._sharedStructuralState);
     newContext.path = newPath;
 
     return newContext;
   }
 }
-
-[
-  'blocks',
-  'exportResolveFunctions',
-  'exportChannels'
-].forEach((fieldName) => {
-  Object.defineProperty(Context.prototype, fieldName, {
-    configurable: true,
-    enumerable: false,
-    get() {
-      if (!this._sharedStructuralState) {
-        this._sharedStructuralState = createContextStructuralState();
-      }
-      return this._sharedStructuralState[fieldName];
-    },
-    set(value) {
-      if (!this._sharedStructuralState) {
-        this._sharedStructuralState = createContextStructuralState();
-      }
-      this._sharedStructuralState[fieldName] = value;
-    }
-  });
-});
 
 module.exports = {
   Context
