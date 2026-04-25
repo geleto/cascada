@@ -902,74 +902,11 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeComponent(node) {
-    node.target._analysis = { declarationTarget: true };
-    return {
-      declares: [{
-        name: node.target.value,
-        type: 'var',
-        initializer: null,
-        explicit: true,
-        componentBinding: true
-      }]
-    };
+    return this.component.analyzeComponent(node);
   }
 
   compileComponent(node) {
-    if (!this.scriptMode) {
-      this.fail(
-        'component bindings are only supported in script mode',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-
-    const targetName = node.target.value;
-    const componentTemplateVar = this.inheritance._compileAsyncGetTemplateOrScript(node, true, false);
-    const componentVarsVar = this._tmpid();
-    const externContextVar = this._tmpid();
-    const rootContextVar = this._tmpid();
-    const payloadVar = this._tmpid();
-    const instanceVar = this._tmpid();
-    const errorContextJson = JSON.stringify(this._createErrorContext(node));
-
-    this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
-    this.emit.line(`const ${componentVarsVar} = {};`);
-    this.inheritance._emitExplicitExternInputs(node, componentVarsVar);
-    this.inheritance._emitCompositionContextObject(
-      node,
-      componentVarsVar,
-      externContextVar,
-      null,
-      !!node.withContext
-    );
-    this.inheritance._emitCompositionContextObject(
-      node,
-      componentVarsVar,
-      rootContextVar,
-      null,
-      true
-    );
-    this.emit.line(`const ${payloadVar} = {`);
-    this.emit.line(`  rootContext: ${rootContextVar},`);
-    this.emit.line(`  externContext: ${externContextVar}`);
-    this.emit.line('};');
-    this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
-    this.emit.line(`  currentBuffer: ${this.buffer.currentBuffer},`);
-    this.emit.line(`  bindingName: "${targetName}",`);
-    this.emit.line(`  templateOrPromise: ${componentTemplateVar},`);
-    this.emit.line(`  payload: ${payloadVar},`);
-    this.emit.line('  ownerContext: context,');
-    this.emit.line('  env,');
-    this.emit.line('  runtime,');
-    this.emit.line('  cb,');
-    this.emit.line(`  errorContext: ${errorContextJson}`);
-    this.emit.line('});');
-    this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${targetName}', args: [${instanceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${targetName}');`);
-
-    if (targetName.charAt(0) !== '_' && this.analysis.isRootScopeOwner(node._analysis)) {
-      this.emit.line(`context.addDeferredExport("${targetName}", "${targetName}", ${this.buffer.currentBuffer});`);
-    }
+    this.component.compileComponent(node);
   }
 
   analyzeFromImport(node) {

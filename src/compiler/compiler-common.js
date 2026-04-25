@@ -13,6 +13,7 @@ const CompileBuffer = require('./buffer');
 const CompileMacro = require('./macro');
 const CompileBoundaries = require('./boundaries');
 const CompileChannel = require('./channel');
+const CompileComponent = require('./component');
 
 /**
  * CompilerCommon - Common base class for compiler functionality
@@ -52,6 +53,7 @@ class CompilerCommon extends Obj {
     this.macro = new CompileMacro(this);
     this.boundaries = new CompileBoundaries(this);
     this.channel = new CompileChannel(this);
+    this.component = new CompileComponent(this);
   }
 
   compile(node, frame) {
