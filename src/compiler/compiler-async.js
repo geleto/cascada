@@ -9,7 +9,7 @@ const {
 const CompilerBaseAsync = require('./compiler-base-async');
 const CompileBuffer = require('./buffer');
 const {
-  INHERITANCE_STARTUP_PROMISE_VAR
+  ROOT_STARTUP_PROMISE_VAR
 } = require('./inheritance');
 
 const RETURN_CHANNEL_NAME = '__return__';
@@ -1469,9 +1469,9 @@ class CompilerAsync extends CompilerBaseAsync {
       COMPILED_SHARED_SCHEMA_VAR,
       COMPILED_INVOKED_METHODS_VAR
     );
-    this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
+    this.emit.line(`let ${ROOT_STARTUP_PROMISE_VAR} = null;`);
     this.emit.line(`const extendsState = ${(!this.scriptMode && this.hasDynamicExtends) ? '{ parentSelection: null }' : 'null'};`);
-    this.emit.line(`${INHERITANCE_STARTUP_PROMISE_VAR} = runtime.runCompiledRootStartup({`);
+    this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runCompiledRootStartup({`);
     this.emit.line('  setup: b___setup__,');
     this.emit.line(`  compiledMethods: ${COMPILED_METHODS_VAR},`);
     this.emit.line('  inheritanceState,');
@@ -1513,9 +1513,9 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance._withAsyncConstructorEntryState(false, () => {
       this.emit.line('function b___scriptBody__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
       this.emit.line('try {');
-      this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
+      this.emit.line(`let ${ROOT_STARTUP_PROMISE_VAR} = null;`);
       this._compileChildren(bodySource, null);
-      this.emit.line(`return ${INHERITANCE_STARTUP_PROMISE_VAR};`);
+      this.emit.line(`return ${ROOT_STARTUP_PROMISE_VAR};`);
       this.emit.closeScopeLevels();
       this.emit.line('} catch (e) {');
       this.emit.line(`  throw runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`);
@@ -1533,7 +1533,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance._withAsyncConstructorEntryState(isTemplateRoot, () => {
       this.emit.line('function b___setup__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
       this.emit.line('try {');
-      this.emit.line(`let ${INHERITANCE_STARTUP_PROMISE_VAR} = null;`);
+      this.emit.line(`let ${ROOT_STARTUP_PROMISE_VAR} = null;`);
       if (isTemplateRoot) {
         this.emit.line(`let ${this.buffer.currentTextChannelVar} = output.getChannel("${this.buffer.currentTextChannelName}");`);
         this.emit.line(`${this.buffer.currentBuffer}._context = context;`);
@@ -1552,11 +1552,11 @@ class CompilerAsync extends CompilerBaseAsync {
       this._emitRootExternInitialization(node);
       this.inheritance.emitRootSharedDeclarations(node);
       if (this.scriptMode && hasGenericScriptBody && !skipGenericSetup) {
-        this.emit.line(`__inheritanceStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
+        this.emit.line(`__rootStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
       } else {
         this._compileChildren(node, null);
       }
-      this.emit.line(`return ${INHERITANCE_STARTUP_PROMISE_VAR};`);
+      this.emit.line(`return ${ROOT_STARTUP_PROMISE_VAR};`);
       this.emit.closeScopeLevels();
       this.emit.line('} catch (e) {');
       this.emit.line(`  throw runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`);
