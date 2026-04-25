@@ -157,7 +157,8 @@ class CompilerAsync extends CompilerBaseAsync {
       return {
         declares,
         uses,
-        mutates
+        mutates,
+        thisSharedSetPath: thisSharedPath
       };
     }
     targets.forEach((target) => {
@@ -288,7 +289,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileSet(node) {
-    const thisSharedPath = this._getThisSharedSetPathFacts(node);
+    const thisSharedPath = node._analysis && node._analysis.thisSharedSetPath;
     if (thisSharedPath) {
       this._compileThisSharedSetPath(node, thisSharedPath);
       return;
