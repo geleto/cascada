@@ -244,84 +244,38 @@ class Channel {
   }
 }
 
-// Shared properties exposed on channel facades (proxy/callable).
-// These must read/write the underlying Channel instance.
-const CHANNEL_API_PROPS = new Set([
-  '_channelName',
-  '_channelType',
-  '_context',
-  '_target',
-  '_base',
-  '_buffer',
-  '_iterator',
-  '_stateVersion',
-  '_fatalError',
-  '_errorStateCache',
-  '_completionResolved'
-]);
-
 // Create a callable facade for channels that are invoked like functions
 // from compiled/user code, e.g. log("text") or x(value).
 function createCallableChannelFacade(output) {
   const target = (...args) => output.invoke(...args);
   return new Proxy(target, {
     get: (proxyTarget, prop) => {
-      if (prop === 'finalSnapshot') {
-        if (!output._finalSnapshotCallable) {
-          output._finalSnapshotCallable = output.finalSnapshot.bind(output);
-        }
-        return output._finalSnapshotCallable;
-      }
-      if (prop === '_applyCommand') {
-        return output._applyCommand.bind(output);
-      }
-      if (prop === '_resolveIteratorCompletion') {
-        return output._resolveIteratorCompletion.bind(output);
-      }
-      if (prop === '_resolveSnapshotCommandResult') {
-        return output._resolveSnapshotCommandResult.bind(output);
-      }
-      if (prop === '_captureGuardState') {
-        return output._captureGuardState.bind(output);
-      }
-      if (prop === '_restoreGuardState') {
-        return output._restoreGuardState.bind(output);
-      }
-      if (prop === '_getTarget') {
-        return output._getTarget.bind(output);
-      }
-      if (prop === '_setTarget') {
-        return output._setTarget.bind(output);
-      }
-      if (prop === '_markStateChanged') {
-        return output._markStateChanged.bind(output);
-      }
-      if (prop === '_ensureErrorState') {
-        return output._ensureErrorState.bind(output);
-      }
-      if (prop === '_computeTargetErrorState') {
-        return output._computeTargetErrorState.bind(output);
-      }
-      if (CHANNEL_API_PROPS.has(prop)) {
-        return output[prop];
-      }
       if (prop === 'then') {
         return undefined;
       }
       if (typeof prop === 'symbol') {
         return proxyTarget[prop];
       }
-      if (Object.prototype.hasOwnProperty.call(output, prop) || typeof output[prop] !== 'undefined') {
+      if (prop in output) {
         const value = output[prop];
         if (typeof value === 'function') {
-          return value.bind(output);
+          const cacheName = `_bound_${String(prop)}`;
+          if (!Object.prototype.hasOwnProperty.call(output, cacheName)) {
+            Object.defineProperty(output, cacheName, {
+              configurable: true,
+              enumerable: false,
+              writable: true,
+              value: value.bind(output)
+            });
+          }
+          return output[cacheName];
         }
         return value;
       }
       return proxyTarget[prop];
     },
     set: (proxyTarget, prop, value) => {
-      if (CHANNEL_API_PROPS.has(prop)) {
+      if (prop in output) {
         output[prop] = value;
         return true;
       }
