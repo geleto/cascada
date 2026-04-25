@@ -169,6 +169,47 @@
       expect(result).to.be('Hi x');
     });
 
+    it('should return the exported namespace before async exported values settle', async function () {
+      const env = new AsyncEnvironment();
+      let resolveValue;
+      const pendingValue = new Promise((resolve) => {
+        resolveValue = resolve;
+      });
+      env.addGlobal('slowValue', () => pendingValue);
+      const tmpl = new AsyncTemplate('{% set x = slowValue() %}', env, 'deferred-export-namespace.njk');
+
+      const exportedPromise = tmpl.getExported({});
+      const first = await Promise.race([
+        exportedPromise.then(() => 'exported'),
+        new Promise((resolve) => setTimeout(() => resolve('timeout'), 0))
+      ]);
+      expect(first).to.be('exported');
+
+      const exported = await exportedPromise;
+      expect(exported).to.have.key('x');
+
+      resolveValue('ready');
+      expect(await exported.x).to.be('ready');
+    });
+
+    it('should reject an early returned exported value when its channel fails', async function () {
+      const env = new AsyncEnvironment();
+      env.addGlobal('failValue', () => {
+        throw new Error('export failed');
+      });
+      const tmpl = new AsyncTemplate('{% set x = failValue() %}', env, 'failed-deferred-export.njk');
+
+      const exported = await tmpl.getExported({});
+      expect(exported).to.have.key('x');
+
+      try {
+        await exported.x;
+        expect().fail('Expected exported value to reject');
+      } catch (err) {
+        expect(err.message).to.contain('export failed');
+      }
+    });
+
     it('should skip deferred export resolution when rendering in component mode', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);

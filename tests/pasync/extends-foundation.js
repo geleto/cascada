@@ -1875,6 +1875,7 @@ describe('Extends Foundation', function () {
       const ctx = new Context({ theme: 'dark' }, {}, env, 'root.script', true);
       ctx.blocks.demo = ['block'];
       ctx.exportResolveFunctions.value = () => 'x';
+      ctx.exportRejectFunctions.value = () => 'err';
       ctx.exportChannels.value = { channelName: 'value', buffer: { id: 1 } };
 
       const forkedPath = ctx.forkForPath('child.script');
@@ -1884,6 +1885,7 @@ describe('Extends Foundation', function () {
       expect(forkedComposition._sharedStructuralState).to.be(ctx._sharedStructuralState);
       expect(forkedPath.blocks).to.be(ctx.blocks);
       expect(forkedComposition.exportResolveFunctions).to.be(ctx.exportResolveFunctions);
+      expect(forkedComposition.exportRejectFunctions).to.be(ctx.exportRejectFunctions);
       expect(forkedComposition.exportChannels).to.be(ctx.exportChannels);
 
       forkedPath.blocks.later = ['new-block'];

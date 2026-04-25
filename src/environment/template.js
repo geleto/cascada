@@ -383,6 +383,7 @@ class AsyncTemplate extends Template {
     const renderCallback = (err) => {
       if (err) {
         rootError = err;
+        context.rejectExports(err);
         if (typeof cb === 'function') {
           cb(err);
         }
@@ -395,30 +396,30 @@ class AsyncTemplate extends Template {
       renderCallback,
       globalRuntime.REGULAR_COMPOSITION_MODE
     );
+    if (output && typeof output.getFinishedPromise === 'function') {
+      output.getFinishedPromise().catch((err) => {
+        context.rejectExports(err);
+      });
+    }
 
-    return (async () => {
-      if (output && typeof output.getFinishedPromise === 'function') {
-        await output.getFinishedPromise();
+    if (rootError) {
+      return Promise.reject(rootError);
+    }
+
+    const exported = context.getExported();
+    const boundExported = {};
+    const macroContext = context;
+
+    for (const name in exported) {
+      const item = exported[name];
+      if (typeof item === 'function' && item.isMacro) {
+        boundExported[name] = item.bind(macroContext);
+      } else {
+        boundExported[name] = item;
       }
-      if (rootError) {
-        throw rootError;
-      }
+    }
 
-      const exported = context.getExported();
-      const boundExported = {};
-      const macroContext = context;
-
-      for (const name in exported) {
-        const item = exported[name];
-        if (typeof item === 'function' && item.isMacro) {
-          boundExported[name] = item.bind(macroContext);
-        } else {
-          boundExported[name] = item;
-        }
-      }
-
-      return boundExported;
-    })();
+    return Promise.resolve(boundExported);
   }
 
   /**

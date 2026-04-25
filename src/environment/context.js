@@ -8,6 +8,8 @@ function createContextStructuralState() {
   return {
     blocks: {},
     exportResolveFunctions: Object.create(null),
+    exportRejectFunctions: Object.create(null),
+    exportError: null,
     exportChannels: Object.create(null)
   };
 }
@@ -16,6 +18,7 @@ function assignContextStructuralState(context, structuralState) {
   context._sharedStructuralState = structuralState;
   context.blocks = structuralState.blocks;
   context.exportResolveFunctions = structuralState.exportResolveFunctions;
+  context.exportRejectFunctions = structuralState.exportRejectFunctions;
   context.exportChannels = structuralState.exportChannels;
 }
 
@@ -165,6 +168,7 @@ class Context extends Obj {
     }
     this.ctx[name] = value;
     this.exportResolveFunctions[name] = null;
+    this.exportRejectFunctions[name] = null;
   }
 
   addDeferredExport(name, channelName, buffer) {
@@ -173,12 +177,18 @@ class Context extends Obj {
     }
 
     let resolve;
-    const promise = new Promise((res) => {
+    let reject;
+    const promise = new Promise((res, rej) => {
       resolve = res;
+      reject = rej;
     });
     this.exportResolveFunctions[name] = resolve;
+    this.exportRejectFunctions[name] = reject;
     this.exportChannels[name] = { channelName, buffer };
     this.ctx[name] = promise;
+    if (this._sharedStructuralState.exportError) {
+      reject(this._sharedStructuralState.exportError);
+    }
   }
 
   resolveExports() {
@@ -198,6 +208,23 @@ class Context extends Obj {
       }
       resolve(channel.finalSnapshot());
       this.exportResolveFunctions[name] = null;
+      this.exportRejectFunctions[name] = null;
+    }
+  }
+
+  rejectExports(error) {
+    if (!error) {
+      return;
+    }
+    this._sharedStructuralState.exportError = error;
+    const names = Object.keys(this.exportRejectFunctions);
+    for (const name of names) {
+      const reject = this.exportRejectFunctions[name];
+      if (reject) {
+        reject(error);
+        this.exportResolveFunctions[name] = null;
+        this.exportRejectFunctions[name] = null;
+      }
     }
   }
 
