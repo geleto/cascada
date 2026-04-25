@@ -24,29 +24,6 @@ class CompilerBaseAsync extends CompilerCommon {
     this.templateUsesInheritanceSurface = false;
   }
 
-  _getCurrentBlockBindingOwners(node, name) {
-    return {
-      declarationOwner: this.analysis.findDeclarationOwner(node._analysis, name),
-      blockOwner: this.currentCallableDefinition ? this.currentCallableDefinition._analysis : null,
-      blockBodyOwner: this.currentCallableDefinition && this.currentCallableDefinition.body
-        ? this.currentCallableDefinition.body._analysis
-        : null
-    };
-  }
-
-  _isHiddenFromCurrentBlock(node, name, declaredOutput, opts = {}) {
-    const { includeImported = false } = opts;
-    const { declarationOwner, blockOwner, blockBodyOwner } = this._getCurrentBlockBindingOwners(node, name);
-    const isVisibleFromCurrentBlock = !!(
-      declaredOutput.shared ||
-      declaredOutput.extern ||
-      (includeImported && declaredOutput.imported) ||
-      declarationOwner === blockOwner ||
-      declarationOwner === blockBodyOwner
-    );
-    return !isVisibleFromCurrentBlock;
-  }
-
   analyzeSymbol(node, analysisPass) {
     if (node._analysis?.declarationTarget || node.isCompilerInternal) {
       return {};
@@ -101,13 +78,13 @@ class CompilerBaseAsync extends CompilerCommon {
 
   _compileDeclaredSymbolLookup(node, name, declaredOutput) {
     if (this.scriptMode && this.currentCallableDefinition) {
-      if (this._isHiddenFromCurrentBlock(node, name, declaredOutput, { includeImported: true })) {
+      if (this.inheritance.isHiddenFromCurrentCallable(node, name, declaredOutput, { includeImported: true })) {
         this.emit('undefined');
         return;
       }
     }
     if (!this.scriptMode && this.currentCallableDefinition && this.inBlock && declaredOutput.type === 'var') {
-      if (this._isHiddenFromCurrentBlock(node, name, declaredOutput)) {
+      if (this.inheritance.isHiddenFromCurrentCallable(node, name, declaredOutput)) {
         this.emit('undefined');
         return;
       }

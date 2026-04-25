@@ -17,6 +17,32 @@ class CompileInheritance {
     this.emit = this.compiler.emit;
   }
 
+  getCurrentCallableBindingOwners(node, name) {
+    return {
+      declarationOwner: this.compiler.analysis.findDeclarationOwner(node._analysis, name),
+      callableOwner: this.compiler.currentCallableDefinition
+        ? this.compiler.currentCallableDefinition._analysis
+        : null,
+      callableBodyOwner: this.compiler.currentCallableDefinition && this.compiler.currentCallableDefinition.body
+        ? this.compiler.currentCallableDefinition.body._analysis
+        : null
+    };
+  }
+
+  isHiddenFromCurrentCallable(node, name, declaredOutput, opts = {}) {
+    const { includeImported = false } = opts;
+    const { declarationOwner, callableOwner, callableBodyOwner } =
+      this.getCurrentCallableBindingOwners(node, name);
+    const isVisibleFromCurrentCallable = !!(
+      declaredOutput.shared ||
+      declaredOutput.extern ||
+      (includeImported && declaredOutput.imported) ||
+      declarationOwner === callableOwner ||
+      declarationOwner === callableBodyOwner
+    );
+    return !isVisibleFromCurrentCallable;
+  }
+
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(
