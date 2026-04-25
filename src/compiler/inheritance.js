@@ -43,6 +43,21 @@ class CompileInheritance {
     return !isVisibleFromCurrentCallable;
   }
 
+  supportsExplicitThisDispatch() {
+    return !!(this.compiler.scriptMode || this.compiler.templateUsesInheritanceSurface);
+  }
+
+  getExplicitThisDispatchMethodName(node) {
+    return node instanceof nodes.LookupVal &&
+      node.target instanceof nodes.Symbol &&
+      node.target.value === 'this' &&
+      node.val &&
+      'value' in node.val &&
+      typeof node.val.value === 'string'
+      ? node.val.value
+      : null;
+  }
+
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(
@@ -53,7 +68,7 @@ class CompileInheritance {
     }
   }
 
-  _compileAsyncGetTemplateOrScript(node, eagerCompile, ignoreMissing, allowNoParent = false) {
+  compileAsyncGetTemplateOrScript(node, eagerCompile, ignoreMissing, allowNoParent = false) {
     const parentTemplateId = this.compiler._tmpid();
     const parentName = JSON.stringify(this.compiler.templateName);
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
@@ -82,7 +97,7 @@ class CompileInheritance {
     return parentTemplateId;
   }
 
-  _emitExplicitExternInputs(node, targetVarsVar) {
+  emitExplicitExternInputs(node, targetVarsVar) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     withVars.forEach((nameNode) => {
       const externName = this.compiler.analysis.getBaseChannelName(nameNode.value);
@@ -99,7 +114,7 @@ class CompileInheritance {
     }
   }
 
-  _emitImmediateExternInputs(node, targetVarsVar) {
+  emitImmediateExternInputs(node, targetVarsVar) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     withVars.forEach((nameNode) => {
       const externName = this.compiler.analysis.getBaseChannelName(nameNode.value);
@@ -108,7 +123,7 @@ class CompileInheritance {
     });
   }
 
-  _emitNamedArgBindings(argNodes, targetVarsVar) {
+  emitNamedArgBindings(argNodes, targetVarsVar) {
     argNodes.forEach((nameNode) => {
       const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
       this.emit(`${targetVarsVar}[${JSON.stringify(inputName)}] = `);
@@ -138,7 +153,7 @@ class CompileInheritance {
     return new nodes.NodeList(node.lineno, node.colno, allArgs);
   }
 
-  _emitCompositionContextObject(node, explicitVarsVar, compositionCtxVar, explicitNamesVar = null, includeRenderContext = !!node.withContext) {
+  emitCompositionContextObject(node, explicitVarsVar, compositionCtxVar, explicitNamesVar = null, includeRenderContext = !!node.withContext) {
     this.emit.line(`const ${compositionCtxVar} = {};`);
     if (includeRenderContext) {
       this.emit.line(`Object.assign(${compositionCtxVar}, context.getRenderContextVariables());`);
@@ -182,7 +197,7 @@ class CompileInheritance {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     if (!node.withContext && withVars.length === 0 && !node.withValue) {
       const target = node.target.value;
-      const id = this._compileAsyncGetTemplateOrScript(node, false, false);
+      const id = this.compileAsyncGetTemplateOrScript(node, false, false);
       const exportedId = this.compiler._tmpid();
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
@@ -195,14 +210,14 @@ class CompileInheritance {
     }
 
     const target = node.target.value;
-    const id = this._compileAsyncGetTemplateOrScript(node, false, false);
+    const id = this.compileAsyncGetTemplateOrScript(node, false, false);
     const exportedId = this.compiler._tmpid();
     const importVarsVar = this.compiler._tmpid();
     const importInputNamesVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
     this.emit.line(`let ${importVarsVar} = {};`);
-    this._emitExplicitExternInputs(node, importVarsVar);
-    this._emitCompositionContextObject(node, importVarsVar, importContextVar, importInputNamesVar);
+    this.emitExplicitExternInputs(node, importVarsVar);
+    this.emitCompositionContextObject(node, importVarsVar, importContextVar, importInputNamesVar);
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  runtime.validateExternInputs(resolvedTemplate.externSpec || [], ${importInputNamesVar}, Object.keys(${importContextVar}), "import");`);
@@ -239,7 +254,7 @@ class CompileInheritance {
   _compileAsyncFromImport(node) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     if (!node.withContext && withVars.length === 0) {
-      const importedId = this._compileAsyncGetTemplateOrScript(node, false, false);
+      const importedId = this.compileAsyncGetTemplateOrScript(node, false, false);
       const exportedId = this.compiler._tmpid();
       const bindingIds = [];
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
@@ -287,15 +302,15 @@ class CompileInheritance {
       return;
     }
 
-    const importedId = this._compileAsyncGetTemplateOrScript(node, false, false);
+    const importedId = this.compileAsyncGetTemplateOrScript(node, false, false);
     const exportedId = this.compiler._tmpid();
     const bindingIds = [];
     const importVarsVar = this.compiler._tmpid();
     const importInputNamesVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
     this.emit.line(`let ${importVarsVar} = {};`);
-    this._emitExplicitExternInputs(node, importVarsVar);
-    this._emitCompositionContextObject(node, importVarsVar, importContextVar, importInputNamesVar);
+    this.emitExplicitExternInputs(node, importVarsVar);
+    this.emitCompositionContextObject(node, importVarsVar, importContextVar, importInputNamesVar);
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  runtime.validateExternInputs(resolvedTemplate.externSpec || [], ${importInputNamesVar}, Object.keys(${importContextVar}), "from-import");`);
@@ -671,8 +686,8 @@ class CompileInheritance {
 
     this.emit.line(`const ${extendsVarsVar} = {};`);
     emitInputCapture(extendsVarsVar);
-    this._emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, null, !!node.withContext);
-    this._emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
+    this.emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, null, !!node.withContext);
+    this.emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
     this._emitExtendsCompositionPayload(
       node,
       extendsVarsVar,
@@ -924,7 +939,7 @@ class CompileInheritance {
   collectInvokedMethodRefsFromCalls(calls) {
     const refs = Object.create(null);
     calls.forEach((callNode) => {
-      const methodName = this.getExplicitThisDispatchMethodName(callNode);
+      const methodName = this.getAnalyzedExplicitThisDispatchMethodName(callNode);
       if (methodName && !refs[methodName]) {
         refs[methodName] = {
           name: methodName,
@@ -935,7 +950,7 @@ class CompileInheritance {
     return refs;
   }
 
-  getExplicitThisDispatchMethodName(callNode) {
+  getAnalyzedExplicitThisDispatchMethodName(callNode) {
     return callNode &&
       callNode._analysis &&
       typeof callNode._analysis.explicitThisDispatchMethodName === 'string'
@@ -1108,10 +1123,10 @@ class CompileInheritance {
       const {
         compositionPayloadVar
       } = this._prepareAsyncExtendsCompositionPayload(node, (extendsVarsVar) => {
-        this._emitExplicitExternInputs(node, extendsVarsVar);
+        this.emitExplicitExternInputs(node, extendsVarsVar);
       });
 
-      const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false, true);
+      const parentTemplateId = this.compileAsyncGetTemplateOrScript(node, true, false, true);
       // This first channel set links the caller's root buffer to the boundary
       // child buffer so any post-extends constructor work stays ordered behind
       // the boundary slot for the channels currently known at the call site.
@@ -1130,9 +1145,9 @@ class CompileInheritance {
     const {
       compositionPayloadVar
     } = this._prepareAsyncExtendsCompositionPayload(node, (extendsVarsVar) => {
-      this._emitImmediateExternInputs(node, extendsVarsVar);
+      this.emitImmediateExternInputs(node, extendsVarsVar);
     });
-    const parentTemplateId = this._compileAsyncGetTemplateOrScript(node, true, false, true);
+    const parentTemplateId = this.compileAsyncGetTemplateOrScript(node, true, false, true);
 
     const deferredSelectionVar = this.compiler._tmpid();
     this.emit.line(`const ${deferredSelectionVar} = runtime.resolveSingle(${parentTemplateId}).then((resolvedParentTemplate) => {`);
@@ -1269,8 +1284,8 @@ class CompileInheritance {
 
       // Async include passes only explicit extern inputs to the child.
       this.emit.line(`let ${includeVarsVar} = {};`);
-      this._emitExplicitExternInputs(node, includeVarsVar);
-      this._emitCompositionContextObject(node, includeVarsVar, includeContextVar, includeInputNamesVar);
+      this.emitExplicitExternInputs(node, includeVarsVar);
+      this.emitCompositionContextObject(node, includeVarsVar, includeContextVar, includeInputNamesVar);
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);

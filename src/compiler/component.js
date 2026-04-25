@@ -30,7 +30,7 @@ class CompileComponent {
     }
 
     const targetName = node.target.value;
-    const componentTemplateVar = this.compiler.inheritance._compileAsyncGetTemplateOrScript(node, true, false);
+    const componentTemplateVar = this.compiler.inheritance.compileAsyncGetTemplateOrScript(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
     const externContextVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
@@ -40,15 +40,15 @@ class CompileComponent {
 
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
     this.emit.line(`const ${componentVarsVar} = {};`);
-    this.compiler.inheritance._emitExplicitExternInputs(node, componentVarsVar);
-    this.compiler.inheritance._emitCompositionContextObject(
+    this.compiler.inheritance.emitExplicitExternInputs(node, componentVarsVar);
+    this.compiler.inheritance.emitCompositionContextObject(
       node,
       componentVarsVar,
       externContextVar,
       null,
       !!node.withContext
     );
-    this.compiler.inheritance._emitCompositionContextObject(
+    this.compiler.inheritance.emitCompositionContextObject(
       node,
       componentVarsVar,
       rootContextVar,

@@ -133,6 +133,10 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.analyzeSet(node, analysisPass);
   }
 
+  finalizeAnalyzeCallAssign(node) {
+    return this.finalizeAnalyzeSet(node);
+  }
+
   analyzeSet(node, analysisPass) {
     const declares = [];
     const uses = [];
@@ -152,6 +156,9 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     if (node.body) {
       node.body._analysis = { createScope: true };
+    }
+    if (node.path && targets.length !== 1) {
+      this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
     }
     const thisSharedPath = this.channel.getThisSharedSetPathFacts(node, analysisPass);
     if (thisSharedPath) {
@@ -193,6 +200,31 @@ class CompilerAsync extends CompilerBaseAsync {
       uses,
       mutates
     };
+  }
+
+  finalizeAnalyzeSet(node) {
+    if (node._analysis && node._analysis.thisSharedSetPath) {
+      return {};
+    }
+
+    const exportFromRootScope = this.analysis.isRootScopeOwner(node._analysis);
+    const targetFacts = [];
+    (node.targets || []).forEach((target) => {
+      if (!(target instanceof nodes.Symbol)) {
+        targetFacts.push(null);
+        return;
+      }
+      const name = target.value;
+      const visibleDeclaration = this.analysis.findDeclaration(node._analysis, name);
+      targetFacts.push({
+        name,
+        isOwnDeclaration: !!(visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis),
+        isVarDeclaration: !!(visibleDeclaration && visibleDeclaration.type === 'var'),
+        isSharedDeclaration: !!(visibleDeclaration && visibleDeclaration.shared),
+        exportFromRootScope
+      });
+    });
+    return { setTargetFacts: targetFacts };
   }
 
   analyzeExtern(node) {
@@ -238,16 +270,22 @@ class CompilerAsync extends CompilerBaseAsync {
 
     const ids = [];
     const isDeclarationOnly = !!node.declarationOnly;
-    const exportFromRootScope = this.analysis.isRootScopeOwner(node._analysis);
+    const targetFacts = node._analysis && Array.isArray(node._analysis.setTargetFacts)
+      ? node._analysis.setTargetFacts
+      : null;
 
-    node.targets.forEach((target) => {
+    node.targets.forEach((target, i) => {
       const name = target.value;
-      const visibleDeclaration = this.analysis.findDeclaration(node._analysis, name);
-      const isOwnDeclaration = !!(visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis);
+      const facts = targetFacts && targetFacts[i]
+        ? targetFacts[i]
+        : {
+          isOwnDeclaration: false,
+          isVarDeclaration: false
+        };
 
-      if (isOwnDeclaration) {
+      if (facts.isOwnDeclaration) {
         this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
-      } else if (!(visibleDeclaration && visibleDeclaration.type === 'var')) {
+      } else if (!facts.isVarDeclaration) {
         this.fail(
           `Compiler error: analysis did not resolve a visible var declaration for '${name}'.`,
           target.lineno,
@@ -264,9 +302,6 @@ class CompilerAsync extends CompilerBaseAsync {
 
     let hasAssignedValue = false;
     if (node.path) {
-      if (ids.length !== 1) {
-        this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
-      }
       const targetName = node.targets[0].value;
       const pathValueId = this._tmpid();
       this.emit(`let ${pathValueId} = `);
@@ -297,14 +332,13 @@ class CompilerAsync extends CompilerBaseAsync {
     node.targets.forEach((target, i) => {
       const name = target.value;
       const valueId = ids[i];
-      const visibleDeclaration = this.analysis.findDeclaration(node._analysis, name);
-      const isSharedDeclaration = !!(visibleDeclaration && visibleDeclaration.shared);
+      const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
 
       if (hasAssignedValue) {
         this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
       }
 
-      if (name.charAt(0) !== '_' && hasAssignedValue && exportFromRootScope && !isSharedDeclaration) {
+      if (name.charAt(0) !== '_' && hasAssignedValue && facts && facts.exportFromRootScope && !facts.isSharedDeclaration) {
         this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.buffer.currentBuffer});`);
       }
     });
@@ -408,6 +442,19 @@ class CompilerAsync extends CompilerBaseAsync {
     return {};
   }
 
+  finalizeOutputAnalyzeSwitch(node) {
+    const allChannels = new Set();
+    node.cases.forEach((c) => {
+      (c.body._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
+    });
+    if (node.default) {
+      (node.default._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
+    }
+    return {
+      poisonChannels: Array.from(allChannels)
+    };
+  }
+
   analyzeCase(node) {
     return { createScope: true };
   }
@@ -448,15 +495,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('');
       this.emit('}');
 
-      const allChannels = new Set();
-      node.cases.forEach((c) => {
-        (c.body._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
-      });
-      if (node.default) {
-        (node.default._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
-      }
-
-      for (const channelName of allChannels) {
+      for (const channelName of (node._analysis.poisonChannels || [])) {
         this.emit.insertLine(
           catchPoisonPos,
           `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`
@@ -479,14 +518,54 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     const guardTargets = this._getGuardTargets(node);
     validateGuardVariablesDeclared(guardTargets.variableValidationTargets, this, node);
-    return {};
+    return { guardTargets };
+  }
+
+  finalizeOutputAnalyzeGuard(node) {
+    const guardTargets = node._analysis && node._analysis.guardTargets
+      ? node._analysis.guardTargets
+      : this._getGuardTargets(node);
+    const bodyUsedChannels = Array.from(node.body._analysis.usedChannels || []);
+    const modifiedLocks = new Set();
+    bodyUsedChannels.forEach((channelName) => {
+      if (channelName && channelName.startsWith('!')) {
+        modifiedLocks.add(channelName);
+      }
+    });
+
+    const resolvedSequenceTargets = this._getResolvedGuardSequenceTargets(
+      node,
+      guardTargets,
+      modifiedLocks
+    );
+    const guardChannels = this._getResolvedGuardChannelNames(
+      node,
+      guardTargets,
+      bodyUsedChannels,
+      resolvedSequenceTargets
+    );
+    const hasSequenceTargets = !!guardTargets.sequenceTargets;
+
+    return {
+      guardFacts: {
+        targets: guardTargets,
+        needsGuardState: !!(guardTargets.variableTargetsAll || hasSequenceTargets),
+        resolvedSequenceTargets,
+        guardChannels
+      }
+    };
   }
 
   compileGuard(node) {
-    const guardTargets = this._getGuardTargets(node);
-    const variableTargetsAll = guardTargets.variableTargetsAll;
-    const hasSequenceTargets = !!guardTargets.sequenceTargets;
-    const needsGuardState = variableTargetsAll || hasSequenceTargets;
+    const guardFacts = node._analysis && node._analysis.guardFacts
+      ? node._analysis.guardFacts
+      : {
+        targets: this._getGuardTargets(node),
+        needsGuardState: false,
+        resolvedSequenceTargets: [],
+        guardChannels: []
+      };
+    const needsGuardState = guardFacts.needsGuardState;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
 
     this.buffer._compileAsyncControlFlowBoundary(node, () => {
@@ -507,76 +586,15 @@ class CompilerAsync extends CompilerBaseAsync {
 
         this.compile(node.body, null);
 
-        const resolvedSequenceTargets = new Set();
-        const modifiedLocks = new Set();
-        const bodyUsedChannels = Array.from(node.body._analysis.usedChannels || []);
-        bodyUsedChannels.forEach((channelName) => {
-          if (channelName && channelName.startsWith('!')) {
-            modifiedLocks.add(channelName);
-          }
-        });
-
-        const shouldGuardAllSequencesImplicitly =
-          variableTargetsAll &&
-          (!node.sequenceTargets || node.sequenceTargets.length === 0);
-
-        if (node.sequenceTargets && node.sequenceTargets.length > 0) {
-          for (const target of node.sequenceTargets) {
-            let matchFound = false;
-
-            if (target === '!') {
-              for (const lock of modifiedLocks) {
-                resolvedSequenceTargets.add(lock);
-                matchFound = true;
-              }
-            } else {
-              const baseKey = '!' + target.slice(0, -1);
-
-              for (const lock of modifiedLocks) {
-                if (lock === baseKey || lock.startsWith(baseKey + '!')) {
-                  resolvedSequenceTargets.add(lock);
-                  matchFound = true;
-                }
-              }
-
-              if (!matchFound) {
-                this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
-              }
-            }
-          }
-        } else if (shouldGuardAllSequencesImplicitly) {
-          for (const lock of modifiedLocks) {
-            resolvedSequenceTargets.add(lock);
-          }
-        }
-
-        if (resolvedSequenceTargets.size > 0) {
+        const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets || [];
+        const guardChannels = guardFacts.guardChannels || [];
+        if (resolvedSequenceTargets.length > 0) {
           this.emit.insertLine(
             guardRepairLinePos,
-            `runtime.guard.repairSequenceOutputs(${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+            `runtime.guard.repairSequenceOutputs(${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)});`
           );
         }
 
-        let guardChannels = this._getGuardedChannelNames(
-          bodyUsedChannels,
-          guardTargets,
-          node.body._analysis
-        );
-        if (resolvedSequenceTargets.size > 0) {
-          const merged = new Set(guardChannels);
-          for (const lockName of resolvedSequenceTargets) {
-            merged.add(lockName);
-          }
-          guardChannels = Array.from(merged);
-        }
-        const bodyDeclaredChannels = Array.from((node.body._analysis.declaredChannels || new Map()).keys());
-        if (bodyDeclaredChannels.length > 0) {
-          const merged = new Set(guardChannels);
-          for (const name of bodyDeclaredChannels) {
-            merged.add(name);
-          }
-          guardChannels = Array.from(merged);
-        }
         if (guardChannels.length > 0) {
           channelGuardStateVar = this._tmpid();
           this.emit.insertLine(
@@ -609,6 +627,61 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
+  _getResolvedGuardSequenceTargets(node, guardTargets, modifiedLocks) {
+    const resolvedSequenceTargets = new Set();
+    const shouldGuardAllSequencesImplicitly =
+      guardTargets.variableTargetsAll &&
+      (!guardTargets.sequenceTargets || guardTargets.sequenceTargets.length === 0);
+
+    if (guardTargets.sequenceTargets && guardTargets.sequenceTargets.length > 0) {
+      for (const target of guardTargets.sequenceTargets) {
+        let matchFound = false;
+
+        if (target === '!') {
+          for (const lock of modifiedLocks) {
+            resolvedSequenceTargets.add(lock);
+            matchFound = true;
+          }
+        } else {
+          const baseKey = '!' + target.slice(0, -1);
+
+          for (const lock of modifiedLocks) {
+            if (lock === baseKey || lock.startsWith(baseKey + '!')) {
+              resolvedSequenceTargets.add(lock);
+              matchFound = true;
+            }
+          }
+
+          if (!matchFound) {
+            this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
+          }
+        }
+      }
+    } else if (shouldGuardAllSequencesImplicitly) {
+      for (const lock of modifiedLocks) {
+        resolvedSequenceTargets.add(lock);
+      }
+    }
+
+    return Array.from(resolvedSequenceTargets);
+  }
+
+  _getResolvedGuardChannelNames(node, guardTargets, bodyUsedChannels, resolvedSequenceTargets) {
+    const merged = new Set(this._getGuardedChannelNames(
+      bodyUsedChannels,
+      guardTargets,
+      node.body._analysis
+    ));
+    for (const lockName of resolvedSequenceTargets) {
+      merged.add(lockName);
+    }
+    const bodyDeclaredChannels = Array.from((node.body._analysis.declaredChannels || new Map()).keys());
+    for (const name of bodyDeclaredChannels) {
+      merged.add(name);
+    }
+    return Array.from(merged);
+  }
+
   _getGuardedChannelNames(usedChannels, guardTargets, analysis) {
     let used = [];
     if (usedChannels instanceof Set) {
@@ -630,7 +703,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (hasNamedChannels || hasTypedChannels) {
       const guardedSet = new Set(hasNamedChannels ? guardTargets.channelSelector : []);
       if (!this.scriptMode && guardedSet.has('text')) {
-        guardedSet.add(this.buffer.currentTextChannelName);
+        guardedSet.add(this.analysis.getCurrentTextChannel(analysis));
       }
       const guardedTypes = new Set(hasTypedChannels ? guardTargets.typeTargets : []);
       return used.filter((name) => {
@@ -644,7 +717,7 @@ class CompilerAsync extends CompilerBaseAsync {
         if (channelDecl) {
           return guardedTypes.has(channelDecl.type);
         }
-        if (!this.scriptMode && name === this.buffer.currentTextChannelName && guardedTypes.has('text')) {
+        if (!this.scriptMode && name === this.analysis.getCurrentTextChannel(analysis) && guardedTypes.has('text')) {
           return true;
         }
         return guardedTypes.has(name);
@@ -703,7 +776,7 @@ class CompilerAsync extends CompilerBaseAsync {
           resolvedChannels.add(name);
         }
         if (!this.scriptMode && !isDeclaredVar && !channelDecl && name === 'text') {
-          resolvedChannels.add(this.buffer.currentTextChannelName);
+          resolvedChannels.add(this.analysis.getCurrentTextChannel(guardNode._analysis));
           continue;
         }
         if (!isDeclaredVar && !channelDecl) {
@@ -739,6 +812,16 @@ class CompilerAsync extends CompilerBaseAsync {
     return {};
   }
 
+  finalizeOutputAnalyzeIf(node) {
+    const trueBranchChannels = new Set(node.body._analysis.usedChannels || []);
+    const falseBranchChannels = node.else_
+      ? new Set(node.else_._analysis.usedChannels || [])
+      : new Set();
+    return {
+      poisonChannels: Array.from(new Set([...trueBranchChannels, ...falseBranchChannels]))
+    };
+  }
+
   compileIf(node) {
     this.buffer._compileAsyncControlFlowBoundary(node, () => {
       let catchPoisonPos;
@@ -764,13 +847,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('');
       this.emit('}');
 
-      const trueBranchChannels = new Set(node.body._analysis.usedChannels || []);
-      const falseBranchChannels = node.else_
-        ? new Set(node.else_._analysis.usedChannels || [])
-        : new Set();
-      const allBranchChannels = new Set([...trueBranchChannels, ...falseBranchChannels]);
-
-      for (const channelName of allBranchChannels) {
+      for (const channelName of (node._analysis.poisonChannels || [])) {
         this.emit.insertLine(
           catchPoisonPos,
           `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`
@@ -780,6 +857,9 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeCapture(node) {
+    if (this.scriptMode) {
+      this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
+    }
     return {
       createScope: true,
       scopeBoundary: false,
@@ -788,10 +868,6 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileCapture(node) {
-    if (this.scriptMode) {
-      this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
-    }
-
     this.boundaries.compileCaptureBoundary(
       this.buffer,
       node,
@@ -803,6 +879,14 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeOutput(node) {
+    if (this.scriptMode) {
+      this.fail(
+        'Script mode does not support template output nodes. Use declared channels and command instead.',
+        node && node.lineno,
+        node && node.colno,
+        node || undefined
+      );
+    }
     const textChannel = !this.scriptMode
       ? this.analysis.getCurrentTextChannel(node._analysis)
       : null;
@@ -814,14 +898,6 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileOutput(node) {
-    if (this.scriptMode) {
-      this.fail(
-        'Script mode does not support template output nodes. Use declared channels and command instead.',
-        node && node.lineno,
-        node && node.colno,
-        node || undefined
-      );
-    }
     const textChannelName = this.buffer.currentTextChannelName;
     node.children.forEach((child) => {
       if (child instanceof nodes.TemplateData) {
@@ -1014,11 +1090,15 @@ class CompilerAsync extends CompilerBaseAsync {
 
   finalizeAnalyzeRoot(node) {
     const externSpec = collectRootExternSpec(node);
+    const rootCompileFacts = this._getRootCompileFacts(node);
     validateScriptExtendsSourceOrder(this, node);
     validateRootExternFallbackOrder(this, node, externSpec);
     validateRootExternCycles(this, node);
     validateLocalSharedMethodNameCollisions(this, node);
-    return { externSpec };
+    return {
+      externSpec,
+      rootCompileFacts
+    };
   }
 
   emitDeclareReturnChannel(bufferExpr) {
@@ -1130,6 +1210,41 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _getRootTextOutput() {
     return this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
+  }
+
+  _getRootCompileFacts(node) {
+    const extendsNodes = node.findAll(nodes.Extends).filter((child) => !child.noParentLiteral);
+    const topLevelDynamicExtends = new Set(
+      node.children.filter((child) => this._isDynamicExtendsNode(child))
+    );
+    const hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
+    const hasDynamicExtends = extendsNodes.some((child) => this._isDynamicExtendsNode(child));
+    const hasDeferredDynamicExtends = extendsNodes.some((child) =>
+      this._isDynamicExtendsNode(child) && !topLevelDynamicExtends.has(child)
+    );
+    const hasExtends = hasStaticExtends || hasDynamicExtends;
+    const constructorDefinition = this._getConstructorDefinition(node);
+    const methodDefinitions = this.scriptMode ? this._getMethodDefinitions(node) : node.findAll(nodes.Block);
+    const callableDefinitions = constructorDefinition
+      ? methodDefinitions.concat([constructorDefinition])
+      : methodDefinitions;
+    const invokedMethodRefs = this.inheritance.collectAllInvokedMethodRefsFromNode(node);
+    const needsInheritanceState = !!(
+      hasExtends ||
+      this._getSharedDeclarations(node).length > 0 ||
+      callableDefinitions.length > 0 ||
+      Object.keys(invokedMethodRefs).length > 0
+    );
+
+    return {
+      topLevelDynamicExtends,
+      hasStaticExtends,
+      hasDynamicExtends,
+      hasDeferredDynamicExtends,
+      hasExtends,
+      needsInheritanceState,
+      invokedMethodRefs
+    };
   }
 
   _emitRootExternInitialization(node) {
@@ -1288,30 +1403,17 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileRoot(node) {
-    const extendsNodes = node.findAll(nodes.Extends).filter((child) => !child.noParentLiteral);
-    this.topLevelDynamicExtends = new Set(
-      node.children.filter((child) => this._isDynamicExtendsNode(child))
-    );
-    this.hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
-    this.hasDynamicExtends = extendsNodes.some((child) => this._isDynamicExtendsNode(child));
-    this.hasDeferredDynamicExtends = extendsNodes.some((child) =>
-      this._isDynamicExtendsNode(child) && !this.topLevelDynamicExtends.has(child)
-    );
-    this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
-    const constructorDefinition = this._getConstructorDefinition(node);
-    const methodDefinitions = this.scriptMode ? this._getMethodDefinitions(node) : node.findAll(nodes.Block);
-    const callableDefinitions = constructorDefinition
-      ? methodDefinitions.concat([constructorDefinition])
-      : methodDefinitions;
-    const invokedMethodRefs = this.inheritance.collectAllInvokedMethodRefsFromNode(node);
-    this.needsInheritanceState = !!(
-      this.hasExtends ||
-      this._getSharedDeclarations(node).length > 0 ||
-      callableDefinitions.length > 0 ||
-      Object.keys(invokedMethodRefs).length > 0
-    );
+    const rootCompileFacts = node._analysis && node._analysis.rootCompileFacts
+      ? node._analysis.rootCompileFacts
+      : this._getRootCompileFacts(node);
+    this.topLevelDynamicExtends = rootCompileFacts.topLevelDynamicExtends;
+    this.hasStaticExtends = rootCompileFacts.hasStaticExtends;
+    this.hasDynamicExtends = rootCompileFacts.hasDynamicExtends;
+    this.hasDeferredDynamicExtends = rootCompileFacts.hasDeferredDynamicExtends;
+    this.hasExtends = rootCompileFacts.hasExtends;
+    this.needsInheritanceState = rootCompileFacts.needsInheritanceState;
     const rootCompileResult = this._compileAsyncRoot(node);
-    const invokedMethods = this.inheritance.compileInvokedMethodsLiteral(invokedMethodRefs);
+    const invokedMethods = this.inheritance.compileInvokedMethodsLiteral(rootCompileFacts.invokedMethodRefs);
     const methods = this.inheritance.collectCompiledMethods(node, rootCompileResult.blocks);
 
     this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);

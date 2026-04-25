@@ -311,16 +311,12 @@ class CompileChannel {
     return false;
   }
 
-  _emitInheritanceStateReference() {
-    return '(typeof inheritanceState === "undefined" ? null : inheritanceState)';
-  }
-
   emitSharedChannelObservation(channelName, node, mode = 'snapshot', implicitVarRead = false) {
     const compiler = this.compiler;
     compiler.emit(
       `runtime.observeInheritanceSharedChannel(${JSON.stringify(channelName)}, ${compiler.buffer.currentBuffer}, ` +
       `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(compiler._generateErrorContext(node))}, path: context.path }, ` +
-      `${this._emitInheritanceStateReference()}, ${JSON.stringify(mode)}, ${implicitVarRead})`
+      `(typeof inheritanceState === "undefined" ? null : inheritanceState), ${JSON.stringify(mode)}, ${implicitVarRead})`
     );
   }
 

@@ -44,6 +44,7 @@ class CompilerBaseAsync extends CompilerCommon {
           node
         );
       }
+      this._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
       uses.push(sequenceLockLookup.key);
       if (sequenceLockLookup.repair) {
         mutates.push(sequenceLockLookup.key);
@@ -101,7 +102,7 @@ class CompilerBaseAsync extends CompilerCommon {
       );
     }
     if (declaredOutput.shared) {
-      this._emitSharedChannelObservation(name, node, 'snapshot', true);
+      this.channel.emitSharedChannelObservation(name, node, 'snapshot', true);
       return;
     }
     if (!this.scriptMode && this.inBlock) {
@@ -128,6 +129,10 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _assertSequenceRootIsContextPath(lockKey, node) {
+    this._failIfSequenceRootIsDeclared(node, lockKey, this.analysis);
+  }
+
+  _failIfSequenceRootIsDeclared(node, lockKey, analysisPass) {
     if (!lockKey || lockKey.charAt(0) !== '!') {
       return;
     }
@@ -136,7 +141,7 @@ class CompilerBaseAsync extends CompilerCommon {
     if (!keyRoot) {
       return;
     }
-    const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
+    const keyRootOutput = analysisPass.findDeclaration(node._analysis, keyRoot);
     if (keyRootOutput) {
       this._failNonContextSequenceRoot(node, keyRootOutput);
     }
@@ -198,30 +203,18 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileIs(node) {
-    const testName = node.right.name ? node.right.name.value : node.right.value;
+    const testFacts =
+      (node._analysis && node._analysis.isTest) ||
+      this._getIsTestFacts(node);
+    const testName = testFacts.name;
     const testFunc = `env.getTest("${testName}")`;
     const failMsg = `test not found: ${testName}`.replace(/"/g, '\\"');
     const errorContext = this._generateErrorContext(node, node.right);
 
-    if (testName === 'error') {
-      const componentBindingRoot = this.component.getBindingRoot(node.left);
-      if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
-        this.component.emitChannelObservation({
-          bindingName: componentBindingRoot.bindingName,
-          channelName: componentBindingRoot.staticPath[1],
-          mode: 'isError',
-          implicitVarRead: false
-        }, node.left);
-        return;
-      }
-      const channelName = this._getObservedChannelName(node.left);
-      if (channelName) {
-        const channelDecl = this.analysis.findDeclaration(node.left._analysis, channelName);
-        if (channelDecl && channelDecl.shared) {
-          this._emitSharedChannelObservation(channelName, node.left, 'isError');
-        } else {
-          this.buffer.emitAddIsError(channelName, node.left);
-        }
+    if (testFacts.isError) {
+      const observationFacts = testFacts.errorObservation;
+      if (observationFacts) {
+        this._emitErrorObservation(observationFacts, node.left, 'isError');
         return;
       }
       this.emit('runtime.isError(');
@@ -231,8 +224,8 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     const mergedNode = {
-      positionNode: (node.right.args && node.right.args.children.length > 0) ? node.right : node.left,
-      children: (node.right.args && node.right.args.children.length > 0) ? [node.left, ...node.right.args.children] : [node.left]
+      positionNode: testFacts.hasArgs ? node.right : node.left,
+      children: testFacts.hasArgs ? [node.left, ...node.right.args.children] : [node.left]
     };
     this._compileAggregate(mergedNode, null, '[', ']', true, true, function (args) {
       this.emit.line(`  const testFunc = ${testFunc};`);
@@ -255,48 +248,16 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compilePeekError(node) {
-    const componentBindingRoot = this.component.getBindingRoot(node.target);
-    if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
-      this.component.emitChannelObservation({
-        bindingName: componentBindingRoot.bindingName,
-        channelName: componentBindingRoot.staticPath[1],
-        mode: 'getError',
-        implicitVarRead: false
-      }, node.target);
-      return;
-    }
-    const channelName = this._getObservedChannelName(node.target);
-    if (channelName) {
-      const channelDecl = this.analysis.findDeclaration(node.target._analysis, channelName);
-      if (channelDecl && channelDecl.shared) {
-        this._emitSharedChannelObservation(channelName, node.target, 'getError');
-      } else {
-        this.buffer.emitAddGetError(channelName, node.target);
-      }
+    const observationFacts =
+      (node._analysis && node._analysis.errorObservation) ||
+      this._getErrorObservationFacts(node.target);
+    if (observationFacts) {
+      this._emitErrorObservation(observationFacts, node.target, 'getError');
       return;
     }
     this.emit('runtime.peekError(');
     this.compile(node.target, null);
     this.emit(')');
-  }
-
-  _getExplicitThisDispatchFacts(node) {
-    if (!(node instanceof nodes.LookupVal)) {
-      return null;
-    }
-    if (!(node.target instanceof nodes.Symbol) || node.target.value !== 'this') {
-      return null;
-    }
-    if (!(node.val instanceof nodes.Literal) || typeof node.val.value !== 'string') {
-      return null;
-    }
-    return {
-      methodName: node.val.value
-    };
-  }
-
-  _supportsExplicitThisInheritanceSurface() {
-    return !!(this.scriptMode || this.templateUsesInheritanceSurface);
   }
 
   compileCompare(node) {
@@ -319,9 +280,14 @@ class CompilerBaseAsync extends CompilerCommon {
     const uses = [];
     const mutates = [];
     let sequenceChannelLookup = null;
+    let thisSharedAccessFacts = null;
+    let componentBindingRoot = null;
+    let componentBindingFacts = null;
+    let explicitThisDispatchMethodName = null;
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
     node._analysis.sequenceLockLookup = sequenceLockLookup;
     if (sequenceLockLookup) {
+      this._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
       uses.push(sequenceLockLookup.key);
       if (sequenceLockLookup.repair) {
         mutates.push(sequenceLockLookup.key);
@@ -330,6 +296,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
     const thisSharedFacts = this.channel.getThisSharedAccessFacts(node, analysisPass);
     if (thisSharedFacts) {
+      thisSharedAccessFacts = thisSharedFacts;
       uses.push(thisSharedFacts.channelName);
       if (
         this.scriptMode &&
@@ -343,8 +310,15 @@ class CompilerBaseAsync extends CompilerCommon {
           subpath: thisSharedFacts.pathPrefix
         };
       }
-      return { uses, mutates, sequenceChannelLookup };
+      return { uses, mutates, sequenceChannelLookup, thisSharedAccessFacts };
     }
+
+    explicitThisDispatchMethodName = this.inheritance.supportsExplicitThisDispatch()
+      ? this.inheritance.getExplicitThisDispatchMethodName(node)
+      : null;
+
+    componentBindingRoot = this.component.getBindingRoot(node);
+    componentBindingFacts = this.component.getBindingFacts(node);
 
     if (this.scriptMode) {
       const sequencePath = this.sequential._extractStaticPath(node);
@@ -370,7 +344,29 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    return { uses, mutates, sequenceChannelLookup };
+    return {
+      uses,
+      mutates,
+      sequenceChannelLookup,
+      thisSharedAccessFacts,
+      componentBindingRoot,
+      componentBindingFacts,
+      explicitThisDispatchMethodName
+    };
+  }
+
+  finalizeAnalyzeIs(node) {
+    const isTest = this._getIsTestFacts(node);
+    return {
+      isTest,
+      errorObservation: isTest.errorObservation || null
+    };
+  }
+
+  finalizeAnalyzePeekError(node) {
+    return {
+      errorObservation: this._getErrorObservationFacts(node.target)
+    };
   }
 
   compileLookupVal(node) {
@@ -390,7 +386,9 @@ class CompilerBaseAsync extends CompilerCommon {
         node
       );
     }
-    const thisSharedFacts = this.channel.getThisSharedAccessFacts(node);
+    const thisSharedFacts =
+      (node._analysis && node._analysis.thisSharedAccessFacts) ||
+      this.channel.getThisSharedAccessFacts(node);
     if (thisSharedFacts) {
       const sequenceChannelLookup =
         node._analysis && node._analysis.sequenceChannelLookup;
@@ -412,27 +410,33 @@ class CompilerBaseAsync extends CompilerCommon {
         );
       }
       if (thisSharedFacts.channelPath.length === 1) {
-        this._emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
+        this.channel.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
         return;
       }
       this._emitThisSharedVarNestedLookup(thisSharedFacts, node);
       return;
     }
 
-    const explicitThisDispatch = this._supportsExplicitThisInheritanceSurface()
-      ? this._getExplicitThisDispatchFacts(node)
-      : null;
-    if (explicitThisDispatch && !(node._analysis && node._analysis.allowExplicitThisDispatchCall)) {
+    const explicitThisDispatchMethodName = node._analysis
+      ? node._analysis.explicitThisDispatchMethodName
+      : this.inheritance.supportsExplicitThisDispatch()
+        ? this.inheritance.getExplicitThisDispatchMethodName(node)
+        : null;
+    if (explicitThisDispatchMethodName && !(node._analysis && node._analysis.allowExplicitThisDispatchCall)) {
       this.fail(
-        `bare inherited-method references are not supported; bare this.${explicitThisDispatch.methodName} references are not allowed; use this.${explicitThisDispatch.methodName}(...)`,
+        `bare inherited-method references are not supported; bare this.${explicitThisDispatchMethodName} references are not allowed; use this.${explicitThisDispatchMethodName}(...)`,
         node.lineno,
         node.colno,
         node
       );
     }
 
-    const componentBindingRoot = this.component.getBindingRoot(node);
-    const componentBindingFacts = this.component.getBindingFacts(node);
+    const componentBindingRoot =
+      (node._analysis && node._analysis.componentBindingRoot) ||
+      this.component.getBindingRoot(node);
+    const componentBindingFacts =
+      (node._analysis && node._analysis.componentBindingFacts) ||
+      this.component.getBindingFacts(node);
     if (componentBindingFacts && componentBindingFacts.kind === 'shared-read') {
       this.component.emitChannelObservation(componentBindingFacts, node);
       return;
@@ -510,6 +514,7 @@ class CompilerBaseAsync extends CompilerCommon {
           node
         );
       }
+      this._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
       uses.push(sequenceLockLookup.key);
       mutates.push(sequenceLockLookup.key);
       return { uses, mutates };
@@ -558,11 +563,12 @@ class CompilerBaseAsync extends CompilerCommon {
         }
       }
     }
-    if (this._supportsExplicitThisInheritanceSurface()) {
-      const explicitThisDispatch = this._getExplicitThisDispatchFacts(node.name);
+    if (this.inheritance.supportsExplicitThisDispatch()) {
+      const explicitThisDispatchMethodNameForCall =
+        this.inheritance.getExplicitThisDispatchMethodName(node.name);
       const thisSharedDispatch = this.channel.getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
-      if (explicitThisDispatch && !thisSharedDispatch) {
-        explicitThisDispatchMethodName = explicitThisDispatch.methodName;
+      if (explicitThisDispatchMethodNameForCall && !thisSharedDispatch) {
+        explicitThisDispatchMethodName = explicitThisDispatchMethodNameForCall;
       }
     }
 
@@ -632,21 +638,43 @@ class CompilerBaseAsync extends CompilerCommon {
     };
   }
 
+  finalizeAnalyzeFunCall(node) {
+    const thisSharedFacts = node.name
+      ? this.channel.getThisSharedAccessFacts(node.name, this.analysis, node._analysis)
+      : null;
+    const explicitThisDispatchMethodName =
+      this.inheritance.supportsExplicitThisDispatch() && !thisSharedFacts
+        ? this.inheritance.getExplicitThisDispatchMethodName(node.name)
+        : null;
+    if (explicitThisDispatchMethodName && node.name) {
+      (node.name._analysis || (node.name._analysis = {})).allowExplicitThisDispatchCall = true;
+    }
+
+    return {
+      funCallThisSharedAccessFacts: thisSharedFacts,
+      componentBindingRoot: node.name ? this.component.getBindingRoot(node.name) : null,
+      componentBindingFacts: node.name ? this.component.getBindingFacts(node.name, { forCall: true }) : null,
+      explicitThisDispatchMethodName: explicitThisDispatchMethodName ||
+        (node._analysis && node._analysis.explicitThisDispatchMethodName) ||
+        null
+    };
+  }
+
   compileFunCall(node) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
     const directMacroCall = node._analysis.directMacroCall;
     const directMacroBinding = directMacroCall ? directMacroCall.binding : null;
     const isDirectMacroCall = !!directMacroCall;
     const importedCallableFacts = node._analysis.importedCallable;
-    const explicitThisDispatch = this._supportsExplicitThisInheritanceSurface()
-      ? this._getExplicitThisDispatchFacts(node.name)
-      : null;
-    const thisSharedFacts = this.channel.getThisSharedAccessFacts(node.name, this.analysis, node._analysis);
-    const componentBindingRoot = this.component.getBindingRoot(node.name);
-    const componentBindingFacts = this.component.getBindingFacts(node.name, { forCall: true });
-    if (explicitThisDispatch && !thisSharedFacts) {
-      (node.name._analysis || (node.name._analysis = {})).allowExplicitThisDispatchCall = true;
-    }
+    const explicitThisDispatchMethodName =
+      node._analysis.explicitThisDispatchMethodName ||
+      null;
+    const componentBindingRoot =
+      node._analysis.componentBindingRoot ||
+      this.component.getBindingRoot(node.name);
+    const componentBindingFacts =
+      node._analysis.componentBindingFacts ||
+      this.component.getBindingFacts(node.name, { forCall: true });
 
     if (componentBindingFacts) {
       if (componentBindingFacts.kind === 'method-call') {
@@ -665,7 +693,7 @@ class CompilerBaseAsync extends CompilerCommon {
       );
     }
 
-    if (this._compileSpecialChannelFunCall(node)) {
+    if (this.channel.compileSpecialChannelFunCall(node)) {
       return;
     }
 
@@ -679,14 +707,6 @@ class CompilerBaseAsync extends CompilerCommon {
 
     const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
     const sequenceLockKey = sequenceLockLookup && sequenceLockLookup.key;
-    if (sequenceLockKey) {
-      let index = sequenceLockKey.indexOf('!', 1);
-      const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
-      const keyRootOutput = this.analysis.findDeclaration(node._analysis, keyRoot);
-      if (keyRootOutput) {
-        this._failNonContextSequenceRoot(node, keyRootOutput);
-      }
-    }
     if (sequenceLockKey) {
       const errorContextJson = JSON.stringify(this._createErrorContext(node));
       this.emit('runtime.sequentialCallWrapValue(');
@@ -714,9 +734,9 @@ class CompilerBaseAsync extends CompilerCommon {
       });
       return;
     }
-    if (explicitThisDispatch) {
+    if (explicitThisDispatchMethodName) {
       const errorContextJson = JSON.stringify(this._createErrorContext(node));
-      this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${explicitThisDispatch.methodName}", `);
+      this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${explicitThisDispatchMethodName}", `);
       this._compileAggregate(node.args, null, '[', ']', false, false);
       this.emit(`, context, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson})`);
       return;
@@ -732,7 +752,7 @@ class CompilerBaseAsync extends CompilerCommon {
     nestedPath.forEach(() => {
       this.emit(`runtime.${memberLookupHelper}((`);
     });
-    this._emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
+    this.channel.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
     nestedPath.forEach((propertyName) => {
       this.emit(`), ${JSON.stringify(propertyName)}, ${errorContextJson})`);
     });
@@ -950,30 +970,6 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
 
-  _compileSpecialChannelFunCall(node) {
-    return this.channel.compileSpecialChannelFunCall(node);
-  }
-
-  _compileChannelObservationFunCall(node, specialChannelCall) {
-    return this.channel._compileChannelObservationFunCall(node, specialChannelCall);
-  }
-
-  _emitInheritanceStateReference() {
-    return this.channel._emitInheritanceStateReference();
-  }
-
-  _emitSharedChannelObservation(channelName, node, mode = 'snapshot', implicitVarRead = false) {
-    this.channel.emitSharedChannelObservation(channelName, node, mode, implicitVarRead);
-  }
-
-  _compileSequenceChannelFunCall(node, specialChannelCall) {
-    return this.channel._compileSequenceChannelFunCall(node, specialChannelCall);
-  }
-
-  _compileSharedChannelStatementFunCall(node, specialChannelCall) {
-    return this.channel._compileSharedChannelStatementFunCall(node, specialChannelCall);
-  }
-
   _emitAsyncDynamicCall(node, currentBufferExpr) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
     const errorContextJson = JSON.stringify(this._createErrorContext(node));
@@ -1007,6 +1003,59 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('runtime.resolveSingle(');
     this.compile(node.target, null);
     this.emit(`).then(function(target){return ${operator}target;})`);
+  }
+
+  _emitErrorObservation(observationFacts, targetNode, mode) {
+    if (observationFacts.kind === 'component') {
+      this.component.emitChannelObservation({
+        bindingName: observationFacts.bindingName,
+        channelName: observationFacts.channelName,
+        mode,
+        implicitVarRead: false
+      }, targetNode);
+      return;
+    }
+    if (observationFacts.kind === 'shared-channel') {
+      this.channel.emitSharedChannelObservation(observationFacts.channelName, targetNode, mode);
+      return;
+    }
+    if (mode === 'isError') {
+      this.buffer.emitAddIsError(observationFacts.channelName, targetNode);
+      return;
+    }
+    this.buffer.emitAddGetError(observationFacts.channelName, targetNode);
+  }
+
+  _getIsTestFacts(node) {
+    const name = node.right.name ? node.right.name.value : node.right.value;
+    const isError = name === 'error';
+    return {
+      name,
+      isError,
+      hasArgs: !!(node.right.args && node.right.args.children.length > 0),
+      errorObservation: isError ? this._getErrorObservationFacts(node.left) : null
+    };
+  }
+
+  _getErrorObservationFacts(targetNode) {
+    const componentBindingRoot = this.component.getBindingRoot(targetNode);
+    if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
+      return {
+        kind: 'component',
+        bindingName: componentBindingRoot.bindingName,
+        channelName: componentBindingRoot.staticPath[1]
+      };
+    }
+
+    const channelName = this._getObservedChannelName(targetNode);
+    if (!channelName) {
+      return null;
+    }
+    const channelDecl = this.analysis.findDeclaration(targetNode._analysis, channelName);
+    return {
+      kind: channelDecl && channelDecl.shared ? 'shared-channel' : 'channel',
+      channelName
+    };
   }
 
   _getObservedChannelName(targetNode) {

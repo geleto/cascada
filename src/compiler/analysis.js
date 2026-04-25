@@ -30,6 +30,7 @@ class CompileAnalysis {
     this._walk(rootNode, null, null);
     this._finalizeDeclarations(rootNode);
     this._finalizeOutputUsage(rootNode);
+    this._finalizeOutputDerivedFacts(rootNode);
     return null;
   }
 
@@ -119,6 +120,32 @@ class CompileAnalysis {
 
   _finalizeNode(node) {
     const analyzerName = `finalizeAnalyze${node.typename}`;
+    const analyzer = this.compiler && this.compiler[analyzerName];
+    if (typeof analyzer === 'function') {
+      const returned = analyzer.call(this.compiler, node, this);
+      if (returned && typeof returned === 'object' && returned !== node._analysis) {
+        node._analysis = Object.assign(node._analysis || {}, returned);
+      }
+    }
+  }
+
+  _finalizeOutputDerivedFacts(node) {
+    if (!node) {
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((child) => this._finalizeOutputDerivedFacts(child));
+      return;
+    }
+    if (!(node instanceof nodes.Node)) {
+      return;
+    }
+
+    node.fields.forEach((field) => {
+      this._finalizeOutputDerivedFacts(node[field]);
+    });
+
+    const analyzerName = `finalizeOutputAnalyze${node.typename}`;
     const analyzer = this.compiler && this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
       const returned = analyzer.call(this.compiler, node, this);
