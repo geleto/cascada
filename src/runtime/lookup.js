@@ -213,8 +213,6 @@ function externLookup(_context, name) {
   return _context.lookup(name);
 }
 
-const contextOrExternLookup = externLookup;
-
 function _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, requestedName) {
   if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
     return;
@@ -233,16 +231,6 @@ function _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, request
   }
 }
 
-function captureCompositionValue(_context, name, currentBuffer) {
-  const channelRead = currentBuffer && typeof currentBuffer.findChannel === 'function'
-    ? channelLookup(name, currentBuffer)
-    : undefined;
-  if (channelRead !== undefined) {
-    return channelRead;
-  }
-  return _context.lookup(name);
-}
-
 function _getObservationPosition(errorContext) {
   return errorContext && typeof errorContext === 'object'
     ? {
@@ -253,12 +241,7 @@ function _getObservationPosition(errorContext) {
 }
 
 function _addObservationCommand(targetBuffer, channelName, pos, mode) {
-  if (
-    targetBuffer &&
-    typeof targetBuffer.isFinished === 'function' &&
-    targetBuffer.isFinished(channelName) &&
-    typeof targetBuffer.findChannel === 'function'
-  ) {
+  if (targetBuffer.isFinished(channelName)) {
     const channel = targetBuffer.findChannel(channelName);
     if (channel) {
       if (mode === 'snapshot') {
@@ -374,24 +357,6 @@ function channelLookup(name, currentBuffer) {
   return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
 }
 
-/**
- * Async context/frame/channel lookup for scripts.
- * Returns poison for missing names via context.lookupScript.
- */
-function contextOrScriptChannelLookup(context, name, currentBuffer, errorContext = null) {
-  const channel = currentBuffer && typeof currentBuffer.findChannel === 'function'
-    ? currentBuffer.findChannel(name)
-    : null;
-  if (channel && isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel)) {
-    return undefined;
-  }
-  const channelRead = channelLookup(name, currentBuffer);
-  if (channelRead !== undefined) {
-    return channelRead;
-  }
-  return context.lookupScript(name, errorContext);
-}
-
 // Ordinary var-channel lookup must not turn mere ancestry into ambient
 // cross-template visibility. Shared channels use explicit observation helpers.
 function isBlockedInheritanceBoundaryChannelRead(currentBuffer, channel) {
@@ -470,7 +435,4 @@ module.exports = {
   observeInheritanceSharedChannel,
   channelLookup,
   externLookup,
-  contextOrExternLookup,
-  captureCompositionValue,
-  contextOrScriptChannelLookup,
 };

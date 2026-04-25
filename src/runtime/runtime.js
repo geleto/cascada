@@ -294,9 +294,6 @@ module.exports = {
   observeInheritanceSharedChannel: lookup.observeInheritanceSharedChannel,
   channelLookup: lookup.channelLookup,
   externLookup: lookup.externLookup,
-  contextOrExternLookup: lookup.contextOrExternLookup,
-  captureCompositionValue: lookup.captureCompositionValue,
-  contextOrScriptChannelLookup: lookup.contextOrScriptChannelLookup,
 
   isArray: lib.isArray,
   keys: lib.keys,
@@ -317,7 +314,6 @@ module.exports = {
   setLoopValueBindings: loop.setLoopValueBindings,
 
   sequentialContextLookupValue: sequential.sequentialContextLookupValue,
-  sequentialContextLookupScriptValue: sequential.sequentialContextLookupScriptValue,
   sequentialMemberLookupScriptValue: sequential.sequentialMemberLookupScriptValue,
   sequentialMemberLookupAsyncValue: sequential.sequentialMemberLookupAsyncValue,
   setPath: require('./set-path').setPath,

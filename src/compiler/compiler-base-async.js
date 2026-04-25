@@ -904,14 +904,10 @@ class CompilerBaseAsync extends CompilerCommon {
     const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
     if (nodeStaticPathKey) {
       this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-      this.emit(`runtime.sequentialContextLookupScriptValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+      this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
       return;
     }
-    this.emit('runtime.contextOrScriptChannelLookup(' +
-      'context, "' + name + '", ' +
-      `${this.buffer.currentBuffer}, ` +
-      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
-      ')');
+    this._compileScriptAmbientOnlySymbolLookup(node, name);
   }
 
   _compileScriptAmbientOnlySymbolLookup(node, name) {

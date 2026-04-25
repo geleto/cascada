@@ -118,8 +118,14 @@ class CompileInheritance {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     withVars.forEach((nameNode) => {
       const externName = this.compiler.analysis.getBaseChannelName(nameNode.value);
-      this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = runtime.captureCompositionValue(context, ${JSON.stringify(externName)}, ${this.compiler.buffer.currentBuffer}`);
-      this.emit.line(');');
+      const declaration = this.compiler.analysis.findDeclaration(nameNode._analysis, externName);
+      this.emit(`${targetVarsVar}[${JSON.stringify(externName)}] = `);
+      if (declaration && declaration.type === 'var' && !declaration.shared) {
+        this.emit(`runtime.channelLookup(${JSON.stringify(externName)}, ${this.compiler.buffer.currentBuffer})`);
+      } else {
+        this.emit(`context.lookup(${JSON.stringify(externName)})`);
+      }
+      this.emit.line(';');
     });
   }
 

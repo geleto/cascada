@@ -368,7 +368,8 @@ describe('Extends Foundation', function () {
     it('should keep undeclared script bare reads on the ambient lookup path', function () {
       const source = new Script('return theme', env, 'ambient-read.casc')._compileSource();
 
-      expect(source).to.contain('runtime.contextOrScriptChannelLookup(context, "theme"');
+      expect(source).to.contain('context.lookupScript("theme"');
+      expect(source).to.not.contain('runtime.channelLookup("theme"');
       expect(source).to.not.contain('runtime.observeInheritanceSharedChannel(');
     });
 
@@ -2424,37 +2425,12 @@ describe('Extends Foundation', function () {
       }
     });
 
-    it('should pass error context through script fallback lookups after a channel miss', function () {
-      const seen = [];
-      const errorContext = {
-        lineno: 3,
-        colno: 5,
-        errorContextString: 'reading missingName',
-        path: 'lookup.script'
-      };
-      const context = {
-        lookupScript(name, receivedErrorContext) {
-          seen.push({ name, errorContext: receivedErrorContext });
-          return 'resolved-from-context';
-        }
-      };
-      const currentBuffer = {
-        findChannel() {
-          return null;
-        }
-      };
+    it('should pass error context through script ambient lookups', function () {
+      const source = new Script('return missingName', env, 'lookup-context.casc')._compileSource();
 
-      const result = runtime.contextOrScriptChannelLookup(
-        context,
-        'missingName',
-        currentBuffer,
-        errorContext
-      );
-
-      expect(result).to.be('resolved-from-context');
-      expect(seen).to.have.length(1);
-      expect(seen[0].name).to.be('missingName');
-      expect(seen[0].errorContext).to.be(errorContext);
+      expect(source).to.contain('context.lookupScript("missingName"');
+      expect(source).to.contain('errorContextString: "Symbol(PosNode)"');
+      expect(source).to.contain('path: context.path');
     });
   });
 
@@ -2793,7 +2769,8 @@ describe('Extends Foundation', function () {
         'payload-observation.njk'
       )._compileSource();
 
-      expect(dynamicTemplateSource).to.contain('runtime.captureCompositionValue(');
+      expect(dynamicTemplateSource).to.contain('runtime.channelLookup("theme"');
+      expect(dynamicTemplateSource).to.not.contain('runtime.captureCompositionValue(');
       expect(dynamicTemplateSource).to.not.contain('captureCompositionScriptValue');
       expect(dynamicTemplateSource).to.not.contain('recordTemporaryCompositionAssignedValue');
     });

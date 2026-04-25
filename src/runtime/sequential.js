@@ -32,12 +32,6 @@ function sequentialContextLookupValue(context, name, pathKey, repair = false, cu
   );
 }
 
-function sequentialContextLookupScriptValue(context, name, pathKey, repair = false, currentBuffer) {
-  return withSequentialPathChannel(currentBuffer, pathKey, null, repair, false, () =>
-    contextLookupOnly(context, name, pathKey)
-  );
-}
-
 function sequentialMemberLookupAsyncValue(target, key, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair, false, () =>
     memberLookupAsync(target, key, errorContext)
@@ -53,7 +47,6 @@ function sequentialMemberLookupScriptValue(target, key, pathKey, errorContext, r
 module.exports = {
   sequentialCallWrapValue,
   sequentialContextLookupValue,
-  sequentialContextLookupScriptValue,
   sequentialMemberLookupAsyncValue,
   sequentialMemberLookupScriptValue
 };
