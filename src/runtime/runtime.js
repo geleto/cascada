@@ -270,7 +270,6 @@ module.exports = {
 
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
-  waitForCurrentBufferChannel: buffer.waitForCurrentBufferChannel,
   createInheritanceState: inheritanceState.createInheritanceState,
   setInheritanceStartupPromise: inheritanceState.setInheritanceStartupPromise,
   awaitInheritanceStartup: inheritanceState.awaitInheritanceStartup,
@@ -294,6 +293,7 @@ module.exports = {
   memberLookupScript: lookup.memberLookupScript,
   observeInheritanceSharedChannel: lookup.observeInheritanceSharedChannel,
   channelLookup: lookup.channelLookup,
+  externLookup: lookup.externLookup,
   contextOrExternLookup: lookup.contextOrExternLookup,
   captureCompositionValue: lookup.captureCompositionValue,
   contextOrScriptChannelLookup: lookup.contextOrScriptChannelLookup,

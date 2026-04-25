@@ -506,7 +506,7 @@ class DataChannel extends Channel {
   }
 }
 
-function _createChannel(buffer, channelName, context, channelType = null, initializer) {
+function createChannel(buffer, channelName, context, channelType = null, initializer) {
   const type = channelType || channelName;
   switch (type) {
     case 'text':
@@ -517,6 +517,10 @@ function _createChannel(buffer, channelName, context, channelType = null, initia
       return new SequentialPathChannel(buffer, channelName, context, type);
     case 'data':
       return new DataChannel(buffer, channelName, context, type);
+    case 'sink':
+      return new SinkChannel(buffer, channelName, context, initializer);
+    case 'sequence':
+      return new SequenceChannel(buffer, channelName, context, initializer);
     default:
       throw new Error(`Unsupported channel type '${type}'`);
   }
@@ -703,10 +707,6 @@ class SinkChannel extends Channel {
   }
 }
 
-function _createSinkChannel(buffer, channelName, context, sink) {
-  return new SinkChannel(buffer, channelName, context, sink);
-}
-
 class SequenceChannel extends SinkChannel {
   constructor(buffer, channelName, context, sink) {
     super(buffer, channelName, context, sink);
@@ -766,20 +766,12 @@ class SequenceChannel extends SinkChannel {
   }
 }
 
-function _createSequenceChannel(buffer, channelName, context, sink) {
-  return new SequenceChannel(buffer, channelName, context, sink);
-}
-
-function createChannel(buffer, channelName, context, channelType = null, initializer) {
-  return _createChannel(buffer, channelName, context, channelType, initializer);
-}
-
 function createSinkChannel(buffer, channelName, context, sink) {
-  return _createSinkChannel(buffer, channelName, context, sink);
+  return createChannel(buffer, channelName, context, 'sink', sink);
 }
 
 function createSequenceChannel(buffer, channelName, context, sink) {
-  return _createSequenceChannel(buffer, channelName, context, sink);
+  return createChannel(buffer, channelName, context, 'sequence', sink);
 }
 
 function declareBufferChannel(buffer, channelName, channelType, context, initializer) {
@@ -794,9 +786,7 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   targetBuffer._channelTypes[channelName] = channelType;
 
   const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
-  const channel = channelFacts && channelFacts.usesInitializerAsTarget
-    ? _createInitializedTargetChannel(targetBuffer, channelName, context, channelType, initializer)
-    : _createChannel(targetBuffer, channelName, context, channelType, initializer);
+  const channel = createChannel(targetBuffer, channelName, context, channelType, initializer);
 
   channel._buffer = targetBuffer;
 
@@ -863,16 +853,6 @@ function initializeInheritanceSharedChannelDefault(buffer, channelName, channelT
     return channel;
   }
   return channel;
-}
-
-function _createInitializedTargetChannel(buffer, channelName, context, channelType, initializer) {
-  if (channelType === 'sink') {
-    return _createSinkChannel(buffer, channelName, context, initializer);
-  }
-  if (channelType === 'sequence') {
-    return _createSequenceChannel(buffer, channelName, context, initializer);
-  }
-  throw new Error(`Unsupported initialized-target channel type '${channelType}'`);
 }
 
 module.exports = {

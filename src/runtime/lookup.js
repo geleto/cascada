@@ -203,7 +203,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext) {
   }
 }
 
-function contextOrExternLookup(_context, name) {
+function externLookup(_context, name) {
   const externContext = _context && typeof _context.getExternContextVariables === 'function'
     ? _context.getExternContextVariables()
     : null;
@@ -212,6 +212,8 @@ function contextOrExternLookup(_context, name) {
   }
   return _context.lookup(name);
 }
+
+const contextOrExternLookup = externLookup;
 
 function _assertChannelReadableFromCurrentBuffer(currentBuffer, channel, requestedName) {
   if (!currentBuffer || !channel || channel._buffer === currentBuffer) {
@@ -467,6 +469,7 @@ module.exports = {
   memberLookupScript,
   observeInheritanceSharedChannel,
   channelLookup,
+  externLookup,
   contextOrExternLookup,
   captureCompositionValue,
   contextOrScriptChannelLookup,

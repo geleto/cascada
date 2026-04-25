@@ -2,7 +2,7 @@
 
 var lib = require('../lib');
 const errors = require('./errors');
-const { CommandBuffer } = require('./command-buffer');
+const { isCommandBuffer } = require('./command-buffer-marker');
 const {
   RESOLVE_MARKER,
   resolveAll,
@@ -11,7 +11,7 @@ const {
 
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
-    if (val instanceof CommandBuffer) {
+    if (isCommandBuffer(val)) {
       return val;
     }
     if (Array.isArray(val.text)) {
@@ -253,7 +253,7 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
 }
 
 function suppressValueScriptRaw(val, autoescape) {
-  if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof CommandBuffer)) {
+  if (val && typeof val === 'object' && !Array.isArray(val) && !isCommandBuffer(val)) {
     const hasCustomToString = val.toString && val.toString !== Object.prototype.toString;
     const isPromise = typeof val.then === 'function';
     if (!hasCustomToString && !isPromise) {

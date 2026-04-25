@@ -21,9 +21,11 @@ const {
 } = require('./commands');
 const { checkFinishedBuffer } = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
+const { markCommandBuffer, isCommandBuffer } = require('./command-buffer-marker');
 
 class CommandBuffer {
   constructor(context, parent = null) {
+    markCommandBuffer(this);
     this._context = context;
     this.parent = parent;
     this.finished = false;
@@ -587,10 +589,6 @@ class CommandBuffer {
 }
 
 function ensureChannelIterator(channel) {
-  if (!channel || typeof channel !== 'object') {
-    return null;
-  }
-
   if (!channel._iterator) {
     // Lazy require avoids top-level cycle: command-buffer <-> buffer-iterator.
     const { BufferIterator } = require('./buffer-iterator');
@@ -611,20 +609,8 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
   return buffer;
 }
 
-function waitForCurrentBufferChannel(buffer, channelName, pos = null) {
-  if (!buffer) {
-    return Promise.resolve();
-  }
-  return buffer.addWaitCurrent(channelName, pos);
-}
-
-function isCommandBuffer(value) {
-  return value instanceof CommandBuffer;
-}
-
 module.exports = {
   CommandBuffer,
   createCommandBuffer,
-  waitForCurrentBufferChannel,
   isCommandBuffer
 };

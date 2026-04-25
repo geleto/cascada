@@ -84,27 +84,38 @@ function normalizeFinalPromise(value) {
 // - waits for every entry so no rejection/error is missed
 // - returns one PoisonedValue containing all collected errors
 // - otherwise returns the array with each entry resolved at its top-level value boundary
-async function resolveAll(args) {
+function resolveAll(args) {
   if (!Array.isArray(args)) {
     throw new TypeError('resolveAll expects an array of values');
   }
 
   if (args.length === 0) {
-    return [];
+    return makeResolvedValue([]);
   }
 
-  // Fast path: single argument can use resolveSingle directly.
-  if (args.length === 1) {
-    const resolved = await resolveSingle(args[0]);
-    return [resolved];
+  const resolvedArgs = [];
+  const syncErrors = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const value = unwrapResolvedValue(args[i]);
+    if (isPoison(value)) {
+      syncErrors.push(...value.errors);
+      continue;
+    }
+    if (value && (typeof value.then === 'function' || value[RESOLVE_MARKER])) {
+      return resolveAllAsync(args);
+    }
+    resolvedArgs.push(value);
   }
 
-  // Fast path: duo is a hot path from compiler aggregate emission.
-  if (args.length === 2) {
-    return resolveDuo(args[0], args[1]);
+  if (syncErrors.length > 0) {
+    return createPoison(syncErrors);
   }
 
-  // Collect all errors first (awaits all promises)
+  return makeResolvedValue(resolvedArgs);
+}
+
+async function resolveAllAsync(args) {
   const errors = await collectErrors(args);
 
   if (errors.length > 0) {
@@ -171,21 +182,11 @@ async function resolveObjectProperties(obj) {
 
 // Consume exactly two independent Cascada values with the same "never miss any error"
 // rule as resolveAll(), but keep the hot two-value path explicit.
-async function resolveDuo(...args) {
+function resolveDuo(...args) {
   if (args.length !== 2) {
     throw new TypeError(`resolveDuo expects exactly 2 arguments, got ${args.length}`);
   }
-  const left = args[0];
-  const right = args[1];
-
-  const errors = await collectErrors([left, right]);
-  if (errors.length > 0) {
-    return createPoison(errors);
-  }
-
-  const resolvedLeft = await resolveValueAndMarker(left);
-  const resolvedRight = await resolveValueAndMarker(right);
-  return [resolvedLeft, resolvedRight];
+  return resolveAll(args);
 }
 
 // Consume one top-level Cascada value.

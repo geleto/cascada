@@ -1,9 +1,13 @@
 'use strict';
 
-const { isPoison, isPoisonError, isRuntimeFatalError, PoisonError, createPoison, collectErrors, handleError } = require('./errors');
-const { RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue } = require('./resolve');
+const { isPoison, isPoisonError, isRuntimeFatalError, PoisonError, createPoison, handleError } = require('./errors');
+const { RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue, resolveAll } = require('./resolve');
+const {
+  materializeTemplateTextValue,
+  suppressValue,
+  suppressValueScriptRaw
+} = require('./safe-output');
 const contextualizedOutputErrorCache = new WeakMap();
-let safeOutputApi = null;
 
 /**
  * Command classes for the script-mode channel pipeline.
@@ -144,8 +148,8 @@ class TextCommand extends ChannelCommand {
         subpath: null,
         pos: specOrValue.pos || null
       });
-      this.normalizeArgs = !!specOrValue.normalizeArgs;
-      this.initializeIfNotSet = !!specOrValue.initializeIfNotSet;
+      this.normalizeArgs = specOrValue.normalizeArgs;
+      this.initializeIfNotSet = specOrValue.initializeIfNotSet;
       return;
     }
     super({
@@ -228,7 +232,7 @@ class VarCommand extends ChannelCommand {
         subpath: null,
         pos: specOrValue.pos || null
       });
-      this.initializeIfNotSet = !!specOrValue.initializeIfNotSet;
+      this.initializeIfNotSet = specOrValue.initializeIfNotSet;
       return;
     }
     super({
@@ -335,7 +339,7 @@ class DataCommand extends ChannelCommand {
       subpath: null,
       pos
     });
-    this.initializeIfNotSet = !!initializeIfNotSet;
+    this.initializeIfNotSet = initializeIfNotSet;
   }
 
   apply(channel) {
@@ -1343,7 +1347,6 @@ function resolveSubpath(target, subpath) {
 }
 
 function normalizeTextCommandArg(value, output, pos) {
-  const { materializeTemplateTextValue } = getSafeOutputApi();
   const materialized = materializeTemplateTextValue(value, buildTextErrorContext(output, pos));
   if (materialized && typeof materialized.then === 'function') {
     return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, output, pos));
@@ -1355,35 +1358,23 @@ function normalizeTextCommandArg(value, output, pos) {
 // resolution: text values may still need snapshot/finalSnapshot materialization
 // before autoescape/suppression turns them into concrete text.
 function materializeTextCommandArgs(values, output, pos) {
-  const normalizedArgs = [];
-  let hasAsyncMaterialization = false;
-  for (const value of values) {
-    const normalized = normalizeTextCommandArg(value, output, pos);
-    if (normalized && typeof normalized.then === 'function') {
-      hasAsyncMaterialization = true;
+  const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, output, pos));
+  const resolvedArgs = resolveAll(normalizedArgs);
+  if (isResolvedValue(resolvedArgs)) {
+    return unwrapResolvedValue(resolvedArgs);
+  }
+  if (isPoison(resolvedArgs)) {
+    throw new PoisonError(resolvedArgs.errors);
+  }
+  return Promise.resolve(resolvedArgs).then((resolved) => {
+    if (isPoison(resolved)) {
+      throw new PoisonError(resolved.errors);
     }
-    normalizedArgs.push(normalized);
-  }
-  if (!hasAsyncMaterialization) {
-    return normalizedArgs;
-  }
-  return materializeTextCommandArgsAsync(normalizedArgs);
-}
-
-async function materializeTextCommandArgsAsync(normalizedArgs) {
-  const errors = await collectErrors(normalizedArgs);
-  if (errors.length > 0) {
-    throw new PoisonError(errors);
-  }
-  const resolvedArgs = [];
-  for (const normalized of normalizedArgs) {
-    resolvedArgs.push(await normalized);
-  }
-  return resolvedArgs;
+    return resolved;
+  });
 }
 
 function normalizeMaterializedTextArg(value, output, pos) {
-  const { suppressValue, suppressValueScriptRaw } = getSafeOutputApi();
   const throwOnUndefined = isThrowOnUndefinedEnabled(output);
   if (throwOnUndefined && (value === null || value === undefined)) {
     throw contextualizeOutputError(output, pos, new Error('attempted to output null or undefined value'));
@@ -1443,9 +1434,3 @@ function isScriptOutputMode(output) {
   return !!(output && output._context && output._context.scriptMode);
 }
 
-function getSafeOutputApi() {
-  if (!safeOutputApi) {
-    safeOutputApi = require('./safe-output');
-  }
-  return safeOutputApi;
-}
