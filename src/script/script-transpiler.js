@@ -1697,16 +1697,21 @@ class ScriptTranspiler {
     }
 
     if (processedLine.isEmpty) {
-      return output;
+      return output + (processedLine.inlineSuffix || '');
     }
 
     if (processedLine.isCommentOnly) {
       output += `{#- ${processedLine.comments.join('; ')} -#}`;
+      if (processedLine.inlineSuffix) {
+        output += processedLine.inlineSuffix;
+      }
       return output;
     }
 
+    // Return-guard prefixes target structural TAG lines; raw text can only
+    // receive EOF/root suffixes because guard analysis skips raw bodies.
     if (processedLine.lineType === 'RAW_TEXT') {
-      return processedLine.rawContent || '';
+      return (processedLine.rawContent || '') + (processedLine.inlineSuffix || '');
     }
 
     if (!processedLine.isContinuation) {
@@ -1773,6 +1778,10 @@ class ScriptTranspiler {
       if (processedLine.comments.length) {
         output += `{#- ${processedLine.comments.join('; ')} -#}`;
       }
+    }
+
+    if (!nextIsContinuation && processedLine.inlineSuffix) {
+      output += processedLine.inlineSuffix;
     }
 
     return output;
@@ -1975,6 +1984,109 @@ class ScriptTranspiler {
     };
   }
 
+  _returnGuardOpenTag() {
+    return '{%- if __return__ == __RETURN_UNSET__ -%}';
+  }
+
+  _returnGuardCloseTag(count = 1) {
+    return Array(count).fill('{%- endif -%}').join('');
+  }
+
+  _appendInlinePrefix(line, content) {
+    if (!line || !content) return;
+    line.inlinePrefix = `${line.inlinePrefix || ''}${content}`;
+  }
+
+  _appendInlineSuffix(line, content) {
+    if (!line || !content) return;
+    line.inlineSuffix = `${line.inlineSuffix || ''}${content}`;
+  }
+
+  _findContinuationEnd(processedLines, index) {
+    let end = index;
+    while (end + 1 < processedLines.length && processedLines[end + 1].isContinuation) {
+      end += 1;
+    }
+    return end;
+  }
+
+  _createReturnGuardFrame(tagName, parent, startEntry = null) {
+    return {
+      tagName,
+      parent,
+      startEntry,
+      endTagName: this.SYNTAX.blockPairs[tagName] || null,
+      isFunctionBoundary: this._isReturnBoundaryTag(tagName),
+      returnGuardDepth: 0,
+      containsReturn: false
+    };
+  }
+
+  _applyReturnGuards(processedLines) {
+    const rootFrame = this._createReturnGuardFrame('root', null, null);
+    const stack = [rootFrame];
+
+    const currentFrame = () => stack[stack.length - 1] || rootFrame;
+    const closeFrameGuards = (frame, line) => {
+      if (!frame || frame.returnGuardDepth <= 0) return;
+      this._appendInlinePrefix(line, this._returnGuardCloseTag(frame.returnGuardDepth));
+      frame.returnGuardDepth = 0;
+    };
+    // Called after popping a closing block, so currentFrame() is already the parent.
+    const propagateReturnToParent = (frame, line) => {
+      if (!frame || !frame.containsReturn || frame.isFunctionBoundary) {
+        return;
+      }
+      const parent = currentFrame();
+      if (!parent) return;
+      this._appendInlineSuffix(line, this._returnGuardOpenTag());
+      parent.returnGuardDepth += 1;
+      parent.containsReturn = true;
+    };
+
+    for (let i = 0; i < processedLines.length; i++) {
+      const line = processedLines[i];
+      if (!line || line.isContinuation || line.lineType === 'RAW_TEXT') {
+        continue;
+      }
+
+      if (line.tagName === 'return') {
+        const suffixLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
+        const frame = currentFrame();
+        this._appendInlineSuffix(suffixLine, this._returnGuardOpenTag());
+        frame.returnGuardDepth += 1;
+        frame.containsReturn = true;
+        continue;
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.MIDDLE) {
+        const frame = currentFrame();
+        closeFrameGuards(frame, line);
+        continue;
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.START) {
+        const parent = currentFrame();
+        stack.push(this._createReturnGuardFrame(line.tagName, parent, line));
+        continue;
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.END) {
+        const frame = stack.length > 1 ? stack.pop() : null;
+        closeFrameGuards(frame, line);
+        propagateReturnToParent(frame, line);
+      }
+    }
+
+    if (rootFrame.returnGuardDepth > 0 && processedLines.length > 0) {
+      this._appendInlineSuffix(
+        processedLines[processedLines.length - 1],
+        this._returnGuardCloseTag(rootFrame.returnGuardDepth)
+      );
+      rootFrame.returnGuardDepth = 0;
+    }
+  }
+
   /**
    * Convert Cascada script to Nunjucks/Cascada template
    * @param {string} scriptStr - The input script string
@@ -2047,13 +2159,6 @@ class ScriptTranspiler {
           opaqueBodyDepth -= 1;
         }
 
-        if (processedLine.injectLines && processedLine.injectLines.length > 0) {
-          processedLine.injectLines.forEach((injected) => {
-            const injectedLine = this._processLine(injected, state, i);
-            processedLines.push(injectedLine);
-            this._updateChannelScopesForLine(injectedLine);
-          });
-        }
       }
 
       state.inMultiLineComment = physicalParseResult.inMultiLineComment;
@@ -2062,6 +2167,7 @@ class ScriptTranspiler {
 
     this._processContinuationsAndComments(processedLines);
     this.returnAnalysis = this._analyzeReturnMetadata(processedLines);
+    this._applyReturnGuards(processedLines);
 
     let output = '';
     let lastNonContinuationLineType = null;

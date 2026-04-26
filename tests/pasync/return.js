@@ -107,6 +107,9 @@ describe('Cascada Script return', function () {
       if __return__ != __RETURN_UNSET__
         record("before")
       endif
+      if __return__ == __RETURN_UNSET__
+        record("unset")
+      endif
       return "done"
       if __return__ != __RETURN_UNSET__
         record("after")
@@ -120,7 +123,305 @@ describe('Cascada Script return', function () {
     });
 
     expect(result).to.be('done');
-    expect(events).to.eql(['after']);
+    expect(events).to.eql(['unset']);
+  });
+
+  describe('guard waterfall', function () {
+    it('skips statements after a top-level return', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'record("before")',
+        'return "done"',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql(['before']);
+    });
+
+    it('keeps the first visible top-level return value', async function () {
+      const result = await env.renderScriptString([
+        'return "first"',
+        'return "second"'
+      ].join('\n'));
+
+      expect(result).to.be('first');
+    });
+
+    it('cascades a return out of nested if blocks', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'if true',
+        '  if true',
+        '    return "done"',
+        '  endif',
+        '  record("after-inner")',
+        'endif',
+        'record("after-outer")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('keeps return guards open across nested sibling blocks until the returning block closes', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'if true',
+        '  return "done"',
+        '  if true',
+        '    record("nested-after-return")',
+        '  endif',
+        'endif',
+        'record("outer-after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('keeps middle tags attached to the original block', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'if false',
+        '  return "wrong"',
+        'else',
+        '  record("else")',
+        'endif',
+        'return "done"'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql(['else']);
+    });
+
+    it('balances guards when both if and else branches return', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'if false',
+        '  return "wrong"',
+        'else',
+        '  return "done"',
+        'endif',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('handles elif return branches without leaking guards', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'if false',
+        '  return "wrong"',
+        'elif true',
+        '  return "done"',
+        'else',
+        '  return "also-wrong"',
+        'endif',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('handles switch case/default returns without leaking guards', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'switch 2',
+        'case 1',
+        '  return "one"',
+        'case 2',
+        '  return "two"',
+        'default',
+        '  return "default"',
+        'endswitch',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('two');
+      expect(events).to.eql([]);
+    });
+
+    it('handles loop else returns without leaking guards', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'for item in []',
+        '  return "wrong"',
+        'else',
+        '  return "done"',
+        'endfor',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('keeps guard/recover branches attached to the original guard block', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'guard',
+        '  var failed = fail()',
+        'recover err',
+        '  return "recover"',
+        'endguard',
+        'record("after")'
+      ].join('\n'), {
+        fail() {
+          throw new Error('boom');
+        },
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('recover');
+      expect(events).to.eql([]);
+    });
+
+    it('closes guard-branch returns before recover', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'guard',
+        '  return "guard"',
+        'recover err',
+        '  record("recover")',
+        'endguard',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('guard');
+      expect(events).to.eql([]);
+    });
+
+    it('does not let nested function returns guard the outer scope', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'function inner()',
+        '  return "inner"',
+        '  record("inner-after")',
+        'endfunction',
+        'record("outer-after-function")',
+        'return inner()'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('inner');
+      expect(events).to.eql(['outer-after-function']);
+    });
+
+    it('cascades returns after loop end tags', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'var i = 0',
+        'while i < 1',
+        '  i = i + 1',
+        '  return "done"',
+        'endwhile',
+        'record("after-while")',
+        'for item in [1]',
+        '  record("after-for-start")',
+        'endfor',
+        'each item in [1]',
+        '  record("after-each-start")',
+        'endeach'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('keeps caller block returns local to the call body', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'function runner()',
+        '  return caller()',
+        'endfunction',
+        'var callerResult = call runner()',
+        '  return 7',
+        '  record("caller-after")',
+        'endcall',
+        'record("outer-after-call")',
+        'return callerResult'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be(7);
+      expect(events).to.eql(['outer-after-call']);
+    });
+
+    it('closes EOF root guards after a final comment-only line', function () {
+      const template = scriptTranspiler.scriptToTemplate([
+        'return "done"',
+        '// final comment'
+      ].join('\n'));
+
+      const commentIndex = template.indexOf('{#- final comment -#}');
+      const closeIndex = template.lastIndexOf('{%- endif -%}');
+      expect(commentIndex).to.be.greaterThan(-1);
+      expect(closeIndex).to.be.greaterThan(commentIndex);
+    });
+
+    it('preserves physical line count when injecting nested return guards', function () {
+      const script = [
+        'if true',
+        '  return 1',
+        'endif',
+        'return 2'
+      ].join('\n');
+      const template = scriptTranspiler.scriptToTemplate(script);
+
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
   });
 
   it('keeps function return channels independent from the outer return channel', async function () {

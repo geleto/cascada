@@ -484,8 +484,23 @@ are not started after return.
 cancellation primitive, is not a side-effect barrier, and must not stop loop
 scheduling based on timing. The loop must preserve Cascada's concurrency
 invariance: observable results and side effects cannot depend on which iteration
-happened to notice a return first. Work that appears before the return point in
-other iterations may run for every item.
+happened to notice a return first.
+
+For a `for` body that can return in the current return-owning scope, the whole
+body should be gated by an ordered return-state read:
+
+```cascada
+for item in items
+  if __return__ == __RETURN_UNSET__
+    ...
+  endif
+endfor
+```
+
+This is not loop cancellation. It is deterministic body gating through the
+normal command-buffer order. Later ordered iterations that have not yet passed
+the body gate can skip the body after a return becomes visible; iterations that
+already passed the gate may still run body work.
 
 Example:
 
@@ -498,10 +513,11 @@ for item in items
 endfor
 ```
 
-Many iterations may run `doSomeWorkWithSideEffects(item)` regardless of when the
-first return becomes visible.
+Many iterations may run `doSomeWorkWithSideEffects(item)` before the first
+return becomes visible. Later ordered iterations that reach the body gate after
+the return is visible skip the body.
 
-However, the return statement itself should be guarded inside a `for` loop:
+The return statement itself should also be guarded inside a `for` loop:
 
 ```cascada
 if __return__ == __RETURN_UNSET__
@@ -514,10 +530,12 @@ value. Combined with the normal guard waterfall, the conceptual rewrite is:
 
 ```cascada
 for item in items
-  doSomeWorkWithSideEffects(item)
-  if item.ok
-    if __return__ == __RETURN_UNSET__
-      return item; if __return__ == __RETURN_UNSET__
+  if __return__ == __RETURN_UNSET__
+    doSomeWorkWithSideEffects(item)
+    if item.ok
+      if __return__ == __RETURN_UNSET__
+        return item; if __return__ == __RETURN_UNSET__
+        endif
       endif
     endif
   endif
@@ -528,14 +546,17 @@ endif
 
 The semantics are:
 
-- pre-return work in parallel iterations may run for every item
 - return does not break, cancel, or stop scheduling ordinary `for` iterations
+- body work for iterations that already passed the ordered body gate may still
+  run
+- later ordered iterations that reach the body gate after return is visible skip
+  the whole body
 - statements after a return in the same source path are guarded
 - statements after the return point in later source-ordered iterations are also
   guarded, so they do not run after the first visible return
-- this guard is an ordered return-channel read; therefore post-return-path work
-  in later iterations may wait for earlier return-state checks, which partially
-  reduces concurrency after the return point
+- these guards are ordered return-channel reads; therefore body work and
+  post-return-path work in later iterations may wait for earlier return-state
+  checks, which partially reduces concurrency around return-capable `for` bodies
 - code after `endfor` in the enclosing scope is guarded
 - once one return has set `__return__`, later return statements in the loop are
   skipped
@@ -545,8 +566,8 @@ The transpiler-level responsibility is to make return state explicit and
 source-ordered. It must not use an out-of-band JavaScript flag, loop break, or
 other timing-dependent cancellation path to stop ordinary `for` iterations. The
 tradeoff is that the generated guards introduce ordered observation points after
-possible returns, so code after those guards may be less parallel than ordinary
-`for` body code before the return point.
+possible returns and around return-capable `for` bodies, so code behind those
+guards may be less parallel than ordinary `for` body code with no return path.
 
 ## Nested Blocks
 
@@ -736,8 +757,8 @@ Integration tests:
 - return value can be an error/poison value and is still reported by final return
 - returned error/poison values do not make injected guards report the error early
 - `each item in items` provides normal sequential short-circuit behavior
-- parallel `for` first visible return wins while pre-return side effects may
-  still run
+- parallel `for` first visible return wins while body side effects that already
+  passed the ordered body gate may still run
 - raw/verbatim contents that look like return code are ignored by return
   rewriting
 - compile-time declarations after return follow the documented classification
@@ -841,16 +862,29 @@ At the end of this phase, ordinary early return should work at script root,
 inside nested control flow, inside functions/methods, and inside caller/call
 assignment bodies.
 
-Phase 3 must also complete the injection API that Phase 2 prepared but did not
-finish: define structured injection entries for guard lines, prefer pre-parsed
-logical line objects over raw strings, avoid mutating physical parser state while
-processing injected lines, and ensure injected semicolon content follows the same
-logical-line metadata rules as user-authored semicolons.
+Phase 3 implementation status:
+
+- Implemented a dedicated return-guard pass over processed logical lines.
+- Generated inline template guard tags instead of adding new physical template
+  lines, preserving source-line layout.
+- Added guard opening after `return`, guard closure before middle/end tags, guard
+  cascade after end tags, and EOF root-scope guard closure.
+- Kept callable boundaries local: function/call-body returns do not guard the
+  outer scope.
+- Covered middle-tag guard behavior for `else`, `elif`, `case`, `default`, loop
+  `else`, and `recover`.
+- Covered EOF root-guard closure on a final comment-only line.
+- Removed the unused `injectLines` consumer after replacing the earlier
+  injection idea with the dedicated return-guard pass.
 
 `scriptTranspiler.returnAnalysis` is a Phase 2 test/introspection hook on the
 module singleton. Later phases should either keep that state purely internal or
 introduce an explicit analysis-result path instead of relying on singleton
 mutable state as public API.
+
+Post-stabilization cleanup: consider suppressing no-op immediately closed return
+guards and either formalizing or removing the `returnAnalysis` singleton test
+hook after the return implementation is fully settled.
 
 #### Phase 4. Loop Return Semantics
 
@@ -860,9 +894,10 @@ Covers steps 7, 8, and 9, landed as sub-phases.
   return.
 - Phase 4b: add sequential `each` loop advancement checks so return prevents
   later iterations from starting.
-- Phase 4c: add the parallel-`for`-specific return protections: guard the
-  return statement itself, preserve first-visible-return semantics, and lock
-  down the documented no-early-exit/non-cancellation behavior.
+- Phase 4c: add the parallel-`for`-specific return protections: gate
+  return-capable `for` bodies, guard the return statement itself, preserve
+  first-visible-return semantics, and lock down the documented
+  no-early-exit/non-cancellation behavior.
 
 The generic loop-body guard cascade after loop end tags belongs to Phase 3's
 guard stack. Step 9 only owns the additional semantics unique to ordinary
@@ -1417,14 +1452,24 @@ endif
 ```
 
 Step 9 does not re-own those generic guard-stack responsibilities. Its scope is
-only the additional behavior needed for ordinary parallel `for`.
+only the additional behavior needed for ordinary parallel `for`: gating the body
+of return-capable loops and preventing later return writes from overwriting the
+first visible return.
 
 Parallel `for` requirements:
 
 - For parallel `for`, do not break, cancel, or stop scheduling iterations because
   return became visible.
-- For parallel `for`, work before the return point may run for every item,
-  including side effects.
+- For parallel `for` bodies that contain a runtime return in the current
+  return-owning scope, wrap the whole loop body in
+  `if __return__ == __RETURN_UNSET__`.
+- This whole-body guard is an ordered return-channel read. It may reduce
+  concurrency for return-capable `for` bodies, but it must remain deterministic
+  and source-ordered.
+- For parallel `for`, body work for iterations that already passed the ordered
+  body guard may still run, including side effects.
+- For parallel `for`, later ordered iterations that have not yet passed the body
+  guard skip the whole body after return is visible.
 - For parallel `for`, guard the `return` statement itself with
   `if __return__ == __RETURN_UNSET__` so later returns do not overwrite the first
   visible return value.
@@ -1445,19 +1490,23 @@ Integration-first tests for this step:
 - multiple matching iterations do not overwrite the first visible return
 - first visible return follows ordered channel semantics, not delay/completion
   order
-- side effects before the return point may run for every iteration
 - return does not reduce the number of ordinary `for` iterations started or
   visited
+- side effects before the return point may run for iterations that already passed
+  the ordered body guard
+- later ordered iterations skip the whole body once return is visible
 - side effects after the return point do not run in later ordered iterations
   once the return is visible
-- post-return body statements may be delayed by ordered return-state checks,
-  demonstrating the documented partial concurrency reduction
+- body statements in return-capable `for` loops may be delayed by ordered
+  return-state checks, demonstrating the documented partial concurrency
+  reduction
 - `for` without return retains existing parallel behavior
 - nested function return inside `for` does not trigger loop return guarding
 
 Focused contract tests only if needed:
 
 - return statement inside `for` is wrapped in `if __return__ == __RETURN_UNSET__`
+- return-capable `for` body is wrapped in `if __return__ == __RETURN_UNSET__`
 - physical line count is preserved for generated for-loop guards
 
 ### 10. Poison And Undefined Return Semantics
@@ -1506,10 +1555,12 @@ Required behavior:
 - Explain only the parallel `for` quirk in detail.
 - Document that `for` does not cancel, break, or stop scheduling iterations when
   return becomes visible.
-- Document that side effects before the return point may still happen for many
-  items, potentially every item.
-- Document that work after the return point is guarded and may run with less
-  concurrency because it must observe ordered return state.
+- Document that return-capable `for` bodies are gated by ordered return-state
+  reads, so later ordered iterations can skip the body after return is visible.
+- Document that body work for iterations that already passed the gate may still
+  happen, including side effects.
+- Document that return-capable `for` bodies may run with less concurrency because
+  they must observe ordered return state.
 - Document that the first visible return value wins.
 - Recommend `each item in items` when the user needs normal sequential
   short-circuit return behavior.
@@ -1517,7 +1568,7 @@ Required behavior:
 Integration checks for this step:
 
 - documentation examples compile and run
-- `for` example demonstrates that pre-return work may run for many items
+- `for` example demonstrates whole-body gating and first-visible-return behavior
 - `each item in items` example demonstrates normal sequential short-circuit
   behavior
 - docs do not over-explain ordinary return behavior
@@ -1537,11 +1588,13 @@ Required points for the `for` note:
 
 - In parallel `for`, `return` does not cancel, break, or stop scheduling
   iterations.
-- In parallel `for`, work before the return point can still happen in many
-  iterations, potentially every item, including side effects.
-- In parallel `for`, work after the return point is guarded. Later iterations do
-  not run that work once the first return is visible, but those guards are
-  ordered checks and can reduce concurrency after the return point.
+- In return-capable parallel `for` bodies, the whole body is guarded by an
+  ordered return-state read.
+- In parallel `for`, work in iterations that already passed the body guard can
+  still happen, including side effects.
+- In parallel `for`, later ordered iterations that reach the body guard after
+  the first visible return skip the body.
+- These ordered checks can reduce concurrency in return-capable `for` bodies.
 - In parallel `for`, the first visible return value wins; later returns are
   skipped once `__return__` is no longer `__RETURN_UNSET__`.
 - If a user needs side-effectful iteration to stop before later items are
@@ -1552,17 +1605,18 @@ Required points for the `for` note:
 Suggested wording:
 
 > `return` is source-order control flow, not cancellation. In a parallel `for`,
-> Cascada does not stop scheduling iterations when return becomes visible. Work
-> before the return point can still run for many items, potentially every item.
-> Cascada guards the return itself so the first visible return value is returned,
-> and later return statements are skipped. Work after the return point is also
-> guarded, so it may run with less concurrency than ordinary pre-return loop work.
+> Cascada does not stop scheduling iterations when return becomes visible. For
+> loops that can return, Cascada gates the body with an ordered return-state
+> check. Iterations that already passed that gate can still run body work, but
+> later ordered iterations skip the body once return is visible. Cascada also
+> guards the return itself so the first visible return value is returned, and
+> later return statements are skipped.
 
 Example for documentation:
 
 ```cascada
 for item in items
-  audit(item)       // may run for many items
+  audit(item)       // may run for iterations that passed the body gate
   if item.ok
     return item     // first visible return wins
   endif
