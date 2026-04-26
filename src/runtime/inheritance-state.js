@@ -109,7 +109,7 @@ function ensureInheritanceInternalState(state) {
         metadataReadyResolved: false,
         metadataReadyWaiterCount: 0,
         metadataReadyYieldPending: false,
-        compositionMode: null,
+        componentComposition: false,
         chainPathStack: []
       }
     });
@@ -253,18 +253,18 @@ function consumeInheritanceMetadataReadyYield(state) {
   return Promise.resolve();
 }
 
-function setInheritanceCompositionMode(state, mode) {
+function setComponentCompositionMode(state, enabled = true) {
   const internalState = ensureInheritanceInternalState(state);
   if (!internalState) {
-    return mode;
+    return !!enabled;
   }
-  internalState.compositionMode = mode ?? null;
-  return mode;
+  internalState.componentComposition = !!enabled;
+  return internalState.componentComposition;
 }
 
-function isInheritanceCompositionMode(state, mode) {
+function isComponentCompositionMode(state) {
   const internalState = ensureInheritanceInternalState(state);
-  return internalState?.compositionMode === mode;
+  return !!internalState?.componentComposition;
 }
 
 function enterInheritanceChainPath(state, path, errorContext = null) {
@@ -629,8 +629,8 @@ module.exports = {
   awaitInheritanceMetadataReadiness,
   isInheritanceMetadataReadinessResolved,
   consumeInheritanceMetadataReadyYield,
-  setInheritanceCompositionMode,
-  isInheritanceCompositionMode,
+  setComponentCompositionMode,
+  isComponentCompositionMode,
   enterInheritanceChainPath,
   leaveInheritanceChainPath,
   cloneInheritanceMethodEntry,

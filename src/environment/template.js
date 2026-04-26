@@ -284,7 +284,7 @@ class Template extends Obj {
     const blockContracts = props.blockContracts;
     this.blocks = this._getCompiledBlocks(props, blockContracts);
     this.externSpec = props.externSpec || [];
-    this.inheritanceSpec = this._getCompiledInheritanceSpec(props);
+    this.inheritanceSpec = props.inheritanceSpec;
     this.rootRenderFunc = props.root;
     this.compiled = true;
   }
@@ -311,19 +311,6 @@ class Template extends Obj {
     });
 
     return blocks;
-  }
-
-  _getCompiledInheritanceSpec(props) {
-    const spec = props.inheritanceSpec && typeof props.inheritanceSpec === 'object'
-      ? props.inheritanceSpec
-      : {};
-    return {
-      setup: spec.setup || null,
-      methods: spec.methods || {},
-      sharedSchema: spec.sharedSchema || {},
-      invokedMethods: spec.invokedMethods || {},
-      hasExtends: !!spec.hasExtends
-    };
   }
 
   _getCompiledBlocks(props, blockContracts) {
@@ -390,7 +377,7 @@ class AsyncTemplate extends Template {
       context,
       globalRuntime,
       renderCallback,
-      globalRuntime.REGULAR_COMPOSITION_MODE
+      true
     );
     const outputFinished = output && typeof output.getFinishedPromise === 'function'
       ? output.getFinishedPromise()
@@ -438,7 +425,7 @@ class AsyncTemplate extends Template {
   _renderForComposition(ctx, cb, renderCtx) {
     this.compile();
     const context = this._createContext(ctx, renderCtx);
-    return this.rootRenderFunc(this.env, context, globalRuntime, cb, globalRuntime.REGULAR_COMPOSITION_MODE);
+    return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
   }
 
   _getCompiledBlocks() {

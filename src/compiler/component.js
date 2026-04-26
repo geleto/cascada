@@ -33,7 +33,6 @@ class CompileComponent {
     const componentTemplateVar = this.compiler.inheritance.compileAsyncGetTemplateOrScript(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
-    const payloadVar = this.compiler._tmpid();
     const instanceVar = this.compiler._tmpid();
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
 
@@ -47,14 +46,11 @@ class CompileComponent {
       null,
       true
     );
-    this.emit.line(`const ${payloadVar} = {`);
-    this.emit.line(`  rootContext: ${rootContextVar}`);
-    this.emit.line('};');
     this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
     this.emit.line(`  currentBuffer: ${this.compiler.buffer.currentBuffer},`);
     this.emit.line(`  bindingName: "${targetName}",`);
     this.emit.line(`  templateOrPromise: ${componentTemplateVar},`);
-    this.emit.line(`  payload: ${payloadVar},`);
+    this.emit.line(`  payload: ${rootContextVar},`);
     this.emit.line('  ownerContext: context,');
     this.emit.line('  env,');
     this.emit.line('  runtime,');

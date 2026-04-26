@@ -231,8 +231,6 @@ module.exports = {
   claimInheritanceSharedDefault: output.claimInheritanceSharedDefault,
   initializeInheritanceSharedChannelDefault: output.initializeInheritanceSharedChannelDefault,
   getInheritanceSharedBuffer: inheritanceBootstrap.getInheritanceSharedBuffer,
-  REGULAR_COMPOSITION_MODE: componentRuntime.REGULAR_COMPOSITION_MODE,
-  COMPONENT_COMPOSITION_MODE: componentRuntime.COMPONENT_COMPOSITION_MODE,
   startComponentInstance: componentRuntime.startComponentInstance,
   callComponentMethod: componentRuntime.callComponentMethod,
   observeComponentChannel: componentRuntime.observeComponentChannel,

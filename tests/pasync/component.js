@@ -734,6 +734,9 @@ describe('Phase 8 - Component Observations', function () {
 
     const makeContext = (path) => ({
       path,
+      getRenderContextVariables() {
+        return {};
+      },
       forkForComposition(nextPath) {
         return makeContext(nextPath);
       }
@@ -1347,6 +1350,9 @@ describe('Phase 8 - Component Lifecycle', function () {
   it('should auto-close a component instance when the owner buffer finishes', async function () {
     const makeContext = (path) => ({
       path,
+      getRenderContextVariables() {
+        return {};
+      },
       forkForComposition(nextPath) {
         return makeContext(nextPath);
       }
@@ -1428,7 +1434,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
   });
 
-  it('should pass plain payload objects as the component root context', async function () {
+  it('should pass plain payload objects as the component root context without reserving rootContext', async function () {
     const seen = {};
     const ownerContext = {
       path: 'Main.script',
@@ -1464,7 +1470,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         externSpec: [],
         path: 'Component.script'
       },
-      payload: { theme: 'dark' },
+      payload: { theme: 'dark', rootContext: 'user-value' },
       ownerContext,
       env: {},
       runtime: runtimeModule,
@@ -1475,6 +1481,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     expect(seen.nextPath).to.be('Component.script');
     expect(seen.rootContext.theme).to.be('dark');
+    expect(seen.rootContext.rootContext).to.be('user-value');
     expect(seen.rootContext.rootOnly).to.be('set-during-fork');
   });
 

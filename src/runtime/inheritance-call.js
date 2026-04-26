@@ -111,12 +111,7 @@ function _cloneErrorContext(errorContext) {
   if (!errorContext) {
     return null;
   }
-  return {
-    lineno: errorContext.lineno ?? 0,
-    colno: errorContext.colno ?? 0,
-    errorContextString: errorContext.errorContextString ?? null,
-    path: errorContext.path ?? null
-  };
+  return { ...errorContext };
 }
 
 function _inheritanceMetadataErrorContext(originContext, fallbackContext = null) {

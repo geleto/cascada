@@ -302,7 +302,7 @@
       runtime.declareBufferChannel(buffer, DEFAULT_TEMPLATE_TEXT_OUTPUT, 'text', context, null);
       const inheritanceState = runtime.createInheritanceState();
       inheritanceState.sharedRootBuffer = buffer;
-      inheritanceStateRuntime.setInheritanceCompositionMode(inheritanceState, runtime.COMPONENT_COMPOSITION_MODE);
+      inheritanceStateRuntime.setComponentCompositionMode(inheritanceState, true);
 
       let callbackError = null;
       tmpl.rootRenderFunc(
@@ -312,9 +312,10 @@
         function (err) {
           callbackError = err || null;
         },
-        runtime.COMPONENT_COMPOSITION_MODE,
+        true,
         buffer,
-        inheritanceState
+        inheritanceState,
+        true
       );
 
       const startupPromise = inheritanceStateRuntime.awaitInheritanceStartup(inheritanceState);

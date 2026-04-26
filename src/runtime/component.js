@@ -10,9 +10,6 @@ const inheritanceCall = require('./inheritance-call');
 const { createCommandBuffer } = require('./command-buffer');
 const { RuntimeFatalError } = require('./errors');
 
-const REGULAR_COMPOSITION_MODE = Object.freeze({ kind: 'regular-composition-mode' });
-const COMPONENT_COMPOSITION_MODE = Object.freeze({ kind: 'component-composition-mode' });
-
 function _createComponentError(message, errorContext = null) {
   return new RuntimeFatalError(
     message,
@@ -21,19 +18,6 @@ function _createComponentError(message, errorContext = null) {
     errorContext ? errorContext.errorContextString : null,
     errorContext ? errorContext.path : null
   );
-}
-
-function _normalizeComponentPayload(payload = {}) {
-  return {
-    rootContext: payload.rootContext ?? Object.assign({}, payload)
-  };
-}
-
-function _throwIfClosed(instance, errorContext) {
-  if (!instance.closed) {
-    return;
-  }
-  throw _createComponentError('Component instance cannot accept new operations', errorContext);
 }
 
 class ComponentInstance {
@@ -46,7 +30,7 @@ class ComponentInstance {
     this.context = context;
     this.rootBuffer = rootBuffer;
     this.inheritanceState = inheritanceStateValue;
-    this.env = env || null;
+    this.env = env;
     this.closed = false;
     this.startupError = null;
   }
@@ -58,14 +42,16 @@ class ComponentInstance {
   }
 
   _throwIfUnavailable(errorContext) {
-    _throwIfClosed(this, errorContext);
+    if (this.closed) {
+      throw _createComponentError('Component instance cannot accept new operations', errorContext);
+    }
     if (this.startupError) {
       throw this.startupError;
     }
   }
 
   _getSharedRootBuffer() {
-    return (this.inheritanceState && this.inheritanceState.sharedRootBuffer) || this.rootBuffer;
+    return this.inheritanceState.sharedRootBuffer ?? this.rootBuffer;
   }
 
   callMethod(methodName, args, runtime, cb, errorContext = null) {
@@ -93,21 +79,14 @@ class ComponentInstance {
   }
 }
 
-function _validateSharedObservationCommand(observationCommand, errorContext = null) {
-  if (
-    !observationCommand.isUniversalObservationCommand ||
-    !observationCommand.channelName
-  ) {
-    throw _createComponentError('Component shared observation requires a universal observational channel command', errorContext);
-  }
-  return observationCommand;
-}
-
 function _enqueueSharedObservation(instance, observationCommand, errorContext = null, implicitVarRead = false) {
   instance._throwIfUnavailable(errorContext);
-  const command = _validateSharedObservationCommand(observationCommand, errorContext);
-  const channelName = command.channelName;
-  const sharedSchema = ensureInheritanceSharedSchemaTable(instance.inheritanceState || {});
+  if (!observationCommand.isUniversalObservationCommand || !observationCommand.channelName) {
+    throw _createComponentError('Component shared observation requires a universal observational channel command', errorContext);
+  }
+
+  const channelName = observationCommand.channelName;
+  const sharedSchema = ensureInheritanceSharedSchemaTable(instance.inheritanceState);
   const channelType = sharedSchema[channelName] ?? null;
 
   if (!channelType) {
@@ -121,8 +100,8 @@ function _enqueueSharedObservation(instance, observationCommand, errorContext = 
   }
 
   const sharedRootBuffer = instance._getSharedRootBuffer();
-  sharedRootBuffer.add(command, channelName);
-  return command.promise;
+  sharedRootBuffer.add(observationCommand, channelName);
+  return observationCommand.promise;
 }
 
 async function _resolveComponentInstance(bindingValue, errorContext = null) {
@@ -289,22 +268,23 @@ async function createComponentInstance(spec) {
     template.compile();
   }
 
-  const normalizedPayload = _normalizeComponentPayload(payload);
-  const renderCtx = ownerContext && typeof ownerContext.getRenderContextVariables === 'function'
-    ? ownerContext.getRenderContextVariables()
-    : {};
-  const componentContext = ownerContext && typeof ownerContext.forkForComposition === 'function'
-    ? ownerContext.forkForComposition(
-      template.path,
-      normalizedPayload.rootContext ?? {},
-      renderCtx
-    )
-    : ownerContext;
+  const payloadContext = { ...(payload ?? {}) };
+  const renderCtx = ownerContext.getRenderContextVariables();
+  const componentContext = ownerContext.forkForComposition(
+    template.path,
+    payloadContext,
+    renderCtx,
+    undefined,
+    payloadContext
+  );
   const componentRootBuffer = createCommandBuffer(componentContext, null, null, null);
   const componentInheritanceState = inheritanceState.createInheritanceState();
   componentInheritanceState.sharedRootBuffer = componentRootBuffer;
-  componentInheritanceState.compositionPayload = normalizedPayload;
-  inheritanceState.setInheritanceCompositionMode(componentInheritanceState, COMPONENT_COMPOSITION_MODE);
+  componentInheritanceState.compositionPayload = {
+    rootContext: payloadContext,
+    payloadContext
+  };
+  inheritanceState.setComponentCompositionMode(componentInheritanceState, true);
 
   const instance = new ComponentInstance({
     context: componentContext,
@@ -336,9 +316,10 @@ async function createComponentInstance(spec) {
       componentContext,
       runtime,
       componentCallback,
-      COMPONENT_COMPOSITION_MODE,
+      true,
       componentRootBuffer,
-      componentInheritanceState
+      componentInheritanceState,
+      true
     );
   } catch (error) {
     instance._setStartupError(error);
@@ -443,8 +424,6 @@ function observeComponentChannel(spec) {
 }
 
 module.exports = {
-  REGULAR_COMPOSITION_MODE,
-  COMPONENT_COMPOSITION_MODE,
   ComponentInstance,
   createComponentInstance,
   startComponentInstance,

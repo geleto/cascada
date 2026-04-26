@@ -75,7 +75,7 @@ module.exports = class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false, parentBuffer = null, inheritanceState = null) {`);
+        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false, parentBuffer = null, inheritanceState = null, componentMode = false) {`);
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`

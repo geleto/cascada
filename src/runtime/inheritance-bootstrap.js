@@ -3,21 +3,6 @@
 const inheritanceState = require('./inheritance-state');
 const inheritanceCall = require('./inheritance-call');
 
-function _isComponentCompositionMode(mode) {
-  return mode?.kind === 'component-composition-mode';
-}
-
-function _getCompiledInheritanceSpec(compiledTemplate) {
-  const spec = compiledTemplate.inheritanceSpec ?? {};
-  return {
-    setup: spec.setup ?? null,
-    methods: spec.methods ?? {},
-    sharedSchema: spec.sharedSchema ?? {},
-    invokedMethods: spec.invokedMethods ?? {},
-    hasExtends: !!spec.hasExtends
-  };
-}
-
 function bootstrapInheritanceMetadata(
   stateValue,
   methods,
@@ -32,7 +17,7 @@ function bootstrapInheritanceMetadata(
   const state = stateValue;
   inheritanceState.beginInheritanceMetadataReadiness(state);
   if (!state.sharedRootBuffer) {
-    state.sharedRootBuffer = currentBuffer ?? null;
+    state.sharedRootBuffer = currentBuffer;
   }
   const shouldLinkNewSharedChannels =
     state.sharedRootBuffer &&
@@ -40,7 +25,7 @@ function bootstrapInheritanceMetadata(
     state.sharedRootBuffer !== currentBuffer;
   let previousSharedNames = null;
   if (shouldLinkNewSharedChannels) {
-    previousSharedNames = Object.keys(state.sharedSchema ?? {}).reduce((acc, name) => {
+    previousSharedNames = Object.keys(state.sharedSchema).reduce((acc, name) => {
       acc[name] = true;
       return acc;
     }, Object.create(null));
@@ -48,7 +33,7 @@ function bootstrapInheritanceMetadata(
   inheritanceState.registerInheritanceSharedSchema(state, sharedSchema, context);
   if (shouldLinkNewSharedChannels) {
     const newlyRegisteredChannels = Object.keys(sharedSchema).filter((name) =>
-      !previousSharedNames || !previousSharedNames[name]
+      !previousSharedNames[name]
     );
     linkCurrentBufferToParentChannels(
       state.sharedRootBuffer,
@@ -61,8 +46,8 @@ function bootstrapInheritanceMetadata(
   return state;
 }
 
-async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheritanceStateValue, compositionMode) {
-  if (_isComponentCompositionMode(compositionMode)) {
+async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheritanceStateValue, componentMode) {
+  if (componentMode) {
     return parentOutputBuffer;
   }
 
@@ -109,26 +94,24 @@ async function renderInheritanceParentRoot(spec) {
     const parentContext = compositionPayload
       ? context.forkForComposition(
           parentTemplate.path,
-          compositionPayload.rootContext ?? {},
+          compositionPayload.rootContext,
           context.getRenderContextVariables(),
           undefined,
-          compositionPayload.payloadContext ?? compositionPayload.rootContext ?? {}
+          compositionPayload.payloadContext
         )
       : context.forkForPath(parentTemplate.path);
-    const parentCompositionMode = inheritanceState.isInheritanceCompositionMode(
-      inheritanceStateValue,
-      runtimeApi.COMPONENT_COMPOSITION_MODE
-    ) ? runtimeApi.COMPONENT_COMPOSITION_MODE : runtimeApi.REGULAR_COMPOSITION_MODE;
+    const parentComponentMode = inheritanceState.isComponentCompositionMode(inheritanceStateValue);
     const parentOutputBuffer = parentTemplate.rootRenderFunc(
       env,
       parentContext,
       runtimeApi,
       cb,
-      parentCompositionMode,
+      true,
       currentBuffer,
-      inheritanceStateValue
+      inheritanceStateValue,
+      parentComponentMode
     );
-    if (parentCompositionMode === runtimeApi.COMPONENT_COMPOSITION_MODE) {
+    if (parentComponentMode) {
       const startupPromise = inheritanceState.awaitInheritanceStartup(inheritanceStateValue);
       if (startupPromise) {
         leaveChainPathOnReturn = false;
@@ -142,7 +125,7 @@ async function renderInheritanceParentRoot(spec) {
       parentOutputBuffer,
       currentBuffer,
       inheritanceStateValue,
-      parentCompositionMode
+      parentComponentMode
     );
     return parentOutputBuffer;
   } finally {
@@ -179,14 +162,14 @@ async function bootstrapInheritanceParentScript(spec) {
     const parentContext = compositionPayload
       ? context.forkForComposition(
           parentScript.path,
-          compositionPayload.rootContext ?? {},
+          compositionPayload.rootContext,
           context.getRenderContextVariables(),
           undefined,
-          compositionPayload.payloadContext ?? compositionPayload.rootContext ?? {}
+          compositionPayload.payloadContext
         )
       : context.forkForPath(parentScript.path);
 
-    const parentInheritanceSpec = _getCompiledInheritanceSpec(parentScript);
+    const parentInheritanceSpec = parentScript.inheritanceSpec;
     if (typeof parentInheritanceSpec.setup !== 'function') {
       throw new Error('Parent script did not expose a compiled setup function');
     }
@@ -326,7 +309,7 @@ function runCompiledRootStartup(spec) {
     startupPromise
   );
 
-  if (opts.resolveExports && !inheritanceState.isInheritanceCompositionMode(inheritanceStateValue, runtime.COMPONENT_COMPOSITION_MODE)) {
+  if (opts.resolveExports && !inheritanceState.isComponentCompositionMode(inheritanceStateValue)) {
     context.resolveExports();
   }
 
@@ -359,7 +342,7 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
 }
 
 function getInheritanceSharedBuffer(currentBuffer, inheritanceStateValue) {
-  return inheritanceStateValue?.sharedRootBuffer ?? currentBuffer;
+  return inheritanceStateValue.sharedRootBuffer ?? currentBuffer;
 }
 
 function finalizeInheritanceMetadata(state, context = null) {

@@ -622,7 +622,7 @@ class CompileInheritance {
   }
 
   _emitAsyncCompositionRootCompletion(node) {
-    this.emit.line(`} else if (compositionMode === runtime.COMPONENT_COMPOSITION_MODE) {`);
+    this.emit.line(`} else if (componentMode) {`);
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('} else {');
     this.emit.line(`  if (${ROOT_STARTUP_PROMISE_VAR}) {`);
