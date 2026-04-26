@@ -14,7 +14,7 @@ Rules:
 
 - Initializer is required.
 - Declaration conflicts/redeclaration follow normal explicit-output rules.
-- In phase 1, this is script-mode output behavior (same family as `sink`).
+- This is script-mode output behavior for initialized, ordered object channels.
 
 ## What Sequence Supports
 
@@ -30,7 +30,7 @@ var user = db.getUser(1)
 var state = db.connectionState
 ```
 
-3. Static subpath routing (same static-path extraction model as `sink` output commands):
+3. Static subpath routing:
 
 ```cascada
 var id = db.api.client.getId()
@@ -46,12 +46,12 @@ db.connectionState = "x"   // compile error
 
 ## Runtime Model
 
-`sequence` is implemented as `SequenceOutputHandler` over sink-style infrastructure.
+`sequence` is implemented as an initialized channel over the command-buffer infrastructure.
 
 Key behavior:
 
 - The sequence initializer may be sync or async.
-- `snapshot()` fallback chain is sink-like:
+- `snapshot()` fallback chain:
   1. `snapshot()`
   2. `getReturnValue()`
   3. `finalize()`
@@ -108,13 +108,13 @@ Relevant files:
 
 ## Ordering Semantics
 
-- Normal flow is command-buffer ordered (same ordering model as sink command execution).
+- Normal flow is command-buffer ordered.
 - Access/call happens at apply-time (not at enqueue-time).
 - `sequence` output commands are not wired to `!` lock-key sequencing (`runtime/sequential.js`).
 
 ## Guard Semantics
 
-`sequence` guard handling is transaction-style and independent from sink pause semantics.
+`sequence` guard handling is transaction-style.
 
 Hook shape on sequence objects:
 

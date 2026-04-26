@@ -31,7 +31,6 @@ carry-overs that are intentionally architecture-independent.
 
 ### Generic channel/runtime behavior already present on the restart baseline
 
-- explicit `var`, `text`, `data`, `sink`, and `sequence` channels exist
 - deferred exports are already promise-first:
   - `Context.addDeferredExport(...)` creates a promise up front
   - `Context.resolveExports()` resolves from the producer channel

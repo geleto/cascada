@@ -43,7 +43,6 @@ data result
 text title
 ```
 
-These variables represent **buffered output sinks**.
 
 Semantics:
 
@@ -55,7 +54,6 @@ This makes output construction explicit, local, and visible in the code.
 
 ---
 
-## 2. Built-in Output Types vs `sink`
 
 ### Built-in Output Types
 
@@ -77,15 +75,12 @@ Snapshot results:
 
 ---
 
-### `sink`: Unified Replacement for Custom Output Handlers
 
 All custom output handlers are unified under a single abstraction:
 
 ```cascada
-sink turtle = createTurtle(200, 100)
 ```
 
-A `sink`:
 
 * replaces the old "custom output handler" concept
 * buffers commands during execution
@@ -93,10 +88,7 @@ A `sink`:
 * is initialized from a context value or factory
 * allows exactly one assignment
 
-Unlike `data` and `text`, **snapshotting a `sink` is capability-based**:
 
-* a sink *may* support snapshotting
-* snapshotting a sink that does not support it is a compile-time error
 * if runtime conditions prevent snapshot detection at compile time, `snapshot()` returns a poisoned value
 
 This keeps the abstraction unified without weakening semantics.
@@ -124,7 +116,6 @@ Applicability:
 
 * `data` variables always support snapshots
 * `text` variables always support snapshots
-* `sink` variables support snapshots only if explicitly implemented
 
 Snapshots are **explicit everywhere**, including at `return`.
 
@@ -196,7 +187,6 @@ Examples:
 guard result, title, value
 guard data
 guard text, var
-guard sink
 guard *
 ```
 
@@ -272,10 +262,8 @@ Semantics:
 * does not poison execution
 * execution continues after revert
 
-When guarding `sink` variables:
 
 * buffered commands are reverted
-* snapshot rollback applies only if the sink supports snapshotting
 
 ---
 
@@ -365,7 +353,6 @@ This unifies Cascada's composition constructs under a consistent value-returning
 | ------------------------- | ------------------------------------------ |
 | `@data`                   | `data` output variables                    |
 | `@text`                   | `text` output variables                    |
-| custom output handlers    | `sink` variables                           |
 | implicit materialization  | explicit `.snapshot()` everywhere          |
 | `capture`                 | output vars + snapshot                     |
 | `extern / reads / writes` | `export / import`                          |
@@ -380,7 +367,6 @@ Execution semantics remain source-order deterministic; only syntax and scoping a
 A developer needs to understand only:
 
 1. `var` — normal variables
-2. `data`, `text`, `sink` — buffered output variables
 3. `.snapshot()` — explicit materialization
 4. `return` — with explicit snapshot calls
 5. `guard` — transactional control (by name or by type)

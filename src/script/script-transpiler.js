@@ -20,8 +20,8 @@
  *     - Data assembly uses explicit data channels with path-based commands.
  *       `data data` + `data.user.id = 1` → `{% command data.set(["user","id"], 1) %}`
  *       `data.tags.push("a")` → `{% command data.push(["tags"], "a") %}`
- *     - Sink channels call methods directly on declared sinks.
- *       `sink db = makeDb(); db.insert(...)` → `{% command db.insert(...) %}`
+ *     - Sequence channels call/read initialized objects in source order.
+ *       `sequence db = makeDb(); db.insert(...)` → `{% command db.insert(...) %}`
  *
  * 4.  **`capture` Removal**
  *     - `capture ... endcapture` is no longer supported in scripts and raises an error.

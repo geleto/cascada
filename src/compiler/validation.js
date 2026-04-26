@@ -66,20 +66,6 @@ function validateChannelDeclarationNode(compiler, node) {
 }
 
 /**
- * Validate sink snapshot guard restrictions.
- * @param {Compiler} compiler - The compiler instance
- * @param {object} options
- * @param {Node} options.node - Position node
- * @param {string} options.command - snapshot|isError|getError
- * @param {string|null} options.channelType - Channel type
- */
-function validateSinkSnapshotInGuard(compiler, { node, command, channelType }) {
-  if (command === 'snapshot' && channelType === 'sink' && compiler.guardDepth > 0) {
-    compiler.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
-  }
-}
-
-/**
  * Validate observation call constraints for channel symbols.
  * @param {Compiler} compiler - The compiler instance
  * @param {object} options
@@ -97,7 +83,6 @@ function validateChannelObservationCall(compiler, { node, command, channelName, 
       node
     );
   }
-  validateSinkSnapshotInGuard(compiler, { node, command, channelType });
 }
 
 function describePreExtendsRootStatement(node) {
@@ -314,7 +299,6 @@ module.exports = {
   collectRootExternSpec,
   validateGuardVariablesDeclared,
   validateChannelDeclarationNode,
-  validateSinkSnapshotInGuard,
   validateChannelObservationCall,
   getScriptExtendsSourceOrderViolation,
   validateScriptExtendsSourceOrder,

@@ -21,7 +21,6 @@ This document defines a hard rename policy for code and code comments.
 ## Canonical Vocabulary
 
 - `channel`: runtime state lane (readable and writable).
-- `channel declaration`: declaration of a channel (`data`, `text`, `var`, `sink`, `sequence`, etc.).
 - `mutation command`: command that mutates channel state.
 - `observation command`: command that observes channel state (`snapshot`, peek, `isError`, `getError`, etc.).
 - `channel queue` / `command queue`: ordering line where both mutation and observation commands wait and execute in sequence.
@@ -37,7 +36,6 @@ Important clarification:
 | `TextOutput` | `TextChannel` |
 | `ValueOutput` | `VarChannel` |
 | `DataOutput` | `DataChannel` |
-| `SinkOutput` | `SinkChannel` |
 | `SequenceOutput` | `SequenceChannel` |
 | `declareOutput` | `declareChannel` |
 | `getOutput` | `getChannel` |

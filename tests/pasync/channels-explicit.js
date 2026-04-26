@@ -53,7 +53,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.be('hello world');
     });
 
-    it('should declare sink channel with initializer', async () => {
+    it('should declare sequence channel with initializer', async () => {
       const context = {
         makeLogger() {
           return {
@@ -64,7 +64,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         }
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.write("message")
         return logger.snapshot()
       `;
@@ -248,7 +248,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       const script = `
         data myData
         text textOut
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         var a = myData
         var b = textOut
         var c = logger
@@ -643,8 +643,8 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
     });
   });
 
-  describe('Sink Channels', function () {
-    it('should execute sink methods during flattening', async () => {
+  describe('Sequence Channels', function () {
+    it('should execute sequence methods during flattening', async () => {
       const context = {
         makeLogger() {
           return {
@@ -655,7 +655,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         }
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.write("msg")
         return logger.snapshot()
       `;
@@ -663,7 +663,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql(['msg']);
     });
 
-    it('should await async sink methods', async () => {
+    it('should await async sequence methods', async () => {
       const context = {
         makeLogger() {
           return {
@@ -677,7 +677,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         },
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.writeAsync("msg")
         return logger.snapshot()
       `;
@@ -685,7 +685,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql(['msg']);
     });
 
-    it('should preserve sink method call order', async () => {
+    it('should preserve sequence method call order', async () => {
       const context = {
         makeLogger() {
           return {
@@ -696,7 +696,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         },
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.write("a")
         logger.write("b")
         return logger.snapshot()
@@ -705,7 +705,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql(['a', 'b']);
     });
 
-    it('should support sink method calls through subpaths', async () => {
+    it('should support sequence method calls through subpaths', async () => {
       const context = {
         makeLogger() {
           return {
@@ -718,7 +718,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         }
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.nested.write("msg")
         return logger.snapshot()
       `;
@@ -737,7 +737,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         }
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.write("msg")
         return logger.snapshot()
       `;
@@ -756,7 +756,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         }
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.write("msg")
         return logger.snapshot()
       `;
@@ -764,28 +764,28 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql(['msg']);
     });
 
-    it('should surface synchronous sink snapshot errors', async () => {
+    it('should surface synchronous sequence snapshot errors', async () => {
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         return logger.snapshot()
       `;
       try {
         await render(script, {
           makeLogger: () => ({
             snapshot: () => {
-              throw new Error('sink snapshot failed');
+              throw new Error('sequence snapshot failed');
             }
           })
         });
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.contain('sink snapshot failed');
+        expect(err.message).to.contain('sequence snapshot failed');
       }
     });
 
-    it('should surface async sink snapshot rejections', async () => {
+    it('should surface async sequence snapshot rejections', async () => {
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         return logger.snapshot()
       `;
       try {
@@ -793,13 +793,13 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
           makeLogger: () => ({
             snapshot: async () => {
               await delay(5);
-              throw new Error('sink snapshot rejected');
+              throw new Error('sequence snapshot rejected');
             }
           })
         });
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.contain('sink snapshot rejected');
+        expect(err.message).to.contain('sequence snapshot rejected');
       }
     });
   });
@@ -1243,9 +1243,9 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ items: ['inner', 'outer'] });
     });
 
-    it('should preserve source order for sink writes emitted from async child blocks', async () => {
+    it('should preserve source order for sequence writes emitted from async child blocks', async () => {
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         var cond = slowTrue()
         if cond
           logger.write(slowValue("inner", 40))
@@ -1839,18 +1839,6 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.be(1);
     });
 
-    it('should throw when sink channels have no initializer', async () => {
-      const script = `
-        sink logger
-      `;
-      try {
-        await render(script);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('sink channels must have an initializer');
-      }
-    });
-
     it('should throw when sequence channels have no initializer', async () => {
       const script = `
         sequence db
@@ -1863,10 +1851,10 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should evaluate sink initializers only once', async () => {
+    it('should evaluate sequence logger initializers only once', async () => {
       let created = 0;
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         return getCreated()
       `;
       const result = await render(script, {
@@ -1965,13 +1953,13 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         'var var = 1',
         'var this = 1',
         'text var',
-        'sink sequence = makeSink()'
+        'sequence sequence = makeSequence()'
       ];
 
       for (const script of scripts) {
         try {
           await render(script, {
-            makeSink() {
+            makeSequence() {
               return { snapshot() { return null; } };
             }
           });
@@ -1997,12 +1985,12 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should surface sink initialization errors', async () => {
+    it('should surface sequence initialization errors', async () => {
       const context = {
         fail() { throw new Error('init failed'); }
       };
       const script = `
-        sink logger = fail()
+        sequence logger = fail()
         return logger.snapshot()
       `;
       try {
@@ -2013,17 +2001,17 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should surface sink method call errors', async () => {
+    it('should surface sequence method call errors', async () => {
       const context = {
         makeLogger() {
           return {
-            write() { throw new Error('sink write failed'); },
+            write() { throw new Error('sequence write failed'); },
             snapshot() { return []; }
           };
         }
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.write("msg")
         return logger.snapshot()
       `;
@@ -2031,7 +2019,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         await render(script, context);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.contain('sink write failed');
+        expect(err.message).to.contain('sequence write failed');
       }
     });
 
@@ -2127,15 +2115,15 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         data myData
         text textOut
         var result
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         myData.x = 1
         textOut("hi")
         result = 5
         logger.write("log")
-        return { data: myData.snapshot(), text: textOut.snapshot(), value: result, sink: logger.snapshot() }
+        return { data: myData.snapshot(), text: textOut.snapshot(), value: result, sequence: logger.snapshot() }
       `;
       const result = await render(script, context);
-      expect(result).to.eql({ data: { x: 1 }, text: 'hi', value: 5, sink: ['log'] });
+      expect(result).to.eql({ data: { x: 1 }, text: 'hi', value: 5, sequence: ['log'] });
     });
 
     it('should support channels in for, while, and each loops', async () => {
@@ -2170,19 +2158,19 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ a: { b: { c: 1, d: 2 }, e: { f: 3 } } });
     });
 
-    it('should support sink snapshots returning null/undefined', async () => {
+    it('should support sequence snapshots returning null/undefined', async () => {
       const context = {
-        makeNullSink() {
+        makeNullSequence() {
           return { snapshot() { return null; } };
         },
-        makeUndefSink() {
+        makeUndefSequence() {
           return { snapshot() { return undefined; } };
         }
       };
       const script = `
-        sink nullSink = makeNullSink()
-        sink undefSink = makeUndefSink()
-        return { n: nullSink.snapshot(), u: undefSink.snapshot() }
+        sequence nullSequence = makeNullSequence()
+        sequence undefSequence = makeUndefSequence()
+        return { n: nullSequence.snapshot(), u: undefSequence.snapshot() }
       `;
       const result = await render(script, context);
       expect(result).to.eql({ n: null, u: undefined });
@@ -2260,17 +2248,17 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       }
     });
 
-    it('should propagate errors from sink methods', async () => {
+    it('should propagate errors from sequence methods', async () => {
       const context = {
         makeLogger() {
           return {
-            write() { throw new Error('sink error'); },
+            write() { throw new Error('sequence error'); },
             snapshot() { return []; }
           };
         }
       };
       const script = `
-        sink logger = makeLogger()
+        sequence logger = makeLogger()
         logger.write("msg")
         return logger.snapshot()
       `;
@@ -2278,7 +2266,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         await render(script, context);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.contain('sink error');
+        expect(err.message).to.contain('sequence error');
       }
     });
   });
@@ -2346,58 +2334,6 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ outer: 1 });
     });
 
-    it('should reject sink snapshot() inside guard', async () => {
-      const script = `
-        sink logger = makeLogger()
-        guard logger
-          var snap = logger.snapshot()
-          logger.write("x")
-        endguard
-        return logger.snapshot()
-      `;
-      try {
-        await render(script, {
-          makeLogger() {
-            return {
-              msgs: [],
-              write(msg) { this.msgs.push(msg); },
-              snapshot() { return this.msgs.slice(); }
-            };
-          }
-        });
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('sink snapshot() is not allowed inside guard blocks');
-      }
-    });
-
-    it('should reject sink snapshot() inside nested guard with recover', async () => {
-      const script = `
-        sink logger = makeLogger()
-        guard logger
-          guard logger
-            logger.write("x")
-            var snap = logger.snapshot()
-          recover
-            logger.write("r")
-          endguard
-        endguard
-        return logger.snapshot()
-      `;
-      try {
-        await render(script, {
-          makeLogger() {
-            return {
-              msgs: [],
-              write(msg) { this.msgs.push(msg); },
-              snapshot() { return this.msgs.slice(); }
-            };
-          }
-        });
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('sink snapshot() is not allowed inside guard blocks');
-      }
-    });
   });
 });
+

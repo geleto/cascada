@@ -15,7 +15,7 @@ This document tracks the output pipeline as implemented in:
 - compiler wiring: `src/compiler/buffer.js`, `src/compiler/emit.js`, `src/compiler/compiler.js`, `src/compiler/validation.js`
 
 ## Scope
-- Output types and facades: `text`, `value`, `data`, `sink`, `sequence`
+- Output types and facades: `text`, `value`, `data`, `sequence`
 - Command buffering and iterator apply model
 - Async block buffer ownership (`usedOutputs` -> buffer creation)
 - Output observations (`snapshot`, `isError`, `getError`)
@@ -61,7 +61,6 @@ Key behavior:
 - Observation helpers:
   - `addSnapshot`, `addIsError`, `addGetError` enqueue commands while active.
   - if buffer is already finished, they apply directly against registered output (waiting for output completion if needed).
-- `addSinkRepair` exists but is mutating, not observation.
 
 ## BufferIterator
 File: `src/runtime/buffer-iterator.js`
@@ -96,16 +95,14 @@ Important rule:
 - `TextOutput`: callable append model; compacts joined text on snapshot/get.
 - `ValueOutput`: callable replace model; declaration default target is `null`.
 - `DataOutput`: dynamic command model (`set/push/...`) through `DataHandler`; copy-on-write after shared snapshot.
-- `SinkOutput`: command dispatch into sink object (including async sink support), snapshot/read via sink methods.
-- `SequenceOutput`: `SinkOutput` variant with guard transaction hooks (`begin/commit/rollback`).
+- `SequenceOutput`: ordered command dispatch into an initialized object, with snapshot/read fallback methods and guard transaction hooks (`begin/commit/rollback`).
 
 ## Commands
 File: `src/runtime/commands.js`
 
 Mutating output commands:
-- `TextCommand`, `ValueCommand`, `DataCommand`, `SinkCommand`
-- `SequenceCallCommand` (mutating call into sequence sink)
-- `SinkRepairCommand` (mutating repair operation)
+- `TextCommand`, `ValueCommand`, `DataCommand`
+- `SequenceCallCommand` (mutating call into sequence target)
 - `TargetPoisonCommand` (encodes producer/apply poison into target)
 - `SetTargetCommand` (guard restore path)
 
@@ -131,7 +128,6 @@ File: `src/compiler/buffer.js`
 - Scope/legality validation lives in `src/compiler/validation.js`:
   - `validateOutputCommandScope`
   - `validateOutputObservationCall`
-  - `validateSinkSnapshotInGuard`
 
 ### Output usage tracking
 File: `src/compiler/buffer.js`

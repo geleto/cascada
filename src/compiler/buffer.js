@@ -213,9 +213,6 @@ class CompileBuffer {
     if (channelType === 'text') {
       this.compiler.emit('normalizeArgs: true, ');
     }
-    if (channelType === 'sink' && subpath && subpath.length > 0) {
-      this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
-    }
     let argList = node.call.args;
     if (channelType === 'data') {
       // For data channels, we create a new "virtual" AST for the arguments,
@@ -381,7 +378,7 @@ class CompileBuffer {
 
   /**
    * Compile channel command: channel.method(args)
-   * Handles declared channels (data/text/value/sink) and custom sinks
+   * Handles declared channels (data/text/value/sequence)
    */
   compileChannelCommand(node) {
     // Preserve channel routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.

@@ -2314,9 +2314,7 @@ Inside an inheritance chain or component script, shared state is accessed throug
 | `shared var x = value` | Shared variable. Read and written via `this.x`. |
 | `shared data x` | Shared `data` channel. Operated on via `this.x.command(...)` and `this.x.path = value`. |
 | `shared text x` | Shared `text` channel. Appended via `this.x("msg")`. |
-| `shared sink logger = sinkExpr` | Shared `sink` channel with an initializer. Called via `this.logger.method(args)`. |
-| `shared sink logger` | Declares participation without claiming a default. |
-| `shared sequence db = sinkExpr` | Shared `sequence` channel with an initializer. Called via `this.db.method(args)`. |
+| `shared sequence db = seqExpr` | Shared `sequence` channel with an initializer. Called via `this.db.method(args)`. |
 | `shared sequence db` | Declares participation without claiming a default. |
 
 **Default priority rules:**

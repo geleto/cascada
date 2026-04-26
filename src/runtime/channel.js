@@ -3,8 +3,7 @@
 const {
   TextCommand,
   VarCommand,
-  DataCommand,
-  SinkCommand
+  DataCommand
 } = require('./commands');
 const { RESOLVE_MARKER } = require('./resolve');
 const DataChannelTarget = require('../script/data-channel');
@@ -517,8 +516,6 @@ function createChannel(buffer, channelName, context, channelType = null, initial
       return new SequentialPathChannel(buffer, channelName, context, type);
     case 'data':
       return new DataChannel(buffer, channelName, context, type);
-    case 'sink':
-      return new SinkChannel(buffer, channelName, context, initializer);
     case 'sequence':
       return new SequenceChannel(buffer, channelName, context, initializer);
     default:
@@ -526,86 +523,46 @@ function createChannel(buffer, channelName, context, channelType = null, initial
   }
 }
 
-class SinkChannel extends Channel {
-  constructor(buffer, channelName, context, sink) {
-    super(buffer, channelName, context, 'sink', undefined, null);
-    this._sink = sink;
-    this._sinkReady = false;
-    this._sinkReadyPromise = null;
+class SequenceObjectChannel extends Channel {
+  constructor(buffer, channelName, context, targetObject) {
+    super(buffer, channelName, context, 'sequence', undefined, null);
+    this._sequenceTarget = targetObject;
+    this._sequenceTargetReady = false;
+    this._sequenceTargetReadyPromise = null;
   }
 
-  _resolveSink() {
-    return this._sink;
+  _resolveSequenceTarget() {
+    return this._sequenceTarget;
   }
 
-  _setSink(sink) {
-    this._sink = sink;
-    this._sinkReady = false;
-    this._sinkReadyPromise = null;
+  _setSequenceTarget(targetObject) {
+    this._sequenceTarget = targetObject;
+    this._sequenceTargetReady = false;
+    this._sequenceTargetReadyPromise = null;
     this._setTarget(undefined);
-    return this._sink;
+    return this._sequenceTarget;
   }
 
-  _repairNow() {
-    this._setTarget(undefined);
-
-    const runRepair = (sink) => {
-      if (!sink || typeof sink.repair !== 'function') {
-        return undefined;
-      }
-      try {
-        const result = sink.repair();
-        if (result && typeof result.then === 'function') {
-          return Promise.resolve(result).catch((err) => {
-            this._setTarget(createPoison([err]));
-            throw err;
-          });
-        }
-        return result;
-      } catch (err) {
-        this._setTarget(createPoison([err]));
-        throw err;
-      }
-    };
-
-    const sink = this._ensureSinkResolved();
-    if (sink && typeof sink.then === 'function') {
-      return Promise.resolve(sink).then(runRepair, (err) => {
-        this._setTarget(createPoison([err]));
-        throw err;
-      });
+  _ensureSequenceTargetResolved() {
+    if (this._sequenceTargetReady) {
+      return this._sequenceTarget;
     }
-    return runRepair(sink);
-  }
-
-  repair(pos = null) {
-    const commandPos = normalizeCommandPos(pos);
-    if (this._buffer) {
-      return this._buffer.addSinkRepair(this._channelName, commandPos);
-    }
-    return Promise.resolve(this._repairNow());
-  }
-
-  _ensureSinkResolved() {
-    if (this._sinkReady) {
-      return this._sink;
-    }
-    if (!this._sinkReadyPromise) {
-      const sinkVal = this._resolveSink();
-      if (!sinkVal || typeof sinkVal.then !== 'function') {
-        this._sink = sinkVal;
-        this._sinkReady = true;
-        return this._sink;
+    if (!this._sequenceTargetReadyPromise) {
+      const targetValue = this._resolveSequenceTarget();
+      if (!targetValue || typeof targetValue.then !== 'function') {
+        this._sequenceTarget = targetValue;
+        this._sequenceTargetReady = true;
+        return this._sequenceTarget;
       }
-      this._sinkReadyPromise = Promise.resolve(sinkVal)
-        .then((resolvedSink) => {
-          this._sink = resolvedSink;
-          this._sinkReady = true;
-          this._sinkReadyPromise = null;
-          return resolvedSink;
+      this._sequenceTargetReadyPromise = Promise.resolve(targetValue)
+        .then((resolvedTarget) => {
+          this._sequenceTarget = resolvedTarget;
+          this._sequenceTargetReady = true;
+          this._sequenceTargetReadyPromise = null;
+          return resolvedTarget;
         });
     }
-    return this._sinkReadyPromise;
+    return this._sequenceTargetReadyPromise;
   }
 
   _applyCommand(cmd) {
@@ -621,10 +578,10 @@ class SinkChannel extends Channel {
         }
         return result;
       }
-      const sink = this._ensureSinkResolved();
+      const sequenceTarget = this._ensureSequenceTargetResolved();
       const apply = () => cmd.apply(this);
-      const result = (sink && typeof sink.then === 'function')
-        ? Promise.resolve(sink).then(apply)
+      const result = (sequenceTarget && typeof sequenceTarget.then === 'function')
+        ? Promise.resolve(sequenceTarget).then(apply)
         : apply();
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).catch((err) => {
@@ -637,23 +594,23 @@ class SinkChannel extends Channel {
     }
   }
 
-  _snapshotFromSink(sink) {
-    if (!sink) return sink;
-    if (typeof sink.snapshot === 'function') return sink.snapshot();
-    if (typeof sink.getReturnValue === 'function') return sink.getReturnValue();
-    if (typeof sink.finalize === 'function') return sink.finalize();
-    return sink;
+  _snapshotFromSequenceTarget(sequenceTarget) {
+    if (!sequenceTarget) return sequenceTarget;
+    if (typeof sequenceTarget.snapshot === 'function') return sequenceTarget.snapshot();
+    if (typeof sequenceTarget.getReturnValue === 'function') return sequenceTarget.getReturnValue();
+    if (typeof sequenceTarget.finalize === 'function') return sequenceTarget.finalize();
+    return sequenceTarget;
   }
 
   _resolveSnapshotCommandResult() {
-    const sinkVal = this._ensureSinkResolved();
-    if (sinkVal && typeof sinkVal.then === 'function') {
-      return sinkVal.then((resolved) => {
+    const targetValue = this._ensureSequenceTargetResolved();
+    if (targetValue && typeof targetValue.then === 'function') {
+      return targetValue.then((resolved) => {
         const target = this._getTarget();
         if (isPoison(target)) {
           throw new PoisonError(target.errors.slice());
         }
-        return this._snapshotFromSink(resolved);
+        return this._snapshotFromSequenceTarget(resolved);
       });
     }
     const target = this._getTarget();
@@ -664,16 +621,16 @@ class SinkChannel extends Channel {
   }
 
   _getCurrentResult() {
-    return this._snapshotFromSink(this._sink);
+    return this._snapshotFromSequenceTarget(this._sequenceTarget);
   }
 
   _captureGuardState() {
-    const sinkVal = this._ensureSinkResolved();
-    const capture = (sink) => {
-      if (!sink || typeof sink.snapshot !== 'function') {
+    const targetValue = this._ensureSequenceTargetResolved();
+    const capture = (sequenceTarget) => {
+      if (!sequenceTarget || typeof sequenceTarget.snapshot !== 'function') {
         return undefined;
       }
-      return sink.snapshot();
+      return sequenceTarget.snapshot();
     };
     const normalizeCapture = (captured) => {
       if (captured && typeof captured.then === 'function') {
@@ -681,97 +638,93 @@ class SinkChannel extends Channel {
       }
       return captured;
     };
-    if (sinkVal && typeof sinkVal.then === 'function') {
-      return Promise.resolve(sinkVal).then((sink) => normalizeCapture(capture(sink)));
+    if (targetValue && typeof targetValue.then === 'function') {
+      return Promise.resolve(targetValue).then((sequenceTarget) => normalizeCapture(capture(sequenceTarget)));
     }
-    return normalizeCapture(capture(sinkVal));
+    return normalizeCapture(capture(targetValue));
   }
 
   _restoreGuardState(state) {
-    const sinkVal = this._ensureSinkResolved();
-    const restore = (sink, recoveredState) => {
+    const targetValue = this._ensureSequenceTargetResolved();
+    const restore = (sequenceTarget, recoveredState) => {
       this._setTarget(undefined);
-      if (!sink || typeof sink.recover !== 'function') {
+      if (!sequenceTarget || typeof sequenceTarget.recover !== 'function') {
         return undefined;
       }
-      return sink.recover(recoveredState);
+      return sequenceTarget.recover(recoveredState);
     };
 
-    const sinkIsPromise = !!(sinkVal && typeof sinkVal.then === 'function');
+    const targetIsPromise = !!(targetValue && typeof targetValue.then === 'function');
     const stateIsPromise = !!(state && typeof state.then === 'function');
-    if (sinkIsPromise || stateIsPromise) {
-      return Promise.all([Promise.resolve(sinkVal), Promise.resolve(state)])
-        .then(([sink, recoveredState]) => restore(sink, recoveredState));
+    if (targetIsPromise || stateIsPromise) {
+      return Promise.all([Promise.resolve(targetValue), Promise.resolve(state)])
+        .then(([sequenceTarget, recoveredState]) => restore(sequenceTarget, recoveredState));
     }
-    return restore(sinkVal, state);
+    return restore(targetValue, state);
   }
 }
 
-class SequenceChannel extends SinkChannel {
-  constructor(buffer, channelName, context, sink) {
-    super(buffer, channelName, context, sink);
+class SequenceChannel extends SequenceObjectChannel {
+  constructor(buffer, channelName, context, targetObject) {
+    super(buffer, channelName, context, targetObject);
     this._channelType = 'sequence';
   }
 
   beginTransaction() {
-    const sinkVal = this._ensureSinkResolved();
-    const begin = (sink) => {
-      if (!sink || typeof sink.begin !== 'function') {
+    const targetValue = this._ensureSequenceTargetResolved();
+    const begin = (sequenceTarget) => {
+      if (!sequenceTarget || typeof sequenceTarget.begin !== 'function') {
         return { active: false, token: undefined };
       }
-      const token = sink.begin();
+      const token = sequenceTarget.begin();
       if (token && typeof token.then === 'function') {
         return Promise.resolve(token).then((resolvedToken) => ({ active: true, token: resolvedToken }));
       }
       return { active: true, token };
     };
-    if (sinkVal && typeof sinkVal.then === 'function') {
-      return Promise.resolve(sinkVal).then(begin);
+    if (targetValue && typeof targetValue.then === 'function') {
+      return Promise.resolve(targetValue).then(begin);
     }
-    return begin(sinkVal);
+    return begin(targetValue);
   }
 
   commitTransaction(tx) {
     if (!tx || !tx.active) {
       return undefined;
     }
-    const sinkVal = this._ensureSinkResolved();
-    const commit = (sink) => {
-      if (!sink || typeof sink.commit !== 'function') {
+    const targetValue = this._ensureSequenceTargetResolved();
+    const commit = (sequenceTarget) => {
+      if (!sequenceTarget || typeof sequenceTarget.commit !== 'function') {
         return undefined;
       }
-      return sink.commit(tx.token);
+      return sequenceTarget.commit(tx.token);
     };
-    if (sinkVal && typeof sinkVal.then === 'function') {
-      return Promise.resolve(sinkVal).then(commit);
+    if (targetValue && typeof targetValue.then === 'function') {
+      return Promise.resolve(targetValue).then(commit);
     }
-    return commit(sinkVal);
+    return commit(targetValue);
   }
 
   rollbackTransaction(tx) {
     if (!tx || !tx.active) {
       return undefined;
     }
-    const sinkVal = this._ensureSinkResolved();
-    const rollback = (sink) => {
-      if (!sink || typeof sink.rollback !== 'function') {
+    const targetValue = this._ensureSequenceTargetResolved();
+    const rollback = (sequenceTarget) => {
+      if (!sequenceTarget || typeof sequenceTarget.rollback !== 'function') {
         return undefined;
       }
-      return sink.rollback(tx.token);
+      return sequenceTarget.rollback(tx.token);
     };
-    if (sinkVal && typeof sinkVal.then === 'function') {
-      return Promise.resolve(sinkVal).then(rollback);
+    if (targetValue && typeof targetValue.then === 'function') {
+      return Promise.resolve(targetValue).then(rollback);
     }
-    return rollback(sinkVal);
+    return rollback(targetValue);
   }
 }
 
-function createSinkChannel(buffer, channelName, context, sink) {
-  return createChannel(buffer, channelName, context, 'sink', sink);
-}
-
-function createSequenceChannel(buffer, channelName, context, sink) {
-  return createChannel(buffer, channelName, context, 'sequence', sink);
+function createSequenceChannel(buffer, channelName, context, targetObject) {
+  return createChannel(buffer, channelName, context, 'sequence', targetObject);
 }
 
 function declareBufferChannel(buffer, channelName, channelType, context, initializer) {
@@ -840,7 +793,7 @@ function initializeInheritanceSharedChannelDefault(buffer, channelName, channelT
   const channel = declareInheritanceSharedChannel(buffer, channelName, channelType, context);
   const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
   if (channelFacts && channelFacts.usesInitializerAsTarget) {
-    if (typeof channel._setSink !== 'function') {
+    if (typeof channel._setSequenceTarget !== 'function') {
       throw new RuntimeFatalError(
         `shared channel '${channelName}' cannot be initialized as '${channelType}'`,
         0,
@@ -849,7 +802,7 @@ function initializeInheritanceSharedChannelDefault(buffer, channelName, channelT
         context && context.path ? context.path : null
       );
     }
-    channel._setSink(initializer);
+    channel._setSequenceTarget(initializer);
     return channel;
   }
   return channel;
@@ -863,8 +816,6 @@ module.exports = {
   SequentialPathChannel,
   inspectTargetForErrors,
   createChannel,
-  SinkChannel,
-  createSinkChannel,
   SequenceChannel,
   createSequenceChannel,
   declareBufferChannel,
@@ -912,15 +863,6 @@ function mergePoisonErrors(existingErrors, nextErrors) {
     merged.push(...nextErrors);
   }
   return merged;
-}
-
-function normalizeCommandPos(pos) {
-  if (!pos || typeof pos !== 'object') {
-    return { lineno: 0, colno: 0 };
-  }
-  const lineno = typeof pos.lineno === 'number' ? pos.lineno : 0;
-  const colno = typeof pos.colno === 'number' ? pos.colno : 0;
-  return { lineno, colno };
 }
 
 async function inspectTargetForErrors(target) {

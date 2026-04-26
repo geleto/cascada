@@ -5,8 +5,7 @@ const {
   CHANNEL_TYPE_FACTS
 } = require('../channel-types');
 const {
-  validateChannelDeclarationNode,
-  validateSinkSnapshotInGuard
+  validateChannelDeclarationNode
 } = require('./validation');
 
 class CompileChannel {
@@ -287,11 +286,6 @@ class CompileChannel {
     if (specialChannelCall.pathPrefix.length !== 0) {
       return false;
     }
-    validateSinkSnapshotInGuard(compiler, {
-      node,
-      command: specialChannelCall.methodName,
-      channelType: specialChannelCall.channelType
-    });
     if (specialChannelCall.methodName === 'snapshot') {
       if (specialChannelCall.shared) {
         this.emitSharedChannelObservation(specialChannelCall.channelName, node, 'snapshot');
@@ -379,21 +373,6 @@ class CompileChannel {
           compiler._compileAggregate(node.args, null, '', '', false, true);
         }
         compiler.emit(']');
-        compiler.emit(`, pos: ${compiler.buffer._emitPositionLiteral(node)} })`);
-      }, node, specialChannelCall.channelName);
-      return true;
-    }
-    if (specialChannelCall.channelType === 'sink') {
-      if (!specialChannelCall.methodName) {
-        compiler.fail('Invalid sink command syntax: expected this.sinkChannel.method(...)', node.lineno, node.colno, node);
-      }
-      compiler.buffer.asyncAddValueToBuffer((resultVar) => {
-        compiler.emit(`${resultVar} = new runtime.SinkCommand({ channelName: ${JSON.stringify(specialChannelCall.channelName)}, command: ${JSON.stringify(specialChannelCall.methodName)}, `);
-        if (specialChannelCall.pathPrefix && specialChannelCall.pathPrefix.length > 0) {
-          compiler.emit(`subpath: ${JSON.stringify(specialChannelCall.pathPrefix)}, `);
-        }
-        compiler.emit('args: ');
-        compiler._compileAggregate(node.args, null, '[', ']', false, true);
         compiler.emit(`, pos: ${compiler.buffer._emitPositionLiteral(node)} })`);
       }, node, specialChannelCall.channelName);
       return true;

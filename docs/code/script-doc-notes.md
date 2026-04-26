@@ -3,7 +3,6 @@ depends - in transpiler and tests: remove
 rewrite intro doc
 rewrite kitchen doc
 regenerate and publish docs
-remove sink
 "Context values follow the same value semantics". What about appConfig.debug = true? I think the config shall be a local copy - you can modify it but changes are only local? The difference: side-effect functions.
 Do we support else if on the same line? elseif
 sequence - add property access (do we have), do we have sub-paths (as data). Shall we support property assignment?
@@ -43,7 +42,6 @@ script.md
 + "How Channel Writes Are Ordered" - shows data example followed immediately by the data docs, the first example is not needed.
 + The data Channel: Building Structured Data - explain how it is different than var: push/etc are safe, in var they use the standard JS side-effect calls. Use if you don't care about order. Property mutation - slower with big data.
 + text channel shall be first
-+ remove sink
 + sequential - Property assignment is a compile error - shall it be this way? "Show an invalid property assignment" - this is instruction not example title
 +  ⚠️ Guard transaction hooks in the sequence channel - this is not the place!!!
 
@@ -68,7 +66,6 @@ script.md
 
 Template document:
 -  **differences** between Cascada Script and Cascada Template syntax  - and nunjucks!
-- remove sink
 - macro vs function
 - scripts do not have extends and include, only import
 - with context - same as script

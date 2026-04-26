@@ -130,7 +130,6 @@ Completed so far:
   - direct channel constructors now use one consistent frame-free signature
   - channel factory helpers now also use frame-free signatures
   - `createCommandBuffer(...)` no longer takes a frame argument
-  - dead `finalizeUnobservedSinks(...)` plumbing was removed
   - a direct `declareChannel(...) -> buffer-only` ownership flip was attempted and reverted because linked-child visibility and local shadowing are not represented precisely enough by the current buffer registry alone
   - compile-time replacement of async `if(frame.topLevel)` export checks was attempted and reverted
     - `frame.topLevel` is not currently equivalent to simple compile-time `!frame.parent`
@@ -159,7 +158,6 @@ Completed so far:
     - sequential-path lock channels
     - `__parentTemplate`
     - root-owned async `var` declarations
-    - explicit async `data` / `text` / `sink` / `sequence` channel declarations
     - explicit async `var` channel declarations
     - guard recovery error vars
     - async loop vars / loop metadata bindings
@@ -168,7 +166,6 @@ Completed so far:
     - the underlying blocker was fixed by preserving owned channels per buffer and resolving visible channels by buffer ancestry instead of the shared map alone
     - guard / capture / revert semantics stay green with buffer-only async text registration
   - a broader "mirror only text + sequential-path channels into `frame._channels`" reduction was also attempted and reverted
-    - ordinary var/data/sink/sequence channel visibility is still not represented precisely enough by the current buffer registry alone
     - guard/recover and deferred export cases still depend on stronger visible-channel semantics
   - deferred export resolution is no longer purely lookup-based
     - async deferred exports now record their owning buffer + channel name directly
@@ -602,7 +599,6 @@ These are important because they shrink the real scope of the migration.
 - compile-time frame depth validation is already separate from runtime behavior
 - direct channel constructors and channel factory helpers now use frame-free signatures
 - `createCommandBuffer(...)` now uses a frame-free signature
-- dead `finalizeUnobservedSinks(...)` plumbing has already been removed
 
 This means a lot of the remaining work is cleanup and migration of ownership/lookup, not invention of entirely new machinery.
 
@@ -933,11 +929,9 @@ Required discipline for future changes:
   - parent-owned declarations
   - import/include/macro/caller composition
 
-### 8. Sink finalization and other frame-walking helpers
 
 Current shape:
 
-- the old sink-finalization helper has already been removed
 
 Examples:
 
@@ -1264,7 +1258,6 @@ Work:
 1. in async mode, register channels in `buffer._channels`
 2. in async mode, make `getChannel(...)` walk buffer ancestry / shared maps instead of frame ancestry
 3. migrate helpers that still rely on frame channel walks
-   - including sink finalization helpers
 4. remove dead frame threading from channel construction and declaration
 
 Why this is more tractable than it first looked:
@@ -1501,7 +1494,6 @@ Implemented so far:
 - `createCommandBuffer(...)` no longer takes frame
 - channel constructors no longer take/store frame
 - channel factory helpers no longer take frame
-- dead sink-finalization plumbing was removed
 
 Remaining likely work in this phase:
 
@@ -1595,7 +1587,6 @@ These are the best first implementation tasks after adopting this plan.
 3. Migrate the async channel registry:
    - `declareChannel(...)`
    - `getChannel(...)`
-   - sink finalization helpers
 
 4. Remove the legacy async loop frame path.
 

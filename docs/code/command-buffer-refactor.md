@@ -47,7 +47,6 @@ The most important current facts are:
   refactor plan, not treated as an optional afterthought
 - command taxonomy has also moved since some earlier notes: both
   `WaitResolveCommand` and `WaitCurrentCommand` exist in the runtime, and
-  `SinkRepairCommand` is now part of the mutating command surface
 
 So the overall direction of this document remains valid, but the migration
 sequence should be read as "update from the current narrowed runtime" rather
@@ -558,19 +557,15 @@ This applies to:
 - text
 - var
 - data
-- sink
 - sequence
 - sequential_path
 
-`sink` / `sequence` may still keep extra registry state if it is genuinely needed, but that is separate from the main channel-registration path.
 
 Related cleanup:
 
 - `targetBuffer._channelTypes[channelName] = channelType` appears to be dead write-only state today
-- `targetBuffer._channelRegistry[channelName] = channel` for sink/sequence
   channels also appears to be dead write-only state today
 - if lane specs become constructor-time metadata, channel type should live there instead of in a parallel runtime map
-- if sink/sequence-specific registry state is truly unnecessary, it should be
   removed rather than surviving as a second unused parallel registry
 
 This section is more urgent now than when the document was first drafted:
@@ -1204,7 +1199,6 @@ Work:
   - finished iterators dispose their own state
   - channel completion promise state is cleared
   - finished-buffer request bookkeeping is cleared
-  - resolved sink promise state is cleared
 - add or keep at least one focused test that proves linkage/readability still
   works after lane-array cleanup
 
@@ -1234,7 +1228,6 @@ Primary files:
 Validation:
 
 - run focused declaration/snapshot tests
-- run any sink/sequence-specific tests that might still depend on hidden
   registry state
 
 ### Phase 2. Clean up duplicate registration
@@ -1254,7 +1247,6 @@ Work:
   - text
   - var
   - data
-  - sink
   - sequence
   - sequential path / `sequential_path`
 

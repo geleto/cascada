@@ -145,13 +145,13 @@ describe('Extends Foundation', function () {
         }).not.to.throwException();
       });
 
-      it('should parse shared sink declarations', function () {
-        const template = scriptTranspiler.scriptToTemplate('shared sink logger = makeLogger()');
+      it('should parse shared sequence declarations', function () {
+        const template = scriptTranspiler.scriptToTemplate('shared sequence logger = makeLogger()');
         const ast = parser.parse(template);
         const declaration = ast.findAll(nodes.ChannelDeclaration)[0];
 
         expect(declaration).to.be.ok();
-        expect(declaration.channelType).to.be('sink');
+        expect(declaration.channelType).to.be('sequence');
         expect(declaration.name.value).to.be('logger');
         expect(declaration.isShared).to.be(true);
       });
@@ -736,7 +736,7 @@ describe('Extends Foundation', function () {
       expect(result).to.eql(['boot']);
     });
 
-    it('should route shared sink operations through this.sharedName', async function () {
+    it('should route shared sequence operations through this.sharedName', async function () {
       env.addGlobal('makeLogger', () => {
         return {
           events: [],
@@ -750,7 +750,7 @@ describe('Extends Foundation', function () {
       });
 
       const result = await env.renderScriptString(
-        'shared sink logger = makeLogger()\nthis.logger.write("boot")\nreturn this.logger.snapshot()',
+        'shared sequence logger = makeLogger()\nthis.logger.write("boot")\nreturn this.logger.snapshot()',
         {}
       );
 

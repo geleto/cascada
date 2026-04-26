@@ -13,7 +13,6 @@ const {
   TextCommand,
   VarCommand,
   DataCommand,
-  SinkCommand,
   SequenceCallCommand
 } = require('../../src/runtime/commands');
 const {
@@ -21,10 +20,9 @@ const {
   TextChannel,
   VarChannel,
   DataChannel,
-  SinkChannel,
+  SequenceChannel,
   inspectTargetForErrors,
-  createChannel,
-  createSinkChannel
+  createChannel
 } = require('../../src/runtime/channel');
 const { createCommandBuffer } = require('../../src/runtime/command-buffer');
 const { createArray } = require('../../src/runtime/resolve');
@@ -110,47 +108,13 @@ describe('channel errors', function () {
       expect(output._target.x.errors[0].message).to.contain(`has no method 'doesNotExist'`);
     });
 
-    it('SinkCommand poisons target on failure, skips while poisoned, and repairs via repair()', async () => {
-      const calls = [];
-      const sink = {
-        write(value) {
-          if (value === 'boom') {
-            throw new Error('sink failed');
-          }
-          calls.push(value);
-        },
-        repair() {
-          calls.push('repair');
-        },
-        snapshot() {
-          return calls.slice();
-        }
-      };
-
-      const output = new SinkChannel(null, 'logger', null, sink);
-
-      await new SinkCommand({ channelName: 'logger', command: 'write', args: ['ok'] }).apply(output);
-      await new SinkCommand({ channelName: 'logger', command: 'write', args: ['boom'] }).apply(output);
-      expect(isPoison(output._target)).to.be(true);
-
-      await new SinkCommand({ channelName: 'logger', command: 'write', args: ['skipped'] }).apply(output);
-      expect(calls).to.eql(['ok']);
-
-      await new SinkCommand({ channelName: 'logger', command: 'repair', args: [] }).apply(output);
-      expect(output._target).to.be(undefined);
-      expect(calls).to.eql(['ok', 'repair']);
-
-      await new SinkCommand({ channelName: 'logger', command: 'write', args: ['after'] }).apply(output);
-      expect(calls).to.eql(['ok', 'repair', 'after']);
-    });
-
     it('SequenceCallCommand still rejects deferred result when poison args are passed', async () => {
-      const sink = {
+      const sequence = {
         exec() {
           throw new Error('should not run');
         }
       };
-      const output = new SinkChannel(null, 'seq', null, sink);
+      const output = new SequenceChannel(null, 'seq', null, sequence);
       const poison = createPoison([new Error('arg poison')]);
       const cmd = new SequenceCallCommand({
         channelName: 'seq',
@@ -254,21 +218,6 @@ describe('channel errors', function () {
       expect(out.snapshot).to.be(undefined);
       expect(out.isError).to.be(undefined);
       expect(out.getError).to.be(undefined);
-    });
-
-    it('routes sink facade repair through command buffer API', async () => {
-      const calls = [];
-      const buffer = createCommandBuffer(null);
-      buffer.addSinkRepair = (name) => {
-        calls.push(['repair', name]);
-        return Promise.resolve(undefined);
-      };
-      const sink = { repair() { } };
-
-      const out = createSinkChannel(buffer, 'logger', null, sink);
-      await out.repair();
-
-      expect(calls).to.eql([['repair', 'logger']]);
     });
 
     it('reports healthy output state after poison is repaired by later overwrite', async () => {

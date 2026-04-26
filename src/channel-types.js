@@ -22,13 +22,6 @@ const CHANNEL_TYPE_FACTS = Object.freeze({
     supportsValueInitializer: true,
     usesInitializerAsTarget: false
   }),
-  sink: Object.freeze({
-    channelDeclarationTag: true,
-    commandClass: 'SinkCommand',
-    requiresInitializer: true,
-    supportsValueInitializer: false,
-    usesInitializerAsTarget: true
-  }),
   sequence: Object.freeze({
     channelDeclarationTag: true,
     commandClass: 'SequenceCallCommand',

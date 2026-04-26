@@ -173,7 +173,6 @@ describe('Cascada Script: Variables', function () {
       const scripts = [
         'var data = 1',
         'var value = 2',
-        'var sink = 3',
         'var context = 4'
       ];
 
@@ -568,7 +567,7 @@ describe('Cascada Script: Variables', function () {
         `
           var n = 0
           while n < 1
-            var sink = n
+            var context = n
             n = n + 1
           endwhile
           return n`

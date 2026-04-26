@@ -851,7 +851,7 @@ describe('Cascada Script: Channel commands', function () {
       });
     });
 
-    it('should support custom channels with the Factory pattern (sink)', async () => {
+    it('should support sequence channels with the Factory pattern', async () => {
       class Turtle {
         constructor() { this.x = 0; this.y = 0; }
         forward(dist) { this.x += dist; }
@@ -862,7 +862,7 @@ describe('Cascada Script: Channel commands', function () {
         makeTurtle: () => new Turtle()
       };
       const script = `
-        sink turtle = makeTurtle()
+        sequence turtle = makeTurtle()
         turtle.forward(50)
         turtle.turn(90)
         turtle.forward(10)
@@ -874,33 +874,7 @@ describe('Cascada Script: Channel commands', function () {
       expect(result.y).to.equal(90);
     });
 
-    it('supports sink snapshot of callable command channel (no path)', async () => {
-      class Logger {
-        constructor() {
-          this.logs = [];
-          const callable = (...args) => this._call(...args);
-          callable.logs = this.logs;
-          callable.snapshot = () => callable;
-          return callable;
-        }
-        _call(text) {
-          this.logs.push(text);
-        }
-      };
-
-      const logHandler = new Logger();
-      const script = `
-        sink log = logHandler
-        log("user1 logged in")
-        log("user2 logged in")
-        return { log: log.snapshot() }
-      `;
-      const result = await env.renderScriptString(script, { logHandler });
-      // The same logger instance is modified
-      expect(result.log.logs).to.eql(['user1 logged in', 'user2 logged in']);
-    });
-
-    it('should support sink channels with a singleton instance - 1 segment path', async () => {
+    it('should support sequence channels with a singleton instance - 1 segment path', async () => {
       const logger = {
         log: [],
         login: function (user) {
@@ -911,7 +885,7 @@ describe('Cascada Script: Channel commands', function () {
         },
       };
       const script = `
-        sink audit = logger
+        sequence audit = logger
         audit.login("user1")
         audit.action("read", "doc1")
         return`;
@@ -920,7 +894,7 @@ describe('Cascada Script: Channel commands', function () {
       expect(logger.log).to.eql(['login(user1)', 'action(read,doc1)']);
     });
 
-    it('should support sink snapshot of multi-segment command channel (2 segments path)', async () => {
+    it('should support sequence snapshot of multi-segment command channel (2 segments path)', async () => {
       // Create a utility object with nested structure
       class OutputLogger {
         constructor() {
@@ -944,11 +918,11 @@ describe('Cascada Script: Channel commands', function () {
       util.snapshot = () => util;
 
       const script = `
-        sink utilSink = utilRef.output
-        utilSink.log("User logged in")
-        utilSink.error("Connection failed")
-        utilSink.warn("Deprecated feature used")
-        return { util: utilSink.snapshot() }
+        sequence utilSequence = utilRef.output
+        utilSequence.log("User logged in")
+        utilSequence.error("Connection failed")
+        utilSequence.warn("Deprecated feature used")
+        return { util: utilSequence.snapshot() }
       `;
 
       const result = await env.renderScriptString(script, { utilRef: util });
@@ -1134,7 +1108,7 @@ describe('Cascada Script: Channel commands', function () {
       };
       const script = `
         data result
-        sink turtle = makeTurtle()
+        sequence turtle = makeTurtle()
         turtle.forward(100)
         result.status = "ignored"
         return turtle.snapshot()

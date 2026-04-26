@@ -813,12 +813,6 @@ endif`;
       expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/does not support callable assignment/);
     });
 
-    it('should convert sink channel calls', () => {
-      const script = 'sink turtle = makeTurtle()\nturtle.forward(50)';
-      const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
-      expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- command turtle.forward(50) -%}');
-    });
-
     it('should convert sequence declaration and calls', () => {
       const script = 'sequence db = makeDb()\nvar user = db.getUser(1)\nreturn user';
       const template = scriptTranspiler.scriptToTemplate(script);

@@ -31,7 +31,6 @@ This document tracks how [script.md](/c:/Projects/cascada/docs/cascada/script.md
   - `var`
   - `data`
   - `text`
-  - `sink`
   - `sequence`
 - `script.md` does not currently present removed legacy script syntax as active user syntax.
 - `extern` is current behavior and should remain documented.
@@ -51,7 +50,6 @@ This document tracks how [script.md](/c:/Projects/cascada/docs/cascada/script.md
 
 - `data` is for structured object and array assembly.
 - `text` supports append and overwrite behavior.
-- `sink` sends ordered commands to an external object.
 - `sequence` provides ordered reads and calls on an external object.
 
 ### Macros and call blocks
@@ -96,7 +94,6 @@ This document tracks how [script.md](/c:/Projects/cascada/docs/cascada/script.md
 
 - `guard` and `recover` are current language features.
 - Guard docs should stay aligned with actual selector support and current channel restrictions.
-- `sink.snapshot()` restrictions inside `guard` should only be documented if they remain implementation-backed.
 - `recover err` is documented today, but bare `recover` also appears to be accepted by the current script surface.
   - document whichever form is intended,
   - do not imply that `recover err` is the only valid spelling unless that is enforced.
@@ -118,7 +115,6 @@ This document tracks how [script.md](/c:/Projects/cascada/docs/cascada/script.md
 
 ## Remaining Improvement Areas For `script.md`
 
-- Keep strengthening `sink` examples so the lifecycle and return behavior are obvious.
 - Keep strengthening `sequence` examples so read, call, and snapshot behavior are obvious.
 - Keep API examples centered on explicit `return` and current channel usage.
 - Keep modular-script examples aligned with `extern` and `with` semantics that are actually tested.

@@ -567,7 +567,6 @@ Existing compiler/runtime paths:
   - `runtime.claimInheritanceSharedDefault(...)` controls child-first default
     claiming.
   - `runtime.initializeInheritanceSharedChannelDefault(...)` handles shared
-    `sink` / `sequence` initializers.
 - Bare shared `var` reads
   - `_compileDeclaredSymbolLookup(...)` detects `declaredOutput.shared`.
   - Shared var reads lower to `_emitSharedChannelObservation(name, node,

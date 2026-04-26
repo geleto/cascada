@@ -523,10 +523,10 @@
     });
   });
 
-  describe('Poison Channel Tests - Custom Sink Channels in Scripts', () => {
+  describe('Poison Channel Tests - Custom Sequence Channels in Scripts', () => {
     let env;
-    // Simple custom sink channel target for testing
-    class TestSinkChannel {
+    // Simple custom sequence channel target for testing
+    class TestSequenceChannel {
       constructor(context) {
         this.commands = [];
         this.context = context;
@@ -549,8 +549,8 @@
       }
     }
 
-    // Singleton sink channel target for testing
-    class SingletonSinkChannel {
+    // Singleton sequence channel target for testing
+    class SingletonSequenceChannel {
       constructor() {
         this.allLogs = [];
         this.currentLogs = [];
@@ -582,18 +582,18 @@
 
     beforeEach(() => {
       env = new AsyncEnvironment(null, { asyncMode: true, scriptMode: true });
-      singleton = new SingletonSinkChannel();
+      singleton = new SingletonSequenceChannel();
 
       context = {
         asyncReject: async () => { throw new Error('Async rejection'); },
         loggerRef: singleton,
-        makeTest: () => new TestSinkChannel()
+        makeTest: () => new TestSequenceChannel()
       };
     });
 
-    it('should poison custom sink channel when condition fails', async () => {
+    it('should poison custom sequence channel when condition fails', async () => {
       const script = `
-        sink test = makeTest()
+        sequence test = makeTest()
         if asyncReject()
           test.log("This should be poisoned")
           test.setValue("key", "value")
@@ -609,10 +609,10 @@
       }
     });
 
-    it('should poison multiple custom sink channels', async () => {
+    it('should poison multiple custom sequence channels', async () => {
       const script = `
-        sink test = makeTest()
-        sink logger = loggerRef
+        sequence test = makeTest()
+        sequence logger = loggerRef
         if asyncReject()
           test.log("Channel 1")
           logger.log("Channel 2")
@@ -628,9 +628,9 @@
       }
     });
 
-    it('should poison custom sink channel in else branch', async () => {
+    it('should poison custom sequence channel in else branch', async () => {
       const script = `
-        sink test = makeTest()
+        sequence test = makeTest()
         if asyncReject()
           test.log("if branch")
         else
@@ -647,9 +647,9 @@
       }
     });
 
-    it('should poison custom sink channel with method chains', async () => {
-      // Add a sink channel target that supports subpaths
-      class ChainSinkChannel {
+    it('should poison custom sequence channel with method chains', async () => {
+      // Add a sequence channel target that supports subpaths
+      class ChainSequenceChannel {
         constructor() {
           this.state = { actions: [] };
         }
@@ -672,7 +672,7 @@
       }
 
       const script = `
-        sink chain = makeChain()
+        sequence chain = makeChain()
         if asyncReject()
           chain.subcommand.doSomething("test")
         endif
@@ -680,26 +680,26 @@
       `;
 
       try {
-        await env.renderScriptString(script, { ...context, makeChain: () => new ChainSinkChannel() });
+        await env.renderScriptString(script, { ...context, makeChain: () => new ChainSequenceChannel() });
         throw new Error('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
       }
     });
 
-    it('should work with sink-backed custom channel when no condition poison', async () => {
+    it('should work with sequence-backed custom channel when no condition poison', async () => {
       const script = `
-      sink testSink = makeTest()
+      sequence testSequence = makeTest()
       if true
-        testSink.log("Success")
-        testSink.setValue("key", "value")
+        testSequence.log("Success")
+        testSequence.setValue("key", "value")
       endif
-      return { test: testSink.snapshot() }
+      return { test: testSequence.snapshot() }
     `;
 
       const result = await env.renderScriptString(script, {
         ...context,
-        makeTest: () => new TestSinkChannel()
+        makeTest: () => new TestSequenceChannel()
       });
       expect(result.test.commands).to.have.length(2);
       expect(result.test.commands[0].type).to.be('log');
@@ -708,8 +708,8 @@
 
     it('should poison channel in nested blocks with custom channels', async () => {
       const script = `
-        sink test = makeTest()
-        sink logger = loggerRef
+        sequence test = makeTest()
+        sequence logger = loggerRef
         if true
           test.log("outer start")
           if asyncReject()
@@ -729,25 +729,25 @@
       }
     });
 
-    it('should handle sink-backed singleton channel state correctly on poison', async () => {
+    it('should handle sequence-backed singleton channel state correctly on poison', async () => {
       // First render - should succeed
       const script1 = `
-      sink loggerSink = loggerRef
+      sequence loggerSequence = loggerRef
       if true
-        loggerSink.log("First render")
+        loggerSequence.log("First render")
       endif
-      return { logger: loggerSink.snapshot() }
+      return { logger: loggerSequence.snapshot() }
     `;
       const result1 = await env.renderScriptString(script1, context);
       expect(result1.logger.logs).to.contain(`First render`);
 
       // Second render - should fail and not pollute singleton state
       const script2 = `
-        sink loggerSink = loggerRef
+        sequence loggerSequence = loggerRef
         if asyncReject()
-          loggerSink.log("Should be poisoned")
+          loggerSequence.log("Should be poisoned")
         endif
-        return loggerSink.snapshot()
+        return loggerSequence.snapshot()
       `;
 
       try {
@@ -759,11 +759,11 @@
 
       // Third render - should succeed and not see poisoned state
       const script3 = `
-      sink loggerSink = loggerRef
+      sequence loggerSequence = loggerRef
       if true
-        loggerSink.log("Third render")
+        loggerSequence.log("Third render")
       endif
-      return { logger: loggerSink.snapshot() }
+      return { logger: loggerSequence.snapshot() }
     `;
       const result3 = await env.renderScriptString(script3, context);
       expect(result3.logger.logs).to.contain(`Third render`);
@@ -928,3 +928,4 @@
   });
 
 })();
+

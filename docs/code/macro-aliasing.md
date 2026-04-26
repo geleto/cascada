@@ -159,7 +159,6 @@ Recommended validations:
 3. The actual type must match the formal parameter kind.
    - `var` formal -> caller var
    - `data` formal -> caller data channel
-   - later, similar rules for `text`, `sink`, `sequence` if supported
 4. Caller-side runtime renaming must be honored.
 5. Formal by-reference names should behave as non-renamable local aliases inside
    the macro body.

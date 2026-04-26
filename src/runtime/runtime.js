@@ -173,18 +173,18 @@ function validateIsolatedExternSpec(externSpec, operationName = 'import') {
   validateExternInputs(externSpec, [], [], operationName);
 }
 
-function declareCompositionPayloadChannels(buffer, context, skipNames = null) {
+function declareCompositionPayloadChannels(commandBuffer, context, skipNames = null) {
   const payloadContext = context.getCompositionPayloadVariables();
   if (!payloadContext) {
     return;
   }
 
   Object.keys(payloadContext).forEach((name) => {
-    if (skipNames?.[name] || buffer._channelTypes?.[name]) {
+    if (skipNames?.[name] || commandBuffer._channelTypes?.[name]) {
       return;
     }
-    output.declareBufferChannel(buffer, name, 'var', context, null);
-    buffer.add(new commands.VarCommand({ channelName: name, args: [payloadContext[name]] }), name);
+    output.declareBufferChannel(commandBuffer, name, 'var', context, null);
+    commandBuffer.add(new commands.VarCommand({ channelName: name, args: [payloadContext[name]] }), name);
   });
 }
 
@@ -222,8 +222,6 @@ module.exports = {
   VarChannel: output.VarChannel,
   SequentialPathChannel: output.SequentialPathChannel,
   createChannel: output.createChannel,
-  SinkChannel: output.SinkChannel,
-  createSinkChannel: output.createSinkChannel,
   SequenceChannel: output.SequenceChannel,
   createSequenceChannel: output.createSequenceChannel,
   declareBufferChannel: output.declareBufferChannel,
@@ -240,7 +238,6 @@ module.exports = {
   WaitResolveCommand: commands.WaitResolveCommand,
   WaitCurrentCommand: commands.WaitCurrentCommand,
   DataCommand: commands.DataCommand,
-  SinkCommand: commands.SinkCommand,
   SequenceCallCommand: commands.SequenceCallCommand,
   SequenceGetCommand: commands.SequenceGetCommand,
   SequentialPathReadCommand: commands.SequentialPathReadCommand,
@@ -252,7 +249,6 @@ module.exports = {
   SnapshotCommand: commands.SnapshotCommand,
   IsErrorCommand: commands.IsErrorCommand,
   GetErrorCommand: commands.GetErrorCommand,
-  SinkRepairCommand: commands.SinkRepairCommand,
   RestoreGuardStateCommand: commands.RestoreGuardStateCommand,
 
 

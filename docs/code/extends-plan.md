@@ -236,7 +236,6 @@ Phase 0 reapplications.
 
 Scope:
 
-- verify plain `var`, `text`, `data`, `sink`, and `sequence`
   declaration/runtime behavior on the restart baseline
 - land only the remaining generic channel/runtime pieces that are still missing
   after Phase 0
@@ -288,7 +287,6 @@ Scope:
     - move shared-schema compilation onto analyzed/transformed metadata along
       with the later dedicated methods/constructor node work
 - handle `shared sequence` explicitly:
-  - `shared sequence db = sinkExpr` carries an initializer expression
   - `shared sequence db` declares participation with no initializer
 - emit code that creates unresolved method/shared entries as pending promise
   structs at runtime startup where needed

@@ -3,7 +3,6 @@
 const {
   ErrorCommand,
   TextCommand,
-  VarCommand,
   SequenceCallCommand,
   SequenceGetCommand,
   SequentialPathReadCommand,
@@ -16,7 +15,6 @@ const {
   WaitCurrentCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,
-  SinkRepairCommand,
   RestoreGuardStateCommand
 } = require('./commands');
 const {
@@ -333,14 +331,6 @@ class CommandBuffer {
 
   addCaptureGuardState(channelName, pos = null) {
     const cmd = new CaptureGuardStateCommand({
-      channelName,
-      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addSinkRepair(channelName, pos = null) {
-    const cmd = new SinkRepairCommand({
       channelName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });

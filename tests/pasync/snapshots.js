@@ -5,10 +5,10 @@ let AsyncEnvironment;
 let expectAsyncError;
 let TextCommand;
 let DataCommand;
-let SinkCommand;
+let SequenceCallCommand;
 let CommandBuffer;
 let createChannel;
-let createSinkChannel;
+let createSequenceChannel;
 let createPoison;
 let isPoisonError;
 
@@ -17,10 +17,10 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   TextCommand = require('../../src/runtime/runtime').TextCommand;
   DataCommand = require('../../src/runtime/runtime').DataCommand;
-  SinkCommand = require('../../src/runtime/runtime').SinkCommand;
+  SequenceCallCommand = require('../../src/runtime/runtime').SequenceCallCommand;
   CommandBuffer = require('../../src/runtime/runtime').CommandBuffer;
   createChannel = require('../../src/runtime/runtime').createChannel;
-  createSinkChannel = require('../../src/runtime/runtime').createSinkChannel;
+  createSequenceChannel = require('../../src/runtime/runtime').createSequenceChannel;
   createPoison = require('../../src/runtime/runtime').createPoison;
   isPoisonError = require('../../src/runtime/runtime').isPoisonError;
   expectAsyncError = require('../util').expectAsyncError;
@@ -29,10 +29,10 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   TextCommand = nunjucks.runtime.TextCommand;
   DataCommand = nunjucks.runtime.DataCommand;
-  SinkCommand = nunjucks.runtime.SinkCommand;
+  SequenceCallCommand = nunjucks.runtime.SequenceCallCommand;
   CommandBuffer = nunjucks.runtime.CommandBuffer;
   createChannel = nunjucks.runtime.createChannel;
-  createSinkChannel = nunjucks.runtime.createSinkChannel;
+  createSequenceChannel = nunjucks.runtime.createSequenceChannel;
   createPoison = nunjucks.runtime.createPoison;
   isPoisonError = nunjucks.runtime.isPoisonError;
   expectAsyncError = nunjucks.util.expectAsyncError;
@@ -56,7 +56,7 @@ describe('channel.finalSnapshot', function () {
         buffer.add(nested, targetName);
         return;
       }
-      if (item instanceof TextCommand || item instanceof DataCommand || item instanceof SinkCommand) {
+      if (item instanceof TextCommand || item instanceof DataCommand || item instanceof SequenceCallCommand) {
         buffer.add(item, targetName);
         return;
       }
@@ -81,21 +81,19 @@ describe('channel.finalSnapshot', function () {
   const flatten = (buffer, ctx, channelName) => (
     makeChannel(buffer, ctx, channelName).finalSnapshot()
   );
-  const flattenSink = (commands, ctx, channelName, sink) => {
+  const flattenSequence = (commands, ctx, channelName, sequence) => {
     const buffer = new CommandBuffer(ctx, null);
-    const sinkChannel = createSinkChannel(buffer, channelName, ctx || null, sink);
+    const sequenceChannel = createSequenceChannel(buffer, channelName, ctx || null, sequence);
 
     buffer._channelTypes = Object.create(null);
-    buffer._channelTypes[channelName] = 'sink';
-    // Don't overwrite buffer._channels - it's already a Map from the constructor
-    // Just ensure the sink channel is registered (it should be from constructor)
+    buffer._channelTypes[channelName] = 'sequence';
     if (buffer._channels instanceof Map) {
-      buffer._channels.set(channelName, sinkChannel);
+      buffer._channels.set(channelName, sequenceChannel);
     }
 
     commands.forEach((entry) => buffer.add(entry, channelName));
-    sinkChannel.finalSnapshot();
-    return sink;
+    sequenceChannel.finalSnapshot();
+    return sequence;
   };
   const cmd = (spec) => {
     if (spec.channelName === 'data') {
@@ -104,7 +102,7 @@ describe('channel.finalSnapshot', function () {
     if (spec.channelName === 'text') {
       return new TextCommand(spec);
     }
-    return new SinkCommand(spec);
+    return new SequenceCallCommand(spec);
   };
 
   // For each test, create a fresh environment and context.
@@ -227,9 +225,9 @@ describe('channel.finalSnapshot', function () {
       expect(buffer._finishAllChannelsRequested).to.be(null);
     });
 
-    it('clears resolved sink promise cache after async sink resolution', async function () {
+    it('clears resolved sequence promise cache after async sequence target resolution', async function () {
       const buffer = new CommandBuffer(context, null);
-      const sinkChannel = createSinkChannel(buffer, 'logger', context, Promise.resolve({
+      const sequenceChannel = createSequenceChannel(buffer, 'logger', context, Promise.resolve({
         snapshot() {
           return ['ok'];
         }
@@ -237,11 +235,11 @@ describe('channel.finalSnapshot', function () {
 
       buffer.markFinishedAndPatchLinks();
 
-      const result = await sinkChannel.finalSnapshot();
+      const result = await sequenceChannel.finalSnapshot();
 
       expect(result).to.eql(['ok']);
-      expect(sinkChannel._sinkReady).to.be(true);
-      expect(sinkChannel._sinkReadyPromise).to.be(null);
+      expect(sequenceChannel._sequenceTargetReady).to.be(true);
+      expect(sequenceChannel._sequenceTargetReadyPromise).to.be(null);
     });
   });
 
@@ -321,9 +319,9 @@ describe('channel.finalSnapshot', function () {
     });
   });
 
-  describe('Sink Channels (Factory & Singleton)', function () {
-    it('should instantiate and use a factory-style sink instance', function () {
-      class CounterSink {
+  describe('Sequence Channels (Factory & Singleton)', function () {
+    it('should instantiate and use a factory-style sequence instance', function () {
+      class CounterSequence {
         constructor() {
           this.count = 0;
         }
@@ -335,34 +333,34 @@ describe('channel.finalSnapshot', function () {
         }
       }
 
-      const sink = new CounterSink();
+      const sequence = new CounterSequence();
       const commands = [
         cmd({ channelName: 'counter', command: 'increment', subpath: [], args: [] })
       ];
 
-      flattenSink(commands, context, 'counter', sink);
-      expect(sink.getReturnValue()).to.eql({ count: 1 });
+      flattenSequence(commands, context, 'counter', sequence);
+      expect(sequence.getReturnValue()).to.eql({ count: 1 });
     });
 
-    it('should use a singleton sink instance', function () {
-      const singletonSink = {
+    it('should use a singleton sequence instance', function () {
+      const singletonSequence = {
         value: 0,
         set(val) { this.value = val; },
         getReturnValue() { return { value: this.value }; }
       };
       const commands = [cmd({ channelName: 'singleton', command: 'set', subpath: [], args: [456] })];
 
-      flattenSink(commands, context, 'singleton', singletonSink);
-      expect(singletonSink.getReturnValue()).to.eql({ value: 456 });
+      flattenSequence(commands, context, 'singleton', singletonSequence);
+      expect(singletonSequence.getReturnValue()).to.eql({ value: 456 });
     });
 
-    it('should support callable sink targets (sink is a function)', function () {
-      const callableSink = function(val) { this.lastValue = val; };
-      callableSink.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
+    it('should support callable sequence targets', function () {
+      const callableSequence = function(val) { this.lastValue = val; };
+      callableSequence.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
       const commands = [cmd({ channelName: 'callable', command: null, subpath: [], args: ['test'] })];
 
-      flattenSink(commands, context, 'callable', callableSink);
-      expect(callableSink.getReturnValue()).to.eql({ result: 'called', lastValue: 'test' });
+      flattenSequence(commands, context, 'callable', callableSequence);
+      expect(callableSequence.getReturnValue()).to.eql({ result: 'called', lastValue: 'test' });
     });
   });
 
@@ -444,15 +442,6 @@ describe('channel.finalSnapshot', function () {
       const buffer = createBuffer(['Hello', null, undefined, 'World'], context, 'text');
       const result = await flatten(buffer, context, 'text');
       expect(result).to.equal('HelloWorld');
-    });
-
-    it('should throw an error for an unsupported channel command target', async function () {
-      const buffer = createBuffer([cmd({ channelName: 'nonexistent', command: 'method', subpath: [], args: [] })]);
-      await expectAsyncError(async () => {
-        await flatten(buffer, context, 'text');
-      }, (err) => {
-        expect(err.message).to.contain('Sink method \'method\' not found');
-      });
     });
 
     it('should throw an error for an unknown command method on data channel', async function () {
@@ -608,24 +597,6 @@ describe('channel.finalSnapshot', function () {
         }
       });
 
-      it('should collect errors from channel instantiation failures', async function () {
-        const arr = [cmd({
-          channelName: 'nonexistent',
-          command: 'method',
-          subpath: [],
-          args: ['arg'],
-          pos: { lineno: 5, colno: 10 }
-        })];
-
-        try {
-          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be(true);
-          expect(err.errors[0].message).to.contain('Sink method \'method\' not found');
-        }
-      });
-
       it('should return a valid snapshot when no poison is found', async function () {
         const arr = ['Hello', ' ', 'World'];
         const result = await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
@@ -748,23 +719,6 @@ describe('channel.finalSnapshot', function () {
         }
       });
 
-      it('should collect unsupported channel target errors', async function () {
-        const arr = [cmd({
-          channelName: 'badHandler',
-          command: 'method',
-          subpath: ['nested', 'path'],
-          args: [],
-          pos: { lineno: 2, colno: 5 }
-        })];
-
-        try {
-          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
-          expect().fail('Should have thrown');
-        } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be(true);
-          expect(thrown.errors[0].message).to.contain('Sink method \'method\' not found');
-        }
-      });
     });
 
     describe('Complex nested poison scenarios', function () {

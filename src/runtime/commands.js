@@ -81,7 +81,7 @@ class Command {
   }
 }
 
-// Base class for commands targeting a declared channel (text/var/data/sink). Carries channel name, method name, arguments, and source position.
+// Base class for commands targeting a declared channel (text/var/data/sequence). Carries channel name, method name, arguments, and source position.
 class ChannelCommand extends Command {
   constructor({ channelName, command = null, args = null, subpath = null, pos = null, withDeferredResult = false }) {
     super({ withDeferredResult });
@@ -293,7 +293,6 @@ class WaitResolveCommand extends ChannelCommand {
   async apply(channel) {
     super.apply(channel);
     try {
-      const { resolveAll } = require('./resolve');
       const values = Array.isArray(this.arguments) ? this.arguments : [];
       const resolvedArgs = await resolveAll(values);
       const resolved = Array.isArray(resolvedArgs) && resolvedArgs.length <= 1
@@ -399,73 +398,7 @@ class DataCommand extends ChannelCommand {
   }
 }
 
-// Calls a method on a sink channel object (or a sub-path within it). Errors poison the channel target.
-class SinkCommand extends ChannelCommand {
-  constructor({ channelName, command, args = null, subpath = null, pos = null }) {
-    super({
-      channelName,
-      command: command || null,
-      args: args || [],
-      subpath: subpath || null,
-      pos
-    });
-  }
-
-  apply(channel) {
-    super.apply(channel);
-    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      if (!channel) return;
-      const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
-      const isRootRepair = this.command === 'repair' && (!this.subpath || this.subpath.length === 0);
-      if (!isRootRepair && isPoison(channel._getTarget())) {
-        return;
-      }
-      const poisonErrors = this.extractPoisonFromArgs(args);
-      if (poisonErrors.length > 0) {
-        channel._setTarget(this.toPoisonValue(poisonErrors));
-        return;
-      }
-      const sink = channel._sink;
-      const target = resolveSubpath(sink, this.subpath);
-      const method = this.command ? (target && target[this.command]) : target;
-
-      if (isRootRepair) {
-        channel._setTarget(undefined);
-        if (typeof method !== 'function') {
-          return;
-        }
-        const repairResult = method.apply(target, args);
-        if (repairResult && typeof repairResult.then === 'function') {
-          return Promise.resolve(repairResult).catch((err) => {
-            channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
-          });
-        }
-        return;
-      }
-
-      if (typeof method !== 'function') {
-        channel._setTarget(this.toPoisonValue([
-          contextualizeOutputError(channel, this.pos, new Error(`Sink method '${this.command}' not found`))
-        ]));
-        return;
-      }
-
-      try {
-        const result = method.apply(target, args);
-        if (result && typeof result.then === 'function') {
-          return Promise.resolve(result).catch((err) => {
-            channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
-          });
-        }
-        return result;
-      } catch (err) {
-        channel._setTarget(this.toPoisonValue([contextualizeOutputError(channel, this.pos, err)]));
-      }
-    });
-  }
-}
-
-// Calls a method on a sequence sink in source order and resolves the deferred result promise with the return value. Mutating — waits for prior observables.
+// Calls a method on a sequence target in source order and resolves the deferred result promise with the return value. Mutating — waits for prior observables.
 class SequenceCallCommand extends ChannelCommand {
   constructor({ channelName, command, args = null, subpath = null, pos = null, withDeferredResult = false }) {
     super({
@@ -490,8 +423,8 @@ class SequenceCallCommand extends ChannelCommand {
         throw err;
       }
 
-      const execute = (sink) => {
-        const target = resolveSubpath(sink, this.subpath);
+      const execute = (sequenceTarget) => {
+        const target = resolveSubpath(sequenceTarget, this.subpath);
         if (target === null || target === undefined) {
           this.resolveResult(undefined);
           return undefined;
@@ -518,16 +451,16 @@ class SequenceCallCommand extends ChannelCommand {
         return result;
       };
 
-      const sink = channel._ensureSinkResolved ? channel._ensureSinkResolved() : channel._sink;
-      if (sink && typeof sink.then === 'function') {
-        return Promise.resolve(sink).then(execute);
+      const sequenceTarget = channel._ensureSequenceTargetResolved ? channel._ensureSequenceTargetResolved() : channel._sequenceTarget;
+      if (sequenceTarget && typeof sequenceTarget.then === 'function') {
+        return Promise.resolve(sequenceTarget).then(execute);
       }
-      return execute(sink);
+      return execute(sequenceTarget);
     });
   }
 }
 
-// Reads a property from a sequence sink in source order and resolves the deferred result promise with the value. Observable — applied immediately without waiting for pending mutating commands.
+// Reads a property from a sequence target in source order and resolves the deferred result promise with the value. Observable — applied immediately without waiting for pending mutating commands.
 class SequenceGetCommand extends ChannelCommand {
   constructor({ channelName, command, subpath = null, pos = null, withDeferredResult = false }) {
     super({
@@ -544,21 +477,21 @@ class SequenceGetCommand extends ChannelCommand {
   apply(channel) {
     if (!channel) return undefined;
 
-    const execute = (sink) => {
-      const target = resolveSubpath(sink, this.subpath);
+    const execute = (sequenceTarget) => {
+      const target = resolveSubpath(sequenceTarget, this.subpath);
       const value = (target === null || target === undefined || !this.command) ? undefined : target[this.command];
       this.resolveResult(value);
       return value;
     };
 
-    const sink = channel._ensureSinkResolved ? channel._ensureSinkResolved() : channel._sink;
-    if (sink && typeof sink.then === 'function') {
-      return Promise.resolve(sink).then(execute, (err) => {
+    const sequenceTarget = channel._ensureSequenceTargetResolved ? channel._ensureSequenceTargetResolved() : channel._sequenceTarget;
+    if (sequenceTarget && typeof sequenceTarget.then === 'function') {
+      return Promise.resolve(sequenceTarget).then(execute, (err) => {
         this.rejectResult(err);
         throw err;
       });
     }
-    return execute(sink);
+    return execute(sequenceTarget);
   }
 }
 
@@ -726,7 +659,7 @@ class ErrorCommand extends Command {
   }
 }
 
-// Writes poison directly into a channel target: pushes a PoisonedValue onto a text buffer, or replaces a data/var/sink target with one.
+// Writes poison directly into a channel target: pushes a PoisonedValue onto a text buffer, or replaces a data/var/sequence target with one.
 class TargetPoisonCommand extends Command {
   constructor({ channelName, errors = null, pos = null }) {
     super();
@@ -932,40 +865,6 @@ class CaptureGuardStateCommand extends Command {
   }
 }
 
-// Calls `_repairNow()` on a sink channel to repair it within a guard block. Carries a deferred result.
-class SinkRepairCommand extends Command {
-  constructor({ channelName, pos = null }) {
-    super({ withDeferredResult: true });
-    this.channelName = channelName;
-    this.pos = pos || { lineno: 0, colno: 0 };
-  }
-
-  apply(output) {
-    const path = output && output._context ? output._context.path : null;
-    const contextualize = (err) => (isPoisonError(err)
-      ? err
-      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
-
-    if (!output) {
-      this.rejectResult(contextualize(new Error('SinkRepairCommand requires a sink channel')));
-      return;
-    }
-
-    try {
-      const result = output._repairNow();
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(
-          (value) => this.resolveResult(value),
-          (err) => this.rejectResult(contextualize(err))
-        );
-      }
-      this.resolveResult(result);
-    } catch (err) {
-      this.rejectResult(contextualize(err));
-    }
-  }
-}
-
 // Captures the current text channel state (including poison) for `try/resume` guard entry.
 // The captured state is passed to a later RestoreGuardStateCommand. Observable.
 // @todo - not implemented, implement as a general CaptureGuardStateCommand?
@@ -1047,7 +946,6 @@ module.exports = {
   WaitResolveCommand,
   WaitCurrentCommand,
   DataCommand,
-  SinkCommand,
   SequenceCallCommand,
   SequenceGetCommand,
   SequentialPathReadCommand,
@@ -1061,7 +959,6 @@ module.exports = {
   IsErrorCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,
-  SinkRepairCommand,
   TextCheckpointCommand,
   RestoreGuardStateCommand
 };

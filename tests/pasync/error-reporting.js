@@ -418,14 +418,19 @@
       }
     });
 
-    it('shoukld report correct path when using unknown channel in script', async () => {
-      var scriptName = 'error-script-unknown-channel.scr';
-      loader.addTemplate(scriptName, 'sink logger = loggerRef\nlogger.missing("Hi")\nreturn logger.snapshot()');
+    it('shoukld report correct path when sequence method fails in script', async () => {
+      var scriptName = 'error-script-sequence-method.scr';
+      loader.addTemplate(scriptName, 'sequence logger = loggerRef\nlogger.fail("Hi")\nreturn logger.snapshot()');
       try {
-        await env.renderScript(scriptName, { loggerRef: { snapshot() { return []; } } });
+        await env.renderScript(scriptName, {
+          loggerRef: {
+            fail() { throw new Error('sequence method failed'); },
+            snapshot() { return []; }
+          }
+        });
         expect().fail('Expected an error to be thrown');
       } catch (err) {
-        expect(err.message).to.contain(`(${scriptName})`).and.contain('Sink method').and.contain('missing');
+        expect(err.message).to.contain(`(${scriptName})`).and.contain('sequence method failed');
       }
     });
 
