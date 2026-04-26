@@ -862,9 +862,9 @@ return { text: output.snapshot(), data: result.snapshot() }`;
     it('should recover from macro error when poison reaches guarded data', async () => {
       const script = `data result
         text output
-        macro bomb()
+        function bomb()
           return error("boom")
-        endmacro
+        endfunction
 
         guard text, data
           result.res = bomb()

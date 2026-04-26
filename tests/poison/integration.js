@@ -76,9 +76,9 @@
 
     it('should pass a poisoned value directly into a script macro', async () => {
       const script = `
-        macro inspect(x)
+        function inspect(x)
           return x
-        endmacro
+        endfunction
 
         var val = input
         return inspect(val)

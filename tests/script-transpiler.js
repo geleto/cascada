@@ -322,6 +322,13 @@ describe('Script Transpiler', () => {
         expect(scriptTranspiler._generateOutput(endLine, false, 'TAG')).to.equal('{%- endmacro -%}');
       });
 
+      it('should reject template macro syntax in scripts', () => {
+        expect(() => scriptTranspiler.scriptToTemplate('macro greet()\nendmacro')).to.throwException((err) => {
+          expect(err.message).to.contain("'macro' is template syntax");
+          expect(err.message).to.contain("Use 'function'");
+        });
+      });
+
       it('should generate output with comments', () => {
         const processedLine = {
           indentation: '',

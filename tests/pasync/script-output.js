@@ -108,7 +108,7 @@ describe('Cascada Script: Channel commands', function () {
 
       // Define a reusable component that returns a clean data object.
       data result
-      macro buildUserReport(id)
+      function buildUserReport(id)
         data reportData
         // These two fetches inside the macro also run in parallel.
         var userData = fetchUser(id)
@@ -120,7 +120,7 @@ describe('Cascada Script: Channel commands', function () {
         reportData.user.name = userData.name
         reportData.user.tasks = tasksData
         return reportData.snapshot()
-      endmacro
+      endfunction
 
       // Call the macro for different users. These two calls are independent
       // and will execute in parallel.
@@ -208,23 +208,23 @@ describe('Cascada Script: Channel commands', function () {
       const script = `
 
         text mainText
-        macro dataProducer()
+        function dataProducer()
             data result
             text ignoredText
             result.value = "produced data"
             ignoredText("ignored text in data macro")
             return result.snapshot()
-        endmacro
+        endfunction
 
-        macro generic()
+        function generic()
             data result
             text genericText
             result.foo = "bar"
             genericText("Generic text")
             return {data: result.snapshot(), text: genericText.snapshot() }
-        endmacro
+        endfunction
 
-        macro textConsumer()
+        function textConsumer()
             text consumerText
             consumerText("Start consumer. ")
 
@@ -238,7 +238,7 @@ describe('Cascada Script: Channel commands', function () {
             var genRes = generic()
             consumerText("Inner text: " + genRes.text)
             return consumerText.snapshot()
-        endmacro
+        endfunction
 
         var consumerResult = textConsumer()
         mainText(consumerResult)
@@ -254,7 +254,7 @@ describe('Cascada Script: Channel commands', function () {
     it('should support explicit callbacks with parameters and return focus', async () => {
       const script = `
         data result
-        macro recursive(list, initial)
+        function recursive(list, initial)
           data resultData
           var acc = initial
           for item in list
@@ -262,7 +262,7 @@ describe('Cascada Script: Channel commands', function () {
           endfor
           resultData.value = acc
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call recursive([1, 2, 3], 0) (sum, num)
           data callData
@@ -279,7 +279,7 @@ describe('Cascada Script: Channel commands', function () {
     it('should support explicit callbacks with no arguments, only focusing', async () => {
       const script = `
         data result
-        macro recursive(list)
+        function recursive(list)
           data resultData
           var acc = 0
           for item in list
@@ -288,7 +288,7 @@ describe('Cascada Script: Channel commands', function () {
           endfor
           resultData.value = acc
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call recursive([1, 2, 3])
           data callData
@@ -305,7 +305,7 @@ describe('Cascada Script: Channel commands', function () {
     it('should support explicit callbacks with arguments but no focusing', async () => {
       const script = `
         data result
-        macro recursive(list)
+        function recursive(list)
           data resultData
           var acc = 0
           for item in list
@@ -314,7 +314,7 @@ describe('Cascada Script: Channel commands', function () {
           endfor
           resultData.value = acc
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call recursive([1, 2, 3]) (item)
           data callData
@@ -331,7 +331,7 @@ describe('Cascada Script: Channel commands', function () {
     it('should support explicit callbacks with no arguments and no focusing', async () => {
       const script = `
         data result
-        macro recursive(list)
+        function recursive(list)
           data resultData
           var acc = 0
           for item in list
@@ -340,7 +340,7 @@ describe('Cascada Script: Channel commands', function () {
           endfor
           resultData.value = acc
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call recursive([1, 2, 3])
           data callData
@@ -357,12 +357,12 @@ describe('Cascada Script: Channel commands', function () {
     it('should support explicit callbacks with empty arguments and focusing', async () => {
       const script = `
         data result
-        macro runner()
+        function runner()
           data resultData
           var res = caller()
           resultData.value = res.val
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call runner() ()
            data callData
@@ -380,12 +380,12 @@ describe('Cascada Script: Channel commands', function () {
       const script = `
         data result
         var outer = 10
-        macro runner()
+        function runner()
           data resultData
           var res = caller()
           resultData.val = res.val
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call runner()
           data callData
@@ -403,13 +403,13 @@ describe('Cascada Script: Channel commands', function () {
       const script = `
         data result
         var x = "outer"
-        macro runner()
+        function runner()
           data resultData
           var innerX = "inner"
           var res = caller()
           resultData.val = res.val
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call runner()
           data callData
@@ -427,12 +427,12 @@ describe('Cascada Script: Channel commands', function () {
       const script = `
         data result
         var x = "outer"
-        macro runner()
+        function runner()
           data resultData
           var res = caller("arg")
           resultData.val = res.val
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call runner() (callX)
           data callData
@@ -449,13 +449,13 @@ describe('Cascada Script: Channel commands', function () {
     it('should fail to access variables defined purely inside the macro (isolation)', async () => {
       const script = `
         data result
-        macro runner()
+        function runner()
           data resultData
           var secret = "inner"
           var res = caller()
           resultData.val = res.val
           return resultData.snapshot()
-        endmacro
+        endfunction
 
         var callResult = call runner()
            data callData
@@ -3023,14 +3023,14 @@ describe('Cascada Script: Channel commands', function () {
       it('should handle operations in macros', async () => {
         const script = `
           data result
-          macro processUser(name, salary)
+          function processUser(name, salary)
             data userData
             userData.name = name
             userData.salary = salary
             userData.salary += 1000
             userData.bonus = salary * 0.1
             return userData.snapshot()
-          endmacro
+          endfunction
 
           var user1 = processUser("Alice", 50000)
           var user2 = processUser("Bob", 60000)
@@ -3151,7 +3151,7 @@ describe('Cascada Script: Channel commands', function () {
       const script = `
         text mainText
         data mainData
-        macro wrapper()
+        function wrapper()
            text wrapperText
            var content = caller()
            wrapperText("DebugContent: " + content)
@@ -3159,7 +3159,7 @@ describe('Cascada Script: Channel commands', function () {
              wrapperText(" HasText: " + content.text)
            endif
            return { text: wrapperText.snapshot() }
-        endmacro
+        endfunction
 
         var wrapped = call wrapper()
           text innerText
@@ -3182,10 +3182,10 @@ describe('Cascada Script: Channel commands', function () {
     it('should not hang when filtered call block declares an unused sibling channel', async () => {
       const script = `
         text mainText
-        macro wrapper()
+        function wrapper()
            var content = caller()
            return { text: content }
-        endmacro
+        endfunction
 
         var wrapped = call wrapper()
           text innerText
@@ -3204,12 +3204,12 @@ describe('Cascada Script: Channel commands', function () {
       const script = `
         text output
         data result
-        macro wrapper()
+        function wrapper()
            data wrapperData
            var content = caller()
            wrapperData.wrappee = content
            return {data: wrapperData.snapshot() }
-        endmacro
+        endfunction
 
         var wrapped = call wrapper()
           data callData
@@ -3237,12 +3237,12 @@ describe('Cascada Script: Channel commands', function () {
       const script = `
         text mainText
         data mainData
-        macro wrapper()
+        function wrapper()
            data wrapperData
            var content = caller()
            wrapperData.wrappee = content
            return {data: wrapperData.snapshot() }
-        endmacro
+        endfunction
 
         var wrapped = call wrapper()
           text innerText

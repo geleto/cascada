@@ -89,12 +89,12 @@
 
         const script = `
         var result = {}
-        macro greet()
+        function greet()
           data greetResult
           greetResult.user.name = getName()
           greetResult.user.id = getUserId()
           return greetResult.snapshot()
-        endmacro
+        endfunction
 
         var macroResult = greet()
         result.output = macroResult.user
@@ -122,12 +122,12 @@
 
         const script = `
         var result = {}
-        macro greet()
+        function greet()
           data greetResult
           greetResult.greeting.type = getGreetingType()
           greetResult.greeting.score = getUserScore()
           return greetResult.snapshot()
-        endmacro
+        endfunction
 
         var macroResult = greet()
         result.output = macroResult.greeting
@@ -155,12 +155,12 @@
 
         const script = `
         var result = {}
-        macro getWeather()
+        function getWeather()
           data weatherResult
           weatherResult.weather.temperature = getTemperature()
           weatherResult.weather.humidity = getHumidity()
           return weatherResult.snapshot()
-        endmacro
+        endfunction
 
         var weatherData = getWeather()
         result.output = weatherData.weather
@@ -188,7 +188,7 @@
 
         const script = `
         var result = {}
-        macro calculateTotal()
+        function calculateTotal()
           data calcResult
           var price = getPrice()
           var taxRate = getTaxRate()
@@ -196,7 +196,7 @@
           calcResult.calculation.tax = price * taxRate
           calcResult.calculation.total = price + (price * taxRate)
           return calcResult.snapshot()
-        endmacro
+        endfunction
 
         var macroResult = calculateTotal()
         result.output = macroResult.calculation
@@ -223,12 +223,12 @@
 
         const script = `
         data result
-        macro getStats(id)
+        function getStats(id)
           var statsResult = {}
           statsResult.id = id
           statsResult.score = fetchScore(id)
           return statsResult
-        endmacro
+        endfunction
 
         var stats1 = getStats(1)
         var stats2 = getStats(2)
@@ -373,14 +373,14 @@
 
         const script = `
         var result = {}
-        macro getPageStats(views, likes, comments)
+        function getPageStats(views, likes, comments)
           data statsResult
           statsResult.stats.views = views
           statsResult.stats.likes = likes
           statsResult.stats.comments = comments
           statsResult.stats.engagement = likes + comments
           return statsResult.snapshot()
-        endmacro
+        endfunction
 
         var macroResult = getPageStats(fetchViewCount(), fetchLikeCount(), fetchCommentCount())
         result.output = macroResult.stats
@@ -450,13 +450,13 @@
 
         const script = `
         data result
-        macro getUserPermissions(level)
+        function getUserPermissions(level)
           var permResult = {}
           permResult.permissions = fetchPermissions(level)
           return permResult
-        endmacro
+        endfunction
 
-        macro userProfile(user)
+        function userProfile(user)
           data profileResult
           profileResult.profile.id = user.id
           profileResult.profile.name = user.name
@@ -464,7 +464,7 @@
           var perms = getUserPermissions(user.level)
           profileResult.profile.permissions = perms.permissions
           return profileResult.snapshot()
-        endmacro
+        endfunction
 
         var user1 = userProfile(fetchUser(1))
         var user2 = userProfile(fetchUser(2))
@@ -494,14 +494,14 @@
 
         const script = `
         var result = {}
-        macro processItems(items, multiplier)
+        function processItems(items, multiplier)
           data procResult
           procResult.original = items
           for item in items
             procResult.processed.push(item * multiplier)
           endfor
           return procResult.snapshot()
-        endmacro
+        endfunction
 
         var procData = processItems(fetchItems(), getMultiplier())
         result.output = procData
@@ -529,7 +529,7 @@
 
         const script = `
         data result
-        macro calculateFinalScore(userId)
+        function calculateFinalScore(userId)
           var scoreResult = {}
           var score = getScore(userId)
           var bonus = getBonus(userId)
@@ -542,7 +542,7 @@
           scoreResult.grade = "A" if total >= 95 else "B"
           scoreResult.passed = total >= 70
           return scoreResult
-        endmacro
+        endfunction
 
         var result1 = calculateFinalScore(1)
         var result2 = calculateFinalScore(2)
@@ -830,10 +830,10 @@
 
       it('should allow reassignment of macro argument in async script mode', async () => {
         const script = `
-        macro bump(x)
+        function bump(x)
           x = x + 1
           return x
-        endmacro
+        endfunction
 
         var result = bump(2)
         return result`;

@@ -95,7 +95,7 @@ class ScriptTranspiler {
     // Define block-related configuration
     this.SYNTAX = {
       // Block-related tags
-      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'function', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
+      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'function', 'filter', 'raw', 'verbatim', 'call', 'guard'],
       lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'component', 'depends', 'extern', 'return', ...CHANNEL_TYPES, 'shared'],
 
       // Middle tags with their parent block types
@@ -117,7 +117,6 @@ class ScriptTranspiler {
         'block': 'endblock',
         'method': 'endmethod',
         'function': 'endfunction',
-        'macro': 'endmacro',
         'filter': 'endfilter',
         'call': 'endcall',
         // Internal tag emitted by this transpiler to support:
@@ -134,7 +133,7 @@ class ScriptTranspiler {
       // Tags that should never be treated as multi-line
       neverContinued: [
         'else', 'elif', 'case', 'default',
-        'endif', 'endfor', 'endswitch', 'endblock', 'endmethod', 'endfunction', 'endmacro',
+        'endif', 'endfor', 'endswitch', 'endblock', 'endmethod', 'endfunction',
         'endfilter', 'endcall', 'endcall_assign', 'endraw', 'endverbatim',
         'endwhile', 'endvar', 'recover'
       ],
@@ -1374,6 +1373,8 @@ class ScriptTranspiler {
       throw new Error(`Legacy '@' channel commands are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'value' && this._isAssignment(code, lineIndex)) {
       throw new Error(`Explicit 'value' declarations are no longer supported at line ${lineIndex + 1}`);
+    } else if (firstWord === 'macro' || firstWord === 'endmacro') {
+      throw new Error(`'${firstWord}' is template syntax. Use '${firstWord === 'macro' ? 'function' : 'endfunction'}' in Cascada Script at line ${lineIndex + 1}`);
     } else if (firstWord === 'var') {
       this._processVar(parseResult, lineIndex);
     } else if (firstWord === 'shared') {
@@ -1498,7 +1499,7 @@ class ScriptTranspiler {
 
     if (processedLine.blockType === this.BLOCK_TYPE.START) {
       let parentAccess = 'inherit';
-      if (processedLine.tagName === 'function' || processedLine.tagName === 'macro' || processedLine.tagName === 'var' || processedLine.tagName === 'set') {
+      if (processedLine.tagName === 'function' || processedLine.tagName === 'var' || processedLine.tagName === 'set') {
         parentAccess = 'none';
       } else if (processedLine.tagName === 'call' || processedLine.tagName === 'call_assign') {
         parentAccess = 'readonly';

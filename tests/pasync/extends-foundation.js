@@ -1699,7 +1699,7 @@ describe('Extends Foundation', function () {
 
     it('should keep per-callable invoked method metadata limited to direct calls', function () {
       const script = new Script(
-        'method build()\n  macro inner()\n    this.hidden()\n  endmacro\n  this.visible()\nendmethod\nmethod visible()\n  return "v"\nendmethod\nreturn null',
+        'method build()\n  function inner()\n    this.hidden()\n  endfunction\n  this.visible()\nendmethod\nmethod visible()\n  return "v"\nendmethod\nreturn null',
         env,
         'direct-invoked.script'
       );
@@ -2776,4 +2776,3 @@ describe('Extends Foundation', function () {
     });
   });
 });
-

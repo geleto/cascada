@@ -44,8 +44,8 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 | **Each Loop**            | `each item in items`<br>  `...`<br>`endeach`               | `{% each item in items %}`<br>  `...`<br>`{% endeach %}`                     |
 | **While Loop**           | `while count < 10`<br>  `...`<br>`endwhile`                | `{% while count < 10 %}`<br>  `...`<br>`{% endwhile %}`                      |
 | **Switch**               | `switch value`<br>  `case 1`<br>    `...`<br>`endswitch`   | `{% switch value %}`<br>  `{% case 1 %}`<br>    `...`<br>`{% endswitch %}`   |
-| **Macro Definition**     | `macro greet(name)`<br>  `...`<br>`endmacro`               | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
-| **Macro Calls**          | `var result = greet("Alice")`                              | `{{ greet("Alice") }}`                                                       |
+| **Function Definition**  | `function greet(name)`<br>  `...`<br>`endfunction`         | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
+| **Function/Macro Calls** | `var result = greet("Alice")`                              | `{{ greet("Alice") }}`                                                       |
 | **Call Block**           | `var x = call wrapper()`<br>  `(param)`<br>  `return value`<br>`endcall` | `{% call wrapper() %}`<br>  `...`<br>`{% endcall %}`              |
 | **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}`                                                             |
 | **Block Assignment**     | *(not available in scripts)*                               | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
@@ -123,13 +123,13 @@ Database: {{ config.database.connection.host }}
 Templates and scripts have a fundamentally different output model:
 
 - **Templates render** — macros, call blocks, and the template itself write text directly to an output stream. `{{ expr }}` interpolates inline; `caller()` renders the call block's content inline at the point of invocation.
-- **Scripts return** — macros and call blocks produce values via explicit `return`. `caller()` returns the value that the call block body returned. The script's final result is whatever `return` produces (a plain value, a channel snapshot, or a composed object).
+- **Scripts return** - functions and call blocks produce values via explicit `return`. `caller()` returns the value that the call block body returned. The script's final result is whatever `return` produces (a plain value, a channel snapshot, or a composed object).
 
 This means the same logical structure behaves differently across modes:
 
 | | Cascada Script | Cascada Template |
 |---|---|---|
-| **Macro result** | Returned as a value — assign with `var result = myMacro(args)` | Rendered inline — invoke with `{{ myMacro(args) }}` |
+| **Function/macro result** | Script function returned as a value - assign with `var result = myFunction(args)` | Template macro rendered inline - invoke with `{{ myMacro(args) }}` |
 | **`caller()` result** | Returns the call block's `return` value | Renders the call block's content inline |
 | **Script/template result** | Explicit `return value` or `return ch.snapshot()` | Text accumulated in the output stream |
 
@@ -138,14 +138,14 @@ This means the same logical structure behaves differently across modes:
 In Script mode, `caller()` returns the value explicitly returned by the call block body. Call blocks must always use assignment form:
 
 ```javascript
-macro map(items)
+function map(items)
   data results
   for item in items
     var result = caller(item)   // receives the call block's return value
     results.items.push(result)
   endfor
   return results.snapshot()
-endmacro
+endfunction
 
 var mapped = call map([1, 2, 3])
   (n)

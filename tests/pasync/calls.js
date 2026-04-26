@@ -31,14 +31,14 @@
     it('should allow assigning the result of a call block to a new variable (var x = call ... endcall)', async () => {
       const script = `
         var result = {}
-        macro map(items)
+        function map(items)
           data outData
           var out = []
           for item in items
             out.push(caller(item))
           endfor
           return out
-        endmacro
+        endfunction
 
         var callResult = call map([1, 2, 3]) (n)
           return n * 2
@@ -54,14 +54,14 @@
     it('should allow assigning the result of a call block to an existing variable (x = call ... endcall)', async () => {
       const script = `
         var result = {}
-        macro map(items)
+        function map(items)
           data outData
           var out = []
           for item in items
             out.push(caller(item))
           endfor
           return out
-        endmacro
+        endfunction
 
         var callResult = none
         callResult = call map([1, 2, 3]) (n)
@@ -80,9 +80,9 @@
       const script = `
         var outer = 10
 
-        macro runner()
+        function runner()
           return caller()
-        endmacro
+        endfunction
 
         var result = call runner()
           return outer
@@ -98,9 +98,9 @@
         data result
         var outer = 10
 
-        macro runner()
+        function runner()
           return caller()
-        endmacro
+        endfunction
 
         var callResult = call runner()
           data innerData
@@ -127,9 +127,9 @@
         var prefix = waitValue("item-")
         var suffix = waitValue("|done")
 
-        macro runner()
+        function runner()
           return caller()
-        endmacro
+        endfunction
 
         var result = call runner()
           return prefix + "Ada" + suffix
@@ -146,9 +146,9 @@
         data result
         var outer = 10
 
-        macro runner()
+        function runner()
           return caller()
-        endmacro
+        endfunction
 
         var callResult = call runner()
           data innerData
@@ -173,9 +173,9 @@
       const script = `
         var outer = 10
 
-        macro runner()
+        function runner()
           return caller()
-        endmacro
+        endfunction
 
         var observed = call runner()
           data result
@@ -198,9 +198,9 @@
 
     it('should keep caller return values isolated from the enclosing return', async () => {
       const script = `
-        macro runner()
+        function runner()
           return caller()
-        endmacro
+        endfunction
 
         var callerResult = call runner()
           return 7
@@ -214,7 +214,7 @@
 
     it('should support multiple caller invocations across different control-flow paths', async () => {
       const script = `
-        macro visit(includePrefix)
+        function visit(includePrefix)
           data out
           out = []
           if includePrefix
@@ -222,7 +222,7 @@
           endif
           out.push(caller("tail"))
           return out.snapshot()
-        endmacro
+        endfunction
 
         var result = call visit(true) (itemValue)
           return itemValue
@@ -238,13 +238,13 @@
       const script = `
         var outer = "O"
 
-        macro outerWrap()
+        function outerWrap()
           return caller()
-        endmacro
+        endfunction
 
-        macro innerWrap()
+        function innerWrap()
           return caller()
-        endmacro
+        endfunction
 
         var result = call outerWrap()
           var innerResult = call innerWrap()
@@ -268,9 +268,9 @@
       };
 
       const script = `
-        macro runner()
+        function runner()
           return caller(fetchValue())
-        endmacro
+        endfunction
 
         var result = call runner() (item)
           return item * 2
@@ -286,9 +286,9 @@
       const script = `
         var outer = 10
 
-        macro runner()
+        function runner()
           return caller()
-        endmacro
+        endfunction
 
         var callResult = call runner()
           outer = 20
@@ -309,9 +309,9 @@
       const script = `
         data outerData
 
-        macro runner()
+        function runner()
           return caller()
-        endmacro
+        endfunction
 
         var callResult = call runner()
           outerData.value = 20

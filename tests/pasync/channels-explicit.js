@@ -588,9 +588,9 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should keep root return isolated from nested macro returns', async () => {
       const script = `
-        macro inner()
+        function inner()
           return delayed(11, 5)
-        endmacro
+        endfunction
 
         var macroValue = inner()
         return { macroValue: macroValue, rootValue: 22 }
@@ -1305,11 +1305,11 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   describe('Macros', function () {
     it('should support explicit channels inside macros', async () => {
       const script = `
-        macro buildUser()
+        function buildUser()
           data myData
           myData.name = "Alice"
           return myData.snapshot()
-        endmacro
+        endfunction
         var result = buildUser()
         return result
       `;
@@ -1321,11 +1321,11 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       const script = `
         data myData
         myData.outer = true
-        macro inner()
+        function inner()
           data myData
           myData.inner = true
           return myData.snapshot()
-        endmacro
+        endfunction
         var innerResult = inner()
         return { outer: myData.snapshot(), inner: innerResult }
       `;
@@ -1339,12 +1339,12 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should support text channel inside macros', async () => {
       const script = `
-        macro greet()
+        function greet()
           text textOut
           textOut("hello")
           textOut(" world")
           return textOut.snapshot()
-        endmacro
+        endfunction
         var result = greet()
         return result
       `;
@@ -1354,13 +1354,13 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should support multiple channels inside macros', async () => {
       const script = `
-        macro bundle()
+        function bundle()
           data myData
           text textOut
           myData.x = 1
           textOut("ok")
           return { data: myData.snapshot(), text: textOut.snapshot() }
-        endmacro
+        endfunction
         var result = bundle()
         return result
       `;
@@ -1370,18 +1370,18 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should handle nested macros with same channel name', async () => {
       const script = `
-        macro inner()
+        function inner()
         data myData
         myData.level = 'inner'
         return myData.snapshot()
-      endmacro
-      macro outer()
+      endfunction
+      function outer()
         data myData
         myData.level = 'outer'
         var innerRes = inner()
         myData.inner = innerRes
         return myData.snapshot()
-      endmacro
+      endfunction
       return outer()
     `;
       const result = await render(script);
@@ -1390,12 +1390,12 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should not export macros declared inside macro bodies', async () => {
       const script = `
-        macro outer()
-          macro inner()
+        function outer()
+          function inner()
             return 42
-          endmacro
+          endfunction
           return inner()
-        endmacro
+        endfunction
         var outerResult = outer()
         var leaked = inner()
         return { outerResult: outerResult, leaked: leaked }
@@ -1410,11 +1410,11 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should throw when macro parameter conflicts with channel name', async () => {
       const script = `
-        macro conflict(x)
+        function conflict(x)
           data x
           x.a = 1
           return x.snapshot()
-        endmacro
+        endfunction
         return conflict(1)
       `;
       try {
@@ -1427,9 +1427,9 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should reject reserved keywords as macro parameter names', async () => {
       const script = `
-        macro bad(data)
+        function bad(data)
           return data
-        endmacro
+        endfunction
         return bad(1)
       `;
       try {
@@ -1442,9 +1442,9 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should reject duplicate macro parameter names', async () => {
       const script = `
-        macro bad(x, x=1)
+        function bad(x, x=1)
           return x
-        endmacro
+        endfunction
         return bad(2)
       `;
       try {
@@ -1458,9 +1458,9 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
     it('should reject macro names that shadow variables in the parent scope', async () => {
       const script = `
         var inner = 1
-        macro inner()
+        function inner()
           return 42
-        endmacro
+        endfunction
         return inner()
       `;
       try {
@@ -1475,9 +1475,9 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       const script = `
         data myData
         myData.x = 1
-        macro wrap(payload)
+        function wrap(payload)
           return payload
-        endmacro
+        endfunction
         var snap = myData.snapshot()
         var result = wrap(snap)
         return result
@@ -1507,14 +1507,14 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
   describe('Caller', function () {
     it('should support caller blocks with explicit channels', async () => {
       const script = `
-        macro collect(items)
+        function collect(items)
           data myData
           for item in items
             var itemVal = caller(item)
             myData.items.push(itemVal)
           endfor
           return myData.snapshot()
-        endmacro
+        endfunction
 
         var callRes = call collect([1, 2, 3]) (num)
           var out
@@ -1530,7 +1530,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should support caller blocks that return text and data', async () => {
       const script = `
-        macro collect(items)
+        function collect(items)
           data myData
           for item in items
             var res = caller(item)
@@ -1538,7 +1538,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
             myData.texts.push(res.text)
           endfor
           return myData.snapshot()
-        endmacro
+        endfunction
 
         var callRes = call collect([1, 2]) (num)
           data outData
@@ -1556,9 +1556,9 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
     it('should preserve async return values through macros and caller blocks', async () => {
       const script = `
-        macro wrap()
+        function wrap()
           return caller()
-        endmacro
+        endfunction
 
         var result = call wrap()
           return delayed({ ok: true, nested: { value: 7 } }, 20)
@@ -1575,7 +1575,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
     it('should keep macro and caller channels isolated', async () => {
       const script = `
         data outer
-        macro collect(items)
+        function collect(items)
           data collected
           collected.results = []
           for item in items
@@ -1583,7 +1583,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
             collected.results.push(result)
           endfor
           return collected.snapshot()
-        endmacro
+        endfunction
 
         var macroResult = call collect([1, 2]) (num)
           data itemData
