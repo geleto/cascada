@@ -23,25 +23,11 @@ function _createComponentError(message, errorContext = null) {
   );
 }
 
-function _normalizeComponentPayload(payload) {
-  if (!payload || typeof payload !== 'object') {
+function _normalizeComponentPayload(payload = {}) {
+  if (payload.rootContext !== undefined || payload.externContext !== undefined) {
     return {
-      rootContext: {},
-      externContext: {}
-    };
-  }
-
-  if (
-    Object.prototype.hasOwnProperty.call(payload, 'rootContext') ||
-    Object.prototype.hasOwnProperty.call(payload, 'externContext')
-  ) {
-    return {
-      rootContext: payload.rootContext && typeof payload.rootContext === 'object'
-        ? payload.rootContext
-        : {},
-      externContext: payload.externContext && typeof payload.externContext === 'object'
-        ? payload.externContext
-        : {}
+      rootContext: payload.rootContext ?? {},
+      externContext: payload.externContext ?? {}
     };
   }
 
@@ -52,7 +38,7 @@ function _normalizeComponentPayload(payload) {
 }
 
 function _throwIfClosed(instance, errorContext) {
-  if (!instance || !instance.closed) {
+  if (!instance.closed) {
     return;
   }
   throw _createComponentError('Component instance cannot accept new operations', errorContext);
@@ -96,7 +82,7 @@ class ComponentInstance {
     return inheritanceCall.invokeComponentMethod(
       this.inheritanceState,
       methodName,
-      Array.isArray(args) ? args : [],
+      args,
       this.context,
       this.env,
       runtime,
@@ -111,16 +97,12 @@ class ComponentInstance {
       return;
     }
     this.closed = true;
-    if (this.rootBuffer && typeof this.rootBuffer.markFinishedAndPatchLinks === 'function') {
-      this.rootBuffer.markFinishedAndPatchLinks();
-    }
+    this.rootBuffer.markFinishedAndPatchLinks();
   }
 }
 
 function _validateSharedObservationCommand(observationCommand, errorContext = null) {
   if (
-    !observationCommand ||
-    typeof observationCommand !== 'object' ||
     !observationCommand.isUniversalObservationCommand ||
     !observationCommand.channelName
   ) {
@@ -129,40 +111,12 @@ function _validateSharedObservationCommand(observationCommand, errorContext = nu
   return observationCommand;
 }
 
-function _requireComponentOptions(spec, operationName) {
-  if (!spec || typeof spec !== 'object') {
-    throw _createComponentError(`${operationName} requires an options object`);
-  }
-  return spec;
-}
-
-function _requireComponentBuffer(currentBuffer, errorContext = null) {
-  if (!currentBuffer || typeof currentBuffer.add !== 'function') {
-    throw _createComponentError('Component operations require a current buffer', errorContext);
-  }
-}
-
-function _requireComponentBindingName(bindingName, errorContext = null) {
-  if (!bindingName) {
-    throw _createComponentError('Component operations require a binding name', errorContext);
-  }
-}
-
-function _requireComponentRuntime(runtime, operationName, errorContext = null) {
-  if (!runtime || typeof runtime !== 'object') {
-    throw _createComponentError(`${operationName} requires runtime helpers`, errorContext);
-  }
-  return runtime;
-}
-
 function _enqueueSharedObservation(instance, observationCommand, errorContext = null, implicitVarRead = false) {
   instance._throwIfUnavailable(errorContext);
   const command = _validateSharedObservationCommand(observationCommand, errorContext);
   const channelName = command.channelName;
   const sharedSchema = ensureInheritanceSharedSchemaTable(instance.inheritanceState || {});
-  const channelType = Object.prototype.hasOwnProperty.call(sharedSchema, channelName)
-    ? sharedSchema[channelName]
-    : null;
+  const channelType = sharedSchema[channelName] ?? null;
 
   if (!channelType) {
     throw _createComponentError(`Shared channel '${channelName}' was not found`, errorContext);
@@ -197,7 +151,7 @@ class ComponentOperationCommand extends Command {
   }) {
     super({ withDeferredResult: true });
     this.methodName = methodName;
-    this.args = Array.isArray(args) ? args : [];
+    this.args = args;
     this.runtime = runtime;
     this.cb = cb;
     this.errorContext = errorContext;
@@ -209,11 +163,7 @@ class ComponentOperationCommand extends Command {
   }
 
   apply(outputChannel) {
-    const bindingValue = outputChannel && typeof outputChannel._getTarget === 'function'
-      ? outputChannel._getTarget()
-      : undefined;
-
-    return this._run(bindingValue);
+    return this._run(outputChannel._getTarget());
   }
 
   async _run(bindingValue) {
@@ -305,10 +255,7 @@ class ObserveSharedChannelCommand extends Command {
   }
 
   apply(outputChannel) {
-    const bindingValue = outputChannel && typeof outputChannel._getTarget === 'function'
-      ? outputChannel._getTarget()
-      : undefined;
-    return this._run(bindingValue);
+    return this._run(outputChannel._getTarget());
   }
 
   async _run(bindingValue) {
@@ -330,7 +277,6 @@ class ObserveSharedChannelCommand extends Command {
 }
 
 async function createComponentInstance(spec) {
-  _requireComponentOptions(spec, 'Component instance creation');
   const {
     templateOrPromise,
     payload,
@@ -342,7 +288,6 @@ async function createComponentInstance(spec) {
     bindingName = null,
     errorContext = null
   } = spec;
-  _requireComponentRuntime(runtime, 'Component instance creation', errorContext);
   const template = await resolveSingle(templateOrPromise);
   if (!template) {
     throw _createComponentError('Component target did not resolve to a script or template', errorContext);
@@ -356,9 +301,6 @@ async function createComponentInstance(spec) {
   // Component payload keys are explicit composition inputs, not an import-style
   // "only declared externs may pass" surface. The component path only validates
   // that any required externs are available from the effective extern context.
-  if (typeof runtime.validateExternInputs !== 'function') {
-    throw _createComponentError('Component instance creation requires runtime.validateExternInputs', errorContext);
-  }
   runtime.validateExternInputs(
     template.externSpec || [],
     [],
@@ -454,7 +396,6 @@ async function createComponentInstance(spec) {
 }
 
 function startComponentInstance(spec) {
-  _requireComponentOptions(spec, 'Component startup');
   const {
     currentBuffer,
     bindingName,
@@ -466,8 +407,6 @@ function startComponentInstance(spec) {
     cb,
     errorContext = null
   } = spec;
-  _requireComponentBuffer(currentBuffer, errorContext);
-  _requireComponentBindingName(bindingName, errorContext);
   const command = new StartComponentInstanceCommand({
     templateOrPromise,
     payload,
@@ -484,7 +423,6 @@ function startComponentInstance(spec) {
 }
 
 function callComponentMethod(spec) {
-  _requireComponentOptions(spec, 'Component method call');
   const {
     bindingName,
     currentBuffer,
@@ -494,12 +432,6 @@ function callComponentMethod(spec) {
     cb,
     errorContext = null
   } = spec;
-  _requireComponentBuffer(currentBuffer, errorContext);
-  _requireComponentBindingName(bindingName, errorContext);
-  _requireComponentRuntime(runtime, 'Component method call', errorContext);
-  if (!methodName) {
-    throw _createComponentError('Component method call requires a method name', errorContext);
-  }
   const command = new ComponentOperationCommand({
     methodName,
     args,
@@ -512,7 +444,6 @@ function callComponentMethod(spec) {
 }
 
 function observeComponentChannel(spec) {
-  _requireComponentOptions(spec, 'Component shared observation');
   const {
     bindingName,
     currentBuffer,
@@ -520,19 +451,12 @@ function observeComponentChannel(spec) {
     errorContext = null,
     implicitVarRead = false
   } = spec;
-  _requireComponentBuffer(currentBuffer, errorContext);
-  if (!observationCommand) {
-    throw _createComponentError('Component shared observation requires an observation command', errorContext);
-  }
-  const observationChannelName = observationCommand && observationCommand.channelName
-    ? observationCommand.channelName
-    : null;
   const command = new ObserveSharedChannelCommand({
     observationCommand,
     errorContext,
     implicitVarRead
   });
-  currentBuffer.add(command, bindingName || observationChannelName);
+  currentBuffer.add(command, bindingName || observationCommand.channelName);
   return command.promise;
 }
 

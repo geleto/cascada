@@ -7,11 +7,11 @@ const { RuntimeFatalError, handleError, isRuntimeFatalError } = require('./error
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';
 
 function _contextualizeFatalError(error, errorContext, fallbackMessage = null) {
-  const lineno = errorContext && typeof errorContext.lineno === 'number' ? errorContext.lineno : 0;
-  const colno = errorContext && typeof errorContext.colno === 'number' ? errorContext.colno : 0;
-  const errorContextString = errorContext && errorContext.errorContextString ? errorContext.errorContextString : null;
-  const path = errorContext && errorContext.path ? errorContext.path : null;
-  const message = fallbackMessage || (error && error.message) || 'Inherited dispatch failed';
+  const lineno = errorContext?.lineno ?? 0;
+  const colno = errorContext?.colno ?? 0;
+  const errorContextString = errorContext?.errorContextString ?? null;
+  const path = errorContext?.path ?? null;
+  const message = fallbackMessage ?? error?.message ?? 'Inherited dispatch failed';
   const contextualError = new RuntimeFatalError(message, lineno, colno, errorContextString, path);
   return contextualError;
 }
@@ -38,10 +38,10 @@ function _normalizeResolutionError(error, errorContext) {
 
   return handleError(
     error,
-    errorContext && typeof errorContext.lineno === 'number' ? errorContext.lineno : 0,
-    errorContext && typeof errorContext.colno === 'number' ? errorContext.colno : 0,
-    errorContext ? errorContext.errorContextString : null,
-    errorContext ? errorContext.path : null
+    errorContext?.lineno ?? 0,
+    errorContext?.colno ?? 0,
+    errorContext?.errorContextString ?? null,
+    errorContext?.path ?? null
   );
 }
 
@@ -92,13 +92,9 @@ function _createMissingSuperMethodError(methodName, errorContext = null) {
 }
 
 function _addChannelNames(target, names) {
-  if (!Array.isArray(names)) {
-    return;
-  }
-
-  for (let i = 0; i < names.length; i++) {
-    if (names[i]) {
-      target.add(names[i]);
+  for (const name of names ?? []) {
+    if (name) {
+      target.add(name);
     }
   }
 }
@@ -112,21 +108,18 @@ function _mergeChannelNames(...arrays) {
 }
 
 function _cloneErrorContext(errorContext) {
-  if (!errorContext || typeof errorContext !== 'object') {
+  if (!errorContext) {
     return null;
   }
   return {
-    lineno: typeof errorContext.lineno === 'number' ? errorContext.lineno : 0,
-    colno: typeof errorContext.colno === 'number' ? errorContext.colno : 0,
-    errorContextString: errorContext.errorContextString || null,
-    path: errorContext.path || null
+    lineno: errorContext.lineno ?? 0,
+    colno: errorContext.colno ?? 0,
+    errorContextString: errorContext.errorContextString ?? null,
+    path: errorContext.path ?? null
   };
 }
 
 function _inheritanceMetadataErrorContext(originContext, fallbackContext = null) {
-  if (!originContext && !fallbackContext) {
-    return null;
-  }
   const origin = _cloneErrorContext(originContext);
   const fallback = _cloneErrorContext(fallbackContext);
   if (!origin) {
@@ -154,13 +147,13 @@ function _getInvokedMethodReferenceName(reference, fallbackName) {
 
 function _getInvokedMethodReferenceOrigin(reference, fallbackContext = null) {
   return _inheritanceMetadataErrorContext(
-    reference && typeof reference === 'object' ? reference.origin : null,
+    reference?.origin ?? null,
     fallbackContext
   );
 }
 
 function _normalizeMethodSignature(signature, inheritedSignature = null) {
-  let normalizedSignature = signature && typeof signature === 'object'
+  let normalizedSignature = signature
     ? {
       argNames: Array.isArray(signature.argNames) ? signature.argNames.slice() : [],
       withContext: !!signature.withContext
@@ -192,7 +185,7 @@ function _normalizeMethodSignature(signature, inheritedSignature = null) {
 }
 
 function _buildResolvedMethodDataBase(entry) {
-  if (!entry || typeof entry !== 'object' || typeof entry.fn !== 'function') {
+  if (!entry || typeof entry.fn !== 'function') {
     throw new RuntimeFatalError(
       'Inherited dispatch resolved to an invalid method entry',
       0,
@@ -206,7 +199,7 @@ function _buildResolvedMethodDataBase(entry) {
   const ownMutatedChannels = _mergeChannelNames(entry.ownMutatedChannels);
   const resolvedData = {
     fn: entry.fn,
-    ownerKey: entry.ownerKey || null,
+    ownerKey: entry.ownerKey ?? null,
     signature: _normalizeMethodSignature(entry.signature, null),
     mergedUsedChannels: ownUsedChannels,
     mergedMutatedChannels: ownMutatedChannels,
@@ -217,16 +210,16 @@ function _buildResolvedMethodDataBase(entry) {
 }
 
 function _finalizeResolvedMethodData(resolvedData, entry, superData = null, invokedMethods = null) {
-  resolvedData.signature = _normalizeMethodSignature(entry.signature, superData ? superData.signature : null);
-  resolvedData.super = superData || null;
-  resolvedData.invokedMethods = invokedMethods || Object.create(null);
+  resolvedData.signature = _normalizeMethodSignature(entry.signature, superData?.signature ?? null);
+  resolvedData.super = superData ?? null;
+  resolvedData.invokedMethods = invokedMethods ?? Object.create(null);
   resolvedData.mergedUsedChannels = _mergeChannelNames(
     resolvedData.mergedUsedChannels,
-    superData ? superData.mergedUsedChannels : null
+    superData?.mergedUsedChannels
   );
   resolvedData.mergedMutatedChannels = _mergeChannelNames(
     resolvedData.mergedMutatedChannels,
-    superData ? superData.mergedMutatedChannels : null
+    superData?.mergedMutatedChannels
   );
   return resolvedData;
 }
@@ -268,7 +261,7 @@ function _throwCollectedMetadataErrors(localErrors, errorContext) {
 }
 
 function _createInvalidInvokedMetadataError(methodData, invokedName, errorContext = null) {
-  const ownerSuffix = methodData && methodData.ownerKey
+  const ownerSuffix = methodData?.ownerKey
     ? ` on owner '${methodData.ownerKey}'`
     : '';
   return _createInheritanceMetadataInvariantError(
@@ -278,7 +271,7 @@ function _createInvalidInvokedMetadataError(methodData, invokedName, errorContex
 }
 
 function _createInvalidSuperMetadataError(methodData, errorContext = null) {
-  const ownerSuffix = methodData && methodData.ownerKey
+  const ownerSuffix = methodData?.ownerKey
     ? ` on owner '${methodData.ownerKey}'`
     : '';
   return _createInheritanceMetadataInvariantError(
@@ -299,7 +292,7 @@ function _isCollectableInheritanceMetadataError(error) {
 }
 
 function _hasCollectedMissingSuperError(errors, methodName) {
-  return (Array.isArray(errors) ? errors : []).some((error) => {
+  return errors.some((error) => {
     const metadata = error && error[INHERITANCE_METADATA_ERROR_KIND];
     return !!(
       metadata &&
@@ -322,29 +315,22 @@ function _collectResolvedMethodData(state, errorContext = null) {
     _collectInvokedMethodData(methodData, errorContext).forEach(addMethodData);
   };
 
-  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state);
   Object.keys(methods).forEach((name) => {
     const entry = methods[name];
-    if (entry && typeof entry === 'object') {
-      // Before the execution table is published, raw entries expose their
-      // in-progress resolved graph through this private finalization cache.
-      addMethodData(_isResolvedMethodData(entry) ? entry : entry._resolvedMethodData);
-    }
+    // Before the execution table is published, raw entries expose their
+    // in-progress resolved graph through this private finalization cache.
+    addMethodData(_isResolvedMethodData(entry) ? entry : entry._resolvedMethodData);
   });
 
-  const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
+  const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state);
   Object.keys(invokedMethods).forEach((name) => addMethodData(invokedMethods[name]));
 
   return collected;
 }
 
 function _collectInvokedMethodData(methodData, errorContext = null) {
-  const invoked = methodData && methodData.invokedMethods && typeof methodData.invokedMethods === 'object'
-    ? methodData.invokedMethods
-    : null;
-  if (!invoked) {
-    return [];
-  }
+  const invoked = methodData.invokedMethods ?? {};
   const resolved = [];
   const names = Object.keys(invoked);
   for (let i = 0; i < names.length; i++) {
@@ -361,10 +347,7 @@ function _collectInvokedMethodData(methodData, errorContext = null) {
 
 function _createResolvedInvokedMethodsData(invokedMethods, errorContext, state = null) {
   const resolved = Object.create(null);
-  if (!invokedMethods || typeof invokedMethods !== 'object') {
-    return resolved;
-  }
-  const names = Object.keys(invokedMethods);
+  const names = Object.keys(invokedMethods ?? {});
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
     resolved[name] = _resolveInvokedMethodReference(invokedMethods[name], name, errorContext, state);
@@ -377,10 +360,10 @@ function _resolveInvokedMethodReference(reference, fallbackName, errorContext, s
     return reference;
   }
 
-  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state);
   const targetName = _getInvokedMethodReferenceName(reference, fallbackName);
   const originContext = _getInvokedMethodReferenceOrigin(reference, errorContext);
-  if (!Object.prototype.hasOwnProperty.call(methods, targetName)) {
+  if (!methods[targetName]) {
     throw _createMissingInheritedMethodError(targetName, originContext);
   }
   const methodData = _getMethodDataFromResolvedEntry(methods[targetName], originContext, state, targetName);
@@ -402,7 +385,7 @@ function _getMethodDataFromResolvedEntry(
     throw _createMissingSuperMethodError(name, errorContext);
   }
 
-  if (!resolvedEntry || typeof resolvedEntry !== 'object') {
+  if (!resolvedEntry) {
     throw new RuntimeFatalError(
       'Inherited dispatch resolved to an invalid method entry',
       0,
@@ -447,8 +430,8 @@ function _getMethodDataFromResolvedEntry(
 }
 
 function getMethodData(state, methodName, errorContext = null) {
-  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
-  if (!Object.prototype.hasOwnProperty.call(methods, methodName)) {
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state);
+  if (!methods[methodName]) {
     throw _createMissingInheritedMethodError(methodName, errorContext);
   }
 
@@ -456,7 +439,7 @@ function getMethodData(state, methodName, errorContext = null) {
 }
 
 function _pruneExecutionMethodData(methodData, seen) {
-  if (!methodData || typeof methodData !== 'object' || seen.has(methodData)) {
+  if (!methodData || seen.has(methodData)) {
     return;
   }
   seen.add(methodData);
@@ -467,7 +450,7 @@ function _pruneExecutionMethodData(methodData, seen) {
 }
 
 function _publishExecutionMethodTable(state, errorContext = null) {
-  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state);
   const names = Object.keys(methods);
   const executionMethods = Object.create(null);
   const seen = new Set();
@@ -484,8 +467,8 @@ function _publishExecutionMethodTable(state, errorContext = null) {
 }
 
 function resolveInheritanceSharedChannel(state, channelName, errorContext = null) {
-  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(state || {});
-  if (!Object.prototype.hasOwnProperty.call(sharedSchema, channelName)) {
+  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(state);
+  if (!sharedSchema[channelName]) {
     throw _createInheritanceFatalError(
       `Shared channel '${channelName}' was not found`,
       errorContext
@@ -496,7 +479,7 @@ function resolveInheritanceSharedChannel(state, channelName, errorContext = null
 }
 
 function _findMethodDataForOwner(methodData, ownerKey) {
-  let current = methodData || null;
+  let current = methodData;
   while (current) {
     if (current.ownerKey === ownerKey) {
       return current;
@@ -508,8 +491,8 @@ function _findMethodDataForOwner(methodData, ownerKey) {
 
 function _getMethodLinkedChannels(methodData) {
   return _mergeChannelNames(
-    methodData && methodData.mergedUsedChannels,
-    methodData && methodData.mergedMutatedChannels
+    methodData?.mergedUsedChannels,
+    methodData?.mergedMutatedChannels
   );
 }
 
@@ -523,7 +506,7 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
 }
 
 function _finalizeInvokedMethodCatalog(state, errorContext = null, errors) {
-  const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state || {});
+  const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state);
   const names = Object.keys(invokedMethods);
   const resolvedCatalog = Object.create(null);
 
@@ -548,7 +531,7 @@ function _finalizeInvokedMethodCatalog(state, errorContext = null, errors) {
   }
 
   for (let i = 0; i < names.length; i++) {
-    if (Object.prototype.hasOwnProperty.call(resolvedCatalog, names[i])) {
+    if (resolvedCatalog[names[i]]) {
       invokedMethods[names[i]] = resolvedCatalog[names[i]];
     }
   }
@@ -568,12 +551,12 @@ function _finalizeChannelFootprints(state, errorContext = null) {
       // reintroduce a second parent-to-child merge phase.
       const nextUsedChannels = _mergeChannelNames(
         methodData.mergedUsedChannels,
-        methodData.super ? methodData.super.mergedUsedChannels : null,
+        methodData.super?.mergedUsedChannels,
         ...invokedMethods.map((entry) => entry.mergedUsedChannels)
       );
       const nextMutatedChannels = _mergeChannelNames(
         methodData.mergedMutatedChannels,
-        methodData.super ? methodData.super.mergedMutatedChannels : null,
+        methodData.super?.mergedMutatedChannels,
         ...invokedMethods.map((entry) => entry.mergedMutatedChannels)
       );
       if (!_channelArraysEqual(methodData.mergedUsedChannels, nextUsedChannels)) {
@@ -592,7 +575,7 @@ function _finalizeChannelFootprints(state, errorContext = null) {
 function finalizeResolvedMethodMetadata(state, errorContext = null, errors = null) {
   const localErrors = Array.isArray(errors) ? errors : [];
   const initialErrorCount = localErrors.length;
-  const methods = inheritanceState.ensureInheritanceMethodsTable(state || {});
+  const methods = inheritanceState.ensureInheritanceMethodsTable(state);
   const methodNames = Object.keys(methods);
   for (let i = 0; i < methodNames.length; i++) {
     const name = methodNames[i];
@@ -625,7 +608,7 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
 }
 
 function _assertResolvedMethodData(methodData) {
-  if (!methodData || typeof methodData !== 'object' || typeof methodData.fn !== 'function') {
+  if (!methodData || typeof methodData.fn !== 'function') {
     throw new RuntimeFatalError(
       'Inherited dispatch resolved to an invalid method entry',
       0,
@@ -638,28 +621,27 @@ function _assertResolvedMethodData(methodData) {
 }
 
 function _createMethodPayload(methodData, args, errorContext, label, context = null, fallbackToContextOriginalArgs = false) {
-  const signature = methodData && methodData.signature ? methodData.signature : { argNames: [], withContext: false };
-  const argNames = Array.isArray(signature.argNames) ? signature.argNames : [];
-  let values = Array.isArray(args) ? args : [];
+  const signature = methodData.signature ?? { argNames: [], withContext: false };
+  const argNames = signature.argNames ?? [];
+  let values = args ?? [];
 
   if (
     fallbackToContextOriginalArgs &&
     values.length === 0 &&
     argNames.length > 0 &&
-    context &&
-    typeof context.getCompositionContextVariables === 'function'
+    context.getCompositionContextVariables
   ) {
-    const originalArgs = context.getCompositionContextVariables() || {};
+    const originalArgs = context.getCompositionContextVariables() ?? {};
     values = argNames.map((name) => originalArgs[name]);
   }
 
   if (values.length > argNames.length) {
     throw new RuntimeFatalError(
       `${label} received too many arguments`,
-      errorContext && typeof errorContext.lineno === 'number' ? errorContext.lineno : 0,
-      errorContext && typeof errorContext.colno === 'number' ? errorContext.colno : 0,
-      errorContext ? errorContext.errorContextString : null,
-      errorContext ? errorContext.path : null
+      errorContext?.lineno ?? 0,
+      errorContext?.colno ?? 0,
+      errorContext?.errorContextString ?? null,
+      errorContext?.path ?? null
     );
   }
 
@@ -674,10 +656,11 @@ function _createMethodPayload(methodData, args, errorContext, label, context = n
 }
 
 function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channelName) {
-  if (!channelName || !currentBuffer || !invocationBuffer || currentBuffer === invocationBuffer) {
-    if (invocationBuffer && channelName) {
-      invocationBuffer._registerLinkedChannel(channelName);
-    }
+  if (!channelName) {
+    return;
+  }
+  if (currentBuffer === invocationBuffer) {
+    invocationBuffer._registerLinkedChannel(channelName);
     return;
   }
   if (currentBuffer.hasLinkedBuffer(invocationBuffer, channelName)) {
@@ -694,10 +677,7 @@ function hasLinkedChannelPath(rootBuffer, buffer, channelName) {
   let current = buffer;
   while (current && current.parent) {
     const parent = current.parent;
-    if (
-      !parent ||
-      !parent.hasLinkedBuffer(current, channelName)
-    ) {
+    if (!parent.hasLinkedBuffer(current, channelName)) {
       return false;
     }
     if (parent === rootBuffer) {
@@ -709,9 +689,6 @@ function hasLinkedChannelPath(rootBuffer, buffer, channelName) {
 }
 
 function _markBufferFinish(buffer) {
-  if (!buffer || typeof buffer.markFinishedAndPatchLinks !== 'function') {
-    return;
-  }
   buffer.markFinishedAndPatchLinks();
 }
 
@@ -754,13 +731,8 @@ function _invokeResolvedMethodData(command, methodData, invocationBuffer) {
 }
 
 async function _finishInvocationBuffer(invocationBuffer) {
-  if (!invocationBuffer) {
-    return;
-  }
   _markBufferFinish(invocationBuffer);
-  if (typeof invocationBuffer.getFinishedPromise === 'function') {
-    await invocationBuffer.getFinishedPromise();
-  }
+  await invocationBuffer.getFinishedPromise();
 }
 
 function createInheritanceInvocationCommand(spec) {
@@ -783,16 +755,10 @@ function createInheritanceInvocationCommand(spec) {
   command.name = name;
   command.label = label || `Inherited method '${name}'`;
   command.methodData = _assertResolvedMethodData(methodData);
-  if (!invocationBuffer) {
-    throw _createInheritanceMetadataInvariantError(
-      `Inherited method '${name}' reached command creation without an admitted invocation buffer`,
-      errorContext
-    );
-  }
   command.normalizeError = typeof normalizeError === 'function'
     ? normalizeError
     : (error) => _normalizeResolutionError(error, errorContext);
-  command.args = Array.isArray(args) ? args : [];
+  command.args = args ?? [];
   command.context = context;
   command.inheritanceState = inheritanceStateValue;
   command.env = env;
@@ -870,10 +836,7 @@ function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKe
 }
 
 function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue, currentBuffer, methodData) {
-  const sharedRootBuffer =
-    inheritanceStateValue && inheritanceStateValue.sharedRootBuffer
-      ? inheritanceStateValue.sharedRootBuffer
-      : currentBuffer;
+  const sharedRootBuffer = inheritanceStateValue.sharedRootBuffer ?? currentBuffer;
   const linkedChannels = _getMethodLinkedChannels(methodData);
   const invocationBuffer = runtime.createCommandBuffer(
     context,
@@ -889,7 +852,6 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
     if (
       sharedRootBuffer &&
       sharedRootBuffer !== currentBuffer &&
-      typeof sharedRootBuffer.addBuffer === 'function' &&
       !hasLinkedChannelPath(sharedRootBuffer, invocationBuffer, linkedChannels[i])
     ) {
       _registerInvocationChannelLink(sharedRootBuffer, invocationBuffer, linkedChannels[i]);
@@ -899,7 +861,7 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
 }
 
 function _invokeWhenMetadataReady(metadataReadyPromise, invokeFn) {
-  if (!metadataReadyPromise || typeof metadataReadyPromise.then !== 'function') {
+  if (!metadataReadyPromise) {
     // Once readiness has already settled, invariant failures surface as
     // synchronous throws here. If readiness is still pending, the same failure
     // is observed as a rejected promise through the `.then(...)` path below.

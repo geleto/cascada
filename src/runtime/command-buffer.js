@@ -24,11 +24,9 @@ const {
   checkFinishedBuffer
 } = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
-const { markCommandBuffer, isCommandBuffer } = require('./command-buffer-marker');
 
 class CommandBuffer {
   constructor(context, parent = null) {
-    markCommandBuffer(this);
     this._context = context;
     this.parent = parent;
     this.finished = false;
@@ -180,7 +178,7 @@ class CommandBuffer {
     // alias layer lives in CommandBuffer: once a command enters the buffer tree,
     // the rest of the runtime should not need to care whether it came from a
     // formal alias such as a by-reference macro parameter.
-    if (!isCommandBuffer(value) && value && typeof value === 'object') {
+    if (!(value instanceof CommandBuffer) && value && typeof value === 'object') {
       if (Object.prototype.hasOwnProperty.call(value, 'channelName')) {
         value.channelName = resolvedChannelName;
       }
@@ -194,7 +192,7 @@ class CommandBuffer {
     const target = this.arrays[resolvedChannelName];
     target.push(value);
     const slot = target.length - 1;
-    if (isCommandBuffer(value)) {
+    if (value instanceof CommandBuffer) {
       value.parent = this;
       if (this._channelAliases) {
         // Nested child buffers must preserve the same explicit alias bindings,
@@ -612,6 +610,5 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
 
 module.exports = {
   CommandBuffer,
-  createCommandBuffer,
-  isCommandBuffer
+  createCommandBuffer
 };

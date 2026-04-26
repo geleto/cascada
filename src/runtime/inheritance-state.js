@@ -3,9 +3,7 @@
 const { RuntimeFatalError, isPoison } = require('./errors');
 const { resolveDuo } = require('./resolve');
 
-const INTERNAL_INHERITANCE_STATE = typeof Symbol === 'function'
-  ? Symbol('cascadaInheritanceInternalState')
-  : '__cascadaInheritanceInternalState__';
+const INTERNAL_INHERITANCE_STATE = Symbol('cascadaInheritanceInternalState');
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';
 
 function tagInheritanceMetadataError(error, kind, methodName = null) {
@@ -22,14 +20,14 @@ function createInheritanceMetadataAggregateError(errors, context = null) {
   const keySeparator = '\0';
   const seen = new Set();
   const normalizedErrors = [];
-  (Array.isArray(errors) ? errors : []).forEach((error) => {
+  errors.forEach((error) => {
     if (!error) {
       return;
     }
     const key = [
       error.path || '',
-      typeof error.lineno === 'number' ? error.lineno : '',
-      typeof error.colno === 'number' ? error.colno : '',
+      error.lineno ?? '',
+      error.colno ?? '',
       error.errorContextString || '',
       error.message || String(error)
     ].join(keySeparator);
@@ -49,10 +47,10 @@ function createInheritanceMetadataAggregateError(errors, context = null) {
     normalizedErrors.map((error, index) => `  ${index + 1}. ${error.message || String(error)}`).join('\n');
   const aggregate = new RuntimeFatalError(
     message,
-    context && typeof context.lineno === 'number' ? context.lineno : 0,
-    context && typeof context.colno === 'number' ? context.colno : 0,
-    context && context.errorContextString ? context.errorContextString : null,
-    context && context.path ? context.path : null
+    context?.lineno ?? 0,
+    context?.colno ?? 0,
+    context?.errorContextString ?? null,
+    context?.path ?? null
   );
   aggregate.errors = normalizedErrors;
   return aggregate;
@@ -67,21 +65,21 @@ function collectOrThrowInheritanceMetadataError(error, errors = null) {
 }
 
 function ensureInheritanceMethodsTable(state) {
-  if (!state.methods || typeof state.methods !== 'object') {
+  if (!state.methods) {
     state.methods = createInheritanceMethodsTable();
   }
   return state.methods;
 }
 
 function ensureInheritanceSharedSchemaTable(state) {
-  if (!state.sharedSchema || typeof state.sharedSchema !== 'object') {
+  if (!state.sharedSchema) {
     state.sharedSchema = Object.create(null);
   }
   return state.sharedSchema;
 }
 
 function ensureInheritanceInvokedMethodsTable(state) {
-  if (!state.invokedMethods || typeof state.invokedMethods !== 'object') {
+  if (!state.invokedMethods) {
     state.invokedMethods = Object.create(null);
   }
   return state.invokedMethods;
@@ -92,7 +90,7 @@ function createInheritanceMethodsTable() {
 }
 
 function ensureInheritanceInternalState(state) {
-  if (!state || typeof state !== 'object') {
+  if (!state) {
     return null;
   }
   if (!state[INTERNAL_INHERITANCE_STATE]) {
@@ -136,25 +134,21 @@ function createInheritanceState() {
 
 function setInheritanceStartupPromise(state, promise) {
   const internalState = ensureInheritanceInternalState(state);
-  if (internalState) {
-    internalState.startupPromise = promise || null;
+  if (!internalState) {
+    return promise;
   }
+  internalState.startupPromise = promise ?? null;
   return promise;
 }
 
 function awaitInheritanceStartup(state) {
   const internalState = ensureInheritanceInternalState(state);
-  const promise = internalState ? internalState.startupPromise : null;
-  return promise && typeof promise.then === 'function' ? promise : null;
+  return internalState?.startupPromise ?? null;
 }
 
 function mergeInheritanceStartupPromise(state, promise, currentPromise = null) {
-  const normalizedCurrent = currentPromise && typeof currentPromise.then === 'function'
-    ? currentPromise
-    : awaitInheritanceStartup(state);
-  const normalizedNext = promise && typeof promise.then === 'function'
-    ? promise
-    : null;
+  const normalizedCurrent = currentPromise ?? awaitInheritanceStartup(state);
+  const normalizedNext = promise ?? null;
 
   if (!normalizedNext) {
     return normalizedCurrent;
@@ -235,10 +229,7 @@ function awaitInheritanceMetadataReadiness(state) {
   if (!internalState || internalState.metadataReadySettled) {
     return null;
   }
-  if (
-    internalState.metadataReadyPromise &&
-    typeof internalState.metadataReadyPromise.then === 'function'
-  ) {
+  if (internalState.metadataReadyPromise) {
     internalState.metadataReadyWaiterCount++;
     return internalState.metadataReadyPromise;
   }
@@ -247,7 +238,7 @@ function awaitInheritanceMetadataReadiness(state) {
 
 function isInheritanceMetadataReadinessResolved(state) {
   const internalState = ensureInheritanceInternalState(state);
-  return !!(internalState && internalState.metadataReadyResolved);
+  return !!internalState?.metadataReadyResolved;
 }
 
 function consumeInheritanceMetadataReadyYield(state) {
@@ -255,7 +246,7 @@ function consumeInheritanceMetadataReadyYield(state) {
   // step yields once so those waiters can enqueue their source-order work.
   // When nobody waited on readiness, startup can continue synchronously.
   const internalState = ensureInheritanceInternalState(state);
-  if (!internalState || !internalState.metadataReadyYieldPending) {
+  if (!internalState?.metadataReadyYieldPending) {
     return null;
   }
   internalState.metadataReadyYieldPending = false;
@@ -264,15 +255,16 @@ function consumeInheritanceMetadataReadyYield(state) {
 
 function setInheritanceCompositionMode(state, mode) {
   const internalState = ensureInheritanceInternalState(state);
-  if (internalState) {
-    internalState.compositionMode = mode || null;
+  if (!internalState) {
+    return mode;
   }
+  internalState.compositionMode = mode ?? null;
   return mode;
 }
 
 function isInheritanceCompositionMode(state, mode) {
   const internalState = ensureInheritanceInternalState(state);
-  return !!internalState && internalState.compositionMode === mode;
+  return internalState?.compositionMode === mode;
 }
 
 function enterInheritanceChainPath(state, path, errorContext = null) {
@@ -291,7 +283,7 @@ function enterInheritanceChainPath(state, path, errorContext = null) {
       0,
       0,
       null,
-      errorContext && errorContext.path ? errorContext.path : normalizedPath
+      errorContext?.path ?? normalizedPath
     );
   }
   internalState.chainPathStack.push(normalizedPath);
@@ -313,9 +305,6 @@ function leaveInheritanceChainPath(state, token) {
 }
 
 function releaseInheritanceBootstrapMetadata(state) {
-  if (!state || typeof state !== 'object') {
-    return state;
-  }
   state.invokedMethods = Object.create(null);
   const internalState = ensureInheritanceInternalState(state);
   if (internalState) {
@@ -341,10 +330,8 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
     ? entry.ownMutatedChannels.slice()
     : [];
   clonedEntry.invokedMethods = cloneInvokedMethodsMap(entry.invokedMethods);
-  clonedEntry.superOrigin = entry.superOrigin && typeof entry.superOrigin === 'object'
-    ? Object.assign({}, entry.superOrigin)
-    : null;
-  clonedEntry.signature = entry.signature && typeof entry.signature === 'object'
+  clonedEntry.superOrigin = entry.superOrigin ? Object.assign({}, entry.superOrigin) : null;
+  clonedEntry.signature = entry.signature
     ? {
       argNames: Array.isArray(entry.signature.argNames)
         ? entry.signature.argNames.slice()
@@ -359,19 +346,14 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
 
 function cloneInvokedMethodsMap(invokedMethods) {
   const cloned = Object.create(null);
-  if (!invokedMethods || typeof invokedMethods !== 'object') {
-    return cloned;
-  }
   // Values are method-name strings before bootstrap and metadata references
   // after bootstrap; shallow cloning preserves the intended identity in both cases.
-  const names = Object.keys(invokedMethods);
+  const names = Object.keys(invokedMethods ?? {});
   for (let i = 0; i < names.length; i++) {
     const value = invokedMethods[names[i]];
     cloned[names[i]] = value && typeof value === 'object'
       ? Object.assign({}, value, {
-        origin: value.origin && typeof value.origin === 'object'
-          ? Object.assign({}, value.origin)
-          : null
+        origin: value.origin ? Object.assign({}, value.origin) : null
       })
       : value;
   }
@@ -379,10 +361,6 @@ function cloneInvokedMethodsMap(invokedMethods) {
 }
 
 function cloneInheritanceMethods(localMethods) {
-  if (!localMethods || typeof localMethods !== 'object') {
-    return localMethods;
-  }
-
   const clonedMethods = Object.create(null);
   const clones = new Map();
   const names = Object.keys(localMethods);
@@ -394,13 +372,13 @@ function cloneInheritanceMethods(localMethods) {
 }
 
 function _formatInheritanceSignature(name, signature) {
-  const args = Array.isArray(signature && signature.argNames) ? signature.argNames.join(', ') : '';
-  const contextSuffix = signature && signature.withContext ? ' with context' : '';
+  const args = Array.isArray(signature?.argNames) ? signature.argNames.join(', ') : '';
+  const contextSuffix = signature?.withContext ? ' with context' : '';
   return `${name}(${args})${contextSuffix}`;
 }
 
 function createEmptyConstructorEntry(context = null) {
-  const ownerKey = context && context.path ? String(context.path) : '__anonymous__';
+  const ownerKey = context?.path ? String(context.path) : '__anonymous__';
   return {
     fn() {
       return null;
@@ -419,8 +397,8 @@ function validateInheritanceContractCompatibility(name, overridingEntry, parentE
     return;
   }
 
-  const overridingSignature = overridingEntry && overridingEntry.signature;
-  const parentSignature = parentEntry && parentEntry.signature;
+  const overridingSignature = overridingEntry.signature;
+  const parentSignature = parentEntry.signature;
   if (!overridingSignature || !parentSignature) {
     return;
   }
@@ -458,8 +436,6 @@ function isUnresolvedSuperEntry(entry) {
 function wireResolvedSuperEntry(targetEntry, parentEntry) {
   let current = targetEntry;
   while (
-    current &&
-    typeof current === 'object' &&
     !isUnresolvedSuperEntry(current.super) &&
     current.super
   ) {
@@ -468,14 +444,14 @@ function wireResolvedSuperEntry(targetEntry, parentEntry) {
   if (current === parentEntry) {
     return false;
   }
-  if (current && typeof current === 'object' && isUnresolvedSuperEntry(current.super)) {
+  if (isUnresolvedSuperEntry(current.super)) {
     current.super = parentEntry;
     // Only raw pre-finalization entries carry this cache; publishing replaces
     // state.methods with direct execution entries that do not need invalidation.
     delete current._resolvedMethodData;
     return true;
   }
-  if (current && typeof current === 'object' && !current.super) {
+  if (!current.super) {
     current.super = parentEntry;
     // Only raw pre-finalization entries carry this cache; publishing replaces
     // state.methods with direct execution entries that do not need invalidation.
@@ -487,9 +463,6 @@ function wireResolvedSuperEntry(targetEntry, parentEntry) {
 
 function registerInheritanceMethods(state, localMethods, context = null) {
   const sharedMethods = ensureInheritanceMethodsTable(state);
-  if (!localMethods || typeof localMethods !== 'object') {
-    return sharedMethods;
-  }
   const isolatedLocalMethods = cloneInheritanceMethods(localMethods);
 
   const names = Object.keys(isolatedLocalMethods);
@@ -525,9 +498,6 @@ function registerInheritanceMethods(state, localMethods, context = null) {
 
 function registerInheritanceSharedSchema(state, localSharedSchema, context = null) {
   const sharedSchema = ensureInheritanceSharedSchemaTable(state);
-  if (!localSharedSchema || typeof localSharedSchema !== 'object') {
-    return sharedSchema;
-  }
   const names = Object.keys(localSharedSchema);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
@@ -545,7 +515,7 @@ function registerInheritanceSharedSchema(state, localSharedSchema, context = nul
       0,
       0,
       null,
-      context && context.path ? context.path : null
+      context?.path ?? null
     );
   }
 
@@ -554,9 +524,6 @@ function registerInheritanceSharedSchema(state, localSharedSchema, context = nul
 
 function registerInheritanceInvokedMethods(state, localInvokedMethods, context = null) {
   const invokedMethods = ensureInheritanceInvokedMethodsTable(state);
-  if (!localInvokedMethods || typeof localInvokedMethods !== 'object') {
-    return invokedMethods;
-  }
   const names = Object.keys(localInvokedMethods);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
@@ -566,16 +533,14 @@ function registerInheritanceInvokedMethods(state, localInvokedMethods, context =
     const localEntry = localInvokedMethods[name];
     if (localEntry && typeof localEntry === 'object') {
       invokedMethods[name] = Object.assign({}, localEntry, {
-        origin: localEntry.origin && typeof localEntry.origin === 'object'
-          ? Object.assign({}, localEntry.origin)
-          : null
+        origin: localEntry.origin ? Object.assign({}, localEntry.origin) : null
       });
       continue;
     }
     invokedMethods[name] = {
       name: typeof localEntry === 'string' ? localEntry : name,
       origin: {
-        path: context && context.path ? context.path : null
+        path: context?.path ?? null
       }
     };
   }
@@ -588,15 +553,11 @@ function validateInheritanceSharedMethodNameCollisions(state, context = null, er
   const names = Object.keys(sharedSchema);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    if (!Object.prototype.hasOwnProperty.call(methods, name)) {
+    if (!methods[name]) {
       continue;
     }
     const methodEntry = methods[name];
-    const path = methodEntry && methodEntry.ownerKey
-      ? methodEntry.ownerKey
-      : context && context.path
-        ? context.path
-        : null;
+    const path = methodEntry?.ownerKey ?? context?.path ?? null;
     const error = new RuntimeFatalError(
       `shared channel '${name}' conflicts with inherited method '${name}'`,
       0,
@@ -616,16 +577,15 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
     const entry = sharedMethods[name];
-    let superOwner = entry && typeof entry === 'object' ? entry : null;
+    let superOwner = entry;
     while (
       superOwner &&
-      typeof superOwner === 'object' &&
       !isUnresolvedSuperEntry(superOwner.super) &&
       superOwner.super
     ) {
       superOwner = superOwner.super;
     }
-    const superEntry = superOwner && typeof superOwner === 'object' ? superOwner.super : null;
+    const superEntry = superOwner?.super ?? null;
     if (isUnresolvedSuperEntry(superEntry)) {
       if (name === '__constructor__') {
         if (!emptyConstructorEntry) {
@@ -635,17 +595,15 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
         delete superOwner._resolvedMethodData;
         continue;
       }
-      const superOrigin = superOwner && superOwner.superOrigin && typeof superOwner.superOrigin === 'object'
-        ? superOwner.superOrigin
-        : null;
+      const superOrigin = superOwner?.superOrigin ?? null;
       collectOrThrowInheritanceMetadataError(
         tagInheritanceMetadataError(
           new RuntimeFatalError(
             `super() for method '${name}' was not found`,
-            superOrigin && typeof superOrigin.lineno === 'number' ? superOrigin.lineno : 0,
-            superOrigin && typeof superOrigin.colno === 'number' ? superOrigin.colno : 0,
-            superOrigin && superOrigin.errorContextString ? superOrigin.errorContextString : null,
-            superOrigin && superOrigin.path ? superOrigin.path : superOwner.ownerKey || (context && context.path ? context.path : null)
+            superOrigin?.lineno ?? 0,
+            superOrigin?.colno ?? 0,
+            superOrigin?.errorContextString ?? null,
+            superOrigin?.path ?? superOwner.ownerKey ?? context?.path ?? null
           ),
           'missing-super-method',
           name

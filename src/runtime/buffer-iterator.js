@@ -1,6 +1,6 @@
 'use strict';
 
-const { isCommandBuffer } = require('./command-buffer');
+const { CommandBuffer } = require('./command-buffer');
 
 class BufferIterator {
   constructor(output) {
@@ -76,7 +76,7 @@ class BufferIterator {
       if (arr && nextIndex < arr.length && arr[nextIndex] != null) {
         cursor.index = nextIndex;
         const item = arr[nextIndex];
-        if (isCommandBuffer(item)) {
+        if (item instanceof CommandBuffer) {
           this._enterChild(item);
         } else {
           const applyResult = this._applyCommand(item);

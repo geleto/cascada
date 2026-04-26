@@ -4,20 +4,16 @@ const inheritanceState = require('./inheritance-state');
 const inheritanceCall = require('./inheritance-call');
 
 function _isComponentCompositionMode(mode) {
-  return !!(mode && mode.kind === 'component-composition-mode');
+  return mode?.kind === 'component-composition-mode';
 }
 
 function _getCompiledInheritanceSpec(compiledTemplate) {
-  const spec = compiledTemplate &&
-    compiledTemplate.inheritanceSpec &&
-    typeof compiledTemplate.inheritanceSpec === 'object'
-    ? compiledTemplate.inheritanceSpec
-    : {};
+  const spec = compiledTemplate.inheritanceSpec ?? {};
   return {
-    setup: spec.setup || null,
-    methods: spec.methods || {},
-    sharedSchema: spec.sharedSchema || {},
-    invokedMethods: spec.invokedMethods || {},
+    setup: spec.setup ?? null,
+    methods: spec.methods ?? {},
+    sharedSchema: spec.sharedSchema ?? {},
+    invokedMethods: spec.invokedMethods ?? {},
     hasExtends: !!spec.hasExtends
   };
 }
@@ -36,20 +32,15 @@ function bootstrapInheritanceMetadata(
   const state = stateValue;
   inheritanceState.beginInheritanceMetadataReadiness(state);
   if (!state.sharedRootBuffer) {
-    state.sharedRootBuffer = currentBuffer || null;
+    state.sharedRootBuffer = currentBuffer ?? null;
   }
   const shouldLinkNewSharedChannels =
     state.sharedRootBuffer &&
     currentBuffer &&
-    state.sharedRootBuffer !== currentBuffer &&
-    sharedSchema &&
-    typeof sharedSchema === 'object';
+    state.sharedRootBuffer !== currentBuffer;
   let previousSharedNames = null;
   if (shouldLinkNewSharedChannels) {
-    const previousSharedSchema = state.sharedSchema && typeof state.sharedSchema === 'object'
-      ? state.sharedSchema
-      : {};
-    previousSharedNames = Object.keys(previousSharedSchema).reduce((acc, name) => {
+    previousSharedNames = Object.keys(state.sharedSchema ?? {}).reduce((acc, name) => {
       acc[name] = true;
       return acc;
     }, Object.create(null));
@@ -100,7 +91,7 @@ async function renderInheritanceParentRoot(spec) {
     cb,
     currentBuffer,
     inheritanceState: inheritanceStateValue
-  } = spec || {};
+  } = spec;
   const parentTemplate = await runtimeApi.resolveSingle(templateOrPromise);
   if (parentTemplate === null || parentTemplate === undefined) {
     return null;
@@ -118,9 +109,9 @@ async function renderInheritanceParentRoot(spec) {
     const parentContext = compositionPayload
       ? context.forkForComposition(
           parentTemplate.path,
-          compositionPayload.rootContext || {},
+          compositionPayload.rootContext ?? {},
           context.getRenderContextVariables(),
-          compositionPayload.externContext || {}
+          compositionPayload.externContext ?? {}
         )
       : context.forkForPath(parentTemplate.path);
     const parentCompositionMode = inheritanceState.isInheritanceCompositionMode(
@@ -138,7 +129,7 @@ async function renderInheritanceParentRoot(spec) {
     );
     if (parentCompositionMode === runtimeApi.COMPONENT_COMPOSITION_MODE) {
       const startupPromise = inheritanceState.awaitInheritanceStartup(inheritanceStateValue);
-      if (startupPromise && typeof startupPromise.then === 'function') {
+      if (startupPromise) {
         leaveChainPathOnReturn = false;
         startupPromise.then(
           () => inheritanceState.leaveInheritanceChainPath(inheritanceStateValue, chainToken),
@@ -170,7 +161,7 @@ async function bootstrapInheritanceParentScript(spec) {
     cb,
     currentBuffer,
     inheritanceState: inheritanceStateValue
-  } = spec || {};
+  } = spec;
   const parentScript = await runtimeApi.resolveSingle(scriptOrPromise);
   if (parentScript === null || parentScript === undefined) {
     return null;
@@ -187,9 +178,9 @@ async function bootstrapInheritanceParentScript(spec) {
     const parentContext = compositionPayload
       ? context.forkForComposition(
           parentScript.path,
-          compositionPayload.rootContext || {},
+          compositionPayload.rootContext ?? {},
           context.getRenderContextVariables(),
-          compositionPayload.externContext || {}
+          compositionPayload.externContext ?? {}
         )
       : context.forkForPath(parentScript.path);
 
@@ -223,7 +214,7 @@ async function bootstrapInheritanceParentScript(spec) {
       options: { resolveExports: true }
     });
 
-    if (startupPromise && typeof startupPromise.then === 'function') {
+    if (startupPromise) {
       await startupPromise;
     }
 
@@ -234,10 +225,7 @@ async function bootstrapInheritanceParentScript(spec) {
 }
 
 function getLocalRootConstructorEntry(compiledMethods) {
-  const methods = compiledMethods && typeof compiledMethods === 'object' ? compiledMethods : null;
-  return methods && Object.prototype.hasOwnProperty.call(methods, '__constructor__')
-    ? methods.__constructor__
-    : null;
+  return compiledMethods.__constructor__ ?? null;
 }
 
 function startInheritanceRootConstructor(
@@ -255,15 +243,13 @@ function startInheritanceRootConstructor(
   const hasLocalConstructor = !!(localEntry && typeof localEntry.fn === 'function');
   if (!hasLocalConstructor) {
     inheritanceState.setInheritanceStartupPromise(inheritanceStateValue, currentStartupPromise);
-    return currentStartupPromise && typeof currentStartupPromise.then === 'function'
-      ? currentStartupPromise
-      : null;
+    return currentStartupPromise ?? null;
   }
 
   const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
   // The readiness `.then` intentionally makes even a synchronous constructor
   // participate in startup merging when metadata is still being finalized.
-  let constructorResult = metadataReadyPromise && typeof metadataReadyPromise.then === 'function'
+  let constructorResult = metadataReadyPromise
     ? metadataReadyPromise.then(() =>
         localEntry.fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState)
       )
@@ -276,9 +262,7 @@ function startInheritanceRootConstructor(
     );
   }
   inheritanceState.setInheritanceStartupPromise(inheritanceStateValue, currentStartupPromise);
-  return currentStartupPromise && typeof currentStartupPromise.then === 'function'
-    ? currentStartupPromise
-    : null;
+  return currentStartupPromise ?? null;
 }
 
 function runCompiledRootStartup(spec) {
@@ -293,9 +277,9 @@ function runCompiledRootStartup(spec) {
     output,
     extendsState = null,
     options = null
-  } = spec || {};
+  } = spec;
   const metadataReadyYield = inheritanceState.consumeInheritanceMetadataReadyYield(inheritanceStateValue);
-  if (metadataReadyYield && typeof metadataReadyYield.then === 'function') {
+  if (metadataReadyYield) {
     return metadataReadyYield.then(() => runCompiledRootStartup({
       setup,
       compiledMethods,
@@ -310,7 +294,7 @@ function runCompiledRootStartup(spec) {
     }));
   }
 
-  const opts = options && typeof options === 'object' ? options : {};
+  const opts = options ?? {};
   let startupPromise = null;
 
   if (typeof setup === 'function') {
@@ -348,12 +332,11 @@ function runCompiledRootStartup(spec) {
 }
 
 function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames) {
-  if (!parentBuffer || !currentBuffer || parentBuffer === currentBuffer || !Array.isArray(channelNames)) {
+  if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
 
-  for (let i = 0; i < channelNames.length; i++) {
-    const channelName = channelNames[i];
+  for (const channelName of channelNames) {
     if (!channelName) {
       continue;
     }
@@ -374,16 +357,10 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
 }
 
 function getInheritanceSharedBuffer(currentBuffer, inheritanceStateValue) {
-  if (inheritanceStateValue && inheritanceStateValue.sharedRootBuffer) {
-    return inheritanceStateValue.sharedRootBuffer;
-  }
-  return currentBuffer;
+  return inheritanceStateValue?.sharedRootBuffer ?? currentBuffer;
 }
 
 function finalizeInheritanceMetadata(state, context = null) {
-  if (!state || typeof state !== 'object') {
-    return state;
-  }
   if (inheritanceState.isInheritanceMetadataReadinessResolved(state)) {
     return state;
   }
@@ -400,7 +377,7 @@ function finalizeInheritanceMetadata(state, context = null) {
     // catalogs from one recursive construction path, then compute final
     // transitive channel footprints from that resolved graph.
     const errorContext = {
-      path: context && context.path ? context.path : null
+      path: context?.path ?? null
     };
     inheritanceCall.finalizeResolvedMethodMetadata(state, errorContext, structuralErrors);
     if (structuralErrors.length > 0) {
