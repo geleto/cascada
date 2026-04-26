@@ -642,6 +642,9 @@ class CompilerAsync extends CompilerBaseAsync {
     for (const name of bodyDeclaredChannels) {
       merged.add(name);
     }
+    // __return__ is internal return-state infrastructure, not a user variable;
+    // guard state capture/restore must not include it because recovery must not undo a return.
+    merged.delete(RETURN_CHANNEL_NAME);
     return Array.from(merged);
   }
 

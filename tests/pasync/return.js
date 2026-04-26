@@ -604,6 +604,267 @@ describe('Cascada Script return', function () {
     });
   });
 
+  describe('semantic hardening', function () {
+    it('returns undefined for bare return and skips later statements', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'return',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be(undefined);
+      expect(events).to.eql([]);
+    });
+
+    it('returns none as a real null value and skips later statements', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'return none',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be(null);
+      expect(events).to.eql([]);
+    });
+
+    it('returns function-produced undefined as a real value', async function () {
+      const result = await env.renderScriptString([
+        'return getUndefined()'
+      ].join('\n'), {
+        getUndefined() {
+          return undefined;
+        }
+      });
+
+      expect(result).to.be(undefined);
+    });
+
+    it('resolves promised return values', async function () {
+      const result = await env.renderScriptString([
+        'return delayed("done")'
+      ].join('\n'), {
+        delayed(value) {
+          return Promise.resolve(value);
+        }
+      });
+
+      expect(result).to.be('done');
+    });
+
+    it('reports rejected promised return values', async function () {
+      try {
+        await env.renderScriptString([
+          'return failLater()'
+        ].join('\n'), {
+          failLater() {
+            return Promise.reject(new Error('rejected return'));
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.errors.some((nested) => nested.message.indexOf('rejected return') !== -1)).to.be(true);
+      }
+    });
+
+    it('does not run later guards while a delayed return rejection settles', async function () {
+      const events = [];
+      try {
+        await env.renderScriptString([
+          'return failLater()',
+          'if __return__ == __RETURN_UNSET__',
+          '  record("after")',
+          'endif'
+        ].join('\n'), {
+          failLater() {
+            return new Promise((resolve, reject) => {
+              setTimeout(() => reject(new Error('delayed return rejection')), 0);
+            });
+          },
+          record(value) {
+            events.push(value);
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.errors.some((nested) => nested.message.indexOf('delayed return rejection') !== -1)).to.be(true);
+        expect(events).to.eql([]);
+      }
+    });
+
+    it('reports poison return values while still marking return as happened', async function () {
+      const events = [];
+      try {
+        await env.renderScriptString([
+          'return poisonValue()',
+          'record("after")'
+        ].join('\n'), {
+          poisonValue() {
+            return runtime.createPoison(new Error('poison return'));
+          },
+          record(value) {
+            events.push(value);
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.errors.some((nested) => nested.message.indexOf('poison return') !== -1)).to.be(true);
+        expect(events).to.eql([]);
+      }
+    });
+
+    it('reports poison return values from nested guarded blocks', async function () {
+      const events = [];
+      try {
+        await env.renderScriptString([
+          'guard',
+          '  if true',
+          '    return poisonValue()',
+          '  endif',
+          'recover err',
+          '  record("recover")',
+          'endguard',
+          'record("after")'
+        ].join('\n'), {
+          poisonValue() {
+            return runtime.createPoison(new Error('guarded poison return'));
+          },
+          record(value) {
+            events.push(value);
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.errors.some((nested) => nested.message.indexOf('guarded poison return') !== -1)).to.be(true);
+        expect(events).to.eql([]);
+      }
+    });
+
+    it('does not leak no-return function sentinels into caller expressions', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'function noop()',
+        '  var x = 1',
+        'endfunction',
+        'if noop()',
+        '  record("truthy")',
+        'else',
+        '  record("falsey")',
+        'endif',
+        'return "done"'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql(['falsey']);
+    });
+
+    it('does not leak no-return caller body sentinels into caller expressions', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'function runner()',
+        '  return caller()',
+        'endfunction',
+        'var callerResult = call runner()',
+        '  var x = 1',
+        'endcall',
+        'if callerResult',
+        '  record("truthy")',
+        'else',
+        '  record("falsey")',
+        'endif',
+        'return "done"'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql(['falsey']);
+    });
+
+    it('distinguishes caller body none from no-return sentinels', async function () {
+      const result = await env.renderScriptString([
+        'function runner()',
+        '  return caller()',
+        'endfunction',
+        'var callerResult = call runner()',
+        '  return none',
+        'endcall',
+        'return callerResult'
+      ].join('\n'));
+
+      expect(result).to.be(null);
+    });
+
+    it('does not let parallel for poison returns get overwritten by later ordered returns', async function () {
+      try {
+        await env.renderScriptString([
+          'for item in [1, 2]',
+          '  if item == 1',
+          '    return poisonValue()',
+          '  endif',
+          '  if item == 2',
+          '    return "wrong"',
+          '  endif',
+          'endfor',
+          'return "none"'
+        ].join('\n'), {
+          poisonValue() {
+            return runtime.createPoison(new Error('parallel poison return'));
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.errors.some((nested) => nested.message.indexOf('parallel poison return') !== -1)).to.be(true);
+      }
+    });
+
+    it('does not let each poison returns advance to later ordered returns', async function () {
+      const events = [];
+      try {
+        await env.renderScriptString([
+          'each item in [1, 2]',
+          '  record("item-" + item)',
+          '  if item == 1',
+          '    return poisonValue()',
+          '  endif',
+          '  return "wrong"',
+          'endeach',
+          'return "none"'
+        ].join('\n'), {
+          poisonValue() {
+            return runtime.createPoison(new Error('each poison return'));
+          },
+          record(value) {
+            events.push(value);
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.errors.some((nested) => nested.message.indexOf('each poison return') !== -1)).to.be(true);
+        expect(events).to.eql(['item-1']);
+      }
+    });
+  });
+
   it('keeps function return channels independent from the outer return channel', async function () {
     const events = [];
     const script = `

@@ -912,6 +912,11 @@ Phase 4 implementation status:
 - Updated limited-loop waited-command expectations for the additional ordered
   return-state observations introduced by return-capable `for` guards.
 
+Known follow-up from Phase 4a: `tests/phase5-while-generator.js` still has a
+pre-existing failure for poison in a sequential `while` condition after the
+return-aware condition rewrite. Investigate the interaction between rewritten
+while guards and sequential-operation poison propagation.
+
 The generic loop-body guard cascade after loop end tags belongs to Phase 3's
 guard stack. Step 9 only owns the additional semantics unique to ordinary
 parallel `for`.
@@ -921,13 +926,28 @@ parallel `for`.
 Covers step 10.
 
 Lock down return values that are easy to confuse with return control state:
-bare `return`, `none`, `undefined`, promises, rejected promises, poison values,
-and poison returns inside guarded or parallel-loop paths.
+bare `return`, `none`, evaluated values that resolve to JavaScript
+`undefined`, promises, rejected promises, poison values, and poison returns
+inside guarded or parallel-loop paths.
 
 Also verify callable bodies that complete without executing an explicit
 `return`: script functions/macros and caller bodies must resolve to the public
 no-value result (`undefined`/`none`, according to the final API decision), not
 leak the internal `runtime.RETURN_UNSET` sentinel to callers.
+
+Phase 5 implementation status:
+
+- Root script rendering now allows `return none` to leave the script as a real
+  `null` value instead of treating it as a missing render result.
+- Script macro/function and caller-body return snapshots map internal
+  `runtime.RETURN_UNSET` to public `undefined` before the value is visible to
+  caller expressions.
+- Added hardening coverage for bare return, `none`, function-produced
+  `undefined`, promised returns, rejected promised returns, poison returns,
+  no-return function/caller bodies, delayed rejected returns, poison returns
+  inside `each`, and parallel-`for` poison returns.
+  Cascada Script does not currently expose `undefined` as a source literal;
+  user-authored no-value syntax remains bare `return` or `none`.
 
 #### Phase 6. User Documentation
 
@@ -937,6 +957,11 @@ Update user-facing script documentation after implementation behavior is stable.
 Keep ordinary return documentation brief and spend detail only on the parallel
 `for` quirk and the recommendation to use `each` for sequential short-circuit
 iteration.
+
+Also document the `guard/recover` interaction at the semantics level: recovery
+may repair guarded user channels, but it does not capture or restore the
+internal `__return__` channel, so recovery must not undo a return that already
+became visible.
 
 ### 0. Return Sentinel And Channel Visibility
 
@@ -1530,7 +1555,9 @@ confuse with control state.
 Required cases:
 
 - `return none`
-- `return undefined` where applicable
+- evaluated return values that resolve to JavaScript `undefined` where
+  applicable; Cascada Script does not currently expose `undefined` as a source
+  literal
 - `return` with no expression
 - returning a promise
 - returning a poison/error value
@@ -1547,7 +1574,8 @@ Integration-first tests for this step:
 - `return` with no expression returns `undefined`/`none` according to current
   API semantics and still skips later statements
 - `return none` is distinct from `__RETURN_UNSET__`
-- `return undefined` is distinct from `__RETURN_UNSET__` where applicable
+- evaluated return values that resolve to JavaScript `undefined` are distinct
+  from `__RETURN_UNSET__` where applicable
 - returning a promise resolves to the promised value
 - returning a rejected promise reports the expected error
 - returning a poison/error value marks return as happened and final render
