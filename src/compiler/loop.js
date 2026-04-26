@@ -73,6 +73,11 @@ class CompileLoop {
       );
 
       const bodyChannels = new Set(node.body._analysis.usedChannels || []);
+      const sequentialReturnChannelName = sequentialLoopBody &&
+        !whileConditionNode &&
+        bodyChannels.has('__return__')
+        ? '__return__'
+        : null;
       let elseFuncId = 'null';
       let elseChannels = null;
 
@@ -90,6 +95,7 @@ class CompileLoop {
         bodyChannels: ${JSON.stringify(Array.from(bodyChannels))},
         elseChannels: ${JSON.stringify(elseChannels ? Array.from(elseChannels) : [])},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
+        sequentialReturnChannelName: ${sequentialReturnChannelName ? `"${sequentialReturnChannelName}"` : 'null'},
         errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
       }`;
 

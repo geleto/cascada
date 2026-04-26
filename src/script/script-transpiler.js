@@ -2010,6 +2010,84 @@ class ScriptTranspiler {
     return end;
   }
 
+  _applyWhileReturnGuards(processedLines) {
+    for (let i = 0; i < processedLines.length; i++) {
+      const line = processedLines[i];
+      if (!line ||
+        line.isContinuation ||
+        line.lineType === 'RAW_TEXT' ||
+        line.tagName !== 'while' ||
+        !line.returnAnalysis ||
+        !line.returnAnalysis.currentReturnBoundary ||
+        !line.returnAnalysis.currentReturnBoundary.mayReturn) {
+        continue;
+      }
+
+      const endLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
+      line.codeContent = `__return__ == __RETURN_UNSET__ and (${line.codeContent || ''}`;
+      endLine.codeContent = `${endLine.codeContent || ''})`;
+    }
+  }
+
+  _applyParallelForReturnGuards(processedLines, analysis) {
+    const loopFrameByStart = new Map();
+    (analysis?.loops || []).forEach((frame) => {
+      if (frame.startEntry) {
+        loopFrameByStart.set(frame.startEntry, frame);
+      }
+    });
+
+    const stack = [];
+
+    for (let i = 0; i < processedLines.length; i++) {
+      const line = processedLines[i];
+      if (!line || line.isContinuation || line.lineType === 'RAW_TEXT') {
+        continue;
+      }
+
+      if (line.returnAnalysis &&
+        line.returnAnalysis.isRuntimeReturn &&
+        line.returnAnalysis.insideParallelFor) {
+        const suffixLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
+        this._appendInlinePrefix(line, this._returnGuardOpenTag());
+        this._appendInlineSuffix(suffixLine, this._returnGuardCloseTag());
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.MIDDLE) {
+        const frame = stack[stack.length - 1];
+        if (frame && frame.bodyGuardOpen) {
+          this._appendInlinePrefix(line, this._returnGuardCloseTag());
+          frame.bodyGuardOpen = false;
+        }
+        continue;
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.START) {
+        const analysisFrame = loopFrameByStart.get(line) || null;
+        const bodyGuardOpen = !!(
+          analysisFrame &&
+          analysisFrame.isParallelLoop &&
+          analysisFrame.loopBodyContainsReturn
+        );
+        if (bodyGuardOpen) {
+          this._appendInlineSuffix(line, this._returnGuardOpenTag());
+        }
+        stack.push({
+          bodyGuardOpen
+        });
+        continue;
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.END) {
+        const frame = stack.length > 0 ? stack.pop() : null;
+        if (frame && frame.bodyGuardOpen) {
+          this._appendInlinePrefix(line, this._returnGuardCloseTag());
+          frame.bodyGuardOpen = false;
+        }
+      }
+    }
+  }
+
   _createReturnGuardFrame(tagName, parent, startEntry = null) {
     return {
       tagName,
@@ -2167,6 +2245,8 @@ class ScriptTranspiler {
 
     this._processContinuationsAndComments(processedLines);
     this.returnAnalysis = this._analyzeReturnMetadata(processedLines);
+    this._applyWhileReturnGuards(processedLines);
+    this._applyParallelForReturnGuards(processedLines, this.returnAnalysis);
     this._applyReturnGuards(processedLines);
 
     let output = '';

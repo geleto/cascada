@@ -424,6 +424,186 @@ describe('Cascada Script return', function () {
     });
   });
 
+  describe('loop return semantics', function () {
+    it('rewrites while conditions in return-owning scopes', function () {
+      const template = scriptTranspiler.scriptToTemplate([
+        'var keepGoing = true',
+        'while keepGoing',
+        '  keepGoing = false',
+        'endwhile',
+        'return "done"'
+      ].join('\n'));
+
+      expect(template).to.contain('while __return__ == __RETURN_UNSET__ and (keepGoing)');
+    });
+
+    it('does not rewrite while conditions in scopes that cannot return', function () {
+      const template = scriptTranspiler.scriptToTemplate([
+        'var keepGoing = true',
+        'while keepGoing',
+        '  keepGoing = false',
+        'endwhile'
+      ].join('\n'));
+
+      expect(template).to.not.contain('while __return__ == __RETURN_UNSET__');
+    });
+
+    it('does not evaluate another while condition after return', async function () {
+      let conditionChecks = 0;
+      const result = await env.renderScriptString([
+        'while shouldContinue()',
+        '  return "done"',
+        'endwhile',
+        'return "wrong"'
+      ].join('\n'), {
+        shouldContinue() {
+          conditionChecks += 1;
+          return conditionChecks < 3;
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(conditionChecks).to.be(1);
+    });
+
+    it('preserves multi-line while conditions when adding the return guard', async function () {
+      const script = [
+        'var i = 0',
+        'while (',
+        '  i < 3',
+        ')',
+        '  i = i + 1',
+        '  return i',
+        'endwhile',
+        'return 0'
+      ].join('\n');
+      const template = scriptTranspiler.scriptToTemplate(script);
+      const result = await env.renderScriptString(script);
+
+      expect(template).to.contain('while __return__ == __RETURN_UNSET__ and ((');
+      expect(template).to.contain(')) -%}');
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+      expect(result).to.be(1);
+    });
+
+    it('stops sequential each advancement after return', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'each item in [1, 2, 3]',
+        '  record("before-" + item)',
+        '  if item == 2',
+        '    return item',
+        '  endif',
+        '  record("after-" + item)',
+        'endeach',
+        'record("after-loop")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be(2);
+      expect(events).to.eql(['before-1', 'after-1', 'before-2']);
+    });
+
+    it('stops object each advancement after return', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'each key, val in items',
+        '  record(key + ":" + val)',
+        '  return key',
+        'endeach',
+        'return null'
+      ].join('\n'), {
+        items: { a: 1, b: 2, c: 3 },
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('a');
+      expect(events).to.eql(['a:1']);
+    });
+
+    it('does not pull the next async iterator item after an each return', async function () {
+      const yielded = [];
+      async function* items() {
+        for (const item of [1, 2, 3]) {
+          yielded.push(item);
+          yield item;
+        }
+      }
+
+      const result = await env.renderScriptString([
+        'each item in items()',
+        '  if item == 2',
+        '    return item',
+        '  endif',
+        'endeach',
+        'return null'
+      ].join('\n'), {
+        items
+      });
+
+      expect(result).to.be(2);
+      expect(yielded).to.eql([1, 2]);
+    });
+
+    it('gates return-capable parallel for bodies with ordered return checks', function () {
+      const template = scriptTranspiler.scriptToTemplate([
+        'for item in items',
+        '  if item.ok',
+        '    return item',
+        '  endif',
+        'endfor',
+        'return null'
+      ].join('\n'));
+
+      expect(template).to.contain('{%- for item in items -%}{%- if __return__ == __RETURN_UNSET__ -%}');
+      expect(template).to.contain('{%- if __return__ == __RETURN_UNSET__ -%}    {%- return item -%}{%- endif -%}');
+    });
+
+    it('does not gate parallel for bodies that only contain nested callable returns', function () {
+      const template = scriptTranspiler.scriptToTemplate([
+        'for item in items',
+        '  function inner()',
+        '    return item',
+        '  endfunction',
+        'endfor',
+        'return null'
+      ].join('\n'));
+
+      expect(template).to.not.contain('{%- for item in items -%}{%- if __return__ == __RETURN_UNSET__ -%}');
+    });
+
+    it('keeps the first source-visible parallel for return value', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'for item in [1, 2]',
+        '  record("body-" + item)',
+        '  if item == 1',
+        '    return delay("first", 30)',
+        '  endif',
+        '  if item == 2',
+        '    return delay("second", 0)',
+        '  endif',
+        'endfor',
+        'return "none"'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        },
+        delay(value, ms) {
+          return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+        }
+      });
+
+      expect(result).to.be('first');
+      expect(events).to.eql(['body-1']);
+    });
+  });
+
   it('keeps function return channels independent from the outer return channel', async function () {
     const events = [];
     const script = `

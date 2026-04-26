@@ -899,6 +899,19 @@ Covers steps 7, 8, and 9, landed as sub-phases.
   first-visible-return semantics, and lock down the documented
   no-early-exit/non-cancellation behavior.
 
+Phase 4 implementation status:
+
+- Implemented same-line `while` condition rewriting for return-owning scopes
+  that may return.
+- Added an ordered parent-buffer return-state check after sequential `each`
+  iterations whose body can return, so arrays, objects, and async iterators stop
+  advancing after return becomes visible.
+- Added return-capable parallel `for` body gates and per-return write guards.
+- Kept nested callable returns inside loops from triggering loop return
+  protections in the enclosing loop.
+- Updated limited-loop waited-command expectations for the additional ordered
+  return-state observations introduced by return-capable `for` guards.
+
 The generic loop-body guard cascade after loop end tags belongs to Phase 3's
 guard stack. Step 9 only owns the additional semantics unique to ordinary
 parallel `for`.
