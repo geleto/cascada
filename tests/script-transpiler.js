@@ -1119,24 +1119,16 @@ endmethod`;
     });
   });
   describe('Syntax Validation', () => {
-    it('should throw an error if a line ends with a semicolon', () => {
+    it('should ignore an empty trailing statement after a semicolon', () => {
       const script = 'var x = 1;';
-      try {
-        scriptTranspiler.scriptToTemplate(script);
-        expect().fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.contain('Semicolons are not allowed in Cascada Script');
-      }
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.be(`{%- ${DECL_TAG} x = 1 -%}`);
     });
 
-    it('should throw an error if a semicolon is in the middle of code', () => {
-      const script = 'var x = 1; + 2';
-      try {
-        scriptTranspiler.scriptToTemplate(script);
-        expect().fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.contain('Semicolons are not allowed in Cascada Script');
-      }
+    it('should split statements when a semicolon is in the middle of code', () => {
+      const script = 'var x = 1; var y = x + 2';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.be(`{%- ${DECL_TAG} x = 1 -%}{%- ${DECL_TAG} y = x + 2 -%}`);
     });
 
     it('should NOT throw an error if semicolon is in a string', () => {

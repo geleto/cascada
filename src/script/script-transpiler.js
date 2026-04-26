@@ -174,8 +174,6 @@ class ScriptTranspiler {
       ...RESERVED_ASYNC_DECLARATION_NAMES
     ]);
 
-    // Track block stack for declaration/assignment blocks
-    this.setBlockStack = []; // 'var' or 'set'
     // Track call vs call_assign nesting so endcall closes the correct block kind.
     this.callBlockStack = [];
 
@@ -1322,13 +1320,26 @@ class ScriptTranspiler {
    * Only 'text' needs more validations and continuation handling because the content is
    * between the '()' and for other cases content goes directly to the template tag unmodified
    */
-  _processLine(line, state, lineIndex) {
+  _processLine(line, state, lineIndex, parsedLine = null, logicalMeta = null, updateState = true) {
     // Parse line with script parser
-    const parseResult = parseTemplateLine(
+    const parseResult = parsedLine || parseTemplateLine(
       line,
       state.inMultiLineComment,
       state.stringState
     );
+    if (logicalMeta) {
+      parseResult.physicalLine = logicalMeta.physicalLine;
+      parseResult.logicalIndex = logicalMeta.logicalIndex;
+      parseResult.isSemicolonLine = logicalMeta.isSemicolonLine;
+      parseResult.colno = logicalMeta.colno;
+      parseResult.terminatesWithSemicolon = !!logicalMeta.terminatesWithSemicolon;
+    } else {
+      parseResult.physicalLine = lineIndex;
+      parseResult.logicalIndex = 0;
+      parseResult.isSemicolonLine = false;
+      parseResult.colno = 0;
+      parseResult.terminatesWithSemicolon = false;
+    }
     // Extract comments and handle them first
     const comments = this._extractComments(parseResult.tokens);
     const codeTokens = this._filterOutComments(parseResult.tokens);
@@ -1361,13 +1372,6 @@ class ScriptTranspiler {
     const firstWord = this._getFirstWord(parseResult.codeContent);
     const code = parseResult.codeContent.trim();
     const continuesFromPrev = this._continuesFromPrevious(code);
-
-    // Check for semicolons in CODE tokens
-    for (const token of parseResult.tokens) {
-      if (token.type === 'CODE' && token.value.includes(';')) {
-        throw new Error(`Semicolons are not allowed in Cascada Script: "${code}" at line ${lineIndex + 1}`);
-      }
-    }
 
     if (code.startsWith('@')) {
       throw new Error(`Legacy '@' channel commands are no longer supported at line ${lineIndex + 1}`);
@@ -1432,9 +1436,169 @@ class ScriptTranspiler {
     parseResult.continuesFromPrev = continuesFromPrev;
 
     //update the state used by the parser (it works only with state + current line)
-    state.inMultiLineComment = parseResult.inMultiLineComment;
-    state.stringState = parseResult.stringState;
+    if (updateState) {
+      state.inMultiLineComment = parseResult.inMultiLineComment;
+      state.stringState = parseResult.stringState;
+    }
     return parseResult;
+  }
+
+  _tokenHasMeaningfulContent(token) {
+    return !!(token && typeof token.value === 'string' && token.value.trim() !== '');
+  }
+
+  _cloneTokenWithValue(token, value, start, end) {
+    const cloned = Object.assign({}, token);
+    cloned.value = value;
+    cloned.start = start;
+    cloned.end = end;
+    return cloned;
+  }
+
+  _createLogicalParsedLine(line, physicalParseResult, tokens, physicalLine, logicalIndex, isSemicolonLine, colno, terminatesWithSemicolon = false) {
+    const indentation = physicalParseResult.indentation !== undefined
+      ? physicalParseResult.indentation
+      : ((line.match(/^[ \t]*/) || [''])[0]);
+    const logicalLineText = tokens.map((token) => token.value || '').join('');
+    return {
+      tokens,
+      inMultiLineComment: physicalParseResult.inMultiLineComment,
+      stringState: physicalParseResult.stringState,
+      indentation,
+      physicalLine,
+      logicalIndex,
+      isSemicolonLine,
+      colno,
+      terminatesWithSemicolon,
+      logicalLineText
+    };
+  }
+
+  _createRawTextLine(line, physicalLine) {
+    return {
+      lineType: 'RAW_TEXT',
+      rawContent: line,
+      codeContent: line,
+      comments: [],
+      indentation: '',
+      isEmpty: line.length === 0,
+      isCommentOnly: false,
+      isContinuation: false,
+      blockType: null,
+      tagName: null,
+      physicalLine,
+      logicalIndex: 0,
+      isSemicolonLine: false,
+      colno: 0
+    };
+  }
+
+  _splitParsedLineIntoLogicalLines(line, physicalParseResult, physicalLine, splitSemicolons = true) {
+    if (!splitSemicolons) {
+      return [this._createLogicalParsedLine(
+        line,
+        physicalParseResult,
+        physicalParseResult.tokens.slice(),
+        physicalLine,
+        0,
+        false,
+        0
+      )];
+    }
+
+    const logicalLines = [];
+    let currentTokens = [];
+    let logicalIndex = 0;
+    let logicalStartCol = null;
+
+    const hasMeaningfulTokens = (tokens) => tokens.some((token) => this._tokenHasMeaningfulContent(token));
+    const firstMeaningfulCol = (tokens) => {
+      const token = tokens.find((candidate) => this._tokenHasMeaningfulContent(candidate));
+      return token ? token.start : 0;
+    };
+    const pushToken = (token) => {
+      if (logicalStartCol === null && this._tokenHasMeaningfulContent(token)) {
+        logicalStartCol = token.start;
+      }
+      currentTokens.push(token);
+    };
+    const flush = (terminatesWithSemicolon = false) => {
+      if (!hasMeaningfulTokens(currentTokens)) {
+        currentTokens = [];
+        logicalStartCol = null;
+        return;
+      }
+      logicalLines.push(this._createLogicalParsedLine(
+        line,
+        physicalParseResult,
+        currentTokens,
+        physicalLine,
+        logicalIndex,
+        logicalIndex > 0,
+        logicalStartCol === null ? firstMeaningfulCol(currentTokens) : logicalStartCol,
+        terminatesWithSemicolon
+      ));
+      logicalIndex += 1;
+      currentTokens = [];
+      logicalStartCol = null;
+    };
+
+    physicalParseResult.tokens.forEach((token) => {
+      if (token.type === TOKEN_TYPES.COMMENT && !hasMeaningfulTokens(currentTokens)) {
+        pushToken(token);
+        flush();
+        return;
+      }
+
+      if (token.type !== TOKEN_TYPES.CODE || token.value.indexOf(';') === -1) {
+        pushToken(token);
+        return;
+      }
+
+      let segmentStart = 0;
+      for (let i = 0; i < token.value.length; i++) {
+        if (token.value[i] !== ';') {
+          continue;
+        }
+        const value = token.value.substring(segmentStart, i);
+        if (value.length > 0) {
+          pushToken(this._cloneTokenWithValue(
+            token,
+            value,
+            token.start + segmentStart,
+            token.start + i
+          ));
+        }
+        flush(true);
+        segmentStart = i + 1;
+      }
+
+      const remainder = token.value.substring(segmentStart);
+      if (remainder.length > 0) {
+        pushToken(this._cloneTokenWithValue(
+          token,
+          remainder,
+          token.start + segmentStart,
+          token.end
+        ));
+      }
+    });
+
+    flush();
+
+    if (logicalLines.length === 0) {
+      return [this._createLogicalParsedLine(
+        line,
+        physicalParseResult,
+        [],
+        physicalLine,
+        0,
+        false,
+        0
+      )];
+    }
+
+    return logicalLines;
   }
 
   _processContinuationsAndComments(parseResults) {
@@ -1452,7 +1616,11 @@ class ScriptTranspiler {
           //skip for now, we may add isContinuation = true later
           continue;
         }
-        if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev)) {
+        const previousResult = prevLineIndex != -1 ? parseResults[prevLineIndex] : null;
+        const canContinueFromPrevious = previousResult &&
+          !previousResult.terminatesWithSemicolon &&
+          (previousResult.continuesToNext || presult.continuesFromPrev);
+        if (canContinueFromPrevious) {
           //this is continuation
           //mark everything between prevLineIndex+1 and i as continuation
           for (let j = prevLineIndex + 1; j <= i; j++) {
@@ -1537,6 +1705,10 @@ class ScriptTranspiler {
       return output;
     }
 
+    if (processedLine.lineType === 'RAW_TEXT') {
+      return processedLine.rawContent || '';
+    }
+
     if (!processedLine.isContinuation) {
       switch (processedLine.lineType) {
         case 'TAG': {
@@ -1613,38 +1785,46 @@ class ScriptTranspiler {
    */
   _validateBlockStructure(processedLines) {
     const stack = [];
+    const formatSourceLocation = (line) => {
+      const sourceLine = (line.physicalLine !== undefined ? line.physicalLine : 0) + 1;
+      if (line.colno && line.colno > 0) {
+        return `Line ${sourceLine}, column ${line.colno + 1}`;
+      }
+      return `Line ${sourceLine}`;
+    };
 
     for (let i = 0; i < processedLines.length; i++) {
       const line = processedLines[i];
+      const sourceLocation = formatSourceLocation(line);
 
       if (!line.blockType || line.isContinuation) continue;
 
       const tag = line.tagName;//getFirstWord(line.codeContent);
       if (line.blockType === this.BLOCK_TYPE.START) {
-        stack.push({ tag, line: i + 1 });
+        stack.push({ tag, line: sourceLocation });
       }
       else if (line.blockType === this.BLOCK_TYPE.MIDDLE) {
         if (!stack.length) {
-          throw new Error(`Line ${i + 1}: '${tag}' outside of any block (content: "${line.codeContent}")`);
+          throw new Error(`${sourceLocation}: '${tag}' outside of any block (content: "${line.codeContent}")`);
         }
 
         const topTag = stack[stack.length - 1].tag;
         const validParents = this.SYNTAX.middleTags[tag] || [];
 
         if (!validParents.includes(topTag)) {
-          throw new Error(`Line ${i + 1}: '${tag}' not valid in '${topTag}' block (content: "${line.codeContent}")`);
+          throw new Error(`${sourceLocation}: '${tag}' not valid in '${topTag}' block (content: "${line.codeContent}")`);
         }
       }
       else if (line.blockType === this.BLOCK_TYPE.END) {
         if (!stack.length) {
-          throw new Error(`Line ${i + 1}: Unexpected '${tag}' (content: "${line.codeContent}")`);
+          throw new Error(`${sourceLocation}: Unexpected '${tag}' (content: "${line.codeContent}")`);
         }
 
         const topTag = stack[stack.length - 1].tag;
         const expectedEndTag = this.SYNTAX.blockPairs[topTag];
 
         if (expectedEndTag !== tag) {
-          throw new Error(`Line ${i + 1}: Unexpected '${tag}', was expecting '${expectedEndTag}' (content: "${line.codeContent}")`);
+          throw new Error(`${sourceLocation}: Unexpected '${tag}', was expecting '${expectedEndTag}' (content: "${line.codeContent}")`);
         }
 
         stack.pop();
@@ -1656,6 +1836,145 @@ class ScriptTranspiler {
     }
   }
 
+  _isReturnBoundaryTag(tagName) {
+    return tagName === 'root' ||
+      tagName === 'function' ||
+      tagName === 'method' ||
+      tagName === 'call' ||
+      tagName === 'call_assign';
+  }
+
+  _isLoopTag(tagName) {
+    return tagName === 'for' || tagName === 'each';
+  }
+
+  _createReturnAnalysisFrame(tagName, parent, startEntry = null) {
+    return {
+      tagName,
+      parent,
+      startEntry,
+      endTagName: this.SYNTAX.blockPairs[tagName] || null,
+      isFunctionBoundary: this._isReturnBoundaryTag(tagName),
+      loopKind: this._isLoopTag(tagName) ? tagName : null,
+      isParallelLoop: tagName === 'for',
+      isSequentialLoop: tagName === 'each',
+      containsReturn: false,
+      loopBodyContainsReturn: false,
+      mayReturn: false,
+      children: []
+    };
+  }
+
+  _nearestReturnBoundaryFrame(stack) {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].isFunctionBoundary) {
+        return stack[i];
+      }
+    }
+    return stack[0];
+  }
+
+  _nearestParallelLoopFrame(stack) {
+    const boundary = this._nearestReturnBoundaryFrame(stack);
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const frame = stack[i];
+      if (frame === boundary) {
+        return null;
+      }
+      if (frame.isParallelLoop) {
+        return frame;
+      }
+    }
+    return null;
+  }
+
+  _markRuntimeReturn(stack) {
+    const boundary = this._nearestReturnBoundaryFrame(stack);
+    if (boundary) {
+      boundary.mayReturn = true;
+    }
+
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const frame = stack[i];
+      frame.containsReturn = true;
+      if (frame.loopKind) {
+        frame.loopBodyContainsReturn = true;
+      }
+      if (frame === boundary) {
+        break;
+      }
+    }
+  }
+
+  _analyzeReturnMetadata(processedLines) {
+    const rootFrame = this._createReturnAnalysisFrame('root', null, null);
+    const stack = [rootFrame];
+    const frames = [rootFrame];
+    const loops = [];
+    let rawDepth = 0;
+
+    for (let i = 0; i < processedLines.length; i++) {
+      const line = processedLines[i];
+      const topFrame = stack[stack.length - 1] || rootFrame;
+      const parallelLoopFrame = this._nearestParallelLoopFrame(stack);
+      line.returnAnalysis = {
+        currentFrame: topFrame,
+        currentReturnBoundary: this._nearestReturnBoundaryFrame(stack),
+        insideParallelFor: !!parallelLoopFrame,
+        parallelForFrame: parallelLoopFrame,
+        isRuntimeReturn: false,
+        ignoredAsOpaqueContent: false
+      };
+
+      if (line.isContinuation) {
+        continue;
+      }
+
+      if (rawDepth > 0 && line.tagName !== 'endraw' && line.tagName !== 'endverbatim') {
+        line.returnAnalysis.ignoredAsOpaqueContent = true;
+        continue;
+      }
+
+      if (line.tagName === 'return') {
+        line.returnAnalysis.isRuntimeReturn = true;
+        this._markRuntimeReturn(stack);
+        continue;
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.START) {
+        const parent = stack[stack.length - 1] || rootFrame;
+        const frame = this._createReturnAnalysisFrame(line.tagName, parent, line);
+        parent.children.push(frame);
+        stack.push(frame);
+        frames.push(frame);
+        if (frame.loopKind) {
+          loops.push(frame);
+        }
+        if (line.tagName === 'raw' || line.tagName === 'verbatim') {
+          rawDepth += 1;
+        }
+        continue;
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.END) {
+        if ((line.tagName === 'endraw' || line.tagName === 'endverbatim') && rawDepth > 0) {
+          rawDepth -= 1;
+        }
+        if (stack.length > 1) {
+          stack.pop();
+        }
+      }
+    }
+
+    return {
+      root: rootFrame,
+      frames,
+      loops,
+      returnOwningScopes: frames.filter((frame) => frame.isFunctionBoundary),
+      hasRuntimeReturn: rootFrame.mayReturn
+    };
+  }
+
   /**
    * Convert Cascada script to Nunjucks/Cascada template
    * @param {string} scriptStr - The input script string
@@ -1665,6 +1984,7 @@ class ScriptTranspiler {
     this._useCoreChannelAliases = !!options.useCoreOutputAliases;
     this.channelScopes = [this._createChannelScope()];
     this.callBlockStack = [];
+    this.returnAnalysis = null;
     // Split into lines
     const lines = scriptStr.split('\n');
 
@@ -1676,30 +1996,72 @@ class ScriptTranspiler {
 
     // Process each line with lookahead for continuation detection
     const processedLines = [];
+    let opaqueBodyDepth = 0;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const processedLine = this._processLine(line, state, i);
-
-      // Store processed line for potential reuse in lookahead
-      processedLines.push(processedLine);
-      if (!processedLine.isContinuation &&
-        processedLine.lineType === 'TAG' &&
-        processedLine.blockType === this.BLOCK_TYPE.START &&
-        processedLine.tagName === 'call') {
-        this.callBlockStack.push('call');
+      const firstWordForOpaque = this._getFirstWord(line.trimStart());
+      if (opaqueBodyDepth > 0 && firstWordForOpaque !== 'endraw' && firstWordForOpaque !== 'endverbatim') {
+        const rawLine = this._createRawTextLine(line, i);
+        processedLines.push(rawLine);
+        continue;
       }
-      this._updateChannelScopesForLine(processedLine);
 
-      if (processedLine.injectLines && processedLine.injectLines.length > 0) {
-        processedLine.injectLines.forEach((injected) => {
-          const injectedLine = this._processLine(injected, state, i);
-          processedLines.push(injectedLine);
-          this._updateChannelScopesForLine(injectedLine);
-        });
+      const physicalParseResult = parseTemplateLine(
+        line,
+        state.inMultiLineComment,
+        state.stringState
+      );
+      const splitSemicolons = opaqueBodyDepth === 0;
+      const logicalLines = this._splitParsedLineIntoLogicalLines(line, physicalParseResult, i, splitSemicolons);
+
+      for (let logicalIndex = 0; logicalIndex < logicalLines.length; logicalIndex++) {
+        const logicalLine = logicalLines[logicalIndex];
+        const processedLine = this._processLine(
+          logicalLine.logicalLineText,
+          state,
+          i,
+          logicalLine,
+          {
+            physicalLine: i,
+            logicalIndex: logicalLine.logicalIndex,
+            isSemicolonLine: logicalLine.isSemicolonLine,
+            colno: logicalLine.colno,
+            terminatesWithSemicolon: logicalLine.terminatesWithSemicolon
+          },
+          false
+        );
+
+        // Store processed line for potential reuse in lookahead
+        processedLines.push(processedLine);
+        if (!processedLine.isContinuation &&
+          processedLine.lineType === 'TAG' &&
+          processedLine.blockType === this.BLOCK_TYPE.START &&
+          processedLine.tagName === 'call') {
+          this.callBlockStack.push('call');
+        }
+        this._updateChannelScopesForLine(processedLine);
+
+        if (processedLine.tagName === 'raw' || processedLine.tagName === 'verbatim') {
+          opaqueBodyDepth += 1;
+        } else if ((processedLine.tagName === 'endraw' || processedLine.tagName === 'endverbatim') && opaqueBodyDepth > 0) {
+          opaqueBodyDepth -= 1;
+        }
+
+        if (processedLine.injectLines && processedLine.injectLines.length > 0) {
+          processedLine.injectLines.forEach((injected) => {
+            const injectedLine = this._processLine(injected, state, i);
+            processedLines.push(injectedLine);
+            this._updateChannelScopesForLine(injectedLine);
+          });
+        }
       }
+
+      state.inMultiLineComment = physicalParseResult.inMultiLineComment;
+      state.stringState = physicalParseResult.stringState;
     }
 
     this._processContinuationsAndComments(processedLines);
+    this.returnAnalysis = this._analyzeReturnMetadata(processedLines);
 
     let output = '';
     let lastNonContinuationLineType = null;
@@ -1707,8 +2069,12 @@ class ScriptTranspiler {
       if (!processedLines[i].isContinuation) {
         lastNonContinuationLineType = processedLines[i].lineType;
       }
-      output += this._generateOutput(processedLines[i], processedLines[i + 1]?.isContinuation, lastNonContinuationLineType, i);
-      if (i != processedLines.length - 1) {
+      output += this._generateOutput(processedLines[i], processedLines[i + 1]?.isContinuation, lastNonContinuationLineType, processedLines[i].physicalLine ?? i);
+      const nextLine = processedLines[i + 1];
+      const joinSamePhysicalLine = nextLine &&
+        nextLine.physicalLine === processedLines[i].physicalLine &&
+        nextLine.isSemicolonLine;
+      if (i != processedLines.length - 1 && !joinSamePhysicalLine) {
         output += '\n';
       }
     }

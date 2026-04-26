@@ -467,39 +467,25 @@ outside()
 endif
 ```
 
-### For With Return
+### Sequential Each
 
-`for item in items with return` is the explicit syntax for normal sequential
-short-circuit return behavior in loops.
+`each` is Cascada's sequential loop form and is the place where normal
+short-circuit return behavior belongs.
 
-This syntax is script-level syntax. The transpiler must recognize the trailing
-`with return` before passing the loop to the template parser, because the parser
-currently treats the loop iterable as a normal expression after `in` and has no
-user-facing `with return` loop option.
-
-The intended script grammar is:
-
-```text
-for <target> in <iterable> with return
-```
-
-The transpiler should lower it to an internal sequential loop representation
-with a return-guard option. The exact generated template syntax should be
-compiler-facing and unambiguous; it does not need to be user-facing script
-syntax.
-
-Because `for ... with return` is explicitly sequential/return-aware, the loop
-implementation can observe the function-local return channel before starting the
-next iteration. The guard cascade still handles statements inside the active
-iteration, but loop advancement must also check `__return__ == __RETURN_UNSET__` so
-later iterations are not started after return.
+Because `each` advances one iteration at a time, the loop implementation can
+observe the function-local return channel before starting the next iteration.
+The guard cascade still handles statements inside the active iteration, but loop
+advancement must also check `__return__ == __RETURN_UNSET__` so later iterations
+are not started after return.
 
 ### Parallel For
 
 `for` is parallel by default. A return inside a parallel `for` is not a
-cancellation primitive and is not a side-effect barrier. Work that appears before
-the return point in other iterations may already have started, and that work may
-still complete after one iteration returns.
+cancellation primitive, is not a side-effect barrier, and must not stop loop
+scheduling based on timing. The loop must preserve Cascada's concurrency
+invariance: observable results and side effects cannot depend on which iteration
+happened to notice a return first. Work that appears before the return point in
+other iterations may run for every item.
 
 Example:
 
@@ -512,8 +498,8 @@ for item in items
 endfor
 ```
 
-Many iterations may already be running `doSomeWorkWithSideEffects(item)` before
-the first return becomes visible.
+Many iterations may run `doSomeWorkWithSideEffects(item)` regardless of when the
+first return becomes visible.
 
 However, the return statement itself should be guarded inside a `for` loop:
 
@@ -542,7 +528,8 @@ endif
 
 The semantics are:
 
-- all already-started parallel iteration work may still run
+- pre-return work in parallel iterations may run for every item
+- return does not break, cancel, or stop scheduling ordinary `for` iterations
 - statements after a return in the same source path are guarded
 - statements after the return point in later source-ordered iterations are also
   guarded, so they do not run after the first visible return
@@ -555,10 +542,11 @@ The semantics are:
 - the first visible return value is the value returned from the function/script
 
 The transpiler-level responsibility is to make return state explicit and
-source-ordered. It does not cancel concurrent work that has already been
-scheduled. The tradeoff is that the generated guards introduce ordered
-observation points after possible returns, so code after those guards may be
-less parallel than ordinary `for` body code before the return point.
+source-ordered. It must not use an out-of-band JavaScript flag, loop break, or
+other timing-dependent cancellation path to stop ordinary `for` iterations. The
+tradeoff is that the generated guards introduce ordered observation points after
+possible returns, so code after those guards may be less parallel than ordinary
+`for` body code before the return point.
 
 ## Nested Blocks
 
@@ -747,8 +735,7 @@ Integration tests:
 - return value can be `none`/`undefined`
 - return value can be an error/poison value and is still reported by final return
 - returned error/poison values do not make injected guards report the error early
-- `for item in items with return` provides normal sequential short-circuit
-  behavior
+- `each item in items` provides normal sequential short-circuit behavior
 - parallel `for` first visible return wins while pre-return side effects may
   still run
 - raw/verbatim contents that look like return code are ignored by return
@@ -803,8 +790,8 @@ Phase 1 review status:
   remain used for var overwrite behavior, while the dedicated return-state
   command remains the intended primitive for injected guards.
 - Postponed to Phase 3: actual guard injection and cascade behavior.
-- Postponed to Phase 4: parallel-`for` return-statement wrapping and
-  `for ... with return` loop advancement checks.
+- Postponed to Phase 4: sequential `each` loop advancement checks and
+  parallel-`for` return-statement wrapping.
 
 #### Phase 2. Transpiler Infrastructure
 
@@ -814,6 +801,32 @@ Add semicolon logical lines, refactor `scriptToTemplate()` to consume logical
 lines, and add the return-analysis pre-pass. This phase should establish the
 machinery for guard injection and line preservation without yet implementing
 the full return waterfall.
+
+Phase 2 implementation status:
+
+- Implemented lexer/token-aware semicolon logical lines for script code tokens.
+- Implemented same-physical-line output joining for semicolon logical lines.
+- Preserved raw/verbatim body text as opaque content for the script logical-line
+  pipeline.
+- Added return-analysis metadata over processed logical lines, including
+  return-owning scopes, loop body returns, parallel `for` context, and
+  sequential `each` loop classification.
+- Phase 2 review fixes:
+  - comment-only logical segments between semicolon statements now preserve
+    source order instead of being attached after the following statement.
+  - a physical line terminated by a semicolon now blocks accidental continuation
+    from the next physical line.
+  - block-structure diagnostics for semicolon logical lines now include the
+    original physical line and column offset.
+- While-condition rewriting remains Phase 4a; Phase 2 only records the metadata
+  needed to decide whether a return-owning scope may return.
+- Conformance note: semicolon handling is implemented in the script transpiler
+  over lexer-produced tokens. If future phases need reusable logical-line
+  splitting outside the transpiler, move the splitter into `script-lexer.js`
+  without changing the token-aware behavior.
+- Removed the earlier sequential-`for` design note from the current
+  implementation path: `for` remains parallel, and `each` owns sequential
+  short-circuit loop behavior.
 
 #### Phase 3. Core Early-Return Control Flow
 
@@ -828,21 +841,32 @@ At the end of this phase, ordinary early return should work at script root,
 inside nested control flow, inside functions/methods, and inside caller/call
 assignment bodies.
 
+Phase 3 must also complete the injection API that Phase 2 prepared but did not
+finish: define structured injection entries for guard lines, prefer pre-parsed
+logical line objects over raw strings, avoid mutating physical parser state while
+processing injected lines, and ensure injected semicolon content follows the same
+logical-line metadata rules as user-authored semicolons.
+
+`scriptTranspiler.returnAnalysis` is a Phase 2 test/introspection hook on the
+module singleton. Later phases should either keep that state purely internal or
+introduce an explicit analysis-result path instead of relying on singleton
+mutable state as public API.
+
 #### Phase 4. Loop Return Semantics
 
 Covers steps 7, 8, and 9, landed as sub-phases.
 
 - Phase 4a: add `while` condition rewriting for return-owning scopes that may
   return.
-- Phase 4b: add `for ... with return` as the explicit sequential short-circuit
-  loop form.
+- Phase 4b: add sequential `each` loop advancement checks so return prevents
+  later iterations from starting.
 - Phase 4c: add the parallel-`for`-specific return protections: guard the
   return statement itself, preserve first-visible-return semantics, and lock
-  down the documented non-cancellation behavior.
+  down the documented no-early-exit/non-cancellation behavior.
 
-The generic loop-body guard cascade after `endfor` belongs to Phase 3's guard
-stack. Step 9 only owns the additional semantics unique to ordinary parallel
-`for`.
+The generic loop-body guard cascade after loop end tags belongs to Phase 3's
+guard stack. Step 9 only owns the additional semantics unique to ordinary
+parallel `for`.
 
 #### Phase 5. Semantic Hardening
 
@@ -863,7 +887,8 @@ Covers step 11.
 
 Update user-facing script documentation after implementation behavior is stable.
 Keep ordinary return documentation brief and spend detail only on the parallel
-`for` quirk and the `for ... with return` recommendation.
+`for` quirk and the recommendation to use `each` for sequential short-circuit
+iteration.
 
 ### 0. Return Sentinel And Channel Visibility
 
@@ -1058,7 +1083,7 @@ The analysis must track:
 - whether each block contains a runtime `return` in its own body
 - whether each loop body contains a runtime `return`
 - whether the current rewrite position is inside a parallel `for`
-- whether a loop is the explicit sequential `for ... with return` form
+- whether a loop is a sequential `each` loop
 
 This metadata is used to:
 
@@ -1067,7 +1092,7 @@ This metadata is used to:
   cannot overwrite the first visible return
 - avoid treating a return inside a nested callable declaration as a return from
   the enclosing loop or scope
-- keep `for ... with return` handling explicit and separate from ordinary
+- keep sequential `each` advancement checks explicit and separate from ordinary
   parallel `for`
 
 The pre-pass must ignore:
@@ -1087,8 +1112,7 @@ Integration-first tests for this step:
 - return inside raw/verbatim content inside a loop does not mark the loop body as
   returning
 - return inside an ordinary parallel `for` is recognized as loop-body return
-- `for ... with return` is identified as the explicit sequential
-  return-aware loop form
+- `each` is identified as the sequential return-aware loop form
 
 ### 4. Return Guard Stack
 
@@ -1327,36 +1351,31 @@ Focused contract tests only if needed:
 
 - generated while tag contains the guarded condition with preserved parentheses
 
-### 8. For With Return
+### 8. Sequential Each Return Advancement
 
-Add the sequential return-aware loop syntax:
+Add return-aware loop advancement to the existing sequential loop syntax:
 
 ```cascada
-for item in items with return
+each item in items
 ```
 
 Required behavior:
 
-- Parse/lower this syntax using the current script transpiler style.
 - Preserve line numbers.
-- Lower to sequential loop behavior, plus an
-  explicit return-check mechanism before starting each next iteration.
+- Preserve existing `each` loop binding and sequential behavior.
+- Add an explicit return-check mechanism before starting each next iteration.
 - Ensure returns inside the body use the normal guard stack.
 - Ensure later iterations are not run once return is visible by checking
   `__return__ == __RETURN_UNSET__` before starting each next iteration.
-- Use this as the documented way to get normal sequential short-circuit return
-  behavior in loops.
-- Keep this script syntax distinct from the existing template/parser `for ...
-  in ... of <concurrencyLimit>` grammar.
+- Use `each` as the documented way to get normal sequential short-circuit return
+  behavior in loops where iteration side effects must not start after return.
 
-Lowering options:
+Implementation options:
 
-- add an internal loop flag to the generated sequential loop representation,
-  such as a compiler-only `returnGuard` option, and have loop
-  compilation/runtime check the function-local return channel before each
-  iteration
-- or lower to an equivalent sequential construct that performs the same ordered
-  return-channel check before advancing
+- add an internal return-aware advancement check to existing sequential `each`
+  compilation/runtime
+- or lower to an equivalent sequential construct that performs the same
+  function-local return-channel check before advancing
 
 Do not rely only on guards inside the loop body. Body guards skip the rest of an
 already-started iteration; they do not, by themselves, prevent the loop from
@@ -1364,17 +1383,16 @@ starting the next iteration.
 
 Integration-first tests for this step:
 
-- `for item in items with return` parses/transpiles successfully
-- loop variable binding works for the new syntax
+- ordinary `each` syntax still parses/transpiles successfully
+- loop variable binding works with return-aware advancement
 - return in the first iteration prevents later iterations
 - return in a later iteration returns that item and skips subsequent iterations
 - side effects before the return do not run for later items after return
 - statements after return in the same iteration are skipped
-- code after `endfor` is skipped after return
-- ordinary `for` without `with return` retains existing parallel behavior
-- invalid `for ... with return` syntax produces a useful error
-- a return in `for item in items with return` prevents the next iteration from
-  starting, not merely the rest of the current body
+- code after `endeach` is skipped after return
+- ordinary `for` retains existing parallel behavior
+- a return in `each item in items` prevents the next iteration from starting,
+  not merely the rest of the current body
 
 Focused contract tests only if needed:
 
@@ -1382,8 +1400,8 @@ Focused contract tests only if needed:
 
 ### 9. Parallel For Return Guarding
 
-Add the parallel-`for`-specific return handling without promising cancellation
-of already-started parallel work.
+Add the parallel-`for`-specific return handling while explicitly forbidding
+early exit or cancellation of ordinary parallel `for` iterations.
 
 The generic guard waterfall from Step 4 already owns the source-order body
 shape and the cascade after `endfor`:
@@ -1403,7 +1421,10 @@ only the additional behavior needed for ordinary parallel `for`.
 
 Parallel `for` requirements:
 
-- For parallel `for`, do not promise cancellation of already-started work.
+- For parallel `for`, do not break, cancel, or stop scheduling iterations because
+  return became visible.
+- For parallel `for`, work before the return point may run for every item,
+  including side effects.
 - For parallel `for`, guard the `return` statement itself with
   `if __return__ == __RETURN_UNSET__` so later returns do not overwrite the first
   visible return value.
@@ -1424,7 +1445,9 @@ Integration-first tests for this step:
 - multiple matching iterations do not overwrite the first visible return
 - first visible return follows ordered channel semantics, not delay/completion
   order
-- side effects before the return point may run for multiple iterations
+- side effects before the return point may run for every iteration
+- return does not reduce the number of ordinary `for` iterations started or
+  visited
 - side effects after the return point do not run in later ordered iterations
   once the return is visible
 - post-return body statements may be delayed by ordered return-state checks,
@@ -1481,21 +1504,22 @@ Required behavior:
 - Do not over-explain cases where return behaves like other programming
   languages.
 - Explain only the parallel `for` quirk in detail.
-- Document that `for` does not cancel already-started parallel iterations.
+- Document that `for` does not cancel, break, or stop scheduling iterations when
+  return becomes visible.
 - Document that side effects before the return point may still happen for many
-  items.
+  items, potentially every item.
 - Document that work after the return point is guarded and may run with less
   concurrency because it must observe ordered return state.
 - Document that the first visible return value wins.
-- Recommend `for item in items with return` when the user needs normal
-  sequential short-circuit return behavior.
+- Recommend `each item in items` when the user needs normal sequential
+  short-circuit return behavior.
 
 Integration checks for this step:
 
 - documentation examples compile and run
 - `for` example demonstrates that pre-return work may run for many items
-- `for item in items with return` example demonstrates normal sequential
-  short-circuit behavior
+- `each item in items` example demonstrates normal sequential short-circuit
+  behavior
 - docs do not over-explain ordinary return behavior
 - docs use the exact supported syntax
 
@@ -1503,17 +1527,18 @@ Integration checks for this step:
 
 The user-facing script documentation should not over-explain `return` where it
 behaves like return in other programming languages. Ordinary top-level,
-function, `if`, `while`, and sequential `for ... with return` cases should be
-documented simply and briefly.
+function, `if`, `while`, and sequential `each` cases should be documented simply
+and briefly.
 
 The only behavior that needs special explanation in the return section is
 parallel `for`.
 
 Required points for the `for` note:
 
-- In parallel `for`, `return` does not cancel already-started iterations.
+- In parallel `for`, `return` does not cancel, break, or stop scheduling
+  iterations.
 - In parallel `for`, work before the return point can still happen in many
-  iterations, including side effects.
+  iterations, potentially every item, including side effects.
 - In parallel `for`, work after the return point is guarded. Later iterations do
   not run that work once the first return is visible, but those guards are
   ordered checks and can reduce concurrency after the return point.
@@ -1522,16 +1547,16 @@ Required points for the `for` note:
 - If a user needs side-effectful iteration to stop before later items are
   processed, or otherwise needs the normal sequential short-circuit behavior
   familiar from other programming languages, they should use
-  `for item in items with return`.
+  `each item in items`.
 
 Suggested wording:
 
 > `return` is source-order control flow, not cancellation. In a parallel `for`,
-> Cascada may already have started many iterations. Work before the return point
-> in those iterations can still run. Cascada guards the return itself so the
-> first visible return value is returned, and later return statements are
-> skipped. Work after the return point is also guarded, so it may run with less
-> concurrency than ordinary pre-return loop work.
+> Cascada does not stop scheduling iterations when return becomes visible. Work
+> before the return point can still run for many items, potentially every item.
+> Cascada guards the return itself so the first visible return value is returned,
+> and later return statements are skipped. Work after the return point is also
+> guarded, so it may run with less concurrency than ordinary pre-return loop work.
 
 Example for documentation:
 
@@ -1546,15 +1571,15 @@ endfor
 
 If the user needs side-effectful iteration to stop before later items are
 processed, or needs normal sequential return behavior, the documentation should
-recommend `for ... with return`:
+recommend `each`:
 
 ```cascada
-for item in items with return
+each item in items
   audit(item)
   if item.ok
     return item
   endif
-endfor
+endeach
 ```
 
 ## Implementation Notes

@@ -3,16 +3,19 @@
 let expect;
 let AsyncEnvironment;
 let runtime;
+let scriptTranspiler;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
   runtime = require('../../src/runtime/runtime');
+  scriptTranspiler = require('../../src/script/script-transpiler');
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   runtime = nunjucks.runtime;
+  scriptTranspiler = nunjucks.scriptTranspiler;
 }
 
 describe('Cascada Script return', function () {
@@ -185,5 +188,140 @@ describe('Cascada Script return', function () {
         expect(err.message).to.contain('reserved');
       }
     }
+  });
+
+  describe('logical semicolon lines', function () {
+    it('renders semicolon-separated statements on one physical line', async function () {
+      const result = await env.renderScriptString('var a = 1; var b = 2; return a + b');
+      expect(result).to.be(3);
+    });
+
+    it('supports same-line block sequences', async function () {
+      const result = await env.renderScriptString('if true; return 1; endif');
+      expect(result).to.be(1);
+    });
+
+    it('keeps semicolon logical lines on the same generated physical line', function () {
+      const template = scriptTranspiler.scriptToTemplate('var a = 1; var b = 2; return a + b');
+      expect(template.split('\n')).to.have.length(1);
+      expect(template).to.contain('{%- var a = 1 -%}');
+      expect(template).to.contain('{%- var b = 2 -%}');
+      expect(template).to.contain('{%- return a + b -%}');
+    });
+
+    it('does not split semicolons inside strings, regexes, or comments', async function () {
+      const script = [
+        'var label = "a;b"; var pattern = r/a;b/; // comment ; stays comment',
+        'return label'
+      ].join('\n');
+
+      const result = await env.renderScriptString(script);
+      expect(result).to.be('a;b');
+    });
+
+    it('preserves comments between semicolon statements in source order', function () {
+      const template = scriptTranspiler.scriptToTemplate(
+        'var a = 1; /* comment ; still comment */ var b = 2; return b'
+      );
+
+      const firstStatement = template.indexOf('{%- var a = 1 -%}');
+      const comment = template.indexOf('{#- comment ; still comment -#}');
+      const secondStatement = template.indexOf('{%- var b = 2 -%}');
+      expect(firstStatement).to.be.lessThan(comment);
+      expect(comment).to.be.lessThan(secondStatement);
+    });
+
+    it('does not continue from a previous physical line terminated by semicolon', function () {
+      const template = scriptTranspiler.scriptToTemplate([
+        'var a = 1;',
+        '  + 2; return a'
+      ].join('\n'));
+
+      expect(template).to.contain('{%- var a = 1 -%}\n');
+      expect(template).to.not.contain('var a = 1\n  + 2');
+    });
+
+    it('preserves raw block bodies without semicolon splitting or script wrapping', function () {
+      const template = scriptTranspiler.scriptToTemplate([
+        'raw',
+        'a;b;return c',
+        'endraw'
+      ].join('\n'));
+
+      expect(template).to.contain('\na;b;return c\n');
+      expect(template).to.not.contain('{%- do a;b;return c -%}');
+    });
+
+    it('reports block errors on the original physical line', function () {
+      try {
+        scriptTranspiler.scriptToTemplate('if true; endif; endif');
+        expect().fail('Should have rejected extra endif');
+      } catch (err) {
+        expect(err.message).to.contain('Line 1');
+        expect(err.message).to.contain('column');
+      }
+    });
+  });
+
+  describe('return analysis pre-pass', function () {
+    it('marks loops whose own body contains a runtime return', function () {
+      scriptTranspiler.scriptToTemplate([
+        'for item in [1]',
+        '  return item',
+        'endfor'
+      ].join('\n'));
+
+      const analysis = scriptTranspiler.returnAnalysis;
+      expect(analysis.loops).to.have.length(1);
+      expect(analysis.loops[0].tagName).to.be('for');
+      expect(analysis.loops[0].isParallelLoop).to.be(true);
+      expect(analysis.loops[0].loopBodyContainsReturn).to.be(true);
+    });
+
+    it('does not count nested callable returns as outer loop returns', function () {
+      scriptTranspiler.scriptToTemplate([
+        'for item in [1]',
+        '  function inner()',
+        '    return item',
+        '  endfunction',
+        'endfor',
+        'return null'
+      ].join('\n'));
+
+      const analysis = scriptTranspiler.returnAnalysis;
+      expect(analysis.loops).to.have.length(1);
+      expect(analysis.loops[0].loopBodyContainsReturn).to.be(false);
+      expect(analysis.returnOwningScopes.some((scope) => scope.tagName === 'function' && scope.mayReturn)).to.be(true);
+    });
+
+    it('ignores return-looking content inside raw blocks', function () {
+      scriptTranspiler.scriptToTemplate([
+        'for item in [1]',
+        '  raw',
+        '    return item',
+        '  endraw',
+        'endfor',
+        'return null'
+      ].join('\n'));
+
+      const analysis = scriptTranspiler.returnAnalysis;
+      expect(analysis.loops).to.have.length(1);
+      expect(analysis.loops[0].loopBodyContainsReturn).to.be(false);
+    });
+
+    it('classifies each as a sequential loop', function () {
+      scriptTranspiler.scriptToTemplate([
+        'each item in items',
+        '  return item',
+        'endeach'
+      ].join('\n'));
+
+      const analysis = scriptTranspiler.returnAnalysis;
+      expect(analysis.loops).to.have.length(1);
+      expect(analysis.loops[0].tagName).to.be('each');
+      expect(analysis.loops[0].isParallelLoop).to.be(false);
+      expect(analysis.loops[0].isSequentialLoop).to.be(true);
+      expect(analysis.loops[0].loopBodyContainsReturn).to.be(true);
+    });
   });
 });
