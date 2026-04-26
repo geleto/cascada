@@ -765,6 +765,79 @@ Focused contract tests:
 
 ## Implementation Steps
 
+### Phased Rollout
+
+The detailed steps below should be implemented in dependency order, but several
+steps are best landed as grouped phases so each milestone has a coherent
+behavioral boundary.
+
+#### Phase 1. Return Channel Invariants
+
+Covers steps 0 and 3.
+
+Audit and complete the compiler/runtime prerequisites before changing the
+script lowering pipeline: `__RETURN_UNSET__`, `__return__` visibility from child
+buffers, poison-safe return-state reads, and user-shadowing protection.
+
+Several pieces already exist in the codebase, including `runtime.RETURN_UNSET`,
+the internal `__return__` channel, raw snapshots, and return-channel
+declaration. Treat this phase as an invariant audit plus any missing narrow
+integration work.
+
+#### Phase 2. Transpiler Infrastructure
+
+Covers steps 1, 2, and 3a.
+
+Add semicolon logical lines, refactor `scriptToTemplate()` to consume logical
+lines, and add the return-analysis pre-pass. This phase should establish the
+machinery for guard injection and line preservation without yet implementing
+the full return waterfall.
+
+#### Phase 3. Core Early-Return Control Flow
+
+Covers steps 4, 5, and 6.
+
+Implement the guard stack, middle-tag handling, and callable-boundary behavior
+together. These pieces are tightly coupled: middle tags must bind to the user's
+original block, and returns inside nested callable bodies must not leak into the
+outer scope.
+
+At the end of this phase, ordinary early return should work at script root,
+inside nested control flow, inside functions/methods, and inside caller/call
+assignment bodies.
+
+#### Phase 4. Loop Return Semantics
+
+Covers steps 7, 8, and 9, landed as sub-phases.
+
+- Phase 4a: add `while` condition rewriting for return-owning scopes that may
+  return.
+- Phase 4b: add `for ... with return` as the explicit sequential short-circuit
+  loop form.
+- Phase 4c: add the parallel-`for`-specific return protections: guard the
+  return statement itself, preserve first-visible-return semantics, and lock
+  down the documented non-cancellation behavior.
+
+The generic loop-body guard cascade after `endfor` belongs to Phase 3's guard
+stack. Step 9 only owns the additional semantics unique to ordinary parallel
+`for`.
+
+#### Phase 5. Semantic Hardening
+
+Covers step 10.
+
+Lock down return values that are easy to confuse with return control state:
+bare `return`, `none`, `undefined`, promises, rejected promises, poison values,
+and poison returns inside guarded or parallel-loop paths.
+
+#### Phase 6. User Documentation
+
+Covers step 11.
+
+Update user-facing script documentation after implementation behavior is stable.
+Keep ordinary return documentation brief and spend detail only on the parallel
+`for` quirk and the `for ... with return` recommendation.
+
 ### 0. Return Sentinel And Channel Visibility
 
 Resolve the blocking return-channel invariants before implementing semicolon
@@ -1282,10 +1355,11 @@ Focused contract tests only if needed:
 
 ### 9. Parallel For Return Guarding
 
-Add return-aware handling for `for` loop bodies without promising cancellation of
-parallel work.
+Add the parallel-`for`-specific return handling without promising cancellation
+of already-started parallel work.
 
-The guard waterfall already handles the source-order body shape:
+The generic guard waterfall from Step 4 already owns the source-order body
+shape and the cascade after `endfor`:
 
 ```cascada
 for item in items
@@ -1297,11 +1371,11 @@ outside()
 endif
 ```
 
-Additional `for` requirements:
+Step 9 does not re-own those generic guard-stack responsibilities. Its scope is
+only the additional behavior needed for ordinary parallel `for`.
 
-- Ensure body guards are attached to the loop body frame, not to an outer frame.
-- Ensure a return inside a loop body cascades after `endfor` so following outer
-  statements are guarded.
+Parallel `for` requirements:
+
 - For parallel `for`, do not promise cancellation of already-started work.
 - For parallel `for`, guard the `return` statement itself with
   `if __return__ == __RETURN_UNSET__` so later returns do not overwrite the first
@@ -1320,7 +1394,6 @@ Additional `for` requirements:
 
 Integration-first tests for this step:
 
-- post-return waterfall still guards code after `endfor`
 - multiple matching iterations do not overwrite the first visible return
 - first visible return follows ordered channel semantics, not delay/completion
   order
@@ -1329,8 +1402,6 @@ Integration-first tests for this step:
   once the return is visible
 - post-return body statements may be delayed by ordered return-state checks,
   demonstrating the documented partial concurrency reduction
-- statements after return in the same iteration are skipped
-- code after `endfor` is skipped after a return
 - `for` without return retains existing parallel behavior
 - nested function return inside `for` does not trigger loop return guarding
 
