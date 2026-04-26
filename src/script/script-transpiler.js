@@ -95,7 +95,7 @@ class ScriptTranspiler {
     // Define block-related configuration
     this.SYNTAX = {
       // Block-related tags
-      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
+      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'function', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
       lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'component', 'depends', 'extern', 'return', ...CHANNEL_TYPES, 'shared'],
 
       // Middle tags with their parent block types
@@ -116,6 +116,7 @@ class ScriptTranspiler {
         'switch': 'endswitch',
         'block': 'endblock',
         'method': 'endmethod',
+        'function': 'endfunction',
         'macro': 'endmacro',
         'filter': 'endfilter',
         'call': 'endcall',
@@ -133,7 +134,7 @@ class ScriptTranspiler {
       // Tags that should never be treated as multi-line
       neverContinued: [
         'else', 'elif', 'case', 'default',
-        'endif', 'endfor', 'endswitch', 'endblock', 'endmethod', 'endmacro',
+        'endif', 'endfor', 'endswitch', 'endblock', 'endmethod', 'endfunction', 'endmacro',
         'endfilter', 'endcall', 'endcall_assign', 'endraw', 'endverbatim',
         'endwhile', 'endvar', 'recover'
       ],
@@ -1497,7 +1498,7 @@ class ScriptTranspiler {
 
     if (processedLine.blockType === this.BLOCK_TYPE.START) {
       let parentAccess = 'inherit';
-      if (processedLine.tagName === 'macro' || processedLine.tagName === 'var' || processedLine.tagName === 'set') {
+      if (processedLine.tagName === 'function' || processedLine.tagName === 'macro' || processedLine.tagName === 'var' || processedLine.tagName === 'set') {
         parentAccess = 'none';
       } else if (processedLine.tagName === 'call' || processedLine.tagName === 'call_assign') {
         parentAccess = 'readonly';
@@ -1545,6 +1546,10 @@ class ScriptTranspiler {
             tagName = 'block';
           } else if (tagName === 'endmethod') {
             tagName = 'endblock';
+          } else if (tagName === 'function') {
+            tagName = 'macro';
+          } else if (tagName === 'endfunction') {
+            tagName = 'endmacro';
           }
           output += `{%- ${tagName}`;
           break;

@@ -43,7 +43,7 @@ describe('Script Transpiler', () => {
         expect(scriptTranspiler._getBlockType('for')).to.equal('START');
         expect(scriptTranspiler._getBlockType('block')).to.equal('START');
         expect(scriptTranspiler._getBlockType('method')).to.equal('START');
-        expect(scriptTranspiler._getBlockType('macro')).to.equal('START');
+        expect(scriptTranspiler._getBlockType('function')).to.equal('START');
         expect(scriptTranspiler._getBlockType('else')).to.equal('MIDDLE');
         expect(scriptTranspiler._getBlockType('elif')).to.equal('MIDDLE');
         //expect(scriptTranspiler._getBlockType('resume')).to.equal('MIDDLE');
@@ -52,7 +52,7 @@ describe('Script Transpiler', () => {
         expect(scriptTranspiler._getBlockType('endfor')).to.equal('END');
         expect(scriptTranspiler._getBlockType('endblock')).to.equal('END');
         expect(scriptTranspiler._getBlockType('endmethod')).to.equal('END');
-        expect(scriptTranspiler._getBlockType('endmacro')).to.equal('END');
+        expect(scriptTranspiler._getBlockType('endfunction')).to.equal('END');
         expect(scriptTranspiler._getBlockType('@text')).to.equal(null);
       });
     });
@@ -298,6 +298,28 @@ describe('Script Transpiler', () => {
         const output = scriptTranspiler._generateOutput(processedLine, false, 'TAG');
 
         expect(output).to.equal('  {%- if condition -%}');
+      });
+
+      it('should generate template macro tags for script functions', () => {
+        const startLine = {
+          indentation: '',
+          lineType: 'TAG',
+          tagName: 'function',
+          codeContent: 'greet(name)',
+          comments: [],
+          isContinuation: false
+        };
+        const endLine = {
+          indentation: '',
+          lineType: 'TAG',
+          tagName: 'endfunction',
+          codeContent: '',
+          comments: [],
+          isContinuation: false
+        };
+
+        expect(scriptTranspiler._generateOutput(startLine, false, 'TAG')).to.equal('{%- macro greet(name) -%}');
+        expect(scriptTranspiler._generateOutput(endLine, false, 'TAG')).to.equal('{%- endmacro -%}');
       });
 
       it('should generate output with comments', () => {

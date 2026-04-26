@@ -37,12 +37,12 @@
 
         const script = `
         var result = {}
-        macro greet(name)
+        function greet(name)
           data greetResult
           greetResult.user.name = name
           greetResult.user.greeted = true
           return greetResult.snapshot()
-        endmacro
+        endfunction
 
         var macroResult = greet(getName())
         result.output = macroResult.user
