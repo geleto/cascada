@@ -6,16 +6,36 @@ const sequential = require('./sequential');
 const lookup = require('./lookup');
 const call = require('./call');
 const frame = require('./frame');
-const output = require('./channel');
+const output = require('./channels');
 const resolve = require('./resolve');
 const buffer = require('./command-buffer');
 const guard = require('./guard');
 const loop = require('./loop');
 const outputValue = require('./safe-output');
-const commands = require('./commands');
+const commandBase = require('./channels/command-base');
+const textChannel = require('./channels/text');
+const varChannel = require('./channels/var');
+const timingCommands = require('./channels/timing');
+const observationCommands = require('./channels/observation');
+const dataChannel = require('./channels/data');
+const sequenceChannel = require('./channels/sequence');
+const sequentialPathChannel = require('./channels/sequential-path');
+const errorCommands = require('./channels/error');
+const commands = {
+  ...commandBase,
+  ...textChannel,
+  ...varChannel,
+  ...timingCommands,
+  ...observationCommands,
+  ...dataChannel,
+  ...sequenceChannel,
+  ...sequentialPathChannel,
+  ...errorCommands
+};
 const asyncBoundaries = require('./async-boundaries');
 const markers = require('./markers');
 const inheritanceState = require('./inheritance-state');
+const inheritanceSharedChannels = require('./inheritance-shared-channels');
 const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceCall = require('./inheritance-call');
 const componentRuntime = require('./component');
@@ -225,9 +245,9 @@ module.exports = {
   SequenceChannel: output.SequenceChannel,
   createSequenceChannel: output.createSequenceChannel,
   declareBufferChannel: output.declareBufferChannel,
-  declareInheritanceSharedChannel: output.declareInheritanceSharedChannel,
-  claimInheritanceSharedDefault: output.claimInheritanceSharedDefault,
-  initializeInheritanceSharedChannelDefault: output.initializeInheritanceSharedChannelDefault,
+  declareInheritanceSharedChannel: inheritanceSharedChannels.declareInheritanceSharedChannel,
+  claimInheritanceSharedDefault: inheritanceSharedChannels.claimInheritanceSharedDefault,
+  initializeInheritanceSharedChannelDefault: inheritanceSharedChannels.initializeInheritanceSharedChannelDefault,
   getInheritanceSharedBuffer: inheritanceBootstrap.getInheritanceSharedBuffer,
   startComponentInstance: componentRuntime.startComponentInstance,
   callComponentMethod: componentRuntime.callComponentMethod,

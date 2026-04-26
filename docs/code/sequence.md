@@ -62,7 +62,7 @@ Key behavior:
 Relevant files:
 
 - `src/runtime/output.js`
-- `src/runtime/commands.js`
+- `src/runtime/channels/*.js`
 
 ## Command Types
 

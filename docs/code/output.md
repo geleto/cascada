@@ -11,7 +11,7 @@ This is the mechanism behind temporal sequential equivalence. Work can start/fin
 Do not bypass these mechanisms to fix a local bug. Shortcuts such as writing to the wrong buffer, forcing direct state writes, skipping links, or finishing buffers early may unblock one test while breaking ordering, poisoning, snapshots, or set-block behavior elsewhere. If a fix does not preserve command insertion order + buffer hierarchy + finalize/link rules, it is not safe.
 
 This document tracks the output pipeline as implemented in:
-- runtime: `src/runtime/command-buffer.js`, `src/runtime/buffer-iterator.js`, `src/runtime/output.js`, `src/runtime/commands.js`, `src/runtime/guard.js`, `src/runtime/async-state.js`
+- runtime: `src/runtime/command-buffer.js`, `src/runtime/buffer-iterator.js`, `src/runtime/output.js`, `src/runtime/channels/*.js`, `src/runtime/guard.js`, `src/runtime/async-state.js`
 - compiler wiring: `src/compiler/buffer.js`, `src/compiler/emit.js`, `src/compiler/compiler.js`, `src/compiler/validation.js`
 
 ## Scope
@@ -98,7 +98,7 @@ Important rule:
 - `SequenceOutput`: ordered command dispatch into an initialized object, with snapshot/read fallback methods and guard transaction hooks (`begin/commit/rollback`).
 
 ## Commands
-File: `src/runtime/commands.js`
+File: `src/runtime/channels/*.js`
 
 Mutating output commands:
 - `TextCommand`, `ValueCommand`, `DataCommand`

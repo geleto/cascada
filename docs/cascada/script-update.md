@@ -18,7 +18,7 @@ This document tracks how [script.md](/c:/Projects/cascada/docs/cascada/script.md
   - [compiler-base.js](/c:/Projects/cascada/src/compiler/compiler-base.js)
   - [validation.js](/c:/Projects/cascada/src/compiler/validation.js)
   - [runtime.js](/c:/Projects/cascada/src/runtime/runtime.js)
-  - [channel.js](/c:/Projects/cascada/src/runtime/channel.js)
+  - [channel.js](/c:/Projects/cascada/src/runtime/channels/index.js)
 - Behavior/tests:
   - [script.js](/c:/Projects/cascada/tests/pasync/script.js)
   - [loader.js](/c:/Projects/cascada/tests/pasync/loader.js)

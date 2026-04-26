@@ -67,8 +67,8 @@ Landed on this branch:
 
 Files:
 
-- `src/runtime/commands.js`
-- `src/runtime/channel.js`
+- `src/runtime/channels/*.js`
+- `src/runtime/channels/index.js`
 - `tests/pasync/channel-errors.js`
 
 ### Export workflow

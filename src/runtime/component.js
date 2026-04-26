@@ -1,6 +1,6 @@
 'use strict';
 
-const { Command } = require('./commands');
+const { Command } = require('./channels/command-base');
 const { resolveSingle } = require('./resolve');
 const {
   ensureInheritanceSharedSchemaTable

@@ -11,10 +11,16 @@ const {
 } = require('../../src/runtime/errors');
 const {
   TextCommand,
+} = require('../../src/runtime/channels/text');
+const {
   VarCommand,
+} = require('../../src/runtime/channels/var');
+const {
   DataCommand,
+} = require('../../src/runtime/channels/data');
+const {
   SequenceCallCommand
-} = require('../../src/runtime/commands');
+} = require('../../src/runtime/channels/sequence');
 const {
   Channel,
   TextChannel,
@@ -23,7 +29,7 @@ const {
   SequenceChannel,
   inspectTargetForErrors,
   createChannel
-} = require('../../src/runtime/channel');
+} = require('../../src/runtime/channels');
 const { createCommandBuffer } = require('../../src/runtime/command-buffer');
 const { createArray } = require('../../src/runtime/resolve');
 describe('channel errors', function () {

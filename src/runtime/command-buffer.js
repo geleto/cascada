@@ -1,22 +1,26 @@
 'use strict';
 
+const { ErrorCommand } = require('./channels/error');
+const { TextCommand } = require('./channels/text');
 const {
-  ErrorCommand,
-  TextCommand,
   SequenceCallCommand,
-  SequenceGetCommand,
+  SequenceGetCommand
+} = require('./channels/sequence');
+const {
   SequentialPathReadCommand,
   RepairReadCommand,
   SequentialPathWriteCommand,
-  RepairWriteCommand,
+  RepairWriteCommand
+} = require('./channels/sequential-path');
+const {
   SnapshotCommand,
   RawSnapshotCommand,
   IsErrorCommand,
-  WaitCurrentCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,
   RestoreGuardStateCommand
-} = require('./commands');
+} = require('./channels/observation');
+const { WaitCurrentCommand } = require('./channels/timing');
 const {
   assertChannelLaneAvailable,
   checkFinishedBuffer

@@ -2,7 +2,7 @@
 
 const lib = require('../lib');
 const { createPoison, isPoison, isPoisonError, isRuntimeFatalError, PoisonError, handleError } = require('./errors');
-const { VarCommand } = require('./commands');
+const { VarCommand } = require('./channels/var');
 
 const arrayFrom = Array.from;
 const supportsIterators = (

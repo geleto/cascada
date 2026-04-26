@@ -887,7 +887,7 @@ Goal:
 Primary files:
 
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
-- [src/runtime/channel.js](C:\Projects\cascada\src\runtime\channel.js)
+- [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
 
 Changes:
 
@@ -1222,7 +1222,7 @@ Work:
 
 Primary files:
 
-- [src/runtime/channel.js](C:\Projects\cascada\src\runtime\channel.js)
+- [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
 
 Validation:
@@ -1252,7 +1252,7 @@ Work:
 
 Primary files:
 
-- [src/runtime/channel.js](C:\Projects\cascada\src\runtime\channel.js)
+- [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
 
 Validation:

@@ -691,7 +691,7 @@ Current shape:
 
 Examples:
 
-- `src/runtime/channel.js`
+- `src/runtime/channels/index.js`
 
 Important observation:
 
@@ -935,7 +935,7 @@ Current shape:
 
 Examples:
 
-- `src/runtime/channel.js`
+- `src/runtime/channels/index.js`
 
 Replacement direction:
 

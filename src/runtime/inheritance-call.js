@@ -1,6 +1,6 @@
 'use strict';
 
-const { Command } = require('./commands');
+const { Command } = require('./channels/command-base');
 const inheritanceState = require('./inheritance-state');
 const { RuntimeFatalError, handleError, isRuntimeFatalError } = require('./errors');
 
@@ -404,11 +404,11 @@ function _getMethodDataFromResolvedEntry(
 
   const superData = resolvedEntry.super
     ? _getMethodDataFromResolvedEntry(
-        resolvedEntry.super,
-        _inheritanceMetadataErrorContext(resolvedEntry.superOrigin, errorContext),
-        state,
-        methodName
-      )
+      resolvedEntry.super,
+      _inheritanceMetadataErrorContext(resolvedEntry.superOrigin, errorContext),
+      state,
+      methodName
+    )
     : null;
 
   try {
