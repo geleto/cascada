@@ -271,7 +271,7 @@
       it('should handle include inside dynamic extends when included child emits no local text', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
         loader.addTemplate('empty-logic.njk', `
-				{% extern flag %}
+
 				{% if flag %}
 				  {% set local = 1 %}
 				{% endif %}

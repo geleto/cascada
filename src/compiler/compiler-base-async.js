@@ -106,10 +106,6 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
     if (!this.scriptMode && this.inBlock) {
-      if (declaredOutput.extern) {
-        this.emit(`runtime.externLookup(context, "${name}")`);
-        return;
-      }
       this.emit(`runtime.channelLookup("${name}", ${this.buffer.currentBuffer})`);
       return;
     }

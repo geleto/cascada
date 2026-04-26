@@ -389,19 +389,6 @@
               [nodes.Symbol, 'user']]]]);
     });
 
-    it('should parse extern declarations', function() {
-      isAST(parser.parse('{% extern user %}'),
-        [nodes.Root,
-          [nodes.Extern,
-            [[nodes.Symbol, 'user']]]]);
-
-      isAST(parser.parse('{% extern theme = "light" %}'),
-        [nodes.Root,
-          [nodes.Extern,
-            [[nodes.Symbol, 'theme']],
-            [nodes.Literal, 'light']]]);
-    });
-
     it('should parse for loops', function() {
       isAST(parser.parse('{% for x in [1, 2] %}{{ x }}{% endfor %}'),
         [nodes.Root,

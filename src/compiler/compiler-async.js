@@ -2,11 +2,8 @@
 
 const nodes = require('../nodes');
 const {
-  collectRootExternSpec,
   validateGuardVariablesDeclared,
   validateScriptExtendsSourceOrder,
-  validateRootExternFallbackOrder,
-  validateRootExternCycles,
   validateLocalSharedMethodNameCollisions
 } = require('./validation');
 const CompilerBaseAsync = require('./compiler-base-async');
@@ -225,40 +222,6 @@ class CompilerAsync extends CompilerBaseAsync {
       });
     });
     return { setTargetFacts: targetFacts };
-  }
-
-  analyzeExtern(node) {
-    if (!this.analysis.isRootScopeOwner(node._analysis)) {
-      this.fail(
-        'extern declarations are only allowed at the root scope',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-
-    const declares = [];
-
-    (node.targets || []).forEach((target) => {
-      if (target instanceof nodes.Symbol) {
-        target._analysis = { declarationTarget: true };
-        declares.push({
-          name: target.value,
-          type: 'var',
-          initializer: null,
-          explicit: true,
-          extern: true,
-          hasFallback: !!node.value
-        });
-      }
-    });
-
-    return { declares };
-  }
-
-  compileExtern(node) {
-    // Root externs are initialized centrally in the async root entry.
-    // The declaration node itself does not emit body code.
   }
 
   compileSet(node) {
@@ -1089,14 +1052,10 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   finalizeAnalyzeRoot(node) {
-    const externSpec = collectRootExternSpec(node);
     const rootCompileFacts = this._getRootCompileFacts(node);
     validateScriptExtendsSourceOrder(this, node);
-    validateRootExternFallbackOrder(this, node, externSpec);
-    validateRootExternCycles(this, node);
     validateLocalSharedMethodNameCollisions(this, node);
     return {
-      externSpec,
       rootCompileFacts
     };
   }
@@ -1117,19 +1076,10 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? undefined : value);`);
   }
 
-  _getRootExternNodes(node) {
-    return (node.children || []).filter((child) => child instanceof nodes.Extern);
-  }
-
   _emitRootCompositionPayloadInitialization(node) {
     const skippedNames = Object.create(null);
     this._getRootDeclarations(node).forEach((declaration) => {
       skippedNames[declaration.name] = true;
-    });
-    this._getRootExternNodes(node).forEach((externNode) => {
-      (externNode.targets || []).forEach((target) => {
-        skippedNames[target.value] = true;
-      });
     });
     this._getSharedDeclarations(node).forEach((declaration) => {
       skippedNames[declaration.name.value] = true;
@@ -1263,47 +1213,6 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  _emitRootExternInitialization(node) {
-    const externNodes = this._getRootExternNodes(node);
-
-    externNodes.forEach((externNode) => {
-      if (!externNode.targets || externNode.targets.length === 0) {
-        return;
-      }
-
-      (externNode.targets || []).forEach((target) => {
-        const name = target.value;
-        const valueId = this._tmpid();
-        const hasCtxId = this._tmpid();
-        const externCtxVar = this._tmpid();
-
-        // Root externs still become root-local var channels after initialization.
-        // That preserves the language rule that externs behave like ordinary
-        // locals once their explicit input/fallback resolution is done, while
-        // inherited/block-time visibility continues to use explicit extern
-        // context rather than ambient channel lookup.
-        this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
-        this.emit.line(`const ${externCtxVar} = context.getExternContextVariables();`);
-        this.emit.line(`const ${hasCtxId} = Object.prototype.hasOwnProperty.call(${externCtxVar}, "${name}");`);
-        this.emit.line(`let ${valueId};`);
-        this.emit.line(`if (${hasCtxId}) {`);
-        this.emit.line(`  ${valueId} = ${externCtxVar}["${name}"];`);
-        this.emit.line('} else {');
-        if (externNode.value) {
-          this.emit(`  ${valueId} = `);
-          this.compileExpression(externNode.value, null, externNode.value);
-          this.emit.line(';');
-          this.emit.line(`  context.setVariable("${name}", ${valueId});`);
-        } else {
-          this.emit.line(`  throw new Error('Missing required extern: ${name}');`);
-        }
-        this.emit.line('}');
-        this.emit.line(`${externCtxVar}["${name}"] = ${valueId};`);
-        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${externNode.lineno}, colno: ${externNode.colno}} }), '${name}');`);
-      });
-    });
-  }
-
   _compileAsyncRootBody(node) {
     this.inheritance.emitAsyncRootStateInitialization(
       COMPILED_METHODS_VAR,
@@ -1391,7 +1300,6 @@ class CompilerAsync extends CompilerBaseAsync {
         this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
       }
       this._emitRootCompositionPayloadInitialization(node);
-      this._emitRootExternInitialization(node);
       this.inheritance.emitRootSharedDeclarations(node);
       if (this.scriptMode && hasGenericScriptBody && !skipGenericSetup) {
         this.emit.line(`__rootStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
@@ -1437,7 +1345,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
     this.emit.line(`const ${COMPILED_INVOKED_METHODS_VAR} = ${invokedMethods};`);
     this.emit.line('return {');
-    this.emit.line(`externSpec: ${JSON.stringify(node._analysis && node._analysis.externSpec ? node._analysis.externSpec : [])},`);
     this.emit.line('inheritanceSpec: {');
     this.emit.line('  setup: b___setup__,');
     this.emit.line(`  methods: ${COMPILED_METHODS_VAR},`);

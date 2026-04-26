@@ -3,19 +3,16 @@
 let expect;
 let AsyncEnvironment;
 let Script;
-let StringLoader;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
   Script = environment.Script;
-  StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   Script = nunjucks.Script;
-  StringLoader = window.util.StringLoader;
 }
 
 describe('Cascada Script: Variables', function () {
@@ -24,91 +21,6 @@ describe('Cascada Script: Variables', function () {
   // For each test, create a fresh environment.
   beforeEach(() => {
     env = new AsyncEnvironment();
-  });
-
-  describe('Extern declarations', function () {
-    it('should initialize script externs from the render context', async function () {
-      const script = `
-        extern user
-        return { result: { user: user } }`;
-
-      const result = await env.renderScriptString(script, { user: 'Ava' });
-      expect(result.result.user).to.be('Ava');
-    });
-
-    it('should use script extern fallbacks when no render value is provided', async function () {
-      const script = `
-        extern theme = "light"
-        return { result: { theme: theme } }`;
-
-      const result = await env.renderScriptString(script, {});
-      expect(result.result.theme).to.be('light');
-    });
-
-    it('should fail clearly when a required script extern is missing', async function () {
-      const script = `
-        extern user
-        return { result: { user: user } }`;
-
-      try {
-        await env.renderScriptString(script, {});
-        expect().fail('Expected missing script extern validation to fail');
-      } catch (error) {
-        expect(error.message).to.contain('Missing required extern: user');
-      }
-    });
-
-    it('should reject nested script extern declarations after transpilation', async function () {
-      const script = `
-        if true
-          extern user
-        endif
-        return { result: {} }`;
-
-      try {
-        await env.renderScriptString(script, { user: 'Ava' });
-        expect().fail('Expected nested script extern validation to fail');
-      } catch (error) {
-        expect(error.message).to.contain('extern declarations are only allowed at the root scope');
-      }
-    });
-
-    it('should reject script extern fallbacks that reference later externs', async function () {
-      const script = `
-        extern a = b
-        extern b = "later"
-        return { result: { a: a } }`;
-
-      try {
-        await env.renderScriptString(script, {});
-        expect().fail('Expected later-script-extern dependency validation to fail');
-      } catch (error) {
-        expect(error.message).to.contain(`extern fallback for 'a' cannot reference later extern 'b'`);
-      }
-    });
-
-    // Deferred by the new extends architecture: root pre-extends vars are replaced
-    // by shared declarations, but the matching runtime semantics land later.
-    it.skip('should configure base script payload through extends with', async function () {
-      const loader = new StringLoader();
-      env = new AsyncEnvironment(loader);
-
-      loader.addTemplate('base.script', `
-        return "[" + theme + "] " + user.name + ": " + title
-      `);
-
-      loader.addTemplate('child.script', `
-        var theme = "dark"
-        extends "base.script" with theme
-      `);
-
-      const result = await env.renderScript('child.script', {
-        title: 'Q1 Report',
-        user: { name: 'Ada' }
-      });
-
-      expect(result).to.be('[dark] Ada: Q1 Report');
-    });
   });
 
   describe('Variable Declaration with var', function () {

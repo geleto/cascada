@@ -92,13 +92,11 @@ async function renderInheritanceParentRoot(spec) {
   let leaveChainPathOnReturn = true;
   try {
     const parentContext = compositionPayload
-      ? context.forkForComposition(
-          parentTemplate.path,
-          compositionPayload.rootContext,
-          context.getRenderContextVariables(),
-          undefined,
-          compositionPayload.payloadContext
-        )
+      ? context.forkForCompositionPayload(
+        parentTemplate.path,
+        compositionPayload,
+        context.getRenderContextVariables()
+      )
       : context.forkForPath(parentTemplate.path);
     const parentComponentMode = inheritanceState.isComponentCompositionMode(inheritanceStateValue);
     const parentOutputBuffer = parentTemplate.rootRenderFunc(
@@ -160,13 +158,11 @@ async function bootstrapInheritanceParentScript(spec) {
 
   try {
     const parentContext = compositionPayload
-      ? context.forkForComposition(
-          parentScript.path,
-          compositionPayload.rootContext,
-          context.getRenderContextVariables(),
-          undefined,
-          compositionPayload.payloadContext
-        )
+      ? context.forkForCompositionPayload(
+        parentScript.path,
+        compositionPayload,
+        context.getRenderContextVariables()
+      )
       : context.forkForPath(parentScript.path);
 
     const parentInheritanceSpec = parentScript.inheritanceSpec;
@@ -235,9 +231,7 @@ function startInheritanceRootConstructor(
   // The readiness `.then` intentionally makes even a synchronous constructor
   // participate in startup merging when metadata is still being finalized.
   let constructorResult = metadataReadyPromise
-    ? metadataReadyPromise.then(() =>
-        localEntry.fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState)
-      )
+    ? metadataReadyPromise.then(() => localEntry.fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState))
     : localEntry.fn(env, context, runtime, cb, output, inheritanceStateValue, extendsState);
   if (constructorResult && typeof constructorResult.then === 'function') {
     return inheritanceState.mergeInheritanceStartupPromise(

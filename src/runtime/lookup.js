@@ -203,14 +203,6 @@ async function _memberLookupScriptComplex(obj, val, errorContext) {
   }
 }
 
-function externLookup(_context, name) {
-  const externContext = _context.getExternContextVariables();
-  if (externContext && Object.prototype.hasOwnProperty.call(externContext, name)) {
-    return externContext[name];
-  }
-  return _context.lookup(name);
-}
-
 function _getObservationPosition(errorContext) {
   return errorContext && typeof errorContext === 'object'
     ? {
@@ -326,5 +318,4 @@ module.exports = {
   memberLookupScript,
   observeInheritanceSharedChannel,
   channelLookup,
-  externLookup,
 };

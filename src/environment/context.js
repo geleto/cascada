@@ -4,26 +4,18 @@ const lib = require('../lib');
 const { Obj } = require('../object');
 const { createPoison } = require('../runtime/errors');
 
-function createContextStructuralState() {
-  return {
-    blocks: {},
-    exportResolveFunctions: Object.create(null),
-    exportRejectFunctions: Object.create(null),
-    exportError: null,
-    exportChannels: Object.create(null)
-  };
-}
-
-function assignContextStructuralState(context, structuralState) {
-  context._sharedStructuralState = structuralState;
-  context.blocks = structuralState.blocks;
-  context.exportResolveFunctions = structuralState.exportResolveFunctions;
-  context.exportRejectFunctions = structuralState.exportRejectFunctions;
-  context.exportChannels = structuralState.exportChannels;
+class ContextExecutionState {
+  constructor() {
+    this.blocks = {};
+    this.exportResolveFunctions = Object.create(null);
+    this.exportRejectFunctions = Object.create(null);
+    this.exportError = null;
+    this.exportChannels = Object.create(null);
+  }
 }
 
 class Context extends Obj {
-  init(ctx, blocks, env, path, scriptMode = false, renderCtx, externCtx = undefined) {
+  init(ctx, blocks, env, path, scriptMode = false, renderCtx, compositionPayloadVars = undefined, executionState = null) {
     // Has to be tied to an environment so we can tap into its globals.
     if (!env) {
       // Lazy load Environment to avoid circular dependency
@@ -41,18 +33,31 @@ class Context extends Obj {
     const initialRenderCtx = renderCtx === undefined ? ctx : (renderCtx || {});
     this.renderCtx = lib.extend({}, initialRenderCtx);
     this.ctx = lib.extend({}, ctx);
-    // Keep the composition payload baseline separate from the mutable working
-    // scope so inherited method/block entry forks can reuse the original
-    // composition inputs without leaking caller- or constructor-local vars.
-    this.compositionCtx = lib.extend({}, ctx);
-    this.compositionPayloadCtx = null;
-    this.externCtx = externCtx === undefined ? null : lib.extend({}, externCtx);
-
-    assignContextStructuralState(this, createContextStructuralState());
+    this.compositionContextVars = lib.extend({}, ctx);
+    // undefined means no composition payload was supplied; null means an
+    // explicit empty payload baseline that should still use payload semantics.
+    this.compositionPayloadVars = compositionPayloadVars === undefined ? null : lib.extend({}, compositionPayloadVars);
+    this.executionState = executionState || new ContextExecutionState();
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
     });
+  }
+
+  get blocks() {
+    return this.executionState.blocks;
+  }
+
+  get exportResolveFunctions() {
+    return this.executionState.exportResolveFunctions;
+  }
+
+  get exportRejectFunctions() {
+    return this.executionState.exportRejectFunctions;
+  }
+
+  get exportChannels() {
+    return this.executionState.exportChannels;
   }
 
   //if the variable is not found, returns undefined
@@ -100,15 +105,11 @@ class Context extends Obj {
   }
 
   getCompositionContextVariables() {
-    return this.compositionCtx || this.renderCtx;
+    return this.compositionContextVars;
   }
 
   getCompositionPayloadVariables() {
-    return this.compositionPayloadCtx;
-  }
-
-  getExternContextVariables() {
-    return this.externCtx || this.ctx;
+    return this.compositionPayloadVars;
   }
 
   addBlock(name, block) {
@@ -191,8 +192,8 @@ class Context extends Obj {
     this.exportRejectFunctions[name] = reject;
     this.exportChannels[name] = { channelName, buffer };
     this.ctx[name] = promise;
-    if (this._sharedStructuralState.exportError) {
-      reject(this._sharedStructuralState.exportError);
+    if (this.executionState.exportError) {
+      reject(this.executionState.exportError);
     }
   }
 
@@ -221,7 +222,7 @@ class Context extends Obj {
     if (!error) {
       return;
     }
-    this._sharedStructuralState.exportError = error;
+    this.executionState.exportError = error;
     const names = Object.keys(this.exportRejectFunctions);
     for (const name of names) {
       const reject = this.exportRejectFunctions[name];
@@ -243,38 +244,35 @@ class Context extends Obj {
   }
 
   forkForPath(newPath) {
-    // Create a new, empty context object.
-    // It will inherit the correct `env` from `this`.
-    const newContext = new Context({}, {}, this.env, null, this.scriptMode, this.renderCtx, this.externCtx);
-
-    // Share critical state objects by REFERENCE. Do NOT copy them.
-    newContext.ctx = this.ctx;           // Share the variable store.
+    const newContext = new Context({}, {}, this.env, null, this.scriptMode, this.renderCtx, this.compositionPayloadVars, this.executionState);
+    newContext.ctx = this.ctx;
     newContext.renderCtx = this.renderCtx;
-    newContext.compositionCtx = this.compositionCtx;
-    newContext.compositionPayloadCtx = this.compositionPayloadCtx;
-    // Keep the remaining shared structural state limited to deferred exports
-    // and sync-template block registry data until the explicit execution-state
-    // object replaces this bridge in the later cleanup phase.
-    assignContextStructuralState(newContext, this._sharedStructuralState);
-
-    // Set the ONLY property that should be different.
+    newContext.compositionContextVars = this.compositionContextVars;
+    newContext.compositionPayloadVars = this.compositionPayloadVars;
     newContext.path = newPath;
 
     return newContext;
   }
 
-  forkForComposition(newPath, ctx, renderCtx, externCtx = undefined, compositionPayloadCtx = undefined) {
+  forkForComposition(newPath, ctx, renderCtx, compositionPayloadVars = undefined) {
     // Fresh composition context that keeps shared structural state such as
     // blocks/exports, but does not share the mutable variable object with the
     // caller. This lets composition boundaries receive explicit inputs without
     // turning them back into ambient shared scope.
-    const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx, externCtx);
-
-    newContext.compositionPayloadCtx = lib.extend({}, compositionPayloadCtx === undefined ? (ctx || {}) : (compositionPayloadCtx || {}));
-    assignContextStructuralState(newContext, this._sharedStructuralState);
+    const payloadVars = compositionPayloadVars === undefined ? (ctx || {}) : (compositionPayloadVars || {});
+    const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx, payloadVars, this.executionState);
     newContext.path = newPath;
 
     return newContext;
+  }
+
+  forkForCompositionPayload(newPath, compositionPayload, renderCtx) {
+    return this.forkForComposition(
+      newPath,
+      compositionPayload.rootContext,
+      renderCtx,
+      compositionPayload.payloadContext
+    );
   }
 }
 

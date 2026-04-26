@@ -96,7 +96,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'function', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'component', 'depends', 'extern', 'return', ...CHANNEL_TYPES, 'shared'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'component', 'depends', 'return', ...CHANNEL_TYPES, 'shared'],
 
       // Middle tags with their parent block types
       middleTags: {

@@ -69,20 +69,6 @@
       finish(done);
     });
 
-    it('should reject extern declarations in sync mode', function () {
-      if (isSlim) {
-        expect(function () {
-          util.render('{% extern user %}', {});
-        }).to.throwException(/extern declarations are only supported in async mode/);
-        return;
-      }
-
-      const env = new Environment();
-      expect(function () {
-        env.renderTemplateString('{% extern user %}', {});
-      }).to.throwException(/extern declarations are only supported in async mode/);
-    });
-
     it('should compile references', function (done) {
       equal('{{ foo.bar }}',
         {
@@ -1375,7 +1361,20 @@
         );
         expect().fail('Expected sync extends-with rejection');
       } catch (err) {
-        expect(String(err)).to.contain('extends with explicit composition inputs is not implemented yet');
+        expect(String(err)).to.contain('extends with explicit composition inputs is not supported in sync mode');
+      }
+      finish(done);
+    });
+
+    it('should reject include with explicit composition inputs in sync mode', function(done) {
+      try {
+        equal(
+          '{% include "item.njk" with name %}',
+          ''
+        );
+        expect().fail('Expected sync include-with rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('include with explicit composition inputs is not supported in sync mode');
       }
       finish(done);
     });
@@ -1426,8 +1425,16 @@
     });
 
     it('should keep sync extends block scope isolated from top-level child assignments', function (done) {
-      var loader = new util.StringLoader();
-      var env = new Environment(loader);
+      var loader;
+      var env;
+
+      if (isSlim) {
+        finish(done);
+        return;
+      }
+
+      loader = new util.StringLoader();
+      env = new Environment(loader);
 
       loader.addTemplate(
         'base.njk',

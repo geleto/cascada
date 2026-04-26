@@ -38,14 +38,8 @@ class CompileComponent {
 
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
     this.emit.line(`const ${componentVarsVar} = {};`);
-    this.compiler.inheritance.emitExplicitExternInputs(node, componentVarsVar);
-    this.compiler.inheritance.emitCompositionContextObject(
-      node,
-      componentVarsVar,
-      rootContextVar,
-      null,
-      true
-    );
+    this.compiler.inheritance.emitCompiledPayloadInputs(node, componentVarsVar);
+    this.compiler.inheritance.emitCompositionContext(rootContextVar, componentVarsVar, node.withContext);
     this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
     this.emit.line(`  currentBuffer: ${this.compiler.buffer.currentBuffer},`);
     this.emit.line(`  bindingName: "${targetName}",`);

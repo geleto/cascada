@@ -208,8 +208,8 @@ class Template extends Obj {
     return undefined;
   }
 
-  _createContext(ctx, renderCtx) {
-    return new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode, renderCtx);
+  _createContext(ctx, renderCtx, compositionPayloadVars) {
+    return new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode, renderCtx, compositionPayloadVars);
   }
 
   _bindExportedValues(exported) {
@@ -283,7 +283,6 @@ class Template extends Obj {
 
     const blockContracts = props.blockContracts;
     this.blocks = this._getCompiledBlocks(props, blockContracts);
-    this.externSpec = props.externSpec || [];
     this.inheritanceSpec = props.inheritanceSpec;
     this.rootRenderFunc = props.root;
     this.compiled = true;
@@ -361,7 +360,9 @@ class AsyncTemplate extends Template {
 
     this.compile();
 
-    const context = this._createContext(ctx, renderCtx);
+    // Imported templates receive ctx as their composition boundary payload.
+    // Use null when there is no boundary payload so root setup skips payload lanes.
+    const context = this._createContext(ctx, renderCtx, ctx || null);
     let rootError = null;
     const renderCallback = (err) => {
       if (err) {
@@ -424,7 +425,9 @@ class AsyncTemplate extends Template {
    */
   _renderForComposition(ctx, cb, renderCtx) {
     this.compile();
-    const context = this._createContext(ctx, renderCtx);
+    // Composed templates receive ctx as their boundary payload so root setup
+    // can declare payload lanes and inherited entries can reuse the baseline.
+    const context = this._createContext(ctx, renderCtx, ctx || null);
     return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
   }
 

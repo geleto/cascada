@@ -5,9 +5,6 @@
   //var unescape;
   var AsyncEnvironment;
   var AsyncTemplate;
-  var CompilerAsync;
-  var validateRootExternCycles;
-  var nodes;
   //var StringLoader;
   //var Environment;
   //var lexer;
@@ -18,9 +15,6 @@
     const envModule = require('../../src/environment/environment');
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
-    CompilerAsync = require('../../src/compiler/compiler-async');
-    validateRootExternCycles = require('../../src/compiler/validation').validateRootExternCycles;
-    nodes = require('../../src/nodes');
     //Environment = require('../../src/environment/environment').Environment;
     //lexer = require('../../src/lexer');
     //unescape = require('he').unescape;
@@ -31,9 +25,6 @@
     //unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     AsyncTemplate = nunjucks.AsyncTemplate;
-    CompilerAsync = (nunjucks.compiler && nunjucks.compiler.CompilerAsync) || null;
-    validateRootExternCycles = null;
-    nodes = nunjucks.nodes;
     //StringLoader = window.StringLoader;
     //Environment = nunjucks.Environment;
     //lexer = nunjucks.lexer;
@@ -46,132 +37,15 @@
       env = new AsyncEnvironment();
     });
 
-    describe('"Extern" tag', () => {
-      it('should initialize root externs from the render context', async () => {
-        const result = await env.renderTemplateString('{% extern user %}{{ user }}', { user: 'Ava' });
-        expect(result).to.equal('Ava');
-      });
-
-      it('should use extern fallbacks when no render value is provided', async () => {
-        const result = await env.renderTemplateString('{% extern theme = "light" %}{{ theme }}', {});
-        expect(result).to.equal('light');
-      });
-
-      it('should initialize multi-target externs from the render context', async () => {
-        const result = await env.renderTemplateString('{% extern user, theme %}{{ user }}-{{ theme }}', {
-          user: 'Ava',
-          theme: 'dark'
-        });
-        expect(result).to.equal('Ava-dark');
-      });
-
-      it('should allow extern fallbacks to reference earlier externs', async () => {
-        const result = await env.renderTemplateString('{% extern prefix = "Dr." %}{% extern title = prefix %}{{ title }}', {});
-        expect(result).to.equal('Dr.');
-      });
-
-      it('should allow extern fallbacks to reference globals', async () => {
-        env.addGlobal('defaultTheme', 'dark');
-        const result = await env.renderTemplateString('{% extern theme = defaultTheme %}{{ theme }}', {});
-        expect(result).to.equal('dark');
-      });
-
-      it('should initialize externs from promised render-context values', async () => {
-        const result = await env.renderTemplateString('{% extern user %}{{ user }}', {
-          user: Promise.resolve('Ava')
-        });
-        expect(result).to.equal('Ava');
-      });
-
-      it('should allow local mutation of initialized extern bindings', async () => {
-        const result = await env.renderTemplateString('{% extern user %}{% set user = user ~ "!" %}{{ user }}', { user: 'Ava' });
-        expect(result).to.equal('Ava!');
-      });
-
-      it('should fail clearly when a required extern is missing', async () => {
-        try {
-          await env.renderTemplateString('{% extern user %}{{ user }}', {});
-          expect().fail('Expected missing extern validation to fail');
-        } catch (err) {
-          expect(err.message).to.contain('Missing required extern: user');
-        }
-      });
-
-      it('should reject nested extern declarations before async lowering', async () => {
-        try {
-          await env.renderTemplateString('{% if true %}{% extern user %}{% endif %}', { user: 'Ava' });
-          expect().fail('Expected nested extern validation to fail');
-        } catch (err) {
-          expect(err.message).to.contain('extern declarations are only allowed at the root scope');
-        }
-      });
-
-      it('should reject extern declarations inside macro bodies', async () => {
-        try {
-          await env.renderTemplateString('{% macro renderUser() %}{% extern user %}{{ user }}{% endmacro %}{{ renderUser() }}', { user: 'Ava' });
-          expect().fail('Expected macro-local extern validation to fail');
-        } catch (err) {
-          expect(err.message).to.contain('extern declarations are only allowed at the root scope');
-        }
-      });
-
-      it('should expose externSpec on compiled async templates', () => {
-        const tmpl = new AsyncTemplate('{% extern user %}{% extern theme = "light" %}', env);
-        tmpl.compile();
-        expect(tmpl.externSpec).to.eql([
-          { names: ['user'], required: true, hasFallback: false },
-          { names: ['theme'], required: false, hasFallback: true }
-        ]);
-      });
-
+    describe('compiled template metadata', () => {
       it('should not expose legacy blockContracts on compiled async templates', () => {
         const tmpl = new AsyncTemplate('{% block content(user) with context %}{{ user }}{% endblock %}', env);
         tmpl.compile();
         expect(tmpl).not.to.have.property('blockContracts');
       });
+    });
 
-      it('should reject extern fallbacks that reference later externs', async () => {
-        try {
-          await env.renderTemplateString('{% extern a = b %}{% extern b = "later" %}{{ a }}', {});
-          expect().fail('Expected later-extern dependency validation to fail');
-        } catch (err) {
-          expect(err.message).to.contain(`extern fallback for 'a' cannot reference later extern 'b'`);
-        }
-      });
-
-      it('should reject direct extern fallback cycles', async () => {
-        try {
-          await env.renderTemplateString('{% extern a = a %}{{ a }}', {});
-          expect().fail('Expected extern cycle validation to fail');
-        } catch (err) {
-          expect(err.message).to.contain('extern cycle detected: a -> a');
-        }
-      });
-
-      it('should reject indirect extern fallback cycles', async () => {
-        if (!CompilerAsync || !validateRootExternCycles) {
-          return;
-        }
-        const compiler = new CompilerAsync('cycle-test.njk', { asyncMode: true, templateName: 'cycle-test.njk' });
-        const ast = new nodes.Root(0, 0, [
-          new nodes.Extern(0, 0, [new nodes.Symbol(0, 0, 'a')], new nodes.Symbol(0, 0, 'b')),
-          new nodes.Extern(0, 0, [new nodes.Symbol(0, 0, 'b')], new nodes.Symbol(0, 0, 'a'))
-        ]);
-
-        expect(() => validateRootExternCycles(compiler, ast)).to.throwException((err) => {
-          expect(err.message).to.contain('extern cycle detected: a -> b -> a');
-        });
-      });
-
-      it('should reject reserved async declaration name context for extern', async () => {
-        try {
-          await env.renderTemplateString('{% extern context %}', {});
-          expect().fail('Expected reserved-name validation to fail');
-        } catch (err) {
-          expect(err.message).to.contain(`Identifier 'context' is reserved`);
-        }
-      });
-
+    describe('reserved names', () => {
       it('should reject reserved async declaration name context for template vars', async () => {
         try {
           await env.renderTemplateString('{% set context = 1 %}{{ context }}', {});

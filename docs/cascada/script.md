@@ -2066,7 +2066,7 @@ When a project grows beyond a single file, Cascada Script provides two file-comp
 - **`extends` / `method`** — inherit a base script's structure and override specific behaviors
 - **`component`** — create isolated, independently-stateful instances of a script hierarchy
 
-These composition mechanisms have different contracts: `import` and `from ... import` use a strict **extern** model where every value crossing the boundary must be declared by the receiving file; `extends` and `component` use a separate **inheritance payload** mechanism described in [Script Inheritance](#script-inheritance-with-extends-shared-and-method). In both cases there is no implicit sharing of caller-scope variables.
+All composition inputs use the same **payload** model: values passed with `with` become bare-name inputs inside the composed file. Payload is copied at the composition boundary and is not shared state. There is no implicit sharing of caller-scope variables.
 
 ### Importing Libraries with `import`
 
@@ -2118,14 +2118,13 @@ Use `as` when importing several functions from the same library; use `from ... i
 
 #### Passing Values to Libraries with `with`
 
-A library can declare **`extern`** values — inputs it expects the caller to provide. The caller passes them with `with`. Here the same library is enriched with a configurable `locale`:
+A library can read payload values passed by the caller with `with`. Here the same library is enriched with a configurable `locale`:
 
 ```cascada
 // formatters.script
-extern locale = "en"    // optional — defaults to "en"
-
 function formatUser(user)
-  return user.firstName + " " + user.lastName + " [" + locale + "]"
+  var selectedLocale = locale or "en"
+  return user.firstName + " " + user.lastName + " [" + selectedLocale + "]"
 endfunction
 ```
 
@@ -2140,7 +2139,7 @@ return { user: fmt.formatUser(user) }
 
 This returns `{ user: "Alice Durand [fr]" }`.
 
-Instead of passing an explicit var, you can expose the render context so the library resolves its externs from it:
+Instead of passing an explicit var, you can expose the render context as payload:
 
 ```cascada
 // main.script — locale comes from the render context, no child var needed
@@ -2152,34 +2151,9 @@ return { user: fmt.formatUser(user) }
 
 This returns `{ user: "Alice Durand [en-GB]" }` when `locale` comes from the render context.
 
-`from ... import` follows the same `with` rules. Named inputs always take priority over context lookup. The full `extern` / `with` rules are in the next section.
+`from ... import` follows the same `with` rules. Named inputs always take priority over context lookup. The full payload rules are in the next section.
 
-### `extern` and `with`: Cross-File Contracts
-
-The examples above showed the pattern: a library declares `extern` for each value it needs; the caller satisfies those externs with `with`. This section covers the complete rules.
-
-```cascada
-// required — caller must provide it
-extern user
-
-// optional — defaults to "light" if caller doesn't provide it
-extern theme = "light"
-```
-
-`extern` is only valid at root scope (not inside `if`, `for`, functions, etc.).
-
-**`extern` rules:**
-- **Vars only**: `extern` works only with `var`-type values. Channels (`data`, `text`, `sequence`) cannot be declared as externs or passed via `with`.
-- **Value-copy semantics**: the caller's value is copied at the composition boundary. Mutating it inside the child does not affect the caller.
-- **Transparent async**: an `extern` can hold a promise just like a normal `var`.
-- **Declaration order**: externs initialize in declaration order. A fallback expression cannot reference an `extern` declared later:
-  ```cascada
-  extern a = b   // ERROR: b is declared later
-  extern b = "default"
-  ```
-- **Post-init behavior**: after initialization, an `extern` behaves exactly like a normal local `var`.
-- **Required vs. optional**: an `extern` without a fallback is required. If the caller does not provide it, rendering fails with a contract error.
-- **Reserved name**: `context` is reserved. `extern context` and `var context = ...` are compile errors.
+### `with`: Composition Payload
 
 **`with varName, ...`** — passes the named parent `var`s by value. Only `var` declarations can be listed; `data`, `text`, and `sequence` declarations cannot cross a composition boundary.
 
@@ -2187,16 +2161,13 @@ extern theme = "light"
 
 **`without context`** — explicitly opts out of render-context access. Useful to make isolation guarantees visible in code.
 
-**Resolution order**: explicit `with` value → `with context` lookup → own `extern` fallback → error.
+**Resolution order**: explicit `with` value → `with context` lookup → ordinary globals/unknown-name behavior.
 
 ```cascada
-// Given: extern locale = "en" in the library
 import "formatters.script" as fmt with context, locale
-// locale  — satisfied by the explicit var (wins over context and over "en")
-// any other extern — looked up in context, then falls back to its own default
+// locale — satisfied by the explicit var, which wins over context
+// other bare payload names are looked up in context
 ```
-
-> The `extern`/`with` rules above apply to `import` and `from ... import`. The `extends` and `component` keywords use a separate **composition payload** mechanism — payload does not require `extern` declarations in the receiving file, and it is not the same as shared state. See [Script Inheritance](#script-inheritance-with-extends-shared-and-method) below.
 
 ### Script Inheritance with `extends`, `shared`, and `method`
 
@@ -2254,7 +2225,7 @@ When you render `child.script`, the inherited flow runs with the child's overrid
 
 **Composition payload: `extends ... with`**
 
-`extends` can pass a composition payload to the parent chain. Payload keys are plain bare-name inputs inside constructors and methods; the receiving file does not declare them with `extern`.
+`extends` can pass a composition payload to the parent chain. Payload keys are plain bare-name inputs inside constructors and methods.
 
 ```cascada
 // base.script

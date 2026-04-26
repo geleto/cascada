@@ -11,7 +11,6 @@ let nodes;
 let transformer;
 let scriptTranspiler;
 let runtime;
-let inheritanceBootstrap;
 let StringLoader;
 let inheritanceStateModule;
 let inheritanceCallModule;
@@ -29,12 +28,6 @@ if (typeof require !== 'undefined') {
   transformer = require('../../src/transformer');
   scriptTranspiler = require('../../src/script/script-transpiler');
   runtime = require('../../src/runtime/runtime');
-  try {
-    inheritanceBootstrap = require('../../src/runtime/inheritance-bootstrap');
-  } catch (err) {
-    void err;
-    inheritanceBootstrap = null;
-  }
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
   } catch (err) {
@@ -59,7 +52,6 @@ if (typeof require !== 'undefined') {
   transformer = nunjucks.transformer || null;
   scriptTranspiler = nunjucks.scriptTranspiler;
   runtime = nunjucks.runtime;
-  inheritanceBootstrap = null;
   inheritanceStateModule = null;
   inheritanceCallModule = null;
   StringLoader = window.util.StringLoader;
@@ -1135,32 +1127,6 @@ describe('Extends Foundation', function () {
       expect(rootBuffer.getOwnChannel('theme')).to.be(parentChannel);
     });
 
-    it('should remove legacy async extends registration helpers from Context', function () {
-      if (!Context) {
-        this.skip();
-        return;
-      }
-
-      expect(Context.prototype.beginAsyncExtendsBlockRegistration).to.be(undefined);
-      expect(Context.prototype.getAsyncBlock).to.be(undefined);
-      expect(Context.prototype.finishAsyncExtendsBlockRegistration).to.be(undefined);
-    });
-
-    it('should remove legacy template payload helpers from Context', function () {
-      if (!Context) {
-        this.skip();
-        return;
-      }
-
-      expect(Context.prototype.getAsyncSuper).to.be(undefined);
-      expect(Context.prototype.setExtendsComposition).to.be(undefined);
-      expect(Context.prototype.getExtendsComposition).to.be(undefined);
-      expect(Context.prototype.setTemplateLocalCaptures).to.be(undefined);
-      expect(Context.prototype.getTemplateLocalCaptures).to.be(undefined);
-      expect(Context.prototype.createInheritancePayload).to.be(undefined);
-      expect(Context.prototype.createSuperInheritancePayload).to.be(undefined);
-      expect(Context.prototype.prepareInheritancePayloadForBlock).to.be(undefined);
-    });
   });
 
   describe('Phase 3 - Method Metadata Compilation', function () {
@@ -1880,10 +1846,10 @@ describe('Extends Foundation', function () {
       ctx.exportChannels.value = { channelName: 'value', buffer: { id: 1 } };
 
       const forkedPath = ctx.forkForPath('child.script');
-      const forkedComposition = ctx.forkForComposition('parent.script', { local: true }, { site: 'Example' }, { extern: true });
+      const forkedComposition = ctx.forkForComposition('parent.script', { local: true }, { site: 'Example' }, { payload: true });
 
-      expect(forkedPath._sharedStructuralState).to.be(ctx._sharedStructuralState);
-      expect(forkedComposition._sharedStructuralState).to.be(ctx._sharedStructuralState);
+      expect(forkedPath.executionState).to.be(ctx.executionState);
+      expect(forkedComposition.executionState).to.be(ctx.executionState);
       expect(forkedPath.blocks).to.be(ctx.blocks);
       expect(forkedComposition.exportResolveFunctions).to.be(ctx.exportResolveFunctions);
       expect(forkedComposition.exportRejectFunctions).to.be(ctx.exportRejectFunctions);
@@ -2736,43 +2702,4 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe('Phase 12 - Composition Payload Shape', function () {
-    it('should compile script and template extends-with startup around one explicit payload object shape', function () {
-      const scriptSource = new Script(
-        'shared var theme = "dark"\nextends "A.script" with theme\nreturn null',
-        env,
-        'payload-shape.script'
-      )._compileSource();
-      const dynamicTemplateSource = new AsyncTemplate(
-        '{% set theme = "dark" %}{% extends (parent if useParent else none) with theme %}{% block body %}x{% endblock %}',
-        env,
-        'payload-shape.njk'
-      )._compileSource();
-
-      expect(scriptSource).to.contain('rootContext');
-      expect(scriptSource).to.not.contain('externContext');
-      expect(scriptSource).to.not.contain('explicitInputValues');
-      expect(scriptSource).to.not.contain('explicitInputNames');
-      expect(scriptSource).to.not.contain('runtime.startParentConstructor(');
-
-      expect(dynamicTemplateSource).to.contain('rootContext');
-      expect(dynamicTemplateSource).to.not.contain('externContext');
-      expect(dynamicTemplateSource).to.not.contain('explicitInputValues');
-      expect(dynamicTemplateSource).to.not.contain('explicitInputNames');
-      expect(dynamicTemplateSource).to.not.contain('runtime.setExtendsComposition(');
-    });
-
-    it('should capture template extends-with inputs through ordered visibility instead of the latest-assigned bridge', function () {
-      const dynamicTemplateSource = new AsyncTemplate(
-        '{% set theme = "dark" %}{% extends (parent if useParent else none) with theme %}{% block body %}x{% endblock %}',
-        env,
-        'payload-observation.njk'
-      )._compileSource();
-
-      expect(dynamicTemplateSource).to.contain('runtime.channelLookup("theme"');
-      expect(dynamicTemplateSource).to.not.contain('runtime.captureCompositionValue(');
-      expect(dynamicTemplateSource).to.not.contain('captureCompositionScriptValue');
-      expect(dynamicTemplateSource).to.not.contain('recordTemporaryCompositionAssignedValue');
-    });
-  });
 });

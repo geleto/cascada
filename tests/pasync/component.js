@@ -56,6 +56,7 @@ describe('Phase 8 - Component Method Calls', function () {
   it('should resolve component method return values correctly', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
+    env.addGlobal('waitAndGet', (value, delay) => new Promise((resolve) => setTimeout(() => resolve(value), delay)));
 
     loader.addTemplate('Component.script', [
       'method build(name)',
@@ -145,6 +146,7 @@ describe('Phase 8 - Component Method Calls', function () {
   it('should keep component method-in-method shared dependencies ordered before a later local method reads them', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
+    env.addGlobal('waitAndGet', (value, delay) => new Promise((resolve) => setTimeout(() => resolve(value), delay)));
 
     loader.addTemplate('A.script', [
       'shared text log',
@@ -176,9 +178,7 @@ describe('Phase 8 - Component Method Calls', function () {
       'return [result, ns.log.snapshot()]'
     ].join('\n'));
 
-    const result = await env.renderScript('Main.script', {
-      waitAndGet: (value, delay) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
-    });
+    const result = await env.renderScript('Main.script', {});
 
     expect(result).to.eql(['dark', 'apply|read:dark|result:dark|']);
   });
@@ -528,30 +528,7 @@ describe('Phase 8 - Component Method Calls', function () {
 });
 
 describe('Phase 8 - Component Observations', function () {
-  it('should leave extern declarations to normal component script initialization', async function () {
-    const loader = new StringLoader();
-    const env = new AsyncEnvironment(loader);
-
-    loader.addTemplate('Component.script', [
-      'extern site',
-      'method read()',
-      '  return site',
-      'endmethod'
-    ].join('\n'));
-    loader.addTemplate('Main.script', [
-      'component "Component.script" as ns',
-      'return ns.read()'
-    ].join('\n'));
-
-    try {
-      await env.renderScript('Main.script', {});
-      expect().fail('Expected renderScript to reject');
-    } catch (error) {
-      expect(String(error)).to.contain('Missing required extern: site');
-    }
-  });
-
-  it('should combine render context and object payload inputs without extern declarations', async function () {
+  it('should combine render context and object payload inputs with payload values', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -568,6 +545,29 @@ describe('Phase 8 - Component Observations', function () {
 
     const result = await env.renderScript('Main.script', { site: 'Example', locale: 'fr' });
     expect(result).to.be('Example|fr|dark|card-7');
+  });
+
+  it('should not expose render context to a component without with context', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'method build()',
+      '  return site',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'return ns.build()'
+    ].join('\n'));
+
+    try {
+      await env.renderScript('Main.script', { site: 'Example' });
+      expect().fail('Expected renderScript to reject');
+    } catch (err) {
+      expect(runtimeModule.isPoisonError(err)).to.be(true);
+      expect(err.message).to.contain('Can not look up unknown variable/function: site');
+    }
   });
 
   it('should allow payload keys without matching declarations on the component path', async function () {
@@ -1239,7 +1239,6 @@ describe('Phase 8 - Component Lifecycle', function () {
         },
         methods: {},
         sharedSchema: [],
-        externSpec: [],
         path: 'Component.script'
       },
       payload: {},
@@ -1328,7 +1327,6 @@ describe('Phase 8 - Component Lifecycle', function () {
         },
         methods: compiledMethods,
         sharedSchema: {},
-        externSpec: [],
         path: 'Component.script'
       },
       payload: {},
@@ -1373,7 +1371,6 @@ describe('Phase 8 - Component Lifecycle', function () {
         rootRenderFunc() {},
         methods: {},
         sharedSchema: [],
-        externSpec: [],
         path: 'Component.script'
       },
       payload: {},
@@ -1467,7 +1464,6 @@ describe('Phase 8 - Component Lifecycle', function () {
         rootRenderFunc() {},
         methods: {},
         sharedSchema: [],
-        externSpec: [],
         path: 'Component.script'
       },
       payload: { theme: 'dark', rootContext: 'user-value' },
@@ -1508,7 +1504,6 @@ describe('Phase 8 - Component Lifecycle', function () {
           compile() {},
           methods: {},
           sharedSchema: [],
-          externSpec: [],
           path: 'Component.script'
         },
         payload: {},
@@ -1563,7 +1558,6 @@ describe('Phase 8 - Component Lifecycle', function () {
         },
         methods: {},
         sharedSchema: [],
-        externSpec: [],
         path: 'Component.script'
       },
       payload: {},
@@ -1594,4 +1588,3 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
   });
 });
-

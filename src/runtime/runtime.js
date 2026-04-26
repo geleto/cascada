@@ -39,6 +39,7 @@ const inheritanceSharedChannels = require('./inheritance-shared-channels');
 const inheritanceBootstrap = require('./inheritance-bootstrap');
 const inheritanceCall = require('./inheritance-call');
 const componentRuntime = require('./component');
+const compositionPayload = require('./composition-payload');
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -153,46 +154,6 @@ function promisify(fn) {
   };
 }
 
-function validateExternInputs(externSpec, providedInputNames, availableValueNames, operationName = 'include') {
-  const spec = Array.isArray(externSpec) ? externSpec : [];
-  const providedNames = Array.isArray(providedInputNames) ? providedInputNames : [];
-  const availableNames = new Set(Array.isArray(availableValueNames) ? availableValueNames : providedNames);
-  const declaredNames = new Set();
-
-  for (let i = 0; i < spec.length; i++) {
-    const entry = spec[i];
-    const names = entry && Array.isArray(entry.names) ? entry.names : [];
-    for (let j = 0; j < names.length; j++) {
-      declaredNames.add(names[j]);
-    }
-  }
-
-  for (let i = 0; i < providedNames.length; i++) {
-    const name = providedNames[i];
-    if (!declaredNames.has(name)) {
-      throw new Error(`${operationName} passed '${name}' but the child template does not declare it as extern`);
-    }
-  }
-
-  for (let i = 0; i < spec.length; i++) {
-    const entry = spec[i];
-    if (!entry || !entry.required) {
-      continue;
-    }
-    const names = Array.isArray(entry.names) ? entry.names : [];
-    for (let j = 0; j < names.length; j++) {
-      const name = names[j];
-      if (!availableNames.has(name)) {
-        throw new Error(`${operationName} is missing required extern '${name}'`);
-      }
-    }
-  }
-}
-
-function validateIsolatedExternSpec(externSpec, operationName = 'import') {
-  validateExternInputs(externSpec, [], [], operationName);
-}
-
 function declareCompositionPayloadChannels(commandBuffer, context, skipNames = null) {
   const payloadContext = context.getCompositionPayloadVariables();
   if (!payloadContext) {
@@ -221,9 +182,8 @@ module.exports = {
   ensureDefinedAsync: outputValue.ensureDefinedAsync,
   promisify,
   withPath,
-  validateExternInputs,
-  validateIsolatedExternSpec,
   declareCompositionPayloadChannels,
+  createCompositionPayload: compositionPayload.createCompositionPayload,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runWaitedControlFlowBoundary: asyncBoundaries.runWaitedControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,
@@ -320,7 +280,6 @@ module.exports = {
   memberLookupScript: lookup.memberLookupScript,
   observeInheritanceSharedChannel: lookup.observeInheritanceSharedChannel,
   channelLookup: lookup.channelLookup,
-  externLookup: lookup.externLookup,
 
   isArray: lib.isArray,
   keys: lib.keys,

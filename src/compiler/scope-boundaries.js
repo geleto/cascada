@@ -51,10 +51,6 @@ function isDeclarationSite(node, ctx = {}) {
     return true;
   }
 
-  if (node instanceof nodes.Extern) {
-    return true;
-  }
-
   if (node instanceof nodes.Import) {
     // Import/FromImport declaration intent is field-context dependent.
     // The node itself is not always treated as a declaration site.
@@ -80,10 +76,6 @@ function extractDeclaredSymbols(node, ctx = {}) {
 
   if (node instanceof nodes.ChannelDeclaration) {
     return node.name instanceof nodes.Symbol ? [node.name] : [];
-  }
-
-  if (node instanceof nodes.Extern) {
-    return (node.targets || []).filter((target) => target instanceof nodes.Symbol);
   }
 
   if (node instanceof nodes.Import && ctx.inImportTarget) {

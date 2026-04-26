@@ -223,10 +223,10 @@ class Component extends Node {
 
 class FromImport extends Node {
   get typename() { return 'FromImport'; }
-  get fields() { return ['template', 'names', 'withContext', 'withVars']; }
+  get fields() { return ['template', 'names', 'withContext', 'withVars', 'withValue']; }
 
-  init(lineno, colno, template, names, withContext, withVars) {
-    super.init(lineno, colno, template, names || new NodeList(), withContext, withVars || new NodeList());
+  init(lineno, colno, template, names, withContext, withVars, withValue) {
+    super.init(lineno, colno, template, names || new NodeList(), withContext, withVars || new NodeList(), withValue);
   }
 }
 
@@ -300,28 +300,19 @@ class TemplateRef extends Node {
 
 class Extends extends TemplateRef {
   get typename() { return 'Extends'; }
-  get fields() { return ['template', 'withContext', 'withVars', 'noParentLiteral']; }
+  get fields() { return ['template', 'withContext', 'withVars', 'withValue', 'noParentLiteral']; }
 
-  init(lineno, colno, template, withContext, withVars, noParentLiteral) {
-    super.init(lineno, colno, template, withContext, withVars || new NodeList(), !!noParentLiteral);
+  init(lineno, colno, template, withContext, withVars, withValue, noParentLiteral) {
+    super.init(lineno, colno, template, withContext, withVars || new NodeList(), withValue, !!noParentLiteral);
   }
 }
 
 class Include extends Node {
   get typename() { return 'Include'; }
-  get fields() { return ['template', 'ignoreMissing', 'withContext', 'withVars']; }
+  get fields() { return ['template', 'ignoreMissing', 'withContext', 'withVars', 'withValue']; }
 
-  init(lineno, colno, template, ignoreMissing, withContext, withVars) {
-    super.init(lineno, colno, template, ignoreMissing, withContext, withVars || new NodeList());
-  }
-}
-
-class Extern extends Node {
-  get typename() { return 'Extern'; }
-  get fields() { return ['targets', 'value']; }
-
-  init(lineno, colno, targets, value) {
-    super.init(lineno, colno, targets || [], value);
+  init(lineno, colno, template, ignoreMissing, withContext, withVars, withValue) {
+    super.init(lineno, colno, template, ignoreMissing, withContext, withVars || new NodeList(), withValue);
   }
 }
 
@@ -592,7 +583,6 @@ module.exports = {
   Super: Super,
   Extends: Extends,
   Include: Include,
-  Extern: Extern,
   Set: Set,
   CallAssign: CallAssign,
   ChannelDeclaration: ChannelDeclaration,

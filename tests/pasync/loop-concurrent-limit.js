@@ -142,7 +142,7 @@
       it('concurrentLimit loop include reads per-iteration loop metadata', async () => {
         const loader = new StringLoader();
         const localEnv = new AsyncEnvironment(loader);
-        loader.addTemplate('cl-child.njk', '{% extern loop %}I{{ loop.index }}|');
+        loader.addTemplate('cl-child.njk', 'I{{ loop.index }}|');
         loader.addTemplate('cl-parent.njk',
           '{% for item in [1,2,3,4] of 2 %}{% include "cl-child.njk" with loop %}{% endfor %}');
         const result = await localEnv.renderTemplate('cl-parent.njk', {});
@@ -152,8 +152,8 @@
       it('nested concurrentLimit loops with include keep metadata isolated', async () => {
         const loader = new StringLoader();
         const localEnv = new AsyncEnvironment(loader);
-        loader.addTemplate('ncl-inner.njk', '{% extern loop %}IN{{ loop.index }}|');
-        loader.addTemplate('ncl-outer.njk', '{% extern loop %}OUT{{ loop.index }}|');
+        loader.addTemplate('ncl-inner.njk', 'IN{{ loop.index }}|');
+        loader.addTemplate('ncl-outer.njk', 'OUT{{ loop.index }}|');
         loader.addTemplate('ncl-parent.njk',
           '{% for o in [1,2] of 2 %}{% for i in ["a","b","c"] of 2 %}{% include "ncl-inner.njk" with loop %}{% endfor %}{% include "ncl-outer.njk" with loop %}{% endfor %}');
         const result = await localEnv.renderTemplate('ncl-parent.njk', {});
@@ -163,7 +163,7 @@
       it('concurrentLimit with loop target shadow keeps include reading value loop', async () => {
         const loader = new StringLoader();
         const localEnv = new AsyncEnvironment(loader);
-        loader.addTemplate('cl-shadow-child.njk', '{% extern loop %}V{{ loop }}|');
+        loader.addTemplate('cl-shadow-child.njk', 'V{{ loop }}|');
         loader.addTemplate('cl-shadow-parent.njk',
           '{% for loop in [10,20,30] of 2 %}{% include "cl-shadow-child.njk" with loop %}{% endfor %}');
         const result = await localEnv.renderTemplate('cl-shadow-parent.njk', {});
@@ -422,7 +422,7 @@
           }
         };
 
-        loader.addTemplate('cl-branch-include-child.njk', '{% extern item %}{% extern slowInclude %}{{ slowInclude(item) }}');
+        loader.addTemplate('cl-branch-include-child.njk', '{{ slowInclude(item) }}');
         loader.addTemplate('cl-branch-include-parent.njk',
           '{% for item in [1,2,3] of 1 %}{{ enterOuter() }}{% if choose(item) %}{% include "cl-branch-include-child.njk" with item, slowInclude %}{% else %}S{{ item }}{% endif %}|{% endfor %}');
 
@@ -2507,13 +2507,12 @@
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% include "inc.njk" %}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
-      expect(source).to.contain('runtime.validateExternInputs(');
     });
 
     it('keeps include loop metadata canonical at runtime under limited loops', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('inc.njk', '{% extern loop %}[{{ loop.index }}/{{ loop.length }}]');
+      loader.addTemplate('inc.njk', '[{{ loop.index }}/{{ loop.length }}]');
 
       const result = await env.renderTemplateString(
         '{% for x in xs of 2 %}{% include "inc.njk" with loop %}{% endfor %}',
@@ -2526,8 +2525,8 @@
     it('keeps nested include loop metadata distinct at runtime under limited loops', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('inner.njk', '{% extern loop %}[inner {{ loop.index }}/{{ loop.length }}]');
-      loader.addTemplate('outer.njk', '{% extern loop %}[outer {{ loop.index }}/{{ loop.length }}]');
+      loader.addTemplate('inner.njk', '[inner {{ loop.index }}/{{ loop.length }}]');
+      loader.addTemplate('outer.njk', '[outer {{ loop.index }}/{{ loop.length }}]');
 
       const result = await env.renderTemplateString(
         '{% for outer in xs of 2 %}{% for inner in ys of 2 %}{% include "inner.njk" with loop %}{% endfor %}{% include "outer.njk" with loop %}{% endfor %}',

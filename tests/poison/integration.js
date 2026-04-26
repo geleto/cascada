@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   'use strict';
 
   var expect;
@@ -110,7 +110,7 @@
       `);
 
       loader.addTemplate('inner.njk', `
-        {% extern items %}
+
         {% for item in items %}
           {{ item }}
         {% endfor %}

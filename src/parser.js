@@ -426,7 +426,7 @@ class Parser extends Obj {
     const seenWithVars = Object.create(null);
     let sawAny = false;
     let sawContext = false;
-    while (true) { // eslint-disable-line no-constant-condition
+    while (true) {
       const nextTok = this.peekToken();
       if (allowObjectValue && nextTok && nextTok.type === lexer.TOKEN_LEFT_CURLY) {
         if (withValue) {
@@ -581,7 +581,7 @@ class Parser extends Obj {
     const names = new nodes.NodeList();
     let compositionInputs = { withContext: null, withVars: null, withValue: null };
 
-    while (1) { // eslint-disable-line no-constant-condition
+    while (true) {
       const nextTok = this.peekToken();
       if (nextTok.type === lexer.TOKEN_BLOCK_END) {
         if (!names.children.length) {
@@ -603,7 +603,10 @@ class Parser extends Obj {
 
       if (nextTok.type === lexer.TOKEN_SYMBOL &&
         (nextTok.value === 'with' || nextTok.value === 'without')) {
-        compositionInputs = this.parseCompositionWithClause('parseFrom', { allowWithoutContext: true });
+        compositionInputs = this.parseCompositionWithClause('parseFrom', {
+          allowWithoutContext: true,
+          allowObjectValue: true
+        });
         const endTok = this.peekToken();
         if (!endTok || endTok.type !== lexer.TOKEN_BLOCK_END) {
           this.fail('parseFrom: expected block end after with clause',
@@ -646,7 +649,8 @@ class Parser extends Obj {
       template,
       names,
       compositionInputs.withContext,
-      compositionInputs.withVars);
+      compositionInputs.withVars,
+      compositionInputs.withValue);
   }
 
   parseBlock() {
@@ -710,9 +714,13 @@ class Parser extends Obj {
     const node = new nodes.Extends(tag.lineno, tag.colno);
     node.template = this.parseExpression();
     node.noParentLiteral = node.template instanceof nodes.Literal && node.template.value === null;
-    const compositionInputs = this.parseCompositionWithClause('parseExtends', { allowWithoutContext: true });
+    const compositionInputs = this.parseCompositionWithClause('parseExtends', {
+      allowWithoutContext: true,
+      allowObjectValue: true
+    });
     node.withContext = compositionInputs.withContext;
     node.withVars = compositionInputs.withVars;
+    node.withValue = compositionInputs.withValue;
 
     this.advanceAfterBlockEnd(tag.value);
     return node;
@@ -728,7 +736,7 @@ class Parser extends Obj {
     const node = new nodes.Include(tag.lineno, tag.colno);
     node.template = this.parseExpression();
 
-    while (true) { // eslint-disable-line no-constant-condition
+    while (true) {
       const nextTok = this.peekToken();
       if (!nextTok) {
         this.fail('parseInclude: expected block end',
@@ -750,54 +758,23 @@ class Parser extends Obj {
         continue;
       }
 
-      const compositionInputs = this.parseCompositionWithClause('parseInclude');
-      if (compositionInputs.withVars || compositionInputs.withContext !== null) {
+      const compositionInputs = this.parseCompositionWithClause('parseInclude', {
+        allowObjectValue: true
+      });
+      if (
+        compositionInputs.withContext !== null ||
+        compositionInputs.withValue ||
+        (compositionInputs.withVars && compositionInputs.withVars.children.length > 0)
+      ) {
         node.withContext = compositionInputs.withContext;
         node.withVars = compositionInputs.withVars;
+        node.withValue = compositionInputs.withValue;
         continue;
       }
 
       this.fail('parseInclude: expected block end, "ignore missing", or "with ..."',
         tag.lineno,
         tag.colno);
-    }
-
-    this.advanceAfterBlockEnd(tag.value);
-    return node;
-  }
-
-  parseExtern() {
-    const tag = this.peekToken();
-    if (!this.skipSymbol('extern')) {
-      this.fail('parseExtern: expected extern', tag.lineno, tag.colno);
-    }
-
-    const node = new nodes.Extern(tag.lineno, tag.colno, [], null);
-
-    let target;
-    while ((target = this.parsePrimary())) {
-      if (!(target instanceof nodes.Symbol)) {
-        this.fail('parseExtern: variable name expected', target.lineno, target.colno);
-      }
-
-      node.targets.push(target);
-
-      if (!this.skip(lexer.TOKEN_COMMA)) {
-        break;
-      }
-    }
-
-    if (!node.targets.length) {
-      this.fail('parseExtern: expected at least one variable name', tag.lineno, tag.colno);
-    }
-
-    if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-      if (node.targets.length !== 1) {
-        this.fail('parseExtern: initializer is only supported for a single extern binding',
-          tag.lineno,
-          tag.colno);
-      }
-      node.value = this.parseExpression();
     }
 
     this.advanceAfterBlockEnd(tag.value);
@@ -1330,8 +1307,6 @@ class Parser extends Obj {
         return this.parseSetPath();
       case 'var':
         return this.parseVar();
-      case 'extern':
-        return this.parseExtern();
       case 'shared':
         return this.parseSharedDeclaration();
       case 'macro':
@@ -1558,7 +1533,7 @@ class Parser extends Obj {
 
   parseIn() {
     let node = this.parseIs();
-    while (1) { // eslint-disable-line no-constant-condition
+    while (true) {
       // check if the next token is 'not'
       const tok = this.nextToken();
       if (!tok) {
@@ -1649,7 +1624,7 @@ class Parser extends Obj {
     const expr = this.parseConcat();
     const ops = [];
 
-    while (1) { // eslint-disable-line no-constant-condition
+    while (true) {
       const tok = this.nextToken();
 
       if (!tok) {
@@ -1939,7 +1914,7 @@ class Parser extends Obj {
         return null;
     }
 
-    while (1) { // eslint-disable-line no-constant-condition
+    while (true) {
       const type = this.peekToken().type;
       if (type === lexer.TOKEN_RIGHT_PAREN ||
         type === lexer.TOKEN_RIGHT_BRACKET ||
@@ -2002,7 +1977,7 @@ class Parser extends Obj {
     const kwargs = new nodes.KeywordArgs(tok.lineno, tok.colno);
     let checkComma = false;
 
-    while (1) { // eslint-disable-line no-constant-condition
+    while (true) {
       tok = this.peekToken();
       if (!noParens && tok.type === lexer.TOKEN_RIGHT_PAREN) {
         this.nextToken();

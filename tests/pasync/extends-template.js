@@ -2,19 +2,16 @@
 
 let expect;
 let AsyncEnvironment;
-let AsyncTemplate;
 let StringLoader;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
-  AsyncTemplate = environment.AsyncTemplate;
   StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
-  AsyncTemplate = nunjucks.AsyncTemplate;
   StringLoader = window.util.StringLoader;
 }
 
@@ -181,12 +178,35 @@ describe('Template Extends', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block body %}Base[{{ theme }}]{% endblock %}');
+      loader.addTemplate('base.njk', '{% block body %}Base[{{ theme }}]{% endblock %}');
       loader.addTemplate('parent.njk', '{% extends "base.njk" %}{% block body %}{{ super() }}{% endblock %}');
       loader.addTemplate('child.njk', '{% set theme = "dark" %}{% extends "parent.njk" with theme %}{% block body %}{{ super() }}{% endblock %}');
 
       const result = await env.renderTemplate('child.njk', {});
       expect(result).to.be('Base[dark]');
+    });
+
+    it('should pass object-style extends-with payload through intermediate template parents unchanged', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', '{% block body %}Base[{{ theme }}:{{ label }}]{% endblock %}');
+      loader.addTemplate('parent.njk', '{% extends "base.njk" %}{% block body %}{{ super() }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% set childTheme = "dark" %}{% extends "parent.njk" with { theme: childTheme, label: "main" } %}{% block body %}{{ super() }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', { theme: 'render' });
+      expect(result).to.be('Base[dark:main]');
+    });
+
+    it('should honor without context on template extends payload root', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', 'Base[{{ site }}]');
+      loader.addTemplate('child.njk', '{% extends "base.njk" without context %}');
+
+      const result = await env.renderTemplate('child.njk', { site: 'Example' });
+      expect(result).to.be('Base[]');
     });
 
     it('should render through an ancestor template constructor when the child has no local constructor body', async function () {

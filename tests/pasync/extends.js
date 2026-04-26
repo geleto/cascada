@@ -186,6 +186,17 @@ describe('Extends Runtime', function () {
       expect(result).to.be('dark');
     });
 
+    it('should honor without context on script extends payload root', async function () {
+      const loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('A.script', 'shared text trace\nif site is error\n  this.trace("missing")\nelse\n  this.trace(site)\nendif');
+      loader.addTemplate('C.script', 'shared text trace\nextends "A.script" without context\nreturn this.trace.snapshot()');
+
+      const result = await env.renderScript('C.script', { site: 'Example' });
+      expect(result).to.be('missing');
+    });
+
     it('should reject multiple top-level script extends declarations', function () {
       expect(() => {
         new Script('extends "A.script"\nextends "B.script"\nreturn 1', env, 'multi-extends.script')._compileSource();
@@ -1131,4 +1142,3 @@ describe('Extends Runtime', function () {
     });
   });
 });
-

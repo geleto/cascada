@@ -253,8 +253,7 @@ function normalizeAsyncCompilerNodes(ast) {
 function isRootConstructorDefinitionNode(node) {
   return (
     node instanceof nodes.Block ||
-    node instanceof nodes.Macro ||
-    node instanceof nodes.Extern
+    node instanceof nodes.Macro
   );
 }
 

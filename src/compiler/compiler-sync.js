@@ -146,15 +146,6 @@ class CompilerSync extends CompilerBaseSync {
     });
   }
 
-  compileExtern(node) {
-    this.fail(
-      'extern declarations are only supported in async mode',
-      node.lineno,
-      node.colno,
-      node
-    );
-  }
-
   compileWhile(node, frame) {
     this.loop.compileSyncWhile(node, frame);
   }

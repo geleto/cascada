@@ -9,6 +9,7 @@ const inheritanceState = require('./inheritance-state');
 const inheritanceCall = require('./inheritance-call');
 const { createCommandBuffer } = require('./command-buffer');
 const { RuntimeFatalError } = require('./errors');
+const { createCompositionPayload } = require('./composition-payload');
 
 function _createComponentError(message, errorContext = null) {
   return new RuntimeFatalError(
@@ -270,20 +271,17 @@ async function createComponentInstance(spec) {
 
   const payloadContext = { ...(payload ?? {}) };
   const renderCtx = ownerContext.getRenderContextVariables();
+  const compositionPayload = createCompositionPayload(payloadContext);
   const componentContext = ownerContext.forkForComposition(
     template.path,
-    payloadContext,
+    compositionPayload.rootContext,
     renderCtx,
-    undefined,
-    payloadContext
+    compositionPayload.payloadContext
   );
   const componentRootBuffer = createCommandBuffer(componentContext, null, null, null);
   const componentInheritanceState = inheritanceState.createInheritanceState();
   componentInheritanceState.sharedRootBuffer = componentRootBuffer;
-  componentInheritanceState.compositionPayload = {
-    rootContext: payloadContext,
-    payloadContext
-  };
+  componentInheritanceState.compositionPayload = compositionPayload;
   inheritanceState.setComponentCompositionMode(componentInheritanceState, true);
 
   const instance = new ComponentInstance({

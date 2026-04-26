@@ -81,7 +81,7 @@
       const env = new AsyncEnvironment(loader);
 
       loader.addTemplate('base.njk', 'B[{% block body %}{% endblock %}]');
-      loader.addTemplate('part.njk', '{% extern value %}<i>{{ value }}</i>');
+      loader.addTemplate('part.njk', '<i>{{ value }}</i>');
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
       loader.addTemplate(
         'child.njk',
@@ -95,7 +95,7 @@
     it('should keep canonical include input keys for duplicated branch-local vars', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('child.njk', '{% extern scopedValue %}[{{ scopedValue }}]');
+      loader.addTemplate('child.njk', '[{{ scopedValue }}]');
 
       const tmpl = new AsyncTemplate(`
         {% if flag %}
@@ -116,7 +116,7 @@
     it('should compile async import with context and explicit inputs without parent-var linking', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('macros.njk', '{% extern theme %}{% macro hi() %}{{ theme }}{{ name }}{% endmacro %}');
+      loader.addTemplate('macros.njk', '{% macro hi() %}{{ theme }}{{ name }}{% endmacro %}');
 
       const tmpl = new AsyncTemplate(
         '{% import "macros.njk" as m with context, theme %}{{ m.hi() }}',
@@ -126,7 +126,6 @@
       const source = tmpl._compileSource();
 
       expect(source).to.contain('context.getRenderContextVariables()');
-      expect(source).to.contain('runtime.validateExternInputs(');
       expect(source).to.not.contain('linkWithParentCompositionBuffer');
     });
 
@@ -150,17 +149,6 @@
       expect(source).to.contain('exported["show"]');
       expect(source).to.not.contain('cannot import \'show#');
       expect(source).to.not.contain('exported["show#');
-    });
-
-    it('should initialize root externs in declaration order without redundant required-value context writes', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% extern user %}{% extern theme = "light" %}{{ user }}{{ theme }}', env, 'root-extern-init.njk');
-      const source = tmpl._compileSource();
-
-      expect(source).to.contain('runtime.declareBufferChannel(output, "user", "var", context, null);');
-      expect(source).to.contain('runtime.declareBufferChannel(output, "theme", "var", context, null);');
-      expect(source).to.not.contain('context.setVariable("user"');
-      expect(source).to.contain('context.setVariable("theme"');
     });
 
     it('should resolve deferred exports through the normal render path', async function () {
