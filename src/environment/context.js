@@ -45,6 +45,7 @@ class Context extends Obj {
     // scope so inherited method/block entry forks can reuse the original
     // composition inputs without leaking caller- or constructor-local vars.
     this.compositionCtx = lib.extend({}, ctx);
+    this.compositionPayloadCtx = null;
     this.externCtx = externCtx === undefined ? null : lib.extend({}, externCtx);
 
     assignContextStructuralState(this, createContextStructuralState());
@@ -100,6 +101,10 @@ class Context extends Obj {
 
   getCompositionContextVariables() {
     return this.compositionCtx || this.renderCtx;
+  }
+
+  getCompositionPayloadVariables() {
+    return this.compositionPayloadCtx;
   }
 
   getExternContextVariables() {
@@ -246,6 +251,7 @@ class Context extends Obj {
     newContext.ctx = this.ctx;           // Share the variable store.
     newContext.renderCtx = this.renderCtx;
     newContext.compositionCtx = this.compositionCtx;
+    newContext.compositionPayloadCtx = this.compositionPayloadCtx;
     // Keep the remaining shared structural state limited to deferred exports
     // and sync-template block registry data until the explicit execution-state
     // object replaces this bridge in the later cleanup phase.
@@ -257,13 +263,14 @@ class Context extends Obj {
     return newContext;
   }
 
-  forkForComposition(newPath, ctx, renderCtx, externCtx = undefined) {
+  forkForComposition(newPath, ctx, renderCtx, externCtx = undefined, compositionPayloadCtx = undefined) {
     // Fresh composition context that keeps shared structural state such as
     // blocks/exports, but does not share the mutable variable object with the
     // caller. This lets composition boundaries receive explicit inputs without
     // turning them back into ambient shared scope.
     const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx, externCtx);
 
+    newContext.compositionPayloadCtx = lib.extend({}, compositionPayloadCtx === undefined ? (ctx || {}) : (compositionPayloadCtx || {}));
     assignContextStructuralState(newContext, this._sharedStructuralState);
     newContext.path = newPath;
 

@@ -674,10 +674,10 @@ class CompileInheritance {
     this._emitAsyncCompositionRootCompletion(node);
   }
 
-  _emitExtendsCompositionPayload(node, extendsVarsVar, extendsExternContextVar, extendsRootContextVar, payloadVar) {
+  _emitExtendsCompositionPayload(node, extendsVarsVar, extendsRootContextVar, payloadVar) {
     this.emit.line(`const ${payloadVar} = inheritanceState && inheritanceState.compositionPayload ? inheritanceState.compositionPayload : {`);
     this.emit.line(`  rootContext: ${extendsRootContextVar},`);
-    this.emit.line(`  externContext: ${extendsExternContextVar}`);
+    this.emit.line(`  payloadContext: ${extendsVarsVar}`);
     this.emit.line('};');
     this.emit.line('if (inheritanceState && !inheritanceState.compositionPayload) {');
     this.emit.line(`  inheritanceState.compositionPayload = ${payloadVar};`);
@@ -686,25 +686,21 @@ class CompileInheritance {
 
   _prepareAsyncExtendsCompositionPayload(node, emitInputCapture) {
     const extendsVarsVar = this.compiler._tmpid();
-    const extendsExternContextVar = this.compiler._tmpid();
     const extendsRootContextVar = this.compiler._tmpid();
     const compositionPayloadVar = this.compiler._tmpid();
 
     this.emit.line(`const ${extendsVarsVar} = {};`);
     emitInputCapture(extendsVarsVar);
-    this.emitCompositionContextObject(node, extendsVarsVar, extendsExternContextVar, null, !!node.withContext);
     this.emitCompositionContextObject(node, extendsVarsVar, extendsRootContextVar, null, true);
     this._emitExtendsCompositionPayload(
       node,
       extendsVarsVar,
-      extendsExternContextVar,
       extendsRootContextVar,
       compositionPayloadVar
     );
 
     return {
       extendsVarsVar,
-      extendsExternContextVar,
       extendsRootContextVar,
       compositionPayloadVar
     };
@@ -798,23 +794,22 @@ class CompileInheritance {
     if (isScriptMethod) {
       const methodBaseContextVar = this.compiler._tmpid();
       const methodExternContextVar = this.compiler._tmpid();
-      this.emit.line(`const ${methodBaseContextVar} = context.getCompositionContextVariables ? context.getCompositionContextVariables() : (context.getRenderContextVariables ? context.getRenderContextVariables() : {});`);
-      this.emit.line(`const ${methodExternContextVar} = context.getExternContextVariables ? context.getExternContextVariables() : undefined;`);
+      this.emit.line(`const ${methodBaseContextVar} = context.getCompositionContextVariables();`);
+      this.emit.line(`const ${methodExternContextVar} = context.getExternContextVariables();`);
       this.emit.line(`context = context.forkForComposition(${invocationPath}, ${methodBaseContextVar}, ${block.withContext ? '(blockRenderCtx || undefined)' : 'undefined'}, ${methodExternContextVar});`);
     } else {
       const signatureBaseContextVar = this.compiler._tmpid();
+      const compositionPayloadContextVar = this.compiler._tmpid();
       const payloadContextVar = this.compiler._tmpid();
       const blockExternContextVar = this.compiler._tmpid();
-      this.emit.line(`const ${blockExternContextVar} = context.getExternContextVariables ? context.getExternContextVariables() : undefined;`);
+      this.emit.line(`const ${blockExternContextVar} = context.getExternContextVariables();`);
+      this.emit.line(`const ${compositionPayloadContextVar} = context.getCompositionPayloadVariables() || {};`);
       this.emit.line(
         `const ${signatureBaseContextVar} = ${declaredBlockArgNames.length > 0
           ? (block.withContext
-            ? '(blockRenderCtx || {})'
-            : '{}')
-          // During the composition-context transition, some callers still
-          // expose only render-context variables while newer paths provide a
-          // dedicated composition-context view.
-          : '(context.getCompositionContextVariables ? context.getCompositionContextVariables() : (context.getRenderContextVariables ? context.getRenderContextVariables() : {}))'};`
+            ? `Object.assign({}, (blockRenderCtx || {}), ${compositionPayloadContextVar})`
+            : compositionPayloadContextVar)
+          : `(Object.keys(${compositionPayloadContextVar}).length > 0 ? ${compositionPayloadContextVar} : context.getCompositionContextVariables())`};`
       );
       this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${signatureBaseContextVar}, ${payloadOriginalArgsVar});`);
       this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);

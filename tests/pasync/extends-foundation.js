@@ -2750,13 +2750,13 @@ describe('Extends Foundation', function () {
       )._compileSource();
 
       expect(scriptSource).to.contain('rootContext');
-      expect(scriptSource).to.contain('externContext');
+      expect(scriptSource).to.not.contain('externContext');
       expect(scriptSource).to.not.contain('explicitInputValues');
       expect(scriptSource).to.not.contain('explicitInputNames');
       expect(scriptSource).to.not.contain('runtime.startParentConstructor(');
 
       expect(dynamicTemplateSource).to.contain('rootContext');
-      expect(dynamicTemplateSource).to.contain('externContext');
+      expect(dynamicTemplateSource).to.not.contain('externContext');
       expect(dynamicTemplateSource).to.not.contain('explicitInputValues');
       expect(dynamicTemplateSource).to.not.contain('explicitInputNames');
       expect(dynamicTemplateSource).to.not.contain('runtime.setExtendsComposition(');

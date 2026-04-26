@@ -111,7 +111,8 @@ async function renderInheritanceParentRoot(spec) {
           parentTemplate.path,
           compositionPayload.rootContext ?? {},
           context.getRenderContextVariables(),
-          compositionPayload.externContext ?? {}
+          undefined,
+          compositionPayload.payloadContext ?? compositionPayload.rootContext ?? {}
         )
       : context.forkForPath(parentTemplate.path);
     const parentCompositionMode = inheritanceState.isInheritanceCompositionMode(
@@ -180,7 +181,8 @@ async function bootstrapInheritanceParentScript(spec) {
           parentScript.path,
           compositionPayload.rootContext ?? {},
           context.getRenderContextVariables(),
-          compositionPayload.externContext ?? {}
+          undefined,
+          compositionPayload.payloadContext ?? compositionPayload.rootContext ?? {}
         )
       : context.forkForPath(parentScript.path);
 

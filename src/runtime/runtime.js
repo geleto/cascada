@@ -173,6 +173,21 @@ function validateIsolatedExternSpec(externSpec, operationName = 'import') {
   validateExternInputs(externSpec, [], [], operationName);
 }
 
+function declareCompositionPayloadChannels(buffer, context, skipNames = null) {
+  const payloadContext = context.getCompositionPayloadVariables();
+  if (!payloadContext) {
+    return;
+  }
+
+  Object.keys(payloadContext).forEach((name) => {
+    if (skipNames?.[name] || buffer._channelTypes?.[name]) {
+      return;
+    }
+    output.declareBufferChannel(buffer, name, 'var', context, null);
+    buffer.add(new commands.VarCommand({ channelName: name, args: [payloadContext[name]] }), name);
+  });
+}
+
 module.exports = {
   makeMacro,
   invokeMacro,
@@ -188,6 +203,7 @@ module.exports = {
   withPath,
   validateExternInputs,
   validateIsolatedExternSpec,
+  declareCompositionPayloadChannels,
   runControlFlowBoundary: asyncBoundaries.runControlFlowBoundary,
   runWaitedControlFlowBoundary: asyncBoundaries.runWaitedControlFlowBoundary,
   runRenderBoundary: asyncBoundaries.runRenderBoundary,

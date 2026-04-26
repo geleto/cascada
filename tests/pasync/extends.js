@@ -459,7 +459,7 @@ describe('Extends Runtime', function () {
         'composition-context-method.script'
       )._compileSource();
 
-      expect(source).to.contain('context.getCompositionContextVariables ? context.getCompositionContextVariables()');
+      expect(source).to.contain('context.getCompositionContextVariables()');
       expect(source).to.not.contain('context.getMethodCompositionVariables');
     });
 

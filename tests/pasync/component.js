@@ -528,7 +528,7 @@ describe('Phase 8 - Component Method Calls', function () {
 });
 
 describe('Phase 8 - Component Observations', function () {
-  it('should validate component extern inputs against the resolved child externSpec', async function () {
+  it('should leave extern declarations to normal component script initialization', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -547,17 +547,15 @@ describe('Phase 8 - Component Observations', function () {
       await env.renderScript('Main.script', {});
       expect().fail('Expected renderScript to reject');
     } catch (error) {
-      expect(String(error)).to.contain("component is missing required extern 'site'");
+      expect(String(error)).to.contain('Missing required extern: site');
     }
   });
 
-  it('should combine required and optional externs with context and object payload inputs', async function () {
+  it('should combine render context and object payload inputs without extern declarations', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
     loader.addTemplate('Component.script', [
-      'extern site',
-      'extern locale = "en"',
       'method build()',
       '  return site + "|" + locale + "|" + theme + "|" + id',
       'endmethod'
@@ -572,12 +570,11 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.be('Example|fr|dark|card-7');
   });
 
-  it('should allow extra payload keys alongside declared externs on the component path', async function () {
+  it('should allow payload keys without matching declarations on the component path', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
     loader.addTemplate('Component.script', [
-      'extern site',
       'method build()',
       '  return site + "|" + theme + "|" + featureFlag',
       'endmethod'
@@ -591,12 +588,11 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.be('Example|dark|on');
   });
 
-  it('should keep plain component extern initialization compatible with shared observations', async function () {
+  it('should keep plain component payload inputs compatible with shared observations', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
     loader.addTemplate('Component.script', [
-      'extern site',
       'shared text log',
       'this.log(site + "|")',
       'method build(name)',
@@ -1432,18 +1428,17 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
   });
 
-  it('should keep rootContext and externContext separate when normalizing plain payload objects', async function () {
+  it('should pass plain payload objects as the component root context', async function () {
     const seen = {};
     const ownerContext = {
       path: 'Main.script',
       getRenderContextVariables() {
         return {};
       },
-      forkForComposition(nextPath, rootContext, renderCtx, externContext) {
+      forkForComposition(nextPath, rootContext, renderCtx) {
         void renderCtx;
         seen.nextPath = nextPath;
         seen.rootContext = rootContext;
-        seen.externContext = externContext;
         rootContext.rootOnly = 'set-during-fork';
         return {
           path: nextPath,
@@ -1479,11 +1474,8 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     expect(seen.nextPath).to.be('Component.script');
-    expect(seen.rootContext).not.to.be(seen.externContext);
     expect(seen.rootContext.theme).to.be('dark');
-    expect(seen.externContext.theme).to.be('dark');
     expect(seen.rootContext.rootOnly).to.be('set-during-fork');
-    expect(seen.externContext.rootOnly).to.be(undefined);
   });
 
   it('should fail clearly when a component target has no compiled rootRenderFunc', async function () {
@@ -1492,8 +1484,8 @@ describe('Phase 8 - Component Lifecycle', function () {
       getRenderContextVariables() {
         return {};
       },
-      forkForComposition(nextPath, rootContext, renderCtx, externContext) {
-        return { path: nextPath, rootContext, renderCtx, externContext };
+      forkForComposition(nextPath, rootContext, renderCtx) {
+        return { path: nextPath, rootContext, renderCtx };
       }
     };
     const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
@@ -1534,8 +1526,8 @@ describe('Phase 8 - Component Lifecycle', function () {
       getRenderContextVariables() {
         return {};
       },
-      forkForComposition(nextPath, rootContext, renderCtx, externContext) {
-        return { path: nextPath, rootContext, renderCtx, externContext };
+      forkForComposition(nextPath, rootContext, renderCtx) {
+        return { path: nextPath, rootContext, renderCtx };
       }
     };
     const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);

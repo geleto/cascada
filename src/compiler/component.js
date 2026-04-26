@@ -32,7 +32,6 @@ class CompileComponent {
     const targetName = node.target.value;
     const componentTemplateVar = this.compiler.inheritance.compileAsyncGetTemplateOrScript(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
-    const externContextVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
     const payloadVar = this.compiler._tmpid();
     const instanceVar = this.compiler._tmpid();
@@ -44,20 +43,12 @@ class CompileComponent {
     this.compiler.inheritance.emitCompositionContextObject(
       node,
       componentVarsVar,
-      externContextVar,
-      null,
-      !!node.withContext
-    );
-    this.compiler.inheritance.emitCompositionContextObject(
-      node,
-      componentVarsVar,
       rootContextVar,
       null,
       true
     );
     this.emit.line(`const ${payloadVar} = {`);
-    this.emit.line(`  rootContext: ${rootContextVar},`);
-    this.emit.line(`  externContext: ${externContextVar}`);
+    this.emit.line(`  rootContext: ${rootContextVar}`);
     this.emit.line('};');
     this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
     this.emit.line(`  currentBuffer: ${this.compiler.buffer.currentBuffer},`);

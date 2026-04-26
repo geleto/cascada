@@ -24,16 +24,8 @@ function _createComponentError(message, errorContext = null) {
 }
 
 function _normalizeComponentPayload(payload = {}) {
-  if (payload.rootContext !== undefined || payload.externContext !== undefined) {
-    return {
-      rootContext: payload.rootContext ?? {},
-      externContext: payload.externContext ?? {}
-    };
-  }
-
   return {
-    rootContext: Object.assign({}, payload),
-    externContext: Object.assign({}, payload)
+    rootContext: payload.rootContext ?? Object.assign({}, payload)
   };
 }
 
@@ -298,24 +290,14 @@ async function createComponentInstance(spec) {
   }
 
   const normalizedPayload = _normalizeComponentPayload(payload);
-  // Component payload keys are explicit composition inputs, not an import-style
-  // "only declared externs may pass" surface. The component path only validates
-  // that any required externs are available from the effective extern context.
-  runtime.validateExternInputs(
-    template.externSpec || [],
-    [],
-    Object.keys(normalizedPayload.externContext || {}),
-    'component'
-  );
   const renderCtx = ownerContext && typeof ownerContext.getRenderContextVariables === 'function'
     ? ownerContext.getRenderContextVariables()
     : {};
   const componentContext = ownerContext && typeof ownerContext.forkForComposition === 'function'
     ? ownerContext.forkForComposition(
       template.path,
-      normalizedPayload.rootContext || {},
-      renderCtx,
-      normalizedPayload.externContext || {}
+      normalizedPayload.rootContext ?? {},
+      renderCtx
     )
     : ownerContext;
   const componentRootBuffer = createCommandBuffer(componentContext, null, null, null);

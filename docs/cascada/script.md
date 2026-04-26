@@ -2066,7 +2066,7 @@ When a project grows beyond a single file, Cascada Script provides two file-comp
 - **`extends` / `method`** — inherit a base script's structure and override specific behaviors
 - **`component`** — create isolated, independently-stateful instances of a script hierarchy
 
-These two composition mechanisms have different contracts: `import` uses a strict **extern** model where every value crossing the boundary must be declared by the receiving file; `extends` and `component` use a separate **inheritance payload** mechanism described in [Script Inheritance](#script-inheritance-with-extends-shared-and-method). In both cases there is no implicit sharing of caller-scope variables.
+These composition mechanisms have different contracts: `import` and `from ... import` use a strict **extern** model where every value crossing the boundary must be declared by the receiving file; `extends` and `component` use a separate **inheritance payload** mechanism described in [Script Inheritance](#script-inheritance-with-extends-shared-and-method). In both cases there is no implicit sharing of caller-scope variables.
 
 ### Importing Libraries with `import`
 
@@ -2251,6 +2251,36 @@ endmethod
 ```
 
 When you render `child.script`, the inherited flow runs with the child's overrides in place.
+
+**Composition payload: `extends ... with`**
+
+`extends` can pass a composition payload to the parent chain. Payload keys are plain bare-name inputs inside constructors and methods; the receiving file does not declare them with `extern`.
+
+```cascada
+// base.script
+shared var theme = initialTheme or "light"
+
+method render(label)
+  return "[" + theme + "] " + label
+endmethod
+```
+
+```cascada
+// child.script
+extends "base.script" with { initialTheme: "dark" }
+```
+
+Supported `with` forms mirror `component` payloads:
+
+```cascada
+extends "base.script" with context
+extends "base.script" with theme, id
+extends "base.script" with context, theme, id
+extends "base.script" with { initialTheme: "dark", id: 0 }
+extends "base.script" with context, { initialTheme: "dark", id: 0 }
+```
+
+`with theme, id` captures the current caller-scope values of `theme` and `id` by their existing names. This shorthand is limited to `var` values.
 
 #### `shared`: Shared State
 
@@ -2582,7 +2612,7 @@ A method body can call functions and read or write shared channels declared in t
 |---|---|---|
 | `class Child extends Base` | `extends "base.script"` | File-level, not type-level. You render the child file. |
 | Constructor | Script body (after `extends`) | No local body → inherited constructor dispatch finds the nearest ancestor's constructor directly; a no-op root constructor is synthesized only at the topmost level when `super()` needs a target. |
-| Constructor parameters | `compositionPayload` via `component ... with` | Flows up the chain; accessible by bare name. |
+| Constructor parameters | `compositionPayload` via `extends ... with` or `component ... with` | Flows up the chain; accessible by bare name. |
 | Instance state (`this.x`) | `shared` values | Visible across the chain; each file must declare the shared names it uses. |
 | Virtual / abstract method | `method` | Called via `this.method(...)`. Every override re-declares the full signature. |
 | `super.method(args)` | `super(args)` | Bare `super()` reuses the original invocation's arguments. |

@@ -1687,8 +1687,8 @@
         expect(result.trim()).to.equal('');
       });
 
-      it('should configure base externs through extends with explicit named inputs', async () => {
-        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
+      it('should configure base payload through extends with explicit named inputs', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
         const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block content(user) %}Child {{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', theme: 'render' });
@@ -1696,31 +1696,31 @@
       });
 
       it('should keep extends-with capture stable without exposing later constructor-local reassignment to inherited blocks', async () => {
-        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
         const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% set theme = "changed" %}{% block content(user) %}{{ super() }} / {{ theme }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Base Ada / dark /');
       });
 
-      it('should let extends with context expose render-context values to base externs while explicit names still win', async () => {
-        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% extern locale = "en" %}{% block content(user) with context %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
+      it('should let extends payload expose render-context values while explicit names still win', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) with context %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
         const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with context, theme %}{% block content(user) with context %}{{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', locale: 'de', siteName: 'Docs', theme: 'render-theme' });
         expect(result.trim()).to.equal('Base Ada / de / dark / Docs');
       });
 
-      it('should not let render-context values satisfy base externs without extends with context', async () => {
-        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% extern locale = "en" %}{% block content(user) with context %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
+      it('should preserve explicit payload names when inherited blocks read render context', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) with context %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
         const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block content(user) with context %}{{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', locale: 'de', siteName: 'Docs' });
-        expect(result.trim()).to.equal('Base Ada / en / dark / Docs');
+        expect(result.trim()).to.equal('Base Ada / de / dark / Docs');
       });
 
       it('should pass pending promise values transparently through extends with', async () => {
-        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
         const childTemplate = '{% set theme = getTheme() %}{% extends "base.njk" with theme %}{% block content(user) %}{{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, {
@@ -1741,7 +1741,7 @@
       });
 
       it('should isolate extends-with root configuration across concurrent renders of the same templates', async () => {
-        loader.addTemplate('base.njk', '{% extern theme = "light" %}{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
         loader.addTemplate('child.njk', '{% set theme = inputTheme %}{% extends "base.njk" with theme %}{% block content(user) %}{{ super() }}{% endblock %}');
 
         const [first, second] = await Promise.all([

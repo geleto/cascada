@@ -1121,6 +1121,22 @@ class CompilerAsync extends CompilerBaseAsync {
     return (node.children || []).filter((child) => child instanceof nodes.Extern);
   }
 
+  _emitRootCompositionPayloadInitialization(node) {
+    const skippedNames = Object.create(null);
+    this._getRootDeclarations(node).forEach((declaration) => {
+      skippedNames[declaration.name] = true;
+    });
+    this._getRootExternNodes(node).forEach((externNode) => {
+      (externNode.targets || []).forEach((target) => {
+        skippedNames[target.value] = true;
+      });
+    });
+    this._getSharedDeclarations(node).forEach((declaration) => {
+      skippedNames[declaration.name.value] = true;
+    });
+    this.emit.line(`runtime.declareCompositionPayloadChannels(${this.buffer.currentBuffer}, context, ${JSON.stringify(skippedNames)});`);
+  }
+
   analyzeRoot(node) {
     const declares = this._getRootDeclarations(node);
     const templateUsesInheritanceSurface = !this.scriptMode && this._templateUsesInheritanceSurface(node);
@@ -1374,6 +1390,7 @@ class CompilerAsync extends CompilerBaseAsync {
       for (const name of sequenceLocks) {
         this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
       }
+      this._emitRootCompositionPayloadInitialization(node);
       this._emitRootExternInitialization(node);
       this.inheritance.emitRootSharedDeclarations(node);
       if (this.scriptMode && hasGenericScriptBody && !skipGenericSetup) {
