@@ -6,7 +6,7 @@ const {
   CHANNEL_TYPE_FACTS
 } = require('../channel-types');
 
-const RESERVED_DECLARATION_NAMES = new Set([...CHANNEL_TYPES, 'value', 'component', 'this', '__return__', '__constructor__']);
+const RESERVED_DECLARATION_NAMES = new Set([...CHANNEL_TYPES, 'value', 'component', 'this', '__return__', '__RETURN_UNSET__', '__constructor__']);
 const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
 
 /**

@@ -784,6 +784,28 @@ the internal `__return__` channel, raw snapshots, and return-channel
 declaration. Treat this phase as an invariant audit plus any missing narrow
 integration work.
 
+Phase 1 review status:
+
+- Fixed in Phase 1: `__RETURN_UNSET__` is reserved and compiled as
+  `runtime.RETURN_UNSET`.
+- Fixed in Phase 1: exact return-state comparisons use an ordered,
+  poison-inspection-free return-state observation rather than an ordinary
+  return-channel snapshot.
+- Fixed in Phase 1: child control-flow and loop buffers link the current
+  function-local `__return__` channel when they read return state.
+- Fixed in Phase 1: the inverse internal comparison
+  `__return__ != __RETURN_UNSET__` preserves ordinary observable-command
+  rejection behavior.
+- Test organization: return-specific tests should live in `tests/pasync/return.js`.
+  Later phases should extend this file or split by behavior/domain if it grows
+  too large, not by implementation phase number.
+- No Phase 1 transitional scaffolding is known to be removable. Raw snapshots
+  remain used for var overwrite behavior, while the dedicated return-state
+  command remains the intended primitive for injected guards.
+- Postponed to Phase 3: actual guard injection and cascade behavior.
+- Postponed to Phase 4: parallel-`for` return-statement wrapping and
+  `for ... with return` loop advancement checks.
+
 #### Phase 2. Transpiler Infrastructure
 
 Covers steps 1, 2, and 3a.
@@ -829,6 +851,11 @@ Covers step 10.
 Lock down return values that are easy to confuse with return control state:
 bare `return`, `none`, `undefined`, promises, rejected promises, poison values,
 and poison returns inside guarded or parallel-loop paths.
+
+Also verify callable bodies that complete without executing an explicit
+`return`: script functions/macros and caller bodies must resolve to the public
+no-value result (`undefined`/`none`, according to the final API decision), not
+leak the internal `runtime.RETURN_UNSET` sentinel to callers.
 
 #### Phase 6. User Documentation
 

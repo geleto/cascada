@@ -195,12 +195,6 @@ module.exports = class CompileEmit {
           if (name === this.compiler.buffer.currentTextChannelName) {
             return false;
           }
-          const decl = this.compiler.analysis && this.compiler.analysis.findDeclaration
-            ? this.compiler.analysis.findDeclaration(analysisNode._analysis, name)
-            : null;
-          if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
-            return false;
-          }
           return !declared.has(name);
         });
       }
@@ -266,12 +260,6 @@ module.exports = class CompileEmit {
     const linkedChannels = usedChannels.filter((name) => {
       if (name === this.compiler.buffer.currentTextChannelName) {
         return true;
-      }
-      const decl = this.compiler.analysis && this.compiler.analysis.findDeclaration
-        ? this.compiler.analysis.findDeclaration(node._analysis, name)
-        : null;
-      if (name === '__return__' || (decl && decl.runtimeName === '__return__')) {
-        return false;
       }
       return !declaredChannels.has(name);
     });

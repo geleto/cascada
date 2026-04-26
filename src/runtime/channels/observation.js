@@ -1,5 +1,6 @@
 'use strict';
 
+const { RETURN_UNSET } = require('../markers');
 const { isPoisonError, handleError } = require('../errors');
 const { Command } = require('./command-base');
 
@@ -64,6 +65,36 @@ class RawSnapshotCommand extends Command {
 
     try {
       this.resolveResult(output._getTarget());
+    } catch (err) {
+      this.rejectResult(contextualize(err));
+    }
+  }
+}
+
+// Ordered return-state observation. This deliberately checks only whether the
+// return channel still contains the sentinel; it does not consume or inspect
+// the returned value, which may itself be poison.
+class ReturnIsUnsetCommand extends Command {
+  constructor({ channelName, pos = null }) {
+    super({ withDeferredResult: true });
+    this.channelName = channelName;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
+  }
+
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
+    if (!output) {
+      this.rejectResult(contextualize(new Error('ReturnIsUnsetCommand requires a channel')));
+      return;
+    }
+
+    try {
+      this.resolveResult(output._getTarget() === RETURN_UNSET);
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
@@ -216,6 +247,7 @@ class RestoreGuardStateCommand extends Command {
 module.exports = {
   SnapshotCommand,
   RawSnapshotCommand,
+  ReturnIsUnsetCommand,
   IsErrorCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,

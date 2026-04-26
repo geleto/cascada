@@ -14,6 +14,8 @@ const compareOps = {
   '>=': '>='
 };
 
+const RETURN_UNSET_SYMBOL_NAME = '__RETURN_UNSET__';
+
 class CompilerBaseSync extends CompilerCommon {
   init(options) {
     super.init(Object.assign({}, options, { asyncMode: false }));
@@ -23,6 +25,10 @@ class CompilerBaseSync extends CompilerCommon {
     const name = node.value;
     if (node.isCompilerInternal) {
       this.emit(name);
+      return;
+    }
+    if (name === RETURN_UNSET_SYMBOL_NAME) {
+      this.emit('runtime.RETURN_UNSET');
       return;
     }
     const frameValue = frame.lookup(name);

@@ -15,6 +15,7 @@ const {
 const {
   SnapshotCommand,
   RawSnapshotCommand,
+  ReturnIsUnsetCommand,
   IsErrorCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,
@@ -298,6 +299,29 @@ class CommandBuffer {
       if (!output._buffer.isFinished(resolvedChannelName)) {
         throw new RuntimeFatalError(
           'Raw snapshot command on finished buffer is allowed only if the target channel stream is finished',
+          pos?.lineno ?? 0,
+          pos?.colno ?? 0,
+          null,
+          path
+        );
+      }
+      return this._runFinishedSnapshotCommand(cmd, resolvedChannelName);
+    }
+    return this._addCommand(cmd, channelName);
+  }
+
+  addReturnIsUnset(channelName, pos = null) {
+    const cmd = new ReturnIsUnsetCommand({
+      channelName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+    if (this.isFinished(channelName)) {
+      const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+      const output = this._channels.get(resolvedChannelName);
+      const path = (this._context && this._context.path) ? this._context.path : null;
+      if (!output._buffer.isFinished(resolvedChannelName)) {
+        throw new RuntimeFatalError(
+          'Return-state command on finished buffer is allowed only if the target channel stream is finished',
           pos?.lineno ?? 0,
           pos?.colno ?? 0,
           null,

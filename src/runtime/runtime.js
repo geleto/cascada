@@ -227,6 +227,8 @@ module.exports = {
   ErrorCommand: commands.ErrorCommand,
   TargetPoisonCommand: commands.TargetPoisonCommand,
   SnapshotCommand: commands.SnapshotCommand,
+  RawSnapshotCommand: commands.RawSnapshotCommand,
+  ReturnIsUnsetCommand: commands.ReturnIsUnsetCommand,
   IsErrorCommand: commands.IsErrorCommand,
   GetErrorCommand: commands.GetErrorCommand,
   RestoreGuardStateCommand: commands.RestoreGuardStateCommand,
