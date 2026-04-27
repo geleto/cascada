@@ -392,6 +392,38 @@ Keep `_validateBlockStructure` separate. A generic reusable block walker sounds
 tempting, but it would add indirection without removing meaningful return
 complexity. The return pass can use the same simple stack discipline directly.
 
+## Refactor Plan
+
+1. Add the new single-pass helpers next to the existing return code:
+   - `_createReturnFrame(tagName, startLine, startIndex)`
+   - `_isReturnExecutableLine(line)`
+   - small local guard open/close helpers inside `_applyReturnGuards`
+2. Rewrite `_applyReturnGuards(processedLines)` around one frame stack:
+   - push self-describing frames on `START`;
+   - call `markReturn(stack)` on `return`;
+   - reset branch-local guard state on `MIDDLE`;
+   - close and propagate on `END`.
+   During the transition, it is fine to build this as a temporary
+   `_applyReturnGuardsSinglePass()` beside the old passes, switch
+   `scriptToTemplate()` to it once focused tests pass, then delete the old pass
+   functions and rename the new function back to `_applyReturnGuards()`.
+3. Fold loop behavior into that pass:
+   - `for`/`each` body gates open when `markReturn()` reaches the loop frame;
+   - body gates close before loop `else` or loop end;
+   - `while` conditions are patched when the `while` frame closes with
+     `hasReturn`.
+4. Change `scriptToTemplate()` to call only the new `_applyReturnGuards()`.
+5. Delete the old return analysis and separate guard passes:
+   - `_analyzeReturnMetadata`
+   - `_applyWhileReturnGuards`
+   - `_applyParallelForReturnGuards`
+   - analysis frame helpers and nearest-boundary helpers
+   - `analyzeReturn()`
+6. Replace tests that inspect `analyzeReturn()` internals with integration tests
+   or generated-template checks that lock down externally meaningful behavior.
+7. Run the return-focused tests first, then the broader script transpiler and
+   loop suites.
+
 ## Non-Goals
 
 - Do not move return waterfall control into the compiler. The script transpiler

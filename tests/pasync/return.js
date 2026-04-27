@@ -478,6 +478,26 @@ describe('Cascada Script return', function () {
       expect(events).to.eql(['outer-after-function']);
     });
 
+    it('does not let nested function returns open outer loop body gates', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'for item in [1, 2]',
+        '  function inner()',
+        '    return item',
+        '  endfunction',
+        '  record("outer-" + item)',
+        'endfor',
+        'return "done"'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql(['outer-1', 'outer-2']);
+    });
+
     it('keeps method returns local and skips later method statements', async function () {
       const events = [];
       const result = await env.renderScriptString([
@@ -689,6 +709,21 @@ describe('Cascada Script return', function () {
         '{%- if __return_is_unset__() -%}{%- do record("after") -%}{%- endif -%}'
       ].join('\n'));
       expect(consecutive).to.not.contain('{%- do record("after") -%}{%- endif -%}{%- endif -%}');
+    });
+
+    it('guards same-line statements after a semicolon return', async function () {
+      const events = [];
+      const result = await env.renderScriptString(
+        'return "done"; record("after")',
+        {
+          record(value) {
+            events.push(value);
+          }
+        }
+      );
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
     });
 
     it('preserves physical line count when injecting nested return guards', function () {
@@ -915,6 +950,26 @@ describe('Cascada Script return', function () {
 
       expect(template).to.contain('{%- for item in items -%}{%- if __return_is_unset__() -%}');
       expect(template).to.contain('{%- if __return_is_unset__() -%}    {%- return item -%}{%- endif -%}');
+    });
+
+    it('skips later statements in a parallel for body after a return-containing child block', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'for item in [1]',
+        '  if true',
+        '    return "done"',
+        '  endif',
+        '  record("after-if")',
+        'endfor',
+        'record("after-loop")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
     });
 
     it('does not gate parallel for bodies that only contain nested callable returns', function () {
