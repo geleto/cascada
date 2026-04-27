@@ -926,42 +926,51 @@ parallel `for`.
 Covers step 10.
 
 Lock down return values that are easy to confuse with return control state:
-bare `return`, `none`, evaluated values that resolve to JavaScript
-`undefined`, promises, rejected promises, poison values, and poison returns
-inside guarded or parallel-loop paths.
+bare `return`, `none`, no-return callables, evaluated values that resolve to
+JavaScript `undefined`, promises, rejected promises, poison values, and poison
+returns inside guarded or parallel-loop paths.
 
 Also verify callable bodies that complete without executing an explicit
-`return`: script functions/macros and caller bodies must resolve to the public
-no-value result (`undefined`/`none`, according to the final API decision), not
-leak the internal `runtime.RETURN_UNSET` sentinel to callers.
+`return`: script functions/macros and caller bodies must resolve to public
+`none`/`null`, not leak the internal `runtime.RETURN_UNSET` sentinel to callers.
 
 Phase 5 implementation status:
 
 - Root script rendering now allows `return none` to leave the script as a real
   `null` value instead of treating it as a missing render result.
 - Script macro/function and caller-body return snapshots map internal
-  `runtime.RETURN_UNSET` to public `undefined` before the value is visible to
+  `runtime.RETURN_UNSET` to public `none`/`null` before the value is visible to
   caller expressions.
 - Added hardening coverage for bare return, `none`, function-produced
   `undefined`, promised returns, rejected promised returns, poison returns,
   no-return function/caller bodies, delayed rejected returns, poison returns
   inside `each`, and parallel-`for` poison returns.
   Cascada Script does not currently expose `undefined` as a source literal;
-  user-authored no-value syntax remains bare `return` or `none`.
+  user-authored no-value syntax remains bare `return` or `none`, both of which
+  produce `null` at the JavaScript API boundary.
 
 #### Phase 6. User Documentation
 
 Covers step 11.
 
 Update user-facing script documentation after implementation behavior is stable.
-Keep ordinary return documentation brief and spend detail only on the parallel
-`for` quirk and the recommendation to use `each` for sequential short-circuit
-iteration.
+Keep return documentation brief and describe it the way users expect from other
+languages: a return exits the current script, function, method, or call block.
+Do not present `for` or `each` as special user-facing return cases.
 
-Also document the `guard/recover` interaction at the semantics level: recovery
-may repair guarded user channels, but it does not capture or restore the
-internal `__return__` channel, so recovery must not undo a return that already
-became visible.
+Keep `guard/recover` return details out of user-facing docs unless a future
+behavior needs explicit explanation; users should be able to read return as
+ordinary callable exit behavior.
+
+Phase 6 implementation status:
+
+- Updated `docs/cascada/script.md` with concise return semantics for scripts,
+  functions, methods, and call blocks.
+- Updated the agent-focused script guide to use supported `function` return
+  examples instead of stale `macro` return guidance.
+- Documented bare/no-return API behavior as `none`/`null`.
+- Kept ordinary control-flow and recovery interactions implied rather than
+  giving them special user-facing sections.
 
 ### 0. Return Sentinel And Channel Visibility
 
@@ -1440,8 +1449,8 @@ Required behavior:
 - Ensure returns inside the body use the normal guard stack.
 - Ensure later iterations are not run once return is visible by checking
   `__return__ == __RETURN_UNSET__` before starting each next iteration.
-- Use `each` as the documented way to get normal sequential short-circuit return
-  behavior in loops where iteration side effects must not start after return.
+- Preserve normal sequential loop behavior for `each`: once return is visible,
+  do not start later iterations.
 
 Implementation options:
 
@@ -1536,8 +1545,7 @@ Integration-first tests for this step:
 - side effects after the return point do not run in later ordered iterations
   once the return is visible
 - body statements in return-capable `for` loops may be delayed by ordered
-  return-state checks, demonstrating the documented partial concurrency
-  reduction
+  return-state checks
 - `for` without return retains existing parallel behavior
 - nested function return inside `for` does not trigger loop return guarding
 
@@ -1547,7 +1555,7 @@ Focused contract tests only if needed:
 - return-capable `for` body is wrapped in `if __return__ == __RETURN_UNSET__`
 - physical line count is preserved for generated for-loop guards
 
-### 10. Poison And Undefined Return Semantics
+### 10. Poison And No-Value Return Semantics
 
 Add dedicated tests and implementation checks for return values that are easy to
 confuse with control state.
@@ -1571,9 +1579,9 @@ what value or error is returned.
 
 Integration-first tests for this step:
 
-- `return` with no expression returns `undefined`/`none` according to current
-  API semantics and still skips later statements
-- `return none` is distinct from `__RETURN_UNSET__`
+- `return` with no expression returns `none`/`null` and still skips later
+  statements
+- `return none` returns `none`/`null` and is distinct from `__RETURN_UNSET__`
 - evaluated return values that resolve to JavaScript `undefined` are distinct
   from `__RETURN_UNSET__` where applicable
 - returning a promise resolves to the promised value
@@ -1593,25 +1601,13 @@ Required behavior:
 - Keep ordinary return documentation brief.
 - Do not over-explain cases where return behaves like other programming
   languages.
-- Explain only the parallel `for` quirk in detail.
-- Document that `for` does not cancel, break, or stop scheduling iterations when
-  return becomes visible.
-- Document that return-capable `for` bodies are gated by ordered return-state
-  reads, so later ordered iterations can skip the body after return is visible.
-- Document that body work for iterations that already passed the gate may still
-  happen, including side effects.
-- Document that return-capable `for` bodies may run with less concurrency because
-  they must observe ordered return state.
-- Document that the first visible return value wins.
-- Recommend `each item in items` when the user needs normal sequential
-  short-circuit return behavior.
+- Document that return exits the current script, function, method, or call block.
+- Do not document loop-specific implementation details or suggest that `for`
+  has unusual user-facing return semantics.
 
 Integration checks for this step:
 
 - documentation examples compile and run
-- `for` example demonstrates whole-body gating and first-visible-return behavior
-- `each item in items` example demonstrates normal sequential short-circuit
-  behavior
 - docs do not over-explain ordinary return behavior
 - docs use the exact supported syntax
 
@@ -1619,63 +1615,8 @@ Integration checks for this step:
 
 The user-facing script documentation should not over-explain `return` where it
 behaves like return in other programming languages. Ordinary top-level,
-function, `if`, `while`, and sequential `each` cases should be documented simply
+function, method, call block, and control-flow cases should be documented simply
 and briefly.
-
-The only behavior that needs special explanation in the return section is
-parallel `for`.
-
-Required points for the `for` note:
-
-- In parallel `for`, `return` does not cancel, break, or stop scheduling
-  iterations.
-- In return-capable parallel `for` bodies, the whole body is guarded by an
-  ordered return-state read.
-- In parallel `for`, work in iterations that already passed the body guard can
-  still happen, including side effects.
-- In parallel `for`, later ordered iterations that reach the body guard after
-  the first visible return skip the body.
-- These ordered checks can reduce concurrency in return-capable `for` bodies.
-- In parallel `for`, the first visible return value wins; later returns are
-  skipped once `__return__` is no longer `__RETURN_UNSET__`.
-- If a user needs side-effectful iteration to stop before later items are
-  processed, or otherwise needs the normal sequential short-circuit behavior
-  familiar from other programming languages, they should use
-  `each item in items`.
-
-Suggested wording:
-
-> `return` is source-order control flow, not cancellation. In a parallel `for`,
-> Cascada does not stop scheduling iterations when return becomes visible. For
-> loops that can return, Cascada gates the body with an ordered return-state
-> check. Iterations that already passed that gate can still run body work, but
-> later ordered iterations skip the body once return is visible. Cascada also
-> guards the return itself so the first visible return value is returned, and
-> later return statements are skipped.
-
-Example for documentation:
-
-```cascada
-for item in items
-  audit(item)       // may run for iterations that passed the body gate
-  if item.ok
-    return item     // first visible return wins
-  endif
-endfor
-```
-
-If the user needs side-effectful iteration to stop before later items are
-processed, or needs normal sequential return behavior, the documentation should
-recommend `each`:
-
-```cascada
-each item in items
-  audit(item)
-  if item.ok
-    return item
-  endif
-endeach
-```
 
 ## Implementation Notes
 

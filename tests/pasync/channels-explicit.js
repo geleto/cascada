@@ -371,16 +371,16 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       expect(result).to.eql({ value: 42 });
     });
 
-    it('should return undefined when no explicit return is provided', async () => {
+    it('should return null when no explicit return is provided', async () => {
       const script = `
         data myData
         myData.x = 1
       `;
       const result = await render(script);
-      expect(result).to.be(undefined);
+      expect(result).to.be(null);
     });
 
-    it('should distinguish no return from explicit return with no expression', async () => {
+    it('should treat no return and bare return as none/null', async () => {
       const noReturnScript = `
         data myData
         myData.x = 1
@@ -394,8 +394,8 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
       const noReturnResult = await render(noReturnScript);
       const explicitReturnResult = await render(explicitReturnScript);
 
-      expect(noReturnResult).to.be(undefined);
-      expect(explicitReturnResult).to.be(undefined);
+      expect(noReturnResult).to.be(null);
+      expect(explicitReturnResult).to.be(null);
     });
 
     it('should allow multiple snapshots at different points', async () => {
@@ -573,7 +573,7 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
         return
       `;
       const result = await render(script);
-      expect(result).to.be(undefined);
+      expect(result).to.be(null);
     });
 
     it('should support mixed return values with snapshots', async () => {

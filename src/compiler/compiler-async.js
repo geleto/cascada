@@ -915,7 +915,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.value) {
       this.compileExpression(node.value, null, node);
     } else {
-      this.emit('undefined');
+      this.emit('null');
     }
     this.emit.line(';');
     this.emit.line(
@@ -1076,7 +1076,7 @@ class CompilerAsync extends CompilerBaseAsync {
       `const ${resultVar}_snapshot = ${bufferExpr}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${lineno}, colno: ${colno}});`
     );
     this.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
-    this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? undefined : value);`);
+    this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? null : value);`);
   }
 
   _emitRootCompositionPayloadInitialization(node) {

@@ -64,7 +64,7 @@ class AsyncEnvironment extends BaseEnvironment {
     const result = await new Promise((resolve, reject) => {
       let callback = (err, res) => {
         // Templates always produce text; null indicates a missing/internal render result.
-        // Script rendering uses a separate path that allows null from `return none`.
+        // Script rendering uses a separate path that allows null from Cascada `none`.
         if (err || res === null) {
           reject(err || new Error('No render result'));
         } else {

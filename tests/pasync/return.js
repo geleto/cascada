@@ -605,7 +605,7 @@ describe('Cascada Script return', function () {
   });
 
   describe('semantic hardening', function () {
-    it('returns undefined for bare return and skips later statements', async function () {
+    it('returns null for bare return and skips later statements', async function () {
       const events = [];
       const result = await env.renderScriptString([
         'return',
@@ -616,8 +616,16 @@ describe('Cascada Script return', function () {
         }
       });
 
-      expect(result).to.be(undefined);
+      expect(result).to.be(null);
       expect(events).to.eql([]);
+    });
+
+    it('returns null when a script completes without return', async function () {
+      const result = await env.renderScriptString([
+        'var x = 1'
+      ].join('\n'));
+
+      expect(result).to.be(null);
     });
 
     it('returns none as a real null value and skips later statements', async function () {
@@ -751,6 +759,17 @@ describe('Cascada Script return', function () {
       }
     });
 
+    it('returns null from functions that complete without return', async function () {
+      const result = await env.renderScriptString([
+        'function noop()',
+        '  var x = 1',
+        'endfunction',
+        'return noop()'
+      ].join('\n'));
+
+      expect(result).to.be(null);
+    });
+
     it('does not leak no-return function sentinels into caller expressions', async function () {
       const events = [];
       const result = await env.renderScriptString([
@@ -771,6 +790,20 @@ describe('Cascada Script return', function () {
 
       expect(result).to.be('done');
       expect(events).to.eql(['falsey']);
+    });
+
+    it('returns null from caller bodies that complete without return', async function () {
+      const result = await env.renderScriptString([
+        'function runner()',
+        '  return caller()',
+        'endfunction',
+        'var callerResult = call runner()',
+        '  var x = 1',
+        'endcall',
+        'return callerResult'
+      ].join('\n'));
+
+      expect(result).to.be(null);
     });
 
     it('does not leak no-return caller body sentinels into caller expressions', async function () {
@@ -798,7 +831,7 @@ describe('Cascada Script return', function () {
       expect(events).to.eql(['falsey']);
     });
 
-    it('distinguishes caller body none from no-return sentinels', async function () {
+    it('returns null from caller body none', async function () {
       const result = await env.renderScriptString([
         'function runner()',
         '  return caller()',

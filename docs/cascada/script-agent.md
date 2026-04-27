@@ -1346,32 +1346,28 @@ endmacro
 ~normal  // Error: macro doesn't accept captureblock
 ```
 
-#### [MACRO-006] Macro return values
+#### [FUNC-006] Function return values
 ```javascript
-// RULE: Macros don't have explicit return; produce effects
-// CONSTRAINT: Effects are @data assignments or context mutations
+// RULE: Use function ... endfunction for reusable value-returning script code
+// CONSTRAINT: If no return runs, the call returns none/null
 
-// ✅ Valid: Macro builds output
-macro buildUser(id)
+// ✅ Valid: Function returns an object
+function buildUser(id)
   var user = fetchUser(id)
-  @data.user.id = user.id
-  @data.user.name = user.name
-endmacro
+  return { id: user.id, name: user.name }
+endfunction
 
-// ✅ Valid: Macro with side effects
-macro log(message)
+// ✅ Valid: Function with side effects
+function log(message)
   !context.logger.log(message)
-endmacro
+endfunction
 
-// ❌ Invalid: No 'return' statement
-macro compute(x)
-  return x * 2  // Error: return not supported
-endmacro
+// ✅ Valid: Function returns a computed value
+function compute(x)
+  return x * 2
+endfunction
 
-// Workaround: Use @data for output
-macro compute(x)
-  @data.result = x * 2
-endmacro
+// Bare return and return none both produce none/null
 ```
 
 ---

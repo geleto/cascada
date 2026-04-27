@@ -1293,7 +1293,9 @@ Support for using `!` through `function` parameters is planned, but it is not im
 
 Functions in Cascada Script are declared with `function ... endfunction`. They let you define reusable chunks of logic that build and return values. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
 
-These functions use `return` to return values, or implicitly return `none` if no `return` is present. Channels declared inside a function are local to that function.
+These functions use `return` to return values. If no `return` runs, the
+function returns `none`. Channels declared inside a function are local to that
+function.
 
 ### Defining and Calling a Function
 
@@ -2031,11 +2033,19 @@ return { status: status, error: errorMsg }
 
 ## Return Statements
 
-Use `return` to explicitly shape what a script or function produces. Without a `return`, scripts and functions return `none`.
+Use `return` to explicitly shape what a script, function, method, or call block
+produces. After a `return` runs, later statements in that same callable body are
+skipped.
 
 ```javascript
 // Return a simple value
 return 42
+
+// Return no value
+return
+
+// Return an explicit null value
+return none
 
 // Return a variable
 return user
@@ -2057,6 +2067,8 @@ return reportData.snapshot()
 
 For most cases, returning a `var` or a plain object literal is simpler than declaring `data`, `text`, or `sequence`. Use those constructs when you need ordered writes, structured path updates, text building, or `sequence` behavior.
 
+If no `return` runs, or if you use bare `return`, the JavaScript API resolves
+with `null`, the same value used for Cascada `none`.
 
 ## Composition and Loading
 

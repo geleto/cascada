@@ -258,7 +258,7 @@ class CompileMacro {
         `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
         `${bufferId}.markFinishedAndPatchLinks();` +
         `${errorCheck}` +
-        `return Promise.resolve(${returnVar}_snapshot).then((value) => value === runtime.RETURN_UNSET ? undefined : value);` +
+        `return Promise.resolve(${returnVar}_snapshot).then((value) => value === runtime.RETURN_UNSET ? null : value);` +
         `})()`;
     } else {
       const textSnapshotVar = compiler._tmpid();

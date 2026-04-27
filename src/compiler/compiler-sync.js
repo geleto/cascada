@@ -409,7 +409,7 @@ class CompilerSync extends CompilerBaseSync {
     if (node.value) {
       this.compileExpression(node.value, frame, node);
     } else {
-      this.emit('undefined');
+      this.emit('null');
     }
     this.emit.line(');');
     this.emit.line('return;');
