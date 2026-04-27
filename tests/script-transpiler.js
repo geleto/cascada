@@ -502,12 +502,6 @@ describe('Script Transpiler', () => {
       expect(template).to.equal('{%- include "partial.html" -%}');
     });
 
-    it('should convert depends statements', () => {
-      const script = 'depends var1, var2';
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- depends var1, var2 -%}');
-    });
-
     it('should convert while loops', () => {
       const script = 'text outText\nwhile condition\n  outText("Looping")\nendwhile\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
@@ -1075,10 +1069,9 @@ return { text: outText.snapshot() }`;
       expect(template).to.contain('{%- endwhile -%}');
     });
 
-    it('should handle template composition with dependencies', () => {
-      const script = `// Template with dependencies
+    it('should handle template composition with inheritance and includes', () => {
+      const script = `// Template composition
 text outText
-depends frameVar1, frameVar2, frameVar3
 
 extends "parentTemplate_" + dynamicPart + ".njk"
 
@@ -1088,19 +1081,18 @@ block content
   outText("<h2>" + frameVar2 + "</h2>")
   frameVar3 = "Updated Value"
 
-  // Include partial with dependencies
-  include includedTemplateName + ".njk" depends = var1, var2
+  // Include partial
+  include includedTemplateName + ".njk"
 endblock
 return { text: outText.snapshot() }`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
 
-      expect(template).to.contain('{%- depends frameVar1, frameVar2, frameVar3 -%}');
       expect(template).to.contain('{%- extends "parentTemplate_" + dynamicPart + ".njk" -%}');
       expect(template).to.contain('{%- block content -%}');
       expect(template).to.contain('{%- command outText("<h1>" + frameVar1 + "</h1>") -%}');
       expect(template).to.contain('{%- set frameVar3 = "Updated Value" -%}');
-      expect(template).to.contain('{%- include includedTemplateName + ".njk" depends = var1, var2 -%}');
+      expect(template).to.contain('{%- include includedTemplateName + ".njk" -%}');
       expect(template).to.contain('{%- endblock -%}');
     });
 

@@ -1,5 +1,4 @@
 TODO
-depends - in transpiler and tests: remove
 rewrite kitchen doc
 regenerate and publish docs
 "Context values follow the same value semantics". What about appConfig.debug = true? I think the config shall be a local copy - you can modify it but changes are only local? The difference: side-effect functions.
