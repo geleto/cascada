@@ -2,6 +2,7 @@
 
 const { isPoison, isPoisonError, isRuntimeFatalError, PoisonError, createPoison, handleError } = require('../errors');
 const { RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue } = require('../resolve');
+const { markPromiseHandled } = require('../promises');
 const contextualizedOutputErrorCache = new WeakMap();
 
 // Base class for all commands. Manages the optional deferred-result promise used by observable commands.
@@ -23,7 +24,7 @@ class Command {
       // paths (for example as command arguments). Mark them handled immediately so
       // an early rejection does not become a process-level warning before the real
       // Cascada consumer observes it.
-      this.promise.catch(() => {});
+      markPromiseHandled(this.promise);
     }
   }
 
@@ -302,12 +303,12 @@ function markDeferredThenablesHandled(value, seen = null) {
   }
 
   if (isHandledDeferredPromise(value)) {
-    Promise.resolve(value).catch(() => {});
+    markPromiseHandled(Promise.resolve(value));
     return;
   }
 
   if (value && isHandledDeferredPromise(value[RESOLVE_MARKER])) {
-    Promise.resolve(value[RESOLVE_MARKER]).catch(() => {});
+    markPromiseHandled(Promise.resolve(value[RESOLVE_MARKER]));
     // Marker-backed arrays/objects already own recursive child-promise collection
     // through their marker promise, so command staging only needs to handle that
     // single deferred boundary here instead of recursing into the structure again.

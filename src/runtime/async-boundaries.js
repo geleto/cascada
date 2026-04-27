@@ -2,6 +2,7 @@
 
 const errors = require('./errors');
 const buffer = require('./command-buffer');
+const { markPromiseHandled } = require('./promises');
 
 function _createChildBoundary(parentBuffer, usedChannels, isolatedContext = null) {
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
@@ -95,7 +96,7 @@ function runValueBoundary(parentBuffer, usedChannels, asyncFn) {
       await _finalizeBoundary(childBuffer);
     }
   })();
-  promise.catch(() => {});
+  markPromiseHandled(promise);
   return promise;
 }
 

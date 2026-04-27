@@ -1148,5 +1148,13 @@ endmethod`;
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.contain(`{%- ${DECL_TAG} x = 1 -%}{#- comment; -#}`);
     });
+
+    it('should reject unsupported for-with-return syntax clearly', () => {
+      const script = 'for item in items with return\n  return item\nendfor';
+      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException((err) => {
+        expect(err.message).to.contain("'for ... with return' is not supported");
+        expect(err.message).to.contain("use 'each'");
+      });
+    });
   });
 });

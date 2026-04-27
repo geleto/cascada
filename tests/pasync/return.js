@@ -889,6 +889,20 @@ describe('Cascada Script return', function () {
       expect(yielded).to.eql([1, 2]);
     });
 
+    it('rejects for-with-return syntax through script rendering with a clear error', async function () {
+      try {
+        await env.renderScriptString([
+          'for item in [1] with return',
+          '  return item',
+          'endfor'
+        ].join('\n'));
+        expect().fail('Should have rejected unsupported for-with-return syntax');
+      } catch (err) {
+        expect(err.message).to.contain("'for ... with return' is not supported");
+        expect(err.message).to.contain("use 'each'");
+      }
+    });
+
     it('gates return-capable parallel for bodies with ordered return checks', function () {
       const template = scriptTranspiler.scriptToTemplate([
         'for item in items',
@@ -1412,13 +1426,12 @@ describe('Cascada Script return', function () {
 
   describe('return analysis pre-pass', function () {
     it('marks loops whose own body contains a runtime return', function () {
-      scriptTranspiler.scriptToTemplate([
+      const analysis = scriptTranspiler.analyzeReturn([
         'for item in [1]',
         '  return item',
         'endfor'
       ].join('\n'));
 
-      const analysis = scriptTranspiler.returnAnalysis;
       expect(analysis.loops).to.have.length(1);
       expect(analysis.loops[0].tagName).to.be('for');
       expect(analysis.loops[0].isParallelLoop).to.be(true);
@@ -1426,7 +1439,7 @@ describe('Cascada Script return', function () {
     });
 
     it('does not count nested callable returns as outer loop returns', function () {
-      scriptTranspiler.scriptToTemplate([
+      const analysis = scriptTranspiler.analyzeReturn([
         'for item in [1]',
         '  function inner()',
         '    return item',
@@ -1435,14 +1448,13 @@ describe('Cascada Script return', function () {
         'return null'
       ].join('\n'));
 
-      const analysis = scriptTranspiler.returnAnalysis;
       expect(analysis.loops).to.have.length(1);
       expect(analysis.loops[0].loopBodyContainsReturn).to.be(false);
       expect(analysis.returnOwningScopes.some((scope) => scope.tagName === 'function' && scope.mayReturn)).to.be(true);
     });
 
     it('ignores return-looking content inside raw blocks', function () {
-      scriptTranspiler.scriptToTemplate([
+      const analysis = scriptTranspiler.analyzeReturn([
         'for item in [1]',
         '  raw',
         '    return item',
@@ -1451,19 +1463,17 @@ describe('Cascada Script return', function () {
         'return null'
       ].join('\n'));
 
-      const analysis = scriptTranspiler.returnAnalysis;
       expect(analysis.loops).to.have.length(1);
       expect(analysis.loops[0].loopBodyContainsReturn).to.be(false);
     });
 
     it('classifies each as a sequential loop', function () {
-      scriptTranspiler.scriptToTemplate([
+      const analysis = scriptTranspiler.analyzeReturn([
         'each item in items',
         '  return item',
         'endeach'
       ].join('\n'));
 
-      const analysis = scriptTranspiler.returnAnalysis;
       expect(analysis.loops).to.have.length(1);
       expect(analysis.loops[0].tagName).to.be('each');
       expect(analysis.loops[0].isParallelLoop).to.be(false);

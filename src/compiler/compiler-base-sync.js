@@ -2,6 +2,7 @@
 
 const nodes = require('../nodes');
 const CompilerCommon = require('./compiler-common');
+const { RETURN_UNSET_SYMBOL_NAME } = require('./return-constants');
 
 const compareOps = {
   '==': '==',
@@ -13,8 +14,6 @@ const compareOps = {
   '<=': '<=',
   '>=': '>='
 };
-
-const RETURN_UNSET_SYMBOL_NAME = '__RETURN_UNSET__';
 
 class CompilerBaseSync extends CompilerCommon {
   init(options) {

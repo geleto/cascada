@@ -1,6 +1,7 @@
 'use strict';
 
 const { CommandBuffer } = require('./command-buffer');
+const { markPromiseHandled } = require('./promises');
 
 class BufferIterator {
   constructor(output) {
@@ -85,14 +86,17 @@ class BufferIterator {
             continue;
           }
           if (applyResult && typeof applyResult.then === 'function') {
-            Promise.resolve(applyResult).finally(() => {
+            // The channel/command path owns the apply result. This chained
+            // promise only performs iterator cleanup and must not surface a
+            // duplicate unhandled rejection if applyResult rejects.
+            markPromiseHandled(Promise.resolve(applyResult).finally(() => {
               this._releaseProcessedEntry(buffer, nextIndex);
               if (this.finished) {
                 this._isAdvancing = false;
                 return;
               }
               this._advanceLoop();
-            });
+            }));
             return;
           }
           this._releaseProcessedEntry(buffer, nextIndex);
@@ -142,11 +146,11 @@ class BufferIterator {
     if (this._pendingObservables) {
       this._pendingObservables.add(promise);
     }
-    promise.finally(() => {
+    markPromiseHandled(promise.finally(() => {
       if (this._pendingObservables) {
         this._pendingObservables.delete(promise);
       }
-    }).catch(() => {});
+    }));
   }
 
   _applyMutable(cmd) {

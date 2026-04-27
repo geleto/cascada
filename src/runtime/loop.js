@@ -129,7 +129,7 @@ function setLoopValueBindings(channelName, index, len, last, pos) {
   });
 }
 
-async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, shouldContinueAfterIteration = null) {
+async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck = null) {
   let didIterate = false;
   let i = 0;
 
@@ -166,7 +166,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, sho
         break;
       }
 
-      if (shouldContinueAfterIteration && !(await shouldContinueAfterIteration())) {
+      if (returnAdvanceCheck && !(await returnAdvanceCheck())) {
         break;
       }
 
@@ -263,7 +263,8 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
         }
 
         const rejectionError = new PoisonError(error, errorContext);
-        //@todo - only one of these assignments is needed
+        // Preserve the loop-else decision on both the aggregate PoisonError and
+        // its leaf error, since callers inspect both shapes in existing paths.
         rejectionError.didIterate = didIterate;
         if (rejectionError.errors.length > 0) {
           rejectionError.errors[rejectionError.errors.length - 1].didIterate = didIterate;
@@ -439,7 +440,7 @@ function callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, erro
   return loopBody(...value.slice(0, loopVars.length), index, len, isLast, errorContext);
 }
 
-async function iterateArraySequential(arr, loopBody, loopVars, errorContext, shouldContinueAfterIteration = null) {
+async function iterateArraySequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck = null) {
   const len = arr.length;
   let didIterate = len > 0;
 
@@ -465,7 +466,7 @@ async function iterateArraySequential(arr, loopBody, loopVars, errorContext, sho
 
     await res;
 
-    if (shouldContinueAfterIteration && !(await shouldContinueAfterIteration())) {
+    if (returnAdvanceCheck && !(await returnAdvanceCheck())) {
       break;
     }
   }
@@ -568,7 +569,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
   return didIterate;
 }
 
-async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, shouldContinueAfterIteration = null) {
+async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, returnAdvanceCheck = null) {
   const keys = Object.keys(arr);
   const len = keys.length;
   let didIterate = len > 0;
@@ -592,7 +593,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
         // In sequential mode we always await the body
         await res;
 
-        if (shouldContinueAfterIteration && !(await shouldContinueAfterIteration())) {
+        if (returnAdvanceCheck && !(await returnAdvanceCheck())) {
           break;
         }
       }
@@ -697,9 +698,11 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   const errorContext = asyncOptions ? asyncOptions.errorContext : null;
 
   let didIterate = false;
-  const shouldContinueAfterIteration = asyncOptions && asyncOptions.sequentialReturnChannelName
+  // Called between sequential iterations. The ordered channel observation may
+  // be async because it is enqueued on the loop's command buffer.
+  const returnAdvanceCheck = asyncOptions && asyncOptions.returnCheckChannelName
     ? (() => buffer.addReturnIsUnset(
-      asyncOptions.sequentialReturnChannelName,
+      asyncOptions.returnCheckChannelName,
       { lineno: errorContext?.lineno || 0, colno: errorContext?.colno || 0 }
     ))
     : null;
@@ -778,7 +781,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
         // any `for` loop marked as sequential. It does NOT support `loop.length`
         // or `loop.last` for async iterators, as that is impossible to know
         // without first consuming the entire iterator.
-        didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext, shouldContinueAfterIteration);
+        didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck);
       } else if (maxConcurrency) {
         // Limited concurrency path: behaves like while loops for metadata
         didIterate = await iterateAsyncLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
@@ -796,7 +799,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
         const effectiveSequential = sequential || limitSequentialOverride;
 
         if (effectiveSequential) {
-          didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext, shouldContinueAfterIteration);
+          didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck);
         } else if (maxConcurrency && maxConcurrency < len) {
           didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
         } else {
@@ -807,7 +810,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
       } else {
         // object iteration
         const effectiveSequential = sequential || limitSequentialOverride;
-        didIterate = await iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, shouldContinueAfterIteration);
+        didIterate = await iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, returnAdvanceCheck);
       }
     }
   } catch (err) {

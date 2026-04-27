@@ -249,19 +249,22 @@ the transpiler behaves as though it rewrote the script to:
 
 ```cascada
 var a = first()
-return a; if __return__ == __RETURN_UNSET__
-var b = second()
-return b; if __return__ == __RETURN_UNSET__
-endif
+return a
+if __return__ == __RETURN_UNSET__; var b = second()
+return b
 endif
 ```
 
-The physical output should keep injected `if` and `endif` on existing physical
-lines where possible, using semicolon logical statements.
+The physical output keeps injected `if` and `endif` tags on existing physical
+lines using semicolon logical statements. The example above is written on
+separate lines for readability; the generated template preserves the original
+script line count.
 
-There are two closing `endif`s because each `return` opens a guard for all
-following statements in the same function/script body. Multiple returns
-therefore create nested guards.
+Guards are materialized lazily. A `return` records that subsequent executable
+statements in the same return-owning scope need protection, but it does not open
+an injected `if` immediately. If the return is followed only by comments, blank
+lines, middle tags, end tags, or EOF, the pending guard is dropped because there
+is no statement to protect.
 
 ## Guard Cascade
 
@@ -272,19 +275,21 @@ The transpiler maintains a block stack. Each stack frame tracks:
 - whether this frame is a function boundary
 - whether this frame is a loop, and if so whether it is `for` or `each`
 - whether a return occurred inside this frame
-- whether a return guard is currently open in this frame
+- whether a return guard is pending or currently active in this frame
 
 When a `return` is processed:
 
-1. Emit the original `return`.
-2. Emit `; if __return__ == __RETURN_UNSET__` on the same physical line.
-3. Mark the current frame as having an open return guard.
-4. Mark the current frame as containing a return.
+1. Materialize any pending guard for the current frame before this return, so
+   repeated returns preserve the first source-visible return value.
+2. Emit the original `return`.
+3. Close any already-active guard after the return statement.
+4. Mark the current frame with a pending guard and `containsReturn = true`.
 
 The current frame is the block that lexically contains the `return` at the
-moment the return is processed. The opened guard belongs to that frame. Later
-nested blocks that appear inside the guarded region do not take ownership of the
-guard, and their end tags must not close it.
+moment the return is processed. A pending guard belongs to that frame. Later
+nested blocks that appear after the return are protected by materializing that
+pending guard on the nested block's start tag; their end tags must not take
+ownership of the parent guard.
 
 For example:
 
@@ -297,15 +302,14 @@ sometag
 endsometag
 ```
 
-The injected `if` opened after `return x` belongs to `sometag`, because
-`sometag` was the current frame when the return was processed. `endanothertag`
-does not close that guard, even though it is the first end tag after the return.
-The guard closes before `endsometag`:
+The pending guard recorded after `return x` belongs to `sometag`. It
+materializes on `anothertag`, because evaluating that tag or its body would be
+post-return work:
 
 ```cascada
 sometag
-  return x; if __return__ == __RETURN_UNSET__
-  anothertag
+  return x
+  if __return__ == __RETURN_UNSET__; anothertag
     work()
   endanothertag
   endif; endsometag
@@ -313,14 +317,19 @@ sometag
 
 When an end tag is processed:
 
-1. If the closing frame has an open return guard, emit `endif; ` before the end
-   tag on the same physical line.
-2. Emit the original end tag.
-3. Pop the closing frame.
-4. If the popped frame contained a return and the new parent frame is not a
-   function boundary, emit `; if __return__ == __RETURN_UNSET__` after the end tag on
-   the same physical line.
-5. Mark the parent frame as having an open return guard and containing a return.
+1. Drop any pending, unopened guard for the closing frame.
+2. If the closing frame has an active return guard, emit `endif; ` before the
+   end tag on the same physical line.
+3. Emit the original end tag.
+4. Pop the closing frame.
+5. If the popped frame contained a return and the new parent frame is not a
+   function boundary, mark the parent with a pending guard and
+   `containsReturn = true`.
+
+Middle tags (`else`, `elif`, `case`, `default`, `recover`) close an active guard
+for the previous branch, or drop a pending guard that never materialized. This
+keeps each branch attached to the original user block instead of nesting later
+branches inside an injected return guard.
 
 The propagation stops at the function boundary. A return inside a function must
 not guard code after the function declaration in the outer scope.
@@ -328,8 +337,9 @@ not guard code after the function declaration in the outer scope.
 ## Return-Owning Scopes And Boundaries
 
 The script root is a return-owning scope. It has no closing end tag, so return
-guards opened at the root are closed at EOF by appending generated `endif`
-logical statements to the last physical source line.
+guards that are active at the root are closed at EOF by appending generated
+`endif` logical statements to the last physical source line. Pending root guards
+are dropped at EOF.
 
 Callable bodies are also return-owning scopes. The guard cascade stops at these
 boundaries. In user-facing script syntax this includes:
@@ -886,13 +896,10 @@ Phase 3 implementation status:
 - Removed the unused `injectLines` consumer after replacing the earlier
   injection idea with the dedicated return-guard pass.
 
-`scriptTranspiler.returnAnalysis` is a Phase 2 test/introspection hook on the
-module singleton. Later phases should either keep that state purely internal or
-introduce an explicit analysis-result path instead of relying on singleton
-mutable state as public API.
-
-Post-stabilization cleanup: either formalize or remove the `returnAnalysis`
-singleton test hook after the return implementation is fully settled.
+`scriptTranspiler.analyzeReturn(script)` is the explicit introspection path for
+return analysis tests. `scriptToTemplate()` keeps the analysis local to one
+transpile call and does not expose singleton mutable analysis state.
+The analysis result is intentionally narrow: `{ loops, returnOwningScopes }`.
 
 #### Phase 4. Loop Return Semantics
 
@@ -919,6 +926,9 @@ Phase 4 implementation status:
   protections in the enclosing loop.
 - Updated limited-loop waited-command expectations for the additional ordered
   return-state observations introduced by return-capable `for` guards.
+- `for ... with return` syntax is not part of the implemented design and is
+  rejected by the script transpiler with a clear error. Use `each` when later
+  iterations must not start after return becomes visible.
 
 Phase 4a regression follow-up: the interaction between rewritten while guards
 and sequential-operation poison propagation is covered. Return-aware while
@@ -1087,8 +1097,8 @@ Required behavior:
 - Preserve `logicalIndex` / `isSemicolonLine` metadata through processing.
 - Do not insert `\n` between semicolon logical lines in generated template
   output.
-- Allow injected return guards to be represented as logical semicolon lines,
-  not as special string concatenation.
+- Keep logical-line metadata available to later inline rewriting passes without
+  requiring additional generated physical lines.
 - Preserve existing continuation/comment behavior for non-semicolon physical
   lines.
 - Preserve raw/verbatim bodies without parsing their contents as logical script
@@ -1099,13 +1109,12 @@ Sub-steps:
 1. Refactor the pipeline so parsing, continuation handling, validation, channel
    scope updates, and output generation operate on logical lines.
 2. Add same-physical-line output joining for `isSemicolonLine` entries.
-3. Add an internal helper for later return passes to inject logical semicolon
-   lines without manually concatenating template strings.
+3. Preserve logical-line metadata so later return passes can add inline prefixes
+   and suffixes while keeping physical line counts stable.
 
 This step is the bridge between lexer support and return rewriting. It should
-only establish the logical-line pipeline. The actual return-guard injection is
-implemented later, but return guards must use this mechanism rather than
-building custom output strings.
+only establish the logical-line pipeline. The actual return-guard materialization
+is implemented later as inline prefixes/suffixes on processed logical lines.
 
 Integration-first tests for this step:
 
@@ -1215,8 +1224,6 @@ not to the next arbitrary end tag in the file.
 
 Each block-stack frame should track at least:
 
-- `tagName`
-- `endTagName`, or a local cache of the value derived from `blockPairs`
 - `isFunctionBoundary`
 - `loopKind`, such as `for`, `each`, or `null`
 - `isParallelLoop`
@@ -1512,6 +1519,10 @@ Focused contract tests only if needed:
 
 Add the parallel-`for`-specific return handling while explicitly forbidding
 early exit or cancellation of ordinary parallel `for` iterations.
+
+`for ... with return` is intentionally not supported in this implementation.
+Scripts that use that syntax should fail during script transpilation with a
+clear diagnostic instead of being passed to the template parser.
 
 The generic guard waterfall from Step 4 already owns the source-order body
 shape and the cascade after `endfor`:

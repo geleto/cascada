@@ -667,6 +667,36 @@ describe('Sequential Operations in Expressions', function () {
       expect(result).to.be(true);
     });
 
+    it('should not emit unhandled rejections for observable sequential poison', async function () {
+      if (typeof process === 'undefined' || !process.on || !process.off) {
+        this.skip();
+      }
+
+      const unhandled = [];
+      const onUnhandled = (reason) => {
+        unhandled.push(reason);
+      };
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        const result = await env.renderScriptString([
+          'var result = true and account!.fail()',
+          'return result is error'
+        ].join('\n'), {
+          account: {
+            fail() {
+              throw new Error('Sequential operation failed');
+            }
+          }
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        expect(result).to.be(true);
+        expect(unhandled).to.have.length(0);
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+      }
+    });
+
     it('should skip sequential operations in ternary true branch (false ? seq : other)', async function () {
       const src = `
     {% set res = (account!.deposit(10) if false else 'skipped') %}

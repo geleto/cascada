@@ -3,6 +3,7 @@
 const lib = require('../lib');
 const { Obj } = require('../object');
 const { createPoison } = require('../runtime/errors');
+const { markPromiseHandled } = require('../runtime/promises');
 
 class ContextExecutionState {
   constructor() {
@@ -188,6 +189,11 @@ class Context extends Obj {
       resolve = res;
       reject = rej;
     });
+    // Deferred exports are often internal-only script locals. If such a local
+    // resolves to poison and no consumer reads the export promise directly, the
+    // channel still owns the error; the export promise should not become a
+    // process-level unhandled rejection.
+    markPromiseHandled(promise);
     this.exportResolveFunctions[name] = resolve;
     this.exportRejectFunctions[name] = reject;
     this.exportChannels[name] = { channelName, buffer };

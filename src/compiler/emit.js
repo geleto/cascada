@@ -189,6 +189,8 @@ module.exports = class CompileEmit {
         // For locally-created scope-root buffers, structural parent-visible lanes
         // should be attached at buffer creation time rather than in a later
         // runtime prelink step.
+        // __return__ is deliberately included when used: child return guards
+        // must observe the same function-local return channel in source order.
         const used = Array.from(analysisNode._analysis.usedChannels || []);
         const declared = new Set((analysisNode._analysis.declaredChannels || new Map()).keys());
         linkedChannels = used.filter((name) => {
@@ -257,6 +259,8 @@ module.exports = class CompileEmit {
   getLinkedChannelsArg(node) {
     const usedChannels = Array.from(node._analysis.usedChannels || []);
     const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
+    // __return__ is deliberately included when used: child control-flow buffers
+    // must observe the same function-local return channel in source order.
     const linkedChannels = usedChannels.filter((name) => {
       if (name === this.compiler.buffer.currentTextChannelName) {
         return true;

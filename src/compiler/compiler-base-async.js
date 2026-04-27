@@ -4,6 +4,10 @@ const nodes = require('../nodes');
 const CompileAnalysis = require('./analysis');
 const CompileRename = require('./rename');
 const CompilerCommon = require('./compiler-common');
+const {
+  RETURN_CHANNEL_NAME,
+  RETURN_UNSET_SYMBOL_NAME
+} = require('./return-constants');
 
 const compareOps = {
   '==': '==',
@@ -15,9 +19,6 @@ const compareOps = {
   '<=': '<=',
   '>=': '>='
 };
-
-const RETURN_CHANNEL_NAME = '__return__';
-const RETURN_UNSET_SYMBOL_NAME = '__RETURN_UNSET__';
 
 class CompilerBaseAsync extends CompilerCommon {
   init(options) {
@@ -288,6 +289,8 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('})');
   }
 
+  // Return-state comparison helpers compile injected guards without inspecting
+  // the possibly-poisoned return value.
   _getReturnStateComparison(node) {
     if (!this.scriptMode || !node || !Array.isArray(node.ops) || node.ops.length !== 1) {
       return null;

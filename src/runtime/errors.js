@@ -1,6 +1,7 @@
 'use strict';
 
 const { POISON_KEY, RESOLVE_MARKER } = require('./markers');
+const { markPromiseHandled } = require('./promises');
 
 
 /**
@@ -199,7 +200,7 @@ class RuntimePromise {
     // only later during output application. Mark the wrapped promise as handled
     // immediately so delayed consumption does not trigger
     // PromiseRejectionHandledWarning for internal async flows.
-    this.promise.catch(() => {});
+    markPromiseHandled(this.promise);
     this.errorContext = errorContext;
   }
 

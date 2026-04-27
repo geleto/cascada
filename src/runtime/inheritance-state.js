@@ -2,6 +2,7 @@
 
 const { RuntimeFatalError, isPoison } = require('./errors');
 const { resolveDuo } = require('./resolve');
+const { markPromiseHandled } = require('./promises');
 
 const INTERNAL_INHERITANCE_STATE = Symbol('cascadaInheritanceInternalState');
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';
@@ -182,7 +183,7 @@ function beginInheritanceMetadataReadiness(state) {
       internalState.metadataReadyResolve = resolve;
       internalState.metadataReadyReject = reject;
     });
-    internalState.metadataReadyPromise.catch(() => {});
+    markPromiseHandled(internalState.metadataReadyPromise);
   }
   return internalState.metadataReadyPromise;
 }

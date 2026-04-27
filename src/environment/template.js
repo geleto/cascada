@@ -7,6 +7,7 @@ const { Frame } = require('../runtime/frame');
 const { Obj } = require('../object');
 const { callbackAsap } = require('./utils');
 const { Context } = require('./context');
+const { markPromiseHandled } = require('../runtime/promises');
 
 // Lazy-loaded environment classes to avoid circular dependencies
 let Environment, AsyncEnvironment;
@@ -412,7 +413,7 @@ class AsyncTemplate extends Template {
 
     const markedExported = globalRuntime.createObject(boundExported);
     if (markedExported && markedExported[globalRuntime.RESOLVE_MARKER]) {
-      markedExported[globalRuntime.RESOLVE_MARKER].catch(() => {});
+      markPromiseHandled(markedExported[globalRuntime.RESOLVE_MARKER]);
     }
     return markedExported;
   }

@@ -11,8 +11,8 @@ const CompileBuffer = require('./buffer');
 const {
   ROOT_STARTUP_PROMISE_VAR
 } = require('./inheritance');
+const { RETURN_CHANNEL_NAME } = require('./return-constants');
 
-const RETURN_CHANNEL_NAME = '__return__';
 const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
 const COMPILED_INVOKED_METHODS_VAR = '__compiledInvokedMethods';

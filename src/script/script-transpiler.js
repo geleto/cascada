@@ -96,7 +96,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'method', 'function', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'component', 'depends', 'return', ...CHANNEL_TYPES, 'shared'],
+      lineTags: ['include', 'extends', 'from', 'import', 'component', 'depends', 'return', ...CHANNEL_TYPES, 'shared'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -135,7 +135,7 @@ class ScriptTranspiler {
         'else', 'elif', 'case', 'default',
         'endif', 'endfor', 'endswitch', 'endblock', 'endmethod', 'endfunction',
         'endfilter', 'endcall', 'endcall_assign', 'endraw', 'endverbatim',
-        'endwhile', 'endvar', 'recover'
+        'endeach', 'endguard', 'endset', 'endwhile', 'endvar', 'recover'
       ],
 
       // Continuation detection
@@ -1399,6 +1399,10 @@ class ScriptTranspiler {
       parseResult.blockType = this._getBlockType(firstWord, code);
       parseResult.tagName = firstWord;
 
+      if (firstWord === 'for' && /\bwith\s+return\s*$/.test(parseResult.codeContent || '')) {
+        throw new Error(`'for ... with return' is not supported at line ${lineIndex + 1}; use 'each' for sequential return behavior.`);
+      }
+
       if (firstWord === 'method') {
         const methodName = this._getLeadingIdentifier(parseResult.codeContent);
         if (methodName && this.RESERVED_DECLARATION_NAMES.has(methodName)) {
@@ -1456,15 +1460,12 @@ class ScriptTranspiler {
   }
 
   _createLogicalParsedLine(line, physicalParseResult, tokens, physicalLine, logicalIndex, isSemicolonLine, colno, terminatesWithSemicolon = false) {
-    const indentation = physicalParseResult.indentation !== undefined
-      ? physicalParseResult.indentation
-      : ((line.match(/^[ \t]*/) || [''])[0]);
     const logicalLineText = tokens.map((token) => token.value || '').join('');
     return {
       tokens,
       inMultiLineComment: physicalParseResult.inMultiLineComment,
       stringState: physicalParseResult.stringState,
-      indentation,
+      indentation: physicalParseResult.indentation,
       physicalLine,
       logicalIndex,
       isSemicolonLine,
@@ -1683,6 +1684,8 @@ class ScriptTranspiler {
 
   _generateOutput(processedLine, nextIsContinuation, lastNonContinuationLineType, lineIndex) {
     let output = processedLine.indentation;
+    // Earlier return passes may rewrite tag codeContent in place, for example
+    // while conditions receive the function-local return-state check here.
     let codeContent = processedLine.codeContent;
 
     if (!processedLine.isContinuation && processedLine.lineType === 'TAG') {
@@ -1857,30 +1860,32 @@ class ScriptTranspiler {
     return tagName === 'for' || tagName === 'each';
   }
 
-  _createReturnAnalysisFrame(tagName, parent, startEntry = null) {
-    return {
+  _createReturnAnalysisFrame(tagName, startEntry = null) {
+    const loopKind = this._isLoopTag(tagName) ? tagName : null;
+    const frame = {
       tagName,
-      parent,
-      startEntry,
-      endTagName: this.SYNTAX.blockPairs[tagName] || null,
       isFunctionBoundary: this._isReturnBoundaryTag(tagName),
-      loopKind: this._isLoopTag(tagName) ? tagName : null,
+      loopKind,
       isParallelLoop: tagName === 'for',
       isSequentialLoop: tagName === 'each',
       containsReturn: false,
       loopBodyContainsReturn: false,
-      mayReturn: false,
-      children: []
+      mayReturn: false
     };
+    if (loopKind) {
+      frame.startEntry = startEntry;
+    }
+    return frame;
   }
 
   _nearestReturnBoundaryFrame(stack) {
+    // stack[0] is the synthetic root frame and is always a return boundary.
     for (let i = stack.length - 1; i >= 0; i--) {
       if (stack[i].isFunctionBoundary) {
         return stack[i];
       }
     }
-    return stack[0];
+    return stack[0] || null;
   }
 
   _nearestParallelLoopFrame(stack) {
@@ -1915,8 +1920,12 @@ class ScriptTranspiler {
     }
   }
 
+  /**
+   * @returns {{loops: Array<object>, returnOwningScopes: Array<object>}}
+   * Return metadata consumed by the loop guard passes and focused tests.
+   */
   _analyzeReturnMetadata(processedLines) {
-    const rootFrame = this._createReturnAnalysisFrame('root', null, null);
+    const rootFrame = this._createReturnAnalysisFrame('root', null);
     const stack = [rootFrame];
     const frames = [rootFrame];
     const loops = [];
@@ -1924,36 +1933,29 @@ class ScriptTranspiler {
 
     for (let i = 0; i < processedLines.length; i++) {
       const line = processedLines[i];
-      const topFrame = stack[stack.length - 1] || rootFrame;
-      const parallelLoopFrame = this._nearestParallelLoopFrame(stack);
-      line.returnAnalysis = {
-        currentFrame: topFrame,
-        currentReturnBoundary: this._nearestReturnBoundaryFrame(stack),
-        insideParallelFor: !!parallelLoopFrame,
-        parallelForFrame: parallelLoopFrame,
-        isRuntimeReturn: false,
-        ignoredAsOpaqueContent: false
-      };
-
-      if (line.isContinuation) {
+      if (line.isContinuation || line.isEmpty || line.isCommentOnly || line.lineType === 'RAW_TEXT') {
         continue;
       }
 
+      line.returnAnalysis = {
+        currentReturnBoundary: this._nearestReturnBoundaryFrame(stack),
+        insideParallelFor: false,
+        isRuntimeReturn: false
+      };
+
       if (rawDepth > 0 && line.tagName !== 'endraw' && line.tagName !== 'endverbatim') {
-        line.returnAnalysis.ignoredAsOpaqueContent = true;
         continue;
       }
 
       if (line.tagName === 'return') {
+        line.returnAnalysis.insideParallelFor = !!this._nearestParallelLoopFrame(stack);
         line.returnAnalysis.isRuntimeReturn = true;
         this._markRuntimeReturn(stack);
         continue;
       }
 
       if (line.blockType === this.BLOCK_TYPE.START) {
-        const parent = stack[stack.length - 1] || rootFrame;
-        const frame = this._createReturnAnalysisFrame(line.tagName, parent, line);
-        parent.children.push(frame);
+        const frame = this._createReturnAnalysisFrame(line.tagName, line);
         stack.push(frame);
         frames.push(frame);
         if (frame.loopKind) {
@@ -1976,20 +1978,33 @@ class ScriptTranspiler {
     }
 
     return {
-      root: rootFrame,
-      frames,
       loops,
-      returnOwningScopes: frames.filter((frame) => frame.isFunctionBoundary),
-      hasRuntimeReturn: rootFrame.mayReturn
+      returnOwningScopes: frames.filter((frame) => frame.isFunctionBoundary)
     };
   }
 
-  _returnGuardOpenTag(count = 1) {
-    return Array(count).fill('{%- if __return__ == __RETURN_UNSET__ -%}').join('');
+  _returnGuardOpenTag() {
+    return '{%- if __return__ == __RETURN_UNSET__ -%}';
   }
 
-  _returnGuardCloseTag(count = 1) {
-    return Array(count).fill('{%- endif -%}').join('');
+  _returnGuardCloseTag() {
+    return '{%- endif -%}';
+  }
+
+  _appendReturnGuardOpenTags(line, count = 1) {
+    for (let i = 0; i < count; i++) {
+      this._appendInlinePrefix(line, this._returnGuardOpenTag());
+    }
+  }
+
+  _appendReturnGuardCloseTags(line, count = 1, asPrefix = true) {
+    for (let i = 0; i < count; i++) {
+      if (asPrefix) {
+        this._appendInlinePrefix(line, this._returnGuardCloseTag());
+      } else {
+        this._appendInlineSuffix(line, this._returnGuardCloseTag());
+      }
+    }
   }
 
   _appendInlinePrefix(line, content) {
@@ -2011,6 +2026,8 @@ class ScriptTranspiler {
   }
 
   _applyWhileReturnGuards(processedLines) {
+    // While guards are part of the condition expression, so this pass rewrites
+    // codeContent before _generateOutput renders the tag.
     for (let i = 0; i < processedLines.length; i++) {
       const line = processedLines[i];
       if (!line ||
@@ -2030,6 +2047,8 @@ class ScriptTranspiler {
   }
 
   _applyParallelForReturnGuards(processedLines, analysis) {
+    // Stack shape for this pass: { bodyGateIsOpen }. It only tracks the
+    // parallel-for body gate opened on the for tag and closed at middle/end tags.
     const loopFrameByStart = new Map();
     (analysis?.loops || []).forEach((frame) => {
       if (frame.startEntry) {
@@ -2059,45 +2078,41 @@ class ScriptTranspiler {
 
       if (line.blockType === this.BLOCK_TYPE.MIDDLE) {
         const frame = stack[stack.length - 1];
-        if (frame && frame.bodyGuardOpen) {
+        if (frame && frame.bodyGateIsOpen) {
           this._appendInlinePrefix(line, this._returnGuardCloseTag());
-          frame.bodyGuardOpen = false;
+          frame.bodyGateIsOpen = false;
         }
         continue;
       }
 
       if (line.blockType === this.BLOCK_TYPE.START) {
         const analysisFrame = loopFrameByStart.get(line) || null;
-        const bodyGuardOpen = !!(
+        const bodyGateIsOpen = !!(
           analysisFrame &&
           analysisFrame.isParallelLoop &&
           analysisFrame.loopBodyContainsReturn
         );
-        if (bodyGuardOpen) {
+        if (bodyGateIsOpen) {
           this._appendInlineSuffix(line, this._returnGuardOpenTag());
         }
         stack.push({
-          bodyGuardOpen
+          bodyGateIsOpen
         });
         continue;
       }
 
       if (line.blockType === this.BLOCK_TYPE.END) {
         const frame = stack.length > 0 ? stack.pop() : null;
-        if (frame && frame.bodyGuardOpen) {
+        if (frame && frame.bodyGateIsOpen) {
           this._appendInlinePrefix(line, this._returnGuardCloseTag());
-          frame.bodyGuardOpen = false;
+          frame.bodyGateIsOpen = false;
         }
       }
     }
   }
 
-  _createReturnGuardFrame(tagName, parent, startEntry = null) {
+  _createReturnGuardFrame(tagName) {
     return {
-      tagName,
-      parent,
-      startEntry,
-      endTagName: this.SYNTAX.blockPairs[tagName] || null,
       isFunctionBoundary: this._isReturnBoundaryTag(tagName),
       returnGuardDepth: 0,
       pendingReturnGuardDepth: 0,
@@ -2106,28 +2121,35 @@ class ScriptTranspiler {
   }
 
   _applyReturnGuards(processedLines) {
-    const rootFrame = this._createReturnGuardFrame('root', null, null);
+    // Stack shape for this pass: function-boundary flag plus active/pending
+    // guard depth for the current source block.
+    const rootFrame = this._createReturnGuardFrame('root');
     const stack = [rootFrame];
 
     const currentFrame = () => stack[stack.length - 1] || rootFrame;
     const openPendingFrameGuards = (frame, line) => {
       if (!frame || frame.pendingReturnGuardDepth <= 0) return;
-      this._appendInlinePrefix(line, this._returnGuardOpenTag(frame.pendingReturnGuardDepth));
+      this._appendReturnGuardOpenTags(line, frame.pendingReturnGuardDepth);
       frame.returnGuardDepth += frame.pendingReturnGuardDepth;
       frame.pendingReturnGuardDepth = 0;
     };
+    // closeFrameGuards closes a materialized guard before a middle/end tag.
+    // closeActiveFrameGuardsAfterLine closes one after a statement or child block
+    // that has already run inside the guard.
+    // The former emits a prefix before the tag; the latter emits a suffix after
+    // a statement or child block.
     const closeFrameGuards = (frame, line) => {
       if (!frame) return;
       frame.pendingReturnGuardDepth = 0;
       if (frame.returnGuardDepth <= 0) return;
       if (line) {
-        this._appendInlinePrefix(line, this._returnGuardCloseTag(frame.returnGuardDepth));
+        this._appendReturnGuardCloseTags(line, frame.returnGuardDepth, true);
       }
       frame.returnGuardDepth = 0;
     };
     const closeActiveFrameGuardsAfterLine = (frame, line) => {
       if (!frame || frame.returnGuardDepth <= 0) return;
-      this._appendInlineSuffix(line, this._returnGuardCloseTag(frame.returnGuardDepth));
+      this._appendReturnGuardCloseTags(line, frame.returnGuardDepth, false);
       frame.returnGuardDepth = 0;
     };
     // Called after popping a closing block, so currentFrame() is already the parent.
@@ -2138,6 +2160,8 @@ class ScriptTranspiler {
       const parent = currentFrame();
       if (!parent) return;
       closeActiveFrameGuardsAfterLine(parent, line);
+      // Any active parent guard has just been flushed. One pending cascade is
+      // enough to protect the next real parent statement.
       parent.pendingReturnGuardDepth = 1;
       parent.containsReturn = true;
     };
@@ -2171,7 +2195,7 @@ class ScriptTranspiler {
       if (line.blockType === this.BLOCK_TYPE.START) {
         const parent = currentFrame();
         openPendingFrameGuards(parent, line);
-        stack.push(this._createReturnGuardFrame(line.tagName, parent, line));
+        stack.push(this._createReturnGuardFrame(line.tagName));
         continue;
       }
 
@@ -2186,25 +2210,22 @@ class ScriptTranspiler {
     }
 
     if (rootFrame.returnGuardDepth > 0 && processedLines.length > 0) {
-      this._appendInlineSuffix(
+      this._appendReturnGuardCloseTags(
         processedLines[processedLines.length - 1],
-        this._returnGuardCloseTag(rootFrame.returnGuardDepth)
+        rootFrame.returnGuardDepth,
+        false
       );
       rootFrame.returnGuardDepth = 0;
     }
     rootFrame.pendingReturnGuardDepth = 0;
   }
 
-  /**
-   * Convert Cascada script to Nunjucks/Cascada template
-   * @param {string} scriptStr - The input script string
-   * @return {Object} Object with template string and possible error
-   */
-  scriptToTemplate(scriptStr, options = {}) {
+  _prepareScriptLines(scriptStr, options = {}) {
+    // This transpiler is a module singleton and keeps parsing state on `this`;
+    // calls must not run concurrently on the same instance.
     this._useCoreChannelAliases = !!options.useCoreOutputAliases;
     this.channelScopes = [this._createChannelScope()];
     this.callBlockStack = [];
-    this.returnAnalysis = null;
     // Split into lines
     const lines = scriptStr.split('\n');
 
@@ -2231,8 +2252,7 @@ class ScriptTranspiler {
         state.inMultiLineComment,
         state.stringState
       );
-      const splitSemicolons = opaqueBodyDepth === 0;
-      const logicalLines = this._splitParsedLineIntoLogicalLines(line, physicalParseResult, i, splitSemicolons);
+      const logicalLines = this._splitParsedLineIntoLogicalLines(line, physicalParseResult, i, opaqueBodyDepth === 0);
 
       for (let logicalIndex = 0; logicalIndex < logicalLines.length; logicalIndex++) {
         const logicalLine = logicalLines[logicalIndex];
@@ -2274,11 +2294,15 @@ class ScriptTranspiler {
     }
 
     this._processContinuationsAndComments(processedLines);
-    this.returnAnalysis = this._analyzeReturnMetadata(processedLines);
-    this._applyWhileReturnGuards(processedLines);
-    this._applyParallelForReturnGuards(processedLines, this.returnAnalysis);
-    this._applyReturnGuards(processedLines);
+    const returnAnalysis = this._analyzeReturnMetadata(processedLines);
 
+    // Validate block structure
+    this._validateBlockStructure(processedLines);
+
+    return { processedLines, returnAnalysis };
+  }
+
+  _renderProcessedLines(processedLines) {
     let output = '';
     let lastNonContinuationLineType = null;
     for (let i = 0; i < processedLines.length; i++) {
@@ -2295,10 +2319,24 @@ class ScriptTranspiler {
       }
     }
 
-    // Validate block structure
-    this._validateBlockStructure(processedLines);
-
     return output;
+  }
+
+  analyzeReturn(scriptStr, options = {}) {
+    return this._prepareScriptLines(scriptStr, options).returnAnalysis;
+  }
+
+  /**
+   * Convert Cascada script to Nunjucks/Cascada template
+   * @param {string} scriptStr - The input script string
+   * @return {Object} Object with template string and possible error
+   */
+  scriptToTemplate(scriptStr, options = {}) {
+    const { processedLines, returnAnalysis } = this._prepareScriptLines(scriptStr, options);
+    this._applyWhileReturnGuards(processedLines);
+    this._applyParallelForReturnGuards(processedLines, returnAnalysis);
+    this._applyReturnGuards(processedLines);
+    return this._renderProcessedLines(processedLines);
   }
 
   _mapCoreChannelName(name) {
