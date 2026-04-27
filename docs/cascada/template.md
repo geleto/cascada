@@ -24,47 +24,18 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 * **`set` for variables and assignment** — Use Nunjucks `{% set %}` syntax instead of Script's `var` and `=`
 * **`do` for execution-only expressions** — Standalone calls and sequence path repair (`!!`) use `{% do %}`
 
-## Script ↔ Template Syntax Reference
+## Render vs Return: The Core Difference
 
-| Feature                  | Cascada Script                                             | Cascada Template                                                             |
-| ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **Text channel**         | `text t`                                                   | *(text output is implicit — no declaration needed)*                          |
-| **Text channel write**   | `t("Hello " + user.name)`                                  | `Hello {{ user.name }}`                                                      |
-| **Expressions**          | `t(total * 1.2)`                                           | `{{ total * 1.2 }}`                                                          |
-| **Variable Declaration** | `var user = fetchUser(1)`                                  | `{% set user = fetchUser(1) %}`                                              |
-| **Assignment**           | `count = count + 1`                                        | `{% set count = count + 1 %}`                                                |
-| **Multiple Variables**   | `var x, y = none`                                          | `{% set x, y = none %}`                                                      |
-| **Comments**             | `// Single line`<br>`/* Multi line */`                     | `{# Single or multi-line #}`                                                 |
-| **Filters**              | `t(name \| upper)`                                         | `{{ name \| upper }}`                                                        |
-| **Filter with Args**     | `t(items \| join(", "))`                                   | `{{ items \| join(", ") }}`                                                  |
-| **Execution-only Call**  | `service.notify(user)`                                     | `{% do service.notify(user) %}`                                              |
-| **Sequence Path Repair** | `user.profile!!`                                           | `{% do user.profile!! %}`                                                    |
-| **If Statement**         | `if user.age >= 18`<br>  `...`<br>`elseif ...`<br>  `...`<br>`else`<br>  `...`<br>`endif` | `{% if user.age >= 18 %}`<br>  `...`<br>`{% elseif ... %}`<br>  `...`<br>`{% else %}`<br>  `...`<br>`{% endif %}` |
-| **For Loop**             | `for item in items`<br>  `...`<br>`endfor`                 | `{% for item in items %}`<br>  `...`<br>`{% endfor %}`                       |
-| **Each Loop**            | `each item in items`<br>  `...`<br>`endeach`               | `{% each item in items %}`<br>  `...`<br>`{% endeach %}`                     |
-| **While Loop**           | `while count < 10`<br>  `...`<br>`endwhile`                | `{% while count < 10 %}`<br>  `...`<br>`{% endwhile %}`                      |
-| **Switch**               | `switch value`<br>  `case 1`<br>    `...`<br>`endswitch`   | `{% switch value %}`<br>  `{% case 1 %}`<br>    `...`<br>`{% endswitch %}`   |
-| **Function Definition**  | `function greet(name)`<br>  `...`<br>`endfunction`         | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
-| **Function/Macro Calls** | `var result = greet("Alice")`                              | `{{ greet("Alice") }}`                                                       |
-| **Call Block**           | `var x = call wrapper()`<br>  `(param)`<br>  `return value`<br>`endcall` | `{% call wrapper() %}`<br>  `...`<br>`{% endcall %}`              |
-| **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}`                                                             |
-| **Block Assignment**     | *(not available in scripts)*                               | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
-| **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
-| **Inherited Override**   | `method name(arg1, arg2)`<br>  `...`<br>`endmethod`        | `{% block name(arg1, arg2) %}`<br>  `...`<br>`{% endblock %}`                |
-| **Shared var declaration** | `shared var theme = "dark"`                              | *(inferred automatically — no declaration needed)*                           |
-| **Shared var write**     | `this.theme = "dark"`                                      | `{% set this.theme = "dark" %}`                                              |
-| **Shared var read**      | `this.theme`                                               | `{{ this.theme }}`                                                           |
-| **Nested shared var read** | `this.user.name`                                         | `{{ this.user.name }}`                                                       |
-| **Include**              | *(not supported in scripts)*                               | `{% include "file" %}`                                                       |
-| **Include with inputs**  | *(not supported in scripts)*                               | `{% include "file" with context, var1, var2 %}`                              |
-| **Import namespace**     | `import "file" as lib`                                     | `{% import "file" as lib %}`                                                 |
-| **Import with inputs**   | `import "file" as lib with context, var1`                  | `{% import "file" as lib with context, var1 %}`                              |
-| **Import names**         | `from "file" import helper`                                | `{% from "file" import helper %}`                                            |
-| **From import with inputs** | `from "file" import helper with context, var1`          | `{% from "file" import helper with context, var1 %}`                         |
-| **Extern (required)**    | `extern user`                                              | `{% extern user %}`                                                          |
-| **Extern (with default)**| `extern theme = "light"`                                   | `{% extern theme = "light" %}`                                               |
-| **Guard Block**          | `guard`<br>  `...`<br>  `recover`<br>  `...`<br>`endguard` | `{% guard %}`<br>  `...`<br>  `{% recover %}`<br>  `...`<br>`{% endguard %}` |
-| **Revert**               | `revert`                                                   | `{% revert %}`                                                               |
+Scripts **return** values; templates **render** text. This applies uniformly to every callable construct:
+
+| | Cascada Script | Cascada Template |
+|---|---|---|
+| **Overall result** | Explicit `return value` or `return ch.snapshot()` | Text accumulated in the output stream |
+| **Function / macro** | Returns a value — `var result = fn(args)` | Renders text inline — `{{ macro(args) }}` |
+| **Call block body** | Must `return` explicitly; outer form is `var x = call fn()` | Renders text; no explicit return |
+| **`caller()`** | Returns the call block body's `return` value | Renders the call block body's text inline |
+| **Method / block** | Returns a value via `return` | Renders text inline |
+| **`super()`** | Returns the parent method's value | Renders the parent block's text |
 
 ## Examples
 
@@ -117,25 +88,52 @@ The sequence path repair operator `!!` repairs poisoned sequence paths. In templ
 Database: {{ config.database.connection.host }}
 ```
 
+## Script ↔ Template Syntax Reference
 
-## Render vs Return: The Core Difference
-
-Templates and scripts have a fundamentally different output model:
-
-- **Templates render** — macros, call blocks, and the template itself write text directly to an output stream. `{{ expr }}` interpolates inline; `caller()` renders the call block's content inline at the point of invocation.
-- **Scripts return** - functions and call blocks produce values via explicit `return`. `caller()` returns the value that the call block body returned. The script's final result is whatever `return` produces (a plain value, a channel snapshot, or a composed object).
-
-This means the same logical structure behaves differently across modes:
-
-| | Cascada Script | Cascada Template |
-|---|---|---|
-| **Function/macro result** | Script function returned as a value - assign with `var result = myFunction(args)` | Template macro rendered inline - invoke with `{{ myMacro(args) }}` |
-| **`caller()` result** | Returns the call block's `return` value | Renders the call block's content inline |
-| **Script/template result** | Explicit `return value` or `return ch.snapshot()` | Text accumulated in the output stream |
+| Feature                  | Cascada Script                                             | Cascada Template                                                             |
+| ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Text channel**         | `text t`                                                   | *(text output is implicit — no declaration needed)*                          |
+| **Text channel write**   | `t("Hello " + user.name)`                                  | `Hello {{ user.name }}`                                                      |
+| **Expressions**          | `t(total * 1.2)`                                           | `{{ total * 1.2 }}`                                                          |
+| **Variable Declaration** | `var user = fetchUser(1)`                                  | `{% set user = fetchUser(1) %}`                                              |
+| **Assignment**           | `count = count + 1`                                        | `{% set count = count + 1 %}`                                                |
+| **Multiple Variables**   | `var x, y = none`                                          | `{% set x, y = none %}`                                                      |
+| **Comments**             | `// Single line`<br>`/* Multi line */`                     | `{# Single or multi-line #}`                                                 |
+| **Filters**              | `t(name \| upper)`                                         | `{{ name \| upper }}`                                                        |
+| **Filter with Args**     | `t(items \| join(", "))`                                   | `{{ items \| join(", ") }}`                                                  |
+| **Execution-only Call**  | `service.notify(user)`                                     | `{% do service.notify(user) %}`                                              |
+| **Sequence Path Repair** | `user.profile!!`                                           | `{% do user.profile!! %}`                                                    |
+| **If Statement**         | `if user.age >= 18`<br>  `...`<br>`elseif ...`<br>  `...`<br>`else`<br>  `...`<br>`endif` | `{% if user.age >= 18 %}`<br>  `...`<br>`{% elseif ... %}`<br>  `...`<br>`{% else %}`<br>  `...`<br>`{% endif %}` |
+| **For Loop**             | `for item in items`<br>  `...`<br>`endfor`                 | `{% for item in items %}`<br>  `...`<br>`{% endfor %}`                       |
+| **Each Loop**            | `each item in items`<br>  `...`<br>`endeach`               | `{% each item in items %}`<br>  `...`<br>`{% endeach %}`                     |
+| **While Loop**           | `while count < 10`<br>  `...`<br>`endwhile`                | `{% while count < 10 %}`<br>  `...`<br>`{% endwhile %}`                      |
+| **Switch**               | `switch value`<br>  `case 1`<br>    `...`<br>`endswitch`   | `{% switch value %}`<br>  `{% case 1 %}`<br>    `...`<br>`{% endswitch %}`   |
+| **Function Definition**  | `function greet(name)`<br>  `...`<br>`endfunction`         | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
+| **Function/Macro Calls** | `var result = greet("Alice")`                              | `{{ greet("Alice") }}`                                                       |
+| **Call Block**           | `var x = call wrapper()`<br>  `(param)`<br>  `return value`<br>`endcall` | `{% call wrapper() %}`<br>  `...`<br>`{% endcall %}`              |
+| **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}`                                                             |
+| **Block Assignment**     | *(not available in scripts)*                               | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
+| **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
+| **Inherited Override**   | `method name(arg1, arg2)`<br>  `...`<br>`endmethod`        | `{% block name(arg1, arg2) %}`<br>  `...`<br>`{% endblock %}`                |
+| **Shared var declaration** | `shared var theme = "dark"`                              | *(inferred automatically — no declaration needed)*                           |
+| **Shared var write**     | `this.theme = "dark"`                                      | `{% set this.theme = "dark" %}`                                              |
+| **Shared var read**      | `this.theme`                                               | `{{ this.theme }}`                                                           |
+| **Nested shared var read** | `this.user.name`                                         | `{{ this.user.name }}`                                                       |
+| **Include**              | *(not supported in scripts)*                               | `{% include "file" %}`                                                       |
+| **Include with inputs**  | *(not supported in scripts)*                               | `{% include "file" with context, var1, var2 %}`                              |
+| **Import namespace**     | `import "file" as lib`                                     | `{% import "file" as lib %}`                                                 |
+| **Import with inputs**   | `import "file" as lib with context, var1`                  | `{% import "file" as lib with context, var1 %}`                              |
+| **Import with object**   | `import "file" as lib with { key: expr }`                  | `{% import "file" as lib with { key: expr } %}`                              |
+| **Import names**         | `from "file" import helper`                                | `{% from "file" import helper %}`                                            |
+| **From import with inputs** | `from "file" import helper with context, var1`          | `{% from "file" import helper with context, var1 %}`                         |
+| **Extern (required)**    | `extern user`                                              | `{% extern user %}`                                                          |
+| **Extern (with default)**| `extern theme = "light"`                                   | `{% extern theme = "light" %}`                                               |
+| **Guard Block**          | `guard`<br>  `...`<br>  `recover`<br>  `...`<br>`endguard` | `{% guard %}`<br>  `...`<br>  `{% recover %}`<br>  `...`<br>`{% endguard %}` |
+| **Revert**               | `revert`                                                   | `{% revert %}`                                                               |
 
 ## Call Blocks and `caller()`
 
-In Script mode, `caller()` returns the value explicitly returned by the call block body. Call blocks must always use assignment form:
+In scripts, call blocks must always use assignment form:
 
 ```javascript
 function map(items)
@@ -192,6 +190,29 @@ The full composition model — `extern`, `with`, `with context`, `extends ... wi
 - Template inheritance uses `{% block name(args) %}` / `{% endblock %}` where scripts use `method name(args)` / `endmethod`. Both support `this.blockName(args)` / `this.methodName(args)` for calling an override via inherited dispatch.
 - `extern`, `with` clauses, and the explicit-contract model are **async-only**. In classic Nunjucks (sync) mode, `extern` is a compile error and templates retain implicit access to all parent-scope variables.
 
+### Blocks in Async Templates
+
+Classic Nunjucks blocks have implicit access to the caller's scope. Cascada async blocks are isolated — they receive data only through declared arguments, with `with context` optionally exposing render-context names:
+
+```nunjucks
+{# Nunjucks — block sees caller's local variables implicitly #}
+{% set user = getUser() %}
+{% block greeting %}
+  Hello {{ user.name }}
+{% endblock %}
+
+{# Cascada async — block receives data through declared arguments #}
+{% set user = getUser() %}
+{% block greeting(user) %}
+  Hello {{ user.name }}
+{% endblock %}
+```
+
+- `{% block name(arg1, arg2) %}` — block-local arguments; local variables that shadow render-context names.
+- `{% block name(args) with context %}` — also exposes render-context bare names.
+- Overrides must match the parent's signature exactly, including `with context`.
+- `super()` renders the parent block with the original block arguments.
+
 ### Inheritance Example
 
 ```nunjucks
@@ -207,7 +228,7 @@ The full composition model — `extern`, `with`, `with context`, `extends ... wi
 {% set theme = "dark" %}
 {% extends "base.njk" with theme %}
 
-{% block content(user) %}
+{% block content(user) with context %}
   {% set user = "Grace" %}
   Child {{ user }} / {{ siteName }} / {{ super() }}
 {% endblock %}
@@ -259,16 +280,30 @@ The child's `{% set this.theme = "dark" %}` writes the shared var before the con
 
 ## Variable Scoping
 
+### Concurrency Isolation
+
+In async mode, every construct that can run concurrently gets its own isolated scope, preventing race conditions between parallel branches or iterations:
+
 | Construct | Classic Nunjucks / sync | Async Cascada Template |
 |---|---|---|
 | `if` / `switch` | No scope — `{% set %}` writes to parent | Local scope — variables stay inside the branch |
 | `for` / `each` loop body | All iterations share one inner scope that is discarded after the loop | Each iteration has its own isolated scope |
 | `while` loop body | Uses the parent scope directly — `{% set %}` inside writes to the outer scope | Each iteration has its own isolated scope |
-| `include` | Child sees all parent `{% set %}` variables | Isolated — child sees only explicit `with` inputs |
-| `block` inputs | Not applicable | Declared by the block signature, e.g. `{% block content(user) %}`; available as locals inside the block |
-| Child top-level `{% set %}` | Visible in the child's blocks | Visible in the child's own blocks |
 
-The short version: in async mode every construct that can run concurrently gets its own scope, preventing race conditions between parallel iterations or branches.
+### Composition Isolation
+
+All composition boundaries are isolated in async mode — the child sees only what is explicitly passed in, not the caller's local variables:
+
+| Construct | Classic Nunjucks / sync | Async Cascada Template |
+|---|---|---|
+| `include` | Sees all caller's `{% set %}` variables | Isolated — sees only explicit `with` inputs |
+| `import` | Macros see only their own arguments | Isolated — sees only explicit `with` inputs |
+| `block` | Sees caller's frame | Isolated — sees only declared block arguments and `with context` names |
+| Child top-level `{% set %}` | Visible in the child's own blocks | Visible in the child's own blocks |
+
+### Passing Data with `with`
+
+All Cascada composition operations support `with` for passing data across isolation boundaries — the same syntax as in scripts, and unlike classic Nunjucks which has no equivalent. See [`with`: Composition Payload](https://geleto.github.io/cascada-script/#with-composition-payload) in the script docs for the full rules.
 
 ## Unsupported Features
 
