@@ -842,6 +842,8 @@ Phase 2 implementation status:
 - Added return-analysis metadata over processed logical lines, including
   return-owning scopes, loop body returns, parallel `for` context, and
   sequential `each` loop classification.
+  This was later replaced by the simpler single return-stack pass described in
+  Phase 3.
 - Phase 2 review fixes:
   - comment-only logical segments between semicolon statements now preserve
     source order instead of being attached after the following statement.
@@ -890,18 +892,16 @@ Phase 3 implementation status:
   not create empty injected `if`/`endif` pairs.
 - Removed the unused `injectLines` consumer after replacing the earlier
   injection idea with the dedicated return-guard pass.
-
-`scriptTranspiler.analyzeReturn(script)` is the explicit introspection path for
-return analysis tests. `scriptToTemplate()` keeps the analysis local to one
-transpile call and does not expose singleton mutable analysis state.
-The analysis result is intentionally narrow: `{ loops, returnOwningScopes }`.
+- Reworked the implementation to use one stateful stack pass over processed
+  logical lines. The old `analyzeReturn()` introspection API and return-analysis
+  metadata were removed; tests now cover behavior and externally meaningful
+  generated-template contracts instead of internal analysis frames.
 
 #### Phase 4. Loop Return Semantics
 
 Covers steps 7, 8, and 9, landed as sub-phases.
 
-- Phase 4a: add `while` condition rewriting for return-owning scopes that may
-  return.
+- Phase 4a: add `while` condition rewriting for while bodies that may return.
 - Phase 4b: add sequential `each` loop advancement checks so return prevents
   later iterations from starting.
 - Phase 4c: add the parallel-`for`-specific return protections: gate
@@ -911,8 +911,8 @@ Covers steps 7, 8, and 9, landed as sub-phases.
 
 Phase 4 implementation status:
 
-- Implemented same-line `while` condition rewriting for return-owning scopes
-  that may return.
+- Implemented same-line `while` condition rewriting for while bodies that may
+  return.
 - Added an ordered parent-buffer return-state check after sequential `each`
   iterations whose body can return, so arrays, objects, and async iterators stop
   advancing after return becomes visible.
@@ -1212,51 +1212,34 @@ Integration-first tests for this step:
 Add guard injection after `return` and cascade it outward through enclosing
 blocks until a function boundary is reached.
 
-This requires tag/endtag depth tracking. The `endif` generated for a return must
-attach to the end tag of the block that was current when the guard was opened,
-not to the next arbitrary end tag in the file.
+This is implemented as one stateful stack pass in the script transpiler. See
+`docs/code/return-transpile.md` for the current minimal design.
 
-Each block-stack frame should track at least:
+The pass avoids a separate return-analysis phase. Each frame tracks boolean
+state only:
 
-- `isFunctionBoundary`
-- `loopKind`, such as `for`, `each`, or `null`
-- `isParallelLoop`
-- `returnGuardDepth`
-- `pendingReturnGuardDepth`
-- `containsReturn`
+- whether a visible return has occurred in the frame;
+- whether a post-return guard is pending or open;
+- whether a loop body guard is open;
+- whether the frame is a return boundary;
+- whether the frame uses a body guard (`for`/`each`) or condition guard
+  (`while`).
 
-When a return is emitted:
+When a return is emitted, the pass marks frames down the stack until the nearest
+return boundary. `function`, `method`, and `call_assign` stop propagation. If a
+marked ancestor is a `for` or `each` body frame, the pass retroactively opens the
+body guard on that frame's start line.
 
-```cascada
-return value
-```
+The pending post-return guard is materialized as `if __return_is_unset__()` only
+when a later executable statement or tag needs protection. Comments, blank
+lines, middle tags, end tags, and EOF do not force the pending guard to open.
+This prevents empty injected blocks such as `if __return_is_unset__(); endif`
+when the return is already at the end of a branch or scope.
 
-the current frame is marked with:
-
-```text
-pendingReturnGuardDepth = 1
-containsReturn = true
-```
-
-The pending guard is materialized as
-`if __return_is_unset__()` only when a later real statement in the same
-frame needs protection. Comments, blank lines, middle tags, end tags, and EOF do
-not force the pending guard to open. This prevents empty injected blocks such as
-`if __return_is_unset__(); endif` when the return is already at the end
-of a branch or scope. Repeated pending guards at the same materialization point
-are coalesced into one guard because they all read the same ordered return state.
-
-When processing an end tag:
-
-1. Look at the frame that this end tag closes.
-2. Drop any pending, unopened guard for that frame.
-3. If that frame has an active `returnGuardDepth`, emit the matching `endif`
-   tags before the end tag.
-4. Emit the original end tag.
-5. Pop the frame.
-6. If the popped frame had `containsReturn`, and the new parent frame is not a
-   function boundary, mark the parent with a pending guard and
-   `containsReturn = true`.
+When processing an end tag, the pass closes any materialized post-return guard,
+then closes any loop body guard, patches `while` conditions if the closed while
+body may return, and propagates a pending guard to the parent frame when the
+closed frame is not a return boundary.
 
 If a return happens inside an already-active guard, the active guard is closed
 after that return or after the child block that propagated the return. The pass

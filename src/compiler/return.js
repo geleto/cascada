@@ -18,12 +18,8 @@ class CompileReturn {
     };
   }
 
-  isReturnChannelName(name) {
-    return name === RETURN_CHANNEL_NAME;
-  }
-
   isReturnChannelReference(name, declaration = null) {
-    return this.isReturnChannelName(name) ||
+    return name === RETURN_CHANNEL_NAME ||
       !!(declaration && declaration.runtimeName === RETURN_CHANNEL_NAME);
   }
 

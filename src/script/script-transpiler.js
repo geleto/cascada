@@ -1848,165 +1848,6 @@ class ScriptTranspiler {
     }
   }
 
-  _isReturnBoundaryTag(tagName) {
-    return tagName === 'root' ||
-      tagName === 'function' ||
-      tagName === 'method' ||
-      tagName === 'call' ||
-      tagName === 'call_assign';
-  }
-
-  _isLoopTag(tagName) {
-    return tagName === 'for' || tagName === 'each';
-  }
-
-  _createReturnAnalysisFrame(tagName, startEntry = null) {
-    const loopKind = this._isLoopTag(tagName) ? tagName : null;
-    const frame = {
-      tagName,
-      isFunctionBoundary: this._isReturnBoundaryTag(tagName),
-      loopKind,
-      isParallelLoop: tagName === 'for',
-      isSequentialLoop: tagName === 'each',
-      containsReturn: false,
-      loopBodyContainsReturn: false,
-      mayReturn: false
-    };
-    if (loopKind) {
-      frame.startEntry = startEntry;
-    }
-    return frame;
-  }
-
-  _nearestReturnBoundaryFrame(stack) {
-    // stack[0] is the synthetic root frame and is always a return boundary.
-    for (let i = stack.length - 1; i >= 0; i--) {
-      if (stack[i].isFunctionBoundary) {
-        return stack[i];
-      }
-    }
-    return stack[0] || null;
-  }
-
-  _nearestParallelLoopFrame(stack) {
-    const boundary = this._nearestReturnBoundaryFrame(stack);
-    for (let i = stack.length - 1; i >= 0; i--) {
-      const frame = stack[i];
-      if (frame === boundary) {
-        return null;
-      }
-      if (frame.isParallelLoop) {
-        return frame;
-      }
-    }
-    return null;
-  }
-
-  _markRuntimeReturn(stack) {
-    const boundary = this._nearestReturnBoundaryFrame(stack);
-    if (boundary) {
-      boundary.mayReturn = true;
-    }
-
-    for (let i = stack.length - 1; i >= 0; i--) {
-      const frame = stack[i];
-      frame.containsReturn = true;
-      if (frame.loopKind) {
-        frame.loopBodyContainsReturn = true;
-      }
-      if (frame === boundary) {
-        break;
-      }
-    }
-  }
-
-  /**
-   * @returns {{loops: Array<object>, returnOwningScopes: Array<object>}}
-   * Return metadata consumed by the loop guard passes and focused tests.
-   */
-  _analyzeReturnMetadata(processedLines) {
-    const rootFrame = this._createReturnAnalysisFrame('root', null);
-    const stack = [rootFrame];
-    const frames = [rootFrame];
-    const loops = [];
-    let rawDepth = 0;
-
-    for (let i = 0; i < processedLines.length; i++) {
-      const line = processedLines[i];
-      if (line.isContinuation || line.isEmpty || line.isCommentOnly || line.lineType === 'RAW_TEXT') {
-        continue;
-      }
-
-      line.returnAnalysis = {
-        currentReturnBoundary: this._nearestReturnBoundaryFrame(stack),
-        insideParallelFor: false,
-        isRuntimeReturn: false
-      };
-
-      if (rawDepth > 0 && line.tagName !== 'endraw' && line.tagName !== 'endverbatim') {
-        continue;
-      }
-
-      if (line.tagName === 'return') {
-        line.returnAnalysis.insideParallelFor = !!this._nearestParallelLoopFrame(stack);
-        line.returnAnalysis.isRuntimeReturn = true;
-        this._markRuntimeReturn(stack);
-        continue;
-      }
-
-      if (line.blockType === this.BLOCK_TYPE.START) {
-        const frame = this._createReturnAnalysisFrame(line.tagName, line);
-        stack.push(frame);
-        frames.push(frame);
-        if (frame.loopKind) {
-          loops.push(frame);
-        }
-        if (line.tagName === 'raw' || line.tagName === 'verbatim') {
-          rawDepth += 1;
-        }
-        continue;
-      }
-
-      if (line.blockType === this.BLOCK_TYPE.END) {
-        if ((line.tagName === 'endraw' || line.tagName === 'endverbatim') && rawDepth > 0) {
-          rawDepth -= 1;
-        }
-        if (stack.length > 1) {
-          stack.pop();
-        }
-      }
-    }
-
-    return {
-      loops,
-      returnOwningScopes: frames.filter((frame) => frame.isFunctionBoundary)
-    };
-  }
-
-  _returnGuardOpenTag() {
-    return '{%- if __return_is_unset__() -%}';
-  }
-
-  _returnGuardCloseTag() {
-    return '{%- endif -%}';
-  }
-
-  _appendReturnGuardOpenTags(line, count = 1) {
-    for (let i = 0; i < count; i++) {
-      this._appendInlinePrefix(line, this._returnGuardOpenTag());
-    }
-  }
-
-  _appendReturnGuardCloseTags(line, count = 1, asPrefix = true) {
-    for (let i = 0; i < count; i++) {
-      if (asPrefix) {
-        this._appendInlinePrefix(line, this._returnGuardCloseTag());
-      } else {
-        this._appendInlineSuffix(line, this._returnGuardCloseTag());
-      }
-    }
-  }
-
   _appendInlinePrefix(line, content) {
     if (!line || !content) return;
     line.inlinePrefix = `${line.inlinePrefix || ''}${content}`;
@@ -2025,199 +1866,182 @@ class ScriptTranspiler {
     return end;
   }
 
-  _applyWhileReturnGuards(processedLines) {
-    // While guards are part of the condition expression, so this pass rewrites
-    // codeContent before _generateOutput renders the tag.
-    for (let i = 0; i < processedLines.length; i++) {
-      const line = processedLines[i];
-      if (!line ||
-        line.isContinuation ||
-        line.lineType === 'RAW_TEXT' ||
-        line.tagName !== 'while' ||
-        !line.returnAnalysis ||
-        !line.returnAnalysis.currentReturnBoundary ||
-        !line.returnAnalysis.currentReturnBoundary.mayReturn) {
-        continue;
-      }
-
-      const endLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
-      line.codeContent = `__return_is_unset__() and (${line.codeContent || ''}`;
-      endLine.codeContent = `${endLine.codeContent || ''})`;
-    }
-  }
-
-  _applyParallelForReturnGuards(processedLines, analysis) {
-    // Stack shape for this pass: { bodyGateIsOpen }. It only tracks the
-    // parallel-for body gate opened on the for tag and closed at middle/end tags.
-    const loopFrameByStart = new Map();
-    (analysis?.loops || []).forEach((frame) => {
-      if (frame.startEntry) {
-        loopFrameByStart.set(frame.startEntry, frame);
-      }
-    });
-
-    const stack = [];
-
-    for (let i = 0; i < processedLines.length; i++) {
-      const line = processedLines[i];
-      if (!line ||
-        line.isContinuation ||
-        line.lineType === 'RAW_TEXT' ||
-        line.isEmpty ||
-        line.isCommentOnly) {
-        continue;
-      }
-
-      if (line.returnAnalysis &&
-        line.returnAnalysis.isRuntimeReturn &&
-        line.returnAnalysis.insideParallelFor) {
-        const suffixLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
-        this._appendInlinePrefix(line, this._returnGuardOpenTag());
-        this._appendInlineSuffix(suffixLine, this._returnGuardCloseTag());
-      }
-
-      if (line.blockType === this.BLOCK_TYPE.MIDDLE) {
-        const frame = stack[stack.length - 1];
-        if (frame && frame.bodyGateIsOpen) {
-          this._appendInlinePrefix(line, this._returnGuardCloseTag());
-          frame.bodyGateIsOpen = false;
-        }
-        continue;
-      }
-
-      if (line.blockType === this.BLOCK_TYPE.START) {
-        const analysisFrame = loopFrameByStart.get(line) || null;
-        const bodyGateIsOpen = !!(
-          analysisFrame &&
-          analysisFrame.isParallelLoop &&
-          analysisFrame.loopBodyContainsReturn
-        );
-        if (bodyGateIsOpen) {
-          this._appendInlineSuffix(line, this._returnGuardOpenTag());
-        }
-        stack.push({
-          bodyGateIsOpen
-        });
-        continue;
-      }
-
-      if (line.blockType === this.BLOCK_TYPE.END) {
-        const frame = stack.length > 0 ? stack.pop() : null;
-        if (frame && frame.bodyGateIsOpen) {
-          this._appendInlinePrefix(line, this._returnGuardCloseTag());
-          frame.bodyGateIsOpen = false;
-        }
-      }
-    }
-  }
-
-  _createReturnGuardFrame(tagName) {
+  _createReturnFrame(tagName, startLine = null, startIndex = -1) {
+    const isReturnBoundary = tagName === 'root' ||
+      tagName === 'function' ||
+      tagName === 'method' ||
+      tagName === 'call_assign';
+    const usesReturnBodyGuard = tagName === 'for' || tagName === 'each';
     return {
-      isFunctionBoundary: this._isReturnBoundaryTag(tagName),
-      returnGuardDepth: 0,
-      pendingReturnGuardDepth: 0,
-      containsReturn: false
+      startLine,
+      startIndex,
+      hasReturn: false,
+      returnGuardOpen: false,
+      pendingReturnGuard: false,
+      returnBodyGuardOpen: false,
+      returnBodyGuardEligible: usesReturnBodyGuard,
+      isReturnBoundary,
+      usesReturnBodyGuard,
+      usesReturnConditionGuard: tagName === 'while'
     };
+  }
+
+  _isReturnExecutableLine(line) {
+    return !!(line &&
+      !line.isContinuation &&
+      !line.isEmpty &&
+      !line.isCommentOnly &&
+      line.lineType !== 'RAW_TEXT');
+  }
+
+  _patchWhileReturnCondition(frame, processedLines) {
+    if (!frame || !frame.usesReturnConditionGuard || !frame.hasReturn || !frame.startLine) {
+      return;
+    }
+    const endLine = processedLines[this._findContinuationEnd(processedLines, frame.startIndex)] || frame.startLine;
+    frame.startLine.codeContent = `__return_is_unset__() and (${frame.startLine.codeContent || ''}`;
+    endLine.codeContent = `${endLine.codeContent || ''})`;
   }
 
   _applyReturnGuards(processedLines) {
-    // Stack shape for this pass: function-boundary flag plus active/pending
-    // guard depth for the current source block.
-    const rootFrame = this._createReturnGuardFrame('root');
+    const returnGuardOpenTag = '{%- if __return_is_unset__() -%}';
+    const returnGuardCloseTag = '{%- endif -%}';
+    const rootFrame = this._createReturnFrame('root', null, -1);
     const stack = [rootFrame];
 
     const currentFrame = () => stack[stack.length - 1] || rootFrame;
-    const openPendingFrameGuards = (frame, line) => {
-      if (!frame || frame.pendingReturnGuardDepth <= 0) return;
-      this._appendReturnGuardOpenTags(line, frame.pendingReturnGuardDepth);
-      frame.returnGuardDepth += frame.pendingReturnGuardDepth;
-      frame.pendingReturnGuardDepth = 0;
-    };
-    // closeFrameGuards closes a materialized guard before a middle/end tag.
-    // closeActiveFrameGuardsAfterLine closes one after a statement or child block
-    // that has already run inside the guard.
-    // The former emits a prefix before the tag; the latter emits a suffix after
-    // a statement or child block.
-    const closeFrameGuards = (frame, line) => {
-      if (!frame) return;
-      frame.pendingReturnGuardDepth = 0;
-      if (frame.returnGuardDepth <= 0) return;
-      if (line) {
-        this._appendReturnGuardCloseTags(line, frame.returnGuardDepth, true);
+    const openReturnGuardBefore = (line) => this._appendInlinePrefix(line, returnGuardOpenTag);
+    const openReturnGuardAfter = (line) => this._appendInlineSuffix(line, returnGuardOpenTag);
+    const closeReturnGuardBefore = (line) => this._appendInlinePrefix(line, returnGuardCloseTag);
+    const closeReturnGuardAfter = (line) => this._appendInlineSuffix(line, returnGuardCloseTag);
+    const openPendingReturnGuard = (frame, line) => {
+      if (!frame || !frame.pendingReturnGuard || frame.returnGuardOpen) {
+        return;
       }
-      frame.returnGuardDepth = 0;
+      openReturnGuardBefore(line);
+      frame.pendingReturnGuard = false;
+      frame.returnGuardOpen = true;
     };
-    const closeActiveFrameGuardsAfterLine = (frame, line) => {
-      if (!frame || frame.returnGuardDepth <= 0) return;
-      this._appendReturnGuardCloseTags(line, frame.returnGuardDepth, false);
-      frame.returnGuardDepth = 0;
+    const closeBranchReturnGuardBefore = (frame, line) => {
+      if (!frame) return;
+      frame.pendingReturnGuard = false;
+      if (frame.returnGuardOpen) {
+        closeReturnGuardBefore(line);
+        frame.returnGuardOpen = false;
+      }
     };
-    // Called after popping a closing block, so currentFrame() is already the parent.
+    const closeBranchReturnGuardAfter = (frame, line) => {
+      if (!frame || !frame.returnGuardOpen) return;
+      closeReturnGuardAfter(line);
+      frame.returnGuardOpen = false;
+    };
+    const openReturnBodyGuard = (frame) => {
+      if (!frame ||
+        !frame.usesReturnBodyGuard ||
+        !frame.returnBodyGuardEligible ||
+        frame.returnBodyGuardOpen ||
+        !frame.startLine) {
+        return;
+      }
+      openReturnGuardAfter(frame.startLine);
+      frame.returnBodyGuardOpen = true;
+    };
+    const closeReturnBodyGuardBefore = (frame, line) => {
+      if (!frame || !frame.returnBodyGuardOpen) return;
+      closeReturnGuardBefore(line);
+      frame.returnBodyGuardOpen = false;
+    };
+    const markReturn = () => {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        const frame = stack[i];
+        frame.hasReturn = true;
+        openReturnBodyGuard(frame);
+        if (frame.isReturnBoundary) {
+          break;
+        }
+      }
+    };
+    const hasEligibleReturnBodyGuardAncestor = () => {
+      // Returns inside a loop body need a one-line guard too: the loop body gate
+      // may not have observed an earlier return when this return line starts.
+      for (let i = stack.length - 1; i >= 0; i--) {
+        const frame = stack[i];
+        if (frame.usesReturnBodyGuard && frame.returnBodyGuardEligible) {
+          return true;
+        }
+        if (frame.isReturnBoundary) {
+          return false;
+        }
+      }
+      return false;
+    };
     const propagateReturnToParent = (frame, line) => {
-      if (!frame || !frame.containsReturn || frame.isFunctionBoundary) {
+      if (!frame || !frame.hasReturn || frame.isReturnBoundary) {
         return;
       }
       const parent = currentFrame();
       if (!parent) return;
-      closeActiveFrameGuardsAfterLine(parent, line);
-      // Any active parent guard has just been flushed. One pending cascade is
-      // enough to protect the next real parent statement.
-      parent.pendingReturnGuardDepth = 1;
-      parent.containsReturn = true;
+      closeBranchReturnGuardAfter(parent, line);
+      parent.hasReturn = true;
+      parent.pendingReturnGuard = true;
     };
 
     for (let i = 0; i < processedLines.length; i++) {
       const line = processedLines[i];
-      if (!line ||
-        line.isContinuation ||
-        line.lineType === 'RAW_TEXT' ||
-        line.isEmpty ||
-        line.isCommentOnly) {
+      if (!this._isReturnExecutableLine(line)) {
         continue;
       }
 
       if (line.tagName === 'return') {
         const frame = currentFrame();
         const suffixLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
-        openPendingFrameGuards(frame, line);
-        closeActiveFrameGuardsAfterLine(frame, suffixLine);
-        frame.pendingReturnGuardDepth = 1;
-        frame.containsReturn = true;
+        openPendingReturnGuard(frame, line);
+        const openedReturnLineGuard = !frame.returnGuardOpen && hasEligibleReturnBodyGuardAncestor();
+        if (openedReturnLineGuard) {
+          openReturnGuardBefore(line);
+        }
+        closeBranchReturnGuardAfter(frame, suffixLine);
+        if (openedReturnLineGuard) {
+          closeReturnGuardAfter(suffixLine);
+        }
+        markReturn();
+        frame.pendingReturnGuard = true;
         continue;
       }
 
       if (line.blockType === this.BLOCK_TYPE.MIDDLE) {
         const frame = currentFrame();
-        closeFrameGuards(frame, line);
+        closeBranchReturnGuardBefore(frame, line);
+        closeReturnBodyGuardBefore(frame, line);
+        if (frame && frame.usesReturnBodyGuard) {
+          frame.returnBodyGuardEligible = false;
+        }
         continue;
       }
 
       if (line.blockType === this.BLOCK_TYPE.START) {
         const parent = currentFrame();
-        openPendingFrameGuards(parent, line);
-        stack.push(this._createReturnGuardFrame(line.tagName));
+        openPendingReturnGuard(parent, line);
+        stack.push(this._createReturnFrame(line.tagName, line, i));
         continue;
       }
 
       if (line.blockType === this.BLOCK_TYPE.END) {
         const frame = stack.length > 1 ? stack.pop() : null;
-        closeFrameGuards(frame, line);
+        closeBranchReturnGuardBefore(frame, line);
+        closeReturnBodyGuardBefore(frame, line);
+        this._patchWhileReturnCondition(frame, processedLines);
         propagateReturnToParent(frame, line);
         continue;
       }
 
-      openPendingFrameGuards(currentFrame(), line);
+      openPendingReturnGuard(currentFrame(), line);
     }
 
-    if (rootFrame.returnGuardDepth > 0 && processedLines.length > 0) {
-      this._appendReturnGuardCloseTags(
-        processedLines[processedLines.length - 1],
-        rootFrame.returnGuardDepth,
-        false
-      );
-      rootFrame.returnGuardDepth = 0;
+    if (rootFrame.returnGuardOpen && processedLines.length > 0) {
+      closeReturnGuardAfter(processedLines[processedLines.length - 1]);
     }
-    rootFrame.pendingReturnGuardDepth = 0;
+    rootFrame.pendingReturnGuard = false;
   }
 
   _prepareScriptLines(scriptStr, options = {}) {
@@ -2294,12 +2118,11 @@ class ScriptTranspiler {
     }
 
     this._processContinuationsAndComments(processedLines);
-    const returnAnalysis = this._analyzeReturnMetadata(processedLines);
 
     // Validate block structure
     this._validateBlockStructure(processedLines);
 
-    return { processedLines, returnAnalysis };
+    return { processedLines };
   }
 
   _renderProcessedLines(processedLines) {
@@ -2322,19 +2145,13 @@ class ScriptTranspiler {
     return output;
   }
 
-  analyzeReturn(scriptStr, options = {}) {
-    return this._prepareScriptLines(scriptStr, options).returnAnalysis;
-  }
-
   /**
    * Convert Cascada script to Nunjucks/Cascada template
    * @param {string} scriptStr - The input script string
    * @return {Object} Object with template string and possible error
    */
   scriptToTemplate(scriptStr, options = {}) {
-    const { processedLines, returnAnalysis } = this._prepareScriptLines(scriptStr, options);
-    this._applyWhileReturnGuards(processedLines);
-    this._applyParallelForReturnGuards(processedLines, returnAnalysis);
+    const { processedLines } = this._prepareScriptLines(scriptStr, options);
     this._applyReturnGuards(processedLines);
     return this._renderProcessedLines(processedLines);
   }

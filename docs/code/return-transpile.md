@@ -72,6 +72,7 @@ analysis tree or attach broad return-analysis metadata to every line.
   returnGuardOpen: false,
   pendingReturnGuard: false,
   returnBodyGuardOpen: false,
+  returnBodyGuardEligible: false,
   isReturnBoundary,
   usesReturnBodyGuard,
   usesReturnConditionGuard
@@ -92,6 +93,8 @@ Fields:
   has needed a guard yet. This avoids emitting empty `if/endif` pairs.
 - `returnBodyGuardOpen`: a loop body guard was opened after this frame's start
   tag and must be closed before a middle/end tag.
+- `returnBodyGuardEligible`: this frame is still in the iteration/body branch
+  that may receive a body guard. Loop `else` branches turn this off.
 - `isReturnBoundary`: return propagation stops at this frame.
 - `usesReturnBodyGuard`: this frame opens a body/iteration gate when a visible
   return is found inside it (`for`, `each`).
@@ -170,7 +173,10 @@ On a middle tag:
    loop, because loop `else` is not part of the iteration body.
 3. Drop any `pendingReturnGuard`; if only comments/blank lines followed the
    return in that branch, no empty guard should be emitted.
-4. Keep `hasReturn` unchanged so the frame can still propagate after its end tag.
+4. Set `returnBodyGuardEligible = false` for loop frames, so a return inside
+   `for/else` or `each/else` does not retroactively open a body gate around the
+   iteration branch.
+5. Keep `hasReturn` unchanged so the frame can still propagate after its end tag.
 
 This same rule covers `if/else`, `switch/case/default`, `guard/recover`, and
 `for/else`.
@@ -245,6 +251,7 @@ For each processed line:
    - close the current branch guard before the middle tag;
    - close the current loop body guard before loop `else`;
    - clear pending branch guards;
+   - turn off loop body-guard eligibility for loop `else`;
    - keep `hasReturn` on the frame so later `end*` propagation still happens.
 6. On an `END` tag:
    - close the popped frame's open post-return guard before the end tag;
@@ -254,6 +261,7 @@ For each processed line:
    - patch a `usesReturnConditionGuard` start condition if the popped frame has
      `hasReturn`;
    - propagate to the parent unless the popped frame is a return boundary:
+     close any currently open parent branch guard after the end tag, then
      set `parent.hasReturn = true` and `parent.pendingReturnGuard = true`.
 7. At EOF:
    - drop pending guards;
@@ -312,7 +320,6 @@ opening tags as soon as the first visible return marks the loop frame.
 Loop body gates and post-return guards should not be separate passes. They are
 both produced by the same stack walk:
 
-- when a loop frame closes with `hasReturn`, patch the loop start line to open
 - when `markReturn(stack)` reaches a loop frame that uses a body guard, patch
   that loop's start line to open the body guard if it has not already been
   opened;
@@ -363,9 +370,10 @@ Do not add raw-depth tracking preemptively. The processed-line model already
 represents opaque body content as `RAW_TEXT`; skipping that line type should be
 enough unless a concrete test proves otherwise.
 
-## What To Remove From The Current Shape
+## Removed From The Earlier Shape
 
-The simplified design should make these concepts unnecessary:
+The simplified implementation removed the earlier multi-pass analysis shape and
+does not use these concepts:
 
 - `_analyzeReturnMetadata`
 - `returnAnalysis` objects stamped onto lines
@@ -382,47 +390,32 @@ The simplified design should make these concepts unnecessary:
 - multiple return-specific stacks
 - `analyzeReturn()` as a public/test introspection API
 
-`scriptToTemplate()` should prepare processed lines, run one return stack pass,
-validate/render, and stay close to the existing transpiler style.
+`scriptToTemplate()` now prepares processed lines, runs one return stack pass,
+validates/renders, and stays close to the existing transpiler style.
 
-Tests that currently inspect `analyzeReturn()` should move to integration tests
-or focused generated-template assertions for externally meaningful contracts.
+Tests that previously inspected `analyzeReturn()` now use integration tests or
+focused generated-template assertions for externally meaningful contracts.
 
 Keep `_validateBlockStructure` separate. A generic reusable block walker sounds
 tempting, but it would add indirection without removing meaningful return
 complexity. The return pass can use the same simple stack discipline directly.
 
-## Refactor Plan
+## Implemented Shape
 
-1. Add the new single-pass helpers next to the existing return code:
-   - `_createReturnFrame(tagName, startLine, startIndex)`
-   - `_isReturnExecutableLine(line)`
-   - small local guard open/close helpers inside `_applyReturnGuards`
-2. Rewrite `_applyReturnGuards(processedLines)` around one frame stack:
-   - push self-describing frames on `START`;
-   - call `markReturn(stack)` on `return`;
-   - reset branch-local guard state on `MIDDLE`;
-   - close and propagate on `END`.
-   During the transition, it is fine to build this as a temporary
-   `_applyReturnGuardsSinglePass()` beside the old passes, switch
-   `scriptToTemplate()` to it once focused tests pass, then delete the old pass
-   functions and rename the new function back to `_applyReturnGuards()`.
-3. Fold loop behavior into that pass:
-   - `for`/`each` body gates open when `markReturn()` reaches the loop frame;
-   - body gates close before loop `else` or loop end;
-   - `while` conditions are patched when the `while` frame closes with
-     `hasReturn`.
-4. Change `scriptToTemplate()` to call only the new `_applyReturnGuards()`.
-5. Delete the old return analysis and separate guard passes:
-   - `_analyzeReturnMetadata`
-   - `_applyWhileReturnGuards`
-   - `_applyParallelForReturnGuards`
-   - analysis frame helpers and nearest-boundary helpers
-   - `analyzeReturn()`
-6. Replace tests that inspect `analyzeReturn()` internals with integration tests
-   or generated-template checks that lock down externally meaningful behavior.
-7. Run the return-focused tests first, then the broader script transpiler and
-   loop suites.
+`scriptToTemplate()` prepares processed logical lines, runs one
+`_applyReturnGuards(processedLines)` stack pass, and then renders the processed
+lines. The old return-analysis pass, separate while/parallel-for return passes,
+and `analyzeReturn()` test/introspection API are removed.
+
+The current helper surface is intentionally small:
+
+- `_createReturnFrame(tagName, startLine, startIndex)`
+- `_isReturnExecutableLine(line)`
+- `_patchWhileReturnCondition(frame, processedLines)`
+- `_applyReturnGuards(processedLines)`
+
+Tests cover the externally meaningful behavior rather than inspecting internal
+return-analysis frames.
 
 ## Non-Goals
 

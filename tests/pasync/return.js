@@ -401,19 +401,22 @@ describe('Cascada Script return', function () {
 
     it('handles loop else returns without leaking guards', async function () {
       const events = [];
-      const result = await env.renderScriptString([
+      const script = [
         'for item in []',
-        '  return "wrong"',
+        '  record("body")',
         'else',
         '  return "done"',
         'endfor',
         'record("after")'
-      ].join('\n'), {
+      ].join('\n');
+      const template = scriptTranspiler.scriptToTemplate(script);
+      const result = await env.renderScriptString(script, {
         record(value) {
           events.push(value);
         }
       });
 
+      expect(template).to.not.contain('{%- for item in [] -%}{%- if __return_is_unset__() -%}');
       expect(result).to.be('done');
       expect(events).to.eql([]);
     });
@@ -781,13 +784,13 @@ describe('Cascada Script return', function () {
   });
 
   describe('loop return semantics', function () {
-    it('rewrites while conditions in return-owning scopes', function () {
+    it('rewrites while conditions when the while body can return', function () {
       const template = scriptTranspiler.scriptToTemplate([
         'var keepGoing = true',
         'while keepGoing',
-        '  keepGoing = false',
+        '  return "done"',
         'endwhile',
-        'return "done"'
+        'return "wrong"'
       ].join('\n'));
 
       expect(template).to.contain('while __return_is_unset__() and (keepGoing)');
@@ -983,6 +986,20 @@ describe('Cascada Script return', function () {
       ].join('\n'));
 
       expect(template).to.not.contain('{%- for item in items -%}{%- if __return_is_unset__() -%}');
+    });
+
+    it('does not gate parallel for bodies for return-looking raw content', function () {
+      const template = scriptTranspiler.scriptToTemplate([
+        'for item in items',
+        '  raw',
+        '    return item',
+        '  endraw',
+        'endfor',
+        'return null'
+      ].join('\n'));
+
+      expect(template).to.not.contain('{%- for item in items -%}{%- if __return_is_unset__() -%}');
+      expect(template).to.contain('    return item');
     });
 
     it('keeps the first source-visible parallel for return value', async function () {
@@ -1480,61 +1497,4 @@ describe('Cascada Script return', function () {
     });
   });
 
-  describe('return analysis pre-pass', function () {
-    it('marks loops whose own body contains a runtime return', function () {
-      const analysis = scriptTranspiler.analyzeReturn([
-        'for item in [1]',
-        '  return item',
-        'endfor'
-      ].join('\n'));
-
-      expect(analysis.loops).to.have.length(1);
-      expect(analysis.loops[0].tagName).to.be('for');
-      expect(analysis.loops[0].isParallelLoop).to.be(true);
-      expect(analysis.loops[0].loopBodyContainsReturn).to.be(true);
-    });
-
-    it('does not count nested callable returns as outer loop returns', function () {
-      const analysis = scriptTranspiler.analyzeReturn([
-        'for item in [1]',
-        '  function inner()',
-        '    return item',
-        '  endfunction',
-        'endfor',
-        'return null'
-      ].join('\n'));
-
-      expect(analysis.loops).to.have.length(1);
-      expect(analysis.loops[0].loopBodyContainsReturn).to.be(false);
-      expect(analysis.returnOwningScopes.some((scope) => scope.tagName === 'function' && scope.mayReturn)).to.be(true);
-    });
-
-    it('ignores return-looking content inside raw blocks', function () {
-      const analysis = scriptTranspiler.analyzeReturn([
-        'for item in [1]',
-        '  raw',
-        '    return item',
-        '  endraw',
-        'endfor',
-        'return null'
-      ].join('\n'));
-
-      expect(analysis.loops).to.have.length(1);
-      expect(analysis.loops[0].loopBodyContainsReturn).to.be(false);
-    });
-
-    it('classifies each as a sequential loop', function () {
-      const analysis = scriptTranspiler.analyzeReturn([
-        'each item in items',
-        '  return item',
-        'endeach'
-      ].join('\n'));
-
-      expect(analysis.loops).to.have.length(1);
-      expect(analysis.loops[0].tagName).to.be('each');
-      expect(analysis.loops[0].isParallelLoop).to.be(false);
-      expect(analysis.loops[0].isSequentialLoop).to.be(true);
-      expect(analysis.loops[0].loopBodyContainsReturn).to.be(true);
-    });
-  });
 });

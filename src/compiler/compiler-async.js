@@ -11,9 +11,6 @@ const CompileBuffer = require('./buffer');
 const {
   ROOT_STARTUP_PROMISE_VAR
 } = require('./inheritance');
-const {
-  RETURN_CHANNEL_NAME
-} = require('./return');
 
 const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
@@ -1340,12 +1337,9 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node && node.isSyntheticConstructor) {
       analysis.parentReadOnly = false;
     }
-    analysis.declares = (analysis.declares || []).concat([{
-      name: RETURN_CHANNEL_NAME,
-      type: 'var',
-      initializer: null,
-      internal: true
-    }]);
+    analysis.declares = (analysis.declares || []).concat([
+      this.return.createChannelDeclaration()
+    ]);
     return analysis;
   }
 
