@@ -615,7 +615,7 @@ describe('Extends Foundation', function () {
         await env.renderScriptString('shared var theme\ntheme = "light"\nreturn this.theme', {});
         expect().fail('Expected bare shared assignment to fail');
       } catch (error) {
-        expect(String(error)).to.contain("Bare shared assignment to 'theme' is not supported");
+        expect(String(error)).to.contain('Bare shared assignment to \'theme\' is not supported');
         expect(String(error)).to.contain('Use this.theme = ... instead');
       }
     });
@@ -728,7 +728,7 @@ describe('Extends Foundation', function () {
       expect(result).to.eql(['boot']);
     });
 
-    it('should route shared sequence operations through this.sharedName', async function () {
+    it('should route void shared sequence operations through this.sharedName', async function () {
       env.addGlobal('makeLogger', () => {
         return {
           events: [],
@@ -787,7 +787,7 @@ describe('Extends Foundation', function () {
       ].join('\n'), {});
 
       expect(result.isError).to.be(true);
-      expect(result.message).to.contain("has no method 'missingCommand'");
+      expect(result.message).to.contain('has no method \'missingCommand\'');
     });
 
     it('should keep parent super writes visible through this.sharedName', async function () {
@@ -849,7 +849,7 @@ describe('Extends Foundation', function () {
         ].join('\n'), {});
         expect().fail('Expected local shared/method collision to fail');
       } catch (error) {
-        expect(String(error)).to.contain("shared channel 'build' conflicts with method 'build' defined in this file");
+        expect(String(error)).to.contain('shared channel \'build\' conflicts with method \'build\' defined in this file');
       }
     });
 
@@ -872,7 +872,7 @@ describe('Extends Foundation', function () {
         await env.renderScript('C.script', {});
         expect().fail('Expected inherited shared/method collision to fail');
       } catch (error) {
-        expect(String(error)).to.contain("shared channel 'build' conflicts with inherited method 'build'");
+        expect(String(error)).to.contain('shared channel \'build\' conflicts with inherited method \'build\'');
       }
     });
 
@@ -884,7 +884,7 @@ describe('Extends Foundation', function () {
         ].join(''));
         expect().fail('Expected local template block/shared collision to fail');
       } catch (error) {
-        expect(String(error)).to.contain("shared channel 'theme' conflicts with method 'theme' defined in this file");
+        expect(String(error)).to.contain('shared channel \'theme\' conflicts with method \'theme\' defined in this file');
       }
     });
 
@@ -904,7 +904,7 @@ describe('Extends Foundation', function () {
         await env.renderTemplate('child.njk', {});
         expect().fail('Expected inherited template block/shared collision to fail');
       } catch (error) {
-        expect(String(error)).to.contain("shared channel 'theme' conflicts with inherited method 'theme'");
+        expect(String(error)).to.contain('shared channel \'theme\' conflicts with inherited method \'theme\'');
       }
     });
 
@@ -1462,8 +1462,8 @@ describe('Extends Foundation', function () {
       } catch (error) {
         expect(error.path).to.be('missing-invoked.script');
         expect(error.lineno).to.be(2);
-        expect(String(error)).to.contain("Inherited method 'missing' was not found");
-        expect(String(error)).to.contain("doing 'FunCall'");
+        expect(String(error)).to.contain('Inherited method \'missing\' was not found');
+        expect(String(error)).to.contain('doing \'FunCall\'');
       }
     });
 
@@ -1593,8 +1593,8 @@ describe('Extends Foundation', function () {
         expect(error.errors).to.have.length(2);
         expect(error.errors[0].path).to.be('metadata-errors.script');
         expect(error.errors[0].lineno).to.be(2);
-        expect(String(error)).to.contain("super() for method 'needsSuper' was not found");
-        expect(String(error)).to.contain("Inherited method 'missing' was not found");
+        expect(String(error)).to.contain('super() for method \'needsSuper\' was not found');
+        expect(String(error)).to.contain('Inherited method \'missing\' was not found');
       }
     });
 
@@ -1632,8 +1632,8 @@ describe('Extends Foundation', function () {
       } catch (error) {
         expect(error.path).to.be('A.script');
         expect(error.lineno).to.be(2);
-        expect(String(error)).to.contain("doing 'Super'");
-        expect(String(error)).to.contain("super() for method 'needsSuper' was not found");
+        expect(String(error)).to.contain('doing \'Super\'');
+        expect(String(error)).to.contain('super() for method \'needsSuper\' was not found');
       }
     });
 
@@ -1658,7 +1658,7 @@ describe('Extends Foundation', function () {
         runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invalid-invoked-footprint.script' });
         expect().fail('Expected invalid invoked metadata to fail');
       } catch (error) {
-        expect(String(error)).to.contain("Invoked method 'beta'");
+        expect(String(error)).to.contain('Invoked method \'beta\'');
         expect(String(error)).to.contain('has invalid metadata');
       }
     });
@@ -1743,7 +1743,7 @@ describe('Extends Foundation', function () {
         expect().fail('Expected conflicting shared channel type to throw');
       } catch (error) {
         expect(error.path).to.be('A.script');
-        expect(String(error)).to.contain("shared channel 'theme' was declared as 'var' and 'text'");
+        expect(String(error)).to.contain('shared channel \'theme\' was declared as \'var\' and \'text\'');
       }
     });
 
@@ -2184,7 +2184,7 @@ describe('Extends Foundation', function () {
         expect(error.path).to.be('missing-method.script');
         expect(error.lineno).to.be(1);
         expect(error.colno).to.be(21);
-        expect(String(error)).to.contain("Inherited method 'build' was not found");
+        expect(String(error)).to.contain('Inherited method \'build\' was not found');
       }
     });
 
@@ -2210,7 +2210,7 @@ describe('Extends Foundation', function () {
         expect(error.path).to.be('dispatch.script');
         expect(error.lineno).to.be(5);
         expect(error.colno).to.be(7);
-        expect(String(error)).to.contain("Shared channel 'theme' was not found");
+        expect(String(error)).to.contain('Shared channel \'theme\' was not found');
         expect(String(error)).to.contain('dispatch.script');
       }
     });
@@ -2301,7 +2301,7 @@ describe('Extends Foundation', function () {
         });
         expect().fail('Expected missing inherited method lookup to reject');
       } catch (error) {
-        expect(String(error)).to.contain("Inherited method 'missing' was not found");
+        expect(String(error)).to.contain('Inherited method \'missing\' was not found');
       }
     });
 
@@ -2512,7 +2512,7 @@ describe('Extends Foundation', function () {
         });
         expect().fail('Expected malformed direct super metadata to fail');
       } catch (error) {
-        expect(String(error)).to.contain("super() metadata on owner 'Main.script' is invalid");
+        expect(String(error)).to.contain('super() metadata on owner \'Main.script\' is invalid');
       }
     });
 

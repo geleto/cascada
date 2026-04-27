@@ -324,8 +324,8 @@ describe('Script Transpiler', () => {
 
       it('should reject template macro syntax in scripts', () => {
         expect(() => scriptTranspiler.scriptToTemplate('macro greet()\nendmacro')).to.throwException((err) => {
-          expect(err.message).to.contain("'macro' is template syntax");
-          expect(err.message).to.contain("Use 'function'");
+          expect(err.message).to.contain('\'macro\' is template syntax');
+          expect(err.message).to.contain('Use \'function\'');
         });
       });
 
@@ -1152,8 +1152,8 @@ endmethod`;
     it('should reject unsupported for-with-return syntax clearly', () => {
       const script = 'for item in items with return\n  return item\nendfor';
       expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException((err) => {
-        expect(err.message).to.contain("'for ... with return' is not supported");
-        expect(err.message).to.contain("use 'each'");
+        expect(err.message).to.contain('\'for ... with return\' is not supported');
+        expect(err.message).to.contain('use \'each\'');
       });
     });
   });

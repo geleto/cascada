@@ -1,5 +1,7 @@
 'use strict';
 
+/* eslint mocha/max-top-level-suites: "off" */
+
 let expect;
 let AsyncEnvironment;
 let Script;
@@ -657,7 +659,7 @@ describe('Phase 8 - Component Observations', function () {
       await env.renderScript('Main.script', {});
       expect().fail('Expected private shared var lookup to fail');
     } catch (err) {
-      expect(err.message).to.contain("Shared channel '_theme' was not found");
+      expect(err.message).to.contain('Shared channel \'_theme\' was not found');
     }
   });
 
@@ -996,7 +998,7 @@ describe('Phase 8 - Component Observations', function () {
 
     expect(outcome.type).to.be('error');
     expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
-    expect(outcome.error.message).to.contain("Shared channel 'missing' was not found");
+    expect(outcome.error.message).to.contain('Shared channel \'missing\' was not found');
   });
 
   it('should read nested properties from component shared vars', async function () {
@@ -1033,7 +1035,7 @@ describe('Phase 8 - Component Observations', function () {
       expect().fail('Expected non-var shared channel nested read to fail');
     } catch (error) {
       expect(error).to.be.a(runtimeModule.RuntimeError);
-      expect(error.message).to.contain("Shared channel 'log' cannot be used as a bare symbol");
+      expect(error.message).to.contain('Shared channel \'log\' cannot be used as a bare symbol');
     }
   });
 

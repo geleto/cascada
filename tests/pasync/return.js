@@ -936,8 +936,8 @@ describe('Cascada Script return', function () {
         ].join('\n'));
         expect().fail('Should have rejected unsupported for-with-return syntax');
       } catch (err) {
-        expect(err.message).to.contain("'for ... with return' is not supported");
-        expect(err.message).to.contain("use 'each'");
+        expect(err.message).to.contain('\'for ... with return\' is not supported');
+        expect(err.message).to.contain('use \'each\'');
       }
     });
 

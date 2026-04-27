@@ -233,76 +233,76 @@ class CompileLoop {
         this.compiler.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${limitedWaitedChannelName}", "var", context, null);`);
       }
 
-    const compileIterationBody = () => {
-      const buffer = this.compiler.buffer.currentBuffer;
-      loopVars.forEach((name) => {
-        this.compiler.emit.line(`runtime.declareBufferChannel(${buffer}, "${name}", "var", context, null);`);
-      });
-      if (node.loopRuntimeName) {
-        this.compiler.emit.line(`runtime.declareBufferChannel(${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
-        this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast);
-      }
-      this._emitLoopIterationBindings(node, loopVars, loopVarNames, (varName, valueExpr) => {
-        this._emitLoopValueAssignment(node, varName, valueExpr);
-      });
-
-      let catchPoisonPos = null;
-      let whileCondId;
-
-      if (whileConditionNode) {
-        whileCondId = this.compiler._tmpid();
-        this.compiler.emit(`let ${whileCondId};`);
-        this.compiler.emit('try {');
-        this.compiler.emit(`${whileCondId} = `);
-        this.compiler.buffer.skipOwnWaitedChannel(() => {
-          this.compiler._compileAwaitedExpression(whileConditionNode, null);
+      const compileIterationBody = () => {
+        const buffer = this.compiler.buffer.currentBuffer;
+        loopVars.forEach((name) => {
+          this.compiler.emit.line(`runtime.declareBufferChannel(${buffer}, "${name}", "var", context, null);`);
         });
-        this.compiler.emit.line(';');
-        const whileErrorContext = this.compiler._createErrorContext(node, whileConditionNode);
-        this.compiler.emit('} catch (e) {');
-        this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext.lineno}, ${whileErrorContext.colno}, "${whileErrorContext.errorContextString}", context.path);`);
-        catchPoisonPos = this.compiler.codebuf.length;
-        this.compiler.emit.line('');
-        this.compiler.emit(`  ${whileCondId} = false;`);
-        this.compiler.emit('}');
-        this.compiler.emit(`if (!${whileCondId}) {`);
-        this.compiler.emit.line('  return false;');
-        this.compiler.emit.line('}');
-      }
-
-      this.compiler.emit.withScopedSyntax(() => {
-        this.compiler.compile(node.body, null);
-      });
-
-      if (whileConditionNode && catchPoisonPos !== null) {
-        const bodyChannels = new Set(node.body._analysis.usedChannels || []);
-        for (const channelName of bodyChannels) {
-          this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
+        if (node.loopRuntimeName) {
+          this.compiler.emit.line(`runtime.declareBufferChannel(${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
+          this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast);
         }
-      }
+        this._emitLoopIterationBindings(node, loopVars, loopVarNames, (varName, valueExpr) => {
+          this._emitLoopValueAssignment(node, varName, valueExpr);
+        });
 
-      if (shouldAwaitLoopBody) {
-        const waitedSnapshotId = this.compiler._tmpid();
-        this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChannel("${limitedWaitedChannelName}").finalSnapshot();`);
+        let catchPoisonPos = null;
+        let whileCondId;
+
         if (whileConditionNode) {
-          this.compiler.emit.line(`await ${waitedSnapshotId};`);
-          this.compiler.emit.line('return true;');
-        } else {
-          this.compiler.emit.line(`return ${waitedSnapshotId};`);
+          whileCondId = this.compiler._tmpid();
+          this.compiler.emit(`let ${whileCondId};`);
+          this.compiler.emit('try {');
+          this.compiler.emit(`${whileCondId} = `);
+          this.compiler.buffer.skipOwnWaitedChannel(() => {
+            this.compiler._compileAwaitedExpression(whileConditionNode, null);
+          });
+          this.compiler.emit.line(';');
+          const whileErrorContext = this.compiler._createErrorContext(node, whileConditionNode);
+          this.compiler.emit('} catch (e) {');
+          this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext.lineno}, ${whileErrorContext.colno}, "${whileErrorContext.errorContextString}", context.path);`);
+          catchPoisonPos = this.compiler.codebuf.length;
+          this.compiler.emit.line('');
+          this.compiler.emit(`  ${whileCondId} = false;`);
+          this.compiler.emit('}');
+          this.compiler.emit(`if (!${whileCondId}) {`);
+          this.compiler.emit.line('  return false;');
+          this.compiler.emit.line('}');
         }
+
+        this.compiler.emit.withScopedSyntax(() => {
+          this.compiler.compile(node.body, null);
+        });
+
+        if (whileConditionNode && catchPoisonPos !== null) {
+          const bodyChannels = new Set(node.body._analysis.usedChannels || []);
+          for (const channelName of bodyChannels) {
+            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
+          }
+        }
+
+        if (shouldAwaitLoopBody) {
+          const waitedSnapshotId = this.compiler._tmpid();
+          this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+          this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChannel("${limitedWaitedChannelName}").finalSnapshot();`);
+          if (whileConditionNode) {
+            this.compiler.emit.line(`await ${waitedSnapshotId};`);
+            this.compiler.emit.line('return true;');
+          } else {
+            this.compiler.emit.line(`return ${waitedSnapshotId};`);
+          }
+        }
+      };
+
+      if ((sequentialLoopBody || hasConcurrencyLimit) && !limitedWaitedChannelName) {
+        this.compiler.fail('compileFor: limited/sequential loop body has no waited channel вЂ” compiler analysis bug', node.lineno, node.colno, node);
       }
-    };
 
-    if ((sequentialLoopBody || hasConcurrencyLimit) && !limitedWaitedChannelName) {
-      this.compiler.fail('compileFor: limited/sequential loop body has no waited channel вЂ” compiler analysis bug', node.lineno, node.colno, node);
-    }
-
-    if (!limitedWaitedChannelName) {
-      compileIterationBody();
-    } else {
-      this.compiler.buffer.withOwnWaitedChannel(limitedWaitedChannelName, compileIterationBody);
-    }
+      if (!limitedWaitedChannelName) {
+        compileIterationBody();
+      } else {
+        this.compiler.buffer.withOwnWaitedChannel(limitedWaitedChannelName, compileIterationBody);
+      }
 
     });
     this.compiler.emit.asyncClosureDepth--;

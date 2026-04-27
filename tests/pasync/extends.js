@@ -551,8 +551,8 @@ describe('Extends Runtime', function () {
         expect(error.name).to.be('RuntimeFatalError');
         expect(error.lineno).to.be(2);
         expect(error.path).to.be('C.script');
-        expect(String(error)).to.contain("Inherited method 'missing' was not found");
-        expect(String(error)).to.contain("doing 'FunCall'");
+        expect(String(error)).to.contain('Inherited method \'missing\' was not found');
+        expect(String(error)).to.contain('doing \'FunCall\'');
       }
     });
 
@@ -573,8 +573,8 @@ describe('Extends Runtime', function () {
         expect(error.name).to.be('RuntimeFatalError');
         expect(error.lineno).to.be(3);
         expect(error.path).to.be('C.script');
-        expect(String(error)).to.contain("Inherited method 'missing' was not found");
-        expect(String(error)).to.contain("doing 'FunCall'");
+        expect(String(error)).to.contain('Inherited method \'missing\' was not found');
+        expect(String(error)).to.contain('doing \'FunCall\'');
       }
     });
 
@@ -588,7 +588,7 @@ describe('Extends Runtime', function () {
         await env.renderScript('C.script', {});
         expect().fail('Expected inherited method arg validation failure');
       } catch (error) {
-        expect(String(error)).to.contain("Inherited method 'build' received too many arguments");
+        expect(String(error)).to.contain('Inherited method \'build\' received too many arguments');
       }
     });
 
@@ -912,7 +912,7 @@ describe('Extends Runtime', function () {
 
         inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
           if (
-            spec.label === "super() for method 'build'" &&
+            spec.label === 'super() for method \'build\'' &&
             spec.methodData &&
             spec.methodData.ownerKey === 'A.script'
           ) {
@@ -976,7 +976,7 @@ describe('Extends Runtime', function () {
 
         inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
           if (
-            spec.label === "super() for method 'build'" &&
+            spec.label === 'super() for method \'build\'' &&
             spec.methodData &&
             spec.methodData.ownerKey === 'A.script'
           ) {
