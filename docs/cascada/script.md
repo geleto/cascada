@@ -2167,11 +2167,15 @@ This returns `{ user: "Alice Durand [en-GB]" }` when `locale` comes from the ren
 
 ### `with`: Composition Payload
 
-**`with varName, ...`** — passes the named parent `var`s by value. Only `var` declarations can be listed; `data`, `text`, and `sequence` declarations cannot cross a composition boundary.
+**`with varName, ...`** — passes the named parent `var`s by value into the child. Only `var` declarations can be listed; `data`, `text`, and `sequence` declarations cannot cross a composition boundary.
+
+**`with { key: expr, ... }`** — an explicit object literal; keys become named inputs inside the child, values are expressions evaluated in the caller's scope. Merged after named-var entries; overrides on key collision.
 
 **`with context`** — makes the render context (the object passed to the renderer) available to bare-name lookups inside the child. It does **not** expose parent local variables or `data`/`text`/`sequence` declarations, and it does **not** create a variable named `context` inside the child.
 
 **`without context`** — explicitly opts out of render-context access. Useful to make isolation guarantees visible in code.
+
+All forms can be combined: `with context, var1, { extra: computed() }`. `with` inputs are named value bindings — not a scope reference or JavaScript object — only the names you list cross the boundary.
 
 **Resolution order**: explicit `with` value → `with context` lookup → ordinary globals/unknown-name behavior.
 
