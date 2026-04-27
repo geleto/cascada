@@ -87,6 +87,10 @@ function _enqueueSharedObservation(instance, observationCommand, errorContext = 
   }
 
   const channelName = observationCommand.channelName;
+  if (channelName.charAt(0) === '_') {
+    throw _createComponentError(`Shared channel '${channelName}' was not found`, errorContext);
+  }
+
   const sharedSchema = ensureInheritanceSharedSchemaTable(instance.inheritanceState);
   const channelType = sharedSchema[channelName] ?? null;
 

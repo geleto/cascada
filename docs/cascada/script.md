@@ -2536,7 +2536,7 @@ var ok   = header.log is error       // true if 'log' is poisoned
 var msg  = header.log#               // peek the error message
 ```
 
-Component shared channels are **read-only from the caller** — writes must go through the component's own constructors and methods. The allowed observation forms are: bare shared-var read (implicit snapshot), nested property read from a shared `var`, `.snapshot()`, `is error`, and `#`. Anything else is a compile error.
+Component shared channels are **read-only from the caller** — writes must go through the component's own constructors and methods. The allowed observation forms are: bare shared-var read (implicit snapshot), nested property read from a shared `var`, `.snapshot()`, `is error`, and `#`. Shared channel names that start with `_` are private to the component and are not observable through the component binding. Anything else is a compile error.
 
 A nested read such as `header.theme.name` is treated as `header.theme.snapshot().name` — Cascada observes the shared var first, then applies ordinary property lookup to the result. This implicit snapshot only applies to shared `var` channels. For `shared text`, `shared data`, or other channel types, call `.snapshot()` explicitly, because `snapshot()` waits for ordered channel work to finish:
 

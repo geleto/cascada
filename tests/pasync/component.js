@@ -637,6 +637,30 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.be('dark');
   });
 
+  it('should keep underscore shared vars private to the component namespace', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'shared var _theme = "dark"',
+      'method readTheme()',
+      '  return this._theme',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'var internal = ns.readTheme()',
+      'return ns._theme'
+    ].join('\n'));
+
+    try {
+      await env.renderScript('Main.script', {});
+      expect().fail('Expected private shared var lookup to fail');
+    } catch (err) {
+      expect(err.message).to.contain("Shared channel '_theme' was not found");
+    }
+  });
+
   it('should read shared vars at the caller current position', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
