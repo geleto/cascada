@@ -1840,6 +1840,8 @@ class ScriptTranspiler {
     }
   }
 
+  // Processed-line mutation helpers. Return lowering uses them to preserve
+  // physical source lines while patching guards into existing output lines.
   _appendInlinePrefix(line, content) {
     if (!line || !content) return;
     line.inlinePrefix = `${line.inlinePrefix || ''}${content}`;
