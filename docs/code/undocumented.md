@@ -1,101 +1,82 @@
-# Documentation Audit: Gaps and Inaccuracies
+# User Documentation Follow-Ups
 
-Findings from a systematic comparison of user-facing docs
-([docs/cascada/script.md](/c:/Projects/cascada/docs/cascada/script.md),
-[docs/cascada/template.md](/c:/Projects/cascada/docs/cascada/template.md))
-against the implementation.
+This note tracks user-facing documentation issues found while comparing
+`docs/cascada/script.md` and `docs/cascada/template.md` with the current
+implementation.
 
----
+It is not an implementation plan. Items here should either be fixed in the user
+docs or removed from this note once resolved.
 
-## Critical Inaccuracy
+## Current Follow-Ups
 
-### `revert` is documented as working but is not compiled
+### Template `revert`
 
-**Location:** `docs/cascada/template.md` - syntax table row 64, and the full
-`guard` / `recover` / `revert` section.
+`docs/cascada/template.md` currently lists template `{% revert %}` as syntax.
+The parser has a `Revert` node, but async/sync compiler support is not present
+in the current source.
 
-**Problem:** `template.md` presents `{% revert %}` as a functional feature with
-a complete working example. In reality, neither `compiler-async.js` nor
-`compiler-sync.js` contains a `compileRevert()` method. When the compiler
-encounters a `Revert` node it throws:
+Until compilation is implemented, template docs should mark `revert` as
+work-in-progress or remove working examples. Script docs already describe manual
+`revert` as work-in-progress.
 
-> `compile: Cannot compile node: Revert`
+If a template containing `{% revert %}` is rendered, the compiler throws at
+compile time with the message:
 
-The parser (`parser.js`) and `nodes.js` have the AST infrastructure in place,
-but compilation was never written.
+```
+compile: Cannot compile node: Revert
+```
 
-**Contrast with `script.md`:** `script.md` correctly marks `revert` as
-"Work in progress."
+This error is produced by the fallback branch in `CompilerCommon.compile()`
+(`src/compiler/compiler-common.js`, line 66) because no `compileRevert`
+method exists on the compiler.
 
-**Evidence:**
+Relevant source:
 
-- `src/nodes.js`: `class Revert extends Node` defined
-- `src/parser.js`: `parseRevert()` exists
-- `src/compiler/compiler-async.js`: no `compileRevert()`
-- `src/compiler/compiler-sync.js`: no `compileRevert()`
+- `src/parser.js` parses `revert`
+- `src/nodes.js` defines `Revert`
+- `src/compiler/compiler-common.js` — `compile()` fallback throws the error above
+- no `compileRevert(...)` method exists in any compiler file
 
-**Fix needed in `template.md`:** Remove the `revert` row from the syntax table
-or mark it WIP, and replace the `### revert` example section with a WIP note
-matching the treatment in `script.md`.
+### Template `without context`
 
----
+`without context` is supported for template imports and from-imports but is not
+yet documented in `docs/cascada/template.md`.
 
-## Documentation Gaps
+**Action required:** Add both supported forms to `template.md`'s syntax table
+and to whatever section covers template composition context rules (imports,
+from-imports, and context inheritance):
 
-### `without context` missing from `template.md`
+- `{% import "file.njk" as lib without context %}`
+- `{% from "file.njk" import helper without context %}`
 
-`without context` is a valid clause on `import` and `from import` that
-explicitly opts out of render-context exposure. It is documented in
-`script.md`, but is entirely absent from `template.md`.
+Unsupported forms (do not document as valid):
 
-**What is and is not supported (from `parser.js`):**
+- `{% include "file.njk" without context %}`
+- `{% block name without context %}`
 
-| Form | Supported |
-|---|---|
-| `import "file" as lib without context` | yes |
-| `from "file" import helper without context` | yes |
-| `include "file" without context` | no |
-| `block name without context` | no |
+### Block Context Syntax
 
-**Fix needed in `template.md`:**
+The current async block context syntax is explicit-signature based:
 
-- Add `import "file" as lib without context`
-- Add `from "file" import helper without context`
-- Mention `without context` in the async composition rules
+```njk
+{% block content(user) with context %}
+```
 
-### `block ... with context` wording needs post-Step-E cleanup
+Legacy block-input wording such as `block name with context, var1` should not be
+used as current syntax.
 
-The current async block syntax is the explicit-signature form
-`block name(args) with context`. The old `block name with context, var1` form
-belonged to the removed legacy block-input model and is no longer valid after
-Step E.
+## Intentional Omissions
 
-**Doc status:** `template.md` already documents the current explicit-signature
-form with `{% block content(user) with context %}`. Any remaining references to
-legacy block `with` inputs should be treated as historical notes, not current
-syntax.
+These features exist but are inherited from standard Nunjucks behavior or are
+internal enough that the Cascada user docs do not need to expand them unless a
+new docs pass chooses to:
 
----
+- filter blocks: `{% filter upper %}...{% endfilter %}`
+- `ignore missing` includes
+- `raw` / `verbatim`
+- internal `asyncAll` loop syntax
 
-## Intentional Omissions (No Change Needed)
+## Cleanup Rule
 
-These features exist in the code but appear to be intentionally inherited from
-standard Nunjucks rather than re-documented in the Cascada user docs.
-
-| Feature | Syntax | Notes |
-|---|---|---|
-| Filter block | `{% filter upper %}...{% endfilter %}` | Parser and compiler support it. |
-| Ignore missing | `{% include "file" ignore missing %}` | Parser supports it. |
-| Raw / verbatim | `{% raw %}...{% endraw %}` | Prevents template parsing of enclosed content. |
-| `asyncAll` loop | `asyncAll item in items ... endall` | Internal parallel loop keyword, not intended as user-facing syntax. |
-
----
-
-## Summary
-
-| Finding | Severity | Affected file |
-|---|---|---|
-| `revert` shown as working but throws compile error at runtime | Critical | `template.md` |
-| `without context` missing from syntax table and key rules | Gap | `template.md` |
-| `block ... with context` wording needed post-Step-E cleanup | Minor gap | `template.md` |
-| `filter`, `ignore missing`, `raw`, `asyncAll` undocumented | Intentional / OK | - |
+When a listed issue is fixed in the user docs or implementation, update or
+delete the corresponding section here. This file should stay small and current.

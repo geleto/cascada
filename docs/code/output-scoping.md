@@ -1,405 +1,166 @@
-# Output Scoping And Buffer Access Plan
+# Output Scoping And Buffer Access
 
-## Architectural Primer: Ordering Before Local Fixes
-Cascada runs many operations concurrently, but output-visible effects must remain equivalent to a correct sequential run. That is enforced by the command-tree structure:
-- async regions emit ordered command segments,
-- nested regions attach as child segments,
-- execution applies commands deterministically in source order, waiting for unfinished slots.
+This document describes the current output/channel scoping model in async
+Cascada.
 
-This is the core temporal sequential equivalence contract. Any fix that bypasses this contract can create regressions that look unrelated (timeouts, missing snapshots, duplicate text, wrong poison propagation).
+## Ordering Contract
 
-Because of that, do not “patch around” a single failure by circumventing buffer ownership, stream linking, or finalize timing. Fixes must preserve:
-1. correct command insertion point,
-2. correct parent/child buffer hierarchy,
-3. correct link/finalize lifecycle.
+Cascada executes independent work concurrently, but output-visible effects must
+match a valid sequential source-order run.
 
-## Purpose
-Fix output scoping and async buffer access bugs introduced by `var -> value` conversion, without mixing concerns across compiler/runtime layers.
+That contract is enforced by the command-buffer tree:
 
-This document is intentionally strict and explicit. Missing small details in this area can cause deadlocks/timeouts and hard-to-trace cross-scope contamination.
+- commands are enqueued into the active `currentBuffer`
+- async/control/composition boundaries reserve child-buffer slots early
+- linked parent channels determine where a child buffer is visible
+- the buffer iterator applies commands in source order and waits for unfinished
+  child slots when it reaches them
 
-## Scope
-This plan targets script-mode output-backed variables and output commands.
-Template text capture (`{% set %}...{% endset %}`) must remain behaviorally unchanged and is a hard regression gate.
+Do not work around an ordering bug by reading from a producer/parent buffer
+directly. If the current buffer cannot observe a value in source order, the bug
+is missing linking, wrong `currentBuffer`, or missing explicit payload wiring.
 
-## Current Problem Profile
-- Remaining script/call/capture timeout regressions still exist, but branch-local `if` minimal repro is fixed under the `currentBuffer` model.
-- Root cause class: producer/observer commands for the same logical output can land on different command streams/buffers.
-- Secondary issue class: same-name output declarations in sibling/nested scopes can collide in one async block stream.
+## Frames And Buffers
 
-## Non-Negotiable Invariants
-1. Frames and buffers
-- Not every frame owns a `CommandBuffer`.
-- Many nested lexical frames can execute in one async block and use one effective command stream.
-- The active stream is the compiler/runtime `currentBuffer` binding threaded through async closures.
-- Output declaration must target the same active `currentBuffer` used for command emission/observation in that region.
+Lexical frames and command buffers are separate concepts.
 
-2. Buffer creation sites
-- New `CommandBuffer` roots are allowed at:
-  - root render entry,
-  - async block roots that actually use output commands (`usesOutputs`).
-- Nested non-async scope frames (`if/for/switch` lexical pushes) must not implicitly create detached buffers.
-- Buffer linking/execution must not depend on compiler `usedExternalOutputs`; command arrays are slot-reserved lazily at runtime.
+- not every frame owns a `CommandBuffer`
+- many lexical scopes can emit into one active command stream
+- the active stream is the compiler/runtime `currentBuffer` binding
+- declarations, mutations, snapshots, and timing commands for a visible channel
+  must be enqueued on the current buffer
 
-3. Observations
-- `snapshot()`, `isError()`, `getError()` are observation commands.
-- Observation commands must not contribute to poison/mutation candidate sets.
+Runtime channel lookup must not infer lexical ownership by climbing to a parent
+producer buffer. The compiler's channel analysis decides what is visible and
+which parent channels are linked into each child boundary.
 
-4. Scope ownership
-- Output lexical scoping is compiler-owned.
-- Runtime executes already-resolved handler keys; runtime must not infer lexical ownership rules.
+## Channel Analysis
 
-5. Declaration inference source
-- Script declarations are explicit (`var`/`value`).
-- Template declaration-vs-assignment (`set`/`setval`) is compiler-resolved policy.
-- Transformer may consume resolved declaration metadata, but must not re-invent async-block ownership.
+The current analysis vocabulary is:
 
-## Output Sets We Need
-Two different sets are required. Do not merge them.
+- `declaredChannels` - channels declared by a scope/boundary
+- `usedChannels` - channels a node may need to observe or touch
+- `mutatedChannels` - channels a node may mutate or otherwise affect through
+  command-emitting work
 
-### `potentiallyPoisonedParentOutputs`
-- Scope: `guard` only.
-- Meaning: parent-scope outputs that can be poisoned by non-observation commands executed inside guard-controlled flows.
-- Used for guard poison/revert behavior.
+See also: `expression-channels.md` for how expressions contribute to channel
+analysis through command-emitting expression forms.
 
-### `writesParentOutputCandidates`
-- Scope: conditional/iterator control nodes (`if`, `switch`, `for`, `while`; include others only if they have equivalent poison-on-control-failure semantics).
-- Meaning: parent-scope outputs that any branch/iteration could write via non-observation commands.
-- Used when condition/iterator is poisoned or fails, to conservatively poison all potentially affected outputs.
+These sets drive:
 
-## Where Each Concern Lives
+- child-buffer linking
+- control-flow poisoning when a controlling value fails
+- guard target resolution
+- method/block/component channel metadata
+- expression-boundary decisions
 
-### Transformer
-Belongs here:
-- Alias/renaming pass for declaration collision avoidance (last phase, after buffer/scoping fixes).
-- Guard/conditional output candidate set collection from AST shape:
-  - `potentiallyPoisonedParentOutputs` (guard nodes),
-  - `writesParentOutputCandidates` (conditional/loop nodes).
-- Exclude observation commands from both sets.
-- Keep metadata attach-only; no runtime-specific buffer wiring in transformer.
+Observation commands count as channel use. Mutating commands count as use and
+mutation.
 
-Must not depend on async block emission ownership details.
-Must produce deterministic output for a given AST.
+## Buffer Creation
 
-### Compiler
-Belongs here:
-- Async block ownership and `usesOutputs` decisions (compiler knows which nodes emit async blocks).
-- Passing transformed metadata through emitted code paths.
-- Mapping diagnostics from alias keys back to user names.
+New command buffers are created for structural ownership, not merely because
+some value is async.
 
-### Runtime
-Belongs here:
-- Pure command stream execution/ordering.
-- No lexical-scoping decisions.
-- No declaration-vs-assignment policy.
+Current buffer creation sites include:
 
-## Naming Decisions
-- Keep `usesOutputs` as the primary compiler/runtime metadata flag.
-- `needsBuffer` is derived/internal only (if used at all).
-- For aliasing, prefer readable suffix style (e.g. `someVar#2`) over `~`.
-- Alias is internal for execution; diagnostics should present source names (optionally include alias in debug detail).
-- Buffer binding naming:
-  - Canonical execution handle: `currentBuffer`.
-  - Runtime declaration API takes explicit buffer argument (`declareOutput(frame, currentBuffer, ...)`).
+- root render entry
+- control-flow boundaries whose command structure depends on async values
+- waited-loop iteration/control-flow boundaries
+- macro/caller boundaries
+- `include` and component composition boundaries (`include` uses
+  `_compileAsyncControlFlowBoundary`; `import` and `from-import` are
+  promise/value-based bindings and do NOT create `CommandBuffer` boundaries)
+- block entry functions (each block is compiled as a separate callable entry
+  with its own buffer scope; in template mode the block body uses a text
+  boundary, not a general control-flow `CommandBuffer` child slot)
+- capture/text boundaries that require isolated text collection
 
-## Critical Constraints
-1. Guard collection rules
-- Collect only parent outputs touched by non-observation commands.
-- For nested guards:
-  - do not accidentally include inner-guard main flow when outer guard semantics should not claim it,
-  - include nested recover paths where poison/recovery effects can propagate.
+Pure value async work should remain a value or promise. It should not allocate a
+child command buffer unless it can enqueue commands or affect visible structure.
 
-2. Conditional/loop collection rules
-- Conservatively include writes from all branches/iterations.
-- This set is for poison-on-control-failure semantics, not guard rollback semantics.
+## Linking
 
-3. Buffer stream integrity
-- Within one async block, all relevant commands for the same logical output must be visible to the same linked command stream.
-- Detached child streams must be linked correctly if used; otherwise they can stall snapshots.
-- Do not globally reuse parent text buffers to fix script deadlocks; this can break template set-block text capture.
+Child buffers link only the parent channels they need.
 
-4. Dynamic target policy
-- For output commands where the target cannot be statically resolved to a symbol, fail compilation in strict script mode.
-- If a relaxed mode is later added, it must conservatively include unresolved targets in poisoning candidate sets and be explicitly tested.
+The compiler filters `usedChannels` through local declarations before emitting
+linked channel lists. Locally declared channels are owned by the child boundary;
+parent-visible channels are linked into the parent tree.
 
-## Implementation Plan (Testable, Ordered)
+The `__waited__` loop timing channel is intentionally flat and is not linked as
+a normal child channel. Waited-loop control-flow uses child-local waited
+channels and contributes one parent waited unit instead.
 
-## Phase 0: Lock Repro Cases
-Goal: freeze minimal failing behavior before fixes.
+## Observations
 
-Tests (short timeout, 1-3s):
-1. Minimal timeout repro in `tests/pasync/script.js` (branch-local scoped value assigned into outer result path).
-2. Keep branch/switch scope tests in `tests/pasync/script.js` enabled, except alias-dependent same-name declaration collision cases.
-3. Temporarily `.skip()` alias-dependent same-name branch/collision tests in `tests/pasync/script.js`; re-enable in Phase 4 (renaming/aliasing).
-4. Keep out-of-scope access/failure tests enabled in `tests/pasync/script.js` (must still fail deterministically).
-5. Set-block sanity checks in `tests/pasync/setblock.js` (prevent regressions while fixing buffers).
+Observation commands are ordered commands:
 
-Acceptance:
-- Repros fail consistently before fix.
-- Temporary skips are limited to alias-dependent tests only.
-- Non-target tests remain unchanged.
-
-## Phase 0.5: Mechanical Buffer Binding Cleanup (No Behavior Change)
-Goal: improve clarity before behavior fixes by removing stale frame-buffer assumptions.
-
-Work:
-1. Make `currentBuffer` the canonical active buffer handle in emitted async closures.
-2. Ensure `declareOutput` and output command emission use the same explicit buffer variable in each region.
-3. Remove/avoid fallback logic that infers active buffer from frame-chain lookup.
-4. Do not change buffer ownership/linking/snapshot behavior in this phase.
-
-Acceptance:
-1. Focused suites remain behaviorally identical:
-   - `tests/pasync/script.js`
-   - `tests/pasync/setblock.js`
-   - `tests/pasync/calls.js`
-2. No new timeouts or ordering regressions introduced by rename-only changes.
-
-## Phase 1: Fix CommandBuffer Access From Child Frames (FIRST)
-Goal: ensure child lexical frames inside one async block always have valid effective buffer access and stream visibility.
-
-Work:
-1. Audit runtime/emit paths where async child frames get/lose effective command buffer reference.
-2. Ensure nested lexical frames and nested async closures use the inherited `currentBuffer` unless a new child buffer is intentionally created.
-3. Ensure detached async child buffer paths are linked only when intended, and linked early enough for observations.
-4. Do not alter renaming/declaration aliasing in this phase.
-5. Keep runtime lexical output lookup behavior (`frame._outputs` + parent chain) unchanged in this phase.
-
-Acceptance tests:
-1. Minimal timeout repro passes (no timeout).
-2. Branch/switch scope timeout tests pass (with alias-dependent tests still skipped).
-3. Set-block tests still pass (no duplication/no text capture regressions).
-4. Existing caller/call tests still pass.
-
-## Phase 2: Add Transformer Output Candidate Sets
-Goal: precompute poison-related parent-output sets in transformer.
-
-Work:
-1. Add `potentiallyPoisonedParentOutputs` to guard nodes.
-2. Add `writesParentOutputCandidates` to conditional/loop nodes.
-3. Exclude observation commands from both.
-4. Keep this conservative and parent-scope-only.
-5. Do not include template-only text-capture internals in these sets.
-
-Acceptance tests:
-1. Guard poison/recover suites pass.
-2. Conditional/loop poison suites pass.
-3. No behavior drift in non-poison output tests.
-
-## Phase 3: Compiler Wiring For Sets + `usesOutputs`
-Goal: consume transformer metadata in compiler emission and maintain clean runtime inputs.
-
-Work:
-1. Keep `usesOutputs` at compiler async-block ownership points.
-2. Use transformer-provided sets for guard/conditional poisoning decisions.
-3. Avoid re-deriving these sets ad hoc during emission.
-
-Acceptance tests:
-1. Guard output poisoning/recovery tests pass.
-2. Conditional/loop poison tests pass.
-3. No new timeouts in script/template async suites.
-
-## Phase 4: Variable/Output Renaming (LAST)
-Goal: eliminate same-name declaration collisions across child scopes sharing command streams.
-
-Work:
-1. Transformer pass assigns deterministic declaration aliases (e.g. `name#2`) on duplicate declarations by scope occurrence.
-2. Rewrite references to aliases in AST where appropriate.
-3. Keep source-name mapping for diagnostics.
-4. Ensure reserved-name and declaration/assignment rules still apply pre/post aliasing.
-
-Acceptance tests:
-1. Same-name sibling/branch declaration tests pass.
-2. No collisions in branch/switch/capture/call cases.
-3. Error messages remain user-friendly (source names), with optional alias debug detail.
-
-## Phase 5: Cleanup and Hardening
-Goal: remove temporary probes and validate stability.
-
-Work:
-1. Remove temporary instrumentation and one-off debug tests.
-2. Keep one minimal non-regression test for the original timeout scenario.
-3. Run focused suites with short timeouts first, then broader quick suite.
-
-Acceptance:
-- Original timeout class fixed.
-- No reintroduced setblock regressions.
-- No guard/conditional poison regressions.
-
-## Suggested Focused Test Matrix
-Use short timeouts (1-3s for isolated tests, 3-5s for grouped files).
-
-1. `tests/pasync/script.js`
-- branch/switch scope tests (including minimal timeout repro).
-
-2. `tests/pasync/setblock.js`
-- basic, multiple, nested async set-block tests.
-
-3. `tests/pasync/calls.js`
-- caller scope read/write + observation behaviors.
-
-4. Guard/poison files (focused grep)
-- guard poisoning/recovering on outputs and condition failure paths.
-
-## Node-Level Collection Rules (Normative)
-
-### A) `potentiallyPoisonedParentOutputs` (Guard Only)
-
-| Node/Region | Include writes? | Include observations? | Notes |
-|---|---:|---:|---|
-| Guard main body | Yes (parent outputs only) | No | Non-observation commands only |
-| Guard recover body | Yes (parent outputs only) | No | Recover can affect poison outcome |
-| Nested guard main body | No (for outer guard set) | No | Nested guard owns its own set |
-| Nested guard recover body | Yes (if semantically in outer guard effect path) | No | Conservative include to avoid missed poisoning |
-| Pure expression/read nodes | No | No | Reads never enter poison-write set |
-| `snapshot/isError/getError` calls | No | No | Explicitly excluded |
-
-Parent-scope-only rule:
-- Include output only if declaration frame is outside the current guard lexical declaration scope.
-- Locals declared inside guard are excluded.
-
-### B) `writesParentOutputCandidates` (Conditionals / Loops)
-
-| Control Node | Include from | Exclude | Notes |
-|---|---|---|---|
-| `if` | all branches (`if` + `else/elif`) | observations | Conservative union |
-| `switch` | all `case` + `default` | observations | Conservative union |
-| `for`/`while`/iterators | loop body | observations | Used when iterator/condition is poisoned/fails |
-| Nested control inside these | recursively include | observations | Conservative propagation |
-| Guard nodes encountered | include normal branch writes, keep guard set separate | observations | Guard has dedicated recover/revert semantics |
-
-Parent-scope-only rule:
-- Same as guard set: only outputs declared outside current control node's local declaration scope.
-
-### C) Observation Classification
-Observation commands are exactly:
 - `snapshot()`
+- raw snapshot reads
 - `isError()`
 - `getError()`
+- guard-state capture/restore reads
+- sequence/path reads
 
-Everything else targeting an output handler is treated as write-capable for poisoning analysis.
+They must be added to the current buffer just like mutations. A snapshot is an
+ordered source-position read, not a shortcut to the producer buffer's current
+state.
 
-## Traversal Algorithm (Deterministic)
-Use deterministic pre-order AST walk with scoped declaration stacks.
+## Poison And Guard Behavior
 
-State per traversal:
-1. `declaredOutputStack`: lexical scopes with declared output names.
-2. `currentControlOwner`: active node being annotated (`Guard`, `If`, `Switch`, loop).
-3. `nestedGuardDepth`: enforces nested-guard include/exclude rules.
+When an async control value fails, the compiler/runtime poisons the channels
+that the skipped body could have affected.
 
-Algorithm sketch:
-1. Enter node:
-- push declaration scope when node introduces lexical scope.
-- register declarations immediately in top scope.
-2. On output command node:
-- classify observation vs non-observation.
-- resolve declaration owner (nearest scope where output was declared).
-- if non-observation and owner is outside current owner-local scope:
-  - add to owner set (`potentiallyPoisonedParentOutputs` or `writesParentOutputCandidates`).
-3. Guard special handling:
-- outer guard collector ignores nested guard main body writes.
-- outer guard collector can include nested guard recover writes conservatively.
-4. Exit node:
-- pop declaration scope when leaving lexical scope.
+Current implementation uses analysis-derived channel sets:
 
-## Scope and Ownership Resolution Rules
-1. Declaration owner:
-- nearest lexical declaration in scope stack wins.
-2. Parent output determination:
-- declaration owner scope depth < current owner-local scope base depth.
-3. Unknown output target:
-- in script mode: fail compilation (preferred, deterministic, safer).
-- use conservative inclusion only where unresolved static targets are explicitly supported.
+- `if` / `switch` gather branch `usedChannels` into `poisonChannels`
+- loops pass body/else channel metadata into runtime loop options
+- guards resolve selected channels and sequence paths from guard targets plus
+  body analysis
 
-4. Template declaration inference:
-- `set`/`setval` ownership is determined by compiler declaration analysis.
-- Transformer set-collection and aliasing passes consume that resolved ownership, not raw token shape.
+Guard behavior remains separate from ordinary control-flow poisoning:
 
-## Compiler Consumption Contract
-Transformer emits:
-1. `node.potentiallyPoisonedParentOutputs` on `Guard` nodes.
-2. `node.writesParentOutputCandidates` on conditional/loop nodes.
-3. Stable declaration aliases when renaming phase is enabled.
+- guard targets decide what state is captured/reverted
+- sequence targets use sequential-path guard commands
+- output/channel guard state is captured and restored through ordered commands
+- unrelated unguarded poison can still escape
 
-Compiler guarantees:
-1. Uses these sets directly for poisoning decisions.
-2. Does not re-derive conflicting sets ad hoc.
-3. Keeps `usesOutputs` as async-block metadata (separate concern).
-4. Preserves existing template set-block behavior (no duplicated text fragments).
+Observation-only reads should not be treated as mutations, but they remain
+ordered uses of the current buffer.
 
-## Edge Cases Checklist
-Before merging, validate each explicitly:
-1. Parent output written in `if` true branch only.
-2. Parent output written in `else` only.
-3. Parent output written in both branches with different declaration aliases.
-4. Local output written in branch; same name exists in parent.
-5. Observation-only calls in branches (must not enter sets).
-6. Nested guard in `if` branch with recover writing parent output.
-7. Guard with only local outputs (set should be empty).
-8. Loop with poisoned iterator before first iteration.
-9. While condition poisoned before body.
-10. Switch expression poisoned before any case.
-11. Template `{% set %}...{% endset %}` async capture remains exactly-once and ordered.
-12. Script branch-local timeout repro no longer hangs at 1-3s timeout.
+## Dynamic Targets
 
-## Risks To Watch
-1. Fixing branch timeouts can break setblock capture text ordering.
-2. Broad buffer sharing can duplicate or reorder text outputs.
-3. Alias pass can accidentally rename symbols in contexts that are not output handlers.
-4. Guard set over-collection can poison outputs that should remain local/non-revertable.
+Channel declarations and ordinary channel operations are statically resolved by
+the compiler/transpiler.
 
-## Summary
-- First priority is command buffer accessibility/stream integrity for child frames in async blocks.
-- Keep poison candidate sets explicit and separate:
-  - `potentiallyPoisonedParentOutputs` (guard),
-  - `writesParentOutputCandidates` (conditionals/loops).
-- Keep async-block ownership (`usesOutputs`) in compiler.
-- Do renaming last, in transformer, with deterministic aliases and source-name diagnostics.
+Runtime receives concrete channel names and command payloads. It should not
+decide whether a source-level operation was a declaration, assignment,
+observation, or parent-scope write. Those are compiler concerns.
 
-## Appendix: Do/Don't Scenarios
+## Invariants
 
-### Scenario 1: Guard Nesting
-Input shape:
-- Outer `guard` contains:
-  - normal body write to parent output `result`
-  - nested `guard` with main-body write to `result`
-  - nested `guard recover` write to `result`
+Keep these invariants when changing output or buffer behavior:
 
-Do:
-- Outer `potentiallyPoisonedParentOutputs` includes:
-  - outer guard body write(s),
-  - nested guard `recover` write(s) conservatively.
-- Inner guard computes its own independent `potentiallyPoisonedParentOutputs`.
+1. Every command for an execution point is enqueued on the active
+   `currentBuffer`.
+2. A visible parent channel must be linked into a child boundary before child
+   commands need it.
+3. Snapshots and error reads are ordered observations, not direct state peeks.
+4. Local declarations shadow parent channels through compiler analysis.
+5. Runtime code must not repair missing visibility by falling back to parent or
+   root producer buffers.
+6. Guard state and control-flow poison use analysis metadata; they are not
+   inferred from runtime buffer contents.
+7. Template set-block/capture boundaries remain isolated text collection
+   boundaries and must not be flattened into parent text output.
 
-Don't:
-- Do not blindly merge nested guard main-body writes into outer guard set.
+## Key Files
 
-### Scenario 2: Branch Union For Poison-On-Control-Failure
-Input shape:
-- `if cond`:
-  - true branch writes parent output `a`
-  - false branch writes parent output `b`
-
-Do:
-- `writesParentOutputCandidates = {a, b}` for the `if` node.
-- If `cond` is poisoned/fails, poison both candidates conservatively.
-
-Don't:
-- Do not include observation-only calls (`a.snapshot()`, `b.isError()`) in candidates.
-
-### Scenario 3: Alias Collision Across Sibling Scopes
-Input shape:
-- branch 1: `var scopedValue = ...`
-- branch 2: `var scopedValue = ...`
-- both mapped to output-backed declarations in the same async command stream.
-
-Do:
-- Assign deterministic aliases in transformer, e.g.:
-  - branch 1 declaration: `scopedValue#1`
-  - branch 2 declaration: `scopedValue#2`
-- Rewrite all references in each branch to the matching alias.
-- Keep diagnostics user-facing by source name (`scopedValue`), with optional alias debug detail.
-
-Don't:
-- Do not emit both declarations as the same handler key.
-- Do not defer collision handling to runtime; resolve in transformer/compiler pipeline.
+- `src/compiler/analysis.js` - channel declaration/use/mutation analysis
+- `src/compiler/buffer.js` - command-buffer emission helpers
+- `src/compiler/boundaries.js` - control/value/text boundary lowering
+- `src/compiler/compiler-async.js` - async control-flow and guard compilation
+- `src/compiler/loop.js` - loop boundary and waited-loop integration
+- `src/runtime/command-buffer.js` - command-buffer tree and channel access
+- `src/runtime/buffer-iterator.js` - source-order command application
+- `src/runtime/channels/*` - channel command implementations
