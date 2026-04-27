@@ -1,32 +1,29 @@
 'use strict';
 
-const { ErrorCommand } = require('./channels/error');
-const { TextCommand } = require('./channels/text');
-const {
-  SequenceCallCommand,
-  SequenceGetCommand
-} = require('./channels/sequence');
-const {
+import {ErrorCommand} from './channels/error';
+import {TextCommand} from './channels/text';
+import {SequenceCallCommand, SequenceGetCommand} from './channels/sequence';
+
+import {
   SequentialPathReadCommand,
   RepairReadCommand,
   SequentialPathWriteCommand,
-  RepairWriteCommand
-} = require('./channels/sequential-path');
-const {
+  RepairWriteCommand,
+} from './channels/sequential-path';
+
+import {
   SnapshotCommand,
   RawSnapshotCommand,
   ReturnIsUnsetCommand,
   IsErrorCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,
-  RestoreGuardStateCommand
-} = require('./channels/observation');
-const { WaitCurrentCommand } = require('./channels/timing');
-const {
-  assertChannelLaneAvailable,
-  checkFinishedBuffer
-} = require('./checks');
-const { handleError, RuntimeFatalError } = require('./errors');
+  RestoreGuardStateCommand,
+} from './channels/observation';
+
+import {WaitCurrentCommand} from './channels/timing';
+import {assertChannelLaneAvailable, checkFinishedBuffer} from './checks';
+import {handleError, RuntimeFatalError} from './errors';
 
 class CommandBuffer {
   constructor(context, parent = null) {
@@ -626,7 +623,10 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
   return buffer;
 }
 
-module.exports = {
+const __defaultExport = {
   CommandBuffer,
   createCommandBuffer
 };
+export { CommandBuffer, createCommandBuffer };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

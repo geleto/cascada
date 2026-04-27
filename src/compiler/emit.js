@@ -1,6 +1,6 @@
-const { DEFAULT_TEMPLATE_TEXT_CHANNEL } = require('./buffer');
+import {DEFAULT_TEMPLATE_TEXT_CHANNEL} from './buffer';
 
-module.exports = class CompileEmit {
+export default class CompileEmit {
   constructor(compiler) {
     this.scopeClosers = '';
     this.compiler = compiler;

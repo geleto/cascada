@@ -1,6 +1,6 @@
 'use strict';
 
-var SafeString = require('./runtime/runtime').SafeString;
+import {SafeString} from './runtime/runtime';
 
 /**
  * Returns `true` if the object is a function, otherwise `false`.
@@ -11,7 +11,7 @@ function callable(value) {
   return typeof value === 'function';
 }
 
-exports.callable = callable;
+export {callable};
 
 /**
  * Returns `true` if the object is strictly not `undefined`.
@@ -22,7 +22,7 @@ function defined(value) {
   return value !== undefined;
 }
 
-exports.defined = defined;
+export {defined};
 
 /**
  * Returns `true` if the operand (one) is divisble by the test's argument
@@ -35,7 +35,7 @@ function divisibleby(one, two) {
   return (one % two) === 0;
 }
 
-exports.divisibleby = divisibleby;
+export {divisibleby};
 
 /**
  * Returns true if the string has been escaped (i.e., is a SafeString).
@@ -46,7 +46,7 @@ function escaped(value) {
   return value instanceof SafeString;
 }
 
-exports.escaped = escaped;
+export {escaped};
 
 /**
  * Returns `true` if the arguments are strictly equal.
@@ -57,11 +57,12 @@ function equalto(one, two) {
   return one === two;
 }
 
-exports.equalto = equalto;
+export {equalto};
 
 // Aliases
-exports.eq = exports.equalto;
-exports.sameas = exports.equalto;
+export var eq = equalto;
+
+export var sameas = equalto;
 
 /**
  * Returns `true` if the value is evenly divisible by 2.
@@ -72,7 +73,7 @@ function even(value) {
   return value % 2 === 0;
 }
 
-exports.even = even;
+export {even};
 
 /**
  * Returns `true` if the value is falsy - if I recall correctly, '', 0, false,
@@ -86,7 +87,7 @@ function falsy(value) {
   return !value;
 }
 
-exports.falsy = falsy;
+export {falsy};
 
 /**
  * Returns `true` if the operand (one) is greater or equal to the test's
@@ -99,7 +100,7 @@ function ge(one, two) {
   return one >= two;
 }
 
-exports.ge = ge;
+export {ge};
 
 /**
  * Returns `true` if the operand (one) is greater than the test's argument
@@ -112,10 +113,10 @@ function greaterthan(one, two) {
   return one > two;
 }
 
-exports.greaterthan = greaterthan;
+export {greaterthan};
 
 // alias
-exports.gt = exports.greaterthan;
+export var gt = greaterthan;
 
 /**
  * Returns `true` if the operand (one) is less than or equal to the test's
@@ -128,7 +129,7 @@ function le(one, two) {
   return one <= two;
 }
 
-exports.le = le;
+export {le};
 
 /**
  * Returns `true` if the operand (one) is less than the test's passed argument
@@ -141,10 +142,10 @@ function lessthan(one, two) {
   return one < two;
 }
 
-exports.lessthan = lessthan;
+export {lessthan};
 
 // alias
-exports.lt = exports.lessthan;
+export var lt = lessthan;
 
 /**
  * Returns `true` if the string is lowercased.
@@ -155,7 +156,7 @@ function lower(value) {
   return value.toLowerCase() === value;
 }
 
-exports.lower = lower;
+export {lower};
 
 /**
  * Returns `true` if the operand (one) is less than or equal to the test's
@@ -168,7 +169,7 @@ function ne(one, two) {
   return one !== two;
 }
 
-exports.ne = ne;
+export {ne};
 
 /**
  * Returns true if the value is strictly equal to `null`.
@@ -179,7 +180,7 @@ function nullTest(value) {
   return value === null;
 }
 
-exports.null = nullTest;
+export {nullTest as null};
 
 /**
  * Returns true if value is a number.
@@ -190,7 +191,7 @@ function number(value) {
   return typeof value === 'number';
 }
 
-exports.number = number;
+export {number};
 
 /**
  * Returns `true` if the value is *not* evenly divisible by 2.
@@ -201,7 +202,7 @@ function odd(value) {
   return value % 2 === 1;
 }
 
-exports.odd = odd;
+export {odd};
 
 /**
  * Returns `true` if the value is a string, `false` if not.
@@ -212,7 +213,7 @@ function string(value) {
   return typeof value === 'string';
 }
 
-exports.string = string;
+export {string};
 
 /**
  * Returns `true` if the value is not in the list of things considered falsy:
@@ -224,7 +225,7 @@ function truthy(value) {
   return !!value;
 }
 
-exports.truthy = truthy;
+export {truthy};
 
 /**
  * Returns `true` if the value is undefined.
@@ -235,7 +236,7 @@ function undefinedTest(value) {
   return value === undefined;
 }
 
-exports.undefined = undefinedTest;
+export {undefinedTest as undefined};
 
 /**
  * Returns `true` if the string is uppercased.
@@ -246,7 +247,7 @@ function upper(value) {
   return value.toUpperCase() === value;
 }
 
-exports.upper = upper;
+export {upper};
 
 /**
  * If ES6 features are available, returns `true` if the value implements the
@@ -266,7 +267,7 @@ function iterable(value) {
   }
 }
 
-exports.iterable = iterable;
+export {iterable};
 
 /**
  * If ES6 features are available, returns `true` if the value is an object hash
@@ -287,4 +288,35 @@ function mapping(value) {
   }
 }
 
-exports.mapping = mapping;
+export {mapping};
+
+const __defaultExport = {
+  callable,
+  defined,
+  divisibleby,
+  escaped,
+  equalto,
+  eq,
+  sameas,
+  even,
+  falsy,
+  ge,
+  greaterthan,
+  gt,
+  le,
+  lessthan,
+  lt,
+  lower,
+  ne,
+  null: nullTest,
+  number,
+  odd,
+  string,
+  truthy,
+  undefined: undefinedTest,
+  upper,
+  iterable,
+  mapping
+};
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

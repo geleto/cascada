@@ -1,9 +1,7 @@
 'use strict';
 
-const nodes = require('../nodes');
-const {
-  CHANNEL_TYPES
-} = require('../channel-types');
+import nodes from '../nodes';
+import {CHANNEL_TYPES} from '../channel-types';
 
 /**
  * Channel analysis pre-pass.
@@ -698,4 +696,4 @@ class CompileAnalysis {
 
 }
 
-module.exports = CompileAnalysis;
+export default CompileAnalysis;

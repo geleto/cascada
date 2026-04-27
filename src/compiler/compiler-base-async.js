@@ -1,9 +1,9 @@
 'use strict';
 
-const nodes = require('../nodes');
-const CompileAnalysis = require('./analysis');
-const CompileRename = require('./rename');
-const CompilerCommon = require('./compiler-common');
+import nodes from '../nodes';
+import CompileAnalysis from './analysis';
+import CompileRename from './rename';
+import CompilerCommon from './compiler-common';
 
 const compareOps = {
   '==': '==',
@@ -769,9 +769,9 @@ class CompilerBaseAsync extends CompilerCommon {
       function () {
         this.emit(`env.getFilter("${node.name.value}")`);
       },
-      ...node.args.children.map((arg) => function () {
+      ...node.args.children.map((arg) => (function() {
         this.compile(arg, null);
-      })
+      }))
     ];
     this._compileResolvedPartList(parts, function (result) {
       this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
@@ -1102,5 +1102,5 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 }
 
-module.exports = CompilerBaseAsync;
-module.exports.CompilerBaseAsync = CompilerBaseAsync;
+export default CompilerBaseAsync;
+export {CompilerBaseAsync};

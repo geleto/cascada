@@ -1,7 +1,7 @@
 'use strict';
 
-const nodes = require('../nodes');
-const CompilerCommon = require('./compiler-common');
+import nodes from '../nodes';
+import CompilerCommon from './compiler-common';
 
 const compareOps = {
   '==': '==',
@@ -191,5 +191,5 @@ class CompilerBaseSync extends CompilerCommon {
   }
 }
 
-module.exports = CompilerBaseSync;
-module.exports.CompilerBaseSync = CompilerBaseSync;
+export default CompilerBaseSync;
+export {CompilerBaseSync};

@@ -1,7 +1,7 @@
 'use strict';
 
-var fs = require('fs');
-var path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 function lookup(relPath, isExecutable) {
   for (let i = 0; i < module.paths.length; i++) {
@@ -34,7 +34,10 @@ function promiseSequence(promises) {
   });
 }
 
-module.exports = {
+const __defaultExport = {
   lookup: lookup,
   promiseSequence: promiseSequence
 };
+export { lookup, promiseSequence };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

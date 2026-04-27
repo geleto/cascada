@@ -1,12 +1,12 @@
 'use strict';
 
-const { CHANNEL_TYPE_FACTS } = require('../../channel-types');
-const { Channel, createCallableChannelFacade, inspectTargetForErrors } = require('./base');
-const { TextChannel } = require('./text');
-const { VarChannel } = require('./var');
-const { SequentialPathChannel } = require('./sequential-path');
-const { DataChannel } = require('./data');
-const { SequenceChannel } = require('./sequence');
+import {CHANNEL_TYPE_FACTS} from '../../channel-types';
+import {Channel, createCallableChannelFacade, inspectTargetForErrors} from './base';
+import {TextChannel} from './text';
+import {VarChannel} from './var';
+import {SequentialPathChannel} from './sequential-path';
+import {DataChannel} from './data';
+import {SequenceChannel} from './sequence';
 
 function createChannel(buffer, channelName, context, channelType = null, initializer) {
   const type = channelType || channelName;
@@ -56,7 +56,7 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
-module.exports = {
+const __defaultExport = {
   Channel,
   DataChannel,
   TextChannel,
@@ -68,3 +68,6 @@ module.exports = {
   createSequenceChannel,
   declareBufferChannel
 };
+export { Channel, DataChannel, TextChannel, VarChannel, SequentialPathChannel, inspectTargetForErrors, createChannel, SequenceChannel, createSequenceChannel, declareBufferChannel };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

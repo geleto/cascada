@@ -1,6 +1,6 @@
 'use strict';
 
-const { RuntimeFatalError } = require('./errors');
+import {RuntimeFatalError} from './errors';
 
 /**
  * Check frame balance when popping.
@@ -83,9 +83,12 @@ function assertChannelLaneAvailable(buffer, channelName) {
   );
 }
 
-module.exports = {
+const __defaultExport = {
   assertChannelLaneAvailable,
   checkFrameBalance,
   checkFinishedBuffer,
   ensureSequentialPathChannel
 };
+export { assertChannelLaneAvailable, checkFrameBalance, checkFinishedBuffer, ensureSequentialPathChannel };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -316,4 +316,4 @@ function installCompat() {
   return uninstall;
 }
 
-module.exports = installCompat;
+export default installCompat;

@@ -1,9 +1,7 @@
 'use strict';
 
-const {
-  checkFrameBalance
-} = require('./checks');
-const { createLoopBindings } = require('./loop');
+import {checkFrameBalance} from './checks';
+import {createLoopBindings} from './loop';
 
 
 // Frames keep track of scoping both at compile-time and run-time so
@@ -137,7 +135,10 @@ function markChannelBufferScope(buffer) {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   Frame,
   markChannelBufferScope
 };
+export { Frame, markChannelBufferScope };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -1,8 +1,8 @@
 'use strict';
 
-const { Command } = require('./channels/command-base');
-const inheritanceState = require('./inheritance-state');
-const { RuntimeFatalError, handleError, isRuntimeFatalError } = require('./errors');
+import {Command} from './channels/command-base';
+import inheritanceState from './inheritance-state';
+import {RuntimeFatalError, handleError, isRuntimeFatalError} from './errors';
 
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';
 
@@ -972,7 +972,7 @@ function invokeComponentMethod(inheritanceStateValue, methodName, args, context,
   });
 }
 
-module.exports = {
+const __defaultExport = {
   createInheritanceInvocationCommand,
   getMethodData,
   finalizeResolvedMethodMetadata,
@@ -983,3 +983,6 @@ module.exports = {
   invokeSuperMethod,
   invokeComponentMethod
 };
+export { createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, hasLinkedChannelPath, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

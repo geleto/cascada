@@ -1,15 +1,16 @@
 'use strict';
 
 // Import all the separated classes
-const { BaseEnvironment } = require('./base-environment');
-const { Environment } = require('./sync-environment');
-const { AsyncEnvironment } = require('./async-environment');
-const { Template, AsyncTemplate } = require('./template');
-const { Script } = require('./script');
-const { Context } = require('./context');
+import {BaseEnvironment} from './base-environment';
+
+import {Environment} from './sync-environment';
+import {AsyncEnvironment} from './async-environment';
+import {Template, AsyncTemplate} from './template';
+import {Script} from './script';
+import {Context} from './context';
 
 // Re-export all the classes
-module.exports = {
+const __defaultExport = {
   BaseEnvironment,
   Environment,
   AsyncEnvironment,
@@ -18,3 +19,6 @@ module.exports = {
   Script,
   Context
 };
+export { BaseEnvironment, Environment, AsyncEnvironment, Template, AsyncTemplate, Script, Context };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

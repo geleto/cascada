@@ -21,4 +21,4 @@ function precompileGlobal(templates, opts) {
   return out;
 }
 
-module.exports = precompileGlobal;
+export default precompileGlobal;

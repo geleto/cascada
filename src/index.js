@@ -1,17 +1,17 @@
 'use strict';
 
-const lib = require('./lib');
-const {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} = require('./environment/environment');
-const Loader = require('./loader/loader');
-const loaders = require('./loader/loaders');
-const precompile = require('./precompile');
-const compiler = require('./compiler/compiler');
-const parser = require('./parser');
-const lexer = require('./lexer');
-const runtime = require('./runtime/runtime');
-const nodes = require('./nodes');
-const installJinjaCompat = require('./jinja-compat');
-const loaderUtils = require('./loader/loader-utils');
+import lib from './lib';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment';
+import Loader from './loader/loader';
+import loaders from './loader/loaders';
+import precompileModule from './precompile';
+import compiler from './compiler/compiler';
+import parser from './parser';
+import lexer from './lexer';
+import runtime from './runtime/runtime';
+import nodes from './nodes';
+import installJinjaCompat from './jinja-compat';
+import loaderUtils from './loader/loader-utils';
 
 // A single instance of an environment, since this is so commonly used
 let e;
@@ -57,7 +57,7 @@ function configureAsync(templatesPath, opts) {
   return configure(templatesPath, opts, true);
 }
 
-module.exports = {
+const __defaultExport = {
   Environment,
   AsyncEnvironment,
   Template,
@@ -157,18 +157,22 @@ module.exports = {
     return asyncE.renderTemplate(name, ctx);
   },
   /** @deprecated Use precompileTemplate instead */
-  precompile: (precompile) ? precompile.precompile : undefined,
+  precompile: (precompileModule) ? precompileModule.precompile : undefined,
   /** @deprecated Use precompileTemplateString instead */
-  precompileString: (precompile) ? precompile.precompileString : undefined,
+  precompileString: (precompileModule) ? precompileModule.precompileString : undefined,
 
-  precompileTemplate: (precompile) ? precompile.precompileTemplate : undefined,
-  precompileTemplateString: (precompile) ? precompile.precompileTemplateString : undefined,
+  precompileTemplate: (precompileModule) ? precompileModule.precompileTemplate : undefined,
+  precompileTemplateString: (precompileModule) ? precompileModule.precompileTemplateString : undefined,
 
-  precompileTemplateAsync: (precompile) ? precompile.precompileTemplateAsync : undefined,
-  precompileTemplateStringAsync: (precompile) ? precompile.precompileTemplateStringAsync : undefined,
-  precompileScript: (precompile) ? precompile.precompileScript : undefined,
-  precompileScriptString: (precompile) ? precompile.precompileScriptString : undefined,
+  precompileTemplateAsync: (precompileModule) ? precompileModule.precompileTemplateAsync : undefined,
+  precompileTemplateStringAsync: (precompileModule) ? precompileModule.precompileTemplateStringAsync : undefined,
+  precompileScript: (precompileModule) ? precompileModule.precompileScript : undefined,
+  precompileScriptString: (precompileModule) ? precompileModule.precompileScriptString : undefined,
   loadString: loaderUtils.loadString,
   clearStringCache: loaderUtils.clearStringCache,
   raceLoaders: loaderUtils.raceLoaders,
 };
+export { Environment, AsyncEnvironment, Template, AsyncTemplate, Script, Loader, compiler, parser, lexer, runtime, lib, nodes, installJinjaCompat, configure };
+
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

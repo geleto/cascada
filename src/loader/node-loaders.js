@@ -1,9 +1,9 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const Loader = require('./loader.js');
-const {PrecompiledLoader} = require('./precompiled-loader.js');
+import fs from 'fs';
+import path from 'path';
+import Loader from './loader.js';
+import {PrecompiledLoader} from './precompiled-loader.js';
 let chokidar;
 
 class FileSystemLoader extends Loader {
@@ -141,8 +141,11 @@ class NodeResolveLoader extends Loader {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   FileSystemLoader: FileSystemLoader,
   PrecompiledLoader: PrecompiledLoader,
   NodeResolveLoader: NodeResolveLoader,
 };
+export { FileSystemLoader, PrecompiledLoader, NodeResolveLoader };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

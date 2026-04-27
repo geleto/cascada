@@ -1,8 +1,17 @@
 'use strict';
 
-const lib = require('../lib');
-const { createPoison, isPoison, isPoisonError, isRuntimeFatalError, PoisonError, handleError } = require('./errors');
-const { VarCommand } = require('./channels/var');
+import lib from '../lib';
+
+import {
+  createPoison,
+  isPoison,
+  isPoisonError,
+  isRuntimeFatalError,
+  PoisonError,
+  handleError,
+} from './errors';
+
+import {VarCommand} from './channels/var';
 
 const arrayFrom = Array.from;
 const supportsIterators = (
@@ -849,7 +858,7 @@ async function* whileIterator() {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   asyncEach,
   asyncAll,
   fromIterator,
@@ -861,4 +870,7 @@ module.exports = {
   iterate,
   whileIterator
 };
+export { asyncEach, asyncAll, fromIterator, createLoopBindings, setLoopValueBindings, iterateAsyncSequential, iterateAsyncParallel, poisonLoopEffects, iterate, whileIterator };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
 

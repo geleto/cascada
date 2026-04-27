@@ -1,11 +1,8 @@
 'use strict';
 
-const {
-  memberLookupAsync,
-  memberLookupScript
-} = require('./lookup');
-const { callWrapAsync } = require('./call');
-const { ensureSequentialPathChannel } = require('./checks');
+import {memberLookupAsync, memberLookupScript} from './lookup';
+import {callWrapAsync} from './call';
+import {ensureSequentialPathChannel} from './checks';
 
 function withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair, isWrite, operation) {
   if (!currentBuffer) {
@@ -44,12 +41,15 @@ function sequentialMemberLookupScriptValue(target, key, pathKey, errorContext, r
   );
 }
 
-module.exports = {
+const __defaultExport = {
   sequentialCallWrapValue,
   sequentialContextLookupValue,
   sequentialMemberLookupAsyncValue,
   sequentialMemberLookupScriptValue
 };
+export { sequentialCallWrapValue, sequentialContextLookupValue, sequentialMemberLookupAsyncValue, sequentialMemberLookupScriptValue };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
 
 function contextLookupOnly(context, name, pathKey) {
   const value = context.lookup(name);

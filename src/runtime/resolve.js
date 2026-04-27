@@ -33,14 +33,8 @@
  */
 'use strict';
 
-const {
-  createPoison,
-  isPoison,
-  isPoisonError,
-  collectErrors,
-  PoisonError
-} = require('./errors');
-const { RESOLVE_MARKER, RESOLVED_VALUE_MARKER } = require('./markers');
+import {createPoison, isPoison, isPoisonError, collectErrors, PoisonError} from './errors';
+import {RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers';
 
 function makeResolvedValue(value, mapper = null) {
   return {
@@ -497,7 +491,7 @@ function createArray(arr) {
   return arr;
 }
 
-module.exports = {
+const __defaultExport = {
   resolveAll,
   resolveDuo,
   resolveSingle,
@@ -514,3 +508,6 @@ module.exports = {
   isResolvedValue,
   unwrapResolvedValue
 };
+export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveObjectProperties, resolveArguments, normalizeFinalPromise, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

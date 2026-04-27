@@ -2,11 +2,11 @@
 
 'use strict';
 
-const path = require('path');
-const webpack = require('webpack');
-const pjson = require('../package.json');
-const promiseSequence = require('./lib/utils').promiseSequence;
-const TerserPlugin = require('terser-webpack-plugin');
+import path from 'path';
+import webpack from 'webpack';
+import pjson from '../package.json';
+import {promiseSequence} from './lib/utils';
+import TerserPlugin from 'terser-webpack-plugin';
 const TEST_ENV = process.env.NODE_ENV === 'test';
 
 const destDir = path.resolve(path.join(__dirname, TEST_ENV ? '../tests/browser' : '../dist/browser'));

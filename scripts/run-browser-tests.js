@@ -6,17 +6,17 @@
 // Run browser tests
 require('@babel/register');
 
-const NYC = require('nyc');
-const mocha = require('mocha');
-const path = require('path');
-const fs = require('fs').promises;
+import NYC from 'nyc';
+import mocha from 'mocha';
+import path from 'path';
+import {promises as fs} from 'fs';
 //const chalk = require('tiny-chalk');
 let chalk;
 
-const libCoverage = require('istanbul-lib-coverage');
-const getStaticServer = require('./lib/static-server');
-const { chromium } = require('playwright');
-const precompileTestTemplates = require('./lib/precompile');
+import libCoverage from 'istanbul-lib-coverage';
+import getStaticServer from './lib/static-server';
+import {chromium} from 'playwright';
+import precompileTestTemplates from './lib/precompile';
 
 process.env.NODE_ENV = 'test';
 let mergeNodeTestsCoverage = process.argv.includes('fullTest');

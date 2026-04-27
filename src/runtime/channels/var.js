@@ -1,7 +1,7 @@
 'use strict';
 
-const { ChannelCommand, runWithResolvedArguments, contextualizeOutputError } = require('./command-base');
-const { Channel } = require('./base');
+import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base';
+import {Channel} from './base';
 
 class VarCommand extends ChannelCommand {
   constructor(specOrValue) {
@@ -65,27 +65,48 @@ class VarCommand extends ChannelCommand {
 }
 
 class VarChannel extends Channel {
-  constructor(buffer, channelName, context, channelType, initialValue = undefined) {
-    // Keep declaration-only var channels aligned with `none` semantics unless
-    // a caller provides an explicit initializer.
-    super(buffer, channelName, context, channelType, initialValue, null);
-  }
-
-  invoke(value) {
-    if (!this._buffer) return;
-    this._buffer.add(new VarCommand({
-      channelName: this._channelName,
-      args: [value],
-      pos: { lineno: 0, colno: 0 }
-    }), this._channelName);
-  }
-
-  _getCurrentResult() {
-    return this._target;
-  }
+  constructor(buffer, channelName, context, channelType, initialValue = undefined) {
+
+    // Keep declaration-only var channels aligned with `none` semantics unless
+
+    // a caller provides an explicit initializer.
+
+    super(buffer, channelName, context, channelType, initialValue, null);
+
+  }
+
+
+
+  invoke(value) {
+
+    if (!this._buffer) return;
+
+    this._buffer.add(new VarCommand({
+
+      channelName: this._channelName,
+
+      args: [value],
+
+      pos: { lineno: 0, colno: 0 }
+
+    }), this._channelName);
+
+  }
+
+
+
+  _getCurrentResult() {
+
+    return this._target;
+
+  }
+
 }
 
-module.exports = {
+const __defaultExport = {
   VarChannel,
   VarCommand
 };
+export { VarChannel, VarCommand };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

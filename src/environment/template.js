@@ -1,13 +1,13 @@
 'use strict';
 
-const lib = require('../lib');
-const compiler = require('../compiler/compiler');
-const globalRuntime = require('../runtime/runtime');
-const { Frame } = require('../runtime/frame');
-const { Obj } = require('../object');
-const { callbackAsap } = require('./utils');
-const { Context } = require('./context');
-const { markPromiseHandled } = require('../runtime/errors');
+import lib from '../lib';
+import compiler from '../compiler/compiler';
+import globalRuntime from '../runtime/runtime';
+import {Frame} from '../runtime/frame';
+import {Obj} from '../object';
+import {callbackAsap} from './utils';
+import {Context} from './context';
+import {markPromiseHandled} from '../runtime/errors';
 
 // Lazy-loaded environment classes to avoid circular dependencies
 let Environment, AsyncEnvironment;
@@ -446,7 +446,10 @@ class AsyncTemplate extends Template {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   Template,
   AsyncTemplate
 };
+export { Template, AsyncTemplate };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

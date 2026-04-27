@@ -28,4 +28,4 @@ class ValueChannelTarget {
   }
 }
 
-module.exports = ValueChannelTarget;
+export default ValueChannelTarget;

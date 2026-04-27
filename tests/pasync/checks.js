@@ -1,6 +1,6 @@
-const expect = require('expect.js');
-const { Frame } = require('../../src/runtime/frame');
-const { ENABLE_FRAME_BALANCE_CHECK } = require('../../src/runtime/checks');
+import expect from 'expect.js';
+import {Frame} from '../../src/runtime/frame';
+import {ENABLE_FRAME_BALANCE_CHECK} from '../../src/runtime/checks';
 
 describe('Frame Balance Validation', function () {
   it('should validate balanced push/pop operations', function () {

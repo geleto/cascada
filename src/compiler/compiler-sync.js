@@ -1,9 +1,9 @@
 'use strict';
 
-const nodes = require('../nodes');
-const { Frame } = require('../runtime/frame');
-const CompilerBaseSync = require('./compiler-base-sync');
-const CompileBuffer = require('./buffer');
+import nodes from '../nodes';
+import {Frame} from '../runtime/frame';
+import CompilerBaseSync from './compiler-base-sync';
+import CompileBuffer from './buffer';
 
 class CompilerSync extends CompilerBaseSync {
   init(templateName, options) {
@@ -433,5 +433,5 @@ class CompilerSync extends CompilerBaseSync {
 
 }
 
-module.exports = CompilerSync;
-module.exports.CompilerSync = CompilerSync;
+export default CompilerSync;
+export {CompilerSync};

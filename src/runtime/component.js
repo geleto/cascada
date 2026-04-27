@@ -1,15 +1,13 @@
 'use strict';
 
-const { Command } = require('./channels/command-base');
-const { resolveSingle } = require('./resolve');
-const {
-  ensureInheritanceSharedSchemaTable
-} = require('./inheritance-state');
-const inheritanceState = require('./inheritance-state');
-const inheritanceCall = require('./inheritance-call');
-const { createCommandBuffer } = require('./command-buffer');
-const { RuntimeFatalError } = require('./errors');
-const { createCompositionPayload } = require('./composition-payload');
+import {Command} from './channels/command-base';
+import {resolveSingle} from './resolve';
+import {ensureInheritanceSharedSchemaTable} from './inheritance-state';
+import inheritanceState from './inheritance-state';
+import inheritanceCall from './inheritance-call';
+import {createCommandBuffer} from './command-buffer';
+import {RuntimeFatalError} from './errors';
+import {createCompositionPayload} from './composition-payload';
 
 function _createComponentError(message, errorContext = null) {
   return new RuntimeFatalError(
@@ -425,10 +423,13 @@ function observeComponentChannel(spec) {
   return command.promise;
 }
 
-module.exports = {
+const __defaultExport = {
   ComponentInstance,
   createComponentInstance,
   startComponentInstance,
   callComponentMethod,
   observeComponentChannel
 };
+export { ComponentInstance, createComponentInstance, startComponentInstance, callComponentMethod, observeComponentChannel };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

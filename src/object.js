@@ -1,7 +1,7 @@
 'use strict';
 
 // A simple class system, more documentation to come
-const EventEmitter = require('events');
+import EventEmitter from 'events';
 
 class Obj {
   constructor(...args) {
@@ -30,4 +30,7 @@ class EmitterObj extends EventEmitter {
   }
 }
 
-module.exports = { Obj, EmitterObj };
+const __defaultExport = { Obj, EmitterObj };
+export { Obj, EmitterObj };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

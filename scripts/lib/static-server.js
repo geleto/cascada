@@ -1,10 +1,10 @@
-const connect = require('connect');
-const serveStatic = require('serve-static');
-const http = require('http');
-const path = require('path');
-const fs = require('fs').promises;
-const babel = require('@babel/core');
-const url = require('url');
+import connect from 'connect';
+import serveStatic from 'serve-static';
+import http from 'http';
+import path from 'path';
+import {promises as fs} from 'fs';
+import babel from '@babel/core';
+import url from 'url';
 
 async function findAvailablePort(startPort = 3000) {
   const net = require('net');
@@ -113,4 +113,4 @@ async function getStaticServer(prt) {
   }
 }
 
-module.exports = getStaticServer;
+export default getStaticServer;

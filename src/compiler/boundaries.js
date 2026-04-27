@@ -355,4 +355,4 @@ class CompileBoundaries {
   }
 }
 
-module.exports = CompileBoundaries;
+export default CompileBoundaries;

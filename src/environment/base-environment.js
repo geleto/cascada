@@ -1,17 +1,17 @@
 'use strict';
 
-const waterfall = require('a-sync-waterfall');
-const lib = require('../lib');
-const filters = require('../filters');
-const { FileSystemLoader, WebLoader, PrecompiledLoader } = require('../loader/loaders');
-const tests = require('../tests');
-const globals = require('../globals');
-const { EmitterObj } = require('../object');
-const { handleError } = require('../runtime/errors');
-const expressApp = require('../express-app');
-const { clearStringCache, callLoaders } = require('../loader/loader-utils');
-const { Template, AsyncTemplate } = require('./template');
-const { Script } = require('./script');
+import waterfall from 'a-sync-waterfall';
+import lib from '../lib';
+import filters from '../filters';
+import {FileSystemLoader, WebLoader, PrecompiledLoader} from '../loader/loaders';
+import tests from '../tests';
+import globals from '../globals';
+import {EmitterObj} from '../object';
+import {handleError} from '../runtime/errors';
+import expressApp from '../express-app';
+import {clearStringCache, callLoaders} from '../loader/loader-utils';
+import {Template, AsyncTemplate} from './template';
+import {Script} from './script';
 
 /**
  * A no-op template, for use with {% include ignore missing %}
@@ -361,8 +361,11 @@ class BaseEnvironment extends EmitterObj {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   BaseEnvironment,
   noopTmplSrc,
   noopTmplSrcAsync
 };
+export { BaseEnvironment, noopTmplSrc, noopTmplSrcAsync };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

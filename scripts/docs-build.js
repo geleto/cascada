@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 // Paths
 const DOCS_SOURCE = path.resolve(__dirname, '../docs/cascada/script.md');

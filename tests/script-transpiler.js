@@ -1,6 +1,6 @@
-const scriptTranspiler = require('../src/script/script-transpiler');
-const { TOKEN_TYPES } = require('../src/script/script-lexer');
-const expect = require('expect.js');
+import scriptTranspiler from '../src/script/script-transpiler';
+import {TOKEN_TYPES} from '../src/script/script-lexer';
+import expect from 'expect.js';
 
 const aliasOptions = {
   useCoreOutputAliases: true

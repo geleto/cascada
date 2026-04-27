@@ -1,10 +1,10 @@
 'use strict';
 
-var path = require('path');
-var express = require('express');
-var expect = require('expect.js');
-var request = require('supertest');
-var nunjucks = require('../src/index');
+import path from 'path';
+import express from 'express';
+import expect from 'expect.js';
+import request from 'supertest';
+import nunjucks from '../src/index';
 
 var VIEWS = path.join(__dirname, '../samples/express/views');
 

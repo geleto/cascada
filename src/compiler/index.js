@@ -1,1 +1,1 @@
-module.exports = require('./compiler');
+export default require('./compiler');

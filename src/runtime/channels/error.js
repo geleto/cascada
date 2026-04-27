@@ -1,7 +1,7 @@
 'use strict';
 
-const { PoisonError, createPoison } = require('../errors');
-const { Command, contextualizeErrorsForOutput } = require('./command-base');
+import {PoisonError, createPoison} from '../errors';
+import {Command, contextualizeErrorsForOutput} from './command-base';
 
 class ErrorCommand extends Command {
   constructor(errors) {
@@ -50,7 +50,10 @@ class TargetPoisonCommand extends Command {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   ErrorCommand,
   TargetPoisonCommand
 };
+export { ErrorCommand, TargetPoisonCommand };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

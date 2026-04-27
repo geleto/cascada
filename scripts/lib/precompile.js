@@ -1,6 +1,6 @@
-const fs = require('fs');
-const path = require('path');
-const precompile = require('../../src/precompile').precompile;
+import fs from 'fs';
+import path from 'path';
+import {precompile} from '../../src/precompile';
 
 const testDir = path.join(__dirname, '../../tests');
 const templateDir = path.join(testDir, 'templates');
@@ -23,4 +23,4 @@ async function precompileTestTemplates() {
   }
 }
 
-module.exports = precompileTestTemplates;
+export default precompileTestTemplates;

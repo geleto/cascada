@@ -1,26 +1,26 @@
 'use strict';
 
-var lib = require('../lib');
-const errors = require('./errors');
-const sequential = require('./sequential');
-const lookup = require('./lookup');
-const call = require('./call');
-const frame = require('./frame');
-const output = require('./channels');
-const resolve = require('./resolve');
-const buffer = require('./command-buffer');
-const guard = require('./guard');
-const loop = require('./loop');
-const outputValue = require('./safe-output');
-const commandBase = require('./channels/command-base');
-const textChannel = require('./channels/text');
-const varChannel = require('./channels/var');
-const timingCommands = require('./channels/timing');
-const observationCommands = require('./channels/observation');
-const dataChannel = require('./channels/data');
-const sequenceChannel = require('./channels/sequence');
-const sequentialPathChannel = require('./channels/sequential-path');
-const errorCommands = require('./channels/error');
+import lib from '../lib';
+import errors from './errors';
+import sequential from './sequential';
+import lookup from './lookup';
+import call from './call';
+import frame from './frame';
+import output from './channels';
+import resolve from './resolve';
+import buffer from './command-buffer';
+import guard from './guard';
+import loop from './loop';
+import outputValue from './safe-output';
+import commandBase from './channels/command-base';
+import textChannel from './channels/text';
+import varChannel from './channels/var';
+import timingCommands from './channels/timing';
+import observationCommands from './channels/observation';
+import dataChannel from './channels/data';
+import sequenceChannel from './channels/sequence';
+import sequentialPathChannel from './channels/sequential-path';
+import errorCommands from './channels/error';
 const commands = {
   ...commandBase,
   ...textChannel,
@@ -32,14 +32,15 @@ const commands = {
   ...sequentialPathChannel,
   ...errorCommands
 };
-const asyncBoundaries = require('./async-boundaries');
-const markers = require('./markers');
-const inheritanceState = require('./inheritance-state');
-const inheritanceSharedChannels = require('./inheritance-shared-channels');
-const inheritanceBootstrap = require('./inheritance-bootstrap');
-const inheritanceCall = require('./inheritance-call');
-const componentRuntime = require('./component');
-const compositionPayload = require('./composition-payload');
+import asyncBoundaries from './async-boundaries';
+import markers from './markers';
+import inheritanceState from './inheritance-state';
+import inheritanceSharedChannels from './inheritance-shared-channels';
+import inheritanceBootstrap from './inheritance-bootstrap';
+import inheritanceCall from './inheritance-call';
+import componentRuntime from './component';
+import compositionPayload from './composition-payload';
+import {setPath} from './set-path';
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -169,7 +170,7 @@ function declareCompositionPayloadChannels(commandBuffer, context, skipNames = n
   });
 }
 
-module.exports = {
+const __defaultExport = {
   makeMacro,
   invokeMacro,
   makeKeywordArgs,
@@ -304,6 +305,10 @@ module.exports = {
   sequentialContextLookupValue: sequential.sequentialContextLookupValue,
   sequentialMemberLookupScriptValue: sequential.sequentialMemberLookupScriptValue,
   sequentialMemberLookupAsyncValue: sequential.sequentialMemberLookupAsyncValue,
-  setPath: require('./set-path').setPath,
+  setPath,
   whileIterator: loop.whileIterator
 };
+export { makeMacro, invokeMacro, makeKeywordArgs, numArgs, promisify, withPath, declareCompositionPayloadChannels, guard };
+
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

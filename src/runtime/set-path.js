@@ -34,13 +34,8 @@
  */
 'use strict';
 
-const { isPoison, createPoison } = require('./errors');
-const {
-  resolveAll,
-  RESOLVE_MARKER,
-  createObject,
-  createArray
-} = require('./resolve');
+import {isPoison, createPoison} from './errors';
+import {resolveAll, RESOLVE_MARKER, createObject, createArray} from './resolve';
 
 /**
  * Helper to check if a value is "Async" (Promise) or "Lazy" (Marked).
@@ -210,6 +205,9 @@ async function _setPathAsync(rootPromise, headPromise, tail, value) {
   return setSinglePath(root, key, newChild);
 }
 
-module.exports = {
+const __defaultExport = {
   setPath
 };
+export { setPath };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

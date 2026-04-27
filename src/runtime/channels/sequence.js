@@ -1,8 +1,8 @@
 'use strict';
 
-const { ChannelCommand, runWithResolvedArguments } = require('./command-base');
-const { PoisonError, isPoison } = require('../errors');
-const { Channel } = require('./base');
+import {ChannelCommand, runWithResolvedArguments} from './command-base';
+import {PoisonError, isPoison} from '../errors';
+import {Channel} from './base';
 
 class SequenceCallCommand extends ChannelCommand {
   constructor({ channelName, command, args = null, subpath = null, pos = null, withDeferredResult = false }) {
@@ -155,36 +155,61 @@ class SequenceObjectChannel extends Channel {
     }
     return this._sequenceTargetReadyPromise;
   }
-
-  _applyCommand(cmd) {
-    if (!cmd) return;
-    try {
-      cmd.resolved = true;
-      if (cmd.isObservable) {
-        const result = cmd.apply(this);
-        if (result && typeof result.then === 'function') {
-          return Promise.resolve(result).catch((err) => {
-            this._recordError(err, cmd);
-          });
-        }
-        return result;
-      }
+
+
+  _applyCommand(cmd) {
+
+    if (!cmd) return;
+
+    try {
+
+      cmd.resolved = true;
+
+      if (cmd.isObservable) {
+
+        const result = cmd.apply(this);
+
+        if (result && typeof result.then === 'function') {
+
+          return Promise.resolve(result).catch((err) => {
+
+            this._recordError(err, cmd);
+
+          });
+
+        }
+
+        return result;
+
+      }
+
       const sequenceTarget = this._ensureSequenceTargetResolved();
       const apply = () => cmd.apply(this);
       const result = (sequenceTarget && typeof sequenceTarget.then === 'function')
         ? Promise.resolve(sequenceTarget).then(apply)
         : apply();
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).catch((err) => {
-          this._recordError(err, cmd);
-        });
-      }
-      return result;
-    } catch (err) {
-      this._recordError(err, cmd);
-    }
-  }
-
+      if (result && typeof result.then === 'function') {
+
+        return Promise.resolve(result).catch((err) => {
+
+          this._recordError(err, cmd);
+
+        });
+
+      }
+
+      return result;
+
+    } catch (err) {
+
+      this._recordError(err, cmd);
+
+    }
+
+  }
+
+
+
   _snapshotFromSequenceTarget(sequenceTarget) {
     if (!sequenceTarget) return sequenceTarget;
     if (typeof sequenceTarget.snapshot === 'function') return sequenceTarget.snapshot();
@@ -204,11 +229,16 @@ class SequenceObjectChannel extends Channel {
         return this._snapshotFromSequenceTarget(resolved);
       });
     }
-    const target = this._getTarget();
-    if (isPoison(target)) {
-      throw new PoisonError(target.errors.slice());
-    }
-    return super._resolveSnapshotCommandResult();
+    const target = this._getTarget();
+
+    if (isPoison(target)) {
+
+      throw new PoisonError(target.errors.slice());
+
+    }
+
+    return super._resolveSnapshotCommandResult();
+
   }
 
   _getCurrentResult() {
@@ -223,12 +253,18 @@ class SequenceObjectChannel extends Channel {
       }
       return sequenceTarget.snapshot();
     };
-    const normalizeCapture = (captured) => {
-      if (captured && typeof captured.then === 'function') {
-        return Promise.resolve(captured);
-      }
-      return captured;
-    };
+    const normalizeCapture = (captured) => {
+
+      if (captured && typeof captured.then === 'function') {
+
+        return Promise.resolve(captured);
+
+      }
+
+      return captured;
+
+    };
+
     if (targetValue && typeof targetValue.then === 'function') {
       return Promise.resolve(targetValue).then((sequenceTarget) => normalizeCapture(capture(sequenceTarget)));
     }
@@ -268,21 +304,31 @@ class SequenceChannel extends SequenceObjectChannel {
         return { active: false, token: undefined };
       }
       const token = sequenceTarget.begin();
-      if (token && typeof token.then === 'function') {
-        return Promise.resolve(token).then((resolvedToken) => ({ active: true, token: resolvedToken }));
-      }
-      return { active: true, token };
-    };
+      if (token && typeof token.then === 'function') {
+
+        return Promise.resolve(token).then((resolvedToken) => ({ active: true, token: resolvedToken }));
+
+      }
+
+      return { active: true, token };
+
+    };
+
     if (targetValue && typeof targetValue.then === 'function') {
       return Promise.resolve(targetValue).then(begin);
     }
     return begin(targetValue);
   }
-
-  commitTransaction(tx) {
-    if (!tx || !tx.active) {
-      return undefined;
-    }
+
+
+  commitTransaction(tx) {
+
+    if (!tx || !tx.active) {
+
+      return undefined;
+
+    }
+
     const targetValue = this._ensureSequenceTargetResolved();
     const commit = (sequenceTarget) => {
       if (!sequenceTarget || typeof sequenceTarget.commit !== 'function') {
@@ -295,11 +341,16 @@ class SequenceChannel extends SequenceObjectChannel {
     }
     return commit(targetValue);
   }
-
-  rollbackTransaction(tx) {
-    if (!tx || !tx.active) {
-      return undefined;
-    }
+
+
+  rollbackTransaction(tx) {
+
+    if (!tx || !tx.active) {
+
+      return undefined;
+
+    }
+
     const targetValue = this._ensureSequenceTargetResolved();
     const rollback = (sequenceTarget) => {
       if (!sequenceTarget || typeof sequenceTarget.rollback !== 'function') {
@@ -314,9 +365,12 @@ class SequenceChannel extends SequenceObjectChannel {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   SequenceObjectChannel,
   SequenceChannel,
   SequenceCallCommand,
   SequenceGetCommand
 };
+export { SequenceObjectChannel, SequenceChannel, SequenceCallCommand, SequenceGetCommand };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

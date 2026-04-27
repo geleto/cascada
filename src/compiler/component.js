@@ -188,4 +188,4 @@ class CompileComponent {
   }
 }
 
-module.exports = CompileComponent;
+export default CompileComponent;

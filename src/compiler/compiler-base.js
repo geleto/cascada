@@ -1,3 +1,3 @@
 'use strict';
 
-module.exports = require('./compiler-common');
+export default require('./compiler-common');

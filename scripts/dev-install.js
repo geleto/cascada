@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-const { execSync } = require('child_process');
+import {execSync} from 'child_process';
 
 // Skip installation in production or CI environments
 if (process.env.NODE_ENV === 'production' || process.env.CI) {

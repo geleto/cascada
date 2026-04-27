@@ -1,7 +1,7 @@
 'use strict';
-const { BaseEnvironment } = require('./base-environment');
-const { AsyncTemplate } = require('./template');
-const { Script } = require('./script');
+import {BaseEnvironment} from './base-environment';
+import {AsyncTemplate} from './template';
+import {Script} from './script';
 
 class AsyncEnvironment extends BaseEnvironment {
   init(loaders, opts) {
@@ -192,6 +192,9 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   AsyncEnvironment
 };
+export { AsyncEnvironment };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

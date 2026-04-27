@@ -1,12 +1,8 @@
 'use strict';
 
-var lib = require('../lib');
-const errors = require('./errors');
-const {
-  RESOLVE_MARKER,
-  resolveAll,
-  resolveSingle
-} = require('./resolve');
+import lib from '../lib';
+import errors from './errors';
+import {RESOLVE_MARKER, resolveAll, resolveSingle} from './resolve';
 
 function getCommandBufferClass() {
   return require('./command-buffer').CommandBuffer;
@@ -314,7 +310,7 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
   return suppressValueScriptRaw(val, autoescape);
 }
 
-module.exports = {
+const __defaultExport = {
   suppressValue,
   suppressValueAsync,
   _suppressValueAsyncComplex,
@@ -328,3 +324,6 @@ module.exports = {
   ensureDefinedAsync,
   _ensureDefinedAsyncComplex
 };
+export { suppressValue, suppressValueAsync, _suppressValueAsyncComplex, suppressValueScriptRaw, suppressValueScript, SafeString, copySafeness, markSafe, materializeTemplateTextValue, ensureDefined, ensureDefinedAsync, _ensureDefinedAsyncComplex };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

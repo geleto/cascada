@@ -1,18 +1,10 @@
 'use strict';
 
-const { isPoison, PoisonError, createPoison } = require('../errors');
-const { isResolvedValue, unwrapResolvedValue, resolveAll } = require('../resolve');
-const {
-  materializeTemplateTextValue,
-  suppressValue,
-  suppressValueScriptRaw
-} = require('../safe-output');
-const {
-  ChannelCommand,
-  runWithResolvedArguments,
-  contextualizeOutputError
-} = require('./command-base');
-const { Channel } = require('./base');
+import {isPoison, PoisonError, createPoison} from '../errors';
+import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve';
+import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output';
+import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base';
+import {Channel} from './base';
 
 class TextCommand extends ChannelCommand {
   constructor(specOrValue) {
@@ -98,42 +90,78 @@ class TextCommand extends ChannelCommand {
 }
 
 class TextChannel extends Channel {
-  constructor(buffer, channelName, context, channelType) {
-    super(buffer, channelName, context, channelType, [], null);
-  }
-
-  invoke(...args) {
-    if (!this._buffer) return;
-    if (args.length === 0) return;
-    this._buffer.add(new TextCommand({
-      channelName: this._channelName,
-      args,
-      normalizeArgs: true,
-      pos: { lineno: 0, colno: 0 }
-    }), this._channelName);
-  }
-
-  _getCurrentResult() {
-    if (!Array.isArray(this._target) || this._target.length === 0) {
-      this._setTarget(['']);
-      return '';
-    }
-    const result = this._target.join('');
-    // Compact accumulated fragments so future appends keep O(1)-ish growth.
-    this._setTarget([result]);
-    return result;
-  }
-
-  _applyPoisonErrors(errors) {
-    if (!Array.isArray(errors) || errors.length === 0) {
-      return;
-    }
-    if (!Array.isArray(this._target)) {
-      this._setTarget([]);
-    }
-    this._target.push(createPoison(errors));
-    this._markStateChanged();
-  }
+  constructor(buffer, channelName, context, channelType) {
+
+    super(buffer, channelName, context, channelType, [], null);
+
+  }
+
+
+
+  invoke(...args) {
+
+    if (!this._buffer) return;
+
+    if (args.length === 0) return;
+
+    this._buffer.add(new TextCommand({
+
+      channelName: this._channelName,
+
+      args,
+
+      normalizeArgs: true,
+
+      pos: { lineno: 0, colno: 0 }
+
+    }), this._channelName);
+
+  }
+
+
+
+  _getCurrentResult() {
+
+    if (!Array.isArray(this._target) || this._target.length === 0) {
+
+      this._setTarget(['']);
+
+      return '';
+
+    }
+
+    const result = this._target.join('');
+
+    // Compact accumulated fragments so future appends keep O(1)-ish growth.
+
+    this._setTarget([result]);
+
+    return result;
+
+  }
+
+
+
+  _applyPoisonErrors(errors) {
+
+    if (!Array.isArray(errors) || errors.length === 0) {
+
+      return;
+
+    }
+
+    if (!Array.isArray(this._target)) {
+
+      this._setTarget([]);
+
+    }
+
+    this._target.push(createPoison(errors));
+
+    this._markStateChanged();
+
+  }
+
 }
 
 function normalizeTextCommandArg(value, output, pos) {
@@ -224,7 +252,10 @@ function isScriptOutputMode(output) {
   return !!(output && output._context && output._context.scriptMode);
 }
 
-module.exports = {
+const __defaultExport = {
   TextChannel,
   TextCommand
 };
+export { TextChannel, TextCommand };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

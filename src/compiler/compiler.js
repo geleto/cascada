@@ -1,12 +1,12 @@
 'use strict';
 
-const parser = require('../parser');
-const transformer = require('../transformer');
-const CompilerCommon = require('./compiler-common');
-const CompilerBaseAsync = require('./compiler-base-async');
-const CompilerBaseSync = require('./compiler-base-sync');
-const CompilerAsync = require('./compiler-async');
-const CompilerSync = require('./compiler-sync');
+import parser from '../parser';
+import transformer from '../transformer';
+import CompilerCommon from './compiler-common';
+import CompilerBaseAsync from './compiler-base-async';
+import CompilerBaseSync from './compiler-base-sync';
+import CompilerAsync from './compiler-async';
+import CompilerSync from './compiler-sync';
 
 function createIdPool() {
   return {
@@ -41,7 +41,7 @@ function compile(src, asyncFilters, extensions, name, opts = {}) {
   return compiler.getCode();
 }
 
-module.exports = {
+const __defaultExport = {
   compile,
   CompilerCommon,
   CompilerBaseAsync,
@@ -50,3 +50,6 @@ module.exports = {
   CompilerSync,
   Compiler: CompilerSync
 };
+export { compile, CompilerCommon, CompilerBaseAsync, CompilerBaseSync, CompilerAsync, CompilerSync, CompilerSync as Compiler };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

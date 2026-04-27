@@ -1,9 +1,9 @@
 'use strict';
 
-var lib = require('./lib');
-var r = require('./runtime/runtime');
+import lib from './lib';
+import r from './runtime/runtime';
 
-var exports = module.exports = {};
+var exports = {};
 
 function normalize(value, defaultValue) {
   if (value === null || value === undefined || value === false) {
@@ -12,7 +12,7 @@ function normalize(value, defaultValue) {
   return value;
 }
 
-exports.abs = Math.abs;
+export var abs = Math.abs;
 
 function isNaN(num) {
   return num !== num; // eslint-disable-line no-self-compare
@@ -45,7 +45,7 @@ function batch(arr, linecount, fillWith) {
   return res;
 }
 
-exports.batch = batch;
+export {batch};
 
 function capitalize(str) {
   str = normalize(str, '');
@@ -53,7 +53,7 @@ function capitalize(str) {
   return r.copySafeness(str, ret.charAt(0).toUpperCase() + ret.slice(1));
 }
 
-exports.capitalize = capitalize;
+export {capitalize};
 
 function center(str, width) {
   str = normalize(str, '');
@@ -69,7 +69,7 @@ function center(str, width) {
   return r.copySafeness(str, pre + str + post);
 }
 
-exports.center = center;
+export {center};
 
 function default_(val, def, bool) {
   if (bool) {
@@ -122,13 +122,13 @@ function dictsort(val, caseSensitive, by) {
   return array;
 }
 
-exports.dictsort = dictsort;
+export {dictsort};
 
 function dump(obj, spaces) {
   return JSON.stringify(obj, null, spaces);
 }
 
-exports.dump = dump;
+export {dump};
 
 function escape(str) {
   if (str instanceof r.SafeString) {
@@ -138,7 +138,7 @@ function escape(str) {
   return r.markSafe(lib.escape(str.toString()));
 }
 
-exports.escape = escape;
+export {escape};
 
 function safe(str) {
   if (str instanceof r.SafeString) {
@@ -148,26 +148,26 @@ function safe(str) {
   return r.markSafe(str.toString());
 }
 
-exports.safe = safe;
+export {safe};
 
 function first(arr) {
   return arr[0];
 }
 
-exports.first = first;
+export {first};
 
 function forceescape(str) {
   str = (str === null || str === undefined) ? '' : str;
   return r.markSafe(lib.escape(str.toString()));
 }
 
-exports.forceescape = forceescape;
+export {forceescape};
 
 function groupby(arr, attr) {
   return lib.groupBy(arr, attr, this.env.opts.throwOnUndefined);
 }
 
-exports.groupby = groupby;
+export {groupby};
 
 function indent(str, width, indentfirst) {
   str = normalize(str, '');
@@ -188,7 +188,7 @@ function indent(str, width, indentfirst) {
   return r.copySafeness(str, res);
 }
 
-exports.indent = indent;
+export {indent};
 
 function join(arr, del, attr) {
   del = del || '';
@@ -200,13 +200,13 @@ function join(arr, del, attr) {
   return arr.join(del);
 }
 
-exports.join = join;
+export {join};
 
 function last(arr) {
   return arr[arr.length - 1];
 }
 
-exports.last = last;
+export {last};
 
 function lengthFilter(val) {
   var value = normalize(val, '');
@@ -228,7 +228,7 @@ function lengthFilter(val) {
   return 0;
 }
 
-exports.length = lengthFilter;
+export {lengthFilter as length};
 
 function list(val) {
   if (lib.isString(val)) {
@@ -242,14 +242,14 @@ function list(val) {
   }
 }
 
-exports.list = list;
+export {list};
 
 function lower(str) {
   str = normalize(str, '');
   return str.toLowerCase();
 }
 
-exports.lower = lower;
+export {lower};
 
 function nl2br(str) {
   if (str === null || str === undefined) {
@@ -258,13 +258,13 @@ function nl2br(str) {
   return r.copySafeness(str, str.replace(/\r\n|\n/g, '<br />\n'));
 }
 
-exports.nl2br = nl2br;
+export {nl2br};
 
 function random(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-exports.random = random;
+export {random};
 
 /**
  * Construct select or reject filter
@@ -285,21 +285,20 @@ function getSelectOrReject(expectedTestResult) {
   return filter;
 }
 
-exports.reject = getSelectOrReject(false);
+export var reject = getSelectOrReject(false);
 
 function rejectattr(arr, attr) {
   return arr.filter((item) => !item[attr]);
 }
 
-exports.rejectattr = rejectattr;
-
-exports.select = getSelectOrReject(true);
+export {rejectattr};
+export var select = getSelectOrReject(true);
 
 function selectattr(arr, attr) {
   return arr.filter((item) => !!item[attr]);
 }
 
-exports.selectattr = selectattr;
+export {selectattr};
 
 function replace(str, old, new_, maxCount) {
   var originalStr = str;
@@ -371,7 +370,7 @@ function replace(str, old, new_, maxCount) {
   return r.copySafeness(originalStr, res);
 }
 
-exports.replace = replace;
+export {replace};
 
 function reverse(val) {
   var arr;
@@ -390,7 +389,7 @@ function reverse(val) {
   return arr;
 }
 
-exports.reverse = reverse;
+export {reverse};
 
 function round(val, precision, method) {
   precision = precision || 0;
@@ -408,7 +407,7 @@ function round(val, precision, method) {
   return rounder(val * factor) / factor;
 }
 
-exports.round = round;
+export {round};
 
 function slice(arr, slices, fillWith) {
   const sliceLength = Math.floor(arr.length / slices);
@@ -433,7 +432,7 @@ function slice(arr, slices, fillWith) {
   return res;
 }
 
-exports.slice = slice;
+export {slice};
 
 function sum(arr, attr, start = 0) {
   if (attr) {
@@ -443,9 +442,9 @@ function sum(arr, attr, start = 0) {
   return start + arr.reduce((a, b) => a + b, 0);
 }
 
-exports.sum = sum;
+export {sum};
 
-exports.sort = r.makeMacro(
+export var sort = r.makeMacro(
   ['value', 'reverse', 'case_sensitive', 'attribute'], [],
   function sortFilter(arr, reversed, caseSens, attr) {
     // Copy it
@@ -484,7 +483,7 @@ function string(obj) {
   return r.copySafeness(obj, obj);
 }
 
-exports.string = string;
+export {string};
 
 function striptags(input, preserveLinebreaks) {
   input = normalize(input, '');
@@ -503,7 +502,7 @@ function striptags(input, preserveLinebreaks) {
   return r.copySafeness(input, res);
 }
 
-exports.striptags = striptags;
+export {striptags};
 
 function title(str) {
   str = normalize(str, '');
@@ -511,13 +510,13 @@ function title(str) {
   return r.copySafeness(str, words.join(' '));
 }
 
-exports.title = title;
+export {title};
 
 function trim(str) {
   return r.copySafeness(str, str.replace(/^\s*|\s*$/g, ''));
 }
 
-exports.trim = trim;
+export {trim};
 
 function truncate(input, length, killwords, end) {
   var orig = input;
@@ -543,14 +542,14 @@ function truncate(input, length, killwords, end) {
   return r.copySafeness(orig, input);
 }
 
-exports.truncate = truncate;
+export {truncate};
 
 function upper(str) {
   str = normalize(str, '');
   return str.toUpperCase();
 }
 
-exports.upper = upper;
+export {upper};
 
 function urlencode(obj) {
   var enc = encodeURIComponent;
@@ -562,7 +561,7 @@ function urlencode(obj) {
   }
 }
 
-exports.urlencode = urlencode;
+export {urlencode};
 
 // For the jinja regexp, see
 // https://github.com/mitsuhiko/jinja2/blob/f15b814dcba6aa12bc74d1f7d0c881d55f7126be/jinja2/utils.py#L20-L23
@@ -615,7 +614,7 @@ function urlize(str, length, nofollow) {
   return words.join('');
 }
 
-exports.urlize = urlize;
+export {urlize};
 
 function wordcount(str) {
   str = normalize(str, '');
@@ -623,14 +622,14 @@ function wordcount(str) {
   return (words) ? words.length : null;
 }
 
-exports.wordcount = wordcount;
+export {wordcount};
 
 function float(val, def) {
   var res = parseFloat(val);
   return (isNaN(res)) ? def : res;
 }
 
-exports.float = float;
+export {float};
 
 const intFilter = r.makeMacro(
   ['value', 'default', 'base'],
@@ -641,8 +640,57 @@ const intFilter = r.makeMacro(
   }
 );
 
-exports.int = intFilter;
+export {intFilter as int};
 
 // Aliases
-exports.d = exports.default;
-exports.e = exports.escape;
+export var d = default_;
+
+export var e = escape;
+
+const __defaultExport = {
+  abs,
+  batch,
+  capitalize,
+  center,
+  default: default_,
+  dictsort,
+  dump,
+  escape,
+  safe,
+  first,
+  forceescape,
+  groupby,
+  indent,
+  join,
+  last,
+  length: lengthFilter,
+  list,
+  lower,
+  nl2br,
+  random,
+  reject,
+  rejectattr,
+  select,
+  selectattr,
+  replace,
+  reverse,
+  round,
+  slice,
+  sum,
+  sort,
+  string,
+  striptags,
+  title,
+  trim,
+  truncate,
+  upper,
+  urlencode,
+  urlize,
+  wordcount,
+  float,
+  int: intFilter,
+  d,
+  e
+};
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

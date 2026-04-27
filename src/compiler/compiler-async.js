@@ -1,16 +1,16 @@
 'use strict';
 
-const nodes = require('../nodes');
-const {
+import nodes from '../nodes';
+
+import {
   validateGuardVariablesDeclared,
   validateScriptExtendsSourceOrder,
-  validateLocalSharedMethodNameCollisions
-} = require('./validation');
-const CompilerBaseAsync = require('./compiler-base-async');
-const CompileBuffer = require('./buffer');
-const {
-  ROOT_STARTUP_PROMISE_VAR
-} = require('./inheritance');
+  validateLocalSharedMethodNameCollisions,
+} from './validation';
+
+import CompilerBaseAsync from './compiler-base-async';
+import CompileBuffer from './buffer';
+import {ROOT_STARTUP_PROMISE_VAR} from './inheritance';
 
 const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
@@ -1349,5 +1349,5 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 }
 
-module.exports = CompilerAsync;
-module.exports.CompilerAsync = CompilerAsync;
+export default CompilerAsync;
+export {CompilerAsync};

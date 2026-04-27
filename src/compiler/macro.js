@@ -1,7 +1,7 @@
 'use strict';
 
-const nodes = require('../nodes');
-const { RETURN_CHANNEL_NAME } = require('./return');
+import nodes from '../nodes';
+import {RETURN_CHANNEL_NAME} from './return';
 
 const CALLER_SCHED_CHANNEL_NAME = '__caller__';
 
@@ -612,4 +612,4 @@ class CompileMacro {
   }
 }
 
-module.exports = CompileMacro;
+export default CompileMacro;

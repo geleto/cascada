@@ -1,7 +1,7 @@
 'use strict';
 
-const inheritanceState = require('./inheritance-state');
-const inheritanceCall = require('./inheritance-call');
+import inheritanceState from './inheritance-state';
+import inheritanceCall from './inheritance-call';
 
 function bootstrapInheritanceMetadata(
   stateValue,
@@ -374,7 +374,7 @@ function finalizeInheritanceMetadata(state, context = null) {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   bootstrapInheritanceMetadata,
   bootstrapInheritanceParentScript,
   runCompiledRootStartup,
@@ -383,3 +383,6 @@ module.exports = {
   getInheritanceSharedBuffer,
   finalizeInheritanceMetadata
 };
+export { bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

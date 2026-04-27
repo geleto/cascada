@@ -1,11 +1,11 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const {_prettifyError} = require('./lib');
-const compiler = require('./compiler/compiler');
-const {Environment, AsyncEnvironment} = require('./environment/environment');
-const precompileGlobal = require('./precompile-global');
+import fs from 'fs';
+import path from 'path';
+import {_prettifyError} from './lib';
+import compiler from './compiler/compiler';
+import {Environment, AsyncEnvironment} from './environment/environment';
+import precompileGlobal from './precompile-global';
 
 function match(filename, patterns) {
   if (!Array.isArray(patterns)) {
@@ -170,7 +170,7 @@ function precompileScript(str, opts) {
   return precompile(str, opts, false/*async*/, true/*script*/);
 }
 
-module.exports = {
+const __defaultExport = {
   /** @deprecated Use precompileTemplate instead */
   precompile,
   /** @deprecated Use precompileTemplateString instead */
@@ -186,3 +186,6 @@ module.exports = {
   precompileScript,
   precompileScriptString,
 };
+export { precompile, precompileString, precompileTemplate, precompileTemplateAsync, precompileTemplateString, precompileTemplateStringAsync, precompileScript, precompileScriptString };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

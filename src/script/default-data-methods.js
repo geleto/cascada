@@ -30,7 +30,7 @@ function deepClone(v) {
   return v;
 }
 
-module.exports = {
+export default {
 
   /**
    * Appends an element to an array. This is an in-place mutation.

@@ -148,9 +148,10 @@ class DataChannelTarget {
 }
 
 // Load and register default data methods on the prototype
-const defaultMethods = require('./default-data-methods');
+import defaultMethods from './default-data-methods';
+
 Object.keys(defaultMethods).forEach((methodName) => {
   DataChannelTarget.prototype.addMethod(methodName, defaultMethods[methodName]);
 });
 
-module.exports = DataChannelTarget;
+export default DataChannelTarget;

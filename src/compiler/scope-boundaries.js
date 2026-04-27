@@ -1,6 +1,6 @@
 'use strict';
 
-const nodes = require('../nodes');
+import nodes from '../nodes';
 
 // Canonical lexical-scope boundaries used by compiler and transformer.
 // Any non-listed fields are implicitly non-scope and are traversed in-place.
@@ -100,10 +100,13 @@ function extractDeclaredSymbols(node, ctx = {}) {
   return [];
 }
 
-module.exports = {
+const __defaultExport = {
   SCOPE_BOUNDARY_FIELDS_BY_NODE,
   SCOPE_BOUNDARY_NODE_NAMES,
   getScopeBoundaryFields,
   isDeclarationSite,
   extractDeclaredSymbols
 };
+export { SCOPE_BOUNDARY_FIELDS_BY_NODE, SCOPE_BOUNDARY_NODE_NAMES, getScopeBoundaryFields, isDeclarationSite, extractDeclaredSymbols };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

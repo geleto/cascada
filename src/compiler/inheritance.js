@@ -1,7 +1,7 @@
 'use strict';
 
-const nodes = require('../nodes');
-const CompileBuffer = require('./buffer');
+import nodes from '../nodes';
+import CompileBuffer from './buffer';
 const ROOT_STARTUP_PROMISE_VAR = '__rootStartupPromise';
 
 /**
@@ -1329,6 +1329,6 @@ class CompileInheritance {
   }
 }
 
-module.exports = CompileInheritance;
-module.exports.ROOT_STARTUP_PROMISE_VAR = ROOT_STARTUP_PROMISE_VAR;
+export default CompileInheritance;
+export {ROOT_STARTUP_PROMISE_VAR};
 

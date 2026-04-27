@@ -2,7 +2,7 @@
 
 'use strict';
 
-const precompileTestTemplates = require('./lib/precompile');
+import precompileTestTemplates from './lib/precompile';
 
 precompileTestTemplates()
   .then(() => {

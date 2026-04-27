@@ -5,13 +5,10 @@
  * Manages buffer stacks, async buffer operations, and channel command compilation.
  */
 
-const nodes = require('../nodes');
-const {
-  CHANNEL_TYPE_FACTS
-} = require('../channel-types');
-const {
-  validateChannelObservationCall
-} = require('./validation');
+import nodes from '../nodes';
+
+import {CHANNEL_TYPE_FACTS} from '../channel-types';
+import {validateChannelObservationCall} from './validation';
 const DEFAULT_TEMPLATE_TEXT_CHANNEL = '__text__';
 const BUFFER_STATE_KEYS = [
   'currentBuffer',
@@ -470,7 +467,9 @@ class CompileBuffer {
 
 }
 
-module.exports = CompileBuffer;
-module.exports.DEFAULT_TEMPLATE_TEXT_CHANNEL = DEFAULT_TEMPLATE_TEXT_CHANNEL;
-module.exports.DEFAULT_TEMPLATE_TEXT_OUTPUT = DEFAULT_TEMPLATE_TEXT_CHANNEL;
+CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL = DEFAULT_TEMPLATE_TEXT_CHANNEL;
+CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT = DEFAULT_TEMPLATE_TEXT_CHANNEL;
+export default CompileBuffer;
+export {DEFAULT_TEMPLATE_TEXT_CHANNEL};
+export {DEFAULT_TEMPLATE_TEXT_CHANNEL as DEFAULT_TEMPLATE_TEXT_OUTPUT};
 

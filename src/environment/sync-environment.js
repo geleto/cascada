@@ -1,9 +1,9 @@
 'use strict';
 
-const lib = require('../lib');
-const { BaseEnvironment } = require('./base-environment');
-const { callbackAsap } = require('./utils');
-const { Template } = require('./template');
+import lib from '../lib';
+import {BaseEnvironment} from './base-environment';
+import {callbackAsap} from './utils';
+import {Template} from './template';
 
 class Environment extends BaseEnvironment {
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
@@ -57,6 +57,9 @@ class Environment extends BaseEnvironment {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   Environment
 };
+export { Environment };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

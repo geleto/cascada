@@ -1,8 +1,8 @@
 'use strict';
 
-const lib = require('../lib');
-const { Obj } = require('../object');
-const { createPoison, markPromiseHandled } = require('../runtime/errors');
+import lib from '../lib';
+import {Obj} from '../object';
+import {createPoison, markPromiseHandled} from '../runtime/errors';
 
 class ContextExecutionState {
   constructor() {
@@ -281,6 +281,9 @@ class Context extends Obj {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   Context
 };
+export { Context };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

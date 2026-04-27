@@ -1,7 +1,7 @@
 'use strict';
 
-const { CommandBuffer } = require('./command-buffer');
-const { markPromiseHandled } = require('./errors');
+import {CommandBuffer} from './command-buffer';
+import {markPromiseHandled} from './errors';
 
 class BufferIterator {
   constructor(output) {
@@ -254,6 +254,9 @@ class BufferIterator {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   BufferIterator
 };
+export { BufferIterator };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

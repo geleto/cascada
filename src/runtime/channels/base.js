@@ -1,14 +1,15 @@
 'use strict';
 
-const { RESOLVE_MARKER } = require('../resolve');
-const {
+import {RESOLVE_MARKER} from '../resolve';
+
+import {
   PoisonError,
   isPoison,
   isPoisonError,
   isRuntimeFatalError,
   createPoison,
-  handleError
-} = require('../errors');
+  handleError,
+} from '../errors';
 
 class Channel {
   constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
@@ -262,7 +263,7 @@ function createCallableChannelFacade(output) {
   });
 }
 
-module.exports = {
+const __defaultExport = {
   Channel,
   createCallableChannelFacade,
   cloneSnapshotValue,
@@ -271,6 +272,9 @@ module.exports = {
   inspectTargetForErrors,
   contextualizeCommandErrors
 };
+export { Channel, createCallableChannelFacade, cloneSnapshotValue, extractPoisonErrors, mergePoisonErrors, inspectTargetForErrors, contextualizeCommandErrors };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
 
 function cloneSnapshotValue(value) {
   if (Array.isArray(value)) {

@@ -1,6 +1,6 @@
 'use strict';
 
-const nodes = require('../nodes');
+import nodes from '../nodes';
 
 class CompileRename {
   constructor(compiler) {
@@ -159,4 +159,4 @@ class CompileRename {
   }
 }
 
-module.exports = CompileRename;
+export default CompileRename;

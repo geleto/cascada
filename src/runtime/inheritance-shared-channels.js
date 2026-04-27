@@ -1,8 +1,8 @@
 'use strict';
 
-const { CHANNEL_TYPE_FACTS } = require('../channel-types');
-const { RuntimeFatalError } = require('./errors');
-const { declareBufferChannel } = require('./channels');
+import {CHANNEL_TYPE_FACTS} from '../channel-types';
+import {RuntimeFatalError} from './errors';
+import {declareBufferChannel} from './channels';
 
 const claimedSharedDefaults = new WeakSet();
 
@@ -61,8 +61,11 @@ function initializeInheritanceSharedChannelDefault(buffer, channelName, channelT
   return channel;
 }
 
-module.exports = {
+const __defaultExport = {
   declareInheritanceSharedChannel,
   claimInheritanceSharedDefault,
   initializeInheritanceSharedChannelDefault
 };
+export { declareInheritanceSharedChannel, claimInheritanceSharedDefault, initializeInheritanceSharedChannelDefault };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

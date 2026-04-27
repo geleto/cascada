@@ -1,13 +1,11 @@
 'use strict';
 
-var lexer = require('./lexer');
-var nodes = require('./nodes');
-var Obj = require('./object').Obj;
-var lib = require('./lib');
-const { RESERVED_DECLARATION_NAMES } = require('./compiler/validation');
-const {
-  CHANNEL_TYPE_FACTS
-} = require('./channel-types');
+import lexer from './lexer';
+import nodes from './nodes';
+import {Obj} from './object';
+import lib from './lib';
+import {RESERVED_DECLARATION_NAMES} from './compiler/validation';
+import {CHANNEL_TYPE_FACTS} from './channel-types';
 
 class Parser extends Obj {
   init(tokens, opts) {
@@ -2120,7 +2118,7 @@ class Parser extends Obj {
 // var n = p.parseAsRoot();
 // nodes.printNodes(n);
 
-module.exports = {
+const __defaultExport = {
   parse(src, extensions, opts) {
     var p = new Parser(lexer.lex(src, opts), opts);
     if (extensions !== undefined) {
@@ -2130,3 +2128,6 @@ module.exports = {
   },
   Parser: Parser
 };
+export { Parser };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

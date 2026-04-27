@@ -70,4 +70,4 @@ function globals() {
   };
 }
 
-module.exports = globals;
+export default globals;

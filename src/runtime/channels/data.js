@@ -1,14 +1,10 @@
 'use strict';
 
-const { isPoison, isPoisonError } = require('../errors');
-const { ChannelCommand, runWithResolvedArguments, contextualizeOutputError } = require('./command-base');
-const DataChannelTarget = require('../../script/data-channel');
-const { createPoison } = require('../errors');
-const {
-  Channel,
-  cloneSnapshotValue,
-  mergePoisonErrors
-} = require('./base');
+import {isPoison, isPoisonError} from '../errors';
+import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base';
+import DataChannelTarget from '../../script/data-channel';
+import {createPoison} from '../errors';
+import {Channel, cloneSnapshotValue, mergePoisonErrors} from './base';
 
 class DataCommand extends ChannelCommand {
   constructor({ channelName, command, args = null, pos = null, initializeIfNotSet = false }) {
@@ -79,109 +75,212 @@ class DataCommand extends ChannelCommand {
   }
 }
 
-class DataChannel extends Channel {
-  constructor(buffer, channelName, context, channelType) {
-    const env = context && context.env ? context.env : null;
-    const base = new DataChannelTarget(context && context.getVariables ? context.getVariables() : {}, env);
-    super(
-      buffer,
-      channelName,
-      context,
-      channelType,
-      base.data,
-      base
-    );
-    this._snapshotShared = false;
-    this._installCommandMethods();
-  }
-
-  _getCurrentResult() {
-    return this._target;
-  }
-
-  _installCommandMethods() {
-    const methods = this._base && this._base.methods ? this._base.methods : null;
-    if (!methods) {
-      return;
-    }
-    Object.keys(methods).forEach((methodName) => {
-      if (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError') {
-        return;
-      }
-      if (Object.prototype.hasOwnProperty.call(this, methodName) || typeof this[methodName] !== 'undefined') {
-        return;
-      }
-      Object.defineProperty(this, methodName, {
-        configurable: true,
-        enumerable: false,
-        writable: true,
-        value: (...args) => {
-          if (!this._buffer) return;
-          this._buffer.add(new DataCommand({
-            channelName: this._channelName,
-            command: methodName,
-            args,
-            pos: { lineno: 0, colno: 0 }
-          }), this._channelName);
-        }
-      });
-    });
-  }
-
-  _resolveSnapshotCommandResult() {
-    const value = super._resolveSnapshotCommandResult();
-    if (value && typeof value === 'object') {
-      this._snapshotShared = true;
-    }
-    return value;
-  }
-
-  _beforeApplyCommand(cmd) {
-    if (!cmd || cmd.isObservable || !this._snapshotShared || !this._base) {
-      return;
-    }
-    const cloned = cloneSnapshotValue(this._target);
-    this._setTarget(cloned);
-    this._base.data = cloned;
-    this._snapshotShared = false;
-  }
-
-  _captureGuardState() {
-    return {
-      target: cloneSnapshotValue(this._target)
-    };
-  }
-
-  _restoreGuardState(state) {
-    const nextTarget = state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target')
-      ? state.target
-      : state;
-    this._setTarget(nextTarget);
-    if (this._base) {
-      this._base.data = nextTarget;
-    }
-    this._snapshotShared = false;
-  }
-
-  _applyPoisonErrors(errors, cmd = null) {
-    if (!Array.isArray(errors) || errors.length === 0) {
-      return;
-    }
-    const mergedRootErrors = mergePoisonErrors(extractPoisonErrors(this._getTarget()), errors);
-    const poison = createPoison(mergedRootErrors);
-    const rawPath = cmd && Array.isArray(cmd.arguments) && cmd.arguments.length > 0 ? cmd.arguments[0] : null;
-    const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
-    if (this._base) {
-      try {
-        this._base.set(path, poison);
-        this._setTarget(this._base.data);
-        return;
-      } catch (err) {
-        void err;
-      }
-    }
-    this._setTarget(poison);
-  }
+class DataChannel extends Channel {
+
+  constructor(buffer, channelName, context, channelType) {
+
+    const env = context && context.env ? context.env : null;
+
+    const base = new DataChannelTarget(context && context.getVariables ? context.getVariables() : {}, env);
+
+    super(
+
+      buffer,
+
+      channelName,
+
+      context,
+
+      channelType,
+
+      base.data,
+
+      base
+
+    );
+
+    this._snapshotShared = false;
+
+    this._installCommandMethods();
+
+  }
+
+
+
+  _getCurrentResult() {
+
+    return this._target;
+
+  }
+
+
+
+  _installCommandMethods() {
+
+    const methods = this._base && this._base.methods ? this._base.methods : null;
+
+    if (!methods) {
+
+      return;
+
+    }
+
+    Object.keys(methods).forEach((methodName) => {
+
+      if (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError') {
+
+        return;
+
+      }
+
+      if (Object.prototype.hasOwnProperty.call(this, methodName) || typeof this[methodName] !== 'undefined') {
+
+        return;
+
+      }
+
+      Object.defineProperty(this, methodName, {
+
+        configurable: true,
+
+        enumerable: false,
+
+        writable: true,
+
+        value: (...args) => {
+
+          if (!this._buffer) return;
+
+          this._buffer.add(new DataCommand({
+
+            channelName: this._channelName,
+
+            command: methodName,
+
+            args,
+
+            pos: { lineno: 0, colno: 0 }
+
+          }), this._channelName);
+
+        }
+
+      });
+
+    });
+
+  }
+
+
+
+  _resolveSnapshotCommandResult() {
+
+    const value = super._resolveSnapshotCommandResult();
+
+    if (value && typeof value === 'object') {
+
+      this._snapshotShared = true;
+
+    }
+
+    return value;
+
+  }
+
+
+
+  _beforeApplyCommand(cmd) {
+
+    if (!cmd || cmd.isObservable || !this._snapshotShared || !this._base) {
+
+      return;
+
+    }
+
+    const cloned = cloneSnapshotValue(this._target);
+
+    this._setTarget(cloned);
+
+    this._base.data = cloned;
+
+    this._snapshotShared = false;
+
+  }
+
+
+
+  _captureGuardState() {
+
+    return {
+
+      target: cloneSnapshotValue(this._target)
+
+    };
+
+  }
+
+
+
+  _restoreGuardState(state) {
+
+    const nextTarget = state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target')
+
+      ? state.target
+
+      : state;
+
+    this._setTarget(nextTarget);
+
+    if (this._base) {
+
+      this._base.data = nextTarget;
+
+    }
+
+    this._snapshotShared = false;
+
+  }
+
+
+
+  _applyPoisonErrors(errors, cmd = null) {
+
+    if (!Array.isArray(errors) || errors.length === 0) {
+
+      return;
+
+    }
+
+    const mergedRootErrors = mergePoisonErrors(extractPoisonErrors(this._getTarget()), errors);
+
+    const poison = createPoison(mergedRootErrors);
+
+    const rawPath = cmd && Array.isArray(cmd.arguments) && cmd.arguments.length > 0 ? cmd.arguments[0] : null;
+
+    const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
+
+    if (this._base) {
+
+      try {
+
+        this._base.set(path, poison);
+
+        this._setTarget(this._base.data);
+
+        return;
+
+      } catch (err) {
+
+        void err;
+
+      }
+
+    }
+
+    this._setTarget(poison);
+
+  }
+
 }
 
 function setDataPoisonAtPath(output, args, poisonValue) {
@@ -231,7 +330,10 @@ function extractPoisonErrors(value) {
   return [];
 }
 
-module.exports = {
+const __defaultExport = {
   DataChannel,
   DataCommand
 };
+export { DataChannel, DataCommand };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

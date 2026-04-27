@@ -1,37 +1,25 @@
 'use strict';
 
-const expect = require('expect.js');
-const { AsyncEnvironment } = require('../../src/environment/environment');
-const {
-  createPoison,
-  isPoison,
-  isPoisonError,
-  PoisonError,
-  RuntimeFatalError
-} = require('../../src/runtime/errors');
-const {
-  TextCommand,
-} = require('../../src/runtime/channels/text');
-const {
-  VarCommand,
-} = require('../../src/runtime/channels/var');
-const {
-  DataCommand,
-} = require('../../src/runtime/channels/data');
-const {
-  SequenceCallCommand
-} = require('../../src/runtime/channels/sequence');
-const {
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment';
+import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeFatalError} from '../../src/runtime/errors';
+import {TextCommand} from '../../src/runtime/channels/text';
+import {VarCommand} from '../../src/runtime/channels/var';
+import {DataCommand} from '../../src/runtime/channels/data';
+import {SequenceCallCommand} from '../../src/runtime/channels/sequence';
+
+import {
   Channel,
   TextChannel,
   VarChannel,
   DataChannel,
   SequenceChannel,
   inspectTargetForErrors,
-  createChannel
-} = require('../../src/runtime/channels');
-const { createCommandBuffer } = require('../../src/runtime/command-buffer');
-const { createArray } = require('../../src/runtime/resolve');
+  createChannel,
+} from '../../src/runtime/channels';
+
+import {createCommandBuffer} from '../../src/runtime/command-buffer';
+import {createArray} from '../../src/runtime/resolve';
 describe('channel errors', function () {
   describe('channel commands step2 poison encoding', function () {
     it('propagates RuntimeFatalError instead of degrading it into poison during argument resolution', async () => {

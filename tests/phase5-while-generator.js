@@ -1,8 +1,8 @@
 'use strict';
 
-const expect = require('expect.js');
-const { AsyncEnvironment } = require('../src/environment/environment');
-const { createPoison, isPoisonError } = require('../src/runtime/runtime');
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../src/environment/environment';
+import {createPoison, isPoisonError} from '../src/runtime/runtime';
 
 describe('Phase 5: While Loop Generator Error Handling', () => {
   let env;

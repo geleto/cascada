@@ -1,6 +1,6 @@
 'use strict';
 
-const nodes = require('../nodes');
+import nodes from '../nodes';
 
 class CompileLoop {
   constructor(compiler) {
@@ -509,4 +509,4 @@ class CompileLoop {
   }
 }
 
-module.exports = CompileLoop;
+export default CompileLoop;

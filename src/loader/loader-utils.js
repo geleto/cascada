@@ -1,6 +1,6 @@
 'use strict';
 
-const lib = require('../lib');
+import lib from '../lib';
 
 // WeakMap to store resource caches for each loader (no mutation of loader objects)
 const resourceCaches = new WeakMap();
@@ -423,10 +423,13 @@ function callLoader(loader, name, callback) {
 }
 
 
-module.exports = {
+const __defaultExport = {
   loadString,
   clearStringCache,
   loadStringFromNativeLoader,
   callLoaders,
   raceLoaders
 };
+export { loadString, clearStringCache, loadStringFromNativeLoader, callLoaders, raceLoaders };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

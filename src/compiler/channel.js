@@ -1,12 +1,8 @@
 'use strict';
 
-const nodes = require('../nodes');
-const {
-  CHANNEL_TYPE_FACTS
-} = require('../channel-types');
-const {
-  validateChannelDeclarationNode
-} = require('./validation');
+import nodes from '../nodes';
+import {CHANNEL_TYPE_FACTS} from '../channel-types';
+import {validateChannelDeclarationNode} from './validation';
 
 class CompileChannel {
   constructor(compiler) {
@@ -381,4 +377,4 @@ class CompileChannel {
   }
 }
 
-module.exports = CompileChannel;
+export default CompileChannel;

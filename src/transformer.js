@@ -1,9 +1,9 @@
 'use strict';
 
-var nodes = require('./nodes');
-var lib = require('./lib');
-var scopeBoundaries = require('./compiler/scope-boundaries');
-const { getScriptExtendsSourceOrderViolation } = require('./compiler/validation');
+import nodes from './nodes';
+import lib from './lib';
+import scopeBoundaries from './compiler/scope-boundaries';
+import {getScriptExtendsSourceOrderViolation} from './compiler/validation';
 
 var sym = 0;
 function gensym() {
@@ -523,6 +523,9 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
 // var ast = transform(parser.parse(src, [new FooExtension()]), ['bar']);
 // nodes.printNodes(ast);
 
-module.exports = {
+const __defaultExport = {
   transform: transform
 };
+export { transform };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

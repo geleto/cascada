@@ -1,6 +1,6 @@
 'use strict';
 
-const { spawn } = require('child_process');
+import {spawn} from 'child_process';
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve) => {

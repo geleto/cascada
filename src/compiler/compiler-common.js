@@ -1,20 +1,22 @@
 'use strict';
 
-const nodes = require('../nodes');
-const { TemplateError } = require('../lib');
+import nodes from '../nodes';
+import {TemplateError} from '../lib';
+
 // const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
-const { Obj } = require('../object');
-const { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES } = require('./validation');
-const CompileSequential = require('./sequential');
-const CompileEmit = require('./emit');
-const CompileInheritance = require('./inheritance');
-const CompileLoop = require('./loop');
-const CompileBuffer = require('./buffer');
-const CompileMacro = require('./macro');
-const CompileBoundaries = require('./boundaries');
-const CompileChannel = require('./channel');
-const CompileComponent = require('./component');
-const CompileReturn = require('./return');
+import {Obj} from '../object';
+
+import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from './validation';
+import CompileSequential from './sequential';
+import CompileEmit from './emit';
+import CompileInheritance from './inheritance';
+import CompileLoop from './loop';
+import CompileBuffer from './buffer';
+import CompileMacro from './macro';
+import CompileBoundaries from './boundaries';
+import CompileChannel from './channel';
+import CompileComponent from './component';
+import CompileReturn from './return';
 
 /**
  * CompilerCommon - Common base class for compiler functionality
@@ -602,5 +604,5 @@ class CompilerCommon extends Obj {
 
 }
 
-module.exports = CompilerCommon;
-module.exports.CompilerCommon = CompilerCommon;
+export default CompilerCommon;
+export {CompilerCommon};

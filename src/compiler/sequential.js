@@ -1,5 +1,6 @@
-const nodes = require('../nodes');
-module.exports = class CompileSequential {
+import nodes from '../nodes';
+
+export default class CompileSequential {
 
   constructor(compiler) {
     this.compiler = compiler;

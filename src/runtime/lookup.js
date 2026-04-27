@@ -1,6 +1,6 @@
 'use strict';
 
-const {
+import {
   createPoison,
   isPoison,
   isPoisonError,
@@ -8,13 +8,11 @@ const {
   RuntimeFatalError,
   RuntimePromise,
   collectErrors,
-} = require('./errors');
-const inheritanceCall = require('./inheritance-call');
-const inheritanceState = require('./inheritance-state');
+} from './errors';
 
-const {
-  resolveDuo
-} = require('./resolve');
+import inheritanceCall from './inheritance-call';
+import inheritanceState from './inheritance-state';
+import {resolveDuo} from './resolve';
 /**
  * Sync member lookup for templates.
  * Returns undefined if obj is undefined or null.
@@ -311,7 +309,7 @@ function channelLookup(name, currentBuffer) {
   return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
 }
 
-module.exports = {
+const __defaultExport = {
   memberLookup,
   memberLookupScriptRaw,
   memberLookupAsync,
@@ -319,3 +317,6 @@ module.exports = {
   observeInheritanceSharedChannel,
   channelLookup,
 };
+export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

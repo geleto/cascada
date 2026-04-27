@@ -1,6 +1,6 @@
 'use strict';
 
-const { POISON_KEY, RESOLVE_MARKER } = require('./markers');
+import {POISON_KEY, RESOLVE_MARKER} from './markers';
 
 // Internal promises are sometimes observed through an owning command/channel
 // instead of by the promise object itself. Mark those promises handled so delayed
@@ -550,7 +550,7 @@ function peekError(value) {
   return null;
 }
 
-module.exports = {
+const __defaultExport = {
   PoisonedValue,
   PoisonError,
   RuntimeError,
@@ -567,3 +567,6 @@ module.exports = {
   peekError,
   markPromiseHandled
 };
+export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, ErrorContext, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, handleError, peekError, markPromiseHandled };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

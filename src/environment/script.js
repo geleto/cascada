@@ -1,8 +1,8 @@
 'use strict';
 
-const lib = require('../lib');
-const scriptTranspiler = require('../script/script-transpiler');
-const { Template, AsyncTemplate } = require('./template');
+import lib from '../lib';
+import scriptTranspiler from '../script/script-transpiler';
+import {Template, AsyncTemplate} from './template';
 
 /**
  * Script class - represents a compiled Cascada script.
@@ -51,6 +51,9 @@ class Script extends Template {
   }
 }
 
-module.exports = {
+const __defaultExport = {
   Script
 };
+export { Script };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

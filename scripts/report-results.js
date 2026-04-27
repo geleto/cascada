@@ -1,10 +1,10 @@
 /* eslint-disable no-console */
 'use strict';
 
-const fs = require('fs').promises;
-const path = require('path');
-const libCoverage = require('istanbul-lib-coverage');
-const NYC = require('nyc');
+import {promises as fs} from 'fs';
+import path from 'path';
+import libCoverage from 'istanbul-lib-coverage';
+import NYC from 'nyc';
 let chalk;
 
 const coverageConfig = {

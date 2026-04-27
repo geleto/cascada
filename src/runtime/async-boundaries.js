@@ -1,7 +1,7 @@
 'use strict';
 
-const errors = require('./errors');
-const buffer = require('./command-buffer');
+import errors from './errors';
+import buffer from './command-buffer';
 
 function _createChildBoundary(parentBuffer, usedChannels, isolatedContext = null) {
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
@@ -95,9 +95,12 @@ function runValueBoundary(parentBuffer, usedChannels, asyncFn) {
   return promise;
 }
 
-module.exports = {
+const __defaultExport = {
   runControlFlowBoundary,
   runWaitedControlFlowBoundary,
   runRenderBoundary,
   runValueBoundary
 };
+export { runControlFlowBoundary, runWaitedControlFlowBoundary, runRenderBoundary, runValueBoundary };
+export default __defaultExport;
+if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

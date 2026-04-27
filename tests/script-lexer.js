@@ -1,11 +1,12 @@
-const expect = require('expect.js');
-const {
-  parseTemplateLine: _parseTemplateLine,
+import expect from 'expect.js';
+
+import {
+  parseTemplateLine as _parseTemplateLine,
   TOKEN_TYPES,
   TOKEN_SUBTYPES,
   isValidRegexContext,
-  hasCompleteRegexPattern
-} = require('../src/script/script-lexer');
+  hasCompleteRegexPattern,
+} from '../src/script/script-lexer';
 
 function parseTemplateLine(...args) {
   const result = _parseTemplateLine(...args);

@@ -70,12 +70,10 @@
  */
 
 // Import the script parser
-const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
-const { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES } = require('../compiler/validation');
-const {
-  CHANNEL_TYPES,
-  CHANNEL_TYPE_FACTS
-} = require('../channel-types');
+import {parseTemplateLine, TOKEN_TYPES} from './script-lexer';
+
+import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from '../compiler/validation';
+import {CHANNEL_TYPES, CHANNEL_TYPE_FACTS} from '../channel-types';
 
 class ScriptTranspiler {
   constructor() {
@@ -2165,5 +2163,6 @@ class ScriptTranspiler {
 }
 
 const transpiler = new ScriptTranspiler();
-module.exports = transpiler;
+export default transpiler;
+if (typeof module !== 'undefined') { module['exports'] = transpiler; }
 

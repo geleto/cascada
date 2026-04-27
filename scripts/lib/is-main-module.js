@@ -1,4 +1,4 @@
-module.exports = function isMainModule() {
+export default function isMainModule() {
   // generate a stack trace
   var stack = (new Error()).stack;
   // the third line refers to our caller

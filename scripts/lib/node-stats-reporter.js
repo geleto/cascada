@@ -1,8 +1,8 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const Mocha = require('mocha');
+import fs from 'fs';
+import path from 'path';
+import Mocha from 'mocha';
 
 /**
  * Custom Mocha reporter that extends Spec and writes Node test stats
@@ -35,6 +35,6 @@ class NodeStatsReporter extends Mocha.reporters.Spec {
   }
 }
 
-module.exports = NodeStatsReporter;
+export default NodeStatsReporter;
 
 
