@@ -4,7 +4,7 @@ Still implemented as a channel (for snapshotting), but commands between snapshot
 
 ## Overview
 
-Accumulators are a channel type for **order-independent reductions** — operations where the combining function is commutative and associative (sum, min, max, etc.). Because order doesn't matter, accumulators can accept values from parallel branches without synchronization overhead and without the deterministic-ordering machinery that `@data` and `@text` require.
+Accumulators are a channel type for **order-independent reductions** — operations where the combining function is commutative and associative (sum, min, max, etc.). Because order doesn't matter, accumulators can accept values from parallel branches without synchronization overhead and without the deterministic-ordering machinery that ordered `data` and `text` channels require.
 
 ## Declaration
 
@@ -160,7 +160,7 @@ No ordering guarantees exist between feeds from concurrent branches. The final r
 
 ## Comparison with Ordered Channels
 
-| Property             | `@data` / `@text`            | `accum`                     |
+| Property             | `data` / `text` channels     | `accum`                     |
 |----------------------|------------------------------|-----------------------------|
 | Order matters        | Yes (source-order assembly)  | No (commutative)            |
 | Parallel overhead    | Buffering + ordering         | Direct accumulation         |

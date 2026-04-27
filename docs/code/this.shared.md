@@ -568,7 +568,7 @@ Existing compiler/runtime paths:
     claiming.
   - `runtime.initializeInheritanceSharedChannelDefault(...)` handles shared
 - Bare shared `var` reads
-  - `_compileDeclaredSymbolLookup(...)` detects `declaredOutput.shared`.
+  - `_compileDeclaredSymbolLookup(...)` detects shared channel declarations.
   - Shared var reads lower to `_emitSharedChannelObservation(name, node,
     'snapshot', true)`.
   - Runtime enforcement lives in

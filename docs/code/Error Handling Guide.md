@@ -144,23 +144,31 @@ This hybrid approach gives us the best of both worlds: the clean "Pass the Conte
 
 ## 4. Advanced Context Propagation: Through Data
 
-Sometimes, an error can only be detected long after the initial call, in a generic function like `flattenBuffer`. In these cases, context is propagated **through data structures**.
+Sometimes, an error can only be detected long after the initial compile site, in
+a generic command-application path. In these cases, context is propagated
+**through command data structures**.
 
-The `OutputCommand` node (`@handler()`) is a perfect example:
+Channel commands are the main example:
 
-1.  **Compile Time:** The compiler encounters `@data.add(...)` at line 20, column 10. It compiles this not as a direct function call, but as a JavaScript object. It **serializes the position info into this object**.
+1.  **Compile Time:** The compiler encounters `result.push(...)` at line 20,
+    column 10. It compiles this as a `DataCommand`, not as an immediate
+    JavaScript array mutation. It serializes the position info into the command.
     ```javascript
     // compiled_template.js
-    output.push({
-      handler: 'data',
-      command: 'add',
-      arguments: [...],
+    currentBuffer.add(new runtime.DataCommand({
+      channelName: 'result',
+      command: 'push',
+      args: [...],
       pos: { lineno: 20, colno: 10 } // Context is now data
-    });
+    }), 'result');
     ```
-2.  **Render Time:** Much later, `flattenBuffer` processes the `output` array. It finds this object.
-3.  **Error Detection:** `flattenBuffer` discovers there is no handler named 'data'. It now needs to create an error.
-4.  **Error Enrichment:** It extracts the `pos` object from the item it's processing and uses that information to call `handleError`, creating a perfectly contextualized `TemplateError`.
+2.  **Apply Time:** Later, the buffer iterator reaches the command and applies
+    it to the `result` channel.
+3.  **Error Detection:** If the channel command fails while resolving arguments
+    or applying the data operation, it still has the original `pos`.
+4.  **Error Enrichment:** The runtime uses that position to call `handleError`,
+    creating a contextualized error even though the failure happened far away
+    from the compile site.
 
 This powerful pattern ensures that even in decoupled parts of the system, context is never lost.
 

@@ -29,7 +29,7 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 | Feature                  | Cascada Script                                             | Cascada Template                                                             |
 | ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | **Text channel**         | `text t`                                                   | *(text output is implicit — no declaration needed)*                          |
-| **Text Output**          | `t("Hello " + user.name)`                                  | `Hello {{ user.name }}`                                                      |
+| **Text channel write**   | `t("Hello " + user.name)`                                  | `Hello {{ user.name }}`                                                      |
 | **Expressions**          | `t(total * 1.2)`                                           | `{{ total * 1.2 }}`                                                          |
 | **Variable Declaration** | `var user = fetchUser(1)`                                  | `{% set user = fetchUser(1) %}`                                              |
 | **Assignment**           | `count = count + 1`                                        | `{% set count = count + 1 %}`                                                |
@@ -288,7 +288,7 @@ The short version: in async mode every construct that can run concurrently gets 
 **Use Cascada Templates when:**
 
 * Primary goal is text/HTML generation
-* Output is predominantly static text with dynamic insertions
+* Rendered text is predominantly static with dynamic insertions
 * Working with existing Nunjucks templates
 
 **Use Cascada Script when:**

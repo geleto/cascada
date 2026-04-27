@@ -726,11 +726,11 @@ Use the following guidelines to determine if these properties are available:
 
 ### Error handling and recovery with conditionals and loops
 
-When an Error Value affects a conditional or loop, Cascada ensures that corrupted data never silently produces incorrect results by propagating the error to any variables or outputs that would have been modified.
+When an Error Value affects a conditional or loop, Cascada ensures that corrupted data never silently produces incorrect results by propagating the error to any variables or channels that would have been modified.
 
 #### Error handling with `if` and `switch` statements
 
-If the condition of an `if` statement (or the expression of a `switch` statement) evaluates to an Error Value, all branches are skipped, and the error is propagated to any variables or outputs that would have been modified within any branch.
+If the condition of an `if` statement (or the expression of a `switch` statement) evaluates to an Error Value, all branches are skipped, and the error is propagated to any variables or channels that would have been modified within any branch.
 
 ```javascript
 var user = fetchUser(userId)  // May fail
@@ -747,13 +747,13 @@ endif
 // If user was an error, accessLevel is now poisoned
 ```
 
-This behavior is important to understand: it's not just that the code doesn't execute - any variables or outputs that would have been assigned in any of the branches become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
+This behavior is important to understand: it's not just that the code doesn't execute - any variables or channels that would have been assigned in any of the branches become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
 
 **Note:** `switch` statements behave identically - if the switch expression is an Error Value, all `case` and `default` branches are skipped and their outputs become poisoned.
 
 #### Error handling with loops
 
-If a loop's iterable evaluates to an Error Value, the loop body is skipped and the error propagates to any variables or outputs that would have been modified by the loop.
+If a loop's iterable evaluates to an Error Value, the loop body is skipped and the error propagates to any variables or channels that would have been modified by the loop.
 
 ```javascript
 var posts = fetchPosts()  // May fail
@@ -1606,7 +1606,7 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   // ❌ The 'result' variable is now an Error Value
   ```
 
-#### Output & Effects
+#### Channels & Effects
 
 * **Channels:**
   If an Error Value is written to a channel, that channel becomes **poisoned**, causing the script to fail when the channel is read or returned.
@@ -1620,7 +1620,7 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   context.database!.commit()       // ❌ skipped, returns error immediately
   ```
 
-This mechanism ensures that once an operation fails, all dependent results and outputs reflect that failure, maintaining data integrity across both parallel and sequential execution flows.
+This mechanism ensures that once an operation fails, all dependent results and channels reflect that failure, maintaining data integrity across both parallel and sequential execution flows.
 #### Deciding When to Handle Errors
 
 **❌ Do not handle errors, let them propagate when:**
@@ -2005,7 +2005,7 @@ If present, it runs only if the guard finishes poisoned:
 
 > ⚠️ **Work in progress:** The `revert` statement for manually resetting channel state inside a `guard` block is not yet available in script mode.
 
-When implemented, `revert` will reset all `data`, `text`, and `sequence` values in the current output scope to their state at the start of the nearest enclosing scope boundary (e.g., the start of the `guard` block). This provides fine-grained control complementing automatic guard recovery.
+When implemented, `revert` will reset all `data`, `text`, and `sequence` values in the current channel scope to their state at the start of the nearest enclosing scope boundary (e.g., the start of the `guard` block). This provides fine-grained control complementing automatic guard recovery.
 
 #### Error Handling with Sequential Operations
 

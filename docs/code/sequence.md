@@ -1,6 +1,6 @@
-# Sequence Output
+# Sequence Channel
 
-This document describes the current `sequence` output implementation.
+This document describes the current `sequence` channel implementation.
 
 ## Declaration
 
@@ -12,33 +12,31 @@ sequence db = makeDb()
 
 Rules:
 
-- Initializer is required.
-- Declaration conflicts/redeclaration follow normal explicit-output rules.
-- This is script-mode output behavior for initialized, ordered object channels.
+- an initializer is required
+- declaration conflicts follow normal explicit-channel rules
+- this is script-mode behavior for initialized, ordered object channels
 
 ## What Sequence Supports
 
-1. Method calls (value-returning):
+Method calls return values:
 
 ```cascada
 var user = db.getUser(1)
 ```
 
-2. Property reads (value-returning):
+Property reads return values:
 
 ```cascada
 var state = db.connectionState
 ```
 
-3. Static subpath routing:
+Static subpath routing is supported:
 
 ```cascada
 var id = db.api.client.getId()
 ```
 
-Current non-goals:
-
-- Property assignment through sequence output syntax is rejected in phase 1.
+Property assignment through sequence channel syntax is rejected:
 
 ```cascada
 db.connectionState = "x"   // compile error
@@ -46,77 +44,67 @@ db.connectionState = "x"   // compile error
 
 ## Runtime Model
 
-`sequence` is implemented as an initialized channel over the command-buffer infrastructure.
+`sequence` is an initialized channel over the command-buffer infrastructure.
 
 Key behavior:
 
-- The sequence initializer may be sync or async.
-- `snapshot()` fallback chain:
+- the initializer may be sync or async
+- method receiver binding is preserved
+- missing properties return `undefined`
+- snapshot fallback order is:
   1. `snapshot()`
   2. `getReturnValue()`
   3. `finalize()`
   4. the object itself
-- Method receiver binding is preserved (`method.apply(target, args)`).
-- Missing properties return `undefined`.
 
 Relevant files:
 
-- `src/runtime/output.js`
-- `src/runtime/channels/*.js`
+- `src/runtime/channels/sequence.js`
+- `src/runtime/command-buffer.js`
 
 ## Command Types
 
-`sequence` uses two explicit command classes:
+`sequence` uses two command classes:
 
 - `SequenceCallCommand`
 - `SequenceGetCommand`
 
-Why split:
-
-- Call and read semantics stay explicit.
-- `SequenceGetCommand` is non-mutating (`mutatesOutput = false`).
-- No shape-dependent branching in a single command implementation.
-
-Deferred result model:
-
-- Commands can be created with `withDeferredResult: true`.
-- The command owns `promise/resolve/reject`.
-- `apply()` resolves/rejects that promise with the call/read result.
+The split keeps call and read semantics explicit. Calls may mutate the sequence
+target. Reads are observation-like and return a deferred result.
 
 ## Compiler Integration
 
-There are two emission paths.
+There are two paths:
 
-1. Statement-style output command path (`command`):
-
-- Emitted through `buffer`.
-- Uses `SequenceCallCommand` for calls, `SequenceGetCommand` for reads.
-- Enqueue-only behavior.
+1. Statement-style channel command path:
+   - emitted through compiler buffer/channel helpers
+   - enqueues a command on the active `currentBuffer`
 
 2. Expression path:
-
-- Emitted through `compiler-base` as:
-  - `runtime.sequenceCall(...)`
-  - `runtime.sequenceGet(...)`
-- Returns value to expressions via deferred command promise behavior.
-- `snapshot` member is intentionally not intercepted as a sequence read/call.
+   - emitted as runtime sequence helpers
+   - returns the command's deferred result promise to the expression
+   - does not intercept `snapshot` as a sequence property read
 
 Relevant files:
 
+- `src/compiler/channel.js`
 - `src/compiler/buffer.js`
-- `src/compiler/compiler-base.js`
+- `src/compiler/compiler-base-async.js`
 
 ## Ordering Semantics
 
-- Normal flow is command-buffer ordered.
-- Access/call happens at apply-time (not at enqueue-time).
-- `sequence` output commands are not wired to `!` lock-key sequencing (`runtime/sequential.js`).
+- operations are command-buffer ordered
+- calls/reads happen at apply time, not enqueue time
+- sequence channel commands are separate from `!` sequential-path locks
+
+Use `sequence` when the object itself provides the ordered side-effect surface.
+Use `!` sequential paths for ordinary context paths.
 
 ## Guard Semantics
 
 `sequence` guard handling is transaction-style.
 
-Hook shape on sequence objects:
+Optional hook shape:
 
 - `begin()`
 - `commit(token?)`
@@ -124,34 +112,30 @@ Hook shape on sequence objects:
 
 Behavior:
 
-- On guard entry for targeted sequence handlers: `begin()` is called and token captured.
-- On guard success: `commit(token?)` is called.
-- On guard failure: `rollback(token?)` is called.
-- Nested transactions unwind in LIFO order.
-- Missing hooks: sequence transaction path is skipped for that handler.
-- Hook errors are collected as guard errors (poison path).
+- on guard entry, targeted sequence channels call `begin()` if available
+- on guard success, `commit(token?)` runs if available
+- on guard failure, `rollback(token?)` runs if available
+- nested transactions unwind in LIFO order
+- missing hooks are tolerated
+- hook errors become guard errors
 
-Buffer pause behavior:
+Deadlock avoidance:
 
-- Sequence-only guarded output sets do not pause the command buffer.
-- Guarded sets including non-sequence handlers still use pause/resume for snapshot/revert safety.
-
-Deadlock-avoidance behavior for sequence expression calls/reads:
-
-- Normal flow: enqueue deferred command, return command promise.
-- Paused-buffer or foreign-buffer flow: run sequence command immediately and return its result/promise.
+- normal flow enqueues a deferred command and returns the command promise
+- paused-buffer or foreign-buffer flow may run the sequence command immediately
+  and return its result/promise
 
 Relevant files:
 
 - `src/runtime/guard.js`
-- `src/compiler/compiler.js`
-- `src/runtime/output.js`
+- `src/runtime/channels/sequence.js`
+- `src/runtime/channels/sequential-path.js`
 
 ## Parser/Transpiler Notes
 
-- `sequence` is recognized as an explicit output declaration.
-- Declarations require initializer.
-- Sequence property assignment is rejected in script transpilation/compilation path.
+- `sequence` is recognized as an explicit channel declaration
+- declarations require an initializer
+- sequence property assignment is rejected in script transpilation/compilation
 
 Relevant files:
 
@@ -168,11 +152,10 @@ Primary suites:
 Covered behavior includes:
 
 - declaration validation
-- return values from sequence calls/reads
+- return values from calls and reads
 - async call return values
 - method receiver binding
 - missing-property `undefined`
-- source-order sequence execution
-- sequence subpath method calls
+- source-order execution
+- static subpath method calls
 - guard begin/commit and begin/rollback flows
-

@@ -6,13 +6,13 @@ var x = { a: [1,2,3], b:7, c:’hello’ };
 Some of these properties can be initialised with Promise values:
 var x = { a: slowOperation };
 
-So when a variable is needed in its final form (e.g. passed to a call as an argument or it goes to an output handler) - we need to resolve its Promise properties.
+So when a variable is needed in its final form (e.g. passed to a call as an argument or consumed by a channel command) - we need to resolve its Promise properties.
 
 This is currently done in resolveAll  with deepResolveObject / deepResolveArray which replaces promises with resolved values.
 This is not the best solution - parts of the object may come from the context object and we do not want to modify these, also deep-checking each object is not optimal.
 
 resolveAll is mostly used in compileAggregate which compiles [], {}, () constructs.
-() is used in call  arguments - it requires the variable to be completely resolved before we pass it to the functions, it is also used in @output arguments, which also require the value to be completely resolved. Cascada tries to defer the resolve to the last possible moment.
+() is used in call arguments - it requires the variable to be completely resolved before we pass it to functions. Channel command arguments are also true value consumers. Cascada tries to defer the resolve to the last possible moment.
 
 {} is used for objects - { a:1 } and [] is used for arrays. This is data initialization - we do not want to resolve anything too early so we store the promises in the data properties (if we don’t - that would be a bug, check this out, _compileAggregate has a resolveItems property).
 

@@ -1,11 +1,10 @@
-# Output Scoping And Buffer Access
+# Channel Scoping And Buffer Access
 
-This document describes the current output/channel scoping model in async
-Cascada.
+This document describes the current channel scoping model in async Cascada.
 
 ## Ordering Contract
 
-Cascada executes independent work concurrently, but output-visible effects must
+Cascada executes independent work concurrently, but channel-visible effects must
 match a valid sequential source-order run.
 
 That contract is enforced by the command-buffer tree:
@@ -151,7 +150,7 @@ Keep these invariants when changing output or buffer behavior:
    root producer buffers.
 6. Guard state and control-flow poison use analysis metadata; they are not
    inferred from runtime buffer contents.
-7. Template set-block/capture boundaries remain isolated text collection
+7. Template set-block/capture boundaries remain isolated text-channel collection
    boundaries and must not be flattened into parent text output.
 
 ## Key Files

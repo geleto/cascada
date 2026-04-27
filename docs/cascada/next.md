@@ -1,4 +1,4 @@
-# Cascada Output & Execution Model Simplification
+# Cascada Channel & Execution Model Simplification
 
 ## Goals
 
@@ -8,35 +8,35 @@ This proposal simplifies Cascada by removing legacy, template-driven abstraction
 * implicit concurrency
 * transactional recovery semantics
 
-The redesign focuses on **explicit output variables**, **explicit snapshot points**, and **lexically isolated modules**, resulting in a smaller, clearer, and more approachable language surface.
+The redesign focuses on **explicit channels**, **explicit snapshot points**, and **lexically isolated modules**, resulting in a smaller, clearer, and more approachable language surface.
 
 ---
 
-## 1. From Implicit Output Handlers to Typed Output Variables
+## 1. From Implicit Handlers to Typed Channels
 
 ### The Old Model
 
-Historically, Cascada used **implicit global output handlers**:
+Historically, Cascada used **implicit global handlers**:
 
 ```cascada
 @data.push(1)
 @text("hello")
 ```
 
-Custom output handlers (for example, turtle graphics or database writers) were registered through APIs and invoked via special `@handler(...)` syntax.
+Custom handlers (for example, turtle graphics or database writers) were registered through APIs and invoked via special `@handler(...)` syntax.
 
 This model had several drawbacks:
 
-* output targets were implicit and globally scoped
+* channel targets were implicit and globally scoped
 * custom handlers required registration APIs
-* output construction and value materialization were conflated
+* channel construction and value materialization were conflated
 * reading code required prior Cascada knowledge
 
 ---
 
-### The New Model: Typed Output Variables
+### The New Model: Typed Channels
 
-Implicit handlers are replaced with **explicit, typed output variables**:
+Implicit handlers are replaced with **explicit, typed channels**:
 
 ```cascada
 data result
@@ -46,18 +46,18 @@ text title
 
 Semantics:
 
-* output variables are **write / call only**
+* channels are **write / call only**
 * writes are buffered in source order
 * no value exists until a snapshot or `return` occurs
 
-This makes output construction explicit, local, and visible in the code.
+This makes channel construction explicit, local, and visible in the code.
 
 ---
 
 
-### Built-in Output Types
+### Built-in Channel Types
 
-Cascada defines two built-in output variable types:
+Cascada defines two built-in channel types:
 
 * `data` — structured data composition
 * `text` — text accumulation
@@ -76,7 +76,7 @@ Snapshot results:
 ---
 
 
-All custom output handlers are unified under a single abstraction:
+All custom handlers are unified under a single channel abstraction:
 
 ```cascada
 ```
@@ -149,12 +149,12 @@ The `capture` construct is fully removed.
 
 * Its functionality is fully subsumed by:
 
-  * typed output variables
+  * typed channels
   * explicit snapshots
   * `return`
 * It was the only construct that did not start a line
 * It introduced special scoping semantics
-* It duplicated output buffering concepts
+* It duplicated channel buffering concepts
 
 Equivalent pattern:
 
@@ -178,7 +178,7 @@ This is clearer, uniform, and explicit.
 It may guard:
 
 * individual variables
-* output variables
+* channels
 * **entire types**
 
 Examples:
@@ -198,11 +198,11 @@ Type guards apply to **all variables of that type** declared in the scope.
 
 Snapshot assignments **do occur** inside guards, but their results are transactional.
 
-Variables assigned to snapshots revert to the snapshot state from before the guard entry. This pre-guard state may be `none` if the output variable had no content before the guard, or it may be an earlier snapshot state.
+Variables assigned to snapshots revert to the snapshot state from before the guard entry. This pre-guard state may be `none` if the channel had no content before the guard, or it may be an earlier snapshot state.
 
-However, if the **output variable being snapshotted** is listed in the guard set, the snapshot assignment is preserved (not reverted).
+However, if the **channel being snapshotted** is listed in the guard set, the snapshot assignment is preserved (not reverted).
 
-Example with guarded output variable:
+Example with guarded channel:
 
 ```cascada
 data foo
@@ -216,7 +216,7 @@ guard foo {
 // after recovery: x = snapshot of [1, 2] (preserved because foo is guarded)
 ```
 
-Example without guarded output variable:
+Example without guarded channel:
 
 ```cascada
 data foo
@@ -258,7 +258,7 @@ revert *
 Semantics:
 
 * reverts listed variables to their state at guard entry
-* applies to output buffers and snapshot assignments
+* applies to channel buffers and snapshot assignments
 * does not poison execution
 * execution continues after revert
 
@@ -295,9 +295,9 @@ This enforces lexical encapsulation and aligns with functional module systems.
 
 ---
 
-### Output Variables Across Modules
+### Channels Across Modules
 
-Output variables can be passed across module boundaries and assigned like any data:
+Channels can be passed across module boundaries and assigned like any data:
 
 ```cascada
 // module.csd
@@ -305,7 +305,7 @@ export data result
 
 // main.csd
 import { result } from './module.csd'
-result.push(1)  // writes to imported output variable
+result.push(1)  // writes to imported channel
 ```
 
 This follows standard data-data assignment semantics.
@@ -351,10 +351,10 @@ This unifies Cascada's composition constructs under a consistent value-returning
 
 | Old Concept               | New Concept                                |
 | ------------------------- | ------------------------------------------ |
-| `@data`                   | `data` output variables                    |
-| `@text`                   | `text` output variables                    |
+| `@data`                   | `data` channels                            |
+| `@text`                   | `text` channels                            |
 | implicit materialization  | explicit `.snapshot()` everywhere          |
-| `capture`                 | output vars + snapshot                     |
+| `capture`                 | channels + snapshot                        |
 | `extern / reads / writes` | `export / import`                          |
 | script `include`          | removed                                    |
 
@@ -381,7 +381,7 @@ Everything else is removed.
 This proposal:
 
 * removes legacy template-driven abstractions from scripts
-* unifies built-in and custom outputs
+* unifies built-in and custom channels
 * makes materialization explicit and predictable
 * enforces encapsulation
 * reduces conceptual load without weakening Cascada's execution model
