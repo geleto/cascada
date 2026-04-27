@@ -1320,26 +1320,18 @@ class ScriptTranspiler {
    * Only 'text' needs more validations and continuation handling because the content is
    * between the '()' and for other cases content goes directly to the template tag unmodified
    */
-  _processLine(line, state, lineIndex, parsedLine = null, logicalMeta = null, updateState = true) {
+  _processLine(line, state, lineIndex, parsedLine = null, updateState = true) {
     // Parse line with script parser
     const parseResult = parsedLine || parseTemplateLine(
       line,
       state.inMultiLineComment,
       state.stringState
     );
-    if (logicalMeta) {
-      parseResult.physicalLine = logicalMeta.physicalLine;
-      parseResult.logicalIndex = logicalMeta.logicalIndex;
-      parseResult.isSemicolonLine = logicalMeta.isSemicolonLine;
-      parseResult.colno = logicalMeta.colno;
-      parseResult.terminatesWithSemicolon = !!logicalMeta.terminatesWithSemicolon;
-    } else {
-      parseResult.physicalLine = lineIndex;
-      parseResult.logicalIndex = 0;
-      parseResult.isSemicolonLine = false;
-      parseResult.colno = 0;
-      parseResult.terminatesWithSemicolon = false;
-    }
+    parseResult.physicalLine = parsedLine?.physicalLine ?? lineIndex;
+    parseResult.logicalIndex = parsedLine?.logicalIndex ?? 0;
+    parseResult.isSemicolonLine = !!parsedLine?.isSemicolonLine;
+    parseResult.colno = parsedLine?.colno ?? 0;
+    parseResult.terminatesWithSemicolon = !!parsedLine?.terminatesWithSemicolon;
     // Extract comments and handle them first
     const comments = this._extractComments(parseResult.tokens);
     const codeTokens = this._filterOutComments(parseResult.tokens);
@@ -1844,7 +1836,7 @@ class ScriptTranspiler {
     }
 
     if (stack.length > 0) {
-      throw new Error(`Unclosed block '${stack[stack.length - 1].tag}' at line ${stack[stack.length - 1].line}`);
+      throw new Error(`Unclosed block '${stack[stack.length - 1].tag}' starting at ${stack[stack.length - 1].line}`);
     }
   }
 
@@ -2085,13 +2077,6 @@ class ScriptTranspiler {
           state,
           i,
           logicalLine,
-          {
-            physicalLine: i,
-            logicalIndex: logicalLine.logicalIndex,
-            isSemicolonLine: logicalLine.isSemicolonLine,
-            colno: logicalLine.colno,
-            terminatesWithSemicolon: logicalLine.terminatesWithSemicolon
-          },
           false
         );
 
