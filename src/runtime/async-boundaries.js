@@ -86,14 +86,17 @@ async function runRenderBoundary(context, cb, asyncFn) {
  * Unlike runControlFlowBoundary(...), this helper preserves normal expression
  * rejection semantics: errors are rethrown to the awaiting caller.
  */
-async function runValueBoundary(parentBuffer, usedChannels, asyncFn) {
+function runValueBoundary(parentBuffer, usedChannels, asyncFn) {
   const { childBuffer } = _createChildBoundary(parentBuffer, usedChannels);
-
-  try {
-    return await asyncFn(childBuffer);
-  } finally {
-    await _finalizeBoundary(childBuffer);
-  }
+  const promise = (async () => {
+    try {
+      return await asyncFn(childBuffer);
+    } finally {
+      await _finalizeBoundary(childBuffer);
+    }
+  })();
+  promise.catch(() => {});
+  return promise;
 }
 
 module.exports = {

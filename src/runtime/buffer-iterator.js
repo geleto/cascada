@@ -146,7 +146,7 @@ class BufferIterator {
       if (this._pendingObservables) {
         this._pendingObservables.delete(promise);
       }
-    });
+    }).catch(() => {});
   }
 
   _applyMutable(cmd) {

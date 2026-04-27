@@ -241,7 +241,7 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'extends "A.script"');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be(undefined);
+      expect(result).to.be(null);
     });
 
     it('should let constructor super() resolve against an empty topmost parent body', async function () {
@@ -277,7 +277,7 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'extends "A.script"');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be(undefined);
+      expect(result).to.be(null);
     });
 
     it('should ignore all ancestor explicit returns across a 3-level hierarchy', async function () {
@@ -289,7 +289,7 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'extends "B.script"');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be(undefined);
+      expect(result).to.be(null);
     });
 
     it('should not treat script output channels as the direct render result when the entry file has no explicit return', async function () {
@@ -300,12 +300,12 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nthis.trace("C|")');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be(undefined);
+      expect(result).to.be(null);
     });
 
     it('should keep the normal script fallback when the entry file has no explicit return', async function () {
       const result = await env.renderScriptString('var x = 1', {});
-      expect(result).to.be(undefined);
+      expect(result).to.be(null);
     });
 
     it('should discard an ancestor constructor return in composition mode when the entry file returns explicitly', async function () {

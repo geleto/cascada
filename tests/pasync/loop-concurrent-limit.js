@@ -2492,7 +2492,7 @@
       const env = new AsyncEnvironment();
       const script = new Script('for x in xs of 2\n  return foo(x)\nendfor\nreturn data.snapshot()', env);
       const source = script._compileSource();
-      expect(countWaitResolveCommands(source)).to.be(4);
+      expect(countWaitResolveCommands(source)).to.be(3);
     });
 
     it('emits WaitResolveCommand for limited-loop var-channel initializer roots', function () {

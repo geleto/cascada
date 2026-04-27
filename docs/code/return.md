@@ -6,6 +6,11 @@ Script `return` is implemented as a source-to-source rewrite in the script
 transpiler. The compiler and runtime continue to use the existing internal
 `__return__` channel as the return value carrier.
 
+The rewrite is line-preserving. Injected return guards are emitted inline on
+existing physical lines as prefixes or suffixes; the pass must not create new
+template lines because template error locations should continue to map back to
+the original script line numbers.
+
 The core idea is:
 
 1. A script `return` writes to the ordered `__return__` channel.
@@ -866,14 +871,18 @@ Phase 3 implementation status:
 
 - Implemented a dedicated return-guard pass over processed logical lines.
 - Generated inline template guard tags instead of adding new physical template
-  lines, preserving source-line layout.
-- Added guard opening after `return`, guard closure before middle/end tags, guard
-  cascade after end tags, and EOF root-scope guard closure.
+  lines, preserving source-line layout and one generated physical line per
+  source physical line.
+- Added lazy guard materialization after `return`: the pass opens the injected
+  guard only when a later real statement needs protection, closes active guards
+  before middle/end tags, cascades guards after end tags, and drops pending
+  guards at block/EOF boundaries when there is nothing left to protect.
 - Kept callable boundaries local: function/call-body returns do not guard the
   outer scope.
 - Covered middle-tag guard behavior for `else`, `elif`, `case`, `default`, loop
   `else`, and `recover`.
-- Covered EOF root-guard closure on a final comment-only line.
+- Covered final-return cases where trailing comments, block end tags, and EOF do
+  not create empty injected `if`/`endif` pairs.
 - Removed the unused `injectLines` consumer after replacing the earlier
   injection idea with the dedicated return-guard pass.
 
@@ -882,9 +891,8 @@ module singleton. Later phases should either keep that state purely internal or
 introduce an explicit analysis-result path instead of relying on singleton
 mutable state as public API.
 
-Post-stabilization cleanup: consider suppressing no-op immediately closed return
-guards and either formalizing or removing the `returnAnalysis` singleton test
-hook after the return implementation is fully settled.
+Post-stabilization cleanup: either formalize or remove the `returnAnalysis`
+singleton test hook after the return implementation is fully settled.
 
 #### Phase 4. Loop Return Semantics
 
@@ -912,10 +920,10 @@ Phase 4 implementation status:
 - Updated limited-loop waited-command expectations for the additional ordered
   return-state observations introduced by return-capable `for` guards.
 
-Known follow-up from Phase 4a: `tests/phase5-while-generator.js` still has a
-pre-existing failure for poison in a sequential `while` condition after the
-return-aware condition rewrite. Investigate the interaction between rewritten
-while guards and sequential-operation poison propagation.
+Phase 4a regression follow-up: the interaction between rewritten while guards
+and sequential-operation poison propagation is covered. Return-aware while
+conditions preserve normal condition poison behavior, so affected loop body
+channels can still be inspected with `is error`.
 
 The generic loop-body guard cascade after loop end tags belongs to Phase 3's
 guard stack. Step 9 only owns the additional semantics unique to ordinary
@@ -1212,60 +1220,79 @@ Each block-stack frame should track at least:
 - `isFunctionBoundary`
 - `loopKind`, such as `for`, `each`, or `null`
 - `isParallelLoop`
-- `returnGuardOpen`
+- `returnGuardDepth`
+- `pendingReturnGuardDepth`
 - `containsReturn`
 
 When a return is emitted:
 
 ```cascada
-return value; if __return__ == __RETURN_UNSET__
+return value
 ```
 
 the current frame is marked with:
 
 ```text
-returnGuardOpen = true
+pendingReturnGuardDepth = 1
 containsReturn = true
 ```
+
+The pending guard is materialized as
+`if __return__ == __RETURN_UNSET__` only when a later real statement in the same
+frame needs protection. Comments, blank lines, middle tags, end tags, and EOF do
+not force the pending guard to open. This prevents empty injected blocks such as
+`if __return__ == __RETURN_UNSET__; endif` when the return is already at the end
+of a branch or scope. Repeated pending guards at the same materialization point
+are coalesced into one guard because they all read the same ordered return state.
 
 When processing an end tag:
 
 1. Look at the frame that this end tag closes.
-2. If that frame has `returnGuardOpen`, emit `endif; ` before the end tag.
-3. Emit the original end tag.
-4. Pop the frame.
-5. If the popped frame had `containsReturn`, and the new parent frame is not a
-   function boundary, emit `; if __return__ == __RETURN_UNSET__` after the end tag.
-6. Mark the parent frame as `returnGuardOpen = true` and
+2. Drop any pending, unopened guard for that frame.
+3. If that frame has an active `returnGuardDepth`, emit the matching `endif`
+   tags before the end tag.
+4. Emit the original end tag.
+5. Pop the frame.
+6. If the popped frame had `containsReturn`, and the new parent frame is not a
+   function boundary, mark the parent with a pending guard and
    `containsReturn = true`.
+
+If a return happens inside an already-active guard, the active guard is closed
+after that return or after the child block that propagated the return. The pass
+then records one fresh pending guard for subsequent statements. This keeps later
+code protected by a newly evaluated return-state check without wrapping it in
+redundant nested identical guards.
 
 This creates the waterfall:
 
 ```cascada
 if outer
   if inner
-    return value; if __return__ == __RETURN_UNSET__
-    endif
-  endif; if __return__ == __RETURN_UNSET__
+    return value
+  endif
+  if __return__ == __RETURN_UNSET__
   afterInner()
   endif
-endif; if __return__ == __RETURN_UNSET__
+endif
+if __return__ == __RETURN_UNSET__
 afterOuter()
 endif
 ```
 
-Middle tags need special handling. If a branch has an open return guard, close
-that guard before emitting the middle tag. The new branch continues in the
-original control-flow block, not inside the injected return guard.
+Middle tags need special handling. If a branch has an active return guard, close
+that guard before emitting the middle tag; if it only has a pending guard, drop
+it. The new branch continues in the original control-flow block, not inside the
+injected return guard.
 
-Root scope has no closing end tag. Any open root-level return guard must be
+Root scope has no closing end tag. Any active root-level return guard must be
 closed at the end of the logical script/template output without changing
-physical source line mapping.
+physical source line mapping. A merely pending root-level guard is dropped at
+EOF because there is no following statement to protect.
 
 EOF closure rule:
 
 - append required root-level `endif` logical statements to the last physical
-  source line as semicolon logical lines
+  source line as semicolon logical lines only for active guards
 - if the source is empty, attach the synthetic closure to line 1
 - do not create unrelated generated-template lines only to close return guards
 
@@ -1285,11 +1312,11 @@ Integration-first tests for this step:
 
 Focused contract tests only if needed:
 
-- root-level injected guard is closed at EOF
+- root-level active injected guard is closed at EOF
 - generated template has balanced injected `if`/`endif`
 - physical line count is preserved for simple and nested returns
-- EOF guard closure on a final comment-only line does not emit tags inside the
-  comment
+- final returns before comments, end tags, or EOF do not emit empty injected
+  `if`/`endif` pairs
 
 ### 5. Middle Tag Handling
 
@@ -1306,9 +1333,10 @@ Middle tags include:
 
 Required behavior:
 
-- If the current branch has an open return guard, emit `endif; ` before the
+- If the current branch has an active return guard, emit `endif; ` before the
   middle tag.
-- Reset branch-local `returnGuardOpen` for the new branch.
+- Drop unopened pending guards and reset branch-local active guard depth for the
+  new branch.
 - Keep `containsReturn` on the enclosing block so the return still cascades
   after the final end tag.
 - Ensure the middle tag binds to the user's original control-flow block, not to

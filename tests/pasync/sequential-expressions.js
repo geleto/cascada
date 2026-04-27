@@ -637,6 +637,36 @@ describe('Sequential Operations in Expressions', function () {
       expect(res.trim()).to.be('true');
     });
 
+    it('should keep non-short-circuited AND sequential poison observable', async function () {
+      const result = await env.renderScriptString([
+        'var result = true and account!.fail()',
+        'return result is error'
+      ].join('\n'), {
+        account: {
+          fail() {
+            throw new Error('Sequential operation failed');
+          }
+        }
+      });
+
+      expect(result).to.be(true);
+    });
+
+    it('should keep non-short-circuited OR sequential poison observable', async function () {
+      const result = await env.renderScriptString([
+        'var result = false or account!.fail()',
+        'return result is error'
+      ].join('\n'), {
+        account: {
+          fail() {
+            throw new Error('Sequential operation failed');
+          }
+        }
+      });
+
+      expect(result).to.be(true);
+    });
+
     it('should skip sequential operations in ternary true branch (false ? seq : other)', async function () {
       const src = `
     {% set res = (account!.deposit(10) if false else 'skipped') %}

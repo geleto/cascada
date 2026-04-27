@@ -1984,8 +1984,8 @@ class ScriptTranspiler {
     };
   }
 
-  _returnGuardOpenTag() {
-    return '{%- if __return__ == __RETURN_UNSET__ -%}';
+  _returnGuardOpenTag(count = 1) {
+    return Array(count).fill('{%- if __return__ == __RETURN_UNSET__ -%}').join('');
   }
 
   _returnGuardCloseTag(count = 1) {
@@ -2041,7 +2041,11 @@ class ScriptTranspiler {
 
     for (let i = 0; i < processedLines.length; i++) {
       const line = processedLines[i];
-      if (!line || line.isContinuation || line.lineType === 'RAW_TEXT') {
+      if (!line ||
+        line.isContinuation ||
+        line.lineType === 'RAW_TEXT' ||
+        line.isEmpty ||
+        line.isCommentOnly) {
         continue;
       }
 
@@ -2096,6 +2100,7 @@ class ScriptTranspiler {
       endTagName: this.SYNTAX.blockPairs[tagName] || null,
       isFunctionBoundary: this._isReturnBoundaryTag(tagName),
       returnGuardDepth: 0,
+      pendingReturnGuardDepth: 0,
       containsReturn: false
     };
   }
@@ -2105,9 +2110,24 @@ class ScriptTranspiler {
     const stack = [rootFrame];
 
     const currentFrame = () => stack[stack.length - 1] || rootFrame;
+    const openPendingFrameGuards = (frame, line) => {
+      if (!frame || frame.pendingReturnGuardDepth <= 0) return;
+      this._appendInlinePrefix(line, this._returnGuardOpenTag(frame.pendingReturnGuardDepth));
+      frame.returnGuardDepth += frame.pendingReturnGuardDepth;
+      frame.pendingReturnGuardDepth = 0;
+    };
     const closeFrameGuards = (frame, line) => {
+      if (!frame) return;
+      frame.pendingReturnGuardDepth = 0;
+      if (frame.returnGuardDepth <= 0) return;
+      if (line) {
+        this._appendInlinePrefix(line, this._returnGuardCloseTag(frame.returnGuardDepth));
+      }
+      frame.returnGuardDepth = 0;
+    };
+    const closeActiveFrameGuardsAfterLine = (frame, line) => {
       if (!frame || frame.returnGuardDepth <= 0) return;
-      this._appendInlinePrefix(line, this._returnGuardCloseTag(frame.returnGuardDepth));
+      this._appendInlineSuffix(line, this._returnGuardCloseTag(frame.returnGuardDepth));
       frame.returnGuardDepth = 0;
     };
     // Called after popping a closing block, so currentFrame() is already the parent.
@@ -2117,22 +2137,27 @@ class ScriptTranspiler {
       }
       const parent = currentFrame();
       if (!parent) return;
-      this._appendInlineSuffix(line, this._returnGuardOpenTag());
-      parent.returnGuardDepth += 1;
+      closeActiveFrameGuardsAfterLine(parent, line);
+      parent.pendingReturnGuardDepth = 1;
       parent.containsReturn = true;
     };
 
     for (let i = 0; i < processedLines.length; i++) {
       const line = processedLines[i];
-      if (!line || line.isContinuation || line.lineType === 'RAW_TEXT') {
+      if (!line ||
+        line.isContinuation ||
+        line.lineType === 'RAW_TEXT' ||
+        line.isEmpty ||
+        line.isCommentOnly) {
         continue;
       }
 
       if (line.tagName === 'return') {
-        const suffixLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
         const frame = currentFrame();
-        this._appendInlineSuffix(suffixLine, this._returnGuardOpenTag());
-        frame.returnGuardDepth += 1;
+        const suffixLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
+        openPendingFrameGuards(frame, line);
+        closeActiveFrameGuardsAfterLine(frame, suffixLine);
+        frame.pendingReturnGuardDepth = 1;
         frame.containsReturn = true;
         continue;
       }
@@ -2145,6 +2170,7 @@ class ScriptTranspiler {
 
       if (line.blockType === this.BLOCK_TYPE.START) {
         const parent = currentFrame();
+        openPendingFrameGuards(parent, line);
         stack.push(this._createReturnGuardFrame(line.tagName, parent, line));
         continue;
       }
@@ -2153,7 +2179,10 @@ class ScriptTranspiler {
         const frame = stack.length > 1 ? stack.pop() : null;
         closeFrameGuards(frame, line);
         propagateReturnToParent(frame, line);
+        continue;
       }
+
+      openPendingFrameGuards(currentFrame(), line);
     }
 
     if (rootFrame.returnGuardDepth > 0 && processedLines.length > 0) {
@@ -2163,6 +2192,7 @@ class ScriptTranspiler {
       );
       rootFrame.returnGuardDepth = 0;
     }
+    rootFrame.pendingReturnGuardDepth = 0;
   }
 
   /**

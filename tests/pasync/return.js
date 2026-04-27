@@ -192,6 +192,72 @@ describe('Cascada Script return', function () {
       expect(events).to.eql([]);
     });
 
+    it('skips structured blocks opened after a top-level return', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'return "done"',
+        'if false',
+        '  record("if")',
+        'else',
+        '  record("else")',
+        'endif',
+        'switch 2',
+        'case 1',
+        '  record("case-1")',
+        'case 2',
+        '  record("case-2")',
+        'default',
+        '  record("default")',
+        'endswitch',
+        'for item in []',
+        '  record("for-body")',
+        'else',
+        '  record("for-else")',
+        'endfor',
+        'guard',
+        '  var failed = fail()',
+        'recover err',
+        '  record("recover")',
+        'endguard',
+        'record("after")'
+      ].join('\n'), {
+        fail() {
+          throw new Error('skipped guard body should not run');
+        },
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('closes a return guard before a middle tag after skipped nested blocks', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'if true',
+        '  return "done"',
+        '  switch 1',
+        '  case 1',
+        '    record("case")',
+        '  default',
+        '    record("default")',
+        '  endswitch',
+        'else',
+        '  record("else")',
+        'endif',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
     it('keeps middle tags attached to the original block', async function () {
       const events = [];
       const result = await env.renderScriptString([
@@ -268,6 +334,66 @@ describe('Cascada Script return', function () {
           events.push(value);
         }
       });
+
+      expect(result).to.be('two');
+      expect(events).to.eql([]);
+    });
+
+    it('does not let a return in an unselected switch case guard selected non-return cases', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'switch 2',
+        'case 1',
+        '  return "one"',
+        'case 2',
+        '  record("two")',
+        'default',
+        '  return "default"',
+        'endswitch',
+        'record("after")',
+        'return "done"'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql(['two', 'after']);
+    });
+
+    it('closes nested switch-case returns before later cases', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'switch 1',
+        'case 1',
+        '  if true',
+        '    return "one"',
+        '  endif',
+        'case 2',
+        '  record("two")',
+        'endswitch',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('one');
+      expect(events).to.eql([]);
+    });
+
+    it('handles same-line switch middle tags around returns', async function () {
+      const events = [];
+      const result = await env.renderScriptString(
+        'switch 2; case 1; return "one"; case 2; return "two"; default; return "default"; endswitch; record("after")',
+        {
+          record(value) {
+            events.push(value);
+          }
+        }
+      );
 
       expect(result).to.be('two');
       expect(events).to.eql([]);
@@ -352,6 +478,25 @@ describe('Cascada Script return', function () {
       expect(events).to.eql(['outer-after-function']);
     });
 
+    it('keeps method returns local and skips later method statements', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'method build()',
+        '  return "method"',
+        '  record("method-after")',
+        'endmethod',
+        'record("outer-after-method")',
+        'return this.build()'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('method');
+      expect(events).to.eql(['outer-after-method']);
+    });
+
     it('cascades returns after loop end tags', async function () {
       const events = [];
       const result = await env.renderScriptString([
@@ -399,28 +544,204 @@ describe('Cascada Script return', function () {
       expect(events).to.eql(['outer-after-call']);
     });
 
-    it('closes EOF root guards after a final comment-only line', function () {
+    it('does not emit empty return guards at block or EOF boundaries', function () {
+      const cases = [
+        'return "done"',
+        [
+          'return "done"',
+          '// final comment'
+        ].join('\n'),
+        [
+          'return "done"',
+          '',
+          '// final comment',
+          '',
+          '/* final block comment */'
+        ].join('\n'),
+        'return "done";',
+        'return "done"; // final comment',
+        [
+          'if true',
+          '  return "done"',
+          'endif'
+        ].join('\n'),
+        [
+          'if true',
+          '  return "done"',
+          '',
+          '  // final branch comment',
+          '',
+          'endif'
+        ].join('\n'),
+        [
+          'if true',
+          '  return "done"',
+          '',
+          '  // final branch comment',
+          '',
+          'else',
+          '  return "other"',
+          'endif'
+        ].join('\n'),
+        [
+          'function f()',
+          '  return "done"',
+          'endfunction',
+          'return f()'
+        ].join('\n'),
+        [
+          'switch 1',
+          'case 1',
+          '  return "one"',
+          'endswitch'
+        ].join('\n'),
+        'if true; return 1; endif'
+      ];
+
+      cases.forEach((script) => {
+        const template = scriptTranspiler.scriptToTemplate(script);
+        expect(template).to.not.match(/\{%- if __return__ == __RETURN_UNSET__ -%\}\s*\{%- endif -%\}/);
+      });
+    });
+
+    it('keeps final comments outside dropped EOF return guards', function () {
       const template = scriptTranspiler.scriptToTemplate([
         'return "done"',
         '// final comment'
       ].join('\n'));
 
       const commentIndex = template.indexOf('{#- final comment -#}');
-      const closeIndex = template.lastIndexOf('{%- endif -%}');
       expect(commentIndex).to.be.greaterThan(-1);
-      expect(closeIndex).to.be.greaterThan(commentIndex);
+      expect(template).to.not.contain('__return__ == __RETURN_UNSET__');
     });
 
-    it('preserves physical line count when injecting nested return guards', function () {
+    it('keeps comments and blank lines before the guard for later executable statements', async function () {
+      const events = [];
       const script = [
-        'if true',
-        '  return 1',
-        'endif',
-        'return 2'
+        'return "done"',
+        '',
+        '// still a plain comment',
+        '',
+        'record("after")'
       ].join('\n');
       const template = scriptTranspiler.scriptToTemplate(script);
 
-      expect(template.split('\n')).to.have.length(script.split('\n').length);
+      const commentIndex = template.indexOf('{#- still a plain comment -#}');
+      const guardIndex = template.indexOf('{%- if __return__ == __RETURN_UNSET__ -%}');
+      const recordIndex = template.indexOf('{%- do record("after") -%}');
+      expect(commentIndex).to.be.greaterThan(-1);
+      expect(guardIndex).to.be.greaterThan(commentIndex);
+      expect(recordIndex).to.be.greaterThan(guardIndex);
+
+      const result = await env.renderScriptString(script, {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('guards structurally empty blocks after return so their conditions do not run', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'return "done"',
+        'if shouldNotRun("empty-if")',
+        'endif',
+        'if shouldNotRun("comment-only-if")',
+        '  // body has no executable statements',
+        'endif'
+      ].join('\n'), {
+        shouldNotRun(value) {
+          events.push(value);
+          return true;
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+    });
+
+    it('does not keep stale active guards nested around later return checks', function () {
+      const cascaded = scriptTranspiler.scriptToTemplate([
+        'if a',
+        '  return 1',
+        'endif',
+        'if b',
+        '  return 2',
+        'endif',
+        'record("after")'
+      ].join('\n'));
+      expect(cascaded).to.contain([
+        '{%- endif -%}{%- endif -%}',
+        '{%- if __return__ == __RETURN_UNSET__ -%}{%- do record("after") -%}{%- endif -%}'
+      ].join('\n'));
+      expect(cascaded).to.not.contain('{%- do record("after") -%}{%- endif -%}{%- endif -%}');
+
+      const consecutive = scriptTranspiler.scriptToTemplate([
+        'return 1',
+        'return 2',
+        'record("after")'
+      ].join('\n'));
+      expect(consecutive).to.contain([
+        '{%- if __return__ == __RETURN_UNSET__ -%}{%- return 2 -%}{%- endif -%}',
+        '{%- if __return__ == __RETURN_UNSET__ -%}{%- do record("after") -%}{%- endif -%}'
+      ].join('\n'));
+      expect(consecutive).to.not.contain('{%- do record("after") -%}{%- endif -%}{%- endif -%}');
+    });
+
+    it('preserves physical line count when injecting nested return guards', function () {
+      const cases = [
+        [
+          'if true',
+          '  return 1',
+          'endif',
+          'return 2'
+        ].join('\n'),
+        [
+          'return "done"',
+          '',
+          '// comment before guarded code',
+          '',
+          'record("after")'
+        ].join('\n'),
+        [
+          'if true',
+          '  return "done"',
+          '',
+          '  // branch comment',
+          '',
+          'else',
+          '  record("else")',
+          'endif',
+          'record("after")'
+        ].join('\n'),
+        [
+          'switch 1',
+          'case 1',
+          '  return "one"',
+          '',
+          '  // case comment',
+          'case 2',
+          '  record("two")',
+          'endswitch',
+          'record("after")'
+        ].join('\n'),
+        [
+          'for item in [1]',
+          '  return item',
+          '',
+          '  // loop comment',
+          'endfor',
+          'record("after")'
+        ].join('\n')
+      ];
+
+      cases.forEach((script) => {
+        const template = scriptTranspiler.scriptToTemplate(script);
+        expect(template.split('\n')).to.have.length(script.split('\n').length);
+      });
     });
   });
 
@@ -484,6 +805,24 @@ describe('Cascada Script return', function () {
       expect(template).to.contain(')) -%}');
       expect(template.split('\n')).to.have.length(script.split('\n').length);
       expect(result).to.be(1);
+    });
+
+    it('keeps poison in return-aware while conditions observable through loop body channels', async function () {
+      const result = await env.renderScriptString([
+        'var count = 0',
+        'while obj!.method()',
+        '  count = count + 1',
+        'endwhile',
+        'return count is error'
+      ].join('\n'), {
+        obj: {
+          method() {
+            throw new Error('Object is poisoned');
+          }
+        }
+      });
+
+      expect(result).to.be(true);
     });
 
     it('stops sequential each advancement after return', async function () {
@@ -601,6 +940,28 @@ describe('Cascada Script return', function () {
 
       expect(result).to.be('first');
       expect(events).to.eql(['body-1']);
+    });
+
+    it('handles switch returns inside return-capable parallel for bodies', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'for item in [1, 2]',
+        '  switch item',
+        '  case 1',
+        '    return "one"',
+        '  case 2',
+        '    record("two")',
+        '  endswitch',
+        'endfor',
+        'record("after")'
+      ].join('\n'), {
+        record(value) {
+          events.push(value);
+        }
+      });
+
+      expect(result).to.be('one');
+      expect(events).to.eql([]);
     });
   });
 
@@ -801,6 +1162,17 @@ describe('Cascada Script return', function () {
         '  var x = 1',
         'endcall',
         'return callerResult'
+      ].join('\n'));
+
+      expect(result).to.be(null);
+    });
+
+    it('returns null from methods that complete without return', async function () {
+      const result = await env.renderScriptString([
+        'method noop()',
+        '  var x = 1',
+        'endmethod',
+        'return this.noop()'
       ].join('\n'));
 
       expect(result).to.be(null);

@@ -29,7 +29,7 @@ class CompileBoundaries {
 
     // Reserve a structural child buffer synchronously before any async
     // condition/operand resolution so later sibling operands stay ordered.
-    this.compiler.emit(`runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
+    this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, async (currentBuffer) => {`);
     this.compiler.emit.asyncClosureDepth++;
     bufferCompiler.withBufferState({ currentBuffer: 'currentBuffer' }, () => {
       emitBody.call(this.compiler);

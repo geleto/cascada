@@ -7,7 +7,6 @@ const aliasOptions = {
 };
 
 const DECL_TAG = 'var';
-const RETURN_GUARD_SUFFIX = '{%- if __return__ == __RETURN_UNSET__ -%}{%- endif -%}';
 
 describe('Script Transpiler', () => {
   // Helper function tests
@@ -470,7 +469,7 @@ describe('Script Transpiler', () => {
     it('should convert tag statements', () => {
       const script = 'text outText\nif condition\n  outText("Indented")\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- text outText -%}\n{%- if condition -%}\n  {%- command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}${RETURN_GUARD_SUFFIX}`);
+      expect(template).to.equal(`{%- text outText -%}\n{%- if condition -%}\n  {%- command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
 
     it('should convert code statements to set tags', () => {
@@ -488,7 +487,7 @@ describe('Script Transpiler', () => {
     it('should preserve indentation', () => {
       const script = 'text outText\nif condition\n  outText("Indented")\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- text outText -%}\n{%- if condition -%}\n  {%- command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}${RETURN_GUARD_SUFFIX}`);
+      expect(template).to.equal(`{%- text outText -%}\n{%- if condition -%}\n  {%- command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
 
     it('should properly convert var declarations', () => {
@@ -512,7 +511,7 @@ describe('Script Transpiler', () => {
     it('should convert while loops', () => {
       const script = 'text outText\nwhile condition\n  outText("Looping")\nendwhile\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- text outText -%}\n{%- while __return__ == __RETURN_UNSET__ and (condition) -%}\n  {%- command outText("Looping") -%}\n{%- endwhile -%}\n{%- return { text: outText.snapshot() } -%}${RETURN_GUARD_SUFFIX}`);
+      expect(template).to.equal(`{%- text outText -%}\n{%- while __return__ == __RETURN_UNSET__ and (condition) -%}\n  {%- command outText("Looping") -%}\n{%- endwhile -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
   });
 
@@ -590,7 +589,7 @@ describe('Script Transpiler', () => {
     it('should handle nested blocks', () => {
       const script = 'text outText\nif condition1\n  if condition2\n    outText("Nested")\n  endif\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- text outText -%}\n{%- if condition1 -%}\n  {%- if condition2 -%}\n    {%- command outText("Nested") -%}\n  {%- endif -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}${RETURN_GUARD_SUFFIX}`);
+      expect(template).to.equal(`{%- text outText -%}\n{%- if condition1 -%}\n  {%- if condition2 -%}\n    {%- command outText("Nested") -%}\n  {%- endif -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
 
     it('should validate middle tags', () => {
@@ -697,7 +696,7 @@ return { text: outText.snapshot() }`;
     it('should handle expressions spanning multiple lines', () => {
       const script = 'text outText\noutText("Hello, " +\n      "World!")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- text outText -%}\n{%- command outText("Hello, " +\n      "World!") -%}\n{%- return { text: outText.snapshot() } -%}${RETURN_GUARD_SUFFIX}`);
+      expect(template).to.equal(`{%- text outText -%}\n{%- command outText("Hello, " +\n      "World!") -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
 
     it('should detect continuation at end of line', () => {
@@ -811,7 +810,7 @@ endif`;
     it('should convert sequence declaration and calls', () => {
       const script = 'sequence db = makeDb()\nvar user = db.getUser(1)\nreturn user';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- sequence db = makeDb() -%}\n{%- ${DECL_TAG} user = db.getUser(1) -%}\n{%- return user -%}${RETURN_GUARD_SUFFIX}`);
+      expect(template).to.equal(`{%- sequence db = makeDb() -%}\n{%- ${DECL_TAG} user = db.getUser(1) -%}\n{%- return user -%}`);
     });
 
     it('should reject sequence property assignment syntax', () => {
@@ -871,7 +870,7 @@ endif`;
     it('should handle multi-line string literals', () => {
       const script = 'text outText\noutText("Line 1\\\nLine 2")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- text outText -%}\n{%- command outText("Line 1\\\nLine 2") -%}\n{%- return { text: outText.snapshot() } -%}${RETURN_GUARD_SUFFIX}`);
+      expect(template).to.equal(`{%- text outText -%}\n{%- command outText("Line 1\\\nLine 2") -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
 
     it('should handle strings with embedded quotes', () => {
@@ -883,7 +882,7 @@ endif`;
     it('should handle strings with multiple line continuations', () => {
       const script = 'text outText\noutText("First line \\\nSecond line \\\nThird line")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- text outText -%}\n{%- command outText("First line \\\nSecond line \\\nThird line") -%}\n{%- return { text: outText.snapshot() } -%}${RETURN_GUARD_SUFFIX}`);
+      expect(template).to.equal(`{%- text outText -%}\n{%- command outText("First line \\\nSecond line \\\nThird line") -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
 
     it('should handle empty blocks', () => {
@@ -978,7 +977,7 @@ endif`;
           {%- command outText("Access denied") -%}
         {%- endif -%}
 
-        {%- return outData.snapshot() -%}${RETURN_GUARD_SUFFIX}`);
+        {%- return outData.snapshot() -%}`);
     });
 
     it('should handle complex mathematical expressions', () => {
