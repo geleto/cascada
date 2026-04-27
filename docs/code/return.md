@@ -133,8 +133,8 @@ registration.
 
 Constructs that are collected or registered at compile time may still be
 available even if they appear textually after a `return`. This can include
-function/method declarations, imports, inheritance/composition metadata, and
-extern declarations depending on their current implementation.
+function/method declarations, imports, and inheritance/composition metadata
+depending on their current implementation.
 
 The implementation must classify script constructs into:
 

@@ -126,8 +126,6 @@ Database: {{ config.database.connection.host }}
 | **Import with object**   | `import "file" as lib with { key: expr }`                  | `{% import "file" as lib with { key: expr } %}`                              |
 | **Import names**         | `from "file" import helper`                                | `{% from "file" import helper %}`                                            |
 | **From import with inputs** | `from "file" import helper with context, var1`          | `{% from "file" import helper with context, var1 %}`                         |
-| **Extern (required)**    | `extern user`                                              | `{% extern user %}`                                                          |
-| **Extern (with default)**| `extern theme = "light"`                                   | `{% extern theme = "light" %}`                                               |
 | **Guard Block**          | `guard`<br>  `...`<br>  `recover`<br>  `...`<br>`endguard` | `{% guard %}`<br>  `...`<br>  `{% recover %}`<br>  `...`<br>`{% endguard %}` |
 | **Revert**               | `revert`                                                   | `{% revert %}`                                                               |
 
@@ -180,15 +178,15 @@ endcall
 {% endguard %}
 ```
 
-## Async Composition (`extern`, `with`, inheritance contracts)
+## Async Composition (`with` Payloads and Inheritance Contracts)
 
-The full composition model — `extern`, `with`, `with context`, `extends ... with ...`, resolution order, pass-through patterns — is documented in [Composition and Loading](https://geleto.github.io/cascada-script/#composition-and-loading) in the script docs. The same rules apply to templates; only the syntax differs.
+The full composition model — `with`, `with context`, `extends ... with ...`, resolution order, pass-through patterns — is documented in [Composition and Loading](https://geleto.github.io/cascada-script/#composition-and-loading) in the script docs. The same rules apply to templates; only the syntax differs.
 
 **Template-specific notes:**
 
 - `include` is supported in templates (it is not available in scripts). It follows the same isolation and `with` rules as `import`.
 - Template inheritance uses `{% block name(args) %}` / `{% endblock %}` where scripts use `method name(args)` / `endmethod`. Both support `this.blockName(args)` / `this.methodName(args)` for calling an override via inherited dispatch.
-- `extern`, `with` clauses, and the explicit-contract model are **async-only**. In classic Nunjucks (sync) mode, `extern` is a compile error and templates retain implicit access to all parent-scope variables.
+- `with` clauses and the explicit payload model are **async-only**. In classic Nunjucks (sync) mode, templates retain implicit access to all parent-scope variables.
 
 ### Blocks in Async Templates
 
@@ -217,9 +215,8 @@ Classic Nunjucks blocks have implicit access to the caller's scope. Cascada asyn
 
 ```nunjucks
 {# base.njk #}
-{% extern theme = "light" %}
 {% block content(user) with context %}
-  Base {{ user }} / {{ siteName }} / {{ theme }}
+  Base {{ user }} / {{ siteName }} / {{ theme or "light" }}
 {% endblock %}
 ```
 
@@ -250,7 +247,7 @@ What this shows:
 
 - `super()` still sees the original block argument `user = "Ada"`, even though the child reassigned the local `user` to `"Grace"`.
 - `siteName` is visible inside both blocks because of `with context`, not because it is an explicit argument.
-- `theme` comes from the `extends ... with ...` composition boundary, not from block arguments or render context.
+- `theme` comes from the `extends ... with ...` payload, not from block arguments or render context.
 
 ### Shared State in Inherited Templates
 

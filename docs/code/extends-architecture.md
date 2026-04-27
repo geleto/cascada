@@ -202,9 +202,9 @@ by the shared-buffer startup path, not by storing default values in
 
 ## Shared State
 
-`shared` means hierarchy-owned instance state. `extern` remains the caller-input
-mechanism for ordinary composition paths such as plain `import`, `from import`,
-and `include`.
+`shared` means hierarchy-owned instance state. Composition payloads are the
+caller-input mechanism for ordinary composition paths such as plain `import`,
+`from import`, and `include`.
 
 Shared declarations belong to constructor/root scope only. They are not
 allowed inside methods/blocks.
@@ -213,7 +213,7 @@ That restriction is also the visibility boundary for inherited execution:
 
 - methods/blocks may read shared channels
 - methods/blocks may read their explicit call payload / arguments
-- methods/blocks may read any explicitly-enabled render/external context that
+- methods/blocks may read any explicitly-enabled render/context payload that
   the language feature allows
 - methods/blocks do not read ambient constructor-local or parent-scope locals
 
@@ -251,7 +251,7 @@ migration error at compile time.
 For async/script mode, name resolution stays split into two explicit classes:
 
 - declared names: ordinary declared vars, declared shared vars/channels, args,
-  loop vars, declared extern bindings
+  loop vars, and composition payload bindings
 - ambient names: undeclared bare names, plus bare names where `this.<name>` is
   the shared access surface, resolved through context/global/render-context
 
@@ -693,7 +693,7 @@ Compatibility requirements should still be preserved:
 
 - plain scripts and templates without `extends`
 - plain `import`, `from import`, and `include`
-- existing `extern` / `with` behavior for non-inheritance composition
+- existing `with` payload behavior for non-inheritance composition
 - `caller()` in macros
 - sequential `!` paths
 - 100% Nunjucks compatibility for sync template inheritance

@@ -72,7 +72,7 @@ The refactor should move toward these rules:
 5. Method invocation, `super()`, and component method calls should share one
    admission/linking core.
 6. Shared-channel observation should remain explicit and current-buffer based.
-7. Composition payload, extern inputs, and shared channels should stay separate.
+7. Composition payloads and shared channels should stay separate.
 8. Component lifecycle should use the same metadata barrier as direct extends,
    but without extra calling-convention shims.
 9. Test-only exports and white-box assertions should keep shrinking as behavior
@@ -213,7 +213,7 @@ The component layer owns:
 - method operation command
 - shared observation command
 - component lifecycle / close behavior
-- component-specific extern validation and payload normalization
+- component-specific payload validation and normalization
 
 Component operations already dispatch through the inherited-call runtime rather
 than carrying their own method metadata model.
