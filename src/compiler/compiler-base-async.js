@@ -4,10 +4,6 @@ const nodes = require('../nodes');
 const CompileAnalysis = require('./analysis');
 const CompileRename = require('./rename');
 const CompilerCommon = require('./compiler-common');
-const {
-  RETURN_CHANNEL_NAME,
-  RETURN_UNSET_SYMBOL_NAME
-} = require('./return-constants');
 
 const compareOps = {
   '==': '==',
@@ -33,9 +29,6 @@ class CompilerBaseAsync extends CompilerCommon {
       return {};
     }
     const name = node.value;
-    if (name === RETURN_UNSET_SYMBOL_NAME) {
-      return {};
-    }
 
     const uses = [];
     const mutates = [];
@@ -70,10 +63,6 @@ class CompilerBaseAsync extends CompilerCommon {
     const name = node.value;
     if (node.isCompilerInternal) {
       this.emit(name);
-      return;
-    }
-    if (name === RETURN_UNSET_SYMBOL_NAME) {
-      this.emit('runtime.RETURN_UNSET');
       return;
     }
     const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
@@ -268,12 +257,6 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileCompare(node) {
-    const returnStateComparison = this._getReturnStateComparison(node);
-    if (returnStateComparison) {
-      this._emitReturnStateComparison(returnStateComparison, node);
-      return;
-    }
-
     this.emit('runtime.resolveDuo(');
     this.compile(node.expr, null);
     this.emit(',');
@@ -287,56 +270,6 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     });
     this.emit('})');
-  }
-
-  // Return-state comparison helpers compile injected guards without inspecting
-  // the possibly-poisoned return value.
-  _getReturnStateComparison(node) {
-    if (!this.scriptMode || !node || !Array.isArray(node.ops) || node.ops.length !== 1) {
-      return null;
-    }
-    const op = node.ops[0];
-    if (!op || !['==', '===', '!=', '!=='].includes(op.type)) {
-      return null;
-    }
-
-    const leftIsReturn = this._isReturnChannelSymbol(node.expr);
-    const rightIsReturn = this._isReturnChannelSymbol(op.expr);
-    const leftIsUnset = this._isReturnUnsetSymbol(node.expr);
-    const rightIsUnset = this._isReturnUnsetSymbol(op.expr);
-    if (!((leftIsReturn && rightIsUnset) || (leftIsUnset && rightIsReturn))) {
-      return null;
-    }
-
-    return {
-      equals: op.type === '==' || op.type === '===',
-      positionNode: leftIsReturn ? node.expr : op.expr
-    };
-  }
-
-  _isReturnChannelSymbol(node) {
-    return node instanceof nodes.Symbol && node.value === RETURN_CHANNEL_NAME;
-  }
-
-  _isReturnUnsetSymbol(node) {
-    return node instanceof nodes.Symbol && node.value === RETURN_UNSET_SYMBOL_NAME;
-  }
-
-  _emitReturnStateComparison(comparison, node) {
-    if (!this.analysis.findDeclaration(node._analysis, RETURN_CHANNEL_NAME)) {
-      this.fail(
-        'Return-state comparison is only valid inside a callable or script body that declares a return channel',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-    const expr = `${this.buffer.currentBuffer}.addReturnIsUnset("${RETURN_CHANNEL_NAME}", {lineno: ${comparison.positionNode.lineno}, colno: ${comparison.positionNode.colno}})`;
-    if (comparison.equals) {
-      this.emit(expr);
-    } else {
-      this.emit(`${expr}.then((value) => !value)`);
-    }
   }
 
   analyzeLookupVal(node, analysisPass) {
@@ -567,6 +500,10 @@ class CompilerBaseAsync extends CompilerCommon {
     let explicitThisDispatchMethodName = null;
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
     node._analysis.sequenceLockLookup = sequenceLockLookup;
+    if (this.return.isUnsetCall(node)) {
+      return this.return.analyzeIsUnsetCall(node);
+    }
+
     if (sequenceLockLookup) {
       const thisSharedFacts = this.channel.getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
       if (thisSharedFacts) {
@@ -724,6 +661,11 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileFunCall(node) {
+    if (this.return.isUnsetCall(node)) {
+      this.return.emitIsUnsetCall(node);
+      return;
+    }
+
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
     const directMacroCall = node._analysis.directMacroCall;
     const directMacroBinding = directMacroCall ? directMacroCall.binding : null;

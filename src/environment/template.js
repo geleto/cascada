@@ -7,7 +7,7 @@ const { Frame } = require('../runtime/frame');
 const { Obj } = require('../object');
 const { callbackAsap } = require('./utils');
 const { Context } = require('./context');
-const { markPromiseHandled } = require('../runtime/promises');
+const { markPromiseHandled } = require('../runtime/errors');
 
 // Lazy-loaded environment classes to avoid circular dependencies
 let Environment, AsyncEnvironment;

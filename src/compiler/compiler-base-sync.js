@@ -2,7 +2,6 @@
 
 const nodes = require('../nodes');
 const CompilerCommon = require('./compiler-common');
-const { RETURN_UNSET_SYMBOL_NAME } = require('./return-constants');
 
 const compareOps = {
   '==': '==',
@@ -24,10 +23,6 @@ class CompilerBaseSync extends CompilerCommon {
     const name = node.value;
     if (node.isCompilerInternal) {
       this.emit(name);
-      return;
-    }
-    if (name === RETURN_UNSET_SYMBOL_NAME) {
-      this.emit('runtime.RETURN_UNSET');
       return;
     }
     const frameValue = frame.lookup(name);

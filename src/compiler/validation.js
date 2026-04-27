@@ -7,10 +7,20 @@ const {
 } = require('../channel-types');
 const {
   RETURN_CHANNEL_NAME,
-  RETURN_UNSET_SYMBOL_NAME
-} = require('./return-constants');
+  RETURN_IS_UNSET_FUNCTION_NAME,
+  RESERVED_RETURN_SENTINEL_SYMBOL_NAME
+} = require('./return');
 
-const RESERVED_DECLARATION_NAMES = new Set([...CHANNEL_TYPES, 'value', 'component', 'this', RETURN_CHANNEL_NAME, RETURN_UNSET_SYMBOL_NAME, '__constructor__']);
+const RESERVED_DECLARATION_NAMES = new Set([
+  ...CHANNEL_TYPES,
+  'value',
+  'component',
+  'this',
+  RETURN_CHANNEL_NAME,
+  RETURN_IS_UNSET_FUNCTION_NAME,
+  RESERVED_RETURN_SENTINEL_SYMBOL_NAME,
+  '__constructor__'
+]);
 const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
 
 /**

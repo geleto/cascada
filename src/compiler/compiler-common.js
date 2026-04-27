@@ -14,6 +14,7 @@ const CompileMacro = require('./macro');
 const CompileBoundaries = require('./boundaries');
 const CompileChannel = require('./channel');
 const CompileComponent = require('./component');
+const CompileReturn = require('./return');
 
 /**
  * CompilerCommon - Common base class for compiler functionality
@@ -51,6 +52,7 @@ class CompilerCommon extends Obj {
     this.loop = new CompileLoop(this);
     this.buffer = new CompileBuffer(this);
     this.macro = new CompileMacro(this);
+    this.return = new CompileReturn(this);
     this.boundaries = new CompileBoundaries(this);
     this.channel = new CompileChannel(this);
     this.component = new CompileComponent(this);

@@ -11,7 +11,9 @@ const CompileBuffer = require('./buffer');
 const {
   ROOT_STARTUP_PROMISE_VAR
 } = require('./inheritance');
-const { RETURN_CHANNEL_NAME } = require('./return-constants');
+const {
+  RETURN_CHANNEL_NAME
+} = require('./return');
 
 const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
@@ -642,10 +644,7 @@ class CompilerAsync extends CompilerBaseAsync {
     for (const name of bodyDeclaredChannels) {
       merged.add(name);
     }
-    // __return__ is internal return-state infrastructure, not a user variable;
-    // guard state capture/restore must not include it because recovery must not undo a return.
-    merged.delete(RETURN_CHANNEL_NAME);
-    return Array.from(merged);
+    return this.return.excludeGuardCaptureChannels(merged);
   }
 
   _getGuardedChannelNames(usedChannels, guardTargets, analysis) {
@@ -904,23 +903,11 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeReturn() {
-    return {
-      mutates: [RETURN_CHANNEL_NAME]
-    };
+    return this.return.analyzeStatement();
   }
 
   compileReturn(node) {
-    const resultVar = this._tmpid();
-    this.emit(`let ${resultVar} = `);
-    if (node.value) {
-      this.compileExpression(node.value, null, node);
-    } else {
-      this.emit('null');
-    }
-    this.emit.line(';');
-    this.emit.line(
-      `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${RETURN_CHANNEL_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}");`
-    );
+    this.return.compileStatement(node);
   }
 
   analyzeMacro(node) {
@@ -1063,22 +1050,6 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  emitDeclareReturnChannel(bufferExpr) {
-    this.emit.line(
-      `runtime.declareBufferChannel(${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
-    );
-  }
-
-  emitReturnChannelSnapshot(bufferExpr, positionNode, resultVar) {
-    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
-    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    this.emit.line(
-      `const ${resultVar}_snapshot = ${bufferExpr}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${lineno}, colno: ${colno}});`
-    );
-    this.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
-    this.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? null : value);`);
-  }
-
   _emitRootCompositionPayloadInitialization(node) {
     const skippedNames = Object.create(null);
     this._getRootDeclarations(node).forEach((declaration) => {
@@ -1170,7 +1141,7 @@ class CompilerAsync extends CompilerBaseAsync {
   _getRootDeclarations(node) {
     const declares = [];
     if (this.scriptMode) {
-      declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
+      declares.push(this.return.createChannelDeclaration());
     } else {
       declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
     }
@@ -1294,7 +1265,7 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
       if (this.scriptMode) {
-        this.emitDeclareReturnChannel(this.buffer.currentBuffer);
+        this.return.emitDeclareChannel(this.buffer.currentBuffer);
       }
       const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
         ? node._analysis.sequenceLocks

@@ -28,11 +28,11 @@ describe('Cascada Script return', function () {
   it('supports the internal return-unset guard before and after a return', async function () {
     const events = [];
     const script = `
-      if __return__ == __RETURN_UNSET__
+      if __return_is_unset__()
         record("before")
       endif
       return "done"
-      if __return__ == __RETURN_UNSET__
+      if __return_is_unset__()
         record("after")
       endif
     `;
@@ -52,7 +52,7 @@ describe('Cascada Script return', function () {
     const script = `
       return "done"
       if true
-        if __return__ == __RETURN_UNSET__
+        if __return_is_unset__()
           record("after")
         endif
       endif
@@ -73,19 +73,19 @@ describe('Cascada Script return', function () {
     const script = `
       var i = 0
       while i < 1
-        if __return__ == __RETURN_UNSET__
+        if __return_is_unset__()
           record("while-before")
         endif
         i = i + 1
       endwhile
       for item in [1]
         return "done"
-        if __return__ == __RETURN_UNSET__
+        if __return_is_unset__()
           record("for-after")
         endif
       endfor
       each item in [1]
-        if __return__ == __RETURN_UNSET__
+        if __return_is_unset__()
           record("each-after")
         endif
       endeach
@@ -101,17 +101,17 @@ describe('Cascada Script return', function () {
     expect(events).to.eql(['while-before']);
   });
 
-  it('supports the inverse internal return-state comparison', async function () {
+  it('supports the inverse internal return-state guard', async function () {
     const events = [];
     const script = `
-      if __return__ != __RETURN_UNSET__
+      if __return_is_unset__() == false
         record("before")
       endif
-      if __return__ == __RETURN_UNSET__
+      if __return_is_unset__()
         record("unset")
       endif
       return "done"
-      if __return__ != __RETURN_UNSET__
+      if __return_is_unset__() == false
         record("after")
       endif
     `;
@@ -600,7 +600,7 @@ describe('Cascada Script return', function () {
 
       cases.forEach((script) => {
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.not.match(/\{%- if __return__ == __RETURN_UNSET__ -%\}\s*\{%- endif -%\}/);
+        expect(template).to.not.match(/\{%- if __return_is_unset__\(\) -%\}\s*\{%- endif -%\}/);
       });
     });
 
@@ -612,7 +612,7 @@ describe('Cascada Script return', function () {
 
       const commentIndex = template.indexOf('{#- final comment -#}');
       expect(commentIndex).to.be.greaterThan(-1);
-      expect(template).to.not.contain('__return__ == __RETURN_UNSET__');
+      expect(template).to.not.contain('__return_is_unset__()');
     });
 
     it('keeps comments and blank lines before the guard for later executable statements', async function () {
@@ -627,7 +627,7 @@ describe('Cascada Script return', function () {
       const template = scriptTranspiler.scriptToTemplate(script);
 
       const commentIndex = template.indexOf('{#- still a plain comment -#}');
-      const guardIndex = template.indexOf('{%- if __return__ == __RETURN_UNSET__ -%}');
+      const guardIndex = template.indexOf('{%- if __return_is_unset__() -%}');
       const recordIndex = template.indexOf('{%- do record("after") -%}');
       expect(commentIndex).to.be.greaterThan(-1);
       expect(guardIndex).to.be.greaterThan(commentIndex);
@@ -675,7 +675,7 @@ describe('Cascada Script return', function () {
       ].join('\n'));
       expect(cascaded).to.contain([
         '{%- endif -%}{%- endif -%}',
-        '{%- if __return__ == __RETURN_UNSET__ -%}{%- do record("after") -%}{%- endif -%}'
+        '{%- if __return_is_unset__() -%}{%- do record("after") -%}{%- endif -%}'
       ].join('\n'));
       expect(cascaded).to.not.contain('{%- do record("after") -%}{%- endif -%}{%- endif -%}');
 
@@ -685,8 +685,8 @@ describe('Cascada Script return', function () {
         'record("after")'
       ].join('\n'));
       expect(consecutive).to.contain([
-        '{%- if __return__ == __RETURN_UNSET__ -%}{%- return 2 -%}{%- endif -%}',
-        '{%- if __return__ == __RETURN_UNSET__ -%}{%- do record("after") -%}{%- endif -%}'
+        '{%- if __return_is_unset__() -%}{%- return 2 -%}{%- endif -%}',
+        '{%- if __return_is_unset__() -%}{%- do record("after") -%}{%- endif -%}'
       ].join('\n'));
       expect(consecutive).to.not.contain('{%- do record("after") -%}{%- endif -%}{%- endif -%}');
     });
@@ -755,7 +755,7 @@ describe('Cascada Script return', function () {
         'return "done"'
       ].join('\n'));
 
-      expect(template).to.contain('while __return__ == __RETURN_UNSET__ and (keepGoing)');
+      expect(template).to.contain('while __return_is_unset__() and (keepGoing)');
     });
 
     it('does not rewrite while conditions in scopes that cannot return', function () {
@@ -766,7 +766,7 @@ describe('Cascada Script return', function () {
         'endwhile'
       ].join('\n'));
 
-      expect(template).to.not.contain('while __return__ == __RETURN_UNSET__');
+      expect(template).to.not.contain('while __return_is_unset__()');
     });
 
     it('does not evaluate another while condition after return', async function () {
@@ -801,7 +801,7 @@ describe('Cascada Script return', function () {
       const template = scriptTranspiler.scriptToTemplate(script);
       const result = await env.renderScriptString(script);
 
-      expect(template).to.contain('while __return__ == __RETURN_UNSET__ and ((');
+      expect(template).to.contain('while __return_is_unset__() and ((');
       expect(template).to.contain(')) -%}');
       expect(template.split('\n')).to.have.length(script.split('\n').length);
       expect(result).to.be(1);
@@ -913,8 +913,8 @@ describe('Cascada Script return', function () {
         'return null'
       ].join('\n'));
 
-      expect(template).to.contain('{%- for item in items -%}{%- if __return__ == __RETURN_UNSET__ -%}');
-      expect(template).to.contain('{%- if __return__ == __RETURN_UNSET__ -%}    {%- return item -%}{%- endif -%}');
+      expect(template).to.contain('{%- for item in items -%}{%- if __return_is_unset__() -%}');
+      expect(template).to.contain('{%- if __return_is_unset__() -%}    {%- return item -%}{%- endif -%}');
     });
 
     it('does not gate parallel for bodies that only contain nested callable returns', function () {
@@ -927,7 +927,7 @@ describe('Cascada Script return', function () {
         'return null'
       ].join('\n'));
 
-      expect(template).to.not.contain('{%- for item in items -%}{%- if __return__ == __RETURN_UNSET__ -%}');
+      expect(template).to.not.contain('{%- for item in items -%}{%- if __return_is_unset__() -%}');
     });
 
     it('keeps the first source-visible parallel for return value', async function () {
@@ -1063,7 +1063,7 @@ describe('Cascada Script return', function () {
       try {
         await env.renderScriptString([
           'return failLater()',
-          'if __return__ == __RETURN_UNSET__',
+          'if __return_is_unset__()',
           '  record("after")',
           'endif'
         ].join('\n'), {
@@ -1289,12 +1289,12 @@ describe('Cascada Script return', function () {
     const script = `
       function pick()
         return "inner"
-        if __return__ == __RETURN_UNSET__
+        if __return_is_unset__()
           return "wrong"
         endif
       endfunction
       var picked = pick()
-      if __return__ == __RETURN_UNSET__
+      if __return_is_unset__()
         record("outer unset")
       endif
       return picked
@@ -1313,7 +1313,7 @@ describe('Cascada Script return', function () {
     const events = [];
     const script = `
       return fail()
-      if __return__ == __RETURN_UNSET__
+      if __return_is_unset__()
         record("after")
       endif
     `;
@@ -1338,6 +1338,7 @@ describe('Cascada Script return', function () {
   it('rejects user declarations that shadow internal return names', async function () {
     const scripts = [
       'var __return__ = 1\nreturn null',
+      'var __return_is_unset__ = 1\nreturn null',
       'var __RETURN_UNSET__ = 1\nreturn null'
     ];
 

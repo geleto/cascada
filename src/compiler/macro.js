@@ -1,7 +1,7 @@
 'use strict';
 
 const nodes = require('../nodes');
-const { RETURN_CHANNEL_NAME } = require('./return-constants');
+const { RETURN_CHANNEL_NAME } = require('./return');
 
 const CALLER_SCHED_CHANNEL_NAME = '__caller__';
 
@@ -51,7 +51,7 @@ class CompileMacro {
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
     const declares = [
       { name: 'caller', type: 'var', initializer: null },
-      { name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true }
+      this.compiler.return.createChannelDeclaration()
     ];
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
@@ -87,7 +87,7 @@ class CompileMacro {
       const decl = compiler.analysis && compiler.analysis.findDeclaration
         ? compiler.analysis.findDeclaration(node._analysis, name)
         : null;
-      if (name === RETURN_CHANNEL_NAME || (decl && decl.runtimeName === RETURN_CHANNEL_NAME)) {
+      if (compiler.return.isReturnChannelReference(name, decl)) {
         return false;
       }
       return !declared.has(name);
@@ -123,7 +123,7 @@ class CompileMacro {
     const declares = [];
     const declaresInParent = [];
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
-    declares.push({ name: RETURN_CHANNEL_NAME, type: 'var', initializer: null, internal: true });
+    declares.push(this.compiler.return.createChannelDeclaration());
     declares.push({ name: 'caller', type: 'var', initializer: null });
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
@@ -255,19 +255,19 @@ class CompileMacro {
       const returnVar = compiler._tmpid();
       return `(async () => {` +
         callerSyncPrefix +
-        `const ${returnVar}_snapshot = ${bufferId}.addSnapshot("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
         `${bufferId}.markFinishedAndPatchLinks();` +
+        `const ${returnVar}_snapshot = ${bufferId}.getChannel("${RETURN_CHANNEL_NAME}").finalSnapshot();` +
         `${errorCheck}` +
-        `return Promise.resolve(${returnVar}_snapshot).then((value) => value === runtime.RETURN_UNSET ? null : value);` +
+        `return ${returnVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? null : value);` +
         `})()`;
     } else {
       const textSnapshotVar = compiler._tmpid();
       return `(async () => {` +
         callerSyncPrefix +
-        `const ${textSnapshotVar} = ${bufferId}.addSnapshot("${compiler.buffer.currentTextChannelName}", {lineno: ${node.lineno}, colno: ${node.colno}});` +
         `${bufferId}.markFinishedAndPatchLinks();` +
+        `const ${textSnapshotVar} = ${bufferId}.getChannel("${compiler.buffer.currentTextChannelName}").finalSnapshot();` +
         `${errorCheck}` +
-        `return Promise.resolve(${textSnapshotVar}).then((value) => runtime.markSafe(value));` +
+        `return ${textSnapshotVar}.then((value) => runtime.markSafe(value));` +
         `})()`;
     }
   }
@@ -286,7 +286,7 @@ class CompileMacro {
     const hasCallerSupport = !!(rawCallerVar && allCallersBufferId);
 
     if (compiler.scriptMode) {
-      compiler.emitDeclareReturnChannel(bufferId);
+      compiler.return.emitDeclareChannel(bufferId);
     }
 
     if (hasCallerSupport) {

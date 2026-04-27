@@ -562,7 +562,7 @@ class CompileInheritance {
     this.emit.line(`    if (${ROOT_STARTUP_PROMISE_VAR}) {`);
     this.emit.line(`      await ${ROOT_STARTUP_PROMISE_VAR};`);
     this.emit.line('    }');
-    this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, node, returnVar);
+    this.compiler.return.emitFinalSnapshot(this.compiler.buffer.currentBuffer, returnVar);
     this.emit.line(`    await ${this.compiler.buffer.currentBuffer}.getFinishedPromise();`);
     this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) {`);
     this.emit.line('      inheritanceState.sharedRootBuffer.markFinishedAndPatchLinks();');
@@ -781,7 +781,7 @@ class CompileInheritance {
       extraParams
     );
     if (isScriptMethod) {
-      this.compiler.emitDeclareReturnChannel(this.compiler.buffer.currentBuffer);
+      this.compiler.return.emitDeclareChannel(this.compiler.buffer.currentBuffer);
     }
     const payloadOriginalArgsVar = this.compiler._tmpid();
     this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
@@ -834,7 +834,7 @@ class CompileInheritance {
     }
     if (isScriptMethod) {
       const resultVar = this.compiler._tmpid();
-      this.compiler.emitReturnChannelSnapshot(this.compiler.buffer.currentBuffer, block, resultVar);
+      this.compiler.return.emitFinalSnapshot(this.compiler.buffer.currentBuffer, resultVar);
       // Script methods still own their entry-local output buffer lifetime.
       // The invocation command waits on the per-call invocation buffer after
       // this local buffer closes, so caller-visible completion still covers the

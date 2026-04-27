@@ -1,8 +1,16 @@
 'use strict';
 
 const { POISON_KEY, RESOLVE_MARKER } = require('./markers');
-const { markPromiseHandled } = require('./promises');
 
+// Internal promises are sometimes observed through an owning command/channel
+// instead of by the promise object itself. Mark those promises handled so delayed
+// Cascada-owned consumption does not create process-level rejection warnings.
+function markPromiseHandled(promise) {
+  if (promise && typeof promise.catch === 'function') {
+    promise.catch(() => {});
+  }
+  return promise;
+}
 
 /**
  * PoisonedValue: An inspectable error container that can be detected synchronously
@@ -556,5 +564,6 @@ module.exports = {
   isError,
   collectErrors,
   handleError,
-  peekError
+  peekError,
+  markPromiseHandled
 };

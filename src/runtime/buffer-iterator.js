@@ -1,7 +1,7 @@
 'use strict';
 
 const { CommandBuffer } = require('./command-buffer');
-const { markPromiseHandled } = require('./promises');
+const { markPromiseHandled } = require('./errors');
 
 class BufferIterator {
   constructor(output) {

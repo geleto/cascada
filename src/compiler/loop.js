@@ -1,7 +1,6 @@
 'use strict';
 
 const nodes = require('../nodes');
-const { RETURN_CHANNEL_NAME } = require('./return-constants');
 
 class CompileLoop {
   constructor(compiler) {
@@ -74,9 +73,11 @@ class CompileLoop {
       );
 
       const bodyChannels = new Set(node.body._analysis.usedChannels || []);
-      const returnCheckEnabled = sequentialLoopBody &&
-        !whileConditionNode &&
-        bodyChannels.has(RETURN_CHANNEL_NAME);
+      const returnCheckChannelName = this.compiler.return.getSequentialLoopAdvanceCheckChannel({
+        sequentialLoopBody,
+        whileConditionNode,
+        bodyChannels
+      });
       let elseFuncId = 'null';
       let elseChannels = null;
 
@@ -94,7 +95,7 @@ class CompileLoop {
         bodyChannels: ${JSON.stringify(Array.from(bodyChannels))},
         elseChannels: ${JSON.stringify(elseChannels ? Array.from(elseChannels) : [])},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
-        returnCheckChannelName: ${returnCheckEnabled ? `"${RETURN_CHANNEL_NAME}"` : 'null'},
+        returnCheckChannelName: ${returnCheckChannelName ? `"${returnCheckChannelName}"` : 'null'},
         errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
       }`;
 

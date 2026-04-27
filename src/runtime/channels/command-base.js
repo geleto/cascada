@@ -1,8 +1,7 @@
 'use strict';
 
-const { isPoison, isPoisonError, isRuntimeFatalError, PoisonError, createPoison, handleError } = require('../errors');
+const { isPoison, isPoisonError, isRuntimeFatalError, PoisonError, createPoison, handleError, markPromiseHandled } = require('../errors');
 const { RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue } = require('../resolve');
-const { markPromiseHandled } = require('../promises');
 const contextualizedOutputErrorCache = new WeakMap();
 
 // Base class for all commands. Manages the optional deferred-result promise used by observable commands.

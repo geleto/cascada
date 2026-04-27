@@ -511,7 +511,7 @@ describe('Script Transpiler', () => {
     it('should convert while loops', () => {
       const script = 'text outText\nwhile condition\n  outText("Looping")\nendwhile\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- text outText -%}\n{%- while __return__ == __RETURN_UNSET__ and (condition) -%}\n  {%- command outText("Looping") -%}\n{%- endwhile -%}\n{%- return { text: outText.snapshot() } -%}`);
+      expect(template).to.equal(`{%- text outText -%}\n{%- while __return_is_unset__() and (condition) -%}\n  {%- command outText("Looping") -%}\n{%- endwhile -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
   });
 
@@ -1064,7 +1064,7 @@ return { text: outText.snapshot() }`;
       const template = scriptTranspiler.scriptToTemplate(script);
 
       expect(template).to.contain(`{%- ${DECL_TAG} stream = createAsyncStream() -%}`);
-      expect(template).to.contain('{%- while __return__ == __RETURN_UNSET__ and (stream.hasNext()) -%}');
+      expect(template).to.contain('{%- while __return_is_unset__() and (stream.hasNext()) -%}');
       expect(template).to.contain(`{%- ${DECL_TAG} chunk = stream.next() -%}`);
       expect(template).to.contain('{%- command outText("Processing chunk " + loop.index + ": " + chunk) -%}');
       expect(template).to.contain('{%- if !chunk -%}');

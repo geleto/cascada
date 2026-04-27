@@ -1984,7 +1984,7 @@ class ScriptTranspiler {
   }
 
   _returnGuardOpenTag() {
-    return '{%- if __return__ == __RETURN_UNSET__ -%}';
+    return '{%- if __return_is_unset__() -%}';
   }
 
   _returnGuardCloseTag() {
@@ -2041,7 +2041,7 @@ class ScriptTranspiler {
       }
 
       const endLine = processedLines[this._findContinuationEnd(processedLines, i)] || line;
-      line.codeContent = `__return__ == __RETURN_UNSET__ and (${line.codeContent || ''}`;
+      line.codeContent = `__return_is_unset__() and (${line.codeContent || ''}`;
       endLine.codeContent = `${endLine.codeContent || ''})`;
     }
   }

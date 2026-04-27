@@ -2,8 +2,7 @@
 
 const lib = require('../lib');
 const { Obj } = require('../object');
-const { createPoison } = require('../runtime/errors');
-const { markPromiseHandled } = require('../runtime/promises');
+const { createPoison, markPromiseHandled } = require('../runtime/errors');
 
 class ContextExecutionState {
   constructor() {

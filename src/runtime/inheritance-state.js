@@ -1,8 +1,7 @@
 'use strict';
 
-const { RuntimeFatalError, isPoison } = require('./errors');
+const { RuntimeFatalError, isPoison, markPromiseHandled } = require('./errors');
 const { resolveDuo } = require('./resolve');
-const { markPromiseHandled } = require('./promises');
 
 const INTERNAL_INHERITANCE_STATE = Symbol('cascadaInheritanceInternalState');
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';

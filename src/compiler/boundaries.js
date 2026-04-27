@@ -156,7 +156,7 @@ class CompileBoundaries {
       textChannelName
     }, () => {
       if (this.compiler.scriptMode) {
-        this.compiler.emitDeclareReturnChannel('currentBuffer');
+        this.compiler.return.emitDeclareChannel('currentBuffer');
         innerBodyFunction.call(this.compiler);
       } else {
         innerBodyFunction.call(this.compiler);
@@ -166,7 +166,7 @@ class CompileBoundaries {
     emitCompiler.asyncClosureDepth = originalAsyncClosureDepth;
 
     if (this.compiler.scriptMode) {
-      this.compiler.emitReturnChannelSnapshot('currentBuffer', positionNode, resultId);
+      this.compiler.return.emitFinalSnapshot('currentBuffer', resultId);
     } else {
       this._emitTextChannelSnapshot('currentBuffer', textChannelName, positionNode, resultId);
     }

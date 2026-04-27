@@ -14,9 +14,9 @@ the original script line numbers.
 The core idea is:
 
 1. A script `return` writes to the ordered `__return__` channel.
-2. `__return__ == __RETURN_UNSET__` is a valid ordered read of that channel.
+2. `__return_is_unset__()` is a valid ordered read of that channel.
 3. After a return has appeared in a lexical execution path, all following
-   statements in that path are guarded by `if __return__ == __RETURN_UNSET__`.
+   statements in that path are guarded by `if __return_is_unset__()`.
 4. The guard propagates outward through enclosing blocks until the current
    function boundary is reached.
 
@@ -41,24 +41,27 @@ turning the language into an imperative stop-the-world execution model.
 The return rewrite depends on a few compiler/runtime invariants. These are
 blocking prerequisites, not optional confirmations.
 
-### `__RETURN_UNSET__` Visibility
+### Return-State Guard Visibility
 
 `__RETURN_UNSET__` is not a user variable. The runtime sentinel currently exists
 as `runtime.RETURN_UNSET`.
 
-The implementation must make `__RETURN_UNSET__` a compiler-recognized internal
-symbol:
+The implementation must keep `__RETURN_UNSET__` reserved as a legacy/internal
+name, but it is no longer a compilable script expression. It must make
+`__return_is_unset__()` a compiler-recognized internal function:
 
 ```cascada
-__return__ == __RETURN_UNSET__
+__return_is_unset__()
 ```
 
-must compile as an ordered read of the current return channel compared with
-`runtime.RETURN_UNSET`.
+The function compiles as an ordered read of the current return channel compared
+with `runtime.RETURN_UNSET`, using `ReturnIsUnsetCommand` rather than a normal
+value read.
 
-The transpiler may emit the name `__RETURN_UNSET__`, but user scripts must not
-be able to declare or shadow it. The compiler must treat it like an internal
-symbol rather than a normal context lookup.
+The transpiler may emit the name `__return_is_unset__`, but user scripts must
+not be able to declare or shadow it. User scripts also must not be able to
+declare or shadow `__RETURN_UNSET__`. The compiler must treat
+`__return_is_unset__()` as an internal call rather than a normal context lookup.
 
 ### `__return__` Ownership And Initialization
 
@@ -86,7 +89,7 @@ or adjust linking/lookup for return channels. The guard architecture is only
 correct if:
 
 ```cascada
-if __return__ == __RETURN_UNSET__
+if __return_is_unset__()
 ```
 
 is an ordered read of the same return channel that later/following `return`
@@ -103,18 +106,11 @@ wrong for guard control flow: later statements should be skipped because return
 happened, and the final return resolution should be responsible for reporting
 the returned error.
 
-Therefore `__return__ == __RETURN_UNSET__` in injected guards must compile to an
-ordered return-state read that can distinguish `runtime.RETURN_UNSET` from "any
-set return value" without throwing because the return value is poison.
-
-Implementation options:
-
-- compile this exact internal comparison to a raw/no-error return-channel
-  observation
-- add a dedicated runtime/compiler primitive such as
-  `returnIsUnset(__return__)`
-- add a return-channel command that resolves only whether the return channel is
-  still unset
+Therefore `__return_is_unset__()` in injected guards must compile to an ordered
+return-state read that can distinguish `runtime.RETURN_UNSET` from "any set
+return value" without throwing because the return value is poison. The compiler
+lowers the internal function to `ReturnIsUnsetCommand`; it must not be compiled
+as a normal context function call or ordinary comparison.
 
 The ordinary final return snapshot must continue to inspect and report returned
 errors.
@@ -163,7 +159,7 @@ body. A normal `return expr` writes `expr` to `__return__`. From that point,
 ordered reads of:
 
 ```cascada
-__return__ == __RETURN_UNSET__
+__return_is_unset__()
 ```
 
 evaluate to false after the return write is visible in source order.
@@ -184,14 +180,14 @@ The lexer should split semicolon-separated logical statements inside `CODE`
 tokens:
 
 ```cascada
-return value; if __return__ == __RETURN_UNSET__
+return value; if __return_is_unset__()
 ```
 
 is treated like two logical script lines on the same physical line:
 
 ```cascada
 return value
-if __return__ == __RETURN_UNSET__
+if __return_is_unset__()
 ```
 
 The rule applies only inside `CODE` tokens. Semicolons inside strings, comments,
@@ -220,7 +216,7 @@ transpiler should therefore join logical semicolon lines without inserting a
 newline in the generated template.
 
 Injected return guards should use the same mechanism as user-authored
-semicolons. In other words, `return value; if __return__ == __RETURN_UNSET__` should
+semicolons. In other words, `return value; if __return_is_unset__()` should
 not be special string concatenation; it should produce two logical statements on
 one physical line.
 
@@ -250,7 +246,7 @@ the transpiler behaves as though it rewrote the script to:
 ```cascada
 var a = first()
 return a
-if __return__ == __RETURN_UNSET__; var b = second()
+if __return_is_unset__(); var b = second()
 return b
 endif
 ```
@@ -309,7 +305,7 @@ post-return work:
 ```cascada
 sometag
   return x
-  if __return__ == __RETURN_UNSET__; anothertag
+  if __return_is_unset__(); anothertag
     work()
   endanothertag
   endif; endsometag
@@ -402,12 +398,12 @@ Conceptual rewrite:
 
 ```cascada
 if ok
-  return a; if __return__ == __RETURN_UNSET__
+  return a; if __return_is_unset__()
   endif
 else
-  return b; if __return__ == __RETURN_UNSET__
+  return b; if __return_is_unset__()
   endif
-endif; if __return__ == __RETURN_UNSET__
+endif; if __return_is_unset__()
 next()
 endif
 ```
@@ -429,7 +425,7 @@ endwhile
 becomes:
 
 ```cascada
-while __return__ == __RETURN_UNSET__ and (condition)
+while __return_is_unset__() and (condition)
   body()
 endwhile
 ```
@@ -474,10 +470,10 @@ conceptually becomes:
 
 ```cascada
 for item in items
-  return item; if __return__ == __RETURN_UNSET__
+  return item; if __return_is_unset__()
   after()
   endif
-endfor; if __return__ == __RETURN_UNSET__
+endfor; if __return_is_unset__()
 outside()
 endif
 ```
@@ -490,7 +486,7 @@ short-circuit return behavior belongs.
 Because `each` advances one iteration at a time, the loop implementation can
 observe the function-local return channel before starting the next iteration.
 The guard cascade still handles statements inside the active iteration, but loop
-advancement must also check `__return__ == __RETURN_UNSET__` so later iterations
+advancement must also check `__return_is_unset__()` so later iterations
 are not started after return.
 
 ### Parallel For
@@ -506,7 +502,7 @@ body should be gated by an ordered return-state read:
 
 ```cascada
 for item in items
-  if __return__ == __RETURN_UNSET__
+  if __return_is_unset__()
     ...
   endif
 endfor
@@ -535,7 +531,7 @@ the return is visible skip the body.
 The return statement itself should also be guarded inside a `for` loop:
 
 ```cascada
-if __return__ == __RETURN_UNSET__
+if __return_is_unset__()
   return item
 endif
 ```
@@ -545,16 +541,16 @@ value. Combined with the normal guard waterfall, the conceptual rewrite is:
 
 ```cascada
 for item in items
-  if __return__ == __RETURN_UNSET__
+  if __return_is_unset__()
     doSomeWorkWithSideEffects(item)
     if item.ok
-      if __return__ == __RETURN_UNSET__
-        return item; if __return__ == __RETURN_UNSET__
+      if __return_is_unset__()
+        return item; if __return_is_unset__()
         endif
       endif
     endif
   endif
-endfor; if __return__ == __RETURN_UNSET__
+endfor; if __return_is_unset__()
 outside()
 endif
 ```
@@ -603,18 +599,18 @@ Conceptual rewrite:
 ```cascada
 if a
   if b
-    return value; if __return__ == __RETURN_UNSET__
+    return value; if __return_is_unset__()
     endif
-  endif; if __return__ == __RETURN_UNSET__
+  endif; if __return_is_unset__()
   afterInner()
   endif
-endif; if __return__ == __RETURN_UNSET__
+endif; if __return_is_unset__()
 afterOuter()
 endif
 ```
 
 The important property is that every statement after the return in the same
-function is dominated by an ordered `__return__ == __RETURN_UNSET__` check.
+function is dominated by an ordered `__return_is_unset__()` check.
 
 ## Continuations And Comments
 
@@ -809,15 +805,14 @@ integration work.
 
 Phase 1 review status:
 
-- Fixed in Phase 1: `__RETURN_UNSET__` is reserved and compiled as
-  `runtime.RETURN_UNSET`.
+- Fixed in Phase 1, later simplified: `__RETURN_UNSET__` remains reserved, but generated guards now use `__return_is_unset__()` instead of compiling the sentinel as a script expression.
 - Fixed in Phase 1: exact return-state comparisons use an ordered,
   poison-inspection-free return-state observation rather than an ordinary
   return-channel snapshot.
 - Fixed in Phase 1: child control-flow and loop buffers link the current
   function-local `__return__` channel when they read return state.
 - Fixed in Phase 1: the inverse internal comparison
-  `__return__ != __RETURN_UNSET__` preserves ordinary observable-command
+  `!__return_is_unset__()` preserves ordinary observable-command
   rejection behavior.
 - Test organization: return-specific tests should live in `tests/pasync/return.js`.
   Later phases should extend this file or split by behavior/domain if it grows
@@ -997,8 +992,7 @@ logical lines or guard rewriting.
 
 Required behavior:
 
-- `__RETURN_UNSET__` is a compiler-recognized internal symbol that compiles to
-  `runtime.RETURN_UNSET`.
+- `__RETURN_UNSET__` is a reserved legacy/internal name, not a compilable script expression.
 - `__RETURN_UNSET__` cannot be declared or shadowed by user code.
 - The transpiler does not initialize `__return__`; the compiler continues to
   declare the return channel for each return-owning scope.
@@ -1045,14 +1039,14 @@ Required behavior:
 Example:
 
 ```cascada
-return value; if __return__ == __RETURN_UNSET__
+return value; if __return_is_unset__()
 ```
 
 must be processed as:
 
 ```cascada
 return value
-if __return__ == __RETURN_UNSET__
+if __return_is_unset__()
 ```
 
 while still producing one physical generated-template line.
@@ -1138,7 +1132,7 @@ Focused contract tests only if needed:
 Implement and verify that the injected guard expression:
 
 ```cascada
-__return__ == __RETURN_UNSET__
+__return_is_unset__()
 ```
 
 is valid in every script/function scope where the transpiler may emit it.
@@ -1146,8 +1140,8 @@ is valid in every script/function scope where the transpiler may emit it.
 Required behavior:
 
 - `__return__` is the current function/script return channel.
-- `__RETURN_UNSET__` compiles to `runtime.RETURN_UNSET`; it is not a normal variable.
-- Reads of `__return__ == __RETURN_UNSET__` are ordered reads and participate in normal
+- `__return_is_unset__()` compiles to `ReturnIsUnsetCommand`; it is not a normal function call.
+- Reads of `__return_is_unset__()` are ordered reads and participate in normal
   Cascada temporal correctness.
 - Child control-flow buffers and loop bodies observe the same function-local
   return channel rather than shadowing it.
@@ -1245,10 +1239,10 @@ containsReturn = true
 ```
 
 The pending guard is materialized as
-`if __return__ == __RETURN_UNSET__` only when a later real statement in the same
+`if __return_is_unset__()` only when a later real statement in the same
 frame needs protection. Comments, blank lines, middle tags, end tags, and EOF do
 not force the pending guard to open. This prevents empty injected blocks such as
-`if __return__ == __RETURN_UNSET__; endif` when the return is already at the end
+`if __return_is_unset__(); endif` when the return is already at the end
 of a branch or scope. Repeated pending guards at the same materialization point
 are coalesced into one guard because they all read the same ordered return state.
 
@@ -1277,11 +1271,11 @@ if outer
   if inner
     return value
   endif
-  if __return__ == __RETURN_UNSET__
+  if __return_is_unset__()
   afterInner()
   endif
 endif
-if __return__ == __RETURN_UNSET__
+if __return_is_unset__()
 afterOuter()
 endif
 ```
@@ -1429,7 +1423,7 @@ while condition
 Generated logical script:
 
 ```cascada
-while __return__ == __RETURN_UNSET__ and (condition)
+while __return_is_unset__() and (condition)
 ```
 
 Requirements:
@@ -1483,7 +1477,7 @@ Required behavior:
 - Add an explicit return-check mechanism before starting each next iteration.
 - Ensure returns inside the body use the normal guard stack.
 - Ensure later iterations are not run once return is visible by checking
-  `__return__ == __RETURN_UNSET__` before starting each next iteration.
+  `__return_is_unset__()` before starting each next iteration.
 - Preserve normal sequential loop behavior for `each`: once return is visible,
   do not start later iterations.
 
@@ -1529,10 +1523,10 @@ shape and the cascade after `endfor`:
 
 ```cascada
 for item in items
-  return item; if __return__ == __RETURN_UNSET__
+  return item; if __return_is_unset__()
   after()
   endif
-endfor; if __return__ == __RETURN_UNSET__
+endfor; if __return_is_unset__()
 outside()
 endif
 ```
@@ -1548,7 +1542,7 @@ Parallel `for` requirements:
   return became visible.
 - For parallel `for` bodies that contain a runtime return in the current
   return-owning scope, wrap the whole loop body in
-  `if __return__ == __RETURN_UNSET__`.
+  `if __return_is_unset__()`.
 - This whole-body guard is an ordered return-channel read. It may reduce
   concurrency for return-capable `for` bodies, but it must remain deterministic
   and source-ordered.
@@ -1557,7 +1551,7 @@ Parallel `for` requirements:
 - For parallel `for`, later ordered iterations that have not yet passed the body
   guard skip the whole body after return is visible.
 - For parallel `for`, guard the `return` statement itself with
-  `if __return__ == __RETURN_UNSET__` so later returns do not overwrite the first
+  `if __return_is_unset__()` so later returns do not overwrite the first
   visible return value.
 - For parallel `for`, generated post-return guards also protect statements after
   the return point in later source-ordered iterations. Those statements may wait
@@ -1590,8 +1584,8 @@ Integration-first tests for this step:
 
 Focused contract tests only if needed:
 
-- return statement inside `for` is wrapped in `if __return__ == __RETURN_UNSET__`
-- return-capable `for` body is wrapped in `if __return__ == __RETURN_UNSET__`
+- return statement inside `for` is wrapped in `if __return_is_unset__()`
+- return-capable `for` body is wrapped in `if __return_is_unset__()`
 - physical line count is preserved for generated for-loop guards
 
 ### 10. Poison And No-Value Return Semantics
@@ -1663,10 +1657,11 @@ This design intentionally keeps return semantics in script syntax lowering:
 
 - The script transpiler emits ordinary Cascada template tags.
 - The compiler continues to compile `return` as a write to `__return__`.
-- The compiler treats `__RETURN_UNSET__` as an internal symbol for
-  `runtime.RETURN_UNSET`, not as a user variable.
+- The compiler keeps `__RETURN_UNSET__` reserved, but direct runtime sentinel use happens only in generated JavaScript.
+- The compiler treats `__return_is_unset__()` as an internal return-state guard
+  call, not as a user function call.
 - The compiler/runtime must make function-local return channels observable from
   child control-flow and loop buffers where injected guards run.
-- Ordered `__return__ == __RETURN_UNSET__` reads are used for control-flow guards.
+- Ordered `__return_is_unset__()` reads are used for control-flow guards.
 - Physical line numbers are preserved by allowing semicolon-separated logical
   statements inside `CODE` tokens.
