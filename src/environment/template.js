@@ -1,7 +1,7 @@
 'use strict';
 
 import * as lib from '../lib.js';
-import * as compiler from '../compiler/compiler.js';
+import {compile} from '../compiler/compiler.js';
 import * as globalRuntime from '../runtime/runtime.js';
 import {Frame} from '../runtime/frame.js';
 import {Obj} from '../object.js';
@@ -284,7 +284,7 @@ class Template extends Obj {
   }
 
   _compileSource() {
-    return compiler.compile(this.tmplStr,
+    return compile(this.tmplStr,
       this.env.asyncFilters,
       this.env.extensionsList,
       this.path,
@@ -427,7 +427,7 @@ class AsyncTemplate extends Template {
   }
 
   _compileSource() {
-    return compiler.compile(this.tmplStr,
+    return compile(this.tmplStr,
       this.env.asyncFilters,
       this.env.extensionsList,
       this.path,

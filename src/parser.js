@@ -3,7 +3,7 @@
 import * as lexer from './lexer.js';
 import * as nodes from './nodes.js';
 import {Obj} from './object.js';
-import * as lib from './lib.js';
+import {TemplateError, indexOf} from './lib.js';
 import {RESERVED_DECLARATION_NAMES} from './compiler/validation.js';
 import {CHANNEL_TYPE_FACTS} from './channel-types.js';
 
@@ -66,7 +66,7 @@ class Parser extends Obj {
     if (colno !== undefined) {
       colno += 1;
     }
-    return new lib.TemplateError(msg, lineno, colno);
+    return new TemplateError(msg, lineno, colno);
   }
 
   fail(msg, lineno, colno) {
@@ -1268,7 +1268,7 @@ class Parser extends Obj {
     }
 
     if (this.breakOnBlocks &&
-      lib.indexOf(this.breakOnBlocks, tok.value) !== -1) {
+      indexOf(this.breakOnBlocks, tok.value) !== -1) {
       return null;
     }
 
@@ -1336,7 +1336,7 @@ class Parser extends Obj {
         if (this.extensions.length) {
           for (let i = 0; i < this.extensions.length; i++) {
             const ext = this.extensions[i];
-            if (lib.indexOf(ext.tags || [], tok.value) !== -1) {
+            if (indexOf(ext.tags || [], tok.value) !== -1) {
               return ext.parse(this, nodes, lexer);
             }
           }

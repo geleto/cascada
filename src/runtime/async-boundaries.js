@@ -1,19 +1,19 @@
 'use strict';
 
-import * as errors from './errors.js';
-import * as buffer from './command-buffer.js';
+import {RuntimeError, handleError, markPromiseHandled} from './errors.js';
+import {createCommandBuffer} from './command-buffer.js';
 
 function _createChildBoundary(parentBuffer, usedChannels, isolatedContext = null) {
   const linkedChannels = Array.isArray(usedChannels) ? usedChannels : null;
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
-  const childBuffer = buffer.createCommandBuffer(bufferContext, null, linkedChannels, parentBuffer || null);
+  const childBuffer = createCommandBuffer(bufferContext, null, linkedChannels, parentBuffer || null);
   return { childBuffer };
 }
 
 function _reportBoundaryError(err, boundaryName, context, cb) {
-  const reportedError = err instanceof errors.RuntimeError
+  const reportedError = err instanceof RuntimeError
     ? err
-    : errors.handleError(err, 0, 0, boundaryName, context && context.path ? context.path : null);
+    : handleError(err, 0, 0, boundaryName, context && context.path ? context.path : null);
   cb(reportedError);
 }
 
@@ -91,7 +91,7 @@ function runValueBoundary(parentBuffer, usedChannels, asyncFn) {
   const promise = Promise.resolve()
     .then(() => asyncFn(childBuffer))
     .finally(() => _finalizeBoundary(childBuffer));
-  errors.markPromiseHandled(promise);
+  markPromiseHandled(promise);
   return promise;
 }
 

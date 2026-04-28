@@ -1,7 +1,7 @@
 'use strict';
 
 import * as nodes from '../nodes.js';
-import * as lib from '../lib.js';
+import {TemplateError} from '../lib.js';
 import {ErrorContext} from '../runtime/errors.js';
 import {Obj} from '../object.js';
 
@@ -16,8 +16,6 @@ import CompileBoundaries from './boundaries.js';
 import CompileChannel from './channel.js';
 import CompileComponent from './component.js';
 import CompileReturn from './return.js';
-
-const {TemplateError} = lib;
 
 /**
  * CompilerCommon - Common base class for compiler functionality

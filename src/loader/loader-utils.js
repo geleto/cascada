@@ -1,6 +1,6 @@
 'use strict';
 
-import * as lib from '../lib.js';
+import {asyncIter} from '../lib.js';
 
 // WeakMap to store resource caches for each loader (no mutation of loader objects)
 const resourceCaches = new WeakMap();
@@ -273,8 +273,8 @@ function createSourceObject(src, path, noCache = false) {
  * @param {Function} callback The callback function (err, result)
  */
 function callLoaders(loaders, name, resolveFromLoader, callback) {
-  // Use the exact same lib.asyncIter call as the original code
-  lib.asyncIter(loaders, (loader, i, next, done) => {
+  // Preserve the original sequential loader iteration behavior.
+  asyncIter(loaders, (loader, i, next, done) => {
     function handle(err, src) {
       if (err) {
         done(err);

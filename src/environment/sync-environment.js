@@ -1,6 +1,6 @@
 'use strict';
 
-import * as lib from '../lib.js';
+import {isFunction} from '../lib.js';
 import {BaseEnvironment} from './base-environment.js';
 import {callbackAsap} from './utils.js';
 import {Template} from './template.js';
@@ -19,7 +19,7 @@ class Environment extends BaseEnvironment {
 
   /** @deprecated Use renderTemplate instead */
   render(name, ctx, cb) {
-    if (lib.isFunction(ctx)) {
+    if (isFunction(ctx)) {
       cb = ctx;
       ctx = null;
     }
@@ -53,7 +53,7 @@ class Environment extends BaseEnvironment {
   }
 
   renderTemplateString(src, ctx, opts, cb) {
-    if (lib.isFunction(opts)) {
+    if (isFunction(opts)) {
       cb = opts;
       opts = {};
     }

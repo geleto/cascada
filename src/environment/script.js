@@ -1,9 +1,9 @@
 'use strict';
 
-import * as lib from '../lib.js';
+import {isString} from '../lib.js';
 import scriptTranspiler from '../script/script-transpiler.js';
 import {Template, AsyncTemplate} from './template.js';
-import * as compiler from '../compiler/compiler.js';
+import {compile} from '../compiler/compiler.js';
 
 /**
  * Script class - represents a compiled Cascada script.
@@ -11,7 +11,7 @@ import * as compiler from '../compiler/compiler.js';
 class Script extends Template {
   init(src, env, path, eagerCompile) {
     // Convert script to template if it's a string
-    if (lib.isString(src)) {
+    if (isString(src)) {
       const template = scriptTranspiler.scriptToTemplate(src);
       src = template;
     }
@@ -42,7 +42,7 @@ class Script extends Template {
   }
 
   _compileSource() {
-    return compiler.compile(this.tmplStr,
+    return compile(this.tmplStr,
       this.env.asyncFilters,
       this.env.extensionsList,
       this.path,

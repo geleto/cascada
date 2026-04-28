@@ -1,7 +1,7 @@
 'use strict';
 
 import * as nodes from './nodes.js';
-import * as lib from './lib.js';
+import {indexOf} from './lib.js';
 import * as scopeBoundaries from './compiler/scope-boundaries.js';
 import {getScriptExtendsSourceOrderViolation} from './compiler/validation.js';
 
@@ -129,7 +129,7 @@ function _liftFilters(node, asyncFilters, prop) {
     if (descNode instanceof nodes.Block) {
       return descNode;
     } else if ((descNode instanceof nodes.Filter &&
-      lib.indexOf(asyncFilters, descNode.name.value) !== -1) ||
+      indexOf(asyncFilters, descNode.name.value) !== -1) ||
       descNode instanceof nodes.CallExtensionAsync) {
       symbol = new nodes.Symbol(descNode.lineno,
         descNode.colno,

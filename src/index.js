@@ -1,6 +1,7 @@
 'use strict';
 
 import * as lib from './lib.js';
+import {isObject} from './lib.js';
 import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
 import Loader from './loader/loader.js';
 import {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
@@ -51,7 +52,7 @@ let asyncE;
 
 export function configure(templatesPath, opts, forAsync = false) {
   opts = opts || {};
-  if (lib.isObject(templatesPath)) {
+  if (isObject(templatesPath)) {
     opts = templatesPath;
     templatesPath = null;
   }

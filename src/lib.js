@@ -1,11 +1,9 @@
 'use strict';
 
-import * as runtimeErrors from './runtime/errors.js';
+import {RuntimeError, PoisonError} from './runtime/errors.js';
 
 var ArrayProto = Array.prototype;
 var ObjProto = Object.prototype;
-var RuntimeError = runtimeErrors.RuntimeError;
-var PoisonError = runtimeErrors.PoisonError;
 var escapeMap = {
   '&': '&amp;',
   '"': '&quot;',

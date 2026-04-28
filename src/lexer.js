@@ -1,7 +1,7 @@
 /* eslint-disable camelcase */
 'use strict';
 
-import * as lib from './lib.js';
+import {indexOf} from './lib.js';
 
 let whitespaceChars = ' \n\t\r\u00A0';
 let delimChars = '()[]{}%*-+~/#,:|.<>=!';
@@ -171,12 +171,12 @@ class Tokenizer {
         let curComplex = cur + this.current();
         let type;
 
-        if (lib.indexOf(complexOps, curComplex) !== -1) {
+        if (indexOf(complexOps, curComplex) !== -1) {
           this.forward();
           cur = curComplex;
 
           // See if this is a strict equality/inequality comparator
-          if (lib.indexOf(complexOps, curComplex + this.current()) !== -1) {
+          if (indexOf(complexOps, curComplex + this.current()) !== -1) {
             cur = curComplex + this.current();
             this.forward();
           }

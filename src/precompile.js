@@ -2,12 +2,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import * as lib from './lib.js';
-import * as compiler from './compiler/compiler.js';
+import {_prettifyError} from './lib.js';
+import {compile} from './compiler/compiler.js';
 import {Environment, AsyncEnvironment} from './environment/environment.js';
 import precompileGlobal from './precompile-global.js';
-
-const {_prettifyError} = lib;
 
 function match(filename, patterns) {
   if (!Array.isArray(patterns)) {
@@ -144,7 +142,7 @@ function _precompile(str, name, env, opts) {
   name = name.replace(/\\/g, '/');
 
   try {
-    template = compiler.compile(str,
+    template = compile(str,
       asyncFilters,
       extensions,
       name,
