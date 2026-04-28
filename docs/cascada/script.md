@@ -6,13 +6,15 @@
 
 [Cascada Github](https://github.com/geleto/cascada)
 
+**Cascada Script** inverts the traditional model: it is parallel by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is always identical to sequential execution.
+
 ## Cascada Script  -  Implicitly Parallel, Explicitly Sequential
 
 **Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
 It uses syntax and language constructs that are instantly familiar to Python and JavaScript developers, while offering language-level support for boilerplate-free concurrent workflows, explicit control over side effects, deterministic output construction, and dataflow-based error handling with recovery rollbacks.
 
-Cascada inverts the traditional async model:
+The core execution model:
 
 * ⚡ **Parallel by default**  -  Independent operations — variable assignments, function calls, loop iterations — execute concurrently without `async`, `await`, or promise management.
 * 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
@@ -29,7 +31,7 @@ Cascada Script is particularly well suited for:
 
 In short, Cascada lets developers **write clear, linear logic** while the engine handles **concurrent execution, ordering guarantees, and error propagation** automatically.
 
-**What makes Cascada Script remarkable is how unremarkable it looks.** Despite executing concurrently by default, it uses the same familiar constructs found in Python and JavaScript — no `async`, no `await`, no callbacks, no promise chains. Here's what a real concurrent workflow looks like:
+Despite executing concurrently by default, it reads exactly like the synchronous code you already write:
 
 ```javascript
 var user  = fetchUser(userId)   // ┐ start immediately,
