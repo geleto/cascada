@@ -3,7 +3,7 @@ import {TemplateRuntime, AsyncTemplateRuntime} from './template-runtime.js';
 
 function assertPrecompiledSource(src) {
   if (isString(src) || (isObject(src) && src.type === 'string')) {
-    throw new Error('This environment only supports precompiled templates');
+    throw new Error('This environment only supports precompiled sources');
   }
 }
 
@@ -21,4 +21,12 @@ class AsyncPrecompiledTemplate extends AsyncTemplateRuntime {
   }
 }
 
-export {PrecompiledTemplate, AsyncPrecompiledTemplate};
+class AsyncPrecompiledScript extends AsyncTemplateRuntime {
+  init(src, env, path, eagerCompile) {
+    assertPrecompiledSource(src);
+    super.init(src, env, path, eagerCompile);
+    this.scriptMode = true;
+  }
+}
+
+export {PrecompiledTemplate, AsyncPrecompiledTemplate, AsyncPrecompiledScript};

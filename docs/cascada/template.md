@@ -342,22 +342,10 @@ Prefer ESM imports in Node and modern browser builds. The main entry can compile
 import { AsyncEnvironment, compileTemplateAsync, precompileTemplateAsync } from 'cascada-engine';
 ```
 
-Use the precompiled entry when templates/scripts are compiled ahead of time:
+Use the precompiled entry when templates are compiled ahead of time and the app only needs the runtime. This entry does not import the compiler, parser, lexer, or precompile API:
 
 ```javascript
 import { AsyncEnvironment as PrecompiledEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled';
 ```
 
-Use the browser-specific precompiled entry when you specifically want the browser slim ESM runtime:
-
-```javascript
-import { AsyncEnvironment as PrecompiledEnvironment, PrecompiledLoader } from 'cascada-engine/browser/precompiled';
-```
-
-Legacy script-tag/global builds expose `window.cascada`:
-
-```javascript
-const env = new window.cascada.AsyncEnvironment();
-```
-
-For migration pages, `window.nunjucks` may alias `window.cascada` for Nunjucks compatibility. New Cascada-specific browser code should use ESM imports.
+Old Nunjucks-style UMD bundles and automatic `window.nunjucks` globals are not supported by the ESM package. Use ESM imports in browser code.

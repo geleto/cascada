@@ -244,14 +244,14 @@ Current Node coverage:
 
 Current browser coverage:
 
-- `scripts/run-browser-tests.js` starts the local test server and opens `tests/browser/slim.html` and `tests/browser/index.html` in Playwright.
+- `scripts/run-browser-tests.js` starts the local test server and opens `tests/browser/precompiled.html` and `tests/browser/index.html` in Playwright.
 - Browser pages import native ESM modules from `src`.
 - Browser pages use import maps for test-only and browser-shimmed bare imports.
 - The test server applies `babel-plugin-istanbul` only to served `src/**/*.js` modules and preserves native `import`/`export`.
 - Each page runs browser Mocha and sends `{ stats, coverage: window.__coverage__ }` back through `window.sendTestResults`.
 - Browser coverage is written to:
   - `coverage/browser-std.json`
-  - `coverage/browser-slim.json`
+  - `coverage/browser-precompiled.json`
 - Browser stats are written to `coverage/browser-tests-stats.json`.
 - Browser coverage is merged with `istanbul-lib-coverage`.
 - `istanbul-lib-report` and `istanbul-reports` write text/html/lcov reports from merged coverage.
@@ -260,7 +260,7 @@ Current combined reporting:
 
 - `scripts/report-results.js` reads:
   - `coverage/browser-std.json`
-  - `coverage/browser-slim.json`
+  - `coverage/browser-precompiled.json`
   - `coverage/coverage-final.json`
   - `coverage/browser-tests-stats.json`
   - `coverage/node-tests-stats.json`
@@ -388,7 +388,7 @@ That lane should verify:
 - async rendering still works when templates are precompiled,
 - coverage and stats are collected separately from the main browser ESM lane.
 
-## Current Slim Path
+## Former Slim Path
 
 The old `slim` path was implemented as a Webpack build mode, not as a separate source architecture.
 
@@ -399,14 +399,14 @@ Previously, `scripts/bundle.js` changed the browser bundle in two important ways
 
 The generated artifact was `tests/browser/nunjucks-slim.min.js` in test mode, or `dist/browser/nunjucks-slim*.js` in package build mode. It was advertised as "only works with precompiled templates".
 
-The browser test page `tests/browser/slim.html` loads:
+The old browser test page `tests/browser/slim.html` loaded:
 
 - the full bundle first as `window.nunjucksFull`,
 - the slim bundle as `window.nunjucks`,
 - `tests/browser/precompiled-templates.js`,
 - then a subset of the browser tests.
 
-The full bundle is still used by the slim test helper to call `precompileString(...)` dynamically during tests. The slim runtime then loads the generated template through `PrecompiledLoader`.
+The full bundle was used by the slim test helper to call `precompileString(...)` dynamically during tests. The slim runtime then loaded the generated template through `PrecompiledLoader`.
 
 `PrecompiledLoader` itself is simple. It maps a template name to a source object:
 
@@ -441,11 +441,11 @@ So the real precompiled runtime dependency is not the compiler. It is:
 - runtime helpers,
 - filters/tests/globals needed by the template.
 
-The current slim bundle hides compiler imports by replacing them with empty modules. That works because precompiled templates never call `_compileSource()`. In ESM this should be made explicit by module boundaries rather than by bundle rewrites.
+The old slim bundle hid compiler imports by replacing them with empty modules. That worked because precompiled templates never called `_compileSource()`. In ESM this is made explicit by module boundaries rather than by bundle rewrites.
 
-## Async Coverage Gap In Current Slim Path
+## Async Coverage Gap In Former Slim Path
 
-The current slim browser page appears to test the precompiled path mostly through legacy sync-oriented tests.
+The old slim browser page appeared to test the precompiled path mostly through legacy sync-oriented tests.
 
 `tests/browser/index.html` loads async suites such as:
 
@@ -461,9 +461,9 @@ The current slim browser page appears to test the precompiled path mostly throug
 - `tests/pasync/structures.js`
 - `tests/pasync/variables.js`
 
-`tests/browser/slim.html` does not load those `pasync` suites. It loads the traditional compiler/runtime/filter/global/Jinja tests against precompiled templates.
+`tests/browser/precompiled.html` does not load those `pasync` suites. It loads the traditional compiler/runtime/filter/global/Jinja tests against precompiled templates.
 
-The ESM migration should add explicit async precompiled tests. Do not assume the old slim path already covers async precompiled rendering.
+The ESM migration adds explicit async precompiled tests in `tests/precompiled-entry.js`. Do not assume the old slim path already covers async precompiled rendering.
 
 ## ESM Precompiled Runtime
 
@@ -476,19 +476,17 @@ Target entries:
 ```text
 src/index.js                  full ESM entry: runtime + compiler/precompile APIs
 src/precompiled/index.js      shared precompiled runtime entry, no compiler
-src/browser/precompiled.js    browser precompiled ESM entry
-src/node/precompiled.js       optional Node precompiled ESM entry, if Node needs a distinct surface
 ```
 
-`src/browser/index.js` is not required unless the package later needs a browser-specific full entry. The important browser-specific entry is `src/browser/precompiled.js`, because that is the ESM replacement for the old slim browser runtime.
+`src/browser/index.js` is not required unless the package later needs a browser-specific full entry. The shared `src/precompiled/index.js` entry is the ESM replacement for the old slim browser runtime.
 
 Done:
 
 - `src/environment/template-runtime.js` owns compiler-free rendering for compiled template objects.
 - `src/environment/template.js` adds string compilation on top of the runtime class.
 - `src/environment/precompiled-template.js` and `src/environment/precompiled-environment.js` reject string compilation and render only precompiled sources.
-- `src/precompiled/index.js` and `src/browser/precompiled.js` expose the runtime-only public surface.
-- `package.json` exports `./precompiled` and `./browser/precompiled`.
+- `src/precompiled/index.js` exposes the runtime-only public surface.
+- `package.json` exports `./precompiled`.
 
 The precompiled entries should not import:
 
@@ -531,7 +529,7 @@ The precompiled environment should:
 - avoid script transpilation and template compilation APIs;
 - keep the public full entry unchanged.
 
-The browser entry can then import only the precompiled environment, `PrecompiledLoader`, browser-safe loaders if needed, and runtime support modules. Tests should assert both behavior and import boundaries: rendering a precompiled template through this entry should pass, and the entry graph should not include compiler/parser/lexer/precompile modules.
+The browser precompiled harness can then import only the shared precompiled environment, `PrecompiledLoader`, browser-safe shims if needed, and runtime support modules. Tests should assert both behavior and import boundaries: rendering a precompiled template through this entry should pass, and the entry graph should not include compiler/parser/lexer/precompile modules.
 
 This avoids the old Webpack trick where compiler modules are present as empty mocks. It also keeps the package honest: a precompiled entry is only "slim" if ESM static imports cannot pull the compiler in by accident.
 
@@ -570,8 +568,8 @@ export default templates;
 The browser precompiled test page can then use:
 
 ```js
-import { AsyncEnvironment } from '../../src/browser/precompiled.js';
-import { PrecompiledLoader } from '../../src/browser/precompiled.js';
+import { AsyncEnvironment } from '../../src/precompiled/index.js';
+import { PrecompiledLoader } from '../../src/precompiled/index.js';
 import templates from './precompiled-templates.js';
 
 const env = new AsyncEnvironment(new PrecompiledLoader(templates));
@@ -587,7 +585,7 @@ Done for the current browser precompiled fixture:
 - `bin/precompile --format esm` exposes the wrapper from the CLI.
 - `tests/browser/precompiled-templates.js` is generated as a native ESM module.
 
-The slim browser harness now imports the precompiled map as ESM and passes it through an explicit `PrecompiledLoader`. The native ESM browser test path no longer depends on `window.nunjucksPrecompiled`.
+The precompiled browser harness now imports the precompiled map as ESM and passes it through an explicit `PrecompiledLoader`. The native ESM browser test path no longer depends on `window.nunjucksPrecompiled`.
 
 ## Node Precompiled Lane
 
@@ -620,7 +618,7 @@ The stronger long-term contract is:
 - Node full entry can compile and render.
 - Node precompiled entry can render precompiled templates without compiler imports.
 - Browser full entry can compile and render in modern browser ESM.
-- Browser precompiled entry can render precompiled templates without compiler imports.
+- Shared precompiled entry can render precompiled templates without compiler imports.
 
 ## Precompiled Browser Test Modes
 
@@ -633,7 +631,7 @@ tests/browser/esm.html
   writes coverage/browser-esm.json
 
 tests/browser/precompiled.html
-  imports the browser precompiled ESM entry
+  imports the shared precompiled ESM entry
   imports precompiled-templates.js
   runs precompiled runtime tests, including async cases
   writes coverage/browser-precompiled.json
@@ -869,12 +867,12 @@ Replace:
 9. Add `"type": "module"` once remaining `.js` files are ESM-safe.
 10. Replace Node coverage with `c8`. Done for the Node coverage test scripts.
 11. Replace browser bundle tests with native browser ESM tests. Done for the current browser test lane.
-12. Add browser ESM Istanbul instrumentation in the test server.
-13. Add the real compiler-free precompiled runtime entry (`src/browser/precompiled.js`, plus shared precompiled environment modules). Done.
-14. Remove CJS build output and CJS export conditions.
+12. Add browser ESM Istanbul instrumentation in the test server. Done.
+13. Add the real compiler-free precompiled runtime entry (`src/precompiled/index.js`, plus shared precompiled environment modules). Done.
+14. Remove CJS build output and CJS export conditions. Done.
 15. Remove browser UMD bundle build. Done for the current package/test build.
 16. Delete unused Babel/Rollup/Webpack dependencies. Done.
-17. Run full Node and browser tests.
+17. Run full Node and browser tests. Done for the current ESM migration pass.
 
 ## Post-Transition Source Cleanup
 

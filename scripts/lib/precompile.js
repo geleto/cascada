@@ -26,7 +26,8 @@ async function precompileTestTemplates() {
     const precompile = await loadPrecompile();
     // Generate precompiled content
     const output = precompile(templateDir, {
-      include: [/\.(njk|html)$/],
+      include: [/^(include|includeMany|base|base-inherit)\.njk$/],
+      isAsync: true,
       format: 'esm'
     });
 

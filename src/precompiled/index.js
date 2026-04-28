@@ -5,8 +5,10 @@ export {
   AsyncPrecompiledEnvironment,
   PrecompiledTemplate as Template,
   AsyncPrecompiledTemplate as AsyncTemplate,
+  AsyncPrecompiledScript as Script,
   PrecompiledTemplate,
-  AsyncPrecompiledTemplate
+  AsyncPrecompiledTemplate,
+  AsyncPrecompiledScript
 } from '../environment/precompiled-environment.js';
 export {Loader} from '../loader/loader.js';
 export {PrecompiledLoader} from '../loader/precompiled-loader.js';

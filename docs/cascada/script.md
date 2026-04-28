@@ -2628,7 +2628,7 @@ In practice:
 
 - `FileSystemLoader` loads scripts from disk
 - `WebLoader` loads scripts over HTTP in browser environments
-- `PrecompiledLoader` loads scripts that were precompiled ahead of time
+- `PrecompiledLoader` loads templates or scripts that were precompiled ahead of time
 
 You can pass one loader or several loaders to `AsyncEnvironment`. If multiple loaders are configured, Cascada tries them in order until one finds the requested script.
 
@@ -2658,16 +2658,10 @@ import {
 } from 'cascada-engine';
 ```
 
-Use the precompiled entry when templates/scripts are compiled ahead of time and the app only needs the runtime:
+Use the precompiled entry when templates or scripts are compiled ahead of time and the app only needs the runtime. This entry does not import the compiler, parser, lexer, or precompile API:
 
 ```javascript
 import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled';
-```
-
-Browser builds can use the browser-specific precompiled ESM entry:
-
-```javascript
-import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/browser/precompiled';
 ```
 
 ### AsyncEnvironment Class
@@ -2874,17 +2868,13 @@ For maximum performance, precompile your scripts and templates into JavaScript a
 
 The resulting JavaScript can be saved to a `.js` file and loaded using the `PrecompiledLoader`. A key option is `opts.env`, which ensures custom filters, global functions, and data methods are included in the compiled output.
 
-For compiler-free runtime usage, import the precompiled entry:
+For compiler-free precompiled rendering, import the precompiled entry. It loads only the runtime and precompiled loader, not the compiler:
 
 ```javascript
 import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled';
 ```
 
-Browser builds can use the browser-specific precompiled ESM entry:
-
-```javascript
-import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/browser/precompiled';
-```
+Use `renderTemplate(...)` for precompiled templates and `renderScript(...)` for precompiled scripts.
 
 The CLI uses the same modes:
 

@@ -19,7 +19,7 @@ const coverageConfig = {
   dir: path.join(scriptDir, '../coverage'),
   files: [
     'browser-std.json',
-    'browser-slim.json'],
+    'browser-precompiled.json'],
   getFullPath: (file) => path.join(coverageConfig.dir, file)
 };
 
@@ -93,7 +93,7 @@ async function runTestFile(browser, port, testFile) {
 
     await page.exposeFunction('sendTestResults', async (results) => {
       if (results.coverage) {
-        const coverageFileName = testFile.includes('slim') ? 'browser-slim.json' : 'browser-std.json';
+        const coverageFileName = testFile.includes('precompiled') ? 'browser-precompiled.json' : 'browser-std.json';
         const coverageFile = coverageConfig.getFullPath(coverageFileName);
         try {
           await fs.writeFile(coverageFile, JSON.stringify(results.coverage));
@@ -157,7 +157,7 @@ async function runTests() {
     console.log(`Static server listening on port ${port}`);
 
     browser = await chromium.launch();
-    const testFiles = ['slim.html', 'index.html'];
+    const testFiles = ['precompiled.html', 'index.html'];
 
     for (const testFile of testFiles) {
       console.log(`\nRunning tests for ${testFile}...`);

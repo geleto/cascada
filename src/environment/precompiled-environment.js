@@ -1,7 +1,7 @@
 import {isFunction} from '../lib.js';
 import {BaseEnvironment} from './base-environment.js';
 import {callbackAsap} from './utils.js';
-import {PrecompiledTemplate, AsyncPrecompiledTemplate} from './precompiled-template.js';
+import {PrecompiledTemplate, AsyncPrecompiledTemplate, AsyncPrecompiledScript} from './precompiled-template.js';
 
 class PrecompiledEnvironment extends BaseEnvironment {
   init(loaders, opts) {
@@ -54,7 +54,10 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
     super.init(loaders, opts);
     this.TemplateClass = AsyncPrecompiledTemplate;
     this.AsyncTemplateClass = AsyncPrecompiledTemplate;
-    this.ScriptClass = null;
+    this.ScriptClass = AsyncPrecompiledScript;
+    this.customDataMethods = {};
+    this.commandChannelClasses = {};
+    this.commandChannels = {};
   }
 
   async renderTemplate(templateName, ctx) {
@@ -70,8 +73,13 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
     return Promise.reject(new Error('Template string rendering is not available in a precompiled environment'));
   }
 
-  renderScript() {
-    return Promise.reject(new Error('Script rendering is not available in a precompiled environment'));
+  async renderScript(scriptName, ctx) {
+    ctx = ctx || {};
+    const script = await this.getScript(scriptName, false, null, false);
+    if (!script) {
+      throw new Error(`Script not found: ${scriptName}`);
+    }
+    return script.render(ctx);
   }
 
   renderScriptString() {
@@ -87,6 +95,15 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
     return this._getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing);
   }
 
+  getScript(name, eagerCompile, parentName, ignoreMissing) {
+    if (typeof name.then === 'function') {
+      return name.then((resolvedName) => {
+        return this._getCompiledScriptPromise(resolvedName, eagerCompile, parentName, ignoreMissing);
+      });
+    }
+    return this._getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing);
+  }
+
   _getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
     return new Promise((resolve, reject) => {
       this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, true, (err, tmpl) => {
@@ -97,6 +114,33 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
         }
       });
     });
+  }
+
+  _getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing) {
+    return new Promise((resolve, reject) => {
+      this._getCompiledScript(name, eagerCompile, parentName, ignoreMissing, (err, script) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(script);
+        }
+      });
+    });
+  }
+
+  addDataMethods(methods) {
+    Object.assign(this.customDataMethods, methods);
+    return this;
+  }
+
+  addCommandChannelClass(name, channelClass) {
+    this.commandChannelClasses[name] = channelClass;
+    return this;
+  }
+
+  addCommandChannel(name, channelInstance) {
+    this.commandChannels[name] = channelInstance;
+    return this;
   }
 
   addFilter(name, func, async) {
@@ -127,5 +171,6 @@ export {
   PrecompiledEnvironment,
   AsyncPrecompiledEnvironment,
   PrecompiledTemplate,
-  AsyncPrecompiledTemplate
+  AsyncPrecompiledTemplate,
+  AsyncPrecompiledScript
 };

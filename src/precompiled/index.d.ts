@@ -33,6 +33,10 @@ export class AsyncTemplate {
 
 export class PrecompiledTemplate extends Template {}
 export class AsyncPrecompiledTemplate extends AsyncTemplate {}
+export class AsyncPrecompiledScript extends AsyncTemplate {
+  render(context?: object): Promise<Record<string, any> | string | null>;
+}
+export class Script extends AsyncPrecompiledScript {}
 
 export class Environment {
   constructor(loaders?: Loader | Loader[], opts?: object);
@@ -51,11 +55,14 @@ export class Environment {
 export class AsyncEnvironment {
   constructor(loaders?: Loader | Loader[], opts?: object);
   renderTemplate(name: string, context?: object): Promise<string>;
+  renderScript(name: string, context?: object): Promise<Record<string, any> | string | null>;
   getTemplate(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string, ignoreMissing?: boolean): Promise<AsyncTemplate>;
+  getScript(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string, ignoreMissing?: boolean): Promise<AsyncPrecompiledScript>;
   addGlobal(name: string, value: any): this;
   addFilter(name: string, func: Function, async?: boolean): this;
   addFilterAsync(name: string, func: Function): this;
   addTest(name: string, func: Function): this;
+  addDataMethods(methods: Record<string, Function>): this;
 }
 
 export class PrecompiledEnvironment extends Environment {}

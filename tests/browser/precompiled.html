@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Mocha Tests (slim)</title>
+  <title>Mocha Tests (precompiled)</title>
   <link rel="stylesheet" href="../../node_modules/mocha/mocha.css" />
 </head>
 <body>
@@ -38,15 +38,15 @@
   </script>
 
   <script>
-    // Prefix all test suite titles with 'slim'
+    // Prefix all test suite titles with 'precompiled'
     (function(originalDescribe) {
       window.describe = window.suite = function describe(title, fn) {
-        originalDescribe('slim ' + title, fn);
+        originalDescribe('precompiled ' + title, fn);
       };
     })(window.describe || window.suite);
   </script>
 
   <script src="console-reporter.js"></script>
-  <script type="module" src="./slim.js"></script>
+  <script type="module" src="./precompiled.js"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ const coverageConfig = {
   dir: path.join(scriptDir, '../coverage'),
   files: [
     'browser-std.json',
-    'browser-slim.json',
+    'browser-precompiled.json',
     'coverage-final.json' // Node coverage
   ],
   getFullPath: (file) => path.join(coverageConfig.dir, file)
