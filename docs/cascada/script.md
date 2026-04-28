@@ -152,14 +152,14 @@ While independent operations run in parallel and may start and complete in any o
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. Poisoning is conservative with control flow: if an `if` condition is an Error Value, neither branch runs and every variable that either branch would have modified becomes poisoned. You can detect and repair these errors using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
 
 #### 💡 Clean, Expressive Syntax
-Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `function ... endfunction`, which supports default values and keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
+Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `function`, which supports default values and keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
 
 
 ## Language Fundamentals
 
 ### Features at a Glance
 
-What makes Cascada Script remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages - no async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic; the engine handles the parallelism.
+What makes Cascada Script remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages - but without the async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic, the engine handles the parallelism.
 
 | Feature | Syntax | Notes |
 |---|---|---|
@@ -277,7 +277,7 @@ This ensures parallel operations never interfere—each variable owns its data i
 
 **Performance Note**
 
-Cascada uses optimized techniques so that assignments do not copy entire values. Values may be shared internally until modified, at which point only the affected parts are copied as needed. This keeps memory usage and performance overhead low while preserving the simple independent value semantics shown in the examples.
+Cascada uses optimized techniques so that assignments do not copy entire objects. Objects may be shared internally until modified, at which point only the affected parts are copied as needed. This keeps memory usage and performance overhead low while preserving the simple independent value semantics shown in the examples.
 
 **Property Assignment**
 
@@ -320,9 +320,11 @@ for id in ids
 endfor
 ```
 
-If you truly do not care about preserving source order, a plain mutable `var` may still be acceptable in non-concurrent code paths. But when multiple parallel branches build a collection, the safest and most idiomatic fix is the `data` channel described in the next section.
+If you truly do not care about preserving source order, a plain mutable `var` may still be acceptable in non-concurrent code paths. But when multiple parallel branches build a collection, do not mutate one shared `var` from all branches. Use one of these ordering tools instead:
 
-Three tools handle this correctly:
+- Use a `data` channel when parallel branches are assembling an array or object and the final value should be deterministic.
+- Use an `each` loop when every iteration must finish before the next one starts.
+- Use the `!` operator when the thing being mutated is a stateful object from the render context, such as a database handle, queue, file writer, or other external service.
 
 **`data` channel (preferred for building collections)** - this is the main mitigation. Writes run concurrently, but the assembled result always matches source-code order:
 ```javascript
@@ -874,7 +876,8 @@ out.user.name = "Alice"
 out.user.logins = 0
 out.user.logins++
 
-// The 'roles' array is created automatically on first push
+// The 'roles' array is created
+// automatically on first push
 out.user.roles.push("editor")
 
 return out.snapshot()
