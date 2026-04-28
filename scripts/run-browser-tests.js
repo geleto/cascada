@@ -4,13 +4,13 @@ import mocha from 'mocha';
 import path from 'path';
 import {fileURLToPath} from 'url';
 import {promises as fs} from 'fs';
-let chalk;
 
 import libCoverage from 'istanbul-lib-coverage';
 import {getStaticServer} from './lib/static-server.js';
 import {chromium} from 'playwright';
 import {precompileTestTemplates} from './lib/precompile.js';
 import {writeCoverageReports} from './lib/coverage-report.js';
+import {colors} from './lib/colors.js';
 
 process.env.NODE_ENV = 'test';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -23,43 +23,40 @@ const coverageConfig = {
   getFullPath: (file) => path.join(coverageConfig.dir, file)
 };
 
-(async () => {
-  chalk = await import('tiny-chalk');
-  runTests().catch(error => {
-    console.error('Unhandled error in test runner:', error);
-    process.exit(1);
-  });
-})();
+runTests().catch(error => {
+  console.error('Unhandled error in test runner:', error);
+  process.exit(1);
+});
 
 function colorConsoleOutput(message) {
   // Check for summary lines first
   if (/^\s+\d+ passing/.test(message)) {
-    return chalk.green(message);
+    return colors.green(message);
   }
   if (/^\s+\d+ failing/.test(message)) {
-    return chalk.red(message);
+    return colors.red(message);
   }
   if (/^\s+\d+ pending/.test(message)) {
-    return chalk.blue(message);
+    return colors.blue(message);
   }
 
   // If not a summary line, proceed with other replacements
   return message
     // Test results
-    .replace(/√/g, chalk.green('√'))
-    .replace(/×/g, chalk.red('×'))
-    .replace(/∘︎/g, chalk.blue('∘︎'))
+    .replace(/√/g, colors.green('√'))
+    .replace(/×/g, colors.red('×'))
+    .replace(/∘︎/g, colors.blue('∘︎'))
 
     // Individual test durations (only for lines starting with spaces, which are test results)
     .replace(/^(\s+.*?)\((\d+)ms\)/gm, (match, testName, duration) => {
       const ms = parseInt(duration, 10);
-      if (ms > 100) return `${testName}${chalk.red(`(${duration}ms)`)}`;
-      if (ms > 50) return `${testName}${chalk.yellow(`(${duration}ms)`)}`;
-      return `${testName}${chalk.dim(`(${duration}ms)`)}`;
+      if (ms > 100) return `${testName}${colors.red(`(${duration}ms)`)}`;
+      if (ms > 50) return `${testName}${colors.yellow(`(${duration}ms)`)}`;
+      return `${testName}${colors.dim(`(${duration}ms)`)}`;
     })
 
     // Error messages (assuming they start with "Error:")
-    .replace(/^(\s*)(Error:.*)/gm, (match, indent, error) => `${indent}${chalk.red(error)}`);
+    .replace(/^(\s*)(Error:.*)/gm, (match, indent, error) => `${indent}${colors.red(error)}`);
 }
 
 async function runTestFile(browser, port, testFile) {
@@ -221,12 +218,12 @@ async function runTests() {
     for (const [fileName, stats] of Object.entries(fileResults)) {
       if (!stats) continue;
       const d = Math.round(stats.duration / 1000);
-      console.log(`${fileName}: ${chalk.green(stats.passes + ' passing')} ${chalk.cyan(stats.pending + ' pending')} ${chalk.red(stats.failures + ' failing')} (${d}s)`);
+      console.log(`${fileName}: ${colors.green(stats.passes + ' passing')} ${colors.cyan(stats.pending + ' pending')} ${colors.red(stats.failures + ' failing')} (${d}s)`);
     }
     console.log('---------------------------------------------------');
-    console.log(chalk.green(`${totalPassed} passing (${durationSec}s)`));
-    console.log(chalk.cyan(`${totalPending} pending`));
-    console.log(chalk.red(`${totalFailed} failing\n`));
+    console.log(colors.green(`${totalPassed} passing (${durationSec}s)`));
+    console.log(colors.cyan(`${totalPending} pending`));
+    console.log(colors.red(`${totalFailed} failing\n`));
 
     if (browser) {
       await browser.close();

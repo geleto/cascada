@@ -4,7 +4,7 @@ import path from 'path';
 import {fileURLToPath} from 'url';
 import libCoverage from 'istanbul-lib-coverage';
 import {writeCoverageReports} from './lib/coverage-report.js';
-let chalk;
+import {colors} from './lib/colors.js';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,8 +19,6 @@ const coverageConfig = {
 };
 
 (async () => {
-  chalk = await import('tiny-chalk');
-
   // Load stats
   let nodeStats = { passes: 0, failures: 0, pending: 0, duration: 0 };
   let browserStats = { passes: 0, failures: 0, pending: 0, duration: 0 };
@@ -63,8 +61,8 @@ const coverageConfig = {
   writeCoverageReports(coverageMap, coverageConfig.dir);
 
   console.log('\nTOTALS:');
-  console.log(chalk.green(`${combinedPassed} passing (${durationSec}s)`));
-  console.log(chalk.cyan(`${combinedPending} pending`));
-  console.log(chalk.red(`${combinedFailed} failing (${nodeStats.failures} node, ${browserStats.failures} browser)\n`));
+  console.log(colors.green(`${combinedPassed} passing (${durationSec}s)`));
+  console.log(colors.cyan(`${combinedPending} pending`));
+  console.log(colors.red(`${combinedFailed} failing (${nodeStats.failures} node, ${browserStats.failures} browser)\n`));
 
 })();

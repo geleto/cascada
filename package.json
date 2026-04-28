@@ -50,8 +50,7 @@
     "madge": "^8.0.0",
     "mocha": "^11.1.0",
     "playwright": "^1.52.0",
-    "supertest": "*",
-    "tiny-chalk": "^3.0.2"
+    "supertest": "*"
   },
   "resolutions": {
     "globals": "11.12.0"
