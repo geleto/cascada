@@ -75,6 +75,7 @@ export default [
 
       // Best Practices
       'no-unused-vars': ['error', { args: 'none', caughtErrors: 'none' }],
+      'no-unassigned-vars': 'off',
       'no-undef': 'error',
       'no-console': ['warn', { allow: ['error', 'warn'] }],
       'no-debugger': 'error',
@@ -92,7 +93,9 @@ export default [
       'no-self-compare': 'error',
       'no-throw-literal': 'error',
       'no-useless-catch': 'error',
+      'no-useless-assignment': 'off',
       'no-useless-return': 'error',
+      'preserve-caught-error': 'off',
       'prefer-promise-reject-errors': 'error',
       'no-shadow': 'error',
       //'no-use-before-define': ['error', { functions: false }],
