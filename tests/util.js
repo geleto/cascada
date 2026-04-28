@@ -283,6 +283,7 @@ if (isBrowser) {
 }
 
 export {
+  utilApi,
   render,
   equal,
   jinjaEqual,
@@ -299,4 +300,3 @@ export {
   Environment,
   Template
 };
-export default utilApi;

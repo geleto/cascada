@@ -1,5 +1,5 @@
 import expect from 'expect.js';
-import util from './util.js';
+import {utilApi as util} from './util.js';
 
 const isBrowser = typeof window !== 'undefined';
 const path = isBrowser ? undefined : await import('path');

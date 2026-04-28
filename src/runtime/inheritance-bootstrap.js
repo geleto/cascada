@@ -1,6 +1,6 @@
 
-import inheritanceState from './inheritance-state.js';
-import inheritanceCall from './inheritance-call.js';
+import {inheritanceStateApi as inheritanceState} from './inheritance-state.js';
+import {inheritanceCallApi as inheritanceCall} from './inheritance-call.js';
 
 function bootstrapInheritanceMetadataImpl(
   stateValue,
@@ -391,5 +391,4 @@ function runCompiledRootStartup(...args) {
   return inheritanceBootstrapApi.runCompiledRootStartup.apply(this, args);
 }
 
-export default inheritanceBootstrapApi;
-export { bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };
+export { inheritanceBootstrapApi, bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };

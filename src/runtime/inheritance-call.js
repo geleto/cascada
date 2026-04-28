@@ -991,5 +991,4 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
   return inheritanceCallApi.getCallableBodyLinkedChannels.apply(this, arguments);
 }
 
-export default inheritanceCallApi;
-export { createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, hasLinkedChannelPath, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };
+export { inheritanceCallApi, createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, hasLinkedChannelPath, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };

@@ -1,6 +1,6 @@
 /* eslint-disable camelcase*/
 import expect from 'expect.js';
-import util from './util.js';
+import {utilApi as util} from './util.js';
 
 const fs = typeof window === 'undefined' ? await import('fs') : null;
 const {Template, Environment} = typeof window !== 'undefined'

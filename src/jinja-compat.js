@@ -1,4 +1,4 @@
-import lookupApi from './runtime/lookup.js';
+import {lookupApi} from './runtime/lookup.js';
 
 function installCompat() {
 
@@ -316,4 +316,4 @@ function installCompat() {
   return uninstall;
 }
 
-export default installCompat;
+export {installCompat};

@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import {createRequire} from 'module';
 import chokidar from 'chokidar';
-import Loader from './loader.js';
+import {Loader} from './loader.js';
 import {PrecompiledLoader} from './precompiled-loader.js';
 
 const resolvePackagePath = createRequire(process.cwd() + path.sep).resolve;

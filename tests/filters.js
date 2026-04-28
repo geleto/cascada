@@ -1,5 +1,5 @@
 import expect from 'expect.js';
-import util from './util.js';
+import {utilApi as util} from './util.js';
 
 const lib = typeof window !== 'undefined' ? window.nunjucks.lib : await import('../src/lib.js');
 const r = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../src/runtime/runtime.js');

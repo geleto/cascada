@@ -1,4 +1,4 @@
-import util from './util.js';
+import {utilApi as util} from './util.js';
 
 (function() {
 

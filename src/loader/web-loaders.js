@@ -1,5 +1,5 @@
 
-import Loader from './loader.js';
+import {Loader} from './loader.js';
 import {PrecompiledLoader} from './precompiled-loader.js';
 
 class WebLoader extends Loader {

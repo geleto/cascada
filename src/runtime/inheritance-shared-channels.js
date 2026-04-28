@@ -70,5 +70,4 @@ function declareInheritanceSharedChannel(...args) {
   return inheritanceSharedChannelsApi.declareInheritanceSharedChannel.apply(this, args);
 }
 
-export default inheritanceSharedChannelsApi;
-export { declareInheritanceSharedChannel, claimInheritanceSharedDefault, initializeInheritanceSharedChannelDefault };
+export { inheritanceSharedChannelsApi, declareInheritanceSharedChannel, claimInheritanceSharedDefault, initializeInheritanceSharedChannelDefault };

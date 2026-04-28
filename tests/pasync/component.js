@@ -7,8 +7,8 @@ import {StringLoader} from '../util.js';
 import * as runtimeModule from '../../src/runtime/runtime.js';
 import * as componentRuntimeModule from '../../src/runtime/component.js';
 import {ComponentInstance} from '../../src/runtime/component.js';
-import inheritanceStateHooks, {InheritanceState} from '../../src/runtime/inheritance-state.js';
-import inheritanceCallHooks from '../../src/runtime/inheritance-call.js';
+import {inheritanceStateApi as inheritanceStateHooks, InheritanceState} from '../../src/runtime/inheritance-state.js';
+import {inheritanceCallApi as inheritanceCallHooks} from '../../src/runtime/inheritance-call.js';
 
 const inheritanceCallModule = inheritanceCallHooks;
 

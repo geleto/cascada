@@ -2,7 +2,7 @@
 import path from 'path';
 import {EmitterObj} from '../object.js';
 
-export default class Loader extends EmitterObj {
+class Loader extends EmitterObj {
   resolve(from, to) {
     return path.resolve(path.dirname(from), to);
   }
@@ -11,3 +11,5 @@ export default class Loader extends EmitterObj {
     return (filename.indexOf('./') === 0 || filename.indexOf('../') === 0);
   }
 };
+
+export {Loader};

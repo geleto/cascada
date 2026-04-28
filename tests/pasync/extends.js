@@ -3,10 +3,10 @@ import expect from 'expect.js';
 import {AsyncEnvironment, Script, Context} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import inheritanceStateHooks, {InheritanceState} from '../../src/runtime/inheritance-state.js';
-import inheritanceCallHooks from '../../src/runtime/inheritance-call.js';
-import inheritanceSharedChannelsHooks from '../../src/runtime/inheritance-shared-channels.js';
-import lookupHooks from '../../src/runtime/lookup.js';
+import {inheritanceStateApi as inheritanceStateHooks, InheritanceState} from '../../src/runtime/inheritance-state.js';
+import {inheritanceCallApi as inheritanceCallHooks} from '../../src/runtime/inheritance-call.js';
+import {inheritanceSharedChannelsApi as inheritanceSharedChannelsHooks} from '../../src/runtime/inheritance-shared-channels.js';
+import {lookupApi as lookupHooks} from '../../src/runtime/lookup.js';
 
 const inheritanceCallModule = inheritanceCallHooks;
 const runtimeHooks = {};

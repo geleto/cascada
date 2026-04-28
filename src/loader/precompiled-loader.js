@@ -1,5 +1,5 @@
 
-import Loader from './loader.js';
+import {Loader} from './loader.js';
 
 class PrecompiledLoader extends Loader {
   constructor(compiledTemplates) {

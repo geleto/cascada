@@ -7,7 +7,7 @@ import * as tests from '../tests.js';
 import {createGlobals} from '../globals.js';
 import {EmitterObj} from '../object.js';
 import {handleError} from '../runtime/errors.js';
-import expressApp from '../express-app.js';
+import {express as expressApp} from '../express-app.js';
 import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
 
 /**

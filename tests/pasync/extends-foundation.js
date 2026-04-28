@@ -6,9 +6,9 @@ import * as nodes from '../../src/nodes.js';
 import * as transformer from '../../src/transformer.js';
 import * as scriptTranspiler from '../../src/script/script-transpiler.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import inheritanceStateModule from '../../src/runtime/inheritance-state.js';
-import inheritanceCallModule from '../../src/runtime/inheritance-call.js';
-import inheritanceBootstrapHooks from '../../src/runtime/inheritance-bootstrap.js';
+import {inheritanceStateApi as inheritanceStateModule} from '../../src/runtime/inheritance-state.js';
+import {inheritanceCallApi as inheritanceCallModule} from '../../src/runtime/inheritance-call.js';
+import {inheritanceBootstrapApi as inheritanceBootstrapHooks} from '../../src/runtime/inheritance-bootstrap.js';
 import {StringLoader} from '../util.js';
 
 const runtimeHooks = {};

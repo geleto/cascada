@@ -1,6 +1,6 @@
 import path from 'path';
 
-export default function express(env, app) {
+function express(env, app) {
   function NunjucksView(name, opts) {
     this.name = name;
     this.path = name;
@@ -22,3 +22,5 @@ export default function express(env, app) {
   app.set('nunjucksEnv', env);
   return env;
 };
+
+export {express};

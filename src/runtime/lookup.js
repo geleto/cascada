@@ -9,7 +9,7 @@ import {
   collectErrors,
 } from './errors.js';
 
-import inheritanceCall from './inheritance-call.js';
+import {inheritanceCallApi as inheritanceCall} from './inheritance-call.js';
 import * as inheritanceState from './inheritance-state.js';
 import {resolveDuo} from './resolve.js';
 /**
@@ -325,5 +325,4 @@ function observeInheritanceSharedChannel(...args) {
   return lookupApi.observeInheritanceSharedChannel.apply(this, args);
 }
 
-export default lookupApi;
-export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };
+export { lookupApi, memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };
