@@ -122,7 +122,7 @@ export function isMainModule(metaUrl) {
 }
 ```
 
-Scripts that currently use `__dirname`, `__filename`, `require.main`, or `require.resolve` must be converted before `"type": "module"` is enabled, unless they are explicitly renamed to `.cjs` as a temporary migration step.
+Scripts that currently use `__dirname`, `__filename`, `require.main`, or `require.resolve` must be converted before `"type": "module"` is enabled. Do not add temporary CommonJS script shims for the package migration.
 
 ## Circular Dependencies
 
@@ -177,21 +177,8 @@ When `"type": "module"` is added, every `.js` file becomes ESM. Any `.js` script
 Preferred path:
 
 1. Convert scripts to ESM before enabling `"type": "module"`.
-2. Rename only unavoidable temporary scripts to `.cjs`.
-3. Track every `.cjs` file in this document or a migration checklist.
-4. Remove all `.cjs` exceptions before the migration is considered complete.
-
-Temporary `.cjs` candidates, if a staged migration is needed:
-
-- `scripts/run-all-tests.cjs`
-- `scripts/run-browser-tests.cjs`
-- `scripts/report-results.cjs`
-- `scripts/runprecompile.cjs`
-- `scripts/lib/static-server.cjs`
-- `scripts/lib/precompile.cjs`
-- `scripts/lib/node-stats-reporter.cjs`
-- `scripts/docs-build.cjs`
-- `bin/precompile.cjs`
+2. Avoid `.cjs` migration exceptions unless a file intentionally tests CommonJS interop.
+3. Track and remove any temporary `.cjs` exception before the migration is considered complete.
 
 Exit criterion: no `.cjs` scripts remain unless they are intentionally testing CommonJS interop. Since Cascada is dropping CommonJS support, the expected final count is zero.
 
@@ -234,7 +221,7 @@ The current CommonJS/browser-bundle setup has these npm commands:
 
 - `npm run mocha`: quick Node Mocha run without coverage.
 - `npm run test:quick`: alias for `npm run mocha`.
-- `npm run test:node`: Node Mocha run with c8 coverage and `scripts/lib/node-stats-reporter.cjs`.
+- `npm run test:node`: Node Mocha run with c8 coverage through `scripts/run-node-tests.js`.
 - `npm run test:pasync`: focused async/poison Node coverage run.
 - `npm run test:browser`: starts the browser test server, then runs Playwright browser tests against native ESM modules.
 - `npm test`: full flow through `scripts/run-all-tests.js`.
@@ -253,7 +240,7 @@ Current Node coverage:
 - Uses `c8` with V8 native ESM coverage.
 - Uses Mocha without Babel/register hooks.
 - Writes Node coverage to `coverage/coverage-final.json`.
-- Writes Node test stats to `coverage/node-tests-stats.json` through `scripts/lib/node-stats-reporter.cjs`.
+- Writes Node test stats to `coverage/node-tests-stats.json` through `scripts/run-node-tests.js`.
 
 Current browser coverage:
 
@@ -294,8 +281,8 @@ Target commands:
   "scripts": {
     "mocha": "cross-env NODE_ENV=test mocha --check-leaks -R spec \"tests/*.js\" \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
     "test:quick": "npm run mocha",
-    "test:node": "cross-env NODE_ENV=test c8 --include \"src/**/*.js\" --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter.cjs tests \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
-    "test:pasync": "cross-env NODE_ENV=test c8 --reporter=html --reporter=text mocha --check-leaks \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
+    "test:node": "cross-env NODE_ENV=test c8 --include \"src/**/*.js\" --reporter=html --reporter=text --reporter=json node scripts/run-node-tests.js",
+    "test:pasync": "cross-env NODE_ENV=test c8 --include \"src/**/*.js\" --reporter=html --reporter=text node scripts/run-node-tests.js tests/pasync tests/poison",
     "test:browser": "cross-env NODE_ENV=test node scripts/run-browser-tests.js",
     "check:cycles": "madge --extensions js --circular src",
     "test": "node scripts/run-all-tests.js"
@@ -307,7 +294,7 @@ Notes:
 
 - Remove `--require @babel/register`.
 - Remove `NODE_PATH`; it is ignored by Node's ESM resolver.
-- Keep `scripts/lib/node-stats-reporter.cjs` as a small CommonJS bridge because Mocha's reporter loader expects a constructable CommonJS export.
+- Keep Node test stats in `scripts/run-node-tests.js` so the test lane stays native ESM end to end.
 - Keep `coverage/node-tests-stats.json`.
 - Keep `coverage/browser-tests-stats.json`.
 - Keep `coverage/coverage-final.json` as the Node JSON coverage report if using `c8 --reporter=json`.
@@ -850,7 +837,7 @@ Replace:
 5. Add `madge` cycle checks and fix circular dependencies exposed by ESM.
 6. Convert tests and test utilities to ESM.
 7. Replace `NODE_PATH` test fixture resolution with a `file:` dev dependency.
-8. Convert scripts to ESM, or rename temporary CommonJS-only tooling to `.cjs`.
+8. Convert scripts to ESM without temporary CommonJS-only tooling.
 9. Add `"type": "module"` once remaining `.js` files are ESM-safe.
 10. Replace Node coverage with `c8`. Done for the Node coverage test scripts.
 11. Replace browser bundle tests with native browser ESM tests. Done for the current browser test lane.

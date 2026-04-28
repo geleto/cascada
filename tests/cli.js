@@ -12,13 +12,8 @@ import {fileURLToPath} from 'url';
   var precompileBin = path.join(rootDir, 'bin', 'precompile');
   var distEntry = path.join(rootDir, 'dist', 'index.js');
 
-  if (process.platform === 'win32') {
-    precompileBin += '.cmd';
-  }
-
   function execPrecompile(args, cb) {
-    const isWindows = process.platform === 'win32';
-    execFile(precompileBin, args, {cwd: rootDir, shell: isWindows}, cb);
+    execFile(process.execPath, [precompileBin, ...args], {cwd: rootDir}, cb);
   }
 
   // https://github.com/nodejs/node/issues/34799
