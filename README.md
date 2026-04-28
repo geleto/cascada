@@ -6,13 +6,13 @@
 **Cascada** is a data-orchestration engine for JavaScript and TypeScript applications, designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
 - **[Cascada Script](https://geleto.github.io/cascada-script/)** - A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
-- **[Cascada Template](docs/cascada/templating.md)** - Template syntax with the same parallel execution capabilities for dynamic content generation
+- **[Cascada Template](docs/cascada/template.md)** - Template syntax with the same concurrent execution capabilities for dynamic content generation
 
-Both share the same core philosophy: **write clear, linear logic while the engine handles parallel execution, ordering guarantees, and error propagation automatically.**
+Both share the same core philosophy: **write clear, linear logic while the engine handles concurrent execution, ordering guarantees, and error propagation automatically.**
 
 What makes them remarkable is precisely how unremarkable they appear. There's no special syntax, no await, no Promise.all - just clean code that is instantly familiar to developers and happens to execute concurrently.
 
-**The problem they solve:** Traditional async/await often forces you to choose between readable sequential code OR maximum concurrency. Cascada gives you both. Independent operations run in parallel automatically, while the engine manages dependencies and assembles results deterministically.
+**The problem they solve:** Traditional async/await often forces you to choose between readable sequential code OR maximum concurrency. Cascada gives you both. Independent operations run concurrently, while the engine manages dependencies and assembles results deterministically.
 
 **How it works:**
 
@@ -28,46 +28,36 @@ What makes them remarkable is precisely how unremarkable they appear. There's no
 - Agent systems and multi-step planning
 - High-throughput I/O coordination
 
-**In short:** Cascada is a data-orchestration layer that handles the complexity of parallel async execution while you focus on business logic—whether you're building data structures with Script or generating dynamic content with Templates.
+**In short:** Cascada is a data-orchestration layer that handles the complexity of concurrent async execution while you focus on business logic—whether you're building data structures with Script or generating dynamic content with Templates.
 
 The most **up-to-date and complete information** on the features of Cascada can be found in the **[Cascada Script Documentation](https://geleto.github.io/cascada-script/)**!
 
-## Read First
-
-**Articles:**
-- [Cascada Script Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to Cascada Script's syntax, features, and how it solves real async programming challenges
-
-- [The Kitchen Chef's Guide to Concurrent Programming with Cascada](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes parallel execution feel as natural as following a recipe
-
-**Learning by Example:**
-- [Casai Examples Repository](https://github.com/geleto/casai-examples) - After reading the articles, explore practical examples showing how Cascada and Casai (an AI orchestration framework built on Cascada) turn complex agentic workflows into readable, linear code - no visual node graphs or async spaghetti, just clear logic that tells a story (work in progress)
-
 ## Overview
 
-### ⚡ Parallel by default
+### [⚡ Parallel by default](https://geleto.github.io/cascada-script/#cascadas-execution-model)
 Cascada is a powerful engine for **JavaScript** and **TypeScript** applications, providing both a [scripting language](https://geleto.github.io/cascada-script/) and a [template syntax](docs/cascada/template.md). It is designed to dramatically simplify complex, asynchronous workflows by fundamentally inverting the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
-### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
+### [🚦 Data-Driven Flow: Code runs when its inputs are ready.](https://geleto.github.io/cascada-script/#cascadas-execution-model)
 The engine intelligently analyzes your code, automatically executing independent asynchronous operations - like API calls, LLM requests, and database queries - concurrently. It guarantees that **operations will wait for their required inputs** before executing, a smart orchestration that **eliminates race conditions by design** while delivering high performance without the complexity and boilerplate of manual async handling.
 
-### ✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.
+### [✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.](https://geleto.github.io/cascada-script/#cascadas-execution-model)
 Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its async state.
 
-### 🎭 One Engine, Two Modes
+### [🎭 One Engine, Two Modes](#two-modes-one-engine)
 This parallel-first philosophy is the foundation for both of its powerful modes:
-* 🚀   A purpose-built **[scripting language](https://geleto.github.io/cascada-script/)** for orchestrating complex data pipelines. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable. It offers a complete toolset for sophisticated logic with `variable declarations`, `conditionals`, `loops,` and `standard operators`. Create reusable components with `macros` and build modular applications using `import` and `extends`.
+* 🚀   A purpose-built **[scripting language](https://geleto.github.io/cascada-script/)** for orchestrating complex data pipelines. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable. It offers a complete toolset for sophisticated logic with `variable declarations`, `conditionals`, `loops,` and `standard operators`. Create reusable components with `functions` and build modular applications using `import` and `extends`.
 * 📜    A familiar **[template syntax](docs/cascada/template.md)** - Cascada is based on the popular [Nunjucks](https://mozilla.github.io/nunjucks/) template engine, for generating text-based output, ideal for dynamic websites, writing emails or crafting detailed LLM prompts.
 
-### ➡️ Implicitly Parallel, Explicitly Sequential
-While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations**, without affecting the parallelism of the rest of the code..
+### [➡️ Implicitly Parallel, Explicitly Sequential](https://geleto.github.io/cascada-script/#managing-side-effects-sequential-execution-with-)
+While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making an LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations**, without affecting the concurrency of the rest of the code.
 
 This inversion - Implicitly Parallel, Explicitly Sequential - is what makes Cascada so effective and intuitive.
 
-### 📋 Execution is chaotic, but the result is orderly
-While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
+### [📋 Execution is chaotic, but the result is orderly](https://geleto.github.io/cascada-script/#channels)
+While independent operations run concurrently and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
 
-### ☣️ Dataflow Poisoning - Errors that flow like data
+### [☣️ Dataflow Poisoning - Errors that flow like data](https://geleto.github.io/cascada-script/#error-handling)
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output. For example, if `fetchPosts()` fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. You can detect and repair these errors, providing fallbacks and logging without derailing your entire workflow.
 
 **⚠️ Heads up!** Cascada is a new project. You might run into bugs, and the documentation is catching up with the code. Your feedback and contributions are welcome as we build the future of asynchronous programming.
@@ -77,19 +67,12 @@ Cascada replaces traditional try/catch exceptions with a data-centric error mode
     ```bash
     npm install cascada-engine
     ```
-2.  Render a Cascada template:
-    ```javascript
-    import { AsyncEnvironment } from 'cascada-engine';
-    const env = new AsyncEnvironment();
-    const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
-    console.log(result); // Hello, World!
-    ```
-3.  Run a Cascada script:
+2.  Run a Cascada script:
     ```javascript
     import { AsyncEnvironment } from 'cascada-engine';
     const env = new AsyncEnvironment();
     const script = `
-      // fetchUser and fetchSettings run in parallel
+      // fetchUser and fetchSettings run concurrently
       var user = fetchUser(123)
       var settings = fetchSettings(123)
       return { greeting: "Hello, " + user.name, theme: settings.theme }
@@ -103,6 +86,16 @@ Cascada replaces traditional try/catch exceptions with a data-centric error mode
     console.log(result.theme);    // dark
     ```
 
+## Read First
+
+**Articles:**
+- [Cascada Script Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to Cascada Script's syntax, features, and how it solves real async programming challenges
+
+- [The Kitchen Chef's Guide to Concurrent Programming with Cascada](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes concurrent execution feel as natural as following a recipe
+
+**Learning by Example:**
+- [Casai Examples Repository](https://github.com/geleto/casai-examples) - After reading the articles, explore practical examples showing how Cascada and Casai (an AI orchestration framework built on Cascada) turn complex agentic workflows into readable, linear code - no visual node graphs or async spaghetti, just clear logic that tells a story (work in progress)
+
 ## Core Concepts (Deeper Dive)
 
 At its core, Cascada offers a set of powerful features available in both its templating and scripting modes.
@@ -113,9 +106,9 @@ The sections below go deeper into Cascada's execution model. You don't need to u
 <tr>
 <td width="50%" valign="top">
 
-### Automatic Parallelization
+### Automatic Concurrency
 
-Cascada automatically identifies and executes **independent operations concurrently**, without any special syntax or configuration. Tasks that don't depend on each other run in parallel, dramatically speeding up I/O-bound workflows.
+Cascada automatically identifies and executes **independent operations concurrently**, without any special syntax or configuration. Tasks that don't depend on each other run concurrently, dramatically speeding up I/O-bound workflows.
 
 </td>
 <td width="50%" valign="top">
@@ -124,7 +117,7 @@ Cascada automatically identifies and executes **independent operations concurren
 
 ```javascript
 // The fetchUser() and fetchConfig() calls
-// are independent and will run in parallel.
+// are independent and will run concurrently.
 var user = fetchUser(123)
 var config = fetchSiteConfig()
 
@@ -141,7 +134,7 @@ return {
 
 ```njk
 {# fetchUser(), fetchConfig() are independent #}
-{# and will run in parallel. #}
+{# and will run concurrently. #}
 {% set user = fetchUser(123) %}
 {% set config = fetchSiteConfig() %}
 
@@ -158,7 +151,7 @@ return {
 
 ### Data-Driven Flow
 
-While independent operations run in parallel, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees correct execution order and produces results identical to sequential code, giving you the performance of parallelism with the predictability of a synchronous process.
+While independent operations run concurrently, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees correct execution order and produces results identical to sequential code, giving you the performance of concurrency with the predictability of a synchronous process.
 
 </td>
 <td valign="top">
@@ -166,7 +159,7 @@ While independent operations run in parallel, Cascada ensures that **dependent o
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// getUser(), getFooter() run in parallel.
+// getUser(), getFooter() run concurrently.
 // getPosts(user.id) depends on `user`, so it
 // waits for getUser() to complete
 var user = getUser()
@@ -181,7 +174,7 @@ return "User: " + user.name
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
-{# getUser() and getFooter() run in parallel. #}
+{# getUser() and getFooter() run concurrently. #}
 {# getPosts(user.id) waits for getUser() #}
 {# to complete before starting. #}
 {% set user = getUser() %}
@@ -249,7 +242,7 @@ return output.snapshot()
 
 ### Sequential Execution Control (`!`)
 
-For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent access on that path (reads and calls without side effects do not need `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
+For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent access on that path (reads and calls without side effects do not need `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
 
 </td>
 <td valign="top">
@@ -275,7 +268,7 @@ account!.withdraw(50)
 
 ```njk
 {# 'account' is provided via context #}
-{# `!account` creates a sequence for the path #}
+{# `!` on the account path enforces ordering #}
 
 {% do account!.deposit(100) %}
 {% do account.getStatus() %}
@@ -290,9 +283,9 @@ account!.withdraw(50)
 
 ### Declarative Data Assembly (Channels)
 
-Cascada provides **channel types** (`data`, `text`, `sink`, `sequence`) for declarative, ordered output assembly. Channel writes execute concurrently as soon as their inputs are ready, but the final assembled result always matches source-code order—giving you the performance of parallelism with the predictability of sequential code.
+Cascada provides **channel types** (`data`, `text`, `sequence`) for declarative, ordered output assembly. Channel writes execute concurrently as soon as their inputs are ready, but the final assembled result always matches source-code order—giving you the performance of concurrency with the predictability of sequential code.
 
-The `data` channel is particularly powerful for building structured objects and arrays from parallel loops. All writes run concurrently, and the assembled result is always in source order.
+The `data` channel is particularly powerful for building structured objects and arrays from concurrent for loops. All writes run concurrently, and the assembled result is always in source order.
 
 </td>
 <td valign="top">
@@ -306,7 +299,7 @@ var productIds = [101, 205, 302]
 data report
 report.totalReviews = 0 // Initialize
 
-// Each iteration runs in parallel.
+// Each iteration runs concurrently.
 for id in productIds
   // fetch concurrently:
   var details = fetchProductDetails(id)
@@ -331,7 +324,7 @@ return report.snapshot()
 
 ```njk
 {# The HTML is assembled sequentially, #}
-{# iregardless of which fetch finishes first #}
+{# regardless of which fetch finishes first #}
 <div class="slow-data">
   {{ fetchSlowData() }}
 </div>
@@ -346,13 +339,13 @@ return report.snapshot()
 <tr>
 <td valign="top">
 
-### External Stateful Objects (`sink`)
+### Sequential Execution for Stateful Objects
 
-The `sink` channel wraps an external stateful object and applies its method calls in **source-code order**, even when the surrounding code runs in parallel. Use it when the important thing is sending ordered commands to an object, not getting a return value from each call.
+Some external objects — graphics contexts, state machines, streaming APIs — require every command to be applied in a specific order. Cascada offers two tools for this: the `!` marker, which enforces ordering on individual calls, and the `sequence` channel (script-only), which wraps the object so that every access on it is automatically sequential.
 
 </td>
 <td valign="top">
-<details open>
+<details>
   <summary><strong>Stateful Object (JavaScript)</strong></summary>
 
   ```javascript
@@ -385,12 +378,35 @@ The `sink` channel wraps an external stateful object and applies its method call
   ```
 </details>
 <details open>
-  <summary><strong>Using a sink (Cascada Script)</strong></summary>
+  <summary><strong>Cascada Script (with `!`)</strong></summary>
 
   ```javascript
   // Draw an 8-sided star using canvas
-  // 'canvasTurtle' is provided via context
-  sink turtle = canvasTurtle
+  // 'turtle' is provided via context
+  turtle!.begin()
+  for i in range(8)
+    turtle!.forward(60)
+    turtle!.turn(135)
+  endfor
+  turtle!.stroke('cyan')
+  ```
+
+  ```javascript
+  // Provide the turtle instance
+  env.renderScriptString(script, {
+    turtle: new CanvasTurtle(
+      document.querySelector('canvas')
+    )
+  });
+  ```
+</details>
+<details>
+  <summary><strong>Cascada Script (with <code>sequence</code>)</strong></summary>
+
+  ```javascript
+  // sequence wraps the object — all accesses
+  // are automatically sequential, no ! needed
+  sequence turtle = canvasTurtle
 
   turtle.begin()
   for i in range(8)
@@ -399,14 +415,17 @@ The `sink` channel wraps an external stateful object and applies its method call
   endfor
   turtle.stroke('cyan')
   ```
+</details>
+<details>
+  <summary><strong>Cascada Template (with `!`)</strong></summary>
 
-  ```javascript
-  // Provide the turtle instance
-  env.renderScriptString(script, {
-    canvasTurtle: new CanvasTurtle(
-      document.querySelector('canvas')
-    )
-  });
+  ```njk
+  {% do turtle!.begin() %}
+  {% for i in range(8) %}
+  {% do turtle!.forward(60) %}
+  {% do turtle!.turn(135) %}
+  {% endfor %}
+  {% do turtle!.stroke('cyan') %}
   ```
 </details>
 </td>
@@ -414,19 +433,19 @@ The `sink` channel wraps an external stateful object and applies its method call
 <tr>
 <td valign="top">
 
-### Macros for Reusable Components
+### Functions and Macros for Reusable Components
 
-Macros allow you to define reusable chunks of logic. In templates, they're great for repeated UI components. In scripts, they can perform complex, parallel async operations internally and return a clean, structured data object, making them the primary way to build modular, data-generating components.
+Functions (in scripts) and macros (in templates) let you define reusable chunks of logic. In templates, macros are great for repeated UI components. In scripts, functions can perform complex, concurrent async operations internally and return a clean, structured data object, making them the primary way to build modular, data-generating components.
 
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script (Data-Building Macro)</strong></summary>
+<summary><strong>Cascada Script (Data-Building Function)</strong></summary>
 
 ```javascript
-// Ftches a user's details and recent
-// activity in parallel to build a summary.
-macro buildUserSummary(userId)
+// Fetches a user's details and recent
+// activity concurrently to build a summary.
+function buildUserSummary(userId)
   // Run three async calls concurrently
   var details = fetchUserDetails(userId)
   var posts = fetchUserPosts(userId)
@@ -438,9 +457,9 @@ macro buildUserSummary(userId)
     postCount: posts.length,
     commentCount: comments.length
   }
-endmacro
+endfunction
 
-// Get both summarries in parallel:
+// Get both summaries concurrently:
 var user1 = buildUserSummary(101)
 var user2 = buildUserSummary(102)
 
@@ -460,13 +479,13 @@ return {
 {#
   This macro generates a user profile widget.
   It works with a user object (which could be a promise)
-  and fetches additional related data in parallel.
+  and fetches additional related data concurrently.
 #}
 {% macro profile_widget(user) %}
   <div class="profile-widget">
     <h2>{{ user.name }}</h2>
     <ul>
-      {# These two fetches run in parallel #}
+      {# These two fetches run concurrently #}
       <li>Followers:
 {{ fetchStats(user.id).followerCount }}
       </li>
@@ -477,12 +496,12 @@ return {
   </div>
 {% endmacro %}
 
-{# Fetch user data in parallel #}
+{# Fetch user data concurrently #}
 {% set userA = fetchUser(1) %}
 {% set userB = fetchUser(2) %}
 
 {# Render widgets. Each widget will internally #}
-{# perform its own parallel data fetches. #}
+{# perform its own concurrent data fetches. #}
 {{ profile_widget(userA) }}
 {{ profile_widget(userB) }}
 ```
@@ -542,9 +561,9 @@ Cascada's parallel-first core powers two distinct syntaxes, each tailored for a 
 
 ### Data-First: Cascada Script
 
-For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds **channels** (`data`, `text`, `sink`, `sequence`) for structured output assembly.
+For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's concurrency capabilities and adds **channels** (`data`, `text`, `sequence`) for structured output assembly.
 - **Clean, delimiter-free syntax**
-- **Channels for structured output**: `data`, `text`, `sink`, `sequence`
+- **Channels for structured output**: `data`, `text`, `sequence`
 - **Focus on logic and orchestration**
 
 </td>
@@ -559,7 +578,7 @@ var plan = makePlan(
   "Analyze competitor's new feature")
 result.plan = plan
 
-// 2. Each step runs in parallel.
+// 2. Each step runs concurrently.
 for step in plan.steps
   var stepResult =
     executeStep(step.instruction)
@@ -735,4 +754,4 @@ console.log(JSON.stringify(result, null, 2));
 - **Nunjucks (Original Engine):** [https://mozilla.github.io/nunjucks/](https://mozilla.github.io/nunjucks/)
 
 ## Development Status and Roadmap
-See the roadmap section in the Cascada Script docsumentation: [https://geleto.github.io/cascada-script/#development-status-and-roadmap](https://geleto.github.io/cascada-script/#development-status-and-roadmap)
+See the roadmap section in the Cascada Script documentation: [https://geleto.github.io/cascada-script/#development-status-and-roadmap](https://geleto.github.io/cascada-script/#development-status-and-roadmap)
