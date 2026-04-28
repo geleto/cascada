@@ -6,6 +6,7 @@ import {compile} from './compiler/compiler.js';
 import {Environment, AsyncEnvironment} from './environment/environment.js';
 import {precompileGlobal} from './precompile-global.js';
 import {precompileEsm} from './precompile-esm.js';
+import {transpiler as scriptTranspiler} from './script/script-transpiler.js';
 
 function match(filename, patterns) {
   if (!Array.isArray(patterns)) {
@@ -16,9 +17,11 @@ function match(filename, patterns) {
 
 /** @deprecated Use precompileTemplateString instead */
 function precompileString(str, opts) {
-  opts = Object.assign((opts ?? {}), { isAsync: false, isScript: false });
+  opts = Object.assign({ isAsync: false, isScript: false }, opts, { isString: true });
   opts.isString = true;
-  const env = opts.env || new Environment([]);
+  const env = opts.isAsync
+    ? opts.asyncEnv || opts.env || new AsyncEnvironment([])
+    : opts.env || new Environment([]);
   const wrapper = getPrecompileWrapper(opts);
 
   if (!opts.name) {
@@ -28,23 +31,17 @@ function precompileString(str, opts) {
 }
 
 function precompileTemplateString(str, opts) {
-  opts = opts || {};
-  opts.isAsync = false;
-  opts.isScript = false;
+  opts = Object.assign({}, opts, { isAsync: false, isScript: false });
   return precompileString(str, opts);
 }
 
 function precompileTemplateStringAsync(str, opts) {
-  opts = opts || {};
-  opts.isAsync = true;
-  opts.isScript = false;
+  opts = Object.assign({}, opts, { isAsync: true, isScript: false });
   return precompileString(str, opts);
 }
 
 function precompileScriptString(str, opts) {
-  opts = opts || {};
-  opts.isAsync = true;
-  opts.isScript = true;
+  opts = Object.assign({}, opts, { isAsync: true, isScript: true });
   return precompileString(str, opts);
 }
 
@@ -142,7 +139,8 @@ function _precompile(str, name, env, opts) {
   name = name.replace(/\\/g, '/');
 
   try {
-    template = compile(str,
+    const source = opts.isScript ? scriptTranspiler.scriptToTemplate(str) : str;
+    template = compile(source,
       asyncFilters,
       extensions,
       name,
@@ -169,20 +167,21 @@ function getPrecompileWrapper(opts) {
 }
 
 function precompileTemplate(str, opts) {
-  return precompile(str, opts, false/*async*/, false/*script*/);
+  return precompile(str, Object.assign({}, opts, { isAsync: false, isScript: false }));
 }
 
 function precompileTemplateAsync(str, opts) {
-  return precompile(str, opts, false/*async*/, false/*script*/);
+  return precompile(str, Object.assign({}, opts, { isAsync: true, isScript: false }));
 }
 
 function precompileScript(str, opts) {
-  return precompile(str, opts, false/*async*/, true/*script*/);
+  return precompile(str, Object.assign({}, opts, { isAsync: true, isScript: true }));
 }
 
 export {
   /** @deprecated Use precompileTemplate instead */
   precompile,
+  /** @deprecated Use precompileTemplateString instead */
   precompileString,
   precompileTemplate,
   precompileTemplateAsync,

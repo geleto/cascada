@@ -329,3 +329,35 @@ All Cascada composition operations support `with` for passing data across isolat
 * Complex data orchestration workflows
 * Need explicit control over multiple output streams
 * Working with LLM orchestration or data pipelines
+
+## API Notes
+
+Cascada keeps Nunjucks-compatible API names where useful, but new code should use the `cascada-engine` package name and Cascada class/function names. See the [Cascada Script API section](script.md#api-reference) for the canonical API surface.
+
+### ESM And Browser Usage
+
+Prefer ESM imports in Node and modern browser builds. The main entry can compile from source:
+
+```javascript
+import { AsyncEnvironment, compileTemplateAsync, precompileTemplateAsync } from 'cascada-engine';
+```
+
+Use the precompiled entry when templates/scripts are compiled ahead of time:
+
+```javascript
+import { AsyncEnvironment as PrecompiledEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled';
+```
+
+Use the browser-specific precompiled entry when you specifically want the browser slim ESM runtime:
+
+```javascript
+import { AsyncEnvironment as PrecompiledEnvironment, PrecompiledLoader } from 'cascada-engine/browser/precompiled';
+```
+
+Legacy script-tag/global builds expose `window.cascada`:
+
+```javascript
+const env = new window.cascada.AsyncEnvironment();
+```
+
+For migration pages, `window.nunjucks` may alias `window.cascada` for Nunjucks compatibility. New Cascada-specific browser code should use ESM imports.

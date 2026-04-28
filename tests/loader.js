@@ -1236,19 +1236,19 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
         function TestScriptLoader() {}
         TestScriptLoader.prototype.load = function(name) {
           if (name === 'script-test.njk') {
-            return 'let x = {{ value }};';
+            return 'var x = value\nreturn x';
           }
           return null;
         };
 
         let env = new AsyncEnvironment([new TestScriptLoader()]);
-        let result = precompileScriptString('let x = {{ value }};', {
+        let result = precompileScriptString('var x = value\nreturn x', {
           name: 'script-test.njk',
           env: env
         });
 
         expect(result).to.be.a('string');
-        expect(result).to.contain('let x');
+        expect(result).to.contain('runtime.declareBufferChannel(output, "x", "var"');
       });
     });
 

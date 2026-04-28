@@ -73,7 +73,6 @@ function default_(val, def, bool) {
   }
 }
 
-// TODO: it is confusing to export something called 'default'
 function dictsort(val, caseSensitive, by) {
   if (!lib.isObject(val)) {
     throw new lib.TemplateError('dictsort filter: val must be an object');

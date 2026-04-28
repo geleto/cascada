@@ -15,6 +15,14 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/types/index.d.ts"
+    },
+    "./precompiled": {
+      "import": "./dist/precompiled/index.js",
+      "types": "./dist/types/precompiled/index.d.ts"
+    },
+    "./browser/precompiled": {
+      "import": "./dist/browser/precompiled.js",
+      "types": "./dist/types/browser/precompiled.d.ts"
     }
   },
   "files": [
@@ -75,7 +83,7 @@
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
     "clean": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist', {recursive: true, force: true})\"",
-    "build:types": "cpy src/index.d.ts dist/types/ --flat",
+    "build:types": "cpy src/index.d.ts dist/types/ --flat && cpy src/precompiled/index.d.ts dist/types/precompiled/ --flat && cpy src/browser/precompiled.d.ts dist/types/browser/ --flat",
     "build:docs": "cpy docs/cascada/script.md README.md dist/docs/ --flat",
     "build": "npm run clean && npm run lint && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/ && npm run build:docs",
     "build:esm": "node scripts/build-esm.mjs",

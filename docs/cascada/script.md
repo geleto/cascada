@@ -2645,6 +2645,31 @@ For details on features inherited from Nunjucks, such as the full range of built
 *   **Script**: A file or string designed for **logic and data orchestration**. Scripts use features like `var`, `for`, `if`, channel declarations (`data`, `text`, `sequence`), and explicit `return` to execute asynchronous operations and produce a structured result. Their primary goal is to *build data*.
 *   **Template**: A file or string designed for **presentation and text generation**. Templates use `{{ variable }}` and `{% tag %}` syntax to render a final string output. Their primary goal is to *render text*.
 
+Use ESM imports for new code. The main entry can compile from source:
+
+```javascript
+import {
+  AsyncEnvironment,
+  FileSystemLoader,
+  compileScript,
+  compileTemplateAsync,
+  precompileScript,
+  precompileTemplateAsync
+} from 'cascada-engine';
+```
+
+Use the precompiled entry when templates/scripts are compiled ahead of time and the app only needs the runtime:
+
+```javascript
+import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled';
+```
+
+Browser builds can use the browser-specific precompiled ESM entry:
+
+```javascript
+import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/browser/precompiled';
+```
+
 ### AsyncEnvironment Class
 
 The `AsyncEnvironment` is the primary class for orchestrating and executing Cascada Scripts. All its rendering methods return Promises.
@@ -2682,8 +2707,10 @@ The `AsyncEnvironment` is the primary class for orchestrating and executing Casc
     *   `loaders`: A single loader or an array of loaders to find script/template files.
     *   `opts`: Configuration flags:
         *   `autoescape` (default: `true`): Automatically escapes template output.
+        *   `throwOnUndefined` (default: `false`): Throw when rendering an undefined value.
         *   `trimBlocks` (default: `false`): Remove the first newline after a block tag.
         *   `lstripBlocks` (default: `false`): Strip leading whitespace from a block tag.
+        *   `tags`: Override template tag delimiters.
 
     ```javascript
     import { AsyncEnvironment, FileSystemLoader } from 'cascada-engine';
@@ -2698,6 +2725,7 @@ Loaders are objects that tell the environment how to find and load your scripts 
 
 *   **Built-in Loaders:**
     *   **`FileSystemLoader`**: (Node.js only) Loads files from the local filesystem.
+    *   **`NodeResolveLoader`**: (Node.js only) Resolves templates through Node package resolution.
     *   **`WebLoader`**: (Browser only) Loads files over HTTP.
     *   **`PrecompiledLoader`**: Loads assets from a precompiled JavaScript object.
     You can pass a single loader or an array of loaders to the `AsyncEnvironment` constructor. If an array is provided, Cascada will try each loader in order until one successfully finds the requested file.
@@ -2780,6 +2808,12 @@ Loaders are objects that tell the environment how to find and load your scripts 
     const result2 = await compiledScript.render({ input: 'data2' });
     ```
 
+Top-level compile helpers are also available:
+
+*   `compileScript(source, [env], [path])`
+*   `compileTemplateAsync(source, [env], [path])`
+*   `compileTemplate(source, [env], [path])` for synchronous Nunjucks-compatible templates
+
 #### Adding Global Methods
 
 *   `asyncEnvironment.addGlobal(name, value)`
@@ -2795,6 +2829,9 @@ Loaders are objects that tell the environment how to find and load your scripts 
 
 *   `asyncEnvironment.addFilter(name, func, [isAsync])`
     Adds a custom filter for use with the `|` operator.
+
+*   `asyncEnvironment.addFilterAsync(name, func)`
+    Adds an async filter.
 
 *   `asyncEnvironment.addDataMethods(methods)`
     Extends the built-in `data` channel with custom methods.
@@ -2830,8 +2867,32 @@ For maximum performance, precompile your scripts and templates into JavaScript a
 
 *   `precompileScript(path, [opts])`
 *   `precompileTemplate(path, [opts])`
+*   `precompileTemplateAsync(path, [opts])`
+*   `precompileScriptString(source, [opts])`
+*   `precompileTemplateString(source, [opts])`
+*   `precompileTemplateStringAsync(source, [opts])`
 
 The resulting JavaScript can be saved to a `.js` file and loaded using the `PrecompiledLoader`. A key option is `opts.env`, which ensures custom filters, global functions, and data methods are included in the compiled output.
+
+For compiler-free runtime usage, import the precompiled entry:
+
+```javascript
+import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled';
+```
+
+Browser builds can use the browser-specific precompiled ESM entry:
+
+```javascript
+import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/browser/precompiled';
+```
+
+The CLI uses the same modes:
+
+```bash
+cascada-precompile views --mode template
+cascada-precompile views --mode template-async
+cascada-precompile script.casc --mode script --format esm
+```
 
 **For a comprehensive guide on precompilation options, see the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
 

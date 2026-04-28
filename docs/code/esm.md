@@ -467,17 +467,28 @@ The ESM migration should add explicit async precompiled tests. Do not assume the
 
 ## ESM Precompiled Runtime
 
-Replace the slim bundle with a compiler-free ESM runtime entry.
+Replace the old slim bundle with a compiler-free ESM runtime entry. This should be a real public entry, not only a browser test harness convenience.
 
-Suggested entries:
+The Nunjucks slim build was useful because applications could precompile templates during their build and ship only the runtime needed to execute those templates. Cascada keeps that capability in ESM form through the precompiled entries below.
+
+Target entries:
 
 ```text
 src/index.js                  full ESM entry: runtime + compiler/precompile APIs
-src/browser/index.js          browser full ESM entry
-src/precompiled/index.js      environment/runtime + PrecompiledLoader, no compiler
+src/precompiled/index.js      shared precompiled runtime entry, no compiler
 src/browser/precompiled.js    browser precompiled ESM entry
-src/node/precompiled.js       optional Node precompiled ESM entry
+src/node/precompiled.js       optional Node precompiled ESM entry, if Node needs a distinct surface
 ```
+
+`src/browser/index.js` is not required unless the package later needs a browser-specific full entry. The important browser-specific entry is `src/browser/precompiled.js`, because that is the ESM replacement for the old slim browser runtime.
+
+Done:
+
+- `src/environment/template-runtime.js` owns compiler-free rendering for compiled template objects.
+- `src/environment/template.js` adds string compilation on top of the runtime class.
+- `src/environment/precompiled-template.js` and `src/environment/precompiled-environment.js` reject string compilation and render only precompiled sources.
+- `src/precompiled/index.js` and `src/browser/precompiled.js` expose the runtime-only public surface.
+- `package.json` exports `./precompiled` and `./browser/precompiled`.
 
 The precompiled entries should not import:
 
@@ -489,7 +500,7 @@ The precompiled entries should not import:
 - `src/precompile.js`
 - Node-only loaders
 
-To make this real, split compile-capable classes from runtime-capable classes. The current `src/environment/template.js` imports the compiler at module top level. In ESM that would pull the compiler into precompiled-only entries even if `_compileSource()` is never called.
+To make this real, split compile-capable classes from runtime-capable classes. The old `src/environment/template.js` shape imported the compiler at module top level. In ESM that would pull the compiler into precompiled-only entries even if `_compileSource()` was never called.
 
 Preferred shape:
 
@@ -512,7 +523,17 @@ src/environment/precompiled-template.js
 
 Then precompiled environments can use only precompiled template classes.
 
-This avoids the old Webpack trick where compiler modules are present as empty mocks.
+The precompiled environment should:
+
+- expose environment/template classes that render `{ type: 'code', obj }` sources from `PrecompiledLoader`;
+- reject string template/script sources with a clear error instead of compiling them;
+- support precompiled template rendering, includes, imports, inheritance, globals, filters, tests, runtime helpers, and output channels;
+- avoid script transpilation and template compilation APIs;
+- keep the public full entry unchanged.
+
+The browser entry can then import only the precompiled environment, `PrecompiledLoader`, browser-safe loaders if needed, and runtime support modules. Tests should assert both behavior and import boundaries: rendering a precompiled template through this entry should pass, and the entry graph should not include compiler/parser/lexer/precompile modules.
+
+This avoids the old Webpack trick where compiler modules are present as empty mocks. It also keeps the package honest: a precompiled entry is only "slim" if ESM static imports cannot pull the compiler in by accident.
 
 ## ESM Precompile Output
 
@@ -550,7 +571,7 @@ The browser precompiled test page can then use:
 
 ```js
 import { AsyncEnvironment } from '../../src/browser/precompiled.js';
-import { PrecompiledLoader } from '../../src/loader/precompiled-loader.js';
+import { PrecompiledLoader } from '../../src/browser/precompiled.js';
 import templates from './precompiled-templates.js';
 
 const env = new AsyncEnvironment(new PrecompiledLoader(templates));
@@ -648,7 +669,7 @@ Browser test pages should use native ESM:
   import '../api.js';
   import '../pasync/calls.js';
 
-  window.nunjucks = cascada.default || cascada;
+  window.nunjucks = {...cascada};
   window.nunjucks.testing = true;
 
   const runner = mocha.run((failures) => {
@@ -849,10 +870,11 @@ Replace:
 10. Replace Node coverage with `c8`. Done for the Node coverage test scripts.
 11. Replace browser bundle tests with native browser ESM tests. Done for the current browser test lane.
 12. Add browser ESM Istanbul instrumentation in the test server.
-13. Remove CJS build output and CJS export conditions.
-14. Remove browser UMD bundle build. Done for the current package/test build.
-15. Delete unused Babel/Rollup/Webpack dependencies. Done.
-16. Run full Node and browser tests.
+13. Add the real compiler-free precompiled runtime entry (`src/browser/precompiled.js`, plus shared precompiled environment modules). Done.
+14. Remove CJS build output and CJS export conditions.
+15. Remove browser UMD bundle build. Done for the current package/test build.
+16. Delete unused Babel/Rollup/Webpack dependencies. Done.
+17. Run full Node and browser tests.
 
 ## Post-Transition Source Cleanup
 

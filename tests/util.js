@@ -62,8 +62,11 @@ function equal(str, ctx, opts, str2, env) {
 }
 
 function jinjaEqual(str, ctx, str2, env) {
-  const jinjaUninstalls = [nunjucks.installJinjaCompat()];
-  if (nunjucksFull !== nunjucks) {
+  const jinjaUninstalls = [];
+  if (typeof nunjucks.installJinjaCompat === 'function') {
+    jinjaUninstalls.push(nunjucks.installJinjaCompat());
+  }
+  if (nunjucksFull !== nunjucks && typeof nunjucksFull.installJinjaCompat === 'function') {
     jinjaUninstalls.push(nunjucksFull.installJinjaCompat());
   }
   try {

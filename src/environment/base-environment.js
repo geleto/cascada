@@ -2,13 +2,20 @@
 import waterfall from 'a-sync-waterfall';
 import {isArray, _entries, without, isFunction} from '../lib.js';
 import * as filters from '../filters.js';
-import {FileSystemLoader, WebLoader} from '../loader/loaders.js';
 import * as tests from '../tests.js';
 import {createGlobals} from '../globals.js';
 import {EmitterObj} from '../object.js';
 import {handleError} from '../runtime/errors.js';
 import {express as expressApp} from '../express-app.js';
 import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
+
+let DefaultFileSystemLoader = null;
+let DefaultWebLoader = null;
+
+function setDefaultLoaderClasses(FileSystemLoader, WebLoader) {
+  DefaultFileSystemLoader = FileSystemLoader;
+  DefaultWebLoader = WebLoader;
+}
 
 /**
  * A no-op template, for use with {% include ignore missing %}
@@ -75,10 +82,10 @@ class BaseEnvironment extends EmitterObj {
 
     if (!loaders) {
       // The filesystem loader is only available server-side
-      if (FileSystemLoader) {
-        this.loaders = [new FileSystemLoader('views')];
-      } else if (WebLoader) {
-        this.loaders = [new WebLoader('/views')];
+      if (DefaultFileSystemLoader) {
+        this.loaders = [new DefaultFileSystemLoader('views')];
+      } else if (DefaultWebLoader) {
+        this.loaders = [new DefaultWebLoader('/views')];
       }
     } else {
       this.loaders = isArray(loaders) ? loaders : [loaders];
@@ -356,4 +363,4 @@ class BaseEnvironment extends EmitterObj {
   }
 }
 
-export { BaseEnvironment, noopTmplSrc, noopTmplSrcAsync };
+export { BaseEnvironment, noopTmplSrc, noopTmplSrcAsync, setDefaultLoaderClasses };

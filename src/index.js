@@ -128,6 +128,7 @@ export function renderAsync(name, ctx) {
   return asyncE.renderTemplate(name, ctx);
 }
 
+/** @deprecated Use renderTemplateString instead */
 export function renderString(src, ctx, cb) {
   if (!e) {
     configure();

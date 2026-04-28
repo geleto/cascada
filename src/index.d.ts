@@ -50,7 +50,6 @@ export function compileScript(src: string, env?: AsyncEnvironment, path?: string
 export function precompileTemplate(path: string, opts?: PrecompileOptions): string;
 export function precompileTemplateString(src: string, opts?: PrecompileOptions): string;
 
-//@todo - does this realy return a promise?
 export function precompileTemplateAsync(path: string, opts?: PrecompileOptionsAsync): string;
 export function precompileScript(path: string, opts?: PrecompileOptionsAsync): string;
 export function precompileTemplateStringAsync(src: string, opts?: PrecompileOptionsAsync): string;

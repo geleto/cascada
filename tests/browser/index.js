@@ -1,7 +1,8 @@
 const cascada = await import('../../src/index.js');
 
-window.nunjucks = {...cascada};
-window.nunjucks.testing = true;
+window.cascada = {...cascada};
+window.nunjucks = window.cascada;
+window.cascada.testing = true;
 mocha.setup({
   ui: 'bdd',
   reporter: window.ConsoleReporter

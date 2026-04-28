@@ -1,10 +1,13 @@
-const cascada = await import('../../src/index.js');
+const cascada = await import('../../src/browser/precompiled.js');
+const cascadaFull = await import('../../src/index.js');
 const precompiledTemplates = (await import('./precompiled-templates.js')).default;
 
-window.nunjucks = {...cascada};
-window.nunjucksFull = window.nunjucks;
+window.cascada = {...cascada};
+window.cascadaFull = {...cascadaFull};
+window.nunjucks = window.cascada;
+window.nunjucksFull = window.cascadaFull;
 window.precompiledTemplates = precompiledTemplates;
-window.nunjucks.testing = true;
+window.cascada.testing = true;
 mocha.setup({
   ui: 'bdd',
   reporter: window.ConsoleReporter

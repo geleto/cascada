@@ -96,5 +96,70 @@ import {fileURLToPath} from 'url';
         done();
       });
     });
+
+    it('should support async template mode', function(done) {
+      var args = [
+        '--mode', 'template-async',
+        '--name', 'item.njk',
+        'tests/templates/item.njk',
+      ];
+      this.timeout(18000); // execFile can be slow on Windows
+      execPrecompile(args, function(err, stdout, stderr) {
+        if (!fs.existsSync(distEntry)) {
+          expectMissingBuild(err, stdout, stderr, done);
+          return;
+        }
+        if (err) {
+          done(err);
+          return;
+        }
+        expect(stdout).to.contain('function root(env, context, runtime, cb');
+        expect(stdout).to.not.contain('function root(env, context, frame, runtime, cb');
+        expect(filterDebuggerMessages(stderr)).to.equal('');
+        done();
+      });
+    });
+
+    it('should support script mode', function(done) {
+      var args = [
+        '--mode', 'script',
+        '--name', 'precompile-script.casc',
+        'tests/templates/precompile-script.casc',
+      ];
+      this.timeout(18000); // execFile can be slow on Windows
+      execPrecompile(args, function(err, stdout, stderr) {
+        if (!fs.existsSync(distEntry)) {
+          expectMissingBuild(err, stdout, stderr, done);
+          return;
+        }
+        if (err) {
+          done(err);
+          return;
+        }
+        expect(stdout).to.contain('runtime.declareBufferChannel(output, "x", "var"');
+        expect(stdout).to.contain('new runtime.VarCommand');
+        expect(filterDebuggerMessages(stderr)).to.equal('');
+        done();
+      });
+    });
+
+    it('should reject invalid mode', function(done) {
+      var args = [
+        '--mode', 'nope',
+        'tests/templates/item.njk',
+      ];
+      this.timeout(18000); // execFile can be slow on Windows
+      execPrecompile(args, function(err, stdout, stderr) {
+        if (!fs.existsSync(distEntry)) {
+          expectMissingBuild(err, stdout, stderr, done);
+          return;
+        }
+        expect(err).to.be.ok();
+        expect(err.code).to.be(1);
+        expect(stdout).to.equal('');
+        expect(filterDebuggerMessages(stderr)).to.contain('Invalid precompile mode "nope"');
+        done();
+      });
+    });
   });
 }());

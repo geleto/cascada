@@ -1,5 +1,11 @@
 import expect from 'expect.js';
-import {precompile, precompileString} from '../src/precompile.js';
+import {
+  precompile,
+  precompileString,
+  precompileScriptString,
+  precompileTemplateAsync,
+  precompileTemplateStringAsync
+} from '../src/precompile.js';
 
 (function() {
 
@@ -19,6 +25,33 @@ import {precompile, precompileString} from '../src/precompile.js';
       expect(output).to.contain('const templates = {};');
       expect(output).to.contain('templates["test.njk"] =');
       expect(output).to.contain('export default templates;');
+    });
+
+    it('should preserve async mode for precompileTemplateStringAsync', function() {
+      const output = precompileTemplateStringAsync('{{ test }}', {
+        name: 'async-test.njk'
+      });
+
+      expect(output).to.contain('function root(env, context, runtime, cb');
+      expect(output).to.not.contain('function root(env, context, frame, runtime, cb');
+    });
+
+    it('should preserve async mode for precompileTemplateAsync', function() {
+      const output = precompileTemplateAsync('./tests/templates/item.njk');
+
+      expect(output).to.contain('function root(env, context, runtime, cb');
+      expect(output).to.not.contain('function root(env, context, frame, runtime, cb');
+    });
+
+    it('should compile script strings as Cascada script syntax', function() {
+      const output = precompileScriptString('var result = {}\nresult.x = 1\nreturn result', {
+        name: 'script-test.casc'
+      });
+
+      expect(output).to.contain('function root(env, context, runtime, cb');
+      expect(output).to.not.contain('var result = {}\\nresult.x = 1\\nreturn result');
+      expect(output).to.contain('runtime.declareBufferChannel(output, "result", "var"');
+      expect(output).to.contain('new runtime.VarCommand');
     });
 
     describe('templates', function() {
