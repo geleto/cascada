@@ -21,7 +21,6 @@ const {WebLoader} = webLoaders;
 const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
 
 (function () {
-  'use strict';
 
   var templatesPath = isBrowser ? '../templates' : 'tests/templates';
 

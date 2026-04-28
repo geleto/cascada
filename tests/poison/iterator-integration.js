@@ -4,7 +4,6 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison} from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   describe('Iterator Poison Integration with Templates', () => {
     let env;

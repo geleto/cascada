@@ -1,4 +1,3 @@
-'use strict';
 
 import {isArray, asyncIter, asyncFor, keys as objectKeys} from '../lib.js';
 

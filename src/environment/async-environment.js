@@ -1,4 +1,3 @@
-'use strict';
 import {BaseEnvironment} from './base-environment.js';
 import {AsyncTemplate} from './template.js';
 import {Script} from './script.js';

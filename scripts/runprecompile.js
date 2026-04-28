@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-
-'use strict';
-
 import precompileTestTemplates from './lib/precompile.js';
 
 precompileTestTemplates()

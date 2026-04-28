@@ -1,4 +1,3 @@
-'use strict';
 
 const CHANNEL_TYPE_FACTS = Object.freeze({
   data: Object.freeze({

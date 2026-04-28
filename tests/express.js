@@ -1,11 +1,10 @@
-'use strict';
 
 import path from 'path';
 import {fileURLToPath} from 'url';
 import express from 'express';
 import expect from 'expect.js';
 import request from 'supertest';
-import nunjucks from '../src/index.js';
+import * as nunjucks from '../src/index.js';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 var VIEWS = path.join(testDir, '../samples/express/views');

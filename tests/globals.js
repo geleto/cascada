@@ -6,7 +6,6 @@ const {Environment} = typeof window !== 'undefined'
   : await import('../src/environment/environment.js');
 
 (function() {
-  'use strict';
 
   var equal;
   var render;

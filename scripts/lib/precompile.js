@@ -10,12 +10,12 @@ const outputFile = path.join(testDir, 'browser/precompiled-templates.js');
 
 async function loadPrecompile() {
   const candidates = [
-    path.join(projectRoot, 'dist/esm/precompile.js'),
+    path.join(projectRoot, 'dist/precompile.js'),
     path.join(projectRoot, 'src/precompile.js')
   ];
   const precompilePath = candidates.find((candidate) => fs.existsSync(candidate));
   if (!precompilePath) {
-    throw new Error('Unable to find precompile module. Run `npm run build:esm` first.');
+    throw new Error('Unable to find precompile module. Run `npm run build` first.');
   }
   const precompileModule = await import(pathToFileURL(precompilePath));
   return precompileModule.precompile;

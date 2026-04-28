@@ -1,4 +1,3 @@
-'use strict';
 
 import {PoisonError, createPoison} from '../errors.js';
 import {Command, contextualizeErrorsForOutput} from './command-base.js';

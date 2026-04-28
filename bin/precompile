@@ -5,27 +5,22 @@ import path from 'path';
 import {fileURLToPath, pathToFileURL} from 'url';
 
 const binDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(binDir, '..');
+const packageRoot = path.resolve(binDir, '..');
 
-const moduleSets = [
-  {
-    precompile: path.join(repoRoot, 'dist', 'precompile.js'),
-    environment: path.join(repoRoot, 'dist', 'environment', 'environment.js'),
-    lib: path.join(repoRoot, 'dist', 'lib.js')
-  },
-  {
-    precompile: path.join(repoRoot, 'dist', 'cjs', 'precompile.js'),
-    environment: path.join(repoRoot, 'dist', 'cjs', 'environment', 'environment.js'),
-    lib: path.join(repoRoot, 'dist', 'cjs', 'lib.js')
-  },
-  {
-    precompile: path.join(repoRoot, 'src', 'precompile.js'),
-    environment: path.join(repoRoot, 'src', 'environment', 'environment.js'),
-    lib: path.join(repoRoot, 'src', 'lib.js')
-  }
+const moduleRoots = [
+  packageRoot,
+  path.join(packageRoot, 'dist')
 ];
 
-const moduleSet = moduleSets.find((set) =>
+function createModuleSet(root) {
+  return {
+    precompile: path.join(root, 'precompile.js'),
+    environment: path.join(root, 'environment', 'environment.js'),
+    lib: path.join(root, 'lib.js')
+  };
+}
+
+const moduleSet = moduleRoots.map(createModuleSet).find((set) =>
   fs.existsSync(set.precompile) &&
   fs.existsSync(set.environment) &&
   fs.existsSync(set.lib)
@@ -42,7 +37,7 @@ const libModule = await import(pathToFileURL(moduleSet.lib));
 
 const precompile = precompileModule.precompile || precompileModule.default?.precompile;
 const Environment = environmentModule.Environment || environmentModule.default?.Environment;
-const lib = libModule.default || libModule;
+const lib = libModule;
 let cmdpath = null;
 
 program

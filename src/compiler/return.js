@@ -1,4 +1,3 @@
-'use strict';
 
 const RETURN_CHANNEL_NAME = '__return__';
 const RETURN_IS_UNSET_FUNCTION_NAME = '__return_is_unset__';

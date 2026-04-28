@@ -1,4 +1,3 @@
-'use strict';
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../src/environment/environment.js';

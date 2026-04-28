@@ -4,7 +4,6 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   describe('Frame Poison Integration with Templates', () => {
     let env;

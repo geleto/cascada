@@ -1,4 +1,4 @@
-export default {
+const fs = {
   existsSync() {
     return false;
   },
@@ -15,3 +15,5 @@ export default {
     return [];
   }
 };
+
+export default fs;

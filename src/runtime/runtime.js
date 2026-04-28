@@ -1,4 +1,3 @@
-'use strict';
 
 export * from './macro.js';
 export * from './safe-output.js';

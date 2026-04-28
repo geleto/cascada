@@ -1,4 +1,3 @@
-'use strict';
 
 import {parse} from '../parser.js';
 import {transform} from '../transformer.js';

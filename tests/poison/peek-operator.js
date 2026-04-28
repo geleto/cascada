@@ -4,7 +4,6 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   describe('Peek Operator (#)', () => {
     let env;

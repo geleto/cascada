@@ -1,8 +1,7 @@
-'use strict';
 
 import waterfall from 'a-sync-waterfall';
 import {isArray, _entries, without, isFunction} from '../lib.js';
-import filters from '../filters.js';
+import * as filters from '../filters.js';
 import {FileSystemLoader, WebLoader, PrecompiledLoader} from '../loader/loaders.js';
 import * as tests from '../tests.js';
 import globals from '../globals.js';

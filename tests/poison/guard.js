@@ -1,8 +1,9 @@
 import expect from 'expect.js';
-import cascada, {AsyncEnvironment} from '../../src/index.js';
+import * as cascada from '../../src/index.js';
+
+const {AsyncEnvironment} = cascada;
 
 (function () {
-  'use strict';
 
   function throwError(message) {
     throw new Error(message);

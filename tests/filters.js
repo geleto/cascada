@@ -5,7 +5,6 @@ const lib = typeof window !== 'undefined' ? window.nunjucks.lib : await import('
 const r = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../src/runtime/runtime.js');
 
 (function() {
-  'use strict';
 
   var render;
   var equal;

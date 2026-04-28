@@ -1,4 +1,3 @@
-'use strict';
 
 import {ChannelCommand, runWithResolvedArguments} from './command-base.js';
 import {PoisonError, isPoison} from '../errors.js';

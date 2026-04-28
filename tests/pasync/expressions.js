@@ -5,7 +5,6 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
   : await import('../../src/environment/environment.js');
 
 (function () {
-  'use strict';
 
   //var unescape;
   //var Environment;

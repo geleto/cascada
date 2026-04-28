@@ -1,4 +1,3 @@
-'use strict';
 
 import {POISON_KEY, RESOLVE_MARKER} from './markers.js';
 

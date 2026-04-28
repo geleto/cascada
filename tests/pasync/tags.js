@@ -3,7 +3,6 @@ import {AsyncEnvironment, AsyncTemplate} from '../../src/environment/environment
 import {delay} from '../util.js';
 
 (function () {
-  'use strict';
 
   //var unescape;
   //var StringLoader;

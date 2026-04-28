@@ -1,4 +1,3 @@
-'use strict';
 
 import {RESOLVE_MARKER} from '../resolve.js';
 

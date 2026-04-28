@@ -1,4 +1,3 @@
-'use strict';
 
 import {isPoison, PoisonError, createPoison} from '../errors.js';
 import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve.js';

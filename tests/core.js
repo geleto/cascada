@@ -5,7 +5,6 @@ import path from 'path';
 import * as nunjucks from '../src/index.js';
 
 (function() {
-  'use strict';
 
   function rmdir(dirPath) {
     fs.emptyDirSync(dirPath);

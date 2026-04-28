@@ -4,7 +4,6 @@ const lib = typeof window !== 'undefined' ? window.nunjucks.lib : await import('
 const lexer = typeof window !== 'undefined' ? window.nunjucks.lexer : await import('../src/lexer.js');
 
 (function() {
-  'use strict';
 
   function _hasTokens(ws, tokens, types) {
     var i;

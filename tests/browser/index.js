@@ -1,8 +1,6 @@
 const cascada = await import('../../src/index.js');
-const {WebLoader} = await import('../../src/loader/web-loaders.js');
 
-window.nunjucks = cascada.default || cascada;
-window.nunjucks.WebLoader = WebLoader;
+window.nunjucks = {...cascada};
 window.nunjucks.testing = true;
 mocha.setup({
   ui: 'bdd',

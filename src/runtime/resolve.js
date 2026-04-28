@@ -31,8 +31,6 @@
  *    - On success, it **mutates the object in-place**, replacing promises with real values.
  *    - This ensures subsequent reads are instant and synchronous.
  */
-'use strict';
-
 import {createPoison, isPoison, isPoisonError, collectErrors, PoisonError} from './errors.js';
 import {RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers.js';
 

@@ -1,4 +1,3 @@
-'use strict';
 
 import {SafeString} from './runtime/runtime.js';
 

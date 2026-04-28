@@ -1,4 +1,3 @@
-'use strict';
 
 import {ErrorCommand} from './channels/error.js';
 import {TextCommand} from './channels/text.js';

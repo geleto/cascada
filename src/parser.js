@@ -1,4 +1,3 @@
-'use strict';
 
 import * as lexer from './lexer.js';
 import * as nodes from './nodes.js';

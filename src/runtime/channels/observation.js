@@ -1,4 +1,3 @@
-'use strict';
 
 import {RETURN_UNSET} from '../markers.js';
 import {isPoisonError, handleError} from '../errors.js';

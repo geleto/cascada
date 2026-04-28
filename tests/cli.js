@@ -5,7 +5,6 @@ import expect from 'expect.js';
 import {fileURLToPath} from 'url';
 
 (function() {
-  'use strict';
 
   const testDir = path.dirname(fileURLToPath(import.meta.url));
   var rootDir = path.resolve(path.join(testDir, '..'));

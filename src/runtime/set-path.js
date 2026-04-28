@@ -32,8 +32,6 @@
  *      - It waits for all async children to settle.
  *      - Upon completion, it mutates the object in-place, swapping Promises for real values.
  */
-'use strict';
-
 import {isPoison, createPoison} from './errors.js';
 import {resolveAll, RESOLVE_MARKER, createObject, createArray} from './resolve.js';
 

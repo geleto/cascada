@@ -1,4 +1,3 @@
-'use strict';
 
 import expectModule from 'expect.js';
 
@@ -25,7 +24,7 @@ if (isBrowser) {
   expect = window.expect;
 } else {
   const nunjucksModule = await import('../src/index.js');
-  nunjucks = nunjucksFull = nunjucksModule.default || nunjucksModule;
+  nunjucks = nunjucksFull = nunjucksModule;
   Loader = nunjucks.FileSystemLoader;
   templatesPath = 'tests/templates';
   expect = expectModule;

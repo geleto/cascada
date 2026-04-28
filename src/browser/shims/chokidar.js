@@ -1,4 +1,4 @@
-export default {
+const chokidar = {
   watch() {
     return {
       on() {
@@ -7,3 +7,5 @@ export default {
     };
   }
 };
+
+export default chokidar;

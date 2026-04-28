@@ -1,4 +1,3 @@
-'use strict';
 
 const POISON_KEY = Symbol.for('cascada.poison');
 const RESOLVE_MARKER = Symbol.for('cascada.resolve');

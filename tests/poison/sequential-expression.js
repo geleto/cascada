@@ -1,6 +1,4 @@
 
-'use strict';
-
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison, isPoison, isPoisonError} from '../../src/runtime/runtime.js';

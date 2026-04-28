@@ -1,27 +1,7 @@
-'use strict';
 
-import * as lib from './lib.js';
 import {isObject} from './lib.js';
 import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
-import Loader from './loader/loader.js';
-import {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
-import {
-  precompile,
-  precompileString,
-  precompileTemplate,
-  precompileTemplateAsync,
-  precompileTemplateString,
-  precompileTemplateStringAsync,
-  precompileScript,
-  precompileScriptString
-} from './precompile.js';
-import * as compiler from './compiler/compiler.js';
-import * as parser from './parser.js';
-import * as lexer from './lexer.js';
-import * as runtime from './runtime/runtime.js';
-import * as nodes from './nodes.js';
-import installJinjaCompat from './jinja-compat.js';
-import {loadString, clearStringCache, raceLoaders} from './loader/loader-utils.js';
+import {FileSystemLoader, WebLoader} from './loader/loaders.js';
 
 export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
 export {default as Loader} from './loader/loader.js';
@@ -181,49 +161,3 @@ export function renderTemplateAsync(name, ctx) {
   }
   return asyncE.renderTemplate(name, ctx);
 }
-
-export default {
-  Environment,
-  AsyncEnvironment,
-  Template,
-  AsyncTemplate,
-  Script,
-  Loader,
-  FileSystemLoader,
-  NodeResolveLoader,
-  PrecompiledLoader,
-  WebLoader,
-  compiler,
-  parser,
-  lexer,
-  runtime,
-  lib,
-  nodes,
-  installJinjaCompat,
-  configure,
-  configureAsync,
-  reset,
-  compile,
-  compileAsync,
-  compileTemplate,
-  compileTemplateAsync,
-  compileScript,
-  render,
-  renderAsync,
-  renderString,
-  renderTemplateString,
-  renderScriptString,
-  renderTemplate,
-  renderTemplateAsync,
-  precompile,
-  precompileString,
-  precompileTemplate,
-  precompileTemplateAsync,
-  precompileTemplateString,
-  precompileTemplateStringAsync,
-  precompileScript,
-  precompileScriptString,
-  loadString,
-  clearStringCache,
-  raceLoaders
-};

@@ -6,7 +6,6 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   describe('Poisoning integration Tests', () => {
     let env;

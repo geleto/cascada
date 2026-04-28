@@ -1,4 +1,3 @@
-'use strict';
 
 import * as nodes from '../nodes.js';
 import {Frame} from '../runtime/frame.js';

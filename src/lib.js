@@ -1,4 +1,3 @@
-'use strict';
 
 import {RuntimeError, PoisonError} from './runtime/errors.js';
 

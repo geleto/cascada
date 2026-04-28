@@ -1,4 +1,3 @@
-'use strict';
 
 import {RuntimeFatalError, isPoison, markPromiseHandled} from './errors.js';
 import {resolveDuo} from './resolve.js';

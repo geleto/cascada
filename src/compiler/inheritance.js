@@ -1,4 +1,3 @@
-'use strict';
 
 import * as nodes from '../nodes.js';
 import CompileBuffer from './buffer.js';

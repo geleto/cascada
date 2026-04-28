@@ -1,6 +1,4 @@
 /* eslint-disable no-console */
-'use strict';
-
 import {promises as fs} from 'fs';
 import path from 'path';
 import {fileURLToPath} from 'url';

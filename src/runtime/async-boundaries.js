@@ -1,4 +1,3 @@
-'use strict';
 
 import {RuntimeError, handleError, markPromiseHandled} from './errors.js';
 import {createCommandBuffer} from './command-buffer.js';

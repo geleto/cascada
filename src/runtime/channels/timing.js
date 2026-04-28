@@ -1,4 +1,3 @@
-'use strict';
 
 import {resolveAll} from '../resolve.js';
 import {ChannelCommand, Command} from './command-base.js';

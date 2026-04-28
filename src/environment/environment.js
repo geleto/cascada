@@ -1,4 +1,3 @@
-'use strict';
 
 import {Environment} from './sync-environment.js';
 import {AsyncEnvironment} from './async-environment.js';

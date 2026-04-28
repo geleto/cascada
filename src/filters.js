@@ -1,4 +1,3 @@
-'use strict';
 
 import * as lib from './lib.js';
 import * as r from './runtime/runtime.js';
@@ -607,12 +606,12 @@ const d = default_;
 
 const e = escape;
 
-export default {
+export {
   abs,
   batch,
   capitalize,
   center,
-  default: default_,
+  default_ as default,
   dictsort,
   dump,
   escape,
@@ -623,7 +622,7 @@ export default {
   indent,
   join,
   last,
-  length: lengthFilter,
+  lengthFilter as length,
   list,
   lower,
   nl2br,
@@ -648,7 +647,7 @@ export default {
   urlize,
   wordcount,
   float,
-  int: intFilter,
+  intFilter as int,
   d,
   e
 };

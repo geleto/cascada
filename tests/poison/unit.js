@@ -4,7 +4,6 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {createPoison, isPoison, PoisonError, collectErrors} from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   //var unescape;
   //var Environment;

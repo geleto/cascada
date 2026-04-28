@@ -1,4 +1,3 @@
-'use strict';
 
 import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base.js';
 import {Channel} from './base.js';

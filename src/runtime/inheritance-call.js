@@ -1,4 +1,3 @@
-'use strict';
 
 import {Command} from './channels/command-base.js';
 import * as inheritanceState from './inheritance-state.js';

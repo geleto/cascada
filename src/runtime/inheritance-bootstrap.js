@@ -1,4 +1,3 @@
-'use strict';
 
 import inheritanceState from './inheritance-state.js';
 import inheritanceCall from './inheritance-call.js';

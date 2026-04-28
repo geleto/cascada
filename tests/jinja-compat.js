@@ -1,7 +1,6 @@
 import util from './util.js';
 
 (function() {
-  'use strict';
 
   var equal;
   var finish;

@@ -1,7 +1,6 @@
 import lookupApi from './runtime/lookup.js';
 
 function installCompat() {
-  'use strict';
 
   /* eslint-disable camelcase */
 
@@ -9,7 +8,6 @@ function installCompat() {
   // references the nunjucks instance
   var runtime = this.runtime;
   var lib = this.lib;
-  // Handle slim case where these 'modules' are excluded from the built source
   var Compiler = this.compiler.Compiler;
   var CompilerSync = this.compiler.CompilerSync;
   var CompilerAsync = this.compiler.CompilerAsync;
@@ -71,7 +69,7 @@ function installCompat() {
     };
   }
 
-  if (process.env.BUILD_TYPE !== 'SLIM' && nodes && compilerClasses.length && Parser) { // i.e., not slim mode
+  if (nodes && compilerClasses.length && Parser) {
     class Slice extends nodes.Node {
       get typename() { return 'Slice'; }
       get fields() { return ['start', 'stop', 'step']; }

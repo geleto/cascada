@@ -1,4 +1,3 @@
-'use strict';
 
 import {escape} from '../lib.js';
 import {

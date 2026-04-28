@@ -7,7 +7,6 @@ import * as runtime from '../../src/runtime/runtime.js';
 import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js';
 
 (function () {
-  'use strict';
 
   describe('Async template command buffering parity', function () {
     it('should compile async template output to text commands on text output', function () {

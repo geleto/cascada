@@ -4,7 +4,6 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   describe('Iterator Functions Poison Handling - Integration tests (basic)', () => {
     let env;

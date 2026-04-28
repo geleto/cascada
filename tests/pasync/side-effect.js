@@ -5,7 +5,6 @@ import {StringLoader, delay, expectAsyncError} from '../util.js';
 import {isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   async function waitForCondition(predicate, timeoutMs = 200, intervalMs = 5) {
     const deadline = Date.now() + timeoutMs;

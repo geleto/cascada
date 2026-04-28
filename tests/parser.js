@@ -5,7 +5,6 @@ const nodes = typeof window !== 'undefined' ? window.nunjucks.nodes : await impo
 const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await import('../src/parser.js');
 
 (function() {
-  'use strict';
 
   function _isAST(node1, node2) {
     // Compare ASTs

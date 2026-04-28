@@ -1,4 +1,3 @@
-'use strict';
 
 import {isFunction} from '../lib.js';
 import {BaseEnvironment} from './base-environment.js';

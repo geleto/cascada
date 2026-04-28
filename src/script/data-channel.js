@@ -148,7 +148,7 @@ class DataChannelTarget {
 }
 
 // Load and register default data methods on the prototype
-import defaultMethods from './default-data-methods.js';
+import {defaultMethods} from './default-data-methods.js';
 
 Object.keys(defaultMethods).forEach((methodName) => {
   DataChannelTarget.prototype.addMethod(methodName, defaultMethods[methodName]);

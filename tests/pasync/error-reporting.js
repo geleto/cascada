@@ -5,7 +5,6 @@ import {StringLoader, delay} from '../util.js';
 import * as runtime from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   describe('Async mode - error path reporting', function () {
     var loader;

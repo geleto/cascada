@@ -1,4 +1,3 @@
-'use strict';
 
 import {markPromiseHandled} from './errors.js';
 

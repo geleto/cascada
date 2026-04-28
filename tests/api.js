@@ -9,7 +9,6 @@ const {Environment} = environmentModule;
 const Loader = isBrowser ? window.nunjucks.WebLoader : loaderModule.FileSystemLoader;
 
 (function() {
-  'use strict';
 
   var templatesPath = isBrowser ? '../templates' : 'tests/templates';
 

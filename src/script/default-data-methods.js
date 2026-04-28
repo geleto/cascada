@@ -30,7 +30,7 @@ function deepClone(v) {
   return v;
 }
 
-export default {
+const defaultMethods = {
 
   /**
    * Appends an element to an array. This is an in-place mutation.
@@ -902,3 +902,5 @@ export default {
     return undefined;
   }
 };
+
+export {defaultMethods};

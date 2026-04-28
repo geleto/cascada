@@ -1,4 +1,3 @@
-'use strict';
 
 import {checkFrameBalance} from './checks.js';
 import {createLoopBindings} from './loop.js';

@@ -2,7 +2,6 @@ import expect from 'expect.js';
 import {precompile, precompileString} from '../src/precompile.js';
 
 (function() {
-  'use strict';
 
   describe('precompile', function() {
     it('should return a string', function() {

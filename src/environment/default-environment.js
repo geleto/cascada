@@ -1,4 +1,3 @@
-'use strict';
 
 let EnvironmentClass = null;
 let AsyncEnvironmentClass = null;

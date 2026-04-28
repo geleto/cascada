@@ -1,4 +1,3 @@
-'use strict';
 
 import {isObject, isString, _prettifyError, keys} from '../lib.js';
 import {compile} from '../compiler/compiler.js';

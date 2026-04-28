@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-
-'use strict';
-
 import mocha from 'mocha';
 import path from 'path';
 import {fileURLToPath} from 'url';

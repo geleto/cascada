@@ -2,7 +2,6 @@ import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 
 (function () {
-  'use strict';
 
   describe('Phase 1: Loop Two-Pass Compilation', () => {
     let env;

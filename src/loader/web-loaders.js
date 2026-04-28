@@ -1,4 +1,3 @@
-'use strict';
 
 import Loader from './loader.js';
 import {PrecompiledLoader} from './precompiled-loader.js';
@@ -89,7 +88,4 @@ class WebLoader extends Loader {
   }
 }
 
-const FileSystemLoader = undefined;
-const NodeResolveLoader = undefined;
-
-export { WebLoader, PrecompiledLoader, FileSystemLoader, NodeResolveLoader };
+export { WebLoader, PrecompiledLoader };

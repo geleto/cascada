@@ -8,7 +8,6 @@ const {Template, Environment} = typeof window !== 'undefined'
   : await import('../src/environment/environment.js');
 
 (function () {
-  'use strict';
 
   var Loader;
   var render;

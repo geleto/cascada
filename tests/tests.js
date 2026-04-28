@@ -2,7 +2,6 @@ import expect from 'expect.js';
 import util from './util.js';
 
 (function() {
-  'use strict';
 
   var render, equal;
 

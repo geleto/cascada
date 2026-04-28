@@ -1,6 +1,4 @@
 /* eslint-disable camelcase */
-'use strict';
-
 import {indexOf} from './lib.js';
 
 let whitespaceChars = ' \n\t\r\u00A0';

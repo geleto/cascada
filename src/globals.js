@@ -1,4 +1,3 @@
-'use strict';
 
 function cycler(items) {
   var index = -1;

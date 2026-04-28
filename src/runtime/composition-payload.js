@@ -1,4 +1,3 @@
-'use strict';
 
 import {declareBufferChannel} from './channels/index.js';
 import {VarCommand} from './channels/var.js';

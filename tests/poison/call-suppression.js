@@ -4,7 +4,6 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   //let PoisonError;
   //PoisonError = runtime.PoisonError;

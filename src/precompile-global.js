@@ -1,4 +1,3 @@
-'use strict';
 
 function precompileGlobal(templates, opts) {
   var out = '';

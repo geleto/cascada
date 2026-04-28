@@ -1,4 +1,3 @@
-'use strict';
 
 import {memberLookupAsync, memberLookupScript} from './lookup.js';
 import {callWrapAsync} from './call.js';

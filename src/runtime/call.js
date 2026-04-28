@@ -1,4 +1,3 @@
-'use strict';
 
 import {createPoison, isPoison, isPoisonError, handleError, RuntimePromise} from './errors.js';
 import {RESOLVE_MARKER, resolveAll} from './resolve.js';

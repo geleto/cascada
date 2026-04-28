@@ -7,7 +7,6 @@ import * as parser from '../../src/parser.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
 (function () {
-  'use strict';
 
   function normalizeOutput(str) {
     return str.replace(/\s+/g, '');

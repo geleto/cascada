@@ -1,4 +1,3 @@
-'use strict';
 
 import {extend, keys, TemplateError, indexOf} from '../lib.js';
 import {Obj} from '../object.js';

@@ -1,4 +1,3 @@
-'use strict';
 
 import {isString} from '../lib.js';
 import scriptTranspiler from '../script/script-transpiler.js';

@@ -1,4 +1,3 @@
-'use strict';
 
 import {spawn} from 'child_process';
 

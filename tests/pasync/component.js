@@ -1,4 +1,3 @@
-'use strict';
 
 /* eslint mocha/max-top-level-suites: "off" */
 

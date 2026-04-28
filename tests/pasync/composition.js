@@ -3,7 +3,6 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 
 (function () {
-  'use strict';
 
   describe('Async mode - dynamic template inheritance', function () {
     var loader;

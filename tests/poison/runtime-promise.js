@@ -15,7 +15,6 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
-  'use strict';
 
   describe('RuntimePromise Integration Tests', () => {
     let env;

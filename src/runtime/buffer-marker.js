@@ -1,4 +1,3 @@
-'use strict';
 
 const COMMAND_BUFFER_MARKER = Symbol.for('cascada.runtime.CommandBuffer');
 

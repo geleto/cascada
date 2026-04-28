@@ -10,7 +10,6 @@ const runtime = typeof window !== 'undefined' ? window.nunjucks.runtime : await 
 const {isPoisonError} = runtime;
 
 (function () {
-  'use strict';
 
   const {unescape} = he;
   //var Environment;
