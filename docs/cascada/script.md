@@ -6,7 +6,7 @@
 
 [Cascada Github](https://github.com/geleto/cascada)
 
-**Cascada Script** inverts the traditional model: it is parallel by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
+**Cascada Script** inverts the traditional programming model: it is parallel by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
 
 ## Cascada Script  -  Implicitly Parallel, Explicitly Sequential
 

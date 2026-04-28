@@ -3,9 +3,9 @@
 
 ### Think Sequentially. Execute Concurrently.
 
-**Cascada** inverts the traditional model: it is parallel by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
+**Cascada** is a data-orchestration engine for JavaScript and TypeScript applications that inverts the traditional programming model: it is parallel by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
 
-**Cascada** is a data-orchestration engine for JavaScript and TypeScript applications, designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
+**Cascada** is designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
 - **[Cascada Script](https://geleto.github.io/cascada-script/)** - A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
 - **[Cascada Template](docs/cascada/template.md)** - Template syntax with the same concurrent execution capabilities for dynamic content generation
