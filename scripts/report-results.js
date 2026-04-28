@@ -5,7 +5,7 @@ import {promises as fs} from 'fs';
 import path from 'path';
 import {fileURLToPath} from 'url';
 import libCoverage from 'istanbul-lib-coverage';
-import NYC from 'nyc';
+import writeCoverageReports from './lib/coverage-report.js';
 let chalk;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -62,29 +62,7 @@ const coverageConfig = {
     }
   }
 
-  // Write to NYC temp dir for reporting
-  const nycTempDir = path.join(coverageConfig.dir, '.nyc_output');
-  await fs.mkdir(nycTempDir, { recursive: true });
-
-  const coverageData = coverageMap.toJSON();
-  for (const [filePath, fileCoverage] of Object.entries(coverageData)) {
-    const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.json`;
-    await fs.writeFile(
-      path.join(nycTempDir, fileName),
-      JSON.stringify({ [filePath]: fileCoverage })
-    );
-  }
-
-  const reportNyc = new NYC({
-    include: ['src/**/*.js'],
-    reporter: ['text', 'html', 'lcov'],
-    showProcessTree: false,
-    tempDir: nycTempDir,
-    cacheDir: nycTempDir,
-    cwd: path.join(scriptDir, '..')
-  });
-
-  await reportNyc.report();
+  writeCoverageReports(coverageMap, coverageConfig.dir);
 
   console.log('\nTOTALS:');
   console.log(chalk.green(`${combinedPassed} passing (${durationSec}s)`));

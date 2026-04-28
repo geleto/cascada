@@ -50,7 +50,6 @@
     "istanbul-reports": "^3.1.7",
     "madge": "^8.0.0",
     "mocha": "^11.1.0",
-    "nyc": "^17.1.0",
     "playwright": "^1.52.0",
     "serve-static": "^2.2.0",
     "supertest": "*",
@@ -91,18 +90,6 @@
     "docs:serve": "npm run docs:build && docsify serve generated-docs/script",
     "docs:publish": "npm run docs:build && gh-pages -d generated-docs/script -r https://github.com/geleto/cascada-script.git -b gh-pages",
     "check:cycles": "madge --extensions js --circular src"
-  },
-  "nyc": {
-    "all": true,
-    "include": [
-      "src/**/*.js"
-    ],
-    "reporter": [
-      "text",
-      "lcov"
-    ],
-    "sourceMap": true,
-    "instrument": false
   },
   "repository": {
     "type": "git",

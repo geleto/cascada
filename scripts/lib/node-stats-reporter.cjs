@@ -7,7 +7,7 @@ const Mocha = require('mocha');
 
 /**
  * Custom Mocha reporter that extends Spec and writes Node test stats
- * to coverage/node-tests-stats.json for aggregation by the browser runner.
+ * to coverage/node-tests-stats.json for aggregation by the combined reporter.
  */
 class NodeStatsReporter extends Mocha.reporters.Spec {
   constructor(runner, options) {

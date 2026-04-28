@@ -3,7 +3,6 @@
 
 'use strict';
 
-import NYC from 'nyc';
 import mocha from 'mocha';
 import path from 'path';
 import {fileURLToPath} from 'url';
@@ -14,10 +13,9 @@ import libCoverage from 'istanbul-lib-coverage';
 import getStaticServer from './lib/static-server.js';
 import {chromium} from 'playwright';
 import precompileTestTemplates from './lib/precompile.js';
+import writeCoverageReports from './lib/coverage-report.js';
 
 process.env.NODE_ENV = 'test';
-let mergeNodeTestsCoverage = process.argv.includes('fullTest');
-const NODE_TESTS_COVERAGE_FILE = 'coverage-final.json';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 const coverageConfig = {
@@ -25,17 +23,8 @@ const coverageConfig = {
   files: [
     'browser-std.json',
     'browser-slim.json'],
-  fileData: {},
   getFullPath: (file) => path.join(coverageConfig.dir, file)
 };
-
-const nyc = new NYC({
-  include: ['src/**/*.js'],
-  reporter: ['text', 'html', 'lcov'],
-  showProcessTree: true,
-  tempDir: path.join(scriptDir, '../coverage/.nyc_output'),
-  cacheDir: path.join(scriptDir, '../coverage/.nyc_output')
-});
 
 (async () => {
   chalk = await import('tiny-chalk');
@@ -162,23 +151,8 @@ async function runTests() {
   let totalDuration = 0;
   const fileResults = {};
 
-  // Node stats (populated only in full test flow)
-  let nodeStats = null;
-
   try {
-
-    //the coverage file from the node tests has to be read in advance because nyc initialization deletes it
-    if (mergeNodeTestsCoverage) {
-      try {
-        coverageConfig.files.push(NODE_TESTS_COVERAGE_FILE);
-        coverageConfig.fileData[NODE_TESTS_COVERAGE_FILE] = JSON.parse(await fs.readFile(coverageConfig.getFullPath(NODE_TESTS_COVERAGE_FILE), 'utf8'));
-        console.log('node coverage file loaded');
-      } catch (e) {
-        console.error(`Failed to open node tests coverage file ${coverageConfig.getFullPath(NODE_TESTS_COVERAGE_FILE)} , error: ${e}`);
-      }
-    }
-
-    nyc.reset();
+    await fs.mkdir(coverageConfig.dir, {recursive: true});
 
     await precompileTestTemplates();
 
@@ -216,23 +190,15 @@ async function runTests() {
     };
     await fs.writeFile(path.join(coverageConfig.dir, 'browser-tests-stats.json'), JSON.stringify(browserStats));
 
-    // Merge the coverage files from browser tests and Node.js tests
+    // Merge coverage from the browser test pages.
     const coverageMap = libCoverage.createCoverageMap({});
     for (const file of coverageConfig.files) {
       try {
-        //the coverage file from the node tests has to be read in advance because nyc initialization deletes it
-        const data = coverageConfig.fileData[file];
-        const coverageData = data || JSON.parse(await fs.readFile(coverageConfig.getFullPath(file), 'utf8'));
+        const coverageData = JSON.parse(await fs.readFile(coverageConfig.getFullPath(file), 'utf8'));
         const fileCoverageMap = libCoverage.createCoverageMap(coverageData);
         coverageMap.merge(fileCoverageMap);
       } catch (error) {
-        if (file === NODE_TESTS_COVERAGE_FILE) {
-          mergeNodeTestsCoverage = false;
-          console.error(`Error processing Node tests coverage file ${file}:`, error);
-        }
-        else {
-          console.error(`Error processing browser coverage file ${file}:`, error);
-        }
+        console.error(`Error processing browser coverage file ${file}:`, error);
       }
     }
 
@@ -240,78 +206,25 @@ async function runTests() {
     const mergedCoverageFile = path.join(coverageConfig.dir, 'merged-coverage.json');
     await fs.writeFile(mergedCoverageFile, JSON.stringify(coverageMap));
 
-    // Write the merged coverage data to NYC's temp directory so it can read it
-    const nycTempDir = path.join(coverageConfig.dir, '.nyc_output');
-    await fs.mkdir(nycTempDir, { recursive: true });
-
-    // Write each file's coverage data as separate files in NYC temp directory
-    const coverageData = coverageMap.toJSON();
-    for (const [filePath, fileCoverage] of Object.entries(coverageData)) {
-      const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.json`;
-      await fs.writeFile(
-        path.join(nycTempDir, fileName),
-        JSON.stringify({ [filePath]: fileCoverage })
-      );
-    }
-
-    if (mergeNodeTestsCoverage) {
-      console.log('\nCombined Coverage Summary from Node and browser tests:');
-    } else {
-      console.log('\nCoverage Summary from browser tests:');
-    }
-
-    // Create a new NYC instance that reads from our merged coverage data
-    const reportNyc = new NYC({
-      include: ['src/**/*.js'],
-      reporter: ['text', 'html', 'lcov'],
-      showProcessTree: true,
-      tempDir: nycTempDir,
-      cacheDir: nycTempDir,
-      cwd: path.join(scriptDir, '..')
-    });
-
-    await reportNyc.report();
+    console.log('\nCoverage Summary from browser tests:');
+    writeCoverageReports(coverageMap, coverageConfig.dir);
 
   } catch (error) {
     console.error('Test runner encountered an error:', error);
     overallTestsPassed = false;
   } finally {
-    if (mergeNodeTestsCoverage) {
-      // Try to read node stats if present
-      try {
-        const statsPath = path.join(scriptDir, '../coverage/node-tests-stats.json');
-        const statsRaw = await fs.readFile(statsPath, 'utf8');
-        nodeStats = JSON.parse(statsRaw);
-        // eslint-disable-next-line no-empty
-      } catch (_) { }
+    const durationSec = Math.round(totalDuration / 1000);
 
-      const combinedPassed = (nodeStats?.passes || 0) + totalPassed;
-      const combinedFailed = (nodeStats?.failures || 0) + totalFailed;
-      const combinedPending = (nodeStats?.pending || 0) + totalPending;
-      const combinedDuration = (nodeStats?.duration || 0) + totalDuration;
-
-      const nodeFail = nodeStats?.failures || 0;
-      const browserFail = totalFailed;
-      const durationSec = Math.round(combinedDuration / 1000);
-
-      console.log('\nTOTALS:');
-      console.log(chalk.green(`${combinedPassed} passing (${durationSec}s)`));
-      console.log(chalk.cyan(`${combinedPending} pending`));
-      console.log(chalk.red(`${combinedFailed} failing (${nodeFail} node, ${browserFail} browser)\n`));
-    } else {
-      const durationSec = Math.round(totalDuration / 1000);
-
-      console.log('\nBROWSER TOTALS:');
-      for (const [fileName, stats] of Object.entries(fileResults)) {
-        if (!stats) continue;
-        const d = Math.round(stats.duration / 1000);
-        console.log(`${fileName}: ${chalk.green(stats.passes + ' passing')} ${chalk.cyan(stats.pending + ' pending')} ${chalk.red(stats.failures + ' failing')} (${d}s)`);
-      }
-      console.log('---------------------------------------------------');
-      console.log(chalk.green(`${totalPassed} passing (${durationSec}s)`));
-      console.log(chalk.cyan(`${totalPending} pending`));
-      console.log(chalk.red(`${totalFailed} failing\n`));
+    console.log('\nBROWSER TOTALS:');
+    for (const [fileName, stats] of Object.entries(fileResults)) {
+      if (!stats) continue;
+      const d = Math.round(stats.duration / 1000);
+      console.log(`${fileName}: ${chalk.green(stats.passes + ' passing')} ${chalk.cyan(stats.pending + ' pending')} ${chalk.red(stats.failures + ' failing')} (${d}s)`);
     }
+    console.log('---------------------------------------------------');
+    console.log(chalk.green(`${totalPassed} passing (${durationSec}s)`));
+    console.log(chalk.cyan(`${totalPending} pending`));
+    console.log(chalk.red(`${totalFailed} failing\n`));
 
     if (browser) {
       await browser.close();

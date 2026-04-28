@@ -234,7 +234,7 @@ The current CommonJS/browser-bundle setup has these npm commands:
 
 - `npm run mocha`: quick Node Mocha run without coverage.
 - `npm run test:quick`: alias for `npm run mocha`.
-- `npm run test:node`: Node Mocha run with NYC coverage and `scripts/lib/node-stats-reporter`.
+- `npm run test:node`: Node Mocha run with c8 coverage and `scripts/lib/node-stats-reporter.cjs`.
 - `npm run test:pasync`: focused async/poison Node coverage run.
 - `npm run test:browser`: starts the browser test server, then runs Playwright browser tests against native ESM modules.
 - `npm test`: full flow through `scripts/run-all-tests.js`.
@@ -267,7 +267,7 @@ Current browser coverage:
   - `coverage/browser-slim.json`
 - Browser stats are written to `coverage/browser-tests-stats.json`.
 - Browser coverage is merged with `istanbul-lib-coverage`.
-- `nyc report` writes text/html/lcov reports from merged coverage.
+- `istanbul-lib-report` and `istanbul-reports` write text/html/lcov reports from merged coverage.
 
 Current combined reporting:
 
@@ -278,8 +278,7 @@ Current combined reporting:
   - `coverage/browser-tests-stats.json`
   - `coverage/node-tests-stats.json`
 - It merges coverage maps with `istanbul-lib-coverage`.
-- It writes per-file coverage JSON into `coverage/.nyc_output`.
-- It runs `nyc report`.
+- It writes text/html/lcov reports through `istanbul-lib-report` and `istanbul-reports`.
 - It prints combined passing/pending/failing totals.
 
 The ESM migration should preserve the command-level behavior: quick Node tests, Node coverage, browser tests, full build/test/precompile flow, combined coverage reports, combined test stats, and non-zero exit behavior.
@@ -342,7 +341,7 @@ Target full test flow should remain:
 5. Run `node scripts/report-results.js`.
 6. Exit non-zero if either browser or Node tests fail.
 
-The order can stay browser-first then Node-first only if the final reporter remains independent of execution order. Today the browser runner has special code for merging a pre-existing Node coverage file, but `npm test` runs browser before Node and then uses `scripts/report-results.js` for the final merge. The ESM version should keep the final merge in `scripts/report-results.js` and avoid order-dependent coverage merging in the browser runner.
+The order can stay browser-first then Node-first because the final reporter is independent of execution order. `scripts/run-browser-tests.js` writes browser stats and coverage only; `scripts/report-results.js` performs the final merge after both lanes complete.
 
 ## Target Browser Test Runner
 
@@ -792,7 +791,7 @@ After Playwright completes:
 const coverage = await page.evaluate(() => window.__coverage__);
 ```
 
-Write coverage JSON into `.nyc_output`, then use `nyc report` or existing Istanbul report tooling to merge/report coverage.
+Merge the coverage maps with `istanbul-lib-coverage`, then use `istanbul-lib-report` and `istanbul-reports` to write text/html/lcov reports.
 
 ## Packages
 
@@ -808,7 +807,6 @@ Keep these as dev dependencies only if browser Istanbul coverage remains:
 
 - `@babel/core`
 - `babel-plugin-istanbul`
-- `nyc`
 - `istanbul-lib-coverage`
 - `istanbul-lib-report`
 - `istanbul-reports`
