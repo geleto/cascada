@@ -89,10 +89,13 @@ class WebLoader extends Loader {
   }
 }
 
-const __defaultExport = {
-  WebLoader: WebLoader,
-  PrecompiledLoader: PrecompiledLoader
+const FileSystemLoader = undefined;
+const NodeResolveLoader = undefined;
+
+export { WebLoader, PrecompiledLoader, FileSystemLoader, NodeResolveLoader };
+export default {
+  FileSystemLoader,
+  NodeResolveLoader,
+  PrecompiledLoader,
+  WebLoader
 };
-export { WebLoader, PrecompiledLoader };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

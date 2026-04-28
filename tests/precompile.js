@@ -3,12 +3,18 @@
 
   var expect,
     precompile,
+    precompileModule,
     precompileString;
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    precompile = require('../src/precompile').precompile;
-    precompileString = require('../src/precompile').precompileString;
+    precompileModule = esmDefault(require('../src/precompile'));
+    precompile = precompileModule.precompile;
+    precompileString = precompileModule.precompileString;
   } else {
     expect = window.expect;
     precompile = nunjucks.precompile;

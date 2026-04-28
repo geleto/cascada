@@ -1,7 +1,7 @@
 'use strict';
 
 import path from 'path';
-import {EmitterObj} from '../object';
+import {EmitterObj} from '../object.js';
 
 export default class Loader extends EmitterObj {
   resolve(from, to) {

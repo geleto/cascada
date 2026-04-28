@@ -1,9 +1,7 @@
 'use strict';
 
-import lib from './lib';
-import r from './runtime/runtime';
-
-var exports = {};
+import lib from './lib.js';
+import r from './runtime/runtime.js';
 
 function normalize(value, defaultValue) {
   if (value === null || value === undefined || value === false) {
@@ -12,7 +10,7 @@ function normalize(value, defaultValue) {
   return value;
 }
 
-export var abs = Math.abs;
+const abs = Math.abs;
 
 function isNaN(num) {
   return num !== num; // eslint-disable-line no-self-compare
@@ -45,7 +43,6 @@ function batch(arr, linecount, fillWith) {
   return res;
 }
 
-export {batch};
 
 function capitalize(str) {
   str = normalize(str, '');
@@ -53,7 +50,6 @@ function capitalize(str) {
   return r.copySafeness(str, ret.charAt(0).toUpperCase() + ret.slice(1));
 }
 
-export {capitalize};
 
 function center(str, width) {
   str = normalize(str, '');
@@ -69,7 +65,6 @@ function center(str, width) {
   return r.copySafeness(str, pre + str + post);
 }
 
-export {center};
 
 function default_(val, def, bool) {
   if (bool) {
@@ -80,8 +75,6 @@ function default_(val, def, bool) {
 }
 
 // TODO: it is confusing to export something called 'default'
-exports['default'] = default_; // eslint-disable-line dot-notation
-
 function dictsort(val, caseSensitive, by) {
   if (!lib.isObject(val)) {
     throw new lib.TemplateError('dictsort filter: val must be an object');
@@ -122,13 +115,11 @@ function dictsort(val, caseSensitive, by) {
   return array;
 }
 
-export {dictsort};
 
 function dump(obj, spaces) {
   return JSON.stringify(obj, null, spaces);
 }
 
-export {dump};
 
 function escape(str) {
   if (str instanceof r.SafeString) {
@@ -138,7 +129,6 @@ function escape(str) {
   return r.markSafe(lib.escape(str.toString()));
 }
 
-export {escape};
 
 function safe(str) {
   if (str instanceof r.SafeString) {
@@ -148,26 +138,22 @@ function safe(str) {
   return r.markSafe(str.toString());
 }
 
-export {safe};
 
 function first(arr) {
   return arr[0];
 }
 
-export {first};
 
 function forceescape(str) {
   str = (str === null || str === undefined) ? '' : str;
   return r.markSafe(lib.escape(str.toString()));
 }
 
-export {forceescape};
 
 function groupby(arr, attr) {
   return lib.groupBy(arr, attr, this.env.opts.throwOnUndefined);
 }
 
-export {groupby};
 
 function indent(str, width, indentfirst) {
   str = normalize(str, '');
@@ -188,7 +174,6 @@ function indent(str, width, indentfirst) {
   return r.copySafeness(str, res);
 }
 
-export {indent};
 
 function join(arr, del, attr) {
   del = del || '';
@@ -200,13 +185,11 @@ function join(arr, del, attr) {
   return arr.join(del);
 }
 
-export {join};
 
 function last(arr) {
   return arr[arr.length - 1];
 }
 
-export {last};
 
 function lengthFilter(val) {
   var value = normalize(val, '');
@@ -228,7 +211,6 @@ function lengthFilter(val) {
   return 0;
 }
 
-export {lengthFilter as length};
 
 function list(val) {
   if (lib.isString(val)) {
@@ -242,14 +224,12 @@ function list(val) {
   }
 }
 
-export {list};
 
 function lower(str) {
   str = normalize(str, '');
   return str.toLowerCase();
 }
 
-export {lower};
 
 function nl2br(str) {
   if (str === null || str === undefined) {
@@ -258,13 +238,11 @@ function nl2br(str) {
   return r.copySafeness(str, str.replace(/\r\n|\n/g, '<br />\n'));
 }
 
-export {nl2br};
 
 function random(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-export {random};
 
 /**
  * Construct select or reject filter
@@ -285,20 +263,18 @@ function getSelectOrReject(expectedTestResult) {
   return filter;
 }
 
-export var reject = getSelectOrReject(false);
+const reject = getSelectOrReject(false);
 
 function rejectattr(arr, attr) {
   return arr.filter((item) => !item[attr]);
 }
 
-export {rejectattr};
-export var select = getSelectOrReject(true);
+const select = getSelectOrReject(true);
 
 function selectattr(arr, attr) {
   return arr.filter((item) => !!item[attr]);
 }
 
-export {selectattr};
 
 function replace(str, old, new_, maxCount) {
   var originalStr = str;
@@ -370,7 +346,6 @@ function replace(str, old, new_, maxCount) {
   return r.copySafeness(originalStr, res);
 }
 
-export {replace};
 
 function reverse(val) {
   var arr;
@@ -389,7 +364,6 @@ function reverse(val) {
   return arr;
 }
 
-export {reverse};
 
 function round(val, precision, method) {
   precision = precision || 0;
@@ -407,7 +381,6 @@ function round(val, precision, method) {
   return rounder(val * factor) / factor;
 }
 
-export {round};
 
 function slice(arr, slices, fillWith) {
   const sliceLength = Math.floor(arr.length / slices);
@@ -432,7 +405,6 @@ function slice(arr, slices, fillWith) {
   return res;
 }
 
-export {slice};
 
 function sum(arr, attr, start = 0) {
   if (attr) {
@@ -442,9 +414,8 @@ function sum(arr, attr, start = 0) {
   return start + arr.reduce((a, b) => a + b, 0);
 }
 
-export {sum};
 
-export var sort = r.makeMacro(
+const sort = r.makeMacro(
   ['value', 'reverse', 'case_sensitive', 'attribute'], [],
   function sortFilter(arr, reversed, caseSens, attr) {
     // Copy it
@@ -483,7 +454,6 @@ function string(obj) {
   return r.copySafeness(obj, obj);
 }
 
-export {string};
 
 function striptags(input, preserveLinebreaks) {
   input = normalize(input, '');
@@ -502,7 +472,6 @@ function striptags(input, preserveLinebreaks) {
   return r.copySafeness(input, res);
 }
 
-export {striptags};
 
 function title(str) {
   str = normalize(str, '');
@@ -510,13 +479,11 @@ function title(str) {
   return r.copySafeness(str, words.join(' '));
 }
 
-export {title};
 
 function trim(str) {
   return r.copySafeness(str, str.replace(/^\s*|\s*$/g, ''));
 }
 
-export {trim};
 
 function truncate(input, length, killwords, end) {
   var orig = input;
@@ -542,14 +509,12 @@ function truncate(input, length, killwords, end) {
   return r.copySafeness(orig, input);
 }
 
-export {truncate};
 
 function upper(str) {
   str = normalize(str, '');
   return str.toUpperCase();
 }
 
-export {upper};
 
 function urlencode(obj) {
   var enc = encodeURIComponent;
@@ -561,7 +526,6 @@ function urlencode(obj) {
   }
 }
 
-export {urlencode};
 
 // For the jinja regexp, see
 // https://github.com/mitsuhiko/jinja2/blob/f15b814dcba6aa12bc74d1f7d0c881d55f7126be/jinja2/utils.py#L20-L23
@@ -614,7 +578,6 @@ function urlize(str, length, nofollow) {
   return words.join('');
 }
 
-export {urlize};
 
 function wordcount(str) {
   str = normalize(str, '');
@@ -622,14 +585,12 @@ function wordcount(str) {
   return (words) ? words.length : null;
 }
 
-export {wordcount};
 
 function float(val, def) {
   var res = parseFloat(val);
   return (isNaN(res)) ? def : res;
 }
 
-export {float};
 
 const intFilter = r.makeMacro(
   ['value', 'default', 'base'],
@@ -640,14 +601,13 @@ const intFilter = r.makeMacro(
   }
 );
 
-export {intFilter as int};
 
 // Aliases
-export var d = default_;
+const d = default_;
 
-export var e = escape;
+const e = escape;
 
-const __defaultExport = {
+export default {
   abs,
   batch,
   capitalize,
@@ -692,5 +652,3 @@ const __defaultExport = {
   d,
   e
 };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -1,8 +1,8 @@
 'use strict';
 
-import {isPoison, isPoisonError, PoisonError, createPoison} from '../errors';
-import {Command, contextualizeErrorsForOutput} from './command-base';
-import {Channel, mergePoisonErrors} from './base';
+import {isPoison, isPoisonError, PoisonError, createPoison} from '../errors.js';
+import {Command, contextualizeErrorsForOutput} from './command-base.js';
+import {Channel, mergePoisonErrors} from './base.js';
 
 class SequentialPathReadCommand extends Command {
   constructor({ channelName, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
@@ -278,13 +278,4 @@ class SequentialPathChannel extends Channel {
 
 }
 
-const __defaultExport = {
-  SequentialPathChannel,
-  SequentialPathReadCommand,
-  RepairReadCommand,
-  SequentialPathWriteCommand,
-  RepairWriteCommand
-};
 export { SequentialPathChannel, SequentialPathReadCommand, RepairReadCommand, SequentialPathWriteCommand, RepairWriteCommand };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

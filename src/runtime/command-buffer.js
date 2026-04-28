@@ -1,15 +1,15 @@
 'use strict';
 
-import {ErrorCommand} from './channels/error';
-import {TextCommand} from './channels/text';
-import {SequenceCallCommand, SequenceGetCommand} from './channels/sequence';
+import {ErrorCommand} from './channels/error.js';
+import {TextCommand} from './channels/text.js';
+import {SequenceCallCommand, SequenceGetCommand} from './channels/sequence.js';
 
 import {
   SequentialPathReadCommand,
   RepairReadCommand,
   SequentialPathWriteCommand,
   RepairWriteCommand,
-} from './channels/sequential-path';
+} from './channels/sequential-path.js';
 
 import {
   SnapshotCommand,
@@ -19,14 +19,17 @@ import {
   GetErrorCommand,
   CaptureGuardStateCommand,
   RestoreGuardStateCommand,
-} from './channels/observation';
+} from './channels/observation.js';
 
-import {WaitCurrentCommand} from './channels/timing';
-import {assertChannelLaneAvailable, checkFinishedBuffer} from './checks';
-import {handleError, RuntimeFatalError} from './errors';
+import {WaitCurrentCommand} from './channels/timing.js';
+import {assertChannelLaneAvailable, checkFinishedBuffer} from './checks.js';
+import {handleError, RuntimeFatalError} from './errors.js';
+import {BufferIterator} from './buffer-iterator.js';
+import {markCommandBuffer} from './buffer-marker.js';
 
 class CommandBuffer {
   constructor(context, parent = null) {
+    markCommandBuffer(this);
     this._context = context;
     this.parent = parent;
     this.finished = false;
@@ -604,8 +607,6 @@ class CommandBuffer {
 
 function ensureChannelIterator(channel) {
   if (!channel._iterator) {
-    // Lazy require avoids top-level cycle: command-buffer <-> buffer-iterator.
-    const { BufferIterator } = require('./buffer-iterator');
     channel._iterator = new BufferIterator(channel);
   }
 
@@ -623,10 +624,8 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
   return buffer;
 }
 
-const __defaultExport = {
+export default {
   CommandBuffer,
   createCommandBuffer
 };
 export { CommandBuffer, createCommandBuffer };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

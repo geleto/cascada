@@ -1,9 +1,9 @@
 'use strict';
 
-import nodes from './nodes';
-import lib from './lib';
-import scopeBoundaries from './compiler/scope-boundaries';
-import {getScriptExtendsSourceOrderViolation} from './compiler/validation';
+import nodes from './nodes.js';
+import lib from './lib.js';
+import scopeBoundaries from './compiler/scope-boundaries.js';
+import {getScriptExtendsSourceOrderViolation} from './compiler/validation.js';
 
 var sym = 0;
 function gensym() {
@@ -518,14 +518,11 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
   return ast;
 }
 
-// var parser = require('./parser');
 // var src = 'hello {% foo %}{% endfoo %} end';
 // var ast = transform(parser.parse(src, [new FooExtension()]), ['bar']);
 // nodes.printNodes(ast);
 
-const __defaultExport = {
+export default {
   transform: transform
 };
 export { transform };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

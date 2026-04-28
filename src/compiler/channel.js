@@ -1,8 +1,8 @@
 'use strict';
 
-import nodes from '../nodes';
-import {CHANNEL_TYPE_FACTS} from '../channel-types';
-import {validateChannelDeclarationNode} from './validation';
+import nodes from '../nodes.js';
+import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
+import {validateChannelDeclarationNode} from './validation.js';
 
 class CompileChannel {
   constructor(compiler) {

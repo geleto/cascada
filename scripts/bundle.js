@@ -3,13 +3,16 @@
 'use strict';
 
 import path from 'path';
+import {fileURLToPath} from 'url';
+import fs from 'fs';
 import webpack from 'webpack';
-import pjson from '../package.json';
-import {promiseSequence} from './lib/utils';
+import {promiseSequence} from './lib/utils.js';
 import TerserPlugin from 'terser-webpack-plugin';
 const TEST_ENV = process.env.NODE_ENV === 'test';
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const pjson = JSON.parse(fs.readFileSync(path.join(scriptDir, '../package.json'), 'utf8'));
 
-const destDir = path.resolve(path.join(__dirname, TEST_ENV ? '../tests/browser' : '../dist/browser'));
+const destDir = path.resolve(path.join(scriptDir, TEST_ENV ? '../tests/browser' : '../dist/browser'));
 
 function runWebpack(opts) {
   const type = opts.slim ? '(slim, only works with precompiled templates)' : '';

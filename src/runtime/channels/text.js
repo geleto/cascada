@@ -1,10 +1,10 @@
 'use strict';
 
-import {isPoison, PoisonError, createPoison} from '../errors';
-import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve';
-import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output';
-import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base';
-import {Channel} from './base';
+import {isPoison, PoisonError, createPoison} from '../errors.js';
+import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve.js';
+import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output.js';
+import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base.js';
+import {Channel} from './base.js';
 
 class TextCommand extends ChannelCommand {
   constructor(specOrValue) {
@@ -252,10 +252,4 @@ function isScriptOutputMode(output) {
   return !!(output && output._context && output._context.scriptMode);
 }
 
-const __defaultExport = {
-  TextChannel,
-  TextCommand
-};
 export { TextChannel, TextCommand };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

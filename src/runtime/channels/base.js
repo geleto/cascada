@@ -1,6 +1,6 @@
 'use strict';
 
-import {RESOLVE_MARKER} from '../resolve';
+import {RESOLVE_MARKER} from '../resolve.js';
 
 import {
   PoisonError,
@@ -9,7 +9,8 @@ import {
   isRuntimeFatalError,
   createPoison,
   handleError,
-} from '../errors';
+} from '../errors.js';
+import {BufferIterator} from '../buffer-iterator.js';
 
 class Channel {
   constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
@@ -20,7 +21,6 @@ class Channel {
     this._target = target;
     this._base = base;
 
-    const { BufferIterator } = require('../buffer-iterator');
     this._iterator = new BufferIterator(this);
     this._stateVersion = 0;
     this._fatalError = null;
@@ -263,18 +263,7 @@ function createCallableChannelFacade(output) {
   });
 }
 
-const __defaultExport = {
-  Channel,
-  createCallableChannelFacade,
-  cloneSnapshotValue,
-  extractPoisonErrors,
-  mergePoisonErrors,
-  inspectTargetForErrors,
-  contextualizeCommandErrors
-};
 export { Channel, createCallableChannelFacade, cloneSnapshotValue, extractPoisonErrors, mergePoisonErrors, inspectTargetForErrors, contextualizeCommandErrors };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
 
 function cloneSnapshotValue(value) {
   if (Array.isArray(value)) {

@@ -3,27 +3,25 @@
 
 'use strict';
 
-// Run browser tests
-require('@babel/register');
-
 import NYC from 'nyc';
 import mocha from 'mocha';
 import path from 'path';
+import {fileURLToPath} from 'url';
 import {promises as fs} from 'fs';
-//const chalk = require('tiny-chalk');
 let chalk;
 
 import libCoverage from 'istanbul-lib-coverage';
-import getStaticServer from './lib/static-server';
+import getStaticServer from './lib/static-server.js';
 import {chromium} from 'playwright';
-import precompileTestTemplates from './lib/precompile';
+import precompileTestTemplates from './lib/precompile.js';
 
 process.env.NODE_ENV = 'test';
 let mergeNodeTestsCoverage = process.argv.includes('fullTest');
 const NODE_TESTS_COVERAGE_FILE = 'coverage-final.json';
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 const coverageConfig = {
-  dir: path.join(__dirname, '../coverage'),
+  dir: path.join(scriptDir, '../coverage'),
   files: [
     'browser-std.json',
     'browser-slim.json'],
@@ -35,8 +33,8 @@ const nyc = new NYC({
   include: ['src/**/*.js'],
   reporter: ['text', 'html', 'lcov'],
   showProcessTree: true,
-  tempDir: path.join(__dirname, '../coverage/.nyc_output'),
-  cacheDir: path.join(__dirname, '../coverage/.nyc_output')
+  tempDir: path.join(scriptDir, '../coverage/.nyc_output'),
+  cacheDir: path.join(scriptDir, '../coverage/.nyc_output')
 });
 
 (async () => {
@@ -265,7 +263,7 @@ async function runTests() {
       showProcessTree: true,
       tempDir: nycTempDir,
       cacheDir: nycTempDir,
-      cwd: path.join(__dirname, '..')
+      cwd: path.join(scriptDir, '..')
     });
 
     await reportNyc.report();
@@ -277,7 +275,7 @@ async function runTests() {
     if (mergeNodeTestsCoverage) {
       // Try to read node stats if present
       try {
-        const statsPath = path.join(__dirname, '../coverage/node-tests-stats.json');
+        const statsPath = path.join(scriptDir, '../coverage/node-tests-stats.json');
         const statsRaw = await fs.readFile(statsPath, 'utf8');
         nodeStats = JSON.parse(statsRaw);
         // eslint-disable-next-line no-empty

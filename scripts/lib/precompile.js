@@ -1,10 +1,13 @@
 import fs from 'fs';
 import path from 'path';
-import {precompile} from '../../src/precompile';
+import {fileURLToPath} from 'url';
+import precompileModule from '../../src/precompile.js';
 
-const testDir = path.join(__dirname, '../../tests');
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const testDir = path.join(scriptDir, '../../tests');
 const templateDir = path.join(testDir, 'templates');
 const outputFile = path.join(testDir, 'browser/precompiled-templates.js');
+const {precompile} = precompileModule;
 
 async function precompileTestTemplates() {
   try {

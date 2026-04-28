@@ -1,9 +1,9 @@
 'use strict';
 
-import nodes from '../nodes';
-import CompileAnalysis from './analysis';
-import CompileRename from './rename';
-import CompilerCommon from './compiler-common';
+import nodes from '../nodes.js';
+import CompileAnalysis from './analysis.js';
+import CompileRename from './rename.js';
+import CompilerCommon from './compiler-common.js';
 
 const compareOps = {
   '==': '==',

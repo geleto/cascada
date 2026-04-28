@@ -1,12 +1,12 @@
 'use strict';
 
-import {CHANNEL_TYPE_FACTS} from '../../channel-types';
-import {Channel, createCallableChannelFacade, inspectTargetForErrors} from './base';
-import {TextChannel} from './text';
-import {VarChannel} from './var';
-import {SequentialPathChannel} from './sequential-path';
-import {DataChannel} from './data';
-import {SequenceChannel} from './sequence';
+import {CHANNEL_TYPE_FACTS} from '../../channel-types.js';
+import {Channel, createCallableChannelFacade, inspectTargetForErrors} from './base.js';
+import {TextChannel} from './text.js';
+import {VarChannel} from './var.js';
+import {SequentialPathChannel} from './sequential-path.js';
+import {DataChannel} from './data.js';
+import {SequenceChannel} from './sequence.js';
 
 function createChannel(buffer, channelName, context, channelType = null, initializer) {
   const type = channelType || channelName;
@@ -56,18 +56,4 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   return channel;
 }
 
-const __defaultExport = {
-  Channel,
-  DataChannel,
-  TextChannel,
-  VarChannel,
-  SequentialPathChannel,
-  inspectTargetForErrors,
-  createChannel,
-  SequenceChannel,
-  createSequenceChannel,
-  declareBufferChannel
-};
 export { Channel, DataChannel, TextChannel, VarChannel, SequentialPathChannel, inspectTargetForErrors, createChannel, SequenceChannel, createSequenceChannel, declareBufferChannel };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

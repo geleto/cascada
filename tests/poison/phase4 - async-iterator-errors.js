@@ -2,7 +2,9 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment';
-import {createPoison, isPoisonError} from '../../src/runtime/runtime';
+import runtime from '../../src/runtime/runtime';
+
+const {createPoison, isPoisonError} = runtime;
 
 describe('Phase 4: Async Iterator Error Handling', () => {
   let env;
@@ -221,7 +223,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
 
   // Test 4.8: Generator yields PoisonError object directly (multiple soft errors)
   it('should collect errors when generator yields PoisonError and continue iteration', async () => {
-    const { PoisonError } = require('../../src/runtime/runtime');
+    const { PoisonError } = runtime;
 
     const context = {
       async *testGen() {
@@ -366,4 +368,3 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     });
   });
 });
-

@@ -1,10 +1,6 @@
-export default function isMainModule() {
-  // generate a stack trace
-  var stack = (new Error()).stack;
-  // the third line refers to our caller
-  var stackLine = stack.split('\n')[2];
-  // extract the module name from that line
-  var callerModuleName = /\((.*):\d+:\d+\)$/.exec(stackLine)[1];
+import {fileURLToPath} from 'url';
+import path from 'path';
 
-  return require.main.filename === callerModuleName;
+export default function isMainModule() {
+  return process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 };

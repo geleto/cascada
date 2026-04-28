@@ -2,10 +2,12 @@
 
 import fs from 'fs';
 import path from 'path';
-import {_prettifyError} from './lib';
-import compiler from './compiler/compiler';
-import {Environment, AsyncEnvironment} from './environment/environment';
-import precompileGlobal from './precompile-global';
+import lib from './lib.js';
+import compiler from './compiler/compiler.js';
+import {Environment, AsyncEnvironment} from './environment/environment.js';
+import precompileGlobal from './precompile-global.js';
+
+const {_prettifyError} = lib;
 
 function match(filename, patterns) {
   if (!Array.isArray(patterns)) {
@@ -170,7 +172,7 @@ function precompileScript(str, opts) {
   return precompile(str, opts, false/*async*/, true/*script*/);
 }
 
-const __defaultExport = {
+export default {
   /** @deprecated Use precompileTemplate instead */
   precompile,
   /** @deprecated Use precompileTemplateString instead */
@@ -186,6 +188,3 @@ const __defaultExport = {
   precompileScript,
   precompileScriptString,
 };
-export { precompile, precompileString, precompileTemplate, precompileTemplateAsync, precompileTemplateString, precompileTemplateStringAsync, precompileScript, precompileScriptString };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -6,11 +6,15 @@
     nodes,
     parser;
 
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    lib = require('../src/lib');
-    nodes = require('../src/nodes');
-    parser = require('../src/parser');
+    lib = esmDefault(require('../src/lib'));
+    nodes = esmDefault(require('../src/nodes'));
+    parser = esmDefault(require('../src/parser'));
   } else {
     expect = window.expect;
     lib = nunjucks.lib;

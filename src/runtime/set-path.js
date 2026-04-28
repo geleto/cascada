@@ -34,8 +34,8 @@
  */
 'use strict';
 
-import {isPoison, createPoison} from './errors';
-import {resolveAll, RESOLVE_MARKER, createObject, createArray} from './resolve';
+import {isPoison, createPoison} from './errors.js';
+import {resolveAll, RESOLVE_MARKER, createObject, createArray} from './resolve.js';
 
 /**
  * Helper to check if a value is "Async" (Promise) or "Lazy" (Marked).
@@ -205,9 +205,7 @@ async function _setPathAsync(rootPromise, headPromise, tail, value) {
   return setSinglePath(root, key, newChild);
 }
 
-const __defaultExport = {
+export default {
   setPath
 };
 export { setPath };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

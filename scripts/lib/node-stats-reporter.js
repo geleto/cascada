@@ -2,7 +2,10 @@
 
 import fs from 'fs';
 import path from 'path';
+import {fileURLToPath} from 'url';
 import Mocha from 'mocha';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Custom Mocha reporter that extends Spec and writes Node test stats
@@ -15,7 +18,7 @@ class NodeStatsReporter extends Mocha.reporters.Spec {
     runner.once('end', () => {
       try {
         const stats = this.stats || {};
-        const outDir = path.join(__dirname, '../../coverage');
+        const outDir = path.join(scriptDir, '../../coverage');
         const outFile = path.join(outDir, 'node-tests-stats.json');
         try {
           fs.mkdirSync(outDir, { recursive: true });

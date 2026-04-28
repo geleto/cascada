@@ -1,7 +1,7 @@
 'use strict';
 
-import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base';
-import {Channel} from './base';
+import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base.js';
+import {Channel} from './base.js';
 
 class VarCommand extends ChannelCommand {
   constructor(specOrValue) {
@@ -103,10 +103,4 @@ class VarChannel extends Channel {
 
 }
 
-const __defaultExport = {
-  VarChannel,
-  VarCommand
-};
 export { VarChannel, VarCommand };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

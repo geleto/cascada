@@ -1,10 +1,9 @@
 'use strict';
 
-import {isPoison, isPoisonError} from '../errors';
-import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base';
-import DataChannelTarget from '../../script/data-channel';
-import {createPoison} from '../errors';
-import {Channel, cloneSnapshotValue, mergePoisonErrors} from './base';
+import {createPoison, isPoison, isPoisonError} from '../errors.js';
+import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base.js';
+import DataChannelTarget from '../../script/data-channel.js';
+import {Channel, cloneSnapshotValue, mergePoisonErrors} from './base.js';
 
 class DataCommand extends ChannelCommand {
   constructor({ channelName, command, args = null, pos = null, initializeIfNotSet = false }) {
@@ -330,10 +329,4 @@ function extractPoisonErrors(value) {
   return [];
 }
 
-const __defaultExport = {
-  DataChannel,
-  DataCommand
-};
 export { DataChannel, DataCommand };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

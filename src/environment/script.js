@@ -1,8 +1,9 @@
 'use strict';
 
-import lib from '../lib';
-import scriptTranspiler from '../script/script-transpiler';
-import {Template, AsyncTemplate} from './template';
+import lib from '../lib.js';
+import scriptTranspiler from '../script/script-transpiler.js';
+import {Template, AsyncTemplate} from './template.js';
+import compiler from '../compiler/compiler.js';
 
 /**
  * Script class - represents a compiled Cascada script.
@@ -41,7 +42,6 @@ class Script extends Template {
   }
 
   _compileSource() {
-    const compiler = require('../compiler/compiler');
     return compiler.compile(this.tmplStr,
       this.env.asyncFilters,
       this.env.extensionsList,
@@ -51,9 +51,7 @@ class Script extends Template {
   }
 }
 
-const __defaultExport = {
+export default {
   Script
 };
 export { Script };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

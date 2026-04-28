@@ -2,7 +2,9 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../src/environment/environment';
-import {createPoison, isPoisonError} from '../src/runtime/runtime';
+import runtime from '../src/runtime/runtime';
+
+const {createPoison, isPoisonError} = runtime;
 
 describe('Phase 6: Loop Poison Integration', () => {
   let env;

@@ -1,8 +1,9 @@
 'use strict';
 
+import runtimeErrors from './runtime/errors.js';
+
 var ArrayProto = Array.prototype;
 var ObjProto = Object.prototype;
-import runtimeErrors from './runtime/errors';
 var RuntimeError = runtimeErrors.RuntimeError;
 var PoisonError = runtimeErrors.PoisonError;
 var escapeMap = {
@@ -16,13 +17,10 @@ var escapeMap = {
 
 var escapeRegex = /[&"'<>\\]/g;
 
-var exports = {};
-
 function hasOwnProp(obj, k) {
   return ObjProto.hasOwnProperty.call(obj, k);
 }
 
-export {hasOwnProp};
 
 function lookupEscape(ch) {
   return escapeMap[ch];
@@ -70,7 +68,6 @@ function _prettifyError(path, withInternals, err) {
   return err;
 }
 
-export {_prettifyError};
 
 //@todo - rename to CompileError and use a class that extends Error
 function TemplateError(message, lineno, colno, errorContextString = null) {
@@ -176,37 +173,31 @@ if (Object.setPrototypeOf) {
   });
 }
 
-export {TemplateError};
 
 function escape(val) {
   return val.replace(escapeRegex, lookupEscape);
 }
 
-export {escape};
 
 function isFunction(obj) {
   return ObjProto.toString.call(obj) === '[object Function]';
 }
 
-export {isFunction};
 
 function isArray(obj) {
   return ObjProto.toString.call(obj) === '[object Array]';
 }
 
-export {isArray};
 
 function isString(obj) {
   return ObjProto.toString.call(obj) === '[object String]';
 }
 
-export {isString};
 
 function isObject(obj) {
   return ObjProto.toString.call(obj) === '[object Object]';
 }
 
-export {isObject};
 
 /**
  * @param {string|number} attr
@@ -251,7 +242,6 @@ function getAttrGetter(attribute) {
   };
 }
 
-export {getAttrGetter};
 
 function groupBy(obj, val, throwOnUndefined) {
   const result = {};
@@ -267,13 +257,11 @@ function groupBy(obj, val, throwOnUndefined) {
   return result;
 }
 
-export {groupBy};
 
 function toArray(obj) {
   return Array.prototype.slice.call(obj);
 }
 
-export {toArray};
 
 function without(array) {
   const result = [];
@@ -292,7 +280,6 @@ function without(array) {
   return result;
 }
 
-export {without};
 
 function repeat(char_, n) {
   var str = '';
@@ -302,7 +289,6 @@ function repeat(char_, n) {
   return str;
 }
 
-export {repeat};
 
 function each(obj, func, context) {
   if (obj == null) {
@@ -318,7 +304,6 @@ function each(obj, func, context) {
   }
 }
 
-export {each};
 
 function map(obj, func) {
   var results = [];
@@ -341,7 +326,6 @@ function map(obj, func) {
   return results;
 }
 
-export {map};
 
 function asyncIter(arr, iter, cb) {
   let i = -1;
@@ -359,7 +343,6 @@ function asyncIter(arr, iter, cb) {
   next();
 }
 
-export {asyncIter};
 
 function asyncFor(obj, iter, cb) {
   const keys = keys_(obj || {});
@@ -380,13 +363,11 @@ function asyncFor(obj, iter, cb) {
   next();
 }
 
-export {asyncFor};
 
 function indexOf(arr, searchElement, fromIndex) {
   return Array.prototype.indexOf.call(arr || [], searchElement, fromIndex);
 }
 
-export {indexOf};
 
 function keys_(obj) {
   const arr = [];
@@ -398,19 +379,16 @@ function keys_(obj) {
   return arr;
 }
 
-export {keys_ as keys};
 
 function _entries(obj) {
   return keys_(obj).map((k) => [k, obj[k]]);
 }
 
-export {_entries};
 
 function _values(obj) {
   return keys_(obj).map((k) => obj[k]);
 }
 
-export {_values};
 
 function extend(obj1, obj2) {
   obj1 = obj1 || {};
@@ -420,8 +398,7 @@ function extend(obj1, obj2) {
   return obj1;
 }
 
-export var _assign = extend;
-export {extend};
+const _assign = extend;
 
 function inOperator(key, val) {
   if (isArray(val) || isString(val)) {
@@ -433,7 +410,6 @@ function inOperator(key, val) {
     + key + '" in unexpected types.');
 }
 
-export {inOperator};
 
 export default {
   hasOwnProp,
@@ -461,29 +437,3 @@ export default {
   extend,
   inOperator
 };
-if (typeof module !== 'undefined') { module['exports'] = {
-  hasOwnProp,
-  _prettifyError,
-  TemplateError,
-  escape,
-  isFunction,
-  isArray,
-  isString,
-  isObject,
-  getAttrGetter,
-  groupBy,
-  toArray,
-  without,
-  repeat,
-  each,
-  map,
-  asyncIter,
-  asyncFor,
-  indexOf,
-  keys: keys_,
-  _entries,
-  _values,
-  _assign,
-  extend,
-  inOperator
-}; }

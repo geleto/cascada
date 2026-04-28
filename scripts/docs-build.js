@@ -1,9 +1,12 @@
 import fs from 'fs';
 import path from 'path';
+import {fileURLToPath} from 'url';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 // Paths
-const DOCS_SOURCE = path.resolve(__dirname, '../docs/cascada/script.md');
-const GENERATED_DOCS_ROOT = path.resolve(__dirname, '../generated-docs');
+const DOCS_SOURCE = path.resolve(scriptDir, '../docs/cascada/script.md');
+const GENERATED_DOCS_ROOT = path.resolve(scriptDir, '../generated-docs');
 const GENERATED_DOCS_SCRIPT_DIR = path.join(GENERATED_DOCS_ROOT, 'script');
 const TARGET_README = path.join(GENERATED_DOCS_SCRIPT_DIR, 'README.md');
 const TARGET_INDEX = path.join(GENERATED_DOCS_SCRIPT_DIR, 'index.html');

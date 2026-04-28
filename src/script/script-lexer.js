@@ -673,16 +673,4 @@ function lex(content) {
 }
 
 // Export
-const __defaultExport = {
-  STATES,
-  TOKEN_TYPES,
-  TOKEN_SUBTYPES,
-  parseTemplateLine,
-  lex,
-  isValidRegexContext,
-  hasCompleteRegexPattern,
-  extractIndentation
-};
 export { STATES, TOKEN_TYPES, TOKEN_SUBTYPES, parseTemplateLine, lex, isValidRegexContext, hasCompleteRegexPattern, extractIndentation };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

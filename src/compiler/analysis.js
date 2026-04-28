@@ -1,7 +1,7 @@
 'use strict';
 
-import nodes from '../nodes';
-import {CHANNEL_TYPES} from '../channel-types';
+import nodes from '../nodes.js';
+import {CHANNEL_TYPES} from '../channel-types.js';
 
 /**
  * Channel analysis pre-pass.

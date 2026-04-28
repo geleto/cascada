@@ -1,7 +1,7 @@
 'use strict';
 
-import {PoisonError, createPoison} from '../errors';
-import {Command, contextualizeErrorsForOutput} from './command-base';
+import {PoisonError, createPoison} from '../errors.js';
+import {Command, contextualizeErrorsForOutput} from './command-base.js';
 
 class ErrorCommand extends Command {
   constructor(errors) {
@@ -50,10 +50,4 @@ class TargetPoisonCommand extends Command {
   }
 }
 
-const __defaultExport = {
-  ErrorCommand,
-  TargetPoisonCommand
-};
 export { ErrorCommand, TargetPoisonCommand };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

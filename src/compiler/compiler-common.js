@@ -1,22 +1,23 @@
 'use strict';
 
-import nodes from '../nodes';
-import {TemplateError} from '../lib';
+import nodes from '../nodes.js';
+import lib from '../lib.js';
+import {ErrorContext} from '../runtime/errors.js';
+import {Obj} from '../object.js';
 
-// const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
-import {Obj} from '../object';
+import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from './validation.js';
+import CompileSequential from './sequential.js';
+import CompileEmit from './emit.js';
+import CompileInheritance from './inheritance.js';
+import CompileLoop from './loop.js';
+import CompileBuffer from './buffer.js';
+import CompileMacro from './macro.js';
+import CompileBoundaries from './boundaries.js';
+import CompileChannel from './channel.js';
+import CompileComponent from './component.js';
+import CompileReturn from './return.js';
 
-import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from './validation';
-import CompileSequential from './sequential';
-import CompileEmit from './emit';
-import CompileInheritance from './inheritance';
-import CompileLoop from './loop';
-import CompileBuffer from './buffer';
-import CompileMacro from './macro';
-import CompileBoundaries from './boundaries';
-import CompileChannel from './channel';
-import CompileComponent from './component';
-import CompileReturn from './return';
+const {TemplateError} = lib;
 
 /**
  * CompilerCommon - Common base class for compiler functionality
@@ -91,7 +92,6 @@ class CompilerCommon extends Obj {
 
   _createErrorContext(node, positionNode) {
     positionNode = positionNode || node;
-    const { ErrorContext } = require('../runtime/errors');
     return new ErrorContext(
       positionNode.lineno + 1,
       positionNode.colno,

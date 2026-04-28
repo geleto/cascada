@@ -10,9 +10,7 @@ function callbackAsap(cb, err, res) {
   });
 }
 
-const __defaultExport = {
+export default {
   callbackAsap
 };
 export { callbackAsap };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

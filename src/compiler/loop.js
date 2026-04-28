@@ -1,6 +1,6 @@
 'use strict';
 
-import nodes from '../nodes';
+import nodes from '../nodes.js';
 
 class CompileLoop {
   constructor(compiler) {

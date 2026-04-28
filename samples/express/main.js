@@ -2,20 +2,21 @@
 
 'use strict';
 
-var path = require('path');
-var nunjucks = require('../..');
-var express = require('express');
+import path from 'path';
+import {fileURLToPath} from 'url';
+import nunjucks from '../../src/index.js';
+import express from 'express';
 
-var app = express();
-nunjucks.configure(path.join(__dirname, 'views'), {
+const sampleDir = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+
+nunjucks.configure(path.join(sampleDir, 'views'), {
   autoescape: true,
   express: app,
   watch: true
 });
 
-// app
-
-app.use(express.static(__dirname));
+app.use(express.static(sampleDir));
 
 app.use(function(req, res, next) {
   res.locals.user = 'hello';

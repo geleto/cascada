@@ -7,9 +7,14 @@
     os,
     path;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    nunjucks = require('../src/index');
+    nunjucks = esmDefault(require('../src/index'));
     fs = require('fs-extra');
     path = require('path');
     os = require('os');

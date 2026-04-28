@@ -1,3 +1,4 @@
+
 (function() {
   'use strict';
 
@@ -9,11 +10,16 @@
   var equal;
   var finish;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     util = require('./util');
-    lib = require('../src/lib');
-    r = require('../src/runtime/runtime');
+    lib = esmDefault(require('../src/lib'));
+    r = esmDefault(require('../src/runtime/runtime'));
   } else {
     expect = window.expect;
     util = window.util;

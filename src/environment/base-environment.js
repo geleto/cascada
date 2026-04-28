@@ -1,17 +1,15 @@
 'use strict';
 
 import waterfall from 'a-sync-waterfall';
-import lib from '../lib';
-import filters from '../filters';
-import {FileSystemLoader, WebLoader, PrecompiledLoader} from '../loader/loaders';
-import tests from '../tests';
-import globals from '../globals';
-import {EmitterObj} from '../object';
-import {handleError} from '../runtime/errors';
-import expressApp from '../express-app';
-import {clearStringCache, callLoaders} from '../loader/loader-utils';
-import {Template, AsyncTemplate} from './template';
-import {Script} from './script';
+import lib from '../lib.js';
+import filters from '../filters.js';
+import {FileSystemLoader, WebLoader, PrecompiledLoader} from '../loader/loaders.js';
+import * as tests from '../tests.js';
+import globals from '../globals.js';
+import {EmitterObj} from '../object.js';
+import {handleError} from '../runtime/errors.js';
+import expressApp from '../express-app.js';
+import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
 
 /**
  * A no-op template, for use with {% include ignore missing %}
@@ -255,8 +253,12 @@ class BaseEnvironment extends EmitterObj {
       eagerCompile = false;
     }
 
+    const TemplateClass = this.TemplateClass;
+    const AsyncTemplateClass = this.AsyncTemplateClass || TemplateClass;
+    const ScriptClass = this.ScriptClass;
+
     // Check if name is a compiled template/script instance
-    if (name instanceof Template || name instanceof Script) {
+    if ((TemplateClass && name instanceof TemplateClass) || (ScriptClass && name instanceof ScriptClass)) {
       tmpl = name;
     } else if (typeof name !== 'string') {
       throw new Error('template names must be a string: ' + name);
@@ -290,11 +292,14 @@ class BaseEnvironment extends EmitterObj {
     let syncResult;
 
     const createCompiledScript = (info) => {
+      if (!ScriptClass) {
+        throw new Error('Script rendering is not available in this environment');
+      }
       if (!info) {
-        return new Script(noopTmplSrcAsync, this, '', eagerCompile);
+        return new ScriptClass(noopTmplSrcAsync, this, '', eagerCompile);
       }
 
-      const compiled = new Script(info.src, this, info.path, eagerCompile);
+      const compiled = new ScriptClass(info.src, this, info.path, eagerCompile);
       if (!info.noCache) {
         const compiledCache = this._compiledCaches.get(info.loader) || new Map();
         compiledCache.set(name, compiled);
@@ -307,12 +312,12 @@ class BaseEnvironment extends EmitterObj {
       let compiled;
       if (!info) {
         compiled = asyncMode
-          ? new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile)
-          : new Template(noopTmplSrc, this, '', eagerCompile);
+          ? new AsyncTemplateClass(noopTmplSrcAsync, this, '', eagerCompile)
+          : new TemplateClass(noopTmplSrc, this, '', eagerCompile);
       } else {
         compiled = asyncMode
-          ? new AsyncTemplate(info.src, this, info.path, eagerCompile)
-          : new Template(info.src, this, info.path, eagerCompile);
+          ? new AsyncTemplateClass(info.src, this, info.path, eagerCompile)
+          : new TemplateClass(info.src, this, info.path, eagerCompile);
         if (!info.noCache) {
           const compiledCache = this._compiledCaches.get(info.loader) || new Map();
           compiledCache.set(name, compiled);
@@ -361,11 +366,4 @@ class BaseEnvironment extends EmitterObj {
   }
 }
 
-const __defaultExport = {
-  BaseEnvironment,
-  noopTmplSrc,
-  noopTmplSrcAsync
-};
 export { BaseEnvironment, noopTmplSrc, noopTmplSrcAsync };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

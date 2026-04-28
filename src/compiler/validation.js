@@ -1,13 +1,13 @@
 'use strict';
 
-import nodes from '../nodes';
-import {CHANNEL_TYPES, CHANNEL_TYPE_FACTS} from '../channel-types';
+import nodes from '../nodes.js';
+import {CHANNEL_TYPES, CHANNEL_TYPE_FACTS} from '../channel-types.js';
 
 import {
   RETURN_CHANNEL_NAME,
   RETURN_IS_UNSET_FUNCTION_NAME,
   RESERVED_RETURN_SENTINEL_SYMBOL_NAME,
-} from './return';
+} from './return.js';
 
 const RESERVED_DECLARATION_NAMES = new Set([
   ...CHANNEL_TYPES,
@@ -200,16 +200,4 @@ function validateLocalSharedMethodNameCollisions(compiler, node) {
 
 
 
-const __defaultExport = {
-  RESERVED_DECLARATION_NAMES,
-  RESERVED_ASYNC_DECLARATION_NAMES,
-  validateGuardVariablesDeclared,
-  validateChannelDeclarationNode,
-  validateChannelObservationCall,
-  getScriptExtendsSourceOrderViolation,
-  validateScriptExtendsSourceOrder,
-  validateLocalSharedMethodNameCollisions
-};
 export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChannelDeclarationNode, validateChannelObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateLocalSharedMethodNameCollisions };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

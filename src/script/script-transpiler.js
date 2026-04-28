@@ -70,10 +70,10 @@
  */
 
 // Import the script parser
-import {parseTemplateLine, TOKEN_TYPES} from './script-lexer';
+import {lex, parseTemplateLine, TOKEN_TYPES} from './script-lexer.js';
 
-import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from '../compiler/validation';
-import {CHANNEL_TYPES, CHANNEL_TYPE_FACTS} from '../channel-types';
+import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from '../compiler/validation.js';
+import {CHANNEL_TYPES, CHANNEL_TYPE_FACTS} from '../channel-types.js';
 
 class ScriptTranspiler {
   constructor() {
@@ -848,7 +848,6 @@ class ScriptTranspiler {
    * @returns {Object|null} result object or null if not a path assignment
    */
   _deconstructPathAssignment(codeContent, lineIndex) {
-    const { lex } = require('./script-lexer');
     // Lex the codeContent to get tokens.
     // This might be expensive for every line, but we only call it if standard var assignment check fails.
     const tokens = lex(codeContent);
@@ -1023,7 +1022,6 @@ class ScriptTranspiler {
   }
 
   _parseDataCommandFromChannel(after, lineIndex) {
-    const { lex } = require('./script-lexer');
     const tokens = lex(after);
 
     const parsed = this._parsePathSegments(tokens, 0, true, true, true, lineIndex);
@@ -2163,6 +2161,9 @@ class ScriptTranspiler {
 }
 
 const transpiler = new ScriptTranspiler();
+const scriptToTemplate = transpiler.scriptToTemplate.bind(transpiler);
+const _deconstructPathAssignment = transpiler._deconstructPathAssignment.bind(transpiler);
+
+export {scriptToTemplate, _deconstructPathAssignment};
 export default transpiler;
-if (typeof module !== 'undefined') { module['exports'] = transpiler; }
 

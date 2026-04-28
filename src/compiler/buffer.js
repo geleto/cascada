@@ -5,10 +5,10 @@
  * Manages buffer stacks, async buffer operations, and channel command compilation.
  */
 
-import nodes from '../nodes';
+import nodes from '../nodes.js';
 
-import {CHANNEL_TYPE_FACTS} from '../channel-types';
-import {validateChannelObservationCall} from './validation';
+import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
+import {validateChannelObservationCall} from './validation.js';
 const DEFAULT_TEMPLATE_TEXT_CHANNEL = '__text__';
 const BUFFER_STATE_KEYS = [
   'currentBuffer',

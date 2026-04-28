@@ -7,9 +7,7 @@ function createCompositionPayload(rootContext, payloadContext = rootContext) {
   };
 }
 
-const __defaultExport = {
+export default {
   createCompositionPayload
 };
 export { createCompositionPayload };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

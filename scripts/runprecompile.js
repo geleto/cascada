@@ -2,7 +2,7 @@
 
 'use strict';
 
-import precompileTestTemplates from './lib/precompile';
+import precompileTestTemplates from './lib/precompile.js';
 
 precompileTestTemplates()
   .then(() => {

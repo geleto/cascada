@@ -1,7 +1,16 @@
 'use strict';
 
-import {CommandBuffer} from './command-buffer';
-import {markPromiseHandled} from './errors';
+import {markPromiseHandled} from './errors.js';
+
+function isCommandBufferLike(value) {
+  return !!(
+    value &&
+    typeof value === 'object' &&
+    value.arrays &&
+    typeof value.isFinished === 'function' &&
+    typeof value.onEnterBuffer === 'function'
+  );
+}
 
 class BufferIterator {
   constructor(output) {
@@ -77,7 +86,7 @@ class BufferIterator {
       if (arr && nextIndex < arr.length && arr[nextIndex] != null) {
         cursor.index = nextIndex;
         const item = arr[nextIndex];
-        if (item instanceof CommandBuffer) {
+        if (isCommandBufferLike(item)) {
           this._enterChild(item);
         } else {
           const applyResult = this._applyCommand(item);
@@ -254,9 +263,7 @@ class BufferIterator {
   }
 }
 
-const __defaultExport = {
+export default {
   BufferIterator
 };
 export { BufferIterator };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

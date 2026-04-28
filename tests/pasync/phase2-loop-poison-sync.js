@@ -1,3 +1,4 @@
+
 (function () {
   'use strict';
 
@@ -6,10 +7,15 @@
   var createPoison;
   var isPoisonError;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    const runtime = require('../../src/runtime/runtime');
+    const runtime = esmDefault(require('../../src/runtime/runtime'));
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
   } else {

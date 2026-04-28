@@ -14,7 +14,7 @@
     //Environment = require('../../src/environment/environment').Environment;
     //unescape = require('he').unescape;
     delay = require('../util').delay;
-    //runtime = require('../../src/runtime/runtime');
+    //runtime = esmDefault(require('../../src/runtime/runtime'));
   } else {
     //unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;

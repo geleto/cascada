@@ -1,7 +1,7 @@
 'use strict';
 
-import {createPoison, isPoison, isPoisonError, handleError, RuntimePromise} from './errors';
-import {RESOLVE_MARKER, resolveAll} from './resolve';
+import {createPoison, isPoison, isPoisonError, handleError, RuntimePromise} from './errors.js';
+import {RESOLVE_MARKER, resolveAll} from './resolve.js';
 
 /**
  * Sync call wrapper for templates.
@@ -173,10 +173,8 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   }
 }
 
-const __defaultExport = {
+export default {
   callWrap,
   callWrapAsync,
 };
 export { callWrap, callWrapAsync };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -1,6 +1,8 @@
 'use strict';
 
-import {SafeString} from './runtime/runtime';
+import runtime from './runtime/runtime.js';
+
+const {SafeString} = runtime;
 
 /**
  * Returns `true` if the object is a function, otherwise `false`.
@@ -60,9 +62,9 @@ function equalto(one, two) {
 export {equalto};
 
 // Aliases
-export var eq = equalto;
+export const eq = equalto;
 
-export var sameas = equalto;
+export const sameas = equalto;
 
 /**
  * Returns `true` if the value is evenly divisible by 2.
@@ -116,7 +118,7 @@ function greaterthan(one, two) {
 export {greaterthan};
 
 // alias
-export var gt = greaterthan;
+export const gt = greaterthan;
 
 /**
  * Returns `true` if the operand (one) is less than or equal to the test's
@@ -145,7 +147,7 @@ function lessthan(one, two) {
 export {lessthan};
 
 // alias
-export var lt = lessthan;
+export const lt = lessthan;
 
 /**
  * Returns `true` if the string is lowercased.
@@ -289,34 +291,3 @@ function mapping(value) {
 }
 
 export {mapping};
-
-const __defaultExport = {
-  callable,
-  defined,
-  divisibleby,
-  escaped,
-  equalto,
-  eq,
-  sameas,
-  even,
-  falsy,
-  ge,
-  greaterthan,
-  gt,
-  le,
-  lessthan,
-  lt,
-  lower,
-  ne,
-  null: nullTest,
-  number,
-  odd,
-  string,
-  truthy,
-  undefined: undefinedTest,
-  upper,
-  iterable,
-  mapping
-};
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

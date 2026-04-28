@@ -8,9 +8,9 @@ import {
   createPoison,
   handleError,
   markPromiseHandled,
-} from '../errors';
+} from '../errors.js';
 
-import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve';
+import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.js';
 const contextualizedOutputErrorCache = new WeakMap();
 
 // Base class for all commands. Manages the optional deferred-result promise used by observable commands.
@@ -109,17 +109,7 @@ class ChannelCommand extends Command {
   }
 }
 
-const __defaultExport = {
-  Command,
-  ChannelCommand,
-  contextualizeErrorsForOutput,
-  contextualizeOutputError,
-  runWithResolvedArguments,
-  markDeferredThenablesHandled
-};
 export { Command, ChannelCommand, contextualizeErrorsForOutput, contextualizeOutputError, runWithResolvedArguments, markDeferredThenablesHandled };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
 
 function contextualizeErrorsForOutput(output, pos, errors) {
   if (!Array.isArray(errors) || errors.length === 0) {

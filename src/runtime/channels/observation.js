@@ -1,8 +1,8 @@
 'use strict';
 
-import {RETURN_UNSET} from '../markers';
-import {isPoisonError, handleError} from '../errors';
-import {Command} from './command-base';
+import {RETURN_UNSET} from '../markers.js';
+import {isPoisonError, handleError} from '../errors.js';
+import {Command} from './command-base.js';
 
 class SnapshotCommand extends Command {
   constructor({ channelName, pos = null }) {
@@ -244,15 +244,4 @@ class RestoreGuardStateCommand extends Command {
   }
 }
 
-const __defaultExport = {
-  SnapshotCommand,
-  RawSnapshotCommand,
-  ReturnIsUnsetCommand,
-  IsErrorCommand,
-  GetErrorCommand,
-  CaptureGuardStateCommand,
-  RestoreGuardStateCommand
-};
 export { SnapshotCommand, RawSnapshotCommand, ReturnIsUnsetCommand, IsErrorCommand, GetErrorCommand, CaptureGuardStateCommand, RestoreGuardStateCommand };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

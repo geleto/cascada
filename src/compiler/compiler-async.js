@@ -1,16 +1,16 @@
 'use strict';
 
-import nodes from '../nodes';
+import nodes from '../nodes.js';
 
 import {
   validateGuardVariablesDeclared,
   validateScriptExtendsSourceOrder,
   validateLocalSharedMethodNameCollisions,
-} from './validation';
+} from './validation.js';
 
-import CompilerBaseAsync from './compiler-base-async';
-import CompileBuffer from './buffer';
-import {ROOT_STARTUP_PROMISE_VAR} from './inheritance';
+import CompilerBaseAsync from './compiler-base-async.js';
+import CompileBuffer from './buffer.js';
+import {ROOT_STARTUP_PROMISE_VAR} from './inheritance.js';
 
 const COMPILED_METHODS_VAR = '__compiledMethods';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';

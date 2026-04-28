@@ -1,6 +1,6 @@
 'use strict';
 
-import Loader from './loader';
+import Loader from './loader.js';
 
 class PrecompiledLoader extends Loader {
   constructor(compiledTemplates) {
@@ -22,9 +22,8 @@ class PrecompiledLoader extends Loader {
   }
 }
 
-const __defaultExport = {
-  PrecompiledLoader: PrecompiledLoader,
-};
-export { PrecompiledLoader };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
+const FileSystemLoader = undefined;
+const WebLoader = undefined;
+const NodeResolveLoader = undefined;
+
+export { PrecompiledLoader, FileSystemLoader, WebLoader, NodeResolveLoader };

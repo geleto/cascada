@@ -6,9 +6,17 @@ let Script;
 let Context;
 let StringLoader;
 let runtime;
+let runtimeHooks;
 let InheritanceState;
 let inheritanceStateModule;
+let inheritanceStateHooks;
 let inheritanceCallModule;
+let inheritanceCallHooks;
+
+
+function esmDefault(module) {
+  return module.default || module;
+}
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -17,19 +25,24 @@ if (typeof require !== 'undefined') {
   Script = environment.Script;
   Context = require('../../src/environment/context').Context;
   StringLoader = require('../util').StringLoader;
-  runtime = require('../../src/runtime/runtime');
+  runtime = esmDefault(require('../../src/runtime/runtime'));
+  runtimeHooks = runtime.default || runtime;
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
+    inheritanceStateHooks = inheritanceStateModule.default || inheritanceStateModule;
     InheritanceState = inheritanceStateModule.InheritanceState;
   } catch (err) {
     void err;
     InheritanceState = null;
+    inheritanceStateHooks = null;
   }
   try {
     inheritanceCallModule = require('../../src/runtime/inheritance-call');
+    inheritanceCallHooks = inheritanceCallModule.default || inheritanceCallModule;
   } catch (err) {
     void err;
     inheritanceCallModule = null;
+    inheritanceCallHooks = null;
   }
 } else {
   expect = window.expect;
@@ -38,8 +51,10 @@ if (typeof require !== 'undefined') {
   Context = nunjucks.Context;
   StringLoader = window.util.StringLoader;
   runtime = nunjucks.runtime;
+  runtimeHooks = runtime;
   InheritanceState = null;
   inheritanceCallModule = null;
+  inheritanceCallHooks = null;
 }
 
 describe('Extends Runtime', function () {
@@ -342,10 +357,10 @@ describe('Extends Runtime', function () {
     it('should route shared declarations from the whole hierarchy to the same shared root buffer', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
-      const originalDeclareInheritanceSharedChannel = runtime.declareInheritanceSharedChannel;
+      const originalDeclareInheritanceSharedChannel = runtimeHooks.declareInheritanceSharedChannel;
       const themeBuffers = [];
 
-      runtime.declareInheritanceSharedChannel = function(buffer, channelName, channelType, context, initializer) {
+      runtimeHooks.declareInheritanceSharedChannel = function(buffer, channelName, channelType, context, initializer) {
         const channel = originalDeclareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer);
         if (channelName === 'theme') {
           themeBuffers.push(channel._buffer);
@@ -365,7 +380,7 @@ describe('Extends Runtime', function () {
           expect(buffer).to.be(themeBuffers[0]);
         });
       } finally {
-        runtime.declareInheritanceSharedChannel = originalDeclareInheritanceSharedChannel;
+        runtimeHooks.declareInheritanceSharedChannel = originalDeclareInheritanceSharedChannel;
       }
     });
 
@@ -626,8 +641,8 @@ describe('Extends Runtime', function () {
 
       let seenCommand = null;
       let startCount = 0;
-      const originalCreateInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
-      inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+      const originalCreateInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
+      inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
         const command = originalCreateInvocationCommand(spec);
         seenCommand = command;
         startCount++;
@@ -679,7 +694,7 @@ describe('Extends Runtime', function () {
         expect(seenCommand.getError()).to.be(null);
         expect(admission).to.be(seenCommand.promise);
       } finally {
-        inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInvocationCommand;
+        inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInvocationCommand;
       }
     });
 
@@ -748,7 +763,7 @@ describe('Extends Runtime', function () {
           return {};
         }
       };
-      const command = inheritanceCallModule.createInheritanceInvocationCommand({
+      const command = inheritanceCallHooks.createInheritanceInvocationCommand({
         name: '__constructor__',
         methodData: {
           fn() {
@@ -791,11 +806,11 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         const events = [];
-        const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
-        const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
+        const originalRegisterInheritanceMethods = inheritanceStateHooks.registerInheritanceMethods;
+        const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
         let buildInvocationCreatedAt = -1;
 
-        inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+        inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
           if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
             buildInvocationCreatedAt = events.length;
             events.push({ type: 'build-invocation-buffer-created' });
@@ -803,7 +818,7 @@ describe('Extends Runtime', function () {
           return originalCreateInheritanceInvocationCommand.apply(this, arguments);
         };
 
-        inheritanceStateModule.registerInheritanceMethods = function(state, methods) {
+        inheritanceStateHooks.registerInheritanceMethods = function(state, methods) {
           if (methods && methods.build && methods.build.ownerKey === 'A.script') {
             events.push({ type: 'parent-build-registered' });
           }
@@ -836,8 +851,8 @@ describe('Extends Runtime', function () {
           expect(buildInvocationCreatedAt).to.be.greaterThan(-1);
           expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
         } finally {
-          inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
-          inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
+          inheritanceStateHooks.registerInheritanceMethods = originalRegisterInheritanceMethods;
+          inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
         }
       });
 
@@ -849,9 +864,9 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         let seenLinkedChannels = null;
-        const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
+        const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
 
-        inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+        inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
           if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
             const invocationBuffer = spec.invocationBuffer;
             seenLinkedChannels = {
@@ -893,7 +908,7 @@ describe('Extends Runtime', function () {
           expect(seenLinkedChannels.trace).to.be(true);
           expect(seenLinkedChannels.late).to.be(true);
         } finally {
-          inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
+          inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
         }
       });
 
@@ -906,11 +921,11 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         const events = [];
-        const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
-        const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
+        const originalRegisterInheritanceMethods = inheritanceStateHooks.registerInheritanceMethods;
+        const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
         let superInvocationCreatedAt = -1;
 
-        inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+        inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
           if (
             spec.label === 'super() for method \'build\'' &&
             spec.methodData &&
@@ -922,7 +937,7 @@ describe('Extends Runtime', function () {
           return originalCreateInheritanceInvocationCommand.apply(this, arguments);
         };
 
-        inheritanceStateModule.registerInheritanceMethods = function(state, methods) {
+        inheritanceStateHooks.registerInheritanceMethods = function(state, methods) {
           if (methods && methods.build && methods.build.ownerKey === 'A.script') {
             events.push({ type: 'parent-build-registered' });
           }
@@ -959,8 +974,8 @@ describe('Extends Runtime', function () {
           expect(superInvocationCreatedAt).to.be.greaterThan(-1);
           expect(superInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
         } finally {
-          inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
-          inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
+          inheritanceStateHooks.registerInheritanceMethods = originalRegisterInheritanceMethods;
+          inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
         }
       });
 
@@ -972,9 +987,9 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         let seenLinkedChannels = null;
-        const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
+        const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
 
-        inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+        inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
           if (
             spec.label === 'super() for method \'build\'' &&
             spec.methodData &&
@@ -1020,7 +1035,7 @@ describe('Extends Runtime', function () {
           expect(seenLinkedChannels.trace).to.be(true);
           expect(seenLinkedChannels.late).to.be(true);
         } finally {
-          inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
+          inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
         }
       });
 
@@ -1060,9 +1075,9 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         let seenInvocationLate = null;
-        const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
+        const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
 
-        inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+        inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
           if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
             const invocationBuffer = spec.invocationBuffer;
             seenInvocationLate = {
@@ -1100,7 +1115,7 @@ describe('Extends Runtime', function () {
             usesOwnInvocationBuffer: true
           });
         } finally {
-          inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
+          inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
         }
       });
 
@@ -1108,9 +1123,9 @@ describe('Extends Runtime', function () {
         const loader = new StringLoader();
         env = new AsyncEnvironment(loader);
         const seenModes = [];
-        const originalObserveInheritanceSharedChannel = runtime.observeInheritanceSharedChannel;
+        const originalObserveInheritanceSharedChannel = runtimeHooks.observeInheritanceSharedChannel;
 
-        runtime.observeInheritanceSharedChannel = function(channelName, currentBuffer, errorContext, inheritanceState, mode) {
+        runtimeHooks.observeInheritanceSharedChannel = function(channelName, currentBuffer, errorContext, inheritanceState, mode) {
           if (channelName === 'trace') {
             seenModes.push(mode);
           }
@@ -1136,7 +1151,7 @@ describe('Extends Runtime', function () {
           expect(result).to.be('parent|');
           expect(seenModes).to.eql(['snapshot']);
         } finally {
-          runtime.observeInheritanceSharedChannel = originalObserveInheritanceSharedChannel;
+          runtimeHooks.observeInheritanceSharedChannel = originalObserveInheritanceSharedChannel;
         }
       });
     });

@@ -1,17 +1,17 @@
 'use strict';
 
-import lib from './lib';
-import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment';
-import Loader from './loader/loader';
-import loaders from './loader/loaders';
-import precompileModule from './precompile';
-import compiler from './compiler/compiler';
-import parser from './parser';
-import lexer from './lexer';
-import runtime from './runtime/runtime';
-import nodes from './nodes';
-import installJinjaCompat from './jinja-compat';
-import loaderUtils from './loader/loader-utils';
+import lib from './lib.js';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
+import Loader from './loader/loader.js';
+import loaders from './loader/loaders.js';
+import precompileModule from './precompile.js';
+import compiler from './compiler/compiler.js';
+import parser from './parser.js';
+import lexer from './lexer.js';
+import runtime from './runtime/runtime.js';
+import nodes from './nodes.js';
+import installJinjaCompat from './jinja-compat.js';
+import loaderUtils from './loader/loader-utils.js';
 
 // A single instance of an environment, since this is so commonly used
 let e;
@@ -57,7 +57,7 @@ function configureAsync(templatesPath, opts) {
   return configure(templatesPath, opts, true);
 }
 
-const __defaultExport = {
+const indexApi = {
   Environment,
   AsyncEnvironment,
   Template,
@@ -172,7 +172,6 @@ const __defaultExport = {
   clearStringCache: loaderUtils.clearStringCache,
   raceLoaders: loaderUtils.raceLoaders,
 };
-export { Environment, AsyncEnvironment, Template, AsyncTemplate, Script, Loader, compiler, parser, lexer, runtime, lib, nodes, installJinjaCompat, configure };
 
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
+export { Environment, AsyncEnvironment, Template, AsyncTemplate, Script, Loader, compiler, parser, lexer, runtime, lib, nodes, installJinjaCompat, configure };
+export default indexApi;

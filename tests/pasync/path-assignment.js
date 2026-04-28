@@ -8,10 +8,15 @@ let isPoison;
 let isPoisonError;
 let transpiler;
 
+
+function esmDefault(module) {
+  return module.default || module;
+}
+
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  runtime = require('../../src/runtime/runtime');
+  runtime = esmDefault(require('../../src/runtime/runtime'));
   createPoison = require('../../src/runtime/errors').createPoison;
   isPoison = require('../../src/runtime/errors').isPoison;
   isPoisonError = require('../../src/runtime/errors').isPoisonError;

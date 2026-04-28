@@ -1,3 +1,4 @@
+
 (function () {
   'use strict';
 
@@ -6,6 +7,11 @@
   var StringLoader;
   var path;
   var delay;
+
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -974,7 +980,7 @@
     // runtime errors (like sequential loop contract violations) are correctly propagated
     // through the returned promise in value-boundary paths.
 
-    const runtime = require('../../src/runtime/runtime');
+    const runtime = esmDefault(require('../../src/runtime/runtime'));
     it('should reject with RuntimeFatalError from runValueBoundary', function (done) {
       // Simulate an async block that throws RuntimeFatalError
       const fatalMsg = 'Simulated Fatal Error';

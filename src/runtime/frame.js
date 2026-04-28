@@ -1,7 +1,7 @@
 'use strict';
 
-import {checkFrameBalance} from './checks';
-import {createLoopBindings} from './loop';
+import {checkFrameBalance} from './checks.js';
+import {createLoopBindings} from './loop.js';
 
 
 // Frames keep track of scoping both at compile-time and run-time so
@@ -135,10 +135,8 @@ function markChannelBufferScope(buffer) {
   }
 }
 
-const __defaultExport = {
+export default {
   Frame,
   markChannelBufferScope
 };
 export { Frame, markChannelBufferScope };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

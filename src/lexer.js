@@ -1,7 +1,7 @@
 /* eslint-disable camelcase */
 'use strict';
 
-import lib from './lib';
+import lib from './lib.js';
 
 let whitespaceChars = ' \n\t\r\u00A0';
 let delimChars = '()[]{}%*-+~/#,:|.<>=!';
@@ -512,11 +512,12 @@ class Tokenizer {
   }
 }
 
-const __defaultExport = {
-  lex(src, opts) {
-    return new Tokenizer(src, opts);
-  },
+function lex(src, opts) {
+  return new Tokenizer(src, opts);
+}
 
+export default {
+  lex,
   TOKEN_STRING: TOKEN_STRING,
   TOKEN_WHITESPACE: TOKEN_WHITESPACE,
   TOKEN_DATA: TOKEN_DATA,
@@ -544,6 +545,3 @@ const __defaultExport = {
   TOKEN_SPECIAL: TOKEN_SPECIAL,
   TOKEN_REGEX: TOKEN_REGEX
 };
-export { TOKEN_STRING, TOKEN_WHITESPACE, TOKEN_DATA, TOKEN_BLOCK_START, TOKEN_BLOCK_END, TOKEN_VARIABLE_START, TOKEN_VARIABLE_END, TOKEN_COMMENT, TOKEN_LEFT_PAREN, TOKEN_RIGHT_PAREN, TOKEN_LEFT_BRACKET, TOKEN_RIGHT_BRACKET, TOKEN_LEFT_CURLY, TOKEN_RIGHT_CURLY, TOKEN_OPERATOR, TOKEN_COMMA, TOKEN_COLON, TOKEN_TILDE, TOKEN_PIPE, TOKEN_INT, TOKEN_FLOAT, TOKEN_BOOLEAN, TOKEN_NONE, TOKEN_SYMBOL, TOKEN_SPECIAL, TOKEN_REGEX };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

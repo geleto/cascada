@@ -1,3 +1,4 @@
+
 'use strict';
 /**
  * Integration tests for sequential operations with poisoning system
@@ -18,9 +19,14 @@ let isPoisonError;
 let AsyncEnvironment;
 let isPoison;
 
+
+function esmDefault(module) {
+  return module.default || module;
+}
+
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
-  runtime = require('../../src/runtime/runtime');
+  runtime = esmDefault(require('../../src/runtime/runtime'));
   createPoison = runtime.createPoison;
   isPoisonError = runtime.isPoisonError;
   isPoison = runtime.isPoison;

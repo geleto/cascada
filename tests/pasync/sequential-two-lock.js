@@ -4,9 +4,14 @@ var expect;
 var AsyncEnvironment;
 var delay;
 
+
+function esmDefault(module) {
+  return module.default || module;
+}
+
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
-  const index = require('../../src/index');
+  const index = esmDefault(require('../../src/index'));
   AsyncEnvironment = index.AsyncEnvironment;
   const util = require('../util');
   delay = util.delay;

@@ -30,7 +30,5 @@ class EmitterObj extends EventEmitter {
   }
 }
 
-const __defaultExport = { Obj, EmitterObj };
+export default { Obj, EmitterObj };
 export { Obj, EmitterObj };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

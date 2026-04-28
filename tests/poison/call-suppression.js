@@ -1,3 +1,4 @@
+
 (function () {
   'use strict';
 
@@ -10,9 +11,14 @@
   let collectErrors;
   let Frame;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    runtime = require('../../src/runtime/runtime');
+    runtime = esmDefault(require('../../src/runtime/runtime'));
     createPoison = runtime.createPoison;
     isPoison = runtime.isPoison;
     isPoisonError = runtime.isPoisonError;

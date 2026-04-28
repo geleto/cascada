@@ -1,3 +1,4 @@
+
 /**
  * Integration Tests for RuntimePromise Issues
  *
@@ -17,11 +18,16 @@
   let isPoisonError;
   let createPoison;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    isPoisonError = require('../../src/runtime/runtime').isPoisonError;
-    const runtime = require('../../src/runtime/runtime');
+    isPoisonError = esmDefault(require('../../src/runtime/runtime')).isPoisonError;
+    const runtime = esmDefault(require('../../src/runtime/runtime'));
     createPoison = runtime.createPoison;
   } else {
     expect = window.expect;

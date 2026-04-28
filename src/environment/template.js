@@ -1,25 +1,19 @@
 'use strict';
 
-import lib from '../lib';
-import compiler from '../compiler/compiler';
-import globalRuntime from '../runtime/runtime';
-import {Frame} from '../runtime/frame';
-import {Obj} from '../object';
-import {callbackAsap} from './utils';
-import {Context} from './context';
-import {markPromiseHandled} from '../runtime/errors';
-
-// Lazy-loaded environment classes to avoid circular dependencies
-let Environment, AsyncEnvironment;
+import lib from '../lib.js';
+import compiler from '../compiler/compiler.js';
+import globalRuntime from '../runtime/runtime.js';
+import {Frame} from '../runtime/frame.js';
+import {Obj} from '../object.js';
+import {callbackAsap} from './utils.js';
+import {Context} from './context.js';
+import {markPromiseHandled} from '../runtime/errors.js';
+import {createDefaultEnvironment} from './default-environment.js';
 
 class Template extends Obj {
   init(src, env, path, eagerCompile) {
     if (!env) {
-      if (!Environment) {
-        const envModule = require('./environment');
-        Environment = envModule.Environment;
-      }
-      this.env = new Environment();
+      this.env = createDefaultEnvironment(false);
     } else {
       this.env = env;
     }
@@ -321,11 +315,7 @@ class Template extends Obj {
 class AsyncTemplate extends Template {
   init(src, env, path, eagerCompile) {
     if (!env) {
-      if (!AsyncEnvironment) {
-        const envModule = require('./environment');
-        AsyncEnvironment = envModule.AsyncEnvironment;
-      }
-      env = new AsyncEnvironment();
+      env = createDefaultEnvironment(true);
     }
     super.init(src, env, path, eagerCompile);
     this.asyncMode = true;
@@ -446,10 +436,4 @@ class AsyncTemplate extends Template {
   }
 }
 
-const __defaultExport = {
-  Template,
-  AsyncTemplate
-};
 export { Template, AsyncTemplate };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

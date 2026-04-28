@@ -1,11 +1,14 @@
 'use strict';
-import {BaseEnvironment} from './base-environment';
-import {AsyncTemplate} from './template';
-import {Script} from './script';
+import {BaseEnvironment} from './base-environment.js';
+import {AsyncTemplate} from './template.js';
+import {Script} from './script.js';
 
 class AsyncEnvironment extends BaseEnvironment {
   init(loaders, opts) {
     super.init(loaders, opts);
+    this.TemplateClass = AsyncTemplate;
+    this.AsyncTemplateClass = AsyncTemplate;
+    this.ScriptClass = Script;
 
     // Initialize script configuration properties
     this.customDataMethods = {};
@@ -192,9 +195,7 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 }
 
-const __defaultExport = {
+export default {
   AsyncEnvironment
 };
 export { AsyncEnvironment };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

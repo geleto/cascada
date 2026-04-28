@@ -8,11 +8,11 @@ import {
   RuntimeFatalError,
   RuntimePromise,
   collectErrors,
-} from './errors';
+} from './errors.js';
 
-import inheritanceCall from './inheritance-call';
-import inheritanceState from './inheritance-state';
-import {resolveDuo} from './resolve';
+import inheritanceCall from './inheritance-call.js';
+import inheritanceState from './inheritance-state.js';
+import {resolveDuo} from './resolve.js';
 /**
  * Sync member lookup for templates.
  * Returns undefined if obj is undefined or null.
@@ -309,7 +309,7 @@ function channelLookup(name, currentBuffer) {
   return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
 }
 
-const __defaultExport = {
+export default {
   memberLookup,
   memberLookupScriptRaw,
   memberLookupAsync,
@@ -318,5 +318,3 @@ const __defaultExport = {
   channelLookup,
 };
 export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -1,16 +1,13 @@
 'use strict';
 
-import lib from '../lib';
-import errors from './errors';
-import {RESOLVE_MARKER, resolveAll, resolveSingle} from './resolve';
-
-function getCommandBufferClass() {
-  return require('./command-buffer').CommandBuffer;
-}
+import lib from '../lib.js';
+import errors from './errors.js';
+import {RESOLVE_MARKER, resolveAll, resolveSingle} from './resolve.js';
+import {isCommandBuffer} from './buffer-marker.js';
 
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
-    if (val instanceof getCommandBufferClass()) {
+    if (isCommandBuffer(val)) {
       return val;
     }
     if (Array.isArray(val.text)) {
@@ -252,7 +249,7 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
 }
 
 function suppressValueScriptRaw(val, autoescape) {
-  if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof getCommandBufferClass())) {
+  if (val && typeof val === 'object' && !Array.isArray(val) && !isCommandBuffer(val)) {
     const hasCustomToString = val.toString && val.toString !== Object.prototype.toString;
     const isPromise = typeof val.then === 'function';
     if (!hasCustomToString && !isPromise) {
@@ -310,7 +307,7 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
   return suppressValueScriptRaw(val, autoescape);
 }
 
-const __defaultExport = {
+export default {
   suppressValue,
   suppressValueAsync,
   _suppressValueAsyncComplex,
@@ -325,5 +322,3 @@ const __defaultExport = {
   _ensureDefinedAsyncComplex
 };
 export { suppressValue, suppressValueAsync, _suppressValueAsyncComplex, suppressValueScriptRaw, suppressValueScript, SafeString, copySafeness, markSafe, materializeTemplateTextValue, ensureDefined, ensureDefinedAsync, _ensureDefinedAsyncComplex };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -1,4 +1,4 @@
-import {DEFAULT_TEMPLATE_TEXT_CHANNEL} from './buffer';
+import {DEFAULT_TEMPLATE_TEXT_CHANNEL} from './buffer.js';
 
 export default class CompileEmit {
   constructor(compiler) {

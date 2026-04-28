@@ -1,3 +1,4 @@
+
 (function () {
   'use strict';
 
@@ -5,10 +6,15 @@
   let AsyncEnvironment;
   let isPoisonError;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    isPoisonError = require('../../src/runtime/runtime').isPoisonError;
+    isPoisonError = esmDefault(require('../../src/runtime/runtime')).isPoisonError;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;

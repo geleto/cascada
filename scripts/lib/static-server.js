@@ -1,14 +1,15 @@
 import connect from 'connect';
 import serveStatic from 'serve-static';
 import http from 'http';
+import net from 'net';
 import path from 'path';
 import {promises as fs} from 'fs';
 import babel from '@babel/core';
-import url from 'url';
+import url, {fileURLToPath} from 'url';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function findAvailablePort(startPort = 3000) {
-  const net = require('net');
-
   return new Promise((resolve, reject) => {
     const server = net.createServer();
 
@@ -31,7 +32,7 @@ async function findAvailablePort(startPort = 3000) {
 }
 
 async function getStaticServer(prt) {
-  const staticRoot = path.join(__dirname, '../..');
+  const staticRoot = path.join(scriptDir, '../..');
   const port = typeof prt === 'undefined' ? await findAvailablePort() : prt;
 
   try {

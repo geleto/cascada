@@ -1,46 +1,79 @@
 'use strict';
 
-import lib from '../lib';
-import errors from './errors';
-import sequential from './sequential';
-import lookup from './lookup';
-import call from './call';
-import frame from './frame';
-import output from './channels';
-import resolve from './resolve';
-import buffer from './command-buffer';
-import guard from './guard';
-import loop from './loop';
-import outputValue from './safe-output';
-import commandBase from './channels/command-base';
-import textChannel from './channels/text';
-import varChannel from './channels/var';
-import timingCommands from './channels/timing';
-import observationCommands from './channels/observation';
-import dataChannel from './channels/data';
-import sequenceChannel from './channels/sequence';
-import sequentialPathChannel from './channels/sequential-path';
-import errorCommands from './channels/error';
+import lib from '../lib.js';
+import errors from './errors.js';
+import sequential from './sequential.js';
+import lookup from './lookup.js';
+import call from './call.js';
+import frame from './frame.js';
+import {
+  Channel,
+  DataChannel,
+  TextChannel,
+  VarChannel,
+  SequentialPathChannel,
+  createChannel,
+  SequenceChannel,
+  createSequenceChannel,
+  declareBufferChannel
+} from './channels/index.js';
+import resolve from './resolve.js';
+import buffer from './command-buffer.js';
+import guard from './guard.js';
+import loop from './loop.js';
+import outputValue from './safe-output.js';
+import {ChannelCommand} from './channels/command-base.js';
+import {TextCommand} from './channels/text.js';
+import {VarCommand} from './channels/var.js';
+import {WaitResolveCommand, WaitCurrentCommand} from './channels/timing.js';
+import {
+  SnapshotCommand,
+  RawSnapshotCommand,
+  ReturnIsUnsetCommand,
+  IsErrorCommand,
+  GetErrorCommand,
+  RestoreGuardStateCommand
+} from './channels/observation.js';
+import {DataCommand} from './channels/data.js';
+import {SequenceCallCommand, SequenceGetCommand} from './channels/sequence.js';
+import {
+  SequentialPathReadCommand,
+  RepairReadCommand,
+  SequentialPathWriteCommand,
+  RepairWriteCommand
+} from './channels/sequential-path.js';
+import {ErrorCommand, TargetPoisonCommand} from './channels/error.js';
 const commands = {
-  ...commandBase,
-  ...textChannel,
-  ...varChannel,
-  ...timingCommands,
-  ...observationCommands,
-  ...dataChannel,
-  ...sequenceChannel,
-  ...sequentialPathChannel,
-  ...errorCommands
+  ChannelCommand,
+  TextCommand,
+  VarCommand,
+  WaitResolveCommand,
+  WaitCurrentCommand,
+  SnapshotCommand,
+  RawSnapshotCommand,
+  ReturnIsUnsetCommand,
+  IsErrorCommand,
+  GetErrorCommand,
+  RestoreGuardStateCommand,
+  DataCommand,
+  SequenceCallCommand,
+  SequenceGetCommand,
+  SequentialPathReadCommand,
+  RepairReadCommand,
+  SequentialPathWriteCommand,
+  RepairWriteCommand,
+  ErrorCommand,
+  TargetPoisonCommand
 };
-import asyncBoundaries from './async-boundaries';
-import markers from './markers';
-import inheritanceState from './inheritance-state';
-import inheritanceSharedChannels from './inheritance-shared-channels';
-import inheritanceBootstrap from './inheritance-bootstrap';
-import inheritanceCall from './inheritance-call';
-import componentRuntime from './component';
-import compositionPayload from './composition-payload';
-import {setPath} from './set-path';
+import asyncBoundaries from './async-boundaries.js';
+import markers from './markers.js';
+import inheritanceState from './inheritance-state.js';
+import inheritanceSharedChannels from './inheritance-shared-channels.js';
+import inheritanceBootstrap from './inheritance-bootstrap.js';
+import inheritanceCall from './inheritance-call.js';
+import componentRuntime from './component.js';
+import compositionPayload from './composition-payload.js';
+import {setPath} from './set-path.js';
 
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
@@ -165,12 +198,12 @@ function declareCompositionPayloadChannels(commandBuffer, context, skipNames = n
     if (skipNames?.[name] || commandBuffer._channelTypes?.[name]) {
       return;
     }
-    output.declareBufferChannel(commandBuffer, name, 'var', context, null);
+    declareBufferChannel(commandBuffer, name, 'var', context, null);
     commandBuffer.add(new commands.VarCommand({ channelName: name, args: [payloadContext[name]] }), name);
   });
 }
 
-const __defaultExport = {
+const runtimeApi = {
   makeMacro,
   invokeMacro,
   makeKeywordArgs,
@@ -197,15 +230,15 @@ const __defaultExport = {
   // Frame classes
   Frame: frame.Frame,
   markChannelBufferScope: frame.markChannelBufferScope,
-  Channel: output.Channel,
-  DataChannel: output.DataChannel,
-  TextChannel: output.TextChannel,
-  VarChannel: output.VarChannel,
-  SequentialPathChannel: output.SequentialPathChannel,
-  createChannel: output.createChannel,
-  SequenceChannel: output.SequenceChannel,
-  createSequenceChannel: output.createSequenceChannel,
-  declareBufferChannel: output.declareBufferChannel,
+  Channel,
+  DataChannel,
+  TextChannel,
+  VarChannel,
+  SequentialPathChannel,
+  createChannel,
+  SequenceChannel,
+  createSequenceChannel,
+  declareBufferChannel,
   declareInheritanceSharedChannel: inheritanceSharedChannels.declareInheritanceSharedChannel,
   claimInheritanceSharedDefault: inheritanceSharedChannels.claimInheritanceSharedDefault,
   initializeInheritanceSharedChannelDefault: inheritanceSharedChannels.initializeInheritanceSharedChannelDefault,
@@ -308,7 +341,5 @@ const __defaultExport = {
   setPath,
   whileIterator: loop.whileIterator
 };
-export { makeMacro, invokeMacro, makeKeywordArgs, numArgs, promisify, withPath, declareCompositionPayloadChannels, guard };
 
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
+export default runtimeApi;

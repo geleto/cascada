@@ -1,3 +1,4 @@
+
 (function () {
   'use strict';
 
@@ -10,6 +11,11 @@
   var runtime;
   var inheritanceStateRuntime;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     const envModule = require('../../src/environment/environment');
@@ -18,7 +24,7 @@
     Context = envModule.Context;
     StringLoader = require('../util').StringLoader;
     DEFAULT_TEMPLATE_TEXT_OUTPUT = require('../../src/compiler/buffer').DEFAULT_TEMPLATE_TEXT_OUTPUT;
-    runtime = require('../../src/runtime/runtime');
+    runtime = esmDefault(require('../../src/runtime/runtime'));
     inheritanceStateRuntime = require('../../src/runtime/inheritance-state');
   } else {
     expect = window.expect;

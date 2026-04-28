@@ -1,7 +1,7 @@
 'use strict';
 
-import nodes from '../nodes';
-import CompilerCommon from './compiler-common';
+import nodes from '../nodes.js';
+import CompilerCommon from './compiler-common.js';
 
 const compareOps = {
   '==': '==',

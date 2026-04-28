@@ -1,3 +1,4 @@
+
 (function () {
   'use strict';
 
@@ -11,6 +12,11 @@
   var runtime;
 
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
@@ -18,7 +24,7 @@
     //unescape = require('he').unescape;
     delay = require('../util').delay;
     StringLoader = require('../util').StringLoader;
-    runtime = require('../../src/runtime/runtime');
+    runtime = esmDefault(require('../../src/runtime/runtime'));
     isPoisonError = runtime.isPoisonError;
   } else {
     expect = window.expect;

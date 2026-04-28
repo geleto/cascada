@@ -3,12 +3,15 @@
 
 import {promises as fs} from 'fs';
 import path from 'path';
+import {fileURLToPath} from 'url';
 import libCoverage from 'istanbul-lib-coverage';
 import NYC from 'nyc';
 let chalk;
 
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+
 const coverageConfig = {
-  dir: path.join(__dirname, '../coverage'),
+  dir: path.join(scriptDir, '../coverage'),
   files: [
     'browser-std.json',
     'browser-slim.json',
@@ -78,7 +81,7 @@ const coverageConfig = {
     showProcessTree: false,
     tempDir: nycTempDir,
     cacheDir: nycTempDir,
-    cwd: path.join(__dirname, '..')
+    cwd: path.join(scriptDir, '..')
   });
 
   await reportNyc.report();

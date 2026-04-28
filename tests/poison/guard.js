@@ -5,9 +5,14 @@
   var expect;
   var AsyncEnvironment;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    cascada = require('../../src/index');
+    cascada = esmDefault(require('../../src/index'));
     AsyncEnvironment = cascada.AsyncEnvironment;
   } else {
     expect = window.expect;

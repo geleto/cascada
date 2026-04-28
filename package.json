@@ -50,6 +50,7 @@
     "cpy-cli": "^5.0.0",
     "cross-env": "^7.0.3",
     "docsify-cli": "^4.4.4",
+    "dummy-pkg": "file:tests/test-node-pkgs/dummy-pkg",
     "eslint": "^9.28.0",
     "eslint-plugin-mocha": "^11.1.0",
     "expect.js": "*",
@@ -62,6 +63,7 @@
     "istanbul-lib-instrument": "^6.0.3",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.1.7",
+    "madge": "^8.0.0",
     "mocha": "^11.1.0",
     "module-alias": "^2.2.3",
     "ncp": "^2.0.0",
@@ -91,14 +93,14 @@
     "babel-register": "@babel/register"
   },
   "engines": {
-    "node": ">= 6.9.0"
+    "node": ">=22"
   },
   "scripts": {
-    "postinstall": "node -e \"try { require('./scripts/dev-install.js') } catch (e) { console.log('Skipping dev install (script not found)') }\"",
-    "mocha": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs mocha --check-leaks -R spec --require @babel/register 'tests/*.js' 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
+    "postinstall": "node scripts/dev-install.js",
+    "mocha": "cross-env NODE_ENV=test mocha --check-leaks -R spec --require @babel/register 'tests/*.js' 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
-    "clean": "node -e \"require('fs').rmSync('dist', {recursive: true, force: true})\"",
+    "clean": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist', {recursive: true, force: true})\"",
     "build:transpile": "babel src --out-dir dist/cjs",
     "build:bundle": "node scripts/bundle.js",
     "build:types": "cpy src/index.d.ts dist/types/ --flat",
@@ -106,14 +108,15 @@
     "build": "npm run clean && npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/ && npm run build:docs",
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:quick": "npm run mocha",
-    "test:node": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
+    "test:node": "cross-env NODE_ENV=test nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "test:browser": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/run-browser-tests.js",
-    "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
+    "test:pasync": "cross-env NODE_ENV=test nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "test": "node scripts/run-all-tests.js",
     "mocha:single": "mocha --check-leaks -R spec",
     "docs:build": "node scripts/docs-build.js",
     "docs:serve": "npm run docs:build && docsify serve generated-docs/script",
-    "docs:publish": "npm run docs:build && gh-pages -d generated-docs/script -r https://github.com/geleto/cascada-script.git -b gh-pages"
+    "docs:publish": "npm run docs:build && gh-pages -d generated-docs/script -r https://github.com/geleto/cascada-script.git -b gh-pages",
+    "check:cycles": "madge --extensions js --circular src"
   },
   "nyc": {
     "extends": "@istanbuljs/nyc-config-babel",

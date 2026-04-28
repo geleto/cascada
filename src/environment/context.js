@@ -1,8 +1,8 @@
 'use strict';
 
-import lib from '../lib';
-import {Obj} from '../object';
-import {createPoison, markPromiseHandled} from '../runtime/errors';
+import lib from '../lib.js';
+import {Obj} from '../object.js';
+import {createPoison, markPromiseHandled} from '../runtime/errors.js';
 
 class ContextExecutionState {
   constructor() {
@@ -18,9 +18,7 @@ class Context extends Obj {
   init(ctx, blocks, env, path, scriptMode = false, renderCtx, compositionPayloadVars = undefined, executionState = null) {
     // Has to be tied to an environment so we can tap into its globals.
     if (!env) {
-      // Lazy load Environment to avoid circular dependency
-      const { Environment } = require('./environment');
-      this.env = new Environment();
+      this.env = { globals: {} };
     } else {
       this.env = env;
     }
@@ -281,9 +279,7 @@ class Context extends Obj {
   }
 }
 
-const __defaultExport = {
+export default {
   Context
 };
 export { Context };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

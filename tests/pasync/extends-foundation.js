@@ -11,9 +11,15 @@ let nodes;
 let transformer;
 let scriptTranspiler;
 let runtime;
+let runtimeHooks;
 let StringLoader;
 let inheritanceStateModule;
 let inheritanceCallModule;
+
+
+function esmDefault(module) {
+  return module.default || module;
+}
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -23,11 +29,12 @@ if (typeof require !== 'undefined') {
   AsyncTemplate = environment.AsyncTemplate;
   Script = environment.Script;
   Context = require('../../src/environment/context').Context;
-  parser = require('../../src/parser');
-  nodes = require('../../src/nodes');
-  transformer = require('../../src/transformer');
-  scriptTranspiler = require('../../src/script/script-transpiler');
-  runtime = require('../../src/runtime/runtime');
+  parser = esmDefault(require('../../src/parser'));
+  nodes = esmDefault(require('../../src/nodes'));
+  transformer = esmDefault(require('../../src/transformer'));
+  scriptTranspiler = esmDefault(require('../../src/script/script-transpiler'));
+  runtime = esmDefault(require('../../src/runtime/runtime'));
+  runtimeHooks = runtime.default || runtime;
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
   } catch (err) {
@@ -52,6 +59,7 @@ if (typeof require !== 'undefined') {
   transformer = nunjucks.transformer || null;
   scriptTranspiler = nunjucks.scriptTranspiler;
   runtime = nunjucks.runtime;
+  runtimeHooks = runtime;
   inheritanceStateModule = null;
   inheritanceCallModule = null;
   StringLoader = window.util.StringLoader;
@@ -1766,8 +1774,8 @@ describe('Extends Foundation', function () {
       env = new AsyncEnvironment(loader);
       const seen = [];
 
-      const originalBootstrapInheritanceMetadata = runtime.bootstrapInheritanceMetadata;
-      runtime.bootstrapInheritanceMetadata = function(inheritanceStateArg, methodsArg, sharedSchemaArg) {
+      const originalBootstrapInheritanceMetadata = runtimeHooks.bootstrapInheritanceMetadata;
+      runtimeHooks.bootstrapInheritanceMetadata = function(inheritanceStateArg, methodsArg, sharedSchemaArg) {
         seen.push(`schema:${Object.keys(sharedSchemaArg || {}).join(',')}`);
         return originalBootstrapInheritanceMetadata.apply(this, arguments);
       };
@@ -1786,7 +1794,7 @@ describe('Extends Foundation', function () {
         expect(seen[0]).to.be('schema:trace');
         expect(seen[1]).to.be('pre-C|');
       } finally {
-        runtime.bootstrapInheritanceMetadata = originalBootstrapInheritanceMetadata;
+        runtimeHooks.bootstrapInheritanceMetadata = originalBootstrapInheritanceMetadata;
       }
     });
 
@@ -2041,9 +2049,9 @@ describe('Extends Foundation', function () {
         this.skip();
         return;
       }
-      const originalRunCompiledRootStartup = runtime.runCompiledRootStartup;
+      const originalRunCompiledRootStartup = runtimeHooks.runCompiledRootStartup;
 
-      runtime.runCompiledRootStartup = function(spec) {
+      runtimeHooks.runCompiledRootStartup = function(spec) {
         const startupPromise = originalRunCompiledRootStartup(spec);
         const {
           inheritanceState: inheritanceStateArg,
@@ -2077,7 +2085,7 @@ describe('Extends Foundation', function () {
 
         expect(result).to.be('late');
       } finally {
-        runtime.runCompiledRootStartup = originalRunCompiledRootStartup;
+        runtimeHooks.runCompiledRootStartup = originalRunCompiledRootStartup;
       }
     });
 
@@ -2517,10 +2525,10 @@ describe('Extends Foundation', function () {
     });
 
     it('should use finalized transitive channels during real callable entry linking', async function () {
-      const originalGetCallableBodyLinkedChannels = runtime.getCallableBodyLinkedChannels;
+      const originalGetCallableBodyLinkedChannels = runtimeHooks.getCallableBodyLinkedChannels;
       let seenLinkedChannels = null;
 
-      runtime.getCallableBodyLinkedChannels = function(methodData, errorContext) {
+      runtimeHooks.getCallableBodyLinkedChannels = function(methodData, errorContext) {
         const channels = originalGetCallableBodyLinkedChannels.apply(this, arguments);
         if (
           methodData &&
@@ -2544,17 +2552,17 @@ describe('Extends Foundation', function () {
         expect(seenLinkedChannels).to.be.ok();
         expect(seenLinkedChannels.channels).to.contain('theme');
       } finally {
-        runtime.getCallableBodyLinkedChannels = originalGetCallableBodyLinkedChannels;
+        runtimeHooks.getCallableBodyLinkedChannels = originalGetCallableBodyLinkedChannels;
       }
     });
 
     it('should use direct super metadata during real callable entry linking', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
-      const originalGetCallableBodyLinkedChannels = runtime.getCallableBodyLinkedChannels;
+      const originalGetCallableBodyLinkedChannels = runtimeHooks.getCallableBodyLinkedChannels;
       let seenLinkedChannels = null;
 
-      runtime.getCallableBodyLinkedChannels = function(methodData, errorContext) {
+      runtimeHooks.getCallableBodyLinkedChannels = function(methodData, errorContext) {
         const channels = originalGetCallableBodyLinkedChannels.apply(this, arguments);
         if (
           methodData &&
@@ -2594,7 +2602,7 @@ describe('Extends Foundation', function () {
         expect(seenLinkedChannels.channels).to.contain('late');
         expect(seenLinkedChannels.channels).to.contain('trace');
       } finally {
-        runtime.getCallableBodyLinkedChannels = originalGetCallableBodyLinkedChannels;
+        runtimeHooks.getCallableBodyLinkedChannels = originalGetCallableBodyLinkedChannels;
       }
     });
 

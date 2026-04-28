@@ -1,7 +1,7 @@
 'use strict';
 
-import {RuntimeFatalError, isPoison, markPromiseHandled} from './errors';
-import {resolveDuo} from './resolve';
+import {RuntimeFatalError, isPoison, markPromiseHandled} from './errors.js';
+import {resolveDuo} from './resolve.js';
 
 const INTERNAL_INHERITANCE_STATE = Symbol('cascadaInheritanceInternalState');
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';
@@ -617,7 +617,7 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
   return sharedMethods;
 }
 
-const __defaultExport = {
+export default {
   InheritanceState,
   createInheritanceState,
   setInheritanceStartupPromise,
@@ -649,6 +649,5 @@ const __defaultExport = {
   createInheritanceMetadataAggregateError,
   collectOrThrowInheritanceMetadataError,
 };
+
 export { InheritanceState, createInheritanceState, setInheritanceStartupPromise, awaitInheritanceStartup, mergeInheritanceStartupPromise, beginInheritanceMetadataReadiness, resolveInheritanceMetadataReadiness, rejectInheritanceMetadataReadiness, awaitInheritanceMetadataReadiness, isInheritanceMetadataReadinessResolved, consumeInheritanceMetadataReadyYield, setComponentCompositionMode, isComponentCompositionMode, enterInheritanceChainPath, leaveInheritanceChainPath, cloneInheritanceMethodEntry, cloneInheritanceMethods, ensureInheritanceMethodsTable, ensureInheritanceSharedSchemaTable, ensureInheritanceInvokedMethodsTable, registerInheritanceMethods, wireResolvedSuperEntry, registerInheritanceSharedSchema, registerInheritanceInvokedMethods, validateInheritanceSharedMethodNameCollisions, finalizeInheritanceMethods, releaseInheritanceBootstrapMetadata, createEmptyConstructorEntry, createInheritanceMetadataAggregateError, collectOrThrowInheritanceMetadataError };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

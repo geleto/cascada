@@ -1,8 +1,8 @@
 'use strict';
 
-import {ChannelCommand, runWithResolvedArguments} from './command-base';
-import {PoisonError, isPoison} from '../errors';
-import {Channel} from './base';
+import {ChannelCommand, runWithResolvedArguments} from './command-base.js';
+import {PoisonError, isPoison} from '../errors.js';
+import {Channel} from './base.js';
 
 class SequenceCallCommand extends ChannelCommand {
   constructor({ channelName, command, args = null, subpath = null, pos = null, withDeferredResult = false }) {
@@ -365,12 +365,4 @@ class SequenceChannel extends SequenceObjectChannel {
   }
 }
 
-const __defaultExport = {
-  SequenceObjectChannel,
-  SequenceChannel,
-  SequenceCallCommand,
-  SequenceGetCommand
-};
 export { SequenceObjectChannel, SequenceChannel, SequenceCallCommand, SequenceGetCommand };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

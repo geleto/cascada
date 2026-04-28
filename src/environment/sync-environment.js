@@ -1,11 +1,18 @@
 'use strict';
 
-import lib from '../lib';
-import {BaseEnvironment} from './base-environment';
-import {callbackAsap} from './utils';
-import {Template} from './template';
+import lib from '../lib.js';
+import {BaseEnvironment} from './base-environment.js';
+import {callbackAsap} from './utils.js';
+import {Template} from './template.js';
 
 class Environment extends BaseEnvironment {
+  init(loaders, opts) {
+    super.init(loaders, opts);
+    this.TemplateClass = Template;
+    this.AsyncTemplateClass = Template;
+    this.ScriptClass = null;
+  }
+
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
     return this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb);
   }
@@ -57,9 +64,7 @@ class Environment extends BaseEnvironment {
   }
 }
 
-const __defaultExport = {
+export default {
   Environment
 };
 export { Environment };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -1,3 +1,4 @@
+
 (function () {
   'use strict';
 
@@ -15,6 +16,11 @@
   let createChannel;
   let scopeBoundaries;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     const envModule = require('../../src/environment/environment');
@@ -23,10 +29,10 @@
     Script = envModule.Script;
     StringLoader = require('../util').StringLoader;
     delay = require('../util').delay;
-    const runtime = require('../../src/runtime/runtime');
+    const runtime = esmDefault(require('../../src/runtime/runtime'));
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
-    parser = require('../../src/parser');
+    parser = esmDefault(require('../../src/parser'));
     TextCommand = runtime.TextCommand;
     CommandBuffer = runtime.CommandBuffer;
     createChannel = runtime.createChannel;

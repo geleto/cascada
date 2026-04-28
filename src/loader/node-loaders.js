@@ -2,9 +2,12 @@
 
 import fs from 'fs';
 import path from 'path';
+import {createRequire} from 'module';
+import chokidar from 'chokidar';
 import Loader from './loader.js';
 import {PrecompiledLoader} from './precompiled-loader.js';
-let chokidar;
+
+const resolvePackagePath = createRequire(process.cwd() + path.sep).resolve;
 
 class FileSystemLoader extends Loader {
   constructor(searchPaths, opts) {
@@ -32,11 +35,6 @@ class FileSystemLoader extends Loader {
     if (opts.watch) {
       // Watch all the templates in the paths and fire an event when
       // they change
-      try {
-        chokidar = require('chokidar');
-      } catch (e) {
-        throw new Error('watch requires chokidar to be installed');
-      }
       const paths = this.searchPaths.filter(fs.existsSync);
       const watcher = chokidar.watch(paths);
       watcher.on('all', (event, fullname) => {
@@ -91,11 +89,6 @@ class NodeResolveLoader extends Loader {
     this.noCache = !!opts.noCache;
 
     if (opts.watch) {
-      try {
-        chokidar = require('chokidar');
-      } catch (e) {
-        throw new Error('watch requires chokidar to be installed');
-      }
       this.watcher = chokidar.watch();
 
       this.watcher.on('change', (fullname) => {
@@ -123,7 +116,7 @@ class NodeResolveLoader extends Loader {
     let fullpath;
 
     try {
-      fullpath = require.resolve(name);
+      fullpath = resolvePackagePath(name);
     } catch (e) {
       return null;
     }
@@ -141,11 +134,4 @@ class NodeResolveLoader extends Loader {
   }
 }
 
-const __defaultExport = {
-  FileSystemLoader: FileSystemLoader,
-  PrecompiledLoader: PrecompiledLoader,
-  NodeResolveLoader: NodeResolveLoader,
-};
 export { FileSystemLoader, PrecompiledLoader, NodeResolveLoader };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

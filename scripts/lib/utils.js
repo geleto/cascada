@@ -2,10 +2,14 @@
 
 import fs from 'fs';
 import path from 'path';
+import {createRequire} from 'module';
+
+const requireFromHere = createRequire(import.meta.url);
 
 function lookup(relPath, isExecutable) {
-  for (let i = 0; i < module.paths.length; i++) {
-    let absPath = path.join(module.paths[i], relPath);
+  const searchPaths = requireFromHere.resolve.paths(relPath) || [];
+  for (let i = 0; i < searchPaths.length; i++) {
+    let absPath = path.join(searchPaths[i], relPath);
     if (isExecutable && process.platform === 'win32') {
       absPath += '.cmd';
     }
@@ -34,10 +38,8 @@ function promiseSequence(promises) {
   });
 }
 
-const __defaultExport = {
+export default {
   lookup: lookup,
   promiseSequence: promiseSequence
 };
 export { lookup, promiseSequence };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

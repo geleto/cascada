@@ -1,3 +1,4 @@
+
 (function() {
   /* eslint-disable vars-on-top */
 
@@ -13,8 +14,12 @@
     templatesPath,
     expect;
 
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof window === 'undefined') {
-    nunjucks = nunjucksFull = require('../src/index.js');
+    nunjucks = nunjucksFull = esmDefault(require('../src/index.js'));
     Loader = nunjucks.FileSystemLoader;
     templatesPath = 'tests/templates';
     expect = require('expect.js');

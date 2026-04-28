@@ -1,8 +1,8 @@
 'use strict';
 
-import {Command} from './channels/command-base';
-import inheritanceState from './inheritance-state';
-import {RuntimeFatalError, handleError, isRuntimeFatalError} from './errors';
+import {Command} from './channels/command-base.js';
+import inheritanceState from './inheritance-state.js';
+import {RuntimeFatalError, handleError, isRuntimeFatalError} from './errors.js';
 
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';
 
@@ -887,7 +887,7 @@ function _admitResolvedMethodInvocation({
     currentBuffer,
     methodData
   );
-  const command = module.exports.createInheritanceInvocationCommand({
+  const command = inheritanceCallApi.createInheritanceInvocationCommand({
     name,
     label,
     methodData,
@@ -972,7 +972,7 @@ function invokeComponentMethod(inheritanceStateValue, methodName, args, context,
   });
 }
 
-const __defaultExport = {
+const inheritanceCallApi = {
   createInheritanceInvocationCommand,
   getMethodData,
   finalizeResolvedMethodMetadata,
@@ -983,6 +983,5 @@ const __defaultExport = {
   invokeSuperMethod,
   invokeComponentMethod
 };
+export default inheritanceCallApi;
 export { createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, hasLinkedChannelPath, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

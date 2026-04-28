@@ -1,6 +1,6 @@
 'use strict';
 
-import lib from '../lib';
+import lib from '../lib.js';
 
 import {
   createPoison,
@@ -9,9 +9,9 @@ import {
   isRuntimeFatalError,
   PoisonError,
   handleError,
-} from './errors';
+} from './errors.js';
 
-import {VarCommand} from './channels/var';
+import {VarCommand} from './channels/var.js';
 
 const arrayFrom = Array.from;
 const supportsIterators = (
@@ -858,7 +858,7 @@ async function* whileIterator() {
   }
 }
 
-const __defaultExport = {
+export default {
   asyncEach,
   asyncAll,
   fromIterator,
@@ -871,6 +871,4 @@ const __defaultExport = {
   whileIterator
 };
 export { asyncEach, asyncAll, fromIterator, createLoopBindings, setLoopValueBindings, iterateAsyncSequential, iterateAsyncParallel, poisonLoopEffects, iterate, whileIterator };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
 

@@ -5,10 +5,14 @@
   var lib;
   var lexer;
 
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    lib = require('../src/lib');
-    lexer = require('../src/lexer');
+    lib = esmDefault(require('../src/lib'));
+    lexer = esmDefault(require('../src/lexer'));
   } else {
     expect = window.expect;
     lib = nunjucks.lib;

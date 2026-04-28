@@ -1,9 +1,9 @@
 'use strict';
 
-import nodes from '../nodes';
-import {Frame} from '../runtime/frame';
-import CompilerBaseSync from './compiler-base-sync';
-import CompileBuffer from './buffer';
+import nodes from '../nodes.js';
+import {Frame} from '../runtime/frame.js';
+import CompilerBaseSync from './compiler-base-sync.js';
+import CompileBuffer from './buffer.js';
 
 class CompilerSync extends CompilerBaseSync {
   init(templateName, options) {

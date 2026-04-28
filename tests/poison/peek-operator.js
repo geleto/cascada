@@ -1,13 +1,19 @@
+
 (function () {
   'use strict';
 
   var expect;
   var AsyncEnvironment;
   var runtime;
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    runtime = require('../../src/runtime/runtime');
+    runtime = esmDefault(require('../../src/runtime/runtime'));
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;

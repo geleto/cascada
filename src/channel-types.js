@@ -33,10 +33,4 @@ const CHANNEL_TYPE_FACTS = Object.freeze({
 
 const CHANNEL_TYPES = Object.freeze(Object.keys(CHANNEL_TYPE_FACTS));
 
-const __defaultExport = {
-  CHANNEL_TYPE_FACTS,
-  CHANNEL_TYPES
-};
 export { CHANNEL_TYPE_FACTS, CHANNEL_TYPES };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

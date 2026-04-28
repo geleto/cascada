@@ -4,7 +4,7 @@ import json from '@rollup/plugin-json';
 
 export default {
   input: {
-    'index': 'src/index.mjs'
+    'index': 'src/index.js'
   },
   plugins: [
     nodeResolve({

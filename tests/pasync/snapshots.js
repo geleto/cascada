@@ -12,17 +12,22 @@ let createSequenceChannel;
 let createPoison;
 let isPoisonError;
 
+
+function esmDefault(module) {
+  return module.default || module;
+}
+
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  TextCommand = require('../../src/runtime/runtime').TextCommand;
-  DataCommand = require('../../src/runtime/runtime').DataCommand;
-  SequenceCallCommand = require('../../src/runtime/runtime').SequenceCallCommand;
-  CommandBuffer = require('../../src/runtime/runtime').CommandBuffer;
-  createChannel = require('../../src/runtime/runtime').createChannel;
-  createSequenceChannel = require('../../src/runtime/runtime').createSequenceChannel;
-  createPoison = require('../../src/runtime/runtime').createPoison;
-  isPoisonError = require('../../src/runtime/runtime').isPoisonError;
+  TextCommand = esmDefault(require('../../src/runtime/runtime')).TextCommand;
+  DataCommand = esmDefault(require('../../src/runtime/runtime')).DataCommand;
+  SequenceCallCommand = esmDefault(require('../../src/runtime/runtime')).SequenceCallCommand;
+  CommandBuffer = esmDefault(require('../../src/runtime/runtime')).CommandBuffer;
+  createChannel = esmDefault(require('../../src/runtime/runtime')).createChannel;
+  createSequenceChannel = esmDefault(require('../../src/runtime/runtime')).createSequenceChannel;
+  createPoison = esmDefault(require('../../src/runtime/runtime')).createPoison;
+  isPoisonError = esmDefault(require('../../src/runtime/runtime')).isPoisonError;
   expectAsyncError = require('../util').expectAsyncError;
 } else {
   expect = window.expect;

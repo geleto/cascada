@@ -1,11 +1,11 @@
 'use strict';
 
-import lexer from './lexer';
-import nodes from './nodes';
-import {Obj} from './object';
-import lib from './lib';
-import {RESERVED_DECLARATION_NAMES} from './compiler/validation';
-import {CHANNEL_TYPE_FACTS} from './channel-types';
+import lexer from './lexer.js';
+import nodes from './nodes.js';
+import {Obj} from './object.js';
+import lib from './lib.js';
+import {RESERVED_DECLARATION_NAMES} from './compiler/validation.js';
+import {CHANNEL_TYPE_FACTS} from './channel-types.js';
 
 class Parser extends Obj {
   init(tokens, opts) {
@@ -2104,7 +2104,6 @@ class Parser extends Obj {
   }
 }
 
-// var util = require('util');
 
 // var l = lexer.lex('{%- if x -%}\n hello {% endif %}');
 // var t;
@@ -2118,16 +2117,15 @@ class Parser extends Obj {
 // var n = p.parseAsRoot();
 // nodes.printNodes(n);
 
-const __defaultExport = {
-  parse(src, extensions, opts) {
-    var p = new Parser(lexer.lex(src, opts), opts);
-    if (extensions !== undefined) {
-      p.extensions = extensions;
-    }
-    return p.parseAsRoot();
-  },
+function parse(src, extensions, opts) {
+  var p = new Parser(lexer.lex(src, opts), opts);
+  if (extensions !== undefined) {
+    p.extensions = extensions;
+  }
+  return p.parseAsRoot();
+}
+
+export default {
+  parse,
   Parser: Parser
 };
-export { Parser };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

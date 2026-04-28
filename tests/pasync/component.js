@@ -10,8 +10,15 @@ let runtimeModule;
 let componentRuntimeModule;
 let InheritanceState;
 let inheritanceStateModule;
+let inheritanceStateHooks;
 let ComponentInstance;
 let inheritanceCallModule;
+let inheritanceCallHooks;
+
+
+function esmDefault(module) {
+  return module.default || module;
+}
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -19,7 +26,7 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = environment.AsyncEnvironment;
   Script = environment.Script;
   StringLoader = require('../util').StringLoader;
-  runtimeModule = require('../../src/runtime/runtime');
+  runtimeModule = esmDefault(require('../../src/runtime/runtime'));
   try {
     const componentRuntime = require('../../src/runtime/component');
     componentRuntimeModule = componentRuntime;
@@ -31,16 +38,20 @@ if (typeof require !== 'undefined') {
   }
   try {
     inheritanceStateModule = require('../../src/runtime/inheritance-state');
+    inheritanceStateHooks = inheritanceStateModule.default || inheritanceStateModule;
     InheritanceState = inheritanceStateModule.InheritanceState;
   } catch (err) {
     void err;
     InheritanceState = null;
+    inheritanceStateHooks = null;
   }
   try {
     inheritanceCallModule = require('../../src/runtime/inheritance-call');
+    inheritanceCallHooks = inheritanceCallModule.default || inheritanceCallModule;
   } catch (err) {
     void err;
     inheritanceCallModule = null;
+    inheritanceCallHooks = null;
   }
 } else {
   expect = window.expect;
@@ -346,11 +357,11 @@ describe('Phase 8 - Component Method Calls', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       const events = [];
-      const originalRegisterInheritanceMethods = inheritanceStateModule.registerInheritanceMethods;
-      const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
+      const originalRegisterInheritanceMethods = inheritanceStateHooks.registerInheritanceMethods;
+      const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
       let buildInvocationCreatedAt = -1;
 
-      inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+      inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
         if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
           buildInvocationCreatedAt = events.length;
           events.push({ type: 'build-invocation-buffer-created' });
@@ -358,7 +369,7 @@ describe('Phase 8 - Component Method Calls', function () {
         return originalCreateInheritanceInvocationCommand.apply(this, arguments);
       };
 
-      inheritanceStateModule.registerInheritanceMethods = function(state, methods) {
+      inheritanceStateHooks.registerInheritanceMethods = function(state, methods) {
         if (methods && methods.build && methods.build.ownerKey === 'A.script') {
           events.push({ type: 'parent-build-registered' });
         }
@@ -386,8 +397,8 @@ describe('Phase 8 - Component Method Calls', function () {
         expect(parentRegisteredAt).to.be.greaterThan(-1);
         expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
       } finally {
-        inheritanceStateModule.registerInheritanceMethods = originalRegisterInheritanceMethods;
-        inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
+        inheritanceStateHooks.registerInheritanceMethods = originalRegisterInheritanceMethods;
+        inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
       }
     });
 
@@ -399,9 +410,9 @@ describe('Phase 8 - Component Method Calls', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       let seenLinkedChannels = null;
-      const originalCreateInheritanceInvocationCommand = inheritanceCallModule.createInheritanceInvocationCommand;
+      const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
 
-      inheritanceCallModule.createInheritanceInvocationCommand = function(spec) {
+      inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
         if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
           const invocationBuffer = spec.invocationBuffer;
           seenLinkedChannels = {
@@ -443,7 +454,7 @@ describe('Phase 8 - Component Method Calls', function () {
         expect(seenLinkedChannels.trace).to.be(true);
         expect(seenLinkedChannels.late).to.be(true);
       } finally {
-        inheritanceCallModule.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
+        inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
       }
     });
 

@@ -33,8 +33,8 @@
  */
 'use strict';
 
-import {createPoison, isPoison, isPoisonError, collectErrors, PoisonError} from './errors';
-import {RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers';
+import {createPoison, isPoison, isPoisonError, collectErrors, PoisonError} from './errors.js';
+import {RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers.js';
 
 function makeResolvedValue(value, mapper = null) {
   return {
@@ -491,7 +491,7 @@ function createArray(arr) {
   return arr;
 }
 
-const __defaultExport = {
+export default {
   resolveAll,
   resolveDuo,
   resolveSingle,
@@ -509,5 +509,3 @@ const __defaultExport = {
   unwrapResolvedValue
 };
 export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveObjectProperties, resolveArguments, normalizeFinalPromise, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

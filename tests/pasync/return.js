@@ -5,11 +5,16 @@ let AsyncEnvironment;
 let runtime;
 let scriptTranspiler;
 
+
+function esmDefault(module) {
+  return module.default || module;
+}
+
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   const environment = require('../../src/environment/environment');
   AsyncEnvironment = environment.AsyncEnvironment;
-  runtime = require('../../src/runtime/runtime');
+  runtime = esmDefault(require('../../src/runtime/runtime'));
   scriptTranspiler = require('../../src/script/script-transpiler');
 } else {
   expect = window.expect;

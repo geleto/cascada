@@ -1,6 +1,6 @@
 'use strict';
 
-import {Obj} from './object';
+import {Obj} from './object.js';
 
 function traverseAndCheck(obj, type, results) {
   if (Array.isArray(obj)) {
@@ -543,7 +543,7 @@ function printNodes(node, indent) {
   }
 }
 
-const __defaultExport = {
+export default {
   Node: Node,
   Root: Root,
   NodeList: NodeList,
@@ -616,6 +616,3 @@ const __defaultExport = {
 
   printNodes: printNodes
 };
-export { Node, Root, NodeList, Value, Literal, Symbol, Group, ArrayNode as Array, Pair, Dict, Output, Capture, TemplateData, If, IfAsync, InlineIf, For, While, Guard, Revert, Return, AsyncEach, AsyncAll, Macro, Caller, Import, Component, FromImport, FunCall, Filter, FilterAsync, KeywordArgs, Block, MethodDefinition, SharedDeclarations, InheritanceMetadata, Super, Extends, Include, Set, CallAssign, ChannelDeclaration, Switch, Case, LookupVal, BinOp, In, Is, Or, And, Not, PeekError, Add, Concat, Sub, Mul, Div, FloorDiv, Mod, Pow, Neg, Pos, Compare, CompareOperand, CallExtension, CallExtensionAsync, Do, ChannelCommand, printNodes };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

@@ -17,10 +17,13 @@
     Template,
     delay;
 
+
+  function esmDefault(module) {
+    return module.default || module;
+  }
+
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    const path = require('path');
-    const Module = require('module');
     Environment = require('../src/environment/environment').Environment;
     AsyncEnvironment = require('../src/environment/environment').AsyncEnvironment;
     WebLoader = require('../src/loader/web-loaders').WebLoader;
@@ -28,29 +31,13 @@
     NodeResolveLoader = require('../src/loader/node-loaders').NodeResolveLoader;
     templatesPath = 'tests/templates';
     StringLoader = require('./util').StringLoader;
-    loadString = require('../src/index').loadString;
-    clearStringCache = require('../src/index').clearStringCache;
-    raceLoaders = require('../src/index').raceLoaders;
-    precompileTemplateString = require('../src/index').precompileTemplateString;
-    precompileScriptString = require('../src/index').precompileScriptString;
+    loadString = esmDefault(require('../src/index')).loadString;
+    clearStringCache = esmDefault(require('../src/index')).clearStringCache;
+    raceLoaders = esmDefault(require('../src/index')).raceLoaders;
+    precompileTemplateString = esmDefault(require('../src/index')).precompileTemplateString;
+    precompileScriptString = esmDefault(require('../src/index')).precompileScriptString;
     Template = require('../src/environment/environment').Template;
     delay = require('./util').delay;
-
-    // Ensure test packages are resolvable for NodeResolveLoader tests.
-    const testNodePkgs = path.join(__dirname, 'test-node-pkgs');
-    if (!Module.globalPaths.includes(testNodePkgs)) {
-      Module.globalPaths.push(testNodePkgs);
-    }
-    if (!module.paths.includes(testNodePkgs)) {
-      module.paths.unshift(testNodePkgs);
-    }
-    const existingNodePath = process.env.NODE_PATH || '';
-    if (!existingNodePath.split(path.delimiter).includes(testNodePkgs)) {
-      process.env.NODE_PATH = existingNodePath
-        ? `${existingNodePath}${path.delimiter}${testNodePkgs}`
-        : testNodePkgs;
-      Module._initPaths();
-    }
   } else {
     expect = window.expect;
     Environment = nunjucks.Environment;
@@ -186,7 +173,7 @@
 
         it('should not allow directory traversal', function() {
           var loader = new NodeResolveLoader();
-          var dummyPkgPath = require.resolve('dummy-pkg/simple-template.html');
+          var dummyPkgPath = loader.getSource('dummy-pkg/simple-template.html').path;
           expect(loader.getSource(dummyPkgPath)).to.be(null);
         });
 

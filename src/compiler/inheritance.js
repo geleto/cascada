@@ -1,7 +1,7 @@
 'use strict';
 
-import nodes from '../nodes';
-import CompileBuffer from './buffer';
+import nodes from '../nodes.js';
+import CompileBuffer from './buffer.js';
 const ROOT_STARTUP_PROMISE_VAR = '__rootStartupPromise';
 
 /**

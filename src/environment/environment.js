@@ -1,24 +1,16 @@
 'use strict';
 
 // Import all the separated classes
-import {BaseEnvironment} from './base-environment';
+import {BaseEnvironment} from './base-environment.js';
 
-import {Environment} from './sync-environment';
-import {AsyncEnvironment} from './async-environment';
-import {Template, AsyncTemplate} from './template';
-import {Script} from './script';
-import {Context} from './context';
+import {Environment} from './sync-environment.js';
+import {AsyncEnvironment} from './async-environment.js';
+import {Template, AsyncTemplate} from './template.js';
+import {Script} from './script.js';
+import {Context} from './context.js';
+import {setDefaultEnvironmentClasses} from './default-environment.js';
+
+setDefaultEnvironmentClasses(Environment, AsyncEnvironment);
 
 // Re-export all the classes
-const __defaultExport = {
-  BaseEnvironment,
-  Environment,
-  AsyncEnvironment,
-  Template,
-  AsyncTemplate,
-  Script,
-  Context
-};
 export { BaseEnvironment, Environment, AsyncEnvironment, Template, AsyncTemplate, Script, Context };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

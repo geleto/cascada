@@ -1,7 +1,7 @@
 'use strict';
 
-import {resolveAll} from '../resolve';
-import {ChannelCommand, Command} from './command-base';
+import {resolveAll} from '../resolve.js';
+import {ChannelCommand, Command} from './command-base.js';
 
 // Timing-only sync point: awaits an iteration value for limited-concurrency
 // loop synchronization. Does not propagate errors.
@@ -57,10 +57,4 @@ class WaitCurrentCommand extends Command {
   }
 }
 
-const __defaultExport = {
-  WaitResolveCommand,
-  WaitCurrentCommand
-};
 export { WaitResolveCommand, WaitCurrentCommand };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }

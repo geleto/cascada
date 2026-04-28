@@ -1,7 +1,7 @@
 'use strict';
 
-import inheritanceState from './inheritance-state';
-import inheritanceCall from './inheritance-call';
+import inheritanceState from './inheritance-state.js';
+import inheritanceCall from './inheritance-call.js';
 
 function bootstrapInheritanceMetadata(
   stateValue,
@@ -374,7 +374,7 @@ function finalizeInheritanceMetadata(state, context = null) {
   }
 }
 
-const __defaultExport = {
+export default {
   bootstrapInheritanceMetadata,
   bootstrapInheritanceParentScript,
   runCompiledRootStartup,
@@ -384,5 +384,3 @@ const __defaultExport = {
   finalizeInheritanceMetadata
 };
 export { bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };
-export default __defaultExport;
-if (typeof module !== 'undefined') { module['exports'] = __defaultExport; }
