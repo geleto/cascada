@@ -28,6 +28,7 @@
   "dependencies": {
     "a-sync-waterfall": "^1.0.1",
     "asap": "^2.0.6",
+    "chokidar": "^4.0.3",
     "commander": "^14.0.0"
   },
   "devDependencies": {
@@ -44,12 +45,10 @@
     "eslint-plugin-mocha": "^11.1.0",
     "expect.js": "*",
     "express": "5.x",
-    "fs-extra": "^11.3.0",
     "gh-pages": "^6.3.0",
     "globals": "^16.2.0",
     "he": "^1.2.0",
     "istanbul-lib-coverage": "^3.2.2",
-    "istanbul-lib-instrument": "^6.0.3",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.1.7",
     "madge": "^8.0.0",
@@ -58,14 +57,6 @@
     "serve-static": "^2.2.0",
     "supertest": "*",
     "tiny-chalk": "^3.0.2"
-  },
-  "peerDependencies": {
-    "chokidar": "^3.3.0"
-  },
-  "peerDependenciesMeta": {
-    "chokidar": {
-      "optional": true
-    }
   },
   "resolutions": {
     "globals": "11.12.0"

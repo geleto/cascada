@@ -1,5 +1,5 @@
 import expect from 'expect.js';
-import fs from 'fs-extra';
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import * as nunjucks from '../src/index.js';
@@ -7,8 +7,7 @@ import * as nunjucks from '../src/index.js';
 (function() {
 
   function rmdir(dirPath) {
-    fs.emptyDirSync(dirPath);
-    fs.rmdirSync(dirPath);
+    fs.rmSync(dirPath, {recursive: true, force: true});
   }
 
   describe('nunjucks.configure', function() {
@@ -18,7 +17,6 @@ import * as nunjucks from '../src/index.js';
       if (fs && path && os) {
         try {
           tempdir = fs.mkdtempSync(path.join(os.tmpdir(), 'templates'));
-          fs.emptyDirSync(tempdir);
         } catch (e) {
           rmdir(tempdir);
           throw e;
