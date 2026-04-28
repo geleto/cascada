@@ -1,11 +1,9 @@
 'use strict';
+/* global __dirname, console */
 
-import fs from 'fs';
-import path from 'path';
-import {fileURLToPath} from 'url';
-import Mocha from 'mocha';
-
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const fs = require('fs');
+const path = require('path');
+const Mocha = require('mocha');
 
 /**
  * Custom Mocha reporter that extends Spec and writes Node test stats
@@ -18,12 +16,12 @@ class NodeStatsReporter extends Mocha.reporters.Spec {
     runner.once('end', () => {
       try {
         const stats = this.stats || {};
-        const outDir = path.join(scriptDir, '../../coverage');
+        const outDir = path.join(__dirname, '../../coverage');
         const outFile = path.join(outDir, 'node-tests-stats.json');
         try {
-          fs.mkdirSync(outDir, { recursive: true });
+          fs.mkdirSync(outDir, {recursive: true});
           // eslint-disable-next-line no-empty
-        } catch (_) { }
+        } catch { }
         fs.writeFileSync(outFile, JSON.stringify({
           tests: stats.tests || 0,
           passes: stats.passes || 0,
@@ -38,6 +36,4 @@ class NodeStatsReporter extends Mocha.reporters.Spec {
   }
 }
 
-export default NodeStatsReporter;
-
-
+module.exports = NodeStatsReporter;

@@ -14,13 +14,22 @@
   <script type="importmap">
     {
       "imports": {
+        "a-sync-waterfall": "../../src/browser/shims/a-sync-waterfall.js",
+        "asap": "../../src/browser/shims/asap.js",
+        "chokidar": "../../src/browser/shims/chokidar.js",
+        "events": "../../src/browser/shims/events.js",
         "expect.js": "./expect-shim.js",
-        "he": "./he-shim.js"
+        "fs": "../../src/browser/shims/fs.js",
+        "he": "./he-shim.js",
+        "module": "../../src/browser/shims/module.js",
+        "path": "../../src/browser/shims/path.js"
       }
     }
   </script>
   <script>
     delete window.require;
+    window.process = window.process || { cwd: function() { return '/'; }, env: {} };
+    window.process.env = window.process.env || {};
     // typeof initMochaPhantomJS === 'function' && initMochaPhantomJS();
     mocha.setup({
       ui: 'bdd',
@@ -28,13 +37,6 @@
     });
   </script>
 
-  <!-- Load full nunjucks lib as window.nunjucksFull, so tests can run -->
-  <script src="./nunjucks.min.js"></script>
-  <script type="text/javascript">
-    window.nunjucksFull = window.nunjucks;
-    window.nunjucks = undefined;
-  </script>
-  <script src="nunjucks-slim.min.js"></script>
   <script src="precompiled-templates.js"></script>
   <script>
     // Prefix all test suite titles with 'slim'

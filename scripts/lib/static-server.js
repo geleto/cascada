@@ -57,15 +57,19 @@ async function getStaticServer(prt) {
             res.setHeader('Content-Type', 'text/css');
           }
 
-          // Browser tests now load ESM test files directly. Avoid Babel's
-          // CommonJS transform for test/source modules served to the browser.
-          if (pathname.endsWith('.js') && !pathname.startsWith('/tests/') && !pathname.startsWith('/src/') && !pathname.endsWith('.min.js') && !filePath.includes('node_modules')) {
+          const shouldInstrument =
+            process.env.NODE_ENV === 'test' &&
+            pathname.startsWith('/src/') &&
+            pathname.endsWith('.js');
+
+          if (shouldInstrument) {
             const code = await fs.readFile(filePath, 'utf8');
             const result = await babel.transformAsync(code, {
               filename: filePath,
               sourceMaps: 'inline',
-              babelrc: true,
-              envName: 'test',
+              babelrc: false,
+              configFile: false,
+              plugins: ['babel-plugin-istanbul'],
             });
 
             if (!result || !result.code) {

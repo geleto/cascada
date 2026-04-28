@@ -236,7 +236,7 @@ The current CommonJS/browser-bundle setup has these npm commands:
 - `npm run test:quick`: alias for `npm run mocha`.
 - `npm run test:node`: Node Mocha run with NYC coverage and `scripts/lib/node-stats-reporter`.
 - `npm run test:pasync`: focused async/poison Node coverage run.
-- `npm run test:browser`: builds browser bundles, then runs Playwright browser tests.
+- `npm run test:browser`: starts the browser test server, then runs Playwright browser tests against native ESM modules.
 - `npm test`: full flow through `scripts/run-all-tests.js`.
 
 Current `npm test` flow:
@@ -250,20 +250,17 @@ Current `npm test` flow:
 
 Current Node coverage:
 
-- Uses `nyc`.
-- Uses Mocha with `--require @babel/register`.
-- Uses `@istanbuljs/nyc-config-babel`.
-- Uses package `nyc.instrument = false`.
+- Uses `c8` with V8 native ESM coverage.
+- Uses Mocha without Babel/register hooks.
 - Writes Node coverage to `coverage/coverage-final.json`.
-- Writes Node test stats to `coverage/node-tests-stats.json` through `scripts/lib/node-stats-reporter`.
+- Writes Node test stats to `coverage/node-tests-stats.json` through `scripts/lib/node-stats-reporter.cjs`.
 
 Current browser coverage:
 
-- `scripts/bundle.js` builds `tests/browser/nunjucks.min.js` and `tests/browser/nunjucks-slim.min.js` when `NODE_ENV=test`.
-- The `slim` path exists to test precompiled-template usage with a smaller runtime surface.
-- Webpack uses `babel-loader`.
-- In test mode, `babel-loader` applies `babel-plugin-istanbul` to bundled `src` code.
-- `scripts/run-browser-tests.js` opens `tests/browser/slim.html` and `tests/browser/index.html` in Playwright.
+- `scripts/run-browser-tests.js` starts the local test server and opens `tests/browser/slim.html` and `tests/browser/index.html` in Playwright.
+- Browser pages import native ESM modules from `src`.
+- Browser pages use import maps for test-only and browser-shimmed bare imports.
+- The test server applies `babel-plugin-istanbul` only to served `src/**/*.js` modules and preserves native `import`/`export`.
 - Each page runs browser Mocha and sends `{ stats, coverage: window.__coverage__ }` back through `window.sendTestResults`.
 - Browser coverage is written to:
   - `coverage/browser-std.json`
@@ -298,7 +295,7 @@ Target commands:
   "scripts": {
     "mocha": "cross-env NODE_ENV=test mocha --check-leaks -R spec \"tests/*.js\" \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
     "test:quick": "npm run mocha",
-    "test:node": "cross-env NODE_ENV=test c8 --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter.js \"tests/*.js\" \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
+    "test:node": "cross-env NODE_ENV=test c8 --include \"src/**/*.js\" --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter.cjs tests \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
     "test:pasync": "cross-env NODE_ENV=test c8 --reporter=html --reporter=text mocha --check-leaks \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
     "test:browser": "cross-env NODE_ENV=test node scripts/run-browser-tests.js",
     "check:cycles": "madge --extensions js --circular src",
@@ -311,7 +308,7 @@ Notes:
 
 - Remove `--require @babel/register`.
 - Remove `NODE_PATH`; it is ignored by Node's ESM resolver.
-- Keep `scripts/lib/node-stats-reporter.js`, converted to ESM.
+- Keep `scripts/lib/node-stats-reporter.cjs` as a small CommonJS bridge because Mocha's reporter loader expects a constructable CommonJS export.
 - Keep `coverage/node-tests-stats.json`.
 - Keep `coverage/browser-tests-stats.json`.
 - Keep `coverage/coverage-final.json` as the Node JSON coverage report if using `c8 --reporter=json`.
@@ -361,7 +358,7 @@ The browser runner should keep the current Playwright + browser Mocha model:
 - close browser and server,
 - exit non-zero on browser failures.
 
-The browser runner should stop building or loading browser bundles.
+The browser runner no longer builds or loads browser bundles.
 
 Playwright remains the supported browser automation layer. The migration removes Webpack/UMD artifacts, not real-browser testing.
 
@@ -407,14 +404,14 @@ That lane should verify:
 
 ## Current Slim Path
 
-The current `slim` path is implemented as a Webpack build mode, not as a separate source architecture.
+The old `slim` path was implemented as a Webpack build mode, not as a separate source architecture.
 
-In `scripts/bundle.js`, `opts.slim` changes the browser bundle in two important ways:
+Previously, `scripts/bundle.js` changed the browser bundle in two important ways when `opts.slim` was enabled:
 
 - imports matching `nodes`, `lexer`, `parser`, `precompile`, `transformer`, or `compiler` are replaced with `node-libs-browser/mock/empty`;
 - imports of `loader/loaders.js` are rewritten to `loader/precompiled-loader.js` instead of `loader/web-loaders.js`.
 
-The generated artifact is `tests/browser/nunjucks-slim.min.js` in test mode, or `dist/browser/nunjucks-slim*.js` in package build mode. It is advertised as "only works with precompiled templates".
+The generated artifact was `tests/browser/nunjucks-slim.min.js` in test mode, or `dist/browser/nunjucks-slim*.js` in package build mode. It was advertised as "only works with precompiled templates".
 
 The browser test page `tests/browser/slim.html` loads:
 
@@ -825,40 +822,15 @@ Keep the existing lightweight browser test server dependencies unless the server
 - `connect`
 - `serve-static`
 
-### Remove
+### Removed
 
-Remove after the ESM migration:
-
-- `@babel/cli`
-- `@babel/register`
-- `@babel/preset-env`
-- `@babel/plugin-transform-classes`
-- `@babel/plugin-transform-modules-commonjs`
-- `@istanbuljs/nyc-config-babel`
-- `babel-loader`
-- `babel-plugin-module-resolver`
-- `rollup`
-- `@rollup/plugin-babel`
-- `@rollup/plugin-commonjs`
-- `@rollup/plugin-json`
-- `@rollup/plugin-node-resolve`
-- `@rollup/plugin-terser`
-- `webpack`
-- `webpack-cli`
-- `terser-webpack-plugin`
-- `node-libs-browser`
-- `@babel/traverse`
-
-Only remove Webpack/Rollup packages after their browser bundle and ESM facade jobs are deleted.
-
-`@babel/traverse` is not currently imported by project code. The local `scripts/lib/arrow-function-coverage-fix.js` plugin calls Babel's provided `programPath.traverse(...)`; it does not require the standalone `@babel/traverse` package.
+The legacy Babel module-transform, browser bundling, module-alias, and browser Node-polyfill dependency surface has been removed. The package now keeps only the Babel pieces still used by the native browser ESM test server for Istanbul instrumentation.
 
 ## Scripts To Remove Or Replace
 
 Remove:
 
 - `build:transpile`
-- `build:esm` if Rollup is no longer needed
 - browser bundle generation scripts
 - `--require @babel/register` from test commands
 - `NODE_PATH=./tests/test-node-pkgs` from test commands
@@ -882,12 +854,12 @@ Replace:
 7. Replace `NODE_PATH` test fixture resolution with a `file:` dev dependency.
 8. Convert scripts to ESM, or rename temporary CommonJS-only tooling to `.cjs`.
 9. Add `"type": "module"` once remaining `.js` files are ESM-safe.
-10. Replace Node coverage with `c8`.
-11. Replace browser bundle tests with native browser ESM tests.
+10. Replace Node coverage with `c8`. Done for the Node coverage test scripts.
+11. Replace browser bundle tests with native browser ESM tests. Done for the current browser test lane.
 12. Add browser ESM Istanbul instrumentation in the test server.
 13. Remove CJS build output and CJS export conditions.
-14. Remove browser UMD bundle build.
-15. Delete unused Babel/Rollup/Webpack dependencies.
+14. Remove browser UMD bundle build. Done for the current package/test build.
+15. Delete unused Babel/Rollup/Webpack dependencies. Done.
 16. Run full Node and browser tests.
 
 ## Post-Transition Source Cleanup
@@ -898,7 +870,7 @@ Cleanup targets:
 
 - Remove the default export from `src/index.js`. The canonical package API should be named exports such as `import { AsyncEnvironment } from 'cascada-engine'`.
 - Decide whether the public package should expose namespace convenience exports such as `compiler`, `parser`, `lexer`, `runtime`, `lib`, and `nodes`. Keep them only if they are intentional public API; otherwise export the individual supported names and leave internal module namespaces private.
-- Delete the generated browser bundle artifacts from tests and source control once native browser ESM pages replace them:
+- Delete the generated browser bundle artifacts from tests and source control once native browser ESM pages replace them. Done for:
   - `tests/browser/nunjucks.min.js`
   - `tests/browser/nunjucks-slim.min.js`
   - old bundle-only browser harness files that only call `require(...)`

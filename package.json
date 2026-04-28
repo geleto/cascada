@@ -27,20 +27,11 @@
     "commander": "^14.0.0"
   },
   "devDependencies": {
-    "@babel/cli": "^7.27.2",
     "@babel/core": "^7.27.4",
-    "@babel/plugin-transform-classes": "^7.27.1",
-    "@babel/plugin-transform-modules-commonjs": "^7.27.1",
-    "@babel/preset-env": "^7.27.2",
-    "@babel/register": "^7.27.1",
-    "@babel/traverse": "^7.27.4",
     "@eslint/js": "^9.28.0",
-    "@istanbuljs/nyc-config-babel": "^3.0.0",
-    "babel-loader": "^10.0.0",
     "babel-plugin-istanbul": "^7.0.0",
-    "babel-plugin-module-resolver": "^5.0.2",
+    "c8": "^10.1.3",
     "connect": "^3.7.0",
-    "core-js": "^3.43.0",
     "cpy-cli": "^5.0.0",
     "cross-env": "^7.0.3",
     "docsify-cli": "^4.4.4",
@@ -59,17 +50,11 @@
     "istanbul-reports": "^3.1.7",
     "madge": "^8.0.0",
     "mocha": "^11.1.0",
-    "module-alias": "^2.2.3",
-    "ncp": "^2.0.0",
-    "node-libs-browser": "^2.2.1",
     "nyc": "^17.1.0",
     "playwright": "^1.52.0",
     "serve-static": "^2.2.0",
     "supertest": "*",
-    "terser-webpack-plugin": "^5.3.14",
-    "tiny-chalk": "^3.0.2",
-    "webpack": "^5.99.9",
-    "webpack-cli": "^6.0.1"
+    "tiny-chalk": "^3.0.2"
   },
   "peerDependencies": {
     "chokidar": "^3.3.0"
@@ -82,9 +67,6 @@
   "resolutions": {
     "globals": "11.12.0"
   },
-  "_moduleAliases": {
-    "babel-register": "@babel/register"
-  },
   "engines": {
     "node": ">=22"
   },
@@ -94,16 +76,15 @@
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
     "clean": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist', {recursive: true, force: true})\"",
-    "build:bundle": "node scripts/bundle.js",
     "build:types": "cpy src/index.d.ts dist/types/ --flat",
     "build:docs": "cpy docs/cascada/script.md README.md dist/docs/ --flat",
     "build": "npm run clean && npm run lint && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/ && npm run build:docs",
     "build:esm": "node scripts/build-esm.mjs",
     "test:quick": "npm run mocha",
     "test:esm": "npm run mocha",
-    "test:node": "cross-env NODE_ENV=test nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter tests \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
-    "test:browser": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/run-browser-tests.js",
-    "test:pasync": "cross-env NODE_ENV=test nyc --reporter=html --reporter=text mocha --check-leaks \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
+    "test:node": "cross-env NODE_ENV=test c8 --include \"src/**/*.js\" --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter.cjs tests \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
+    "test:browser": "cross-env NODE_ENV=test node scripts/run-browser-tests.js",
+    "test:pasync": "cross-env NODE_ENV=test c8 --include \"src/**/*.js\" --reporter=html --reporter=text mocha --check-leaks \"tests/pasync/**/*.js\" \"tests/poison/**/*.js\"",
     "test": "node scripts/run-all-tests.js",
     "mocha:single": "mocha --check-leaks -R spec",
     "docs:build": "node scripts/docs-build.js",
@@ -112,7 +93,6 @@
     "check:cycles": "madge --extensions js --circular src"
   },
   "nyc": {
-    "extends": "@istanbuljs/nyc-config-babel",
     "all": true,
     "include": [
       "src/**/*.js"
