@@ -1,6 +1,6 @@
 
 import waterfall from 'a-sync-waterfall';
-import {isArray, _entries, without, isFunction} from '../lib.js';
+import * as lib from '../lib.js';
 import * as filters from '../filters.js';
 import * as tests from '../tests.js';
 import {createGlobals} from '../globals.js';
@@ -88,7 +88,7 @@ class BaseEnvironment extends EmitterObj {
         this.loaders = [new DefaultWebLoader('/views')];
       }
     } else {
-      this.loaders = isArray(loaders) ? loaders : [loaders];
+      this.loaders = lib.isArray(loaders) ? loaders : [loaders];
     }
 
     this._initLoaders();
@@ -100,8 +100,8 @@ class BaseEnvironment extends EmitterObj {
     this.extensions = {};
     this.extensionsList = [];
 
-    _entries(filters).forEach(([name, filter]) => this.addFilter(name, filter));
-    _entries(tests).forEach(([name, test]) => this.addTest(name, test));
+    lib._entries(filters).forEach(([name, filter]) => this.addFilter(name, filter));
+    lib._entries(tests).forEach(([name, test]) => this.addTest(name, test));
   }
 
   _initLoaders() {
@@ -155,7 +155,7 @@ class BaseEnvironment extends EmitterObj {
       return;
     }
 
-    this.extensionsList = without(this.extensionsList, extension);
+    this.extensionsList = lib.without(this.extensionsList, extension);
     delete this.extensions[name];
   }
 
@@ -229,23 +229,23 @@ class BaseEnvironment extends EmitterObj {
       name = name.raw;
     }
 
-    if (isFunction(asyncMode)) {
+    if (lib.isFunction(asyncMode)) {
       cb = asyncMode;
       asyncMode = false;
     }
 
-    if (isFunction(ignoreMissing)) {
+    if (lib.isFunction(ignoreMissing)) {
       cb = ignoreMissing;
       ignoreMissing = false;
     }
 
-    if (isFunction(parentName)) {
+    if (lib.isFunction(parentName)) {
       cb = parentName;
       parentName = null;
       eagerCompile = eagerCompile || false;
     }
 
-    if (isFunction(eagerCompile)) {
+    if (lib.isFunction(eagerCompile)) {
       cb = eagerCompile;
       eagerCompile = false;
     }

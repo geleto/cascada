@@ -373,22 +373,33 @@ function finalizeInheritanceMetadata(state, context = null) {
   }
 }
 
-const inheritanceBootstrapApi = {
-  bootstrapInheritanceMetadata: bootstrapInheritanceMetadataImpl,
-  bootstrapInheritanceParentScript,
-  runCompiledRootStartup: runCompiledRootStartupImpl,
-  renderInheritanceParentRoot,
-  linkCurrentBufferToParentChannels,
-  getInheritanceSharedBuffer,
-  finalizeInheritanceMetadata
-};
+let bootstrapInheritanceMetadataHook = bootstrapInheritanceMetadataImpl;
+let runCompiledRootStartupHook = runCompiledRootStartupImpl;
+
+const inheritanceBootstrapApi = {};
+Object.defineProperties(inheritanceBootstrapApi, {
+  bootstrapInheritanceMetadata: {
+    get: () => bootstrapInheritanceMetadataHook,
+    set: (value) => { bootstrapInheritanceMetadataHook = value; }
+  },
+  runCompiledRootStartup: {
+    get: () => runCompiledRootStartupHook,
+    set: (value) => { runCompiledRootStartupHook = value; }
+  },
+  bootstrapInheritanceParentScript: { value: bootstrapInheritanceParentScript },
+  renderInheritanceParentRoot: { value: renderInheritanceParentRoot },
+  linkCurrentBufferToParentChannels: { value: linkCurrentBufferToParentChannels },
+  getInheritanceSharedBuffer: { value: getInheritanceSharedBuffer },
+  finalizeInheritanceMetadata: { value: finalizeInheritanceMetadata }
+});
+Object.freeze(inheritanceBootstrapApi);
 
 function bootstrapInheritanceMetadata(...args) {
-  return inheritanceBootstrapApi.bootstrapInheritanceMetadata.apply(this, args);
+  return bootstrapInheritanceMetadataHook.apply(this, args);
 }
 
 function runCompiledRootStartup(...args) {
-  return inheritanceBootstrapApi.runCompiledRootStartup.apply(this, args);
+  return runCompiledRootStartupHook.apply(this, args);
 }
 
 export { inheritanceBootstrapApi, bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };

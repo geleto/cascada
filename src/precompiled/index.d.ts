@@ -68,5 +68,22 @@ export class AsyncEnvironment {
 export class PrecompiledEnvironment extends Environment {}
 export class AsyncPrecompiledEnvironment extends AsyncEnvironment {}
 
-export namespace runtime {}
-export namespace lib {}
+export class SafeString {
+  constructor(val: string);
+  val: string;
+  length: number;
+  valueOf(): string;
+  toString(): string;
+}
+
+export function markSafe(val: string): SafeString;
+
+export class TemplateError extends Error {
+  constructor(message: string, lineno: number, colno: number);
+  name: string;
+  message: string;
+  stack: string;
+  cause?: Error | undefined;
+  lineno: number;
+  colno: number;
+}

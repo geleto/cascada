@@ -1,5 +1,6 @@
 import expect from 'expect.js';
 import * as cascada from '../../src/index.js';
+import {PoisonedValue} from '../../src/runtime/runtime.js';
 
 const {AsyncEnvironment} = cascada;
 
@@ -680,7 +681,7 @@ const {AsyncEnvironment} = cascada;
       return {data: result.snapshot() }`;
 
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); }
       };
 
       const res = await env.renderScriptString(script, context);
@@ -764,7 +765,7 @@ const {AsyncEnvironment} = cascada;
         return { text: output.snapshot(), data: result.snapshot() }`;
 
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); }
       };
 
       const res = await env.renderScriptString(script, context);
@@ -821,7 +822,7 @@ const {AsyncEnvironment} = cascada;
       // We must modify "state" inside guard to satisfy guard requirement.
       const template = `{% set state = "ok" %}{% guard state, text %}Start {% set state = "mod" %}{{ error("fail") }}{% recover %}Recovered{% set state = "recovered" %}{% endguard %} State: {{ state }}`;
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); }
       };
 
       const res = await env.renderTemplateString(template, context);
@@ -842,7 +843,7 @@ recover
 endguard
 return { text: output.snapshot(), data: result.snapshot() }`;
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); },
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); },
         delay: (ms) => new Promise(r => setTimeout(r, ms))
       };
       const res = await env.renderScriptString(script, context);
@@ -864,7 +865,7 @@ return { text: output.snapshot(), data: result.snapshot() }`;
         return {data: result.snapshot(), text: output.snapshot() }
       `;
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); }
       };
       const res = await env.renderScriptString(script, context);
       expect(res.data.res).to.equal('safe');
@@ -881,7 +882,7 @@ return { text: output.snapshot(), data: result.snapshot() }`;
 
         return { text: output.snapshot() }`;
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); }
       };
 
       try {
@@ -928,7 +929,7 @@ recover
 endguard
 return {data: result.snapshot() }`;
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); }
       };
       const res = await env.renderScriptString(script, context);
       expect(res.data.res).to.equal('caught');
@@ -945,7 +946,7 @@ recover
 endguard
 return { text: output.snapshot(), data: result.snapshot() }`;
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); }
       };
       const res = await env.renderScriptString(script, context);
       expect(res.data.res).to.equal('caught');
@@ -1160,8 +1161,8 @@ return { text: output.snapshot(), data: result.snapshot() }`;
 
         return { text: output.snapshot(), data: result.snapshot() }`;
       const context = {
-        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); },
-        lock: { fail: () => { return new cascada.runtime.PoisonedValue([new Error('sequence_fail')]); } }
+        error: (msg) => { return new PoisonedValue([new Error(msg)]); },
+        lock: { fail: () => { return new PoisonedValue([new Error('sequence_fail')]); } }
       };
       const res = await env.renderScriptString(script, context);
 

@@ -461,7 +461,7 @@ The old slim browser page appeared to test the precompiled path mostly through l
 - `tests/pasync/structures.js`
 - `tests/pasync/variables.js`
 
-`tests/browser/precompiled.html` does not load those `pasync` suites. It loads the traditional compiler/runtime/filter/global/Jinja tests against precompiled templates.
+`tests/browser/precompiled.html` does not load those `pasync` suites. It runs focused compiler-free runtime checks against precompiled templates.
 
 The ESM migration adds explicit async precompiled tests in `tests/precompiled-entry.js`. Do not assume the old slim path already covers async precompiled rendering.
 
@@ -881,7 +881,7 @@ After the package, tests, scripts, and browser lanes run as native ESM, remove t
 Cleanup targets:
 
 - Remove the default export from `src/index.js`. Done. The canonical package API is named exports such as `import { AsyncEnvironment } from 'cascada-engine'`.
-- Decide whether the public package should expose namespace convenience exports such as `compiler`, `parser`, `lexer`, `runtime`, `lib`, and `nodes`. Keep them only if they are intentional public API; otherwise export the individual supported names and leave internal module namespaces private.
+- Decide whether the public package should expose namespace convenience exports such as `compiler`, `parser`, `lexer`, `runtime`, `lib`, and `nodes`. Done. These are no longer exported from the package entry; browser tests attach them explicitly as test-only internals where needed.
 - Delete the generated browser bundle artifacts from tests and source control once native browser ESM pages replace them. Done for:
   - `tests/browser/nunjucks.min.js`
   - `tests/browser/nunjucks-slim.min.js`
@@ -894,7 +894,6 @@ Cleanup targets:
 
 ```js
 export { SomeName } from './some-module.js';
-export * as runtime from './runtime/runtime.js';
 ```
 
 instead of importing a module only to immediately re-export the same bindings.
@@ -914,13 +913,13 @@ rather than anonymous `export default { ... }`, unless the default object is del
 - Keep `src/runtime/runtime.js` as a named-export runtime barrel. Do not reintroduce a default runtime object.
 - Remove redundant `'use strict';` prologues from ESM source, tests, and scripts. Done for the active source/test/script tree.
 - Keep one-off helpers near their only owner. For example, callback-to-promise helpers used only by async extension compilation should live in generated compiler output or compiler-owned helpers, not on the global runtime surface.
-- Re-check broad namespace imports after the migration. Use namespace imports only when the namespace itself is part of the public API or when many members are genuinely consumed locally.
-- Re-check mutable test hook surfaces such as `src/runtime/inheritance-call.js`. Done for the default-export part: mutable hook registries now use named exports such as `inheritanceCallApi`, `inheritanceStateApi`, `inheritanceBootstrapApi`, and `lookupApi`. A later refactor can replace the mutable registries themselves with explicit dependency injection or setter helpers if that API is still desirable.
-- Re-check `src/index.js` convenience functions after named imports are canonical. Keep `configure`, `render*`, `compile*`, and `precompile*` only if they are intended top-level API; otherwise move convenience wrappers to a legacy or compatibility entry before final package publication.
+- Re-check broad namespace imports after the migration. Use namespace imports when several members are genuinely consumed locally; use named imports for one or two symbols. Done for the active cleanup pass.
+- Re-check mutable test hook surfaces such as `src/runtime/inheritance-call.js`. Done. Hook registries remain as named internal test surfaces, but the hookable entries are accessor-backed instead of plain writable data properties.
+- Re-check `src/index.js` convenience functions after named imports are canonical. Done for the current package shape. Compatibility helpers remain exported but are not part of the documented canonical API.
 - Remove transitional Rollup-generated ESM output and any `dist/esm` facade once the build copies native ESM source to the final `dist` shape.
 - Normalize import style after the source is fully ESM:
   - use direct named imports for one or two symbols,
-  - use namespace imports only for intentional module APIs,
+  - use namespace imports when several members are consumed locally,
   - use direct `export { name } from ...` where a file is only forwarding.
 - Re-run the cycle check after each barrel cleanup. If a direct re-export creates a cycle, fix the dependency layering rather than hiding the cycle with a broad namespace import or dynamic import.
 

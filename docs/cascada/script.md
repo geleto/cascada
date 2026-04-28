@@ -2651,8 +2651,6 @@ Use ESM imports for new code. The main entry can compile from source:
 import {
   AsyncEnvironment,
   FileSystemLoader,
-  compileScript,
-  compileTemplateAsync,
   precompileScript,
   precompileTemplateAsync
 } from 'cascada-engine';
@@ -2801,12 +2799,6 @@ Loaders are objects that tell the environment how to find and load your scripts 
     const result1 = await compiledScript.render({ input: 'data1' });
     const result2 = await compiledScript.render({ input: 'data2' });
     ```
-
-Top-level compile helpers are also available:
-
-*   `compileScript(source, [env], [path])`
-*   `compileTemplateAsync(source, [env], [path])`
-*   `compileTemplate(source, [env], [path])` for synchronous Nunjucks-compatible templates
 
 #### Adding Global Methods
 

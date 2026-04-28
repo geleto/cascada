@@ -971,24 +971,35 @@ function invokeComponentMethod(inheritanceStateValue, methodName, args, context,
   });
 }
 
-const inheritanceCallApi = {
-  createInheritanceInvocationCommand: createInheritanceInvocationCommandImpl,
-  getMethodData,
-  finalizeResolvedMethodMetadata,
-  hasLinkedChannelPath,
-  getCallableBodyLinkedChannels: getCallableBodyLinkedChannelsImpl,
-  resolveInheritanceSharedChannel,
-  invokeInheritedMethod,
-  invokeSuperMethod,
-  invokeComponentMethod
-};
+let createInheritanceInvocationCommandHook = createInheritanceInvocationCommandImpl;
+let getCallableBodyLinkedChannelsHook = getCallableBodyLinkedChannelsImpl;
+
+const inheritanceCallApi = {};
+Object.defineProperties(inheritanceCallApi, {
+  createInheritanceInvocationCommand: {
+    get: () => createInheritanceInvocationCommandHook,
+    set: (value) => { createInheritanceInvocationCommandHook = value; }
+  },
+  getCallableBodyLinkedChannels: {
+    get: () => getCallableBodyLinkedChannelsHook,
+    set: (value) => { getCallableBodyLinkedChannelsHook = value; }
+  },
+  getMethodData: { value: getMethodData },
+  finalizeResolvedMethodMetadata: { value: finalizeResolvedMethodMetadata },
+  hasLinkedChannelPath: { value: hasLinkedChannelPath },
+  resolveInheritanceSharedChannel: { value: resolveInheritanceSharedChannel },
+  invokeInheritedMethod: { value: invokeInheritedMethod },
+  invokeSuperMethod: { value: invokeSuperMethod },
+  invokeComponentMethod: { value: invokeComponentMethod }
+});
+Object.freeze(inheritanceCallApi);
 
 function createInheritanceInvocationCommand(spec) {
-  return inheritanceCallApi.createInheritanceInvocationCommand.apply(this, arguments);
+  return createInheritanceInvocationCommandHook.apply(this, arguments);
 }
 
 function getCallableBodyLinkedChannels(methodData, errorContext = null) {
-  return inheritanceCallApi.getCallableBodyLinkedChannels.apply(this, arguments);
+  return getCallableBodyLinkedChannelsHook.apply(this, arguments);
 }
 
 export { inheritanceCallApi, createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, hasLinkedChannelPath, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };

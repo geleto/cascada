@@ -122,7 +122,14 @@ export default [
       'mocha/no-mocha-arrows': 'off',
       'mocha/no-exports': 'off',
       'mocha/no-skipped-tests': 'off',
+      'mocha/no-pending-tests': 'off',
       'mocha/no-top-level-hooks': 'off',
+    }
+  },
+  {
+    files: ['scripts/docs-build.js'],
+    rules: {
+      'no-console': 'off'
     }
   }
 ];

@@ -1,7 +1,13 @@
 import {isFunction} from '../lib.js';
 import {BaseEnvironment} from './base-environment.js';
 import {callbackAsap} from './utils.js';
-import {PrecompiledTemplate, AsyncPrecompiledTemplate, AsyncPrecompiledScript} from './precompiled-template.js';
+import * as precompiledTemplate from './precompiled-template.js';
+
+const {
+  PrecompiledTemplate,
+  AsyncPrecompiledTemplate,
+  AsyncPrecompiledScript
+} = precompiledTemplate;
 
 class PrecompiledEnvironment extends BaseEnvironment {
   init(loaders, opts) {

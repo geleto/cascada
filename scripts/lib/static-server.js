@@ -5,9 +5,10 @@ import net from 'net';
 import path from 'path';
 import {promises as fs} from 'fs';
 import babel from '@babel/core';
-import url, {fileURLToPath} from 'url';
+import {fileURLToPath} from 'url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const logMissingFiles = process.env.CASCADA_TEST_SERVER_LOG_404 === '1';
 
 async function findAvailablePort(startPort = 3000) {
   return new Promise((resolve, reject) => {
@@ -40,8 +41,7 @@ async function getStaticServer(prt) {
 
     // Middleware to handle all requests
     app.use(async (req, res, next) => {
-      const parsedUrl = url.parse(req.url);
-      const pathname = parsedUrl.pathname;
+      const {pathname} = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       const filePath = path.join(staticRoot, pathname);
 
       try {
@@ -88,8 +88,9 @@ async function getStaticServer(prt) {
         }
       } catch (error) {
         if (error.code === 'ENOENT') {
-          // File not found
-          console.error(`File not found: ${filePath}`);
+          if (logMissingFiles) {
+            console.error(`File not found: ${filePath}`);
+          }
           res.statusCode = 404;
           res.setHeader('Content-Type', 'text/plain');
           res.end('404 Not Found');

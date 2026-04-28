@@ -6,12 +6,8 @@ import {FileSystemLoader, WebLoader} from './loader/loaders.js';
 export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
 export {Loader} from './loader/loader.js';
 export {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
-export * as compiler from './compiler/compiler.js';
-export * as parser from './parser.js';
-export * as lexer from './lexer.js';
-export * as runtime from './runtime/runtime.js';
-export * as lib from './lib.js';
-export * as nodes from './nodes.js';
+export {SafeString, markSafe} from './runtime/safe-output.js';
+export {TemplateError} from './lib.js';
 export {installCompat as installJinjaCompat} from './jinja-compat.js';
 export {
   precompile,

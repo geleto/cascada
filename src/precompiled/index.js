@@ -12,5 +12,5 @@ export {
 } from '../environment/precompiled-environment.js';
 export {Loader} from '../loader/loader.js';
 export {PrecompiledLoader} from '../loader/precompiled-loader.js';
-export * as runtime from '../runtime/runtime.js';
-export * as lib from '../lib.js';
+export {SafeString, markSafe} from '../runtime/safe-output.js';
+export {TemplateError} from '../lib.js';

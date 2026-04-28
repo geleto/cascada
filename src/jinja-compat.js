@@ -1,23 +1,23 @@
+import * as compiler from './compiler/compiler.js';
+import * as lexer from './lexer.js';
+import * as lib from './lib.js';
+import * as nodes from './nodes.js';
+import * as parser from './parser.js';
+import * as runtime from './runtime/runtime.js';
 import {lookupApi} from './runtime/lookup.js';
 
 function installCompat() {
 
   /* eslint-disable camelcase */
 
-  // This must be called like `nunjucks.installCompat` so that `this`
-  // references the nunjucks instance
-  var runtime = this.runtime;
-  var lib = this.lib;
-  var Compiler = this.compiler.Compiler;
-  var CompilerSync = this.compiler.CompilerSync;
-  var CompilerAsync = this.compiler.CompilerAsync;
-  var CompilerCommon = this.compiler.CompilerCommon;
+  var Compiler = compiler.Compiler;
+  var CompilerSync = compiler.CompilerSync;
+  var CompilerAsync = compiler.CompilerAsync;
+  var CompilerCommon = compiler.CompilerCommon;
   var compilerClasses = Array.from(new Set(
     [Compiler, CompilerSync, CompilerAsync, CompilerCommon].filter(Boolean)
   ));
-  var Parser = this.parser.Parser;
-  var nodes = this.nodes;
-  var lexer = this.lexer;
+  var Parser = parser.Parser;
 
   var orig_Frame_lookupOrContext = runtime.Frame.prototype.lookupOrContext;
   var orig_memberLookup = lookupApi.memberLookup;

@@ -1,4 +1,4 @@
-export type TemplateCallback<T> = (err: lib.TemplateError | null, res: T | null) => void;
+export type TemplateCallback<T> = (err: TemplateError | null, res: T | null) => void;
 export type Callback<E, T> = (err: E | null, res: T | null) => void;
 
 /** @deprecated Use renderTemplate instead */
@@ -340,26 +340,24 @@ export class PrecompiledLoader extends Loader implements ILoader {
   getSource(name: string): LoaderSource;
 }
 
-export namespace runtime {
-  class SafeString {
-    constructor(val: string);
-    val: string;
-    length: number;
-    valueOf(): string;
-    toString(): string;
-  }
+export class SafeString {
+  constructor(val: string);
+  val: string;
+  length: number;
+  valueOf(): string;
+  toString(): string;
 }
 
-export namespace lib {
-  class TemplateError extends Error {
-    constructor(message: string, lineno: number, colno: number);
+export function markSafe(val: string): SafeString;
 
-    name: string; // always 'Template render error'
-    message: string;
-    stack: string;
+export class TemplateError extends Error {
+  constructor(message: string, lineno: number, colno: number);
 
-    cause?: Error | undefined;
-    lineno: number;
-    colno: number;
-  }
+  name: string; // always 'Template render error'
+  message: string;
+  stack: string;
+
+  cause?: Error | undefined;
+  lineno: number;
+  colno: number;
 }

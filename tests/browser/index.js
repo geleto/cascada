@@ -1,6 +1,12 @@
 const cascada = await import('../../src/index.js');
+const compiler = await import('../../src/compiler/compiler.js');
+const parser = await import('../../src/parser.js');
+const lexer = await import('../../src/lexer.js');
+const runtime = await import('../../src/runtime/runtime.js');
+const lib = await import('../../src/lib.js');
+const nodes = await import('../../src/nodes.js');
 
-window.cascada = {...cascada};
+window.cascada = {...cascada, compiler, parser, lexer, runtime, lib, nodes};
 window.nunjucks = window.cascada;
 window.cascada.testing = true;
 mocha.setup({

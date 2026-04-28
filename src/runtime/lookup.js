@@ -308,21 +308,32 @@ function channelLookup(name, currentBuffer) {
   return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
 }
 
-const lookupApi = {
-  memberLookup: memberLookupImpl,
-  memberLookupScriptRaw,
-  memberLookupAsync,
-  memberLookupScript,
-  observeInheritanceSharedChannel: observeInheritanceSharedChannelImpl,
-  channelLookup
-};
+let memberLookupHook = memberLookupImpl;
+let observeInheritanceSharedChannelHook = observeInheritanceSharedChannelImpl;
+
+const lookupApi = {};
+Object.defineProperties(lookupApi, {
+  memberLookup: {
+    get: () => memberLookupHook,
+    set: (value) => { memberLookupHook = value; }
+  },
+  observeInheritanceSharedChannel: {
+    get: () => observeInheritanceSharedChannelHook,
+    set: (value) => { observeInheritanceSharedChannelHook = value; }
+  },
+  memberLookupScriptRaw: { value: memberLookupScriptRaw },
+  memberLookupAsync: { value: memberLookupAsync },
+  memberLookupScript: { value: memberLookupScript },
+  channelLookup: { value: channelLookup }
+});
+Object.freeze(lookupApi);
 
 function memberLookup(...args) {
-  return lookupApi.memberLookup.apply(this, args);
+  return memberLookupHook.apply(this, args);
 }
 
 function observeInheritanceSharedChannel(...args) {
-  return lookupApi.observeInheritanceSharedChannel.apply(this, args);
+  return observeInheritanceSharedChannelHook.apply(this, args);
 }
 
 export { lookupApi, memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };

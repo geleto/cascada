@@ -339,10 +339,13 @@ Cascada keeps Nunjucks-compatible API names where useful, but new code should us
 Prefer ESM imports in Node and modern browser builds. The main entry can compile from source:
 
 ```javascript
-import { AsyncEnvironment, compileTemplateAsync, precompileTemplateAsync } from 'cascada-engine';
+import { AsyncEnvironment, FileSystemLoader } from 'cascada-engine';
+
+const env = new AsyncEnvironment(new FileSystemLoader('templates'));
+const html = await env.renderTemplate('page.njk', data);
 ```
 
-Use the precompiled entry when templates are compiled ahead of time and the app only needs the runtime. This entry does not import the compiler, parser, lexer, or precompile API:
+Use the precompiled entry when templates or scripts are compiled ahead of time and the app only needs the runtime. This entry does not import the compiler, parser, lexer, or precompile API:
 
 ```javascript
 import { AsyncEnvironment as PrecompiledEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled';

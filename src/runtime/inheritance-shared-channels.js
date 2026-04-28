@@ -60,14 +60,21 @@ function initializeInheritanceSharedChannelDefault(buffer, channelName, channelT
   return channel;
 }
 
-const inheritanceSharedChannelsApi = {
-  declareInheritanceSharedChannel: declareInheritanceSharedChannelImpl,
-  claimInheritanceSharedDefault,
-  initializeInheritanceSharedChannelDefault
-};
+let declareInheritanceSharedChannelHook = declareInheritanceSharedChannelImpl;
+
+const inheritanceSharedChannelsApi = {};
+Object.defineProperties(inheritanceSharedChannelsApi, {
+  declareInheritanceSharedChannel: {
+    get: () => declareInheritanceSharedChannelHook,
+    set: (value) => { declareInheritanceSharedChannelHook = value; }
+  },
+  claimInheritanceSharedDefault: { value: claimInheritanceSharedDefault },
+  initializeInheritanceSharedChannelDefault: { value: initializeInheritanceSharedChannelDefault }
+});
+Object.freeze(inheritanceSharedChannelsApi);
 
 function declareInheritanceSharedChannel(...args) {
-  return inheritanceSharedChannelsApi.declareInheritanceSharedChannel.apply(this, args);
+  return declareInheritanceSharedChannelHook.apply(this, args);
 }
 
 export { inheritanceSharedChannelsApi, declareInheritanceSharedChannel, claimInheritanceSharedDefault, initializeInheritanceSharedChannelDefault };
