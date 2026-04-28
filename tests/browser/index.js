@@ -1,17 +1,28 @@
-// Include the necessary test files
-require('../util.js');
-require('../api.js');
-require('../lexer.js');
-require('../loader.js');
-require('../parser.js');
-require('../compiler.js');
-require('../runtime.js');
-require('../filters.js');
-require('../globals.js');
-require('../jinja-compat.js');
-require('../tests.js');
-
-// Set up the test environment
-nunjucks.testing = true;
+window.nunjucks.testing = true;
+mocha.setup({
+  ui: 'bdd',
+  reporter: window.ConsoleReporter
+});
 mocha.checkLeaks();
-mocha.run();
+
+await import('../util.js');
+await import('../api.js');
+await import('../pasync/calls.js');
+await import('../pasync/conditional.js');
+await import('../pasync/custom.js');
+await import('../pasync/expressions.js');
+await import('../pasync/loader.js');
+await import('../pasync/loops.js');
+await import('../pasync/macros.js');
+await import('../pasync/race.js');
+await import('../pasync/setblock.js');
+await import('../pasync/structures.js');
+await import('../lexer.js');
+await import('../loader.js');
+await import('../parser.js');
+await import('../compiler.js');
+await import('../runtime.js');
+await import('../filters.js');
+await import('../globals.js');
+await import('../jinja-compat.js');
+await import('../tests.js');

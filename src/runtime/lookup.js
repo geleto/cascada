@@ -17,7 +17,7 @@ import {resolveDuo} from './resolve.js';
  * Sync member lookup for templates.
  * Returns undefined if obj is undefined or null.
  */
-function memberLookup(obj, val) {
+function memberLookupImpl(obj, val) {
   if (obj === undefined || obj === null) {
     return undefined;
   }
@@ -253,7 +253,7 @@ function _observeResolvedInheritanceSharedChannel(name, currentBuffer, channelTy
   return _addObservationCommand(currentBuffer, name, pos, mode);
 }
 
-function observeInheritanceSharedChannel(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
+function observeInheritanceSharedChannelImpl(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
   if (!currentBuffer || !inheritanceStateValue) {
     return undefined;
   }
@@ -309,4 +309,22 @@ function channelLookup(name, currentBuffer) {
   return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
 }
 
+const lookupApi = {
+  memberLookup: memberLookupImpl,
+  memberLookupScriptRaw,
+  memberLookupAsync,
+  memberLookupScript,
+  observeInheritanceSharedChannel: observeInheritanceSharedChannelImpl,
+  channelLookup
+};
+
+function memberLookup(...args) {
+  return lookupApi.memberLookup.apply(this, args);
+}
+
+function observeInheritanceSharedChannel(...args) {
+  return lookupApi.observeInheritanceSharedChannel.apply(this, args);
+}
+
+export default lookupApi;
 export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };

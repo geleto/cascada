@@ -1,37 +1,11 @@
 
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {StringLoader, delay, expectAsyncError} from '../util.js';
+import {isPoisonError} from '../../src/runtime/runtime.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  var AsyncEnvironment;
-  var StringLoader;
-  var delay;
-  var expectAsyncError;
-  var runtime;
-  var isPoisonError;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    StringLoader = require('../util').StringLoader;
-    delay = require('../util').delay;
-    expectAsyncError = require('../util').expectAsyncError;
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-    isPoisonError = runtime.isPoisonError;
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    StringLoader = window.util.StringLoader;
-    delay = window.util.delay;
-    expectAsyncError = window.util.expectAsyncError;
-    runtime = nunjucks.runtime;
-    isPoisonError = nunjucks.runtime.isPoisonError;
-  }
 
   async function waitForCondition(predicate, timeoutMs = 200, intervalMs = 5) {
     const deadline = Date.now() + timeoutMs;

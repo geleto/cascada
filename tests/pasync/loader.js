@@ -1,25 +1,16 @@
+import expect from 'expect.js';
+import he from 'he';
+import {StringLoader} from '../util.js';
+
+const {AsyncEnvironment} = typeof window !== 'undefined'
+  ? window.nunjucks
+  : await import('../../src/environment/environment.js');
+
 (function () {
   'use strict';
 
-  var expect;
-  var unescape;
-  var AsyncEnvironment;
-  var StringLoader;
+  const {unescape} = he;
   //var Environment;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    //Environment = require('../../src/environment/environment').Environment;
-    unescape = require('he').unescape;
-    StringLoader = require('../util').StringLoader;
-  } else {
-    expect = window.expect;
-    unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    //Environment = nunjucks.Environment;
-    StringLoader = window.util.StringLoader;
-  }
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 

@@ -1,31 +1,15 @@
+import expect from 'expect.js';
+import util from './util.js';
+
+const lib = typeof window !== 'undefined' ? window.nunjucks.lib : await import('../src/lib.js');
+const r = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../src/runtime/runtime.js');
 
 (function() {
   'use strict';
 
-  var expect;
-  var util;
-  var lib;
-  var r;
   var render;
   var equal;
   var finish;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    util = require('./util');
-    lib = esmDefault(require('../src/lib'));
-    r = esmDefault(require('../src/runtime/runtime'));
-  } else {
-    expect = window.expect;
-    util = window.util;
-    lib = nunjucks.lib;
-    r = nunjucks.runtime;
-  }
 
   render = util.render;
   equal = util.equal;

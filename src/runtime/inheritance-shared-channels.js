@@ -20,7 +20,7 @@ function claimInheritanceSharedDefault(buffer, channelName) {
   return true;
 }
 
-function declareInheritanceSharedChannel(buffer, channelName, channelType, context) {
+function declareInheritanceSharedChannelImpl(buffer, channelName, channelType, context) {
   const existingChannel = buffer && typeof buffer.getOwnChannel === 'function'
     ? buffer.getOwnChannel(channelName)
     : null;
@@ -61,4 +61,15 @@ function initializeInheritanceSharedChannelDefault(buffer, channelName, channelT
   return channel;
 }
 
+const inheritanceSharedChannelsApi = {
+  declareInheritanceSharedChannel: declareInheritanceSharedChannelImpl,
+  claimInheritanceSharedDefault,
+  initializeInheritanceSharedChannelDefault
+};
+
+function declareInheritanceSharedChannel(...args) {
+  return inheritanceSharedChannelsApi.declareInheritanceSharedChannel.apply(this, args);
+}
+
+export default inheritanceSharedChannelsApi;
 export { declareInheritanceSharedChannel, claimInheritanceSharedDefault, initializeInheritanceSharedChannelDefault };

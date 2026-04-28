@@ -1,40 +1,19 @@
+import expect from 'expect.js';
+import he from 'he';
+import {delay} from '../util.js';
+
+const {AsyncEnvironment} = typeof window !== 'undefined'
+  ? window.nunjucks
+  : await import('../../src/environment/environment.js');
+const lexer = typeof window !== 'undefined' ? window.nunjucks.lexer : await import('../../src/lexer.js');
+const runtime = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../../src/runtime/runtime.js');
+const {isPoisonError} = runtime;
 
 (function () {
   'use strict';
 
-  var expect;
-  var unescape;
-  var AsyncEnvironment;
+  const {unescape} = he;
   //var Environment;
-  var lexer;
-  var delay;
-  var runtime;
-  var isPoisonError;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    //Environment = require('../../src/environment/environment').Environment;
-    lexer = esmDefault(require('../../src/lexer'));
-    unescape = require('he').unescape;
-    delay = require('../util').delay;
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-    isPoisonError = runtime.isPoisonError;
-  } else {
-    expect = window.expect;
-    unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    //Environment = nunjucks.Environment;
-    lexer = nunjucks.lexer;
-    delay = window.util.delay;
-    runtime = nunjucks.runtime;
-    isPoisonError = nunjucks.runtime.isPoisonError;
-  }
 
   class AsyncExtension {
     constructor(tagName, method, options = {}) {

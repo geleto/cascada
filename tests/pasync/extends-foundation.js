@@ -1,69 +1,32 @@
 'use strict';
 
-let expect;
-let Environment;
-let AsyncEnvironment;
-let AsyncTemplate;
-let Script;
-let Context;
-let parser;
-let nodes;
-let transformer;
-let scriptTranspiler;
-let runtime;
-let runtimeHooks;
-let StringLoader;
-let inheritanceStateModule;
-let inheritanceCallModule;
+import expect from 'expect.js';
+import {Environment, AsyncEnvironment, AsyncTemplate, Script, Context} from '../../src/environment/environment.js';
+import * as parser from '../../src/parser.js';
+import * as nodes from '../../src/nodes.js';
+import * as transformer from '../../src/transformer.js';
+import * as scriptTranspiler from '../../src/script/script-transpiler.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import inheritanceStateModule from '../../src/runtime/inheritance-state.js';
+import inheritanceCallModule from '../../src/runtime/inheritance-call.js';
+import inheritanceBootstrapHooks from '../../src/runtime/inheritance-bootstrap.js';
+import {StringLoader} from '../util.js';
 
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  const environment = require('../../src/environment/environment');
-  Environment = environment.Environment;
-  AsyncEnvironment = environment.AsyncEnvironment;
-  AsyncTemplate = environment.AsyncTemplate;
-  Script = environment.Script;
-  Context = require('../../src/environment/context').Context;
-  parser = esmDefault(require('../../src/parser'));
-  nodes = esmDefault(require('../../src/nodes'));
-  transformer = esmDefault(require('../../src/transformer'));
-  scriptTranspiler = esmDefault(require('../../src/script/script-transpiler'));
-  runtime = esmDefault(require('../../src/runtime/runtime'));
-  runtimeHooks = runtime.default || runtime;
-  try {
-    inheritanceStateModule = require('../../src/runtime/inheritance-state');
-  } catch (err) {
-    void err;
+const runtimeHooks = {};
+Object.defineProperties(runtimeHooks, {
+  bootstrapInheritanceMetadata: {
+    get: () => inheritanceBootstrapHooks.bootstrapInheritanceMetadata,
+    set: (value) => { inheritanceBootstrapHooks.bootstrapInheritanceMetadata = value; }
+  },
+  runCompiledRootStartup: {
+    get: () => inheritanceBootstrapHooks.runCompiledRootStartup,
+    set: (value) => { inheritanceBootstrapHooks.runCompiledRootStartup = value; }
+  },
+  getCallableBodyLinkedChannels: {
+    get: () => inheritanceCallModule.getCallableBodyLinkedChannels,
+    set: (value) => { inheritanceCallModule.getCallableBodyLinkedChannels = value; }
   }
-  try {
-    inheritanceCallModule = require('../../src/runtime/inheritance-call');
-  } catch (err) {
-    void err;
-    inheritanceCallModule = null;
-  }
-  StringLoader = require('../util').StringLoader;
-} else {
-  expect = window.expect;
-  Environment = nunjucks.Environment;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  AsyncTemplate = nunjucks.AsyncTemplate;
-  Script = nunjucks.Script;
-  Context = null;
-  parser = nunjucks.parser;
-  nodes = nunjucks.nodes;
-  transformer = nunjucks.transformer || null;
-  scriptTranspiler = nunjucks.scriptTranspiler;
-  runtime = nunjucks.runtime;
-  runtimeHooks = runtime;
-  inheritanceStateModule = null;
-  inheritanceCallModule = null;
-  StringLoader = window.util.StringLoader;
-}
+});
 
 describe('Extends Foundation', function () {
   let env;

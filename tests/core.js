@@ -1,27 +1,11 @@
+import expect from 'expect.js';
+import fs from 'fs-extra';
+import os from 'os';
+import path from 'path';
+import * as nunjucks from '../src/index.js';
+
 (function() {
   'use strict';
-
-  var expect,
-    nunjucks,
-    fs,
-    os,
-    path;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    nunjucks = esmDefault(require('../src/index'));
-    fs = require('fs-extra');
-    path = require('path');
-    os = require('os');
-  } else {
-    expect = window.expect;
-    nunjucks = window.nunjucks;
-  }
 
   function rmdir(dirPath) {
     fs.emptyDirSync(dirPath);

@@ -1,57 +1,13 @@
 
+import expect from 'expect.js';
+import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
+import {StringLoader, delay} from '../util.js';
+import {createPoison, isPoisonError, TextCommand, CommandBuffer, createChannel} from '../../src/runtime/runtime.js';
+import * as parser from '../../src/parser.js';
+import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
+
 (function () {
   'use strict';
-
-  let expect;
-  let AsyncEnvironment;
-  let AsyncTemplate;
-  let Script;
-  let StringLoader;
-  let delay;
-  let createPoison;
-  let isPoisonError;
-  let parser;
-  let TextCommand;
-  let CommandBuffer;
-  let createChannel;
-  let scopeBoundaries;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    const envModule = require('../../src/environment/environment');
-    AsyncEnvironment = envModule.AsyncEnvironment;
-    AsyncTemplate = envModule.AsyncTemplate;
-    Script = envModule.Script;
-    StringLoader = require('../util').StringLoader;
-    delay = require('../util').delay;
-    const runtime = esmDefault(require('../../src/runtime/runtime'));
-    createPoison = runtime.createPoison;
-    isPoisonError = runtime.isPoisonError;
-    parser = esmDefault(require('../../src/parser'));
-    TextCommand = runtime.TextCommand;
-    CommandBuffer = runtime.CommandBuffer;
-    createChannel = runtime.createChannel;
-    scopeBoundaries = require('../../src/compiler/scope-boundaries');
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    AsyncTemplate = nunjucks.AsyncTemplate;
-    Script = nunjucks.Script;
-    StringLoader = window.util.StringLoader;
-    delay = window.util.delay;
-    createPoison = nunjucks.createPoison;
-    isPoisonError = nunjucks.isPoisonError;
-    parser = nunjucks.parser;
-    TextCommand = nunjucks.runtime.TextCommand;
-    CommandBuffer = nunjucks.runtime.CommandBuffer;
-    createChannel = nunjucks.runtime.createChannel;
-    scopeBoundaries = nunjucks.compiler.scopeBoundaries || null;
-  }
 
   function normalizeOutput(str) {
     return str.replace(/\s+/g, '');

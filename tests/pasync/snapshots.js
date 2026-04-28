@@ -1,47 +1,18 @@
 'use strict';
 
-let expect;
-let AsyncEnvironment;
-let expectAsyncError;
-let TextCommand;
-let DataCommand;
-let SequenceCallCommand;
-let CommandBuffer;
-let createChannel;
-let createSequenceChannel;
-let createPoison;
-let isPoisonError;
-
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  TextCommand = esmDefault(require('../../src/runtime/runtime')).TextCommand;
-  DataCommand = esmDefault(require('../../src/runtime/runtime')).DataCommand;
-  SequenceCallCommand = esmDefault(require('../../src/runtime/runtime')).SequenceCallCommand;
-  CommandBuffer = esmDefault(require('../../src/runtime/runtime')).CommandBuffer;
-  createChannel = esmDefault(require('../../src/runtime/runtime')).createChannel;
-  createSequenceChannel = esmDefault(require('../../src/runtime/runtime')).createSequenceChannel;
-  createPoison = esmDefault(require('../../src/runtime/runtime')).createPoison;
-  isPoisonError = esmDefault(require('../../src/runtime/runtime')).isPoisonError;
-  expectAsyncError = require('../util').expectAsyncError;
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  TextCommand = nunjucks.runtime.TextCommand;
-  DataCommand = nunjucks.runtime.DataCommand;
-  SequenceCallCommand = nunjucks.runtime.SequenceCallCommand;
-  CommandBuffer = nunjucks.runtime.CommandBuffer;
-  createChannel = nunjucks.runtime.createChannel;
-  createSequenceChannel = nunjucks.runtime.createSequenceChannel;
-  createPoison = nunjucks.runtime.createPoison;
-  isPoisonError = nunjucks.runtime.isPoisonError;
-  expectAsyncError = nunjucks.util.expectAsyncError;
-}
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {expectAsyncError} from '../util.js';
+import {
+  TextCommand,
+  DataCommand,
+  SequenceCallCommand,
+  CommandBuffer,
+  createChannel,
+  createSequenceChannel,
+  createPoison,
+  isPoisonError
+} from '../../src/runtime/runtime.js';
 
 describe('channel.finalSnapshot', function () {
   let env;

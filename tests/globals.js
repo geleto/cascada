@@ -1,22 +1,16 @@
+import expect from 'expect.js';
+import util from './util.js';
+
+const {Environment} = typeof window !== 'undefined'
+  ? window.nunjucks
+  : await import('../src/environment/environment.js');
+
 (function() {
   'use strict';
 
-  var expect;
-  var util;
-  var Environment;
   var equal;
   var render;
   var finish;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    util = require('./util');
-    Environment = require('../src/environment/environment').Environment;
-  } else {
-    expect = window.expect;
-    util = window.util;
-    Environment = nunjucks.Environment;
-  }
 
   equal = util.equal;
   render = util.render;

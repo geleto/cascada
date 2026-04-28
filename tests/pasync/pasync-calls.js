@@ -1,25 +1,12 @@
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {delay} from '../util.js';
+
 (function () {
   'use strict';
 
-  var expect;
   //var unescape;
-  var AsyncEnvironment;
   //var Environment;
-  var delay;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    //Environment = require('../../src/environment/environment').Environment;
-    //unescape = require('he').unescape;
-    delay = require('../util').delay;
-  } else {
-    expect = window.expect;
-    //unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    //Environment = nunjucks.Environment;
-    delay = window.util.delay;
-  }
 
   describe('Async mode - calls and arguments', () => {
     let env;

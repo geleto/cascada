@@ -1,16 +1,8 @@
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  var AsyncEnvironment;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-  }
 
   describe('Phase 1: Loop Two-Pass Compilation', () => {
     let env;
@@ -568,4 +560,3 @@
     });
   });
 })();
-

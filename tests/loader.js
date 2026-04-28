@@ -1,60 +1,29 @@
+import expect from 'expect.js';
+import {StringLoader, delay} from './util.js';
+
+const isBrowser = typeof window !== 'undefined';
+const indexModule = isBrowser ? window.nunjucks : await import('../src/index.js');
+const webLoaders = isBrowser ? window.nunjucks : await import('../src/loader/web-loaders.js');
+const nodeLoaders = isBrowser ? {} : await import('../src/loader/node-loaders.js');
+
+const {
+  Environment,
+  AsyncEnvironment,
+  Template,
+  loadString,
+  clearStringCache,
+  raceLoaders,
+  precompileTemplateString,
+  precompileScriptString
+} = indexModule;
+
+const {WebLoader} = webLoaders;
+const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
+
 (function () {
   'use strict';
 
-  var expect,
-    Environment,
-    AsyncEnvironment,
-    WebLoader,
-    FileSystemLoader,
-    NodeResolveLoader,
-    templatesPath,
-    StringLoader,
-    loadString,
-    clearStringCache,
-    raceLoaders,
-    precompileTemplateString,
-    precompileScriptString,
-    Template,
-    delay;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    Environment = require('../src/environment/environment').Environment;
-    AsyncEnvironment = require('../src/environment/environment').AsyncEnvironment;
-    WebLoader = require('../src/loader/web-loaders').WebLoader;
-    FileSystemLoader = require('../src/loader/node-loaders').FileSystemLoader;
-    NodeResolveLoader = require('../src/loader/node-loaders').NodeResolveLoader;
-    templatesPath = 'tests/templates';
-    StringLoader = require('./util').StringLoader;
-    loadString = esmDefault(require('../src/index')).loadString;
-    clearStringCache = esmDefault(require('../src/index')).clearStringCache;
-    raceLoaders = esmDefault(require('../src/index')).raceLoaders;
-    precompileTemplateString = esmDefault(require('../src/index')).precompileTemplateString;
-    precompileScriptString = esmDefault(require('../src/index')).precompileScriptString;
-    Template = require('../src/environment/environment').Template;
-    delay = require('./util').delay;
-  } else {
-    expect = window.expect;
-    Environment = nunjucks.Environment;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    WebLoader = nunjucks.WebLoader;
-    FileSystemLoader = nunjucks.FileSystemLoader;
-    NodeResolveLoader = nunjucks.NodeResolveLoader;
-    templatesPath = '../templates',
-    StringLoader = window.util.StringLoader;
-    loadString = nunjucks.loadString;
-    clearStringCache = nunjucks.clearStringCache;
-    raceLoaders = nunjucks.raceLoaders;
-    precompileTemplateString = nunjucks.precompileTemplateString;
-    precompileScriptString = nunjucks.precompileScriptString;
-    Template = nunjucks.Template;
-    delay = window.util.delay;
-  }
+  var templatesPath = isBrowser ? '../templates' : 'tests/templates';
 
   describe('loader', function() {
     it('should allow a simple loader to be created', function() {

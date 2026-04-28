@@ -616,6 +616,38 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
   }
   return sharedMethods;
 }
+const inheritanceStateApi = {
+  InheritanceState,
+  createInheritanceState,
+  setInheritanceStartupPromise,
+  awaitInheritanceStartup,
+  mergeInheritanceStartupPromise,
+  beginInheritanceMetadataReadiness,
+  resolveInheritanceMetadataReadiness,
+  rejectInheritanceMetadataReadiness,
+  awaitInheritanceMetadataReadiness,
+  isInheritanceMetadataReadinessResolved,
+  consumeInheritanceMetadataReadyYield,
+  setComponentCompositionMode,
+  isComponentCompositionMode,
+  enterInheritanceChainPath,
+  leaveInheritanceChainPath,
+  cloneInheritanceMethodEntry,
+  cloneInheritanceMethods,
+  ensureInheritanceMethodsTable,
+  ensureInheritanceSharedSchemaTable,
+  ensureInheritanceInvokedMethodsTable,
+  registerInheritanceMethods,
+  wireResolvedSuperEntry,
+  registerInheritanceSharedSchema,
+  registerInheritanceInvokedMethods,
+  validateInheritanceSharedMethodNameCollisions,
+  finalizeInheritanceMethods,
+  releaseInheritanceBootstrapMetadata,
+  createEmptyConstructorEntry,
+  createInheritanceMetadataAggregateError,
+  collectOrThrowInheritanceMetadataError
+};
 
-
+export default inheritanceStateApi;
 export { InheritanceState, createInheritanceState, setInheritanceStartupPromise, awaitInheritanceStartup, mergeInheritanceStartupPromise, beginInheritanceMetadataReadiness, resolveInheritanceMetadataReadiness, rejectInheritanceMetadataReadiness, awaitInheritanceMetadataReadiness, isInheritanceMetadataReadinessResolved, consumeInheritanceMetadataReadyYield, setComponentCompositionMode, isComponentCompositionMode, enterInheritanceChainPath, leaveInheritanceChainPath, cloneInheritanceMethodEntry, cloneInheritanceMethods, ensureInheritanceMethodsTable, ensureInheritanceSharedSchemaTable, ensureInheritanceInvokedMethodsTable, registerInheritanceMethods, wireResolvedSuperEntry, registerInheritanceSharedSchema, registerInheritanceInvokedMethods, validateInheritanceSharedMethodNameCollisions, finalizeInheritanceMethods, releaseInheritanceBootstrapMetadata, createEmptyConstructorEntry, createInheritanceMetadataAggregateError, collectOrThrowInheritanceMetadataError };

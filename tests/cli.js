@@ -1,12 +1,14 @@
+import fs from 'fs';
+import path from 'path';
+import {execFile} from 'child_process';
+import expect from 'expect.js';
+import {fileURLToPath} from 'url';
+
 (function() {
   'use strict';
 
-  var fs = require('fs');
-  var path = require('path');
-  var execFile = require('child_process').execFile;
-  var expect = require('expect.js');
-
-  var rootDir = path.resolve(path.join(__dirname, '..'));
+  const testDir = path.dirname(fileURLToPath(import.meta.url));
+  var rootDir = path.resolve(path.join(testDir, '..'));
   var precompileBin = path.join(rootDir, 'bin', 'precompile');
   var distDir = path.join(rootDir, 'dist', 'cjs');
 

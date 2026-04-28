@@ -1,26 +1,17 @@
+import expect from 'expect.js';
+import util from './util.js';
+
+const isBrowser = typeof window !== 'undefined';
+const path = isBrowser ? undefined : await import('path');
+const environmentModule = isBrowser ? window.nunjucks : await import('../src/environment/environment.js');
+const loaderModule = isBrowser ? window.nunjucks : await import('../src/loader/node-loaders.js');
+const {Environment} = environmentModule;
+const Loader = isBrowser ? window.nunjucks.WebLoader : loaderModule.FileSystemLoader;
+
 (function() {
   'use strict';
 
-  var expect;
-  var util;
-  var Environment;
-  var Loader;
-  var templatesPath;
-  var path;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    util = require('./util');
-    Environment = require('../src/environment/environment').Environment;
-    Loader = require('../src/loader/node-loaders').FileSystemLoader;
-    templatesPath = 'tests/templates';
-    path = require('path');
-  } else {
-    expect = window.expect;
-    Environment = nunjucks.Environment;
-    Loader = nunjucks.WebLoader;
-    templatesPath = '../templates';
-  }
+  var templatesPath = isBrowser ? '../templates' : 'tests/templates';
 
   describe('api', function() {
     var env;

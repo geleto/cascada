@@ -1,36 +1,11 @@
 
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {StringLoader, delay} from '../util.js';
+import * as runtime from '../../src/runtime/runtime.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  var AsyncEnvironment;
-  var StringLoader;
-  var path;
-  var delay;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    path = require('path');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    StringLoader = require('../util').StringLoader;
-    delay = require('../util').delay;
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    StringLoader = window.util.StringLoader;
-    delay = window.util.delay;
-    // eslint-disable-next-line no-unused-vars
-    path = {
-      join: function () {
-        return Array.prototype.join.call(arguments, '/');
-      }
-    };
-  }
 
   describe('Async mode - error path reporting', function () {
     var loader;
@@ -979,8 +954,6 @@
     // involving the boundary helpers, Frame, and RuntimeFatalError. It verifies that critical
     // runtime errors (like sequential loop contract violations) are correctly propagated
     // through the returned promise in value-boundary paths.
-
-    const runtime = esmDefault(require('../../src/runtime/runtime'));
     it('should reject with RuntimeFatalError from runValueBoundary', function (done) {
       // Simulate an async block that throws RuntimeFatalError
       const fatalMsg = 'Simulated Fatal Error';

@@ -1,31 +1,17 @@
+import expect from 'expect.js';
+import he from 'he';
+import {StringLoader, delay} from '../util.js';
+
+const {AsyncEnvironment} = typeof window !== 'undefined'
+  ? window.nunjucks
+  : await import('../../src/environment/environment.js');
+
 (function () {
   'use strict';
 
-  var expect;
-  var unescape;
-  var AsyncEnvironment;
-  var StringLoader;
+  const {unescape} = he;
   //var Environment;
   //var lexer;
-  var delay;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    //Environment = require('../../src/environment/environment').Environment;
-    //lexer = require('../../src/lexer');
-    unescape = require('he').unescape;
-    StringLoader = require('../util').StringLoader;
-    delay = require('../util').delay;
-  } else {
-    expect = window.expect;
-    unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    StringLoader = window.util.StringLoader;
-    //Environment = nunjucks.Environment;
-    //lexer = nunjucks.lexer;
-    delay = window.util.delay;
-  }
 
   describe('Async mode race conditions tests', () => {
     let env;

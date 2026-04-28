@@ -1,28 +1,16 @@
+import expect from 'expect.js';
+import {delay} from '../util.js';
+
+const {AsyncEnvironment} = typeof window !== 'undefined'
+  ? window.nunjucks
+  : await import('../../src/environment/environment.js');
+
 (function () {
   'use strict';
 
-  var expect;
   //var unescape;
-  var AsyncEnvironment;
   //var Environment;
-  var delay;
   //var runtime;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    //Environment = require('../../src/environment/environment').Environment;
-    //unescape = require('he').unescape;
-    delay = require('../util').delay;
-    //runtime = esmDefault(require('../../src/runtime/runtime'));
-  } else {
-    //unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    //Environment = nunjucks.Environment;
-    delay = window.util.delay;
-    expect = window.expect;
-    //runtime = nunjucks.runtime;
-  }
 
   // Helper function to normalize whitespace for consistent test comparisons
   function normalizeWhitespace(str) {

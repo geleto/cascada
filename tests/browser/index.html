@@ -39,6 +39,14 @@
   <script src="../../node_modules/expect.js/index.js"></script>
   <script src="../../node_modules/mocha/mocha.js"></script>
   <script src="../../node_modules/he/he.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "expect.js": "./expect-shim.js",
+        "he": "./he-shim.js"
+      }
+    }
+  </script>
   <script>
     delete window.require;
     mocha.setup({
@@ -48,39 +56,8 @@
   </script>
 
   <script src="./nunjucks.min.js"></script>
-  <script src="../util.js"></script>
-
-  <script src="../api.js"></script>
-  <script src="../pasync/calls.js"></script>
-  <script src="../pasync/conditional.js"></script>
-  <script src="../pasync/custom.js"></script>
-  <script src="../pasync/expressions.js"></script>
-  <script src="../pasync/loader.js"></script>
-  <script src="../pasync/loops.js"></script>
-  <script src="../pasync/macros.js"></script>
-  <script src="../pasync/race.js"></script>
-  <script src="../pasync/setblock.js"></script>
-  <script src="../pasync/structures.js"></script>
-  <script src="../pasync/variables.js"></script>
-  <script src="../lexer.js"></script>
-  <script src="../loader.js"></script>
-  <script src="../parser.js"></script>
-  <script src="../compiler.js"></script>
-  <script src="../runtime.js"></script>
-  <script src="../filters.js"></script>
-  <script src="../globals.js"></script>
-  <script src="../jinja-compat.js"></script>
-  <script src="../tests.js"></script>
   <script src="console-reporter.js"></script>
-
-  <script>
-    nunjucks.testing = true;
-    mocha.setup({
-      ui: 'bdd',
-      reporter: ConsoleReporter
-    });
-    mocha.checkLeaks();
-  </script>
+  <script type="module" src="./index.js"></script>
 </body>
 
 </html>

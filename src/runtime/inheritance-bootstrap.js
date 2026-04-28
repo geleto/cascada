@@ -1,9 +1,9 @@
 'use strict';
 
-import * as inheritanceState from './inheritance-state.js';
+import inheritanceState from './inheritance-state.js';
 import inheritanceCall from './inheritance-call.js';
 
-function bootstrapInheritanceMetadata(
+function bootstrapInheritanceMetadataImpl(
   stateValue,
   methods,
   sharedSchema,
@@ -244,7 +244,7 @@ function startInheritanceRootConstructor(
   return currentStartupPromise ?? null;
 }
 
-function runCompiledRootStartup(spec) {
+function runCompiledRootStartupImpl(spec) {
   const {
     setup,
     compiledMethods,
@@ -374,4 +374,23 @@ function finalizeInheritanceMetadata(state, context = null) {
   }
 }
 
+const inheritanceBootstrapApi = {
+  bootstrapInheritanceMetadata: bootstrapInheritanceMetadataImpl,
+  bootstrapInheritanceParentScript,
+  runCompiledRootStartup: runCompiledRootStartupImpl,
+  renderInheritanceParentRoot,
+  linkCurrentBufferToParentChannels,
+  getInheritanceSharedBuffer,
+  finalizeInheritanceMetadata
+};
+
+function bootstrapInheritanceMetadata(...args) {
+  return inheritanceBootstrapApi.bootstrapInheritanceMetadata.apply(this, args);
+}
+
+function runCompiledRootStartup(...args) {
+  return inheritanceBootstrapApi.runCompiledRootStartup.apply(this, args);
+}
+
+export default inheritanceBootstrapApi;
 export { bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };

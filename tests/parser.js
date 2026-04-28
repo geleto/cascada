@@ -1,26 +1,11 @@
+import expect from 'expect.js';
+
+const lib = typeof window !== 'undefined' ? window.nunjucks.lib : await import('../src/lib.js');
+const nodes = typeof window !== 'undefined' ? window.nunjucks.nodes : await import('../src/nodes.js');
+const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await import('../src/parser.js');
+
 (function() {
   'use strict';
-
-  var expect,
-    lib,
-    nodes,
-    parser;
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    lib = esmDefault(require('../src/lib'));
-    nodes = esmDefault(require('../src/nodes'));
-    parser = esmDefault(require('../src/parser'));
-  } else {
-    expect = window.expect;
-    lib = nunjucks.lib;
-    nodes = nunjucks.nodes;
-    parser = nunjucks.parser;
-  }
 
   function _isAST(node1, node2) {
     // Compare ASTs

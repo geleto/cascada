@@ -1,25 +1,8 @@
+import expect from 'expect.js';
+import {precompile, precompileString} from '../src/precompile.js';
+
 (function() {
   'use strict';
-
-  var expect,
-    precompile,
-    precompileModule,
-    precompileString;
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    precompileModule = esmDefault(require('../src/precompile'));
-    precompile = precompileModule.precompile;
-    precompileString = precompileModule.precompileString;
-  } else {
-    expect = window.expect;
-    precompile = nunjucks.precompile;
-    precompileString = nunjucks.precompileString;
-  }
 
   describe('precompile', function() {
     it('should return a string', function() {

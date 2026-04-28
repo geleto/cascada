@@ -57,8 +57,9 @@ async function getStaticServer(prt) {
             res.setHeader('Content-Type', 'text/css');
           }
 
-          // For JS files that are not in node_modules and not minified, apply Babel transform
-          if (pathname.endsWith('.js') && !pathname.endsWith('.min.js') && !filePath.includes('node_modules')) {
+          // Browser tests now load ESM test files directly. Avoid Babel's
+          // CommonJS transform for test/source modules served to the browser.
+          if (pathname.endsWith('.js') && !pathname.startsWith('/tests/') && !pathname.startsWith('/src/') && !pathname.endsWith('.min.js') && !filePath.includes('node_modules')) {
             const code = await fs.readFile(filePath, 'utf8');
             const result = await babel.transformAsync(code, {
               filename: filePath,

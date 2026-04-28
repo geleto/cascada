@@ -1,28 +1,8 @@
 'use strict';
 
-var expect;
-var AsyncEnvironment;
-var delay;
-var expectAsyncError;
-
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  const index = esmDefault(require('../../src/index'));
-  AsyncEnvironment = index.AsyncEnvironment;
-  const util = require('../util');
-  delay = util.delay;
-  expectAsyncError = util.expectAsyncError;
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  delay = window.util.delay;
-  expectAsyncError = window.util.expectAsyncError;
-}
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/index.js';
+import {delay, expectAsyncError} from '../util.js';
 
 describe('Sequential Operations in Expressions', function () {
   describe('Sequential Expressions with ! Marker', () => {

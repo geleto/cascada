@@ -1,25 +1,8 @@
 'use strict';
 
-var expect;
-var AsyncEnvironment;
-var delay;
-
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  const index = esmDefault(require('../../src/index'));
-  AsyncEnvironment = index.AsyncEnvironment;
-  const util = require('../util');
-  delay = util.delay;
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  delay = window.util.delay;
-}
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/index.js';
+import {delay} from '../util.js';
 
 describe('Sequential Operations - Two Lock System', function () {
   let env;

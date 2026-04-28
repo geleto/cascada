@@ -1,31 +1,9 @@
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {StringLoader} from '../util.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  var AsyncEnvironment;
-  var StringLoader;
-  var path;
-  var util;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    path = require('path');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    StringLoader = require('../util').StringLoader;
-    util = require('../util');
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    StringLoader = window.util.StringLoader;
-    // eslint-disable-next-line no-unused-vars
-    path = {
-      join: function () {
-        return Array.prototype.join.call(arguments, '/');
-      }
-    };
-    // eslint-disable-next-line no-unused-vars
-    util = window.util;
-  }
 
   describe('Async mode - context binding', function () {
     var env;

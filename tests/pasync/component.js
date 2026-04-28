@@ -2,68 +2,16 @@
 
 /* eslint mocha/max-top-level-suites: "off" */
 
-let expect;
-let AsyncEnvironment;
-let Script;
-let StringLoader;
-let runtimeModule;
-let componentRuntimeModule;
-let InheritanceState;
-let inheritanceStateModule;
-let inheritanceStateHooks;
-let ComponentInstance;
-let inheritanceCallModule;
-let inheritanceCallHooks;
+import expect from 'expect.js';
+import {AsyncEnvironment, Script} from '../../src/environment/environment.js';
+import {StringLoader} from '../util.js';
+import * as runtimeModule from '../../src/runtime/runtime.js';
+import * as componentRuntimeModule from '../../src/runtime/component.js';
+import {ComponentInstance} from '../../src/runtime/component.js';
+import inheritanceStateHooks, {InheritanceState} from '../../src/runtime/inheritance-state.js';
+import inheritanceCallHooks from '../../src/runtime/inheritance-call.js';
 
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  const environment = require('../../src/environment/environment');
-  AsyncEnvironment = environment.AsyncEnvironment;
-  Script = environment.Script;
-  StringLoader = require('../util').StringLoader;
-  runtimeModule = esmDefault(require('../../src/runtime/runtime'));
-  try {
-    const componentRuntime = require('../../src/runtime/component');
-    componentRuntimeModule = componentRuntime;
-    ComponentInstance = componentRuntime.ComponentInstance;
-  } catch (err) {
-    void err;
-    componentRuntimeModule = null;
-    ComponentInstance = null;
-  }
-  try {
-    inheritanceStateModule = require('../../src/runtime/inheritance-state');
-    inheritanceStateHooks = inheritanceStateModule.default || inheritanceStateModule;
-    InheritanceState = inheritanceStateModule.InheritanceState;
-  } catch (err) {
-    void err;
-    InheritanceState = null;
-    inheritanceStateHooks = null;
-  }
-  try {
-    inheritanceCallModule = require('../../src/runtime/inheritance-call');
-    inheritanceCallHooks = inheritanceCallModule.default || inheritanceCallModule;
-  } catch (err) {
-    void err;
-    inheritanceCallModule = null;
-    inheritanceCallHooks = null;
-  }
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  Script = null;
-  StringLoader = window.util.StringLoader;
-  runtimeModule = nunjucks.runtime;
-  componentRuntimeModule = null;
-  InheritanceState = null;
-  ComponentInstance = null;
-  inheritanceCallModule = null;
-}
+const inheritanceCallModule = inheritanceCallHooks;
 
 describe('Phase 8 - Component Method Calls', function () {
   it('should resolve component method return values correctly', async function () {

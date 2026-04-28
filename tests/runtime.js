@@ -1,15 +1,10 @@
+import expect from 'expect.js';
+import util from './util.js';
+
 (function() {
   'use strict';
 
-  var expect, util, finish, render;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    util = require('./util');
-  } else {
-    expect = window.expect;
-    util = window.util;
-  }
+  var finish, render;
 
   finish = util.finish;
   render = util.render;

@@ -491,7 +491,7 @@ function _getMethodLinkedChannels(methodData) {
   );
 }
 
-function getCallableBodyLinkedChannels(methodData, errorContext = null) {
+function getCallableBodyLinkedChannelsImpl(methodData, errorContext = null) {
   const resolvedMethodData = _assertResolvedMethodData(methodData);
   if (resolvedMethodData.super && !_isResolvedMethodData(resolvedMethodData.super)) {
     throw _createInvalidSuperMetadataError(resolvedMethodData, errorContext);
@@ -730,7 +730,7 @@ async function _finishInvocationBuffer(invocationBuffer) {
   await invocationBuffer.getFinishedPromise();
 }
 
-function createInheritanceInvocationCommand(spec) {
+function createInheritanceInvocationCommandImpl(spec) {
   const {
     name,
     label = null,
@@ -973,15 +973,24 @@ function invokeComponentMethod(inheritanceStateValue, methodName, args, context,
 }
 
 const inheritanceCallApi = {
-  createInheritanceInvocationCommand,
+  createInheritanceInvocationCommand: createInheritanceInvocationCommandImpl,
   getMethodData,
   finalizeResolvedMethodMetadata,
   hasLinkedChannelPath,
-  getCallableBodyLinkedChannels,
+  getCallableBodyLinkedChannels: getCallableBodyLinkedChannelsImpl,
   resolveInheritanceSharedChannel,
   invokeInheritedMethod,
   invokeSuperMethod,
   invokeComponentMethod
 };
+
+function createInheritanceInvocationCommand(spec) {
+  return inheritanceCallApi.createInheritanceInvocationCommand.apply(this, arguments);
+}
+
+function getCallableBodyLinkedChannels(methodData, errorContext = null) {
+  return inheritanceCallApi.getCallableBodyLinkedChannels.apply(this, arguments);
+}
+
 export default inheritanceCallApi;
 export { createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, hasLinkedChannelPath, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };

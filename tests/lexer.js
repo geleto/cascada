@@ -1,23 +1,10 @@
+import expect from 'expect.js';
+
+const lib = typeof window !== 'undefined' ? window.nunjucks.lib : await import('../src/lib.js');
+const lexer = typeof window !== 'undefined' ? window.nunjucks.lexer : await import('../src/lexer.js');
+
 (function() {
   'use strict';
-
-  var expect;
-  var lib;
-  var lexer;
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    lib = esmDefault(require('../src/lib'));
-    lexer = esmDefault(require('../src/lexer'));
-  } else {
-    expect = window.expect;
-    lib = nunjucks.lib;
-    lexer = nunjucks.lexer;
-  }
 
   function _hasTokens(ws, tokens, types) {
     var i;

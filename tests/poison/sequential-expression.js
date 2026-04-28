@@ -3,7 +3,6 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import * as runtime from '../../src/runtime/runtime.js';
 import {createPoison, isPoison, isPoisonError} from '../../src/runtime/runtime.js';
 
 /**

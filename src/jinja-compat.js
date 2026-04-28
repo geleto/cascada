@@ -1,3 +1,5 @@
+import lookupApi from './runtime/lookup.js';
+
 function installCompat() {
   'use strict';
 
@@ -20,7 +22,7 @@ function installCompat() {
   var lexer = this.lexer;
 
   var orig_Frame_lookupOrContext = runtime.Frame.prototype.lookupOrContext;
-  var orig_memberLookup = runtime.memberLookup;
+  var orig_memberLookup = lookupApi.memberLookup;
   var orig_Compiler_assertTypes = new Map();
   var orig_Parser_parseAggregate;
   if (compilerClasses.length) {
@@ -34,7 +36,7 @@ function installCompat() {
 
   function uninstall() {
     runtime.Frame.prototype.lookupOrContext = orig_Frame_lookupOrContext;
-    runtime.memberLookup = orig_memberLookup;
+    lookupApi.memberLookup = orig_memberLookup;
     orig_Compiler_assertTypes.forEach((assertType, CompilerClass) => {
       CompilerClass.prototype.assertType = assertType;
       delete CompilerClass.prototype.compileSlice;
@@ -295,7 +297,7 @@ function installCompat() {
   OBJECT_MEMBERS.itervalues = OBJECT_MEMBERS.values;
   OBJECT_MEMBERS.iterkeys = OBJECT_MEMBERS.keys;
 
-  runtime.memberLookup = function memberLookup(obj, val, autoescape) {
+  lookupApi.memberLookup = function memberLookup(obj, val, autoescape) {
     if (arguments.length === 4) {
       return sliceLookup.apply(this, arguments);
     }

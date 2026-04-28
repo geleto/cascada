@@ -1,35 +1,14 @@
+import expect from 'expect.js';
+import {AsyncEnvironment, AsyncTemplate} from '../../src/environment/environment.js';
+import {delay} from '../util.js';
+
 (function () {
   'use strict';
 
-  var expect;
   //var unescape;
-  var AsyncEnvironment;
-  var AsyncTemplate;
   //var StringLoader;
   //var Environment;
   //var lexer;
-  var delay;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    const envModule = require('../../src/environment/environment');
-    AsyncEnvironment = envModule.AsyncEnvironment;
-    AsyncTemplate = envModule.AsyncTemplate;
-    //Environment = require('../../src/environment/environment').Environment;
-    //lexer = require('../../src/lexer');
-    //unescape = require('he').unescape;
-    //StringLoader = require('./pasync-loader');
-    delay = require('../util').delay;
-  } else {
-    expect = window.expect;
-    //unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    AsyncTemplate = nunjucks.AsyncTemplate;
-    //StringLoader = window.StringLoader;
-    //Environment = nunjucks.Environment;
-    //lexer = nunjucks.lexer;
-    delay = window.util.delay;
-  }
 
   describe('Async tags', () => {
     let env;

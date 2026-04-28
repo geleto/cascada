@@ -1,61 +1,26 @@
 'use strict';
 
-let expect;
-let AsyncEnvironment;
-let Script;
-let Context;
-let StringLoader;
-let runtime;
-let runtimeHooks;
-let InheritanceState;
-let inheritanceStateModule;
-let inheritanceStateHooks;
-let inheritanceCallModule;
-let inheritanceCallHooks;
+import expect from 'expect.js';
+import {AsyncEnvironment, Script, Context} from '../../src/environment/environment.js';
+import {StringLoader} from '../util.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import inheritanceStateHooks, {InheritanceState} from '../../src/runtime/inheritance-state.js';
+import inheritanceCallHooks from '../../src/runtime/inheritance-call.js';
+import inheritanceSharedChannelsHooks from '../../src/runtime/inheritance-shared-channels.js';
+import lookupHooks from '../../src/runtime/lookup.js';
 
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  const environment = require('../../src/environment/environment');
-  AsyncEnvironment = environment.AsyncEnvironment;
-  Script = environment.Script;
-  Context = require('../../src/environment/context').Context;
-  StringLoader = require('../util').StringLoader;
-  runtime = esmDefault(require('../../src/runtime/runtime'));
-  runtimeHooks = runtime.default || runtime;
-  try {
-    inheritanceStateModule = require('../../src/runtime/inheritance-state');
-    inheritanceStateHooks = inheritanceStateModule.default || inheritanceStateModule;
-    InheritanceState = inheritanceStateModule.InheritanceState;
-  } catch (err) {
-    void err;
-    InheritanceState = null;
-    inheritanceStateHooks = null;
+const inheritanceCallModule = inheritanceCallHooks;
+const runtimeHooks = {};
+Object.defineProperties(runtimeHooks, {
+  declareInheritanceSharedChannel: {
+    get: () => inheritanceSharedChannelsHooks.declareInheritanceSharedChannel,
+    set: (value) => { inheritanceSharedChannelsHooks.declareInheritanceSharedChannel = value; }
+  },
+  observeInheritanceSharedChannel: {
+    get: () => lookupHooks.observeInheritanceSharedChannel,
+    set: (value) => { lookupHooks.observeInheritanceSharedChannel = value; }
   }
-  try {
-    inheritanceCallModule = require('../../src/runtime/inheritance-call');
-    inheritanceCallHooks = inheritanceCallModule.default || inheritanceCallModule;
-  } catch (err) {
-    void err;
-    inheritanceCallModule = null;
-    inheritanceCallHooks = null;
-  }
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  Script = nunjucks.Script;
-  Context = nunjucks.Context;
-  StringLoader = window.util.StringLoader;
-  runtime = nunjucks.runtime;
-  runtimeHooks = runtime;
-  InheritanceState = null;
-  inheritanceCallModule = null;
-  inheritanceCallHooks = null;
-}
+});
 
 describe('Extends Runtime', function () {
   let env;

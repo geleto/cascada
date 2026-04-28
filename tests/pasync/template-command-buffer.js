@@ -1,40 +1,13 @@
 
+import expect from 'expect.js';
+import {AsyncEnvironment, AsyncTemplate, Context} from '../../src/environment/environment.js';
+import {StringLoader} from '../util.js';
+import {DEFAULT_TEMPLATE_TEXT_OUTPUT} from '../../src/compiler/buffer.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  var AsyncEnvironment;
-  var AsyncTemplate;
-  var Context;
-  var StringLoader;
-  var DEFAULT_TEMPLATE_TEXT_OUTPUT;
-  var runtime;
-  var inheritanceStateRuntime;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    const envModule = require('../../src/environment/environment');
-    AsyncEnvironment = envModule.AsyncEnvironment;
-    AsyncTemplate = envModule.AsyncTemplate;
-    Context = envModule.Context;
-    StringLoader = require('../util').StringLoader;
-    DEFAULT_TEMPLATE_TEXT_OUTPUT = require('../../src/compiler/buffer').DEFAULT_TEMPLATE_TEXT_OUTPUT;
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-    inheritanceStateRuntime = require('../../src/runtime/inheritance-state');
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    AsyncTemplate = nunjucks.AsyncTemplate;
-    Context = nunjucks.Context;
-    StringLoader = window.util.StringLoader;
-    runtime = nunjucks.runtime;
-    inheritanceStateRuntime = null;
-  }
 
   describe('Async template command buffering parity', function () {
     it('should compile async template output to text commands on text output', function () {

@@ -1,36 +1,20 @@
 /* eslint-disable camelcase*/
+import expect from 'expect.js';
+import util from './util.js';
+
+const fs = typeof window === 'undefined' ? await import('fs') : null;
+const {Template, Environment} = typeof window !== 'undefined'
+  ? window.nunjucks
+  : await import('../src/environment/environment.js');
+
 (function () {
   'use strict';
 
-  var expect;
-  var util;
-  var Template;
   var Loader;
-  var Environment;
-  var fs;
   var render;
   var equal;
   var finish;
   var isSlim;
-  var Compiler;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    util = require('./util');
-    Template = require('../src/environment/environment').Template;
-    Environment = require('../src/environment/environment').Environment;
-    Compiler = require('../src/compiler/compiler').Compiler;
-    fs = require('fs');
-  } else {
-    expect = window.expect;
-    util = window.util;
-    Template = nunjucks.Template;
-    Environment = nunjucks.Environment;
-    Compiler = nunjucks.compiler && nunjucks.compiler.Compiler;
-    if (!Compiler && window.nunjucksFull) {
-      Compiler = window.nunjucksFull.compiler && window.nunjucksFull.compiler.Compiler;
-    }
-  }
 
   render = util.render;
   equal = util.equal;

@@ -1,15 +1,10 @@
+import util from './util.js';
+
 (function() {
   'use strict';
 
-  var util;
   var equal;
   var finish;
-
-  if (typeof require !== 'undefined') {
-    util = require('./util');
-  } else {
-    util = window.util;
-  }
 
   equal = util.jinjaEqual;
   finish = util.finish;

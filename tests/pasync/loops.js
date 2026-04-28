@@ -1,41 +1,17 @@
+import expect from 'expect.js';
+import {StringLoader, delay} from '../util.js';
+
+const {AsyncEnvironment} = typeof window !== 'undefined'
+  ? window.nunjucks
+  : await import('../../src/environment/environment.js');
+const runtime = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../../src/runtime/runtime.js');
+const {isPoisonError} = runtime;
 
 (function () {
   'use strict';
 
-  var expect;
   //var unescape;
-  var AsyncEnvironment;
   //var Environment;
-  var delay;
-  var StringLoader;
-  var isPoisonError;
-  var runtime;
-
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    //Environment = require('../../src/environment/environment').Environment;
-    //unescape = require('he').unescape;
-    delay = require('../util').delay;
-    StringLoader = require('../util').StringLoader;
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-    isPoisonError = runtime.isPoisonError;
-  } else {
-    expect = window.expect;
-    //unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    //Environment = nunjucks.Environment;
-    delay = window.util.delay;
-    StringLoader = window.util.StringLoader;
-    runtime = nunjucks.runtime;
-    isPoisonError = runtime.isPoisonError;
-  }
 
   describe('Async mode - loops', () => {
     let env;

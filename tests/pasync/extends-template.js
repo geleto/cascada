@@ -1,19 +1,8 @@
 'use strict';
 
-let expect;
-let AsyncEnvironment;
-let StringLoader;
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  const environment = require('../../src/environment/environment');
-  AsyncEnvironment = environment.AsyncEnvironment;
-  StringLoader = require('../util').StringLoader;
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  StringLoader = window.util.StringLoader;
-}
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {StringLoader} from '../util.js';
 
 describe('Template Extends', function () {
   describe('Phase 9 - Generic Template Root Equivalence', function () {

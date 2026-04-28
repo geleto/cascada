@@ -1,25 +1,15 @@
+import expect from 'expect.js';
+import {delay} from '../util.js';
+
+const {AsyncEnvironment} = typeof window !== 'undefined'
+  ? window.nunjucks
+  : await import('../../src/environment/environment.js');
+
 (function () {
   'use strict';
 
-  var expect;
   //var unescape;
-  var AsyncEnvironment;
   //var Environment;
-  var delay;
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    //Environment = require('../../src/environment/environment').Environment;
-    //unescape = require('he').unescape;
-    delay = require('../util').delay;
-  } else {
-    expect = window.expect;
-    //unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    //Environment = nunjucks.Environment;
-    delay = window.util.delay;
-  }
 
   describe('Cascada Script: Call blocks (assignment)', function () {
     let env;
