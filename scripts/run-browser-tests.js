@@ -83,6 +83,7 @@ async function runTestFile(browser, port, testFile) {
     if (!response.ok()) {
       throw new Error(`Failed to load ${url}: ${response.status()} ${response.statusText()}`);
     }
+    await page.waitForFunction(() => window.cascadaBrowserTestsLoaded, undefined, { timeout: 120000 });
 
     await page.exposeFunction('logProgress', (message) => {
       console.log(`${testFile} progress:`, message);
@@ -126,7 +127,7 @@ async function runTestFile(browser, port, testFile) {
       }
     });
 
-    const testResult = await page.waitForFunction(() => window.testResultsReceived, { timeout: 120000 });
+    const testResult = await page.waitForFunction(() => window.testResultsReceived, undefined, { timeout: 120000 });
     const resultValue = await testResult.jsonValue();
 
     await coverageSavedPromise;// Wait for coverage data to be saved before proceeding

@@ -47,3 +47,5 @@ describe('precompiled runtime entry', function() {
     }
   });
 });
+
+window.cascadaBrowserTestsLoaded = true;

@@ -1,5 +1,3 @@
-
-import waterfall from 'a-sync-waterfall';
 import * as lib from '../lib.js';
 import * as filters from '../filters.js';
 import * as tests from '../tests.js';
@@ -11,6 +9,57 @@ import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
 
 let DefaultFileSystemLoader = null;
 let DefaultWebLoader = null;
+
+function executeWaterfallAsync(fn) {
+  if (typeof setImmediate === 'function') {
+    setImmediate(fn);
+  } else {
+    queueMicrotask(fn);
+  }
+}
+
+function makeWaterfallIterator(tasks) {
+  function makeCallback(index) {
+    const fn = function(...args) {
+      if (tasks.length) {
+        tasks[index](...args);
+      }
+      return fn.next();
+    };
+    fn.next = function() {
+      return index < tasks.length - 1 ? makeCallback(index + 1) : null;
+    };
+    return fn;
+  }
+  return makeCallback(0);
+}
+
+function waterfall(tasks, callback = function() {}, forceAsync = false) {
+  const schedule = forceAsync ? executeWaterfallAsync : (fn) => fn();
+  if (!Array.isArray(tasks)) {
+    callback(new Error('First argument to waterfall must be an array of functions'));
+    return;
+  }
+  if (!tasks.length) {
+    callback();
+    return;
+  }
+
+  function wrapIterator(iterator) {
+    return function(err, ...values) {
+      if (err) {
+        callback(err, ...values);
+        callback = function() {};
+        return;
+      }
+      const next = iterator.next();
+      values.push(next ? wrapIterator(next) : callback);
+      schedule(() => iterator(...values));
+    };
+  }
+
+  wrapIterator(makeWaterfallIterator(tasks))();
+}
 
 function setDefaultLoaderClasses(FileSystemLoader, WebLoader) {
   DefaultFileSystemLoader = FileSystemLoader;

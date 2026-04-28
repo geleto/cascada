@@ -1,5 +1,3 @@
-import connect from 'connect';
-import serveStatic from 'serve-static';
 import http from 'http';
 import net from 'net';
 import path from 'path';
@@ -10,6 +8,22 @@ import {fileURLToPath} from 'url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const logMissingFiles = process.env.CASCADA_TEST_SERVER_LOG_404 === '1';
 const serveDistForSrc = process.env.CASCADA_TEST_DIST === '1';
+
+function getContentType(pathname) {
+  if (pathname.endsWith('.js') || pathname.endsWith('.min.js')) {
+    return 'application/javascript';
+  }
+  if (pathname.endsWith('.html')) {
+    return 'text/html';
+  }
+  if (pathname.endsWith('.css')) {
+    return 'text/css';
+  }
+  if (pathname.endsWith('.json')) {
+    return 'application/json';
+  }
+  return null;
+}
 
 async function findAvailablePort(startPort = 3000) {
   return new Promise((resolve, reject) => {
@@ -38,10 +52,7 @@ async function getStaticServer(prt) {
   const port = typeof prt === 'undefined' ? await findAvailablePort() : prt;
 
   try {
-    const app = connect();
-
-    // Middleware to handle all requests
-    app.use(async (req, res, next) => {
+    const app = async (req, res) => {
       const {pathname} = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       const servedPathname = serveDistForSrc && pathname.startsWith('/src/')
         ? `/dist/${pathname.slice('/src/'.length)}`
@@ -52,13 +63,9 @@ async function getStaticServer(prt) {
         const stats = await fs.stat(filePath);
 
         if (stats.isFile()) {
-          // Set correct MIME type for all files
-          if (pathname.endsWith('.js') || pathname.endsWith('.min.js')) {
-            res.setHeader('Content-Type', 'application/javascript');
-          } else if (pathname.endsWith('.html')) {
-            res.setHeader('Content-Type', 'text/html');
-          } else if (pathname.endsWith('.css')) {
-            res.setHeader('Content-Type', 'text/css');
+          const contentType = getContentType(pathname);
+          if (contentType) {
+            res.setHeader('Content-Type', contentType);
           }
 
           const shouldInstrument =
@@ -87,8 +94,9 @@ async function getStaticServer(prt) {
             res.end(fileContent);
           }
         } else {
-          // If it's not a file, move to the next middleware
-          next();
+          res.statusCode = 404;
+          res.setHeader('Content-Type', 'text/plain');
+          res.end('404 Not Found');
         }
       } catch (error) {
         if (error.code === 'ENOENT') {
@@ -105,10 +113,7 @@ async function getStaticServer(prt) {
           res.end('500 Internal Server Error');
         }
       }
-    });
-
-    // Fallback static file serving
-    app.use(serveStatic(staticRoot));
+    };
 
     return new Promise((resolve) => {
       const server = http.createServer(app);

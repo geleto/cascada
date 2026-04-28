@@ -36,3 +36,5 @@ await import('../filters.js');
 await import('../globals.js');
 await import('../jinja-compat.js');
 await import('../tests.js');
+
+window.cascadaBrowserTestsLoaded = true;

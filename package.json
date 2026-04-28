@@ -26,8 +26,6 @@
   ],
   "homepage": "https://github.com/geleto/cascada",
   "dependencies": {
-    "a-sync-waterfall": "^1.0.1",
-    "asap": "^2.0.6",
     "chokidar": "^4.0.3",
     "commander": "^14.0.0"
   },
@@ -36,8 +34,6 @@
     "@eslint/js": "^9.28.0",
     "babel-plugin-istanbul": "^7.0.0",
     "c8": "^10.1.3",
-    "connect": "^3.7.0",
-    "cpy-cli": "^5.0.0",
     "cross-env": "^7.0.3",
     "docsify-cli": "^4.4.4",
     "dummy-pkg": "file:tests/test-node-pkgs/dummy-pkg",
@@ -54,7 +50,6 @@
     "madge": "^8.0.0",
     "mocha": "^11.1.0",
     "playwright": "^1.52.0",
-    "serve-static": "^2.2.0",
     "supertest": "*",
     "tiny-chalk": "^3.0.2"
   },
@@ -70,9 +65,9 @@
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
     "clean": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist', {recursive: true, force: true})\"",
-    "build:types": "cpy src/index.d.ts dist/types/ --flat && cpy src/precompiled/index.d.ts dist/types/precompiled/ --flat",
-    "build:docs": "cpy docs/cascada/script.md README.md dist/docs/ --flat",
-    "build": "npm run clean && npm run lint && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/ && npm run build:docs",
+    "build:types": "node scripts/copy-build-assets.js types",
+    "build:docs": "node scripts/copy-build-assets.js docs",
+    "build": "npm run clean && npm run lint && npm run build:esm && npm run build:types && node scripts/copy-build-assets.js bin && npm run build:docs",
     "build:esm": "node scripts/build-esm.mjs",
     "test:quick": "npm run mocha",
     "test:esm": "npm run mocha",
