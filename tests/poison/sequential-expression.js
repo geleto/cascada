@@ -1,5 +1,11 @@
 
 'use strict';
+
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import {createPoison, isPoison, isPoisonError} from '../../src/runtime/runtime.js';
+
 /**
  * Integration tests for sequential operations with poisoning system
  *
@@ -11,33 +17,6 @@
  * 5. Complex Expression Patterns
  * 6. Edge Cases and Error Aggregation
  */
-
-let expect;
-let runtime;
-let createPoison;
-let isPoisonError;
-let AsyncEnvironment;
-let isPoison;
-
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  runtime = esmDefault(require('../../src/runtime/runtime'));
-  createPoison = runtime.createPoison;
-  isPoisonError = runtime.isPoisonError;
-  isPoison = runtime.isPoison;
-  AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-} else {
-  expect = window.expect;
-  createPoison = nunjucks.runtime.createPoison;
-  isPoisonError = nunjucks.runtime.isPoisonError;
-  isPoison = nunjucks.runtime.isPoison;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-}
 
 describe('Sequential Expression Poisoning', function () {
   let env;

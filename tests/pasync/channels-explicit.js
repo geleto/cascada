@@ -1,27 +1,8 @@
 'use strict';
 
-let expect;
-let AsyncEnvironment;
-let createPoison;
-let isPoisonError;
-
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  const runtime = esmDefault(require('../../src/runtime/runtime'));
-  createPoison = runtime.createPoison;
-  isPoisonError = runtime.isPoisonError;
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  createPoison = nunjucks.runtime.createPoison;
-  isPoisonError = nunjucks.runtime.isPoisonError;
-}
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
 
 describe('Cascada Script: Explicit Channel Declarations', function () {
   let env;
@@ -2341,4 +2322,3 @@ describe('Cascada Script: Explicit Channel Declarations', function () {
 
   });
 });
-

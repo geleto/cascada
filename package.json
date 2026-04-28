@@ -91,7 +91,8 @@
   },
   "scripts": {
     "postinstall": "node scripts/dev-install.js",
-    "mocha": "cross-env NODE_ENV=test mocha --check-leaks -R spec --require @babel/register 'tests/*.js' 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
+    "mocha": "npm run mocha:legacy && npm run test:esm",
+    "mocha:legacy": "cross-env NODE_ENV=test mocha --check-leaks -R spec --require @babel/register 'tests/*.js' 'tests/pasync/**/*.js' 'tests/poison/**/*.js' --ignore tests/express.js --ignore tests/phase3-empty-loops.js --ignore tests/phase5-while-generator.js --ignore tests/phase6-integration.js --ignore tests/script-lexer.js --ignore tests/script-transpiler.js --ignore tests/pasync/checks.js --ignore tests/pasync/channel-errors.js --ignore tests/pasync/channels-explicit.js --ignore tests/pasync/output-data-methods.js --ignore tests/pasync/path-assignment.js --ignore tests/pasync/return.js --ignore tests/pasync/script-output.js --ignore tests/pasync/script.js --ignore \"tests/poison/**/*.js\"",
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
     "clean": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist', {recursive: true, force: true})\"",
@@ -102,6 +103,7 @@
     "build": "npm run clean && npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/ && npm run build:docs",
     "build:esm": "node scripts/build-esm.mjs",
     "test:quick": "npm run mocha",
+    "test:esm": "mocha --check-leaks -R spec tests/express.js tests/phase3-empty-loops.js tests/phase5-while-generator.js tests/phase6-integration.js tests/script-lexer.js tests/script-transpiler.js tests/pasync/checks.js tests/pasync/channel-errors.js tests/pasync/channels-explicit.js tests/pasync/output-data-methods.js tests/pasync/path-assignment.js tests/pasync/return.js tests/pasync/script-output.js tests/pasync/script.js \"tests/poison/**/*.js\"",
     "test:node": "cross-env NODE_ENV=test nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "test:browser": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/run-browser-tests.js",
     "test:pasync": "cross-env NODE_ENV=test nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",

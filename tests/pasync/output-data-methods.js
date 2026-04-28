@@ -1,15 +1,7 @@
 'use strict';
 
-let expect;
-let AsyncEnvironment;
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-}
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
 
 describe('Cascada Script: @data String and Array Methods', function () {
   let env;

@@ -1,12 +1,12 @@
 'use strict';
 
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../../src/environment/environment';
-import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeFatalError} from '../../src/runtime/errors';
-import {TextCommand} from '../../src/runtime/channels/text';
-import {VarCommand} from '../../src/runtime/channels/var';
-import {DataCommand} from '../../src/runtime/channels/data';
-import {SequenceCallCommand} from '../../src/runtime/channels/sequence';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeFatalError} from '../../src/runtime/errors.js';
+import {TextCommand} from '../../src/runtime/channels/text.js';
+import {VarCommand} from '../../src/runtime/channels/var.js';
+import {DataCommand} from '../../src/runtime/channels/data.js';
+import {SequenceCallCommand} from '../../src/runtime/channels/sequence.js';
 
 import {
   Channel,
@@ -16,10 +16,10 @@ import {
   SequenceChannel,
   inspectTargetForErrors,
   createChannel,
-} from '../../src/runtime/channels';
+} from '../../src/runtime/channels/index.js';
 
-import {createCommandBuffer} from '../../src/runtime/command-buffer';
-import {createArray} from '../../src/runtime/resolve';
+import {createCommandBuffer} from '../../src/runtime/command-buffer.js';
+import {createArray} from '../../src/runtime/resolve.js';
 describe('channel errors', function () {
   describe('channel commands step2 poison encoding', function () {
     it('propagates RuntimeFatalError instead of degrading it into poison during argument resolution', async () => {

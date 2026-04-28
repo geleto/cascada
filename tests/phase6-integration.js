@@ -1,8 +1,8 @@
 'use strict';
 
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../src/environment/environment';
-import * as runtime from '../src/runtime/runtime';
+import {AsyncEnvironment} from '../src/environment/environment.js';
+import * as runtime from '../src/runtime/runtime.js';
 
 const {createPoison, isPoisonError} = runtime;
 

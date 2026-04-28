@@ -1,30 +1,11 @@
 
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  let runtime;
-  let createPoison;
-  let isPoisonError;
-  let AsyncEnvironment;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-    createPoison = runtime.createPoison;
-    isPoisonError = runtime.isPoisonError;
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  } else {
-    expect = window.expect;
-    createPoison = nunjucks.runtime.createPoison;
-    isPoisonError = nunjucks.runtime.isPoisonError;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-  }
 
   describe('Iterator Functions Poison Handling - Integration tests (basic)', () => {
     let env;
@@ -673,4 +654,3 @@
     });
   });
 })();
-

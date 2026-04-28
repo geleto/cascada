@@ -1,31 +1,12 @@
 
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {StringLoader} from '../util.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import {isPoisonError} from '../../src/runtime/runtime.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  let AsyncEnvironment;
-  let StringLoader;
-  let runtime;
-  let isPoisonError;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    StringLoader = require('../util').StringLoader;
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-    isPoisonError = runtime.isPoisonError;
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    StringLoader = window.util.StringLoader;
-    runtime = nunjucks.runtime;
-    isPoisonError = nunjucks.runtime.isPoisonError;
-  }
 
   describe('Poisoning integration Tests', () => {
     let env;

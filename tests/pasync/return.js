@@ -1,27 +1,9 @@
 'use strict';
 
-let expect;
-let AsyncEnvironment;
-let runtime;
-let scriptTranspiler;
-
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  const environment = require('../../src/environment/environment');
-  AsyncEnvironment = environment.AsyncEnvironment;
-  runtime = esmDefault(require('../../src/runtime/runtime'));
-  scriptTranspiler = require('../../src/script/script-transpiler');
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  runtime = nunjucks.runtime;
-  scriptTranspiler = nunjucks.scriptTranspiler;
-}
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import * as scriptTranspiler from '../../src/script/script-transpiler.js';
 
 describe('Cascada Script return', function () {
   let env;

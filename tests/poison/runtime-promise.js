@@ -10,32 +10,12 @@
  * With the fixes, all tests should pass with full error context.
  */
 
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  let AsyncEnvironment;
-  let isPoisonError;
-  let createPoison;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    isPoisonError = esmDefault(require('../../src/runtime/runtime')).isPoisonError;
-    const runtime = esmDefault(require('../../src/runtime/runtime'));
-    createPoison = runtime.createPoison;
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    isPoisonError = nunjucks.runtime.isPoisonError;
-    createPoison = nunjucks.createPoison;
-  }
-
 
   describe('RuntimePromise Integration Tests', () => {
     let env;

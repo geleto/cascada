@@ -1,24 +1,10 @@
 
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import * as runtime from '../../src/runtime/runtime.js';
+
 (function () {
   'use strict';
-
-  var expect;
-  var AsyncEnvironment;
-  var runtime;
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    runtime = nunjucks.runtime;
-  }
 
   describe('Peek Operator (#)', () => {
     let env;

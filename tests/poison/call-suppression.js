@@ -1,39 +1,13 @@
 
+import expect from 'expect.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../../src/runtime/runtime.js';
+
 (function () {
   'use strict';
 
-  var expect;
-  let runtime;
-  let createPoison;
-  let isPoison;
-  let isPoisonError;
   //let PoisonError;
-  let collectErrors;
-  let Frame;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-    createPoison = runtime.createPoison;
-    isPoison = runtime.isPoison;
-    isPoisonError = runtime.isPoisonError;
-    //PoisonError = runtime.PoisonError;
-    collectErrors = runtime.collectErrors;
-    Frame = runtime.Frame;
-  } else {
-    expect = window.expect;
-    createPoison = nunjucks.runtime.createPoison;
-    isPoison = nunjucks.runtime.isPoison;
-    isPoisonError = nunjucks.runtime.isPoisonError;
-    //PoisonError = nunjucks.runtime.PoisonError;
-    collectErrors = nunjucks.runtime.collectErrors;
-    Frame = nunjucks.runtime.Frame;
-  }
+  //PoisonError = runtime.PoisonError;
 
   const mockErrorContext = { lineno: 1, colno: 1, errorContextString: 'test', path: 'test' };
 

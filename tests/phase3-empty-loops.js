@@ -1,7 +1,7 @@
 'use strict';
 
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../src/environment/environment';
+import {AsyncEnvironment} from '../src/environment/environment.js';
 
 describe('Phase 3: Empty Loop Handling', () => {
   let env;

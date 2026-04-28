@@ -1,36 +1,13 @@
 
+import expect from 'expect.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import {createPoison, isPoison, PoisonError, collectErrors} from '../../src/runtime/runtime.js';
+
 (function () {
   'use strict';
 
-  var expect;
   //var unescape;
   //var Environment;
-  let runtime;
-  let createPoison;
-  let isPoison;
-  let PoisonError;
-  let collectErrors;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    runtime = esmDefault(require('../../src/runtime/runtime'));
-    createPoison = runtime.createPoison;
-    isPoison = runtime.isPoison;
-    PoisonError = runtime.PoisonError;
-    collectErrors = runtime.collectErrors;
-  } else {
-    expect = window.expect;
-    createPoison = nunjucks.runtime.createPoison;
-    isPoison = nunjucks.runtime.isPoison;
-    PoisonError = nunjucks.runtime.PoisonError;
-    collectErrors = nunjucks.runtime.collectErrors;
-  }
-
 
   describe('Error Propagation Dataflow Poisoning - Unit Tests', () => {
     describe('createPoison and isPoison', () => {

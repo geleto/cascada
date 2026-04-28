@@ -1,35 +1,10 @@
 'use strict';
 
-let expect;
-let AsyncEnvironment;
-let runtime;
-let createPoison;
-let isPoison;
-let isPoisonError;
-let transpiler;
-
-
-function esmDefault(module) {
-  return module.default || module;
-}
-
-if (typeof require !== 'undefined') {
-  expect = require('expect.js');
-  AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  runtime = esmDefault(require('../../src/runtime/runtime'));
-  createPoison = require('../../src/runtime/errors').createPoison;
-  isPoison = require('../../src/runtime/errors').isPoison;
-  isPoisonError = require('../../src/runtime/errors').isPoisonError;
-  transpiler = require('../../src/script/script-transpiler');
-} else {
-  expect = window.expect;
-  AsyncEnvironment = nunjucks.AsyncEnvironment;
-  runtime = nunjucks.runtime;
-  createPoison = nunjucks.createPoison;
-  isPoisonError = nunjucks.isPoisonError;
-  isPoison = nunjucks.isPoison;
-  transpiler = nunjucks.transpiler;
-}
+import expect from 'expect.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import * as runtime from '../../src/runtime/runtime.js';
+import {createPoison, isPoison, isPoisonError} from '../../src/runtime/errors.js';
+import * as transpiler from '../../src/script/script-transpiler.js';
 
 describe('Cascada Script: Variable Path Assignments (set_path)', function () {
   let env;

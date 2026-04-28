@@ -1,24 +1,8 @@
+import expect from 'expect.js';
+import cascada, {AsyncEnvironment} from '../../src/index.js';
+
 (function () {
   'use strict';
-
-  var cascada;
-  var expect;
-  var AsyncEnvironment;
-
-
-  function esmDefault(module) {
-    return module.default || module;
-  }
-
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    cascada = esmDefault(require('../../src/index'));
-    AsyncEnvironment = cascada.AsyncEnvironment;
-  } else {
-    expect = window.expect;
-    cascada = window.cascada;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-  }
 
   function throwError(message) {
     throw new Error(message);

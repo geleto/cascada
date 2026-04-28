@@ -1,14 +1,8 @@
 import expect from 'expect.js';
-import {Frame} from '../../src/runtime/frame';
-import {ENABLE_FRAME_BALANCE_CHECK} from '../../src/runtime/checks';
+import {Frame} from '../../src/runtime/frame.js';
 
 describe('Frame Balance Validation', function () {
   it('should validate balanced push/pop operations', function () {
-    if (!ENABLE_FRAME_BALANCE_CHECK) {
-      this.skip();
-      return;
-    }
-
     // Simulate runtime environment initialization logic if needed
     // The frame itself should handle its own depth tracking if initialized correctly
 
@@ -55,11 +49,6 @@ describe('Frame Balance Validation', function () {
   });
 
   it('should detect frame depth mismatch', function () {
-    if (!ENABLE_FRAME_BALANCE_CHECK) {
-      this.skip();
-      return;
-    }
-
     const root = new Frame(null, false);
     root._runtimeDepth = 0;
 
@@ -75,11 +64,6 @@ describe('Frame Balance Validation', function () {
   });
 
   it('should detect pop without parent (root pop)', function () {
-    if (!ENABLE_FRAME_BALANCE_CHECK) {
-      this.skip();
-      return;
-    }
-
     const root = new Frame(null, false);
     root._runtimeDepth = 0;
 
@@ -90,11 +74,6 @@ describe('Frame Balance Validation', function () {
   });
 
   it('should handle nested frames correctly', function () {
-    if (!ENABLE_FRAME_BALANCE_CHECK) {
-      this.skip();
-      return;
-    }
-
     const root = new Frame(null, false);
     root._runtimeDepth = 0;
 
