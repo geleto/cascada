@@ -56,6 +56,7 @@ function nodeRunArgs(args) {
     '--reporter=html',
     '--reporter=text',
     '--reporter=json',
+    process.execPath,
     'scripts/run-node-tests.js'
   ]);
   const nodeCode = await run(node.cmd, node.args, { env: nodeDistEnv });
