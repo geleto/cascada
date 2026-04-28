@@ -10,15 +10,15 @@
 
 **Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
-It uses syntax and language constructs that are instantly familiar to Python and JavaScript developers, while offering language-level support for boilerplate-free parallel workflows, explicit control over side effects, deterministic output construction, and dataflow-based error handling with recovery rollbacks.
+It uses syntax and language constructs that are instantly familiar to Python and JavaScript developers, while offering language-level support for boilerplate-free concurrent workflows, explicit control over side effects, deterministic output construction, and dataflow-based error handling with recovery rollbacks.
 
 Cascada inverts the traditional async model:
 
 * ⚡ **Parallel by default**  -  Independent operations — variable assignments, function calls, loop iterations — execute concurrently without `async`, `await`, or promise management.
 * 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
-* ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs — the rest of the script stays parallel.
+* ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs — the rest of the script stays concurrent.
 * 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
-* ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated parallel work to continue safely.
+* ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated concurrent work to continue safely.
 
 Cascada Script is particularly well suited for:
 
@@ -27,13 +27,13 @@ Cascada Script is particularly well suited for:
 * Agent systems and planning patterns
 * High-throughput I/O coordination
 
-In short, Cascada lets developers **write clear, linear logic** while the engine handles **parallel execution, ordering guarantees, and error propagation** automatically.
+In short, Cascada lets developers **write clear, linear logic** while the engine handles **concurrent execution, ordering guarantees, and error propagation** automatically.
 
 **What makes Cascada Script remarkable is how unremarkable it looks.** Despite executing concurrently by default, it uses the same familiar constructs found in Python and JavaScript — no `async`, no `await`, no callbacks, no promise chains. Here's what a real concurrent workflow looks like:
 
 ```javascript
 var user  = fetchUser(userId)   // ┐ start immediately,
-var posts = fetchPosts(userId)  // ┘ run in parallel
+var posts = fetchPosts(userId)  // ┘ run concurrently
 
 // evaluates as soon as 'user' resolves — posts may still be fetching
 var role = "admin" if user.isAdmin else "member"
@@ -63,7 +63,7 @@ Every construct above runs exactly as you'd read it — the engine orchestrates 
 
 - [Cascada Script Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to Cascada Script's syntax, features, and how it solves real async programming challenges
 
-- [The Kitchen Chef's Guide to Concurrent Programming with Cascada](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes parallel execution feel as natural as following a recipe
+- [The Kitchen Chef's Guide to Concurrent Programming with Cascada](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes concurrent execution feel as natural as following a recipe
 
 **Learning by Example:**
 - [Casai Examples Repository](https://github.com/geleto/casai-examples) - Explore practical examples showing how Cascada and Casai (an AI orchestration framework built on Cascada) turn complex agentic workflows into readable, linear code - no visual node graphs or async spaghetti, just clear logic that tells a story (work in progress)
@@ -90,7 +90,7 @@ npm install cascada-engine
 
 ### The script
 
-Write plain, familiar logic. Cascada runs independent operations in parallel automatically:
+Write plain, familiar logic. Cascada runs independent operations concurrently:
 
 ```javascript
 const script = `
@@ -104,7 +104,7 @@ const script = `
 `;
 ```
 
-No `async`, no `await`. `fetchUser` and `fetchPosts` run in parallel — Cascada handles it.
+No `async`, no `await`. `fetchUser` and `fetchPosts` run concurrently — Cascada handles it.
 
 ### Running a script
 
@@ -130,7 +130,7 @@ To understand how Cascada achieves effortless concurrency, read the next section
 
 ## Cascada's Execution Model
 
-Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts - it explains why the language behaves the way it does and how to leverage its parallel capabilities.
+Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts - it explains why the language behaves the way it does and how to leverage its concurrency.
 
 #### ⚡ Parallel by default
 Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**. Independent variable assignments, function calls, loop iterations, and function invocations all run concurrently — no special syntax required.
@@ -143,10 +143,10 @@ Forget await. Forget .then(). Forget manually tracking which variables are promi
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
 #### ➡️ Implicitly Parallel, Explicitly Sequential
-While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical — they sequence only what they touch, without affecting the parallelism of the rest of the script.
+While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical — they sequence only what they touch, without affecting the concurrency of the rest of the script.
 
 #### 📋 Execution is chaotic, but the result is orderly
-While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
+While independent operations run concurrently and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
 
 #### ☣️ Dataflow Poisoning - Errors that flow like data
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. Poisoning is conservative with control flow: if an `if` condition is an Error Value, neither branch runs and every variable that either branch would have modified becomes poisoned. You can detect and repair these errors using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
@@ -159,7 +159,7 @@ Cascada Script offers a modern, expressive syntax designed to be instantly famil
 
 ### Features at a Glance
 
-What makes Cascada Script remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages - but without the async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic, the engine handles the parallelism.
+What makes Cascada Script remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages - but without the async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic, the engine handles the concurrency.
 
 | Feature | Syntax | Notes |
 |---|---|---|
@@ -175,7 +175,7 @@ What makes Cascada Script remarkable is how unremarkable it looks. Despite execu
 | Inline if (ternary) | `a if condition else b` | Python-style conditional expression |
 | Conditionals | `if / elif / else / endif` | Standard branching |
 | Switch | `switch / case / default / endswitch` | Multi-way branching |
-| Parallel loop | `for item in array`, `for key, value in object`, `for element in iterator` | Iterations run concurrently |
+| Concurrent loop | `for item in array`, `for key, value in object`, `for element in iterator` | Iterations run concurrently |
 | Sequential loop | `each item in list / endeach` | Iterations run in strict order |
 | While loop | `while condition / endwhile` | Condition-based loop |
 | Filters | `value \| filterName(args)` | Transform values with built-in or custom filters |
@@ -189,9 +189,9 @@ Everything above is the language you already know. Cascada adds a small set of s
 
 | Cascada Feature | Syntax | Purpose |
 |---|---|---|
-| Implicit parallelism | *(no syntax)* | Independent operations run concurrently automatically |
-| `text` channel | `text log`, `log("line")` | Generate text from parallel code, assembled in source order |
-| `data` channel | `data out`, `out.items.push(item)` | Build structured objects and arrays from parallel code - writes are concurrent, result is in source order |
+| Implicit concurrency | *(no syntax)* | Independent operations run concurrently automatically |
+| `text` channel | `text log`, `log("line")` | Generate text from concurrent code, assembled in source order |
+| `data` channel | `data out`, `out.items.push(item)` | Build structured objects and arrays from concurrent code - writes are concurrent, result is in source order |
 | `sequence` channel | `sequence db = services.db`, `var user = db.getUser(1)` | Sequential reads and calls on an external object |
 | Sequential operator | `obj!.method()`, `obj!.prop` | Enforce strict execution order on a context object path |
 | Guard | `guard [targets] / recover [err] / endguard` | Transaction-like block: auto-restores state on error |
@@ -273,7 +273,7 @@ nums[0] = 99
 copy[0]  // 1 - copy is independent
 ```
 
-This ensures parallel operations never interfere—each variable owns its data independently.
+This ensures concurrent operations never interfere—each variable owns its data independently.
 
 **Performance Note**
 
@@ -308,21 +308,21 @@ return {
 
 Direct assignment (`=` and property `=`) is the safe, idiomatic way to update values in Cascada. **Mutation methods** - methods that modify an existing value in-place rather than producing a new one - need more care. The main unsafe cases are the familiar JavaScript array mutators: `.push()`, `.pop()`, `.shift()`, `.unshift()`, `.splice()`, `.sort()`, `.reverse()`, `.fill()`, and `.copyWithin()`. Treat similar in-place methods on custom objects the same way: they are **side effects** in exactly the same sense as writing to a database or calling a stateful external service.
 
-The problem is not "methods are always forbidden". The problem is **concurrent mutation of the same value**. If only one execution path is mutating a local value, ordinary JavaScript methods like `items.push(x)` are fine. But when parallel branches can touch the same `var`, these methods become race-prone.
+The problem is not "methods are always forbidden". The problem is **concurrent mutation of the same value**. If only one execution path is mutating a local value, ordinary JavaScript methods like `items.push(x)` are fine. But when concurrent branches can touch the same `var`, these methods become race-prone.
 
-Calling a mutation method on a plain `var` inside a parallel `for` loop is unsafe - iterations run concurrently, so whichever branch finishes last wins and source-code order is not preserved:
+Calling a mutation method on a plain `var` inside a concurrent `for` loop is unsafe - iterations run concurrently, so whichever branch finishes last wins and source-code order is not preserved:
 
 ```javascript
-// ❌ UNSAFE - parallel iterations race on the same var
+// ❌ UNSAFE - concurrent iterations race on the same var
 var items = []
 for id in ids
   items.push(fetchItem(id))  // order not guaranteed
 endfor
 ```
 
-If you truly do not care about preserving source order, a plain mutable `var` may still be acceptable in non-concurrent code paths. But when multiple parallel branches build a collection, do not mutate one shared `var` from all branches. Use one of these ordering tools instead:
+If you truly do not care about preserving source order, a plain mutable `var` may still be acceptable in non-concurrent code paths. But when multiple concurrent branches build a collection, do not mutate one shared `var` from all branches. Use one of these ordering tools instead:
 
-- Use a `data` channel when parallel branches are assembling an array or object and the final value should be deterministic.
+- Use a `data` channel when concurrent branches are assembling an array or object and the final value should be deterministic.
 - Use an `each` loop when every iteration must finish before the next one starts.
 - Use the `!` operator when the thing being mutated is a stateful object from the render context, such as a database handle, queue, file writer, or other external service.
 
@@ -336,7 +336,7 @@ endfor
 return result.snapshot()
 ```
 
-Use the `data` channel when you are assembling arrays or objects from parallel code, whether order matters strictly or you just want to avoid shared-mutation races entirely.
+Use the `data` channel when you are assembling arrays or objects from concurrent code, whether order matters strictly or you just want to avoid shared-mutation races entirely.
 
 **`each` loop (sequential iteration)** - runs one iteration at a time, making mutation methods on a plain `var` safe:
 ```javascript
@@ -350,13 +350,13 @@ endeach
 ```javascript
 // 'collection' is a context object
 for id in ids
-  collection!.push(fetchItem(id))  // sequential; rest of the loop still runs in parallel
+  collection!.push(fetchItem(id))  // sequential; rest of the loop still runs concurrently
 endfor
 ```
 
 **Scoping: No Reuse of Visible Names**
 
-You cannot declare a variable in an inner scope (e.g., inside a `for` loop or `if` block) if a variable with the same name is already declared in an outer scope. This prevents accidental overwrites in parallel execution.
+You cannot declare a variable in an inner scope (e.g., inside a `for` loop or `if` block) if a variable with the same name is already declared in an outer scope. This prevents accidental overwrites in concurrent execution.
 
 ```javascript
 var item = "parent"
@@ -528,7 +528,7 @@ endeach
 
 ## Control Flow
 
-This section covers control flow constructs. Remember that Cascada's parallel-by-default execution means loops and conditionals behave differently than in traditional languages.
+This section covers control flow constructs. Remember that Cascada's concurrent-by-default execution means loops and conditionals behave differently than in traditional languages.
 These constructs also participate in Cascada's error-propagation model; for the full rules on poisoning, detection, and recovery, see [Error Handling](#error-handling).
 
 
@@ -586,10 +586,10 @@ endswitch
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
 
 ##### `for` Loops: Iterate Concurrently
-Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. By default, the body of the `for` loop executes **in parallel for each item**, maximizing I/O throughput for independent operations.
+Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. By default, the body of the `for` loop executes **concurrently for each item**, maximizing I/O throughput for independent operations.
 
 ```javascript
-// Each iteration runs concurrently, fetching user details in parallel
+// Each iteration runs concurrently, fetching user details
 data result
 for userId in userIds
   var user = fetchUserDetails(userId)
@@ -671,7 +671,7 @@ endfor
 ```
 
 ##### `while` Loops: Iterate Sequentially based on Condition
-Use a `while` loop to execute a block of code repeatedly as long as a condition is true. Unlike the parallel `for` loop, the `while` loop's body executes **sequentially**. The condition is re-evaluated only after the body has fully completed its execution for the current iteration.
+Use a `while` loop to execute a block of code repeatedly as long as a condition is true. Unlike the concurrent `for` loop, the `while` loop's body executes **sequentially**. The condition is re-evaluated only after the body has fully completed its execution for the current iteration.
 
 ```
 while some_expression
@@ -708,10 +708,10 @@ Properties that require knowledge of the total collection size:
 Use the following guidelines to determine if these properties are available:
 
 1.  **Arrays and Objects:**
-    ✅ **Always Available.** Because the size of an array or object is known upfront, these properties are available regardless of whether the loop runs in parallel, sequentially, or with a concurrency limit.
+    ✅ **Always Available.** Because the size of an array or object is known upfront, these properties are available regardless of whether the loop runs concurrently, sequentially, or with a concurrency limit.
 
-2.  **Parallel Async Iterators:**
-    ✅ **Available (Async).** For fully parallel async iterators, `loop.length` and `loop.last` are resolved asynchronously after Cascada has consumed the entire iterator. In practice, these behave like promise-backed loop metadata: loop bodies can start immediately as items arrive, and expressions that depend on `loop.length` or `loop.last` simply wait until the stream has been fully consumed.
+2.  **Concurrent Async Iterators:**
+    ✅ **Available (Async).** For fully concurrent async iterators, `loop.length` and `loop.last` are resolved asynchronously after Cascada has consumed the entire iterator. In practice, these behave like promise-backed loop metadata: loop bodies can start immediately as items arrive, and expressions that depend on `loop.length` or `loop.last` simply wait until the stream has been fully consumed.
 
 3.  **Sequential or Constrained Async Iterators:**
     ❌ **Not Available.** When an async iterator is restricted - by `each` or by a concurrency limit (`of N`) - Cascada treats it as a stream and does **not** provide `loop.length` or `loop.last`. In these modes, the loop only learns about the next item by continuing iteration. If an iteration were allowed to wait on `loop.length` or `loop.last`, it could block the very iteration progress needed to discover the end of the stream, causing a deadlock.
@@ -831,7 +831,7 @@ Channel writes execute as soon as their required input data is available, follow
 
 ### The `text` Channel: Generating Text
 
-The `text` channel builds a string of text. It is the simplest channel to reach for when parallel code needs to contribute to one final piece of text while preserving source-code order.
+The `text` channel builds a string of text. It is the simplest channel to reach for when concurrent code needs to contribute to one final piece of text while preserving source-code order.
 
 ```javascript
 text log
@@ -851,11 +851,11 @@ Two write forms:
 | `name = expr` | Overwrites the entire text with `expr` |
 
 ### The `data` Channel: Building Structured Data
-The `data` channel is the main tool for constructing structured output. It is especially useful when parallel code needs to build arrays or objects in a predictable order - all writes execute concurrently, but the assembled result always matches source-code order. This is the right alternative to [mutation methods on plain `var` values](#mutation-methods-and-side-effects), which race in parallel code.
+The `data` channel is the main tool for constructing structured output. It is especially useful when concurrent code needs to build arrays or objects in a predictable order - all writes execute concurrently, but the assembled result always matches source-code order. This is the right alternative to [mutation methods on plain `var` values](#mutation-methods-and-side-effects), which race in concurrent code.
 
-The key difference from a plain `var` is that `data` operations such as `.push()`, `.merge()`, and `.append()` are **channel commands**, not ordinary JavaScript in-place mutations. They are scheduled and assembled safely by Cascada, so they remain safe even when multiple parallel branches write to the same `data` channel. On a plain `var`, those same method names are just standard JavaScript side effects on the current value, so parallel calls do not get ordered assembly guarantees.
+The key difference from a plain `var` is that `data` operations such as `.push()`, `.merge()`, and `.append()` are **channel commands**, not ordinary JavaScript in-place mutations. They are scheduled and assembled safely by Cascada, so they remain safe even when multiple concurrent branches write to the same `data` channel. On a plain `var`, those same method names are just standard JavaScript side effects on the current value, so concurrent calls do not get ordered assembly guarantees.
 
-Use a plain `var` when you are building a value locally in one place, or when you genuinely do not need channel ordering/assembly behavior. Use a `data` channel when multiple parallel branches contribute to the same result, or when you want ordered path-based construction without shared-mutation races.
+Use a plain `var` when you are building a value locally in one place, or when you genuinely do not need channel ordering/assembly behavior. Use a `data` channel when multiple concurrent branches contribute to the same result, or when you want ordered path-based construction without shared-mutation races.
 
 As a rule of thumb, `data` channels optimize for correctness and ordered assembly, not raw in-memory mutation speed. On very large nested structures, many fine-grained property writes can be slower than composing a plain object or array locally and assigning or returning it once.
 
@@ -1219,7 +1219,7 @@ For details, see [Protecting State with `guard`](#protecting-state-with-guard).
 
 ## Managing Side Effects: Sequential Execution with `!`
 
-For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
+For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
 
 Sequential paths also participate in Cascada's error-propagation model; for the full rules on poisoning, repair, and recovery, see [Error Handling](#error-handling).
 
@@ -1242,7 +1242,7 @@ You can also sequence calls to a **specific method** on an object, rather than l
 logger.log!("Entry 1")
 logger.log!("Entry 2")
 
-// Unmarked methods run in parallel
+// Unmarked methods run concurrently
 logger.getStatus()
 ```
 
@@ -1261,7 +1261,7 @@ turtle!.lineTo(50, 40)
 turtle!.penUp()
 ```
 
-Only the `turtle` path is serialized. Other independent work in the script can still run in parallel.
+Only the `turtle` path is serialized. Other independent work in the script can still run concurrently.
 
 
 ### Context Requirement for Sequential Paths
@@ -1312,7 +1312,7 @@ A function can call async functions and use `return` to provide its result. Like
 
 ```javascript
 function buildDepartment(deptId)
-  // These two async calls run in parallel.
+  // These two async calls run concurrently.
   var manager = fetchManager(deptId)
   var team = fetchTeamMembers(deptId)
 
@@ -1527,17 +1527,17 @@ Functions participate in the normal dataflow poisoning rules, but they are still
 
 ## Error Handling
 
-Cascada's parallel-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
+Cascada's concurrent-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
 
 This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result.
 
 ### Error Handling Fundamentals
 
 #### Error Handling in Action
-Here's a concrete example showing how error propagation works in parallel execution:
+Here's a concrete example showing how error propagation works in concurrent execution:
 
 ```javascript
-// These three API calls run in parallel
+// These three API calls run concurrently
 var user = fetchUser(123)      // ✅ succeeds
 var posts = fetchPosts(123)    // ❌ fails with network error
 var comments = fetchComments() // ✅ succeeds
@@ -1623,7 +1623,7 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   context.database!.commit()       // ❌ skipped, returns error immediately
   ```
 
-This mechanism ensures that once an operation fails, all dependent results and channels reflect that failure, maintaining data integrity across both parallel and sequential execution flows.
+This mechanism ensures that once an operation fails, all dependent results and channels reflect that failure, maintaining data integrity across both concurrent and sequential execution flows.
 #### Deciding When to Handle Errors
 
 **❌ Do not handle errors, let them propagate when:**
@@ -1785,7 +1785,7 @@ if summary is error
 endif
 ```
 
-This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a parallel batch rather than just the first one encountered.
+This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a concurrent batch rather than just the first one encountered.
 
 ### Advanced Recovery Mechanisms
 
@@ -1987,7 +1987,7 @@ endguard
 ```
 
 **⚠️ Performance warning**
-When variables are protected (via `guard *` or explicit variable names), any code that depends on such variables must wait for the guard to finish. This can reduce parallelism. Use `guard *` only for small, tightly scoped operations.
+When variables are protected (via `guard *` or explicit variable names), any code that depends on such variables must wait for the guard to finish. This can reduce concurrency. Use `guard *` only for small, tightly scoped operations.
 
 ---
 
@@ -2888,7 +2888,7 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 
 ### Differences from classic Nunjucks
 
-- **Block-local scoping:** `if`, `for`/`each`/`while`, and `switch` branches run in their own scope. `var` declarations inside them stay local unless you intentionally write to an outer variable. This avoids race conditions and keeps loops parallel.
+- **Block-local scoping:** `if`, `for`/`each`/`while`, and `switch` branches run in their own scope. `var` declarations inside them stay local unless you intentionally write to an outer variable. This avoids race conditions and keeps loops concurrent.
 
 ### Roadmap
 This roadmap outlines key features and enhancements that are planned or currently in progress.
