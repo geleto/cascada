@@ -2,19 +2,18 @@
   "name": "cascada-engine",
   "version": "0.4.0",
   "description": "The parallel-first scripting & templating engine with transparent async support and automatic, implicit concurrency.",
+  "type": "module",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
-  "main": "./dist/cjs/index.js",
-  "module": "./dist/esm/index.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/types/index.d.ts",
   "bin": {
     "cascada-precompile": "dist/bin/precompile"
   },
-  "browser": "./dist/browser/nunjucks.js",
   "exports": {
     ".": {
-      "require": "./dist/cjs/index.js",
-      "import": "./dist/esm/index.js",
+      "import": "./dist/index.js",
       "types": "./dist/types/index.d.ts"
     }
   },
@@ -95,11 +94,10 @@
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
     "clean": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist', {recursive: true, force: true})\"",
-    "build:transpile": "babel src --out-dir dist/cjs",
     "build:bundle": "node scripts/bundle.js",
     "build:types": "cpy src/index.d.ts dist/types/ --flat",
     "build:docs": "cpy docs/cascada/script.md README.md dist/docs/ --flat",
-    "build": "npm run clean && npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/ && npm run build:docs",
+    "build": "npm run clean && npm run lint && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/ && npm run build:docs",
     "build:esm": "node scripts/build-esm.mjs",
     "test:quick": "npm run mocha",
     "test:esm": "npm run mocha",

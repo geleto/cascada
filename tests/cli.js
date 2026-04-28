@@ -10,7 +10,7 @@ import {fileURLToPath} from 'url';
   const testDir = path.dirname(fileURLToPath(import.meta.url));
   var rootDir = path.resolve(path.join(testDir, '..'));
   var precompileBin = path.join(rootDir, 'bin', 'precompile');
-  var distDir = path.join(rootDir, 'dist', 'cjs');
+  var distEntry = path.join(rootDir, 'dist', 'index.js');
 
   if (process.platform === 'win32') {
     precompileBin += '.cmd';
@@ -44,7 +44,7 @@ import {fileURLToPath} from 'url';
     it('should echo a compiled template to stdout', function(done) {
       this.timeout(18000); // execFile can be slow on Windows
       execPrecompile(['tests/templates/item.njk'], function(err, stdout, stderr) {
-        if (!fs.existsSync(distDir)) {
+        if (!fs.existsSync(distEntry)) {
           expectMissingBuild(err, stdout, stderr, done);
           return;
         }
@@ -65,7 +65,7 @@ import {fileURLToPath} from 'url';
       ];
       this.timeout(18000); // execFile can be slow on Windows
       execPrecompile(args, function(err, stdout, stderr) {
-        if (!fs.existsSync(distDir)) {
+        if (!fs.existsSync(distEntry)) {
           expectMissingBuild(err, stdout, stderr, done);
           return;
         }

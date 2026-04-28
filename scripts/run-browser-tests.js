@@ -144,7 +144,7 @@ async function runTestFile(browser, port, testFile) {
     return resultValue;
   } catch (error) {
     console.error(`Error in ${testFile}:`, error);
-    return { failures: 1, total: 1, passed: 0 };
+    return { stats: { failures: 1, passes: 0, pending: 0, duration: 0 } };
   } finally {
     await context.close();
   }
@@ -192,6 +192,10 @@ async function runTests() {
       console.log(`\nRunning tests for ${testFile}...`);
       const result = await runTestFile(browser, port, testFile);
       fileResults[testFile] = result.stats;
+
+      if (!result.stats || (result.stats.passes + result.stats.failures + result.stats.pending) === 0) {
+        overallTestsPassed = false;
+      }
 
       if (result.stats.failures > 0) {
         overallTestsPassed = false;

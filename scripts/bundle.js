@@ -62,11 +62,11 @@ function runWebpack(opts) {
                         extensions: ['.js'],
                         resolvePath: (sourcePath) => {
                           if (sourcePath.match(/^(fs|path|os|chokidar|stream)$/)) {
-                            return 'node-libs-browser/mock/empty';
+                            return 'node-libs-browser/mock/empty.js';
                           }
                           if (opts.slim) {
                             if (sourcePath.match(/(^|\/)(nodes|lexer|parser|precompile|transformer|compiler)(\.js)?$/)) {
-                              return 'node-libs-browser/mock/empty';
+                              return 'node-libs-browser/mock/empty.js';
                             }
                           }
                           if (sourcePath.match(/(^|\/)loaders(\.js)?$/)) {
