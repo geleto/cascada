@@ -1,6 +1,6 @@
 
 import * as nodes from '../nodes.js';
-import CompilerCommon from './compiler-common.js';
+import {CompilerCommon} from './compiler-common.js';
 
 const compareOps = {
   '==': '==',
@@ -190,5 +190,4 @@ class CompilerBaseSync extends CompilerCommon {
   }
 }
 
-export default CompilerBaseSync;
 export {CompilerBaseSync};

@@ -7,8 +7,8 @@ import {
   validateLocalSharedMethodNameCollisions,
 } from './validation.js';
 
-import CompilerBaseAsync from './compiler-base-async.js';
-import CompileBuffer from './buffer.js';
+import {CompilerBaseAsync} from './compiler-base-async.js';
+import {CompileBuffer} from './buffer.js';
 import {ROOT_STARTUP_PROMISE_VAR} from './inheritance.js';
 
 const COMPILED_METHODS_VAR = '__compiledMethods';
@@ -1371,5 +1371,4 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 }
 
-export default CompilerAsync;
 export {CompilerAsync};

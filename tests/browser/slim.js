@@ -3,23 +3,13 @@ const precompiledTemplates = (await import('./precompiled-templates.js')).defaul
 
 window.nunjucks = {...cascada};
 window.nunjucksFull = window.nunjucks;
-window.nunjucksPrecompiled = precompiledTemplates;
+window.precompiledTemplates = precompiledTemplates;
 window.nunjucks.testing = true;
 mocha.setup({
   ui: 'bdd',
   reporter: window.ConsoleReporter
 });
 mocha.checkLeaks();
-
-beforeEach(function(done) {
-  window.nunjucksPrecompiled = precompiledTemplates;
-  done();
-});
-
-afterEach(function(done) {
-  window.nunjucksPrecompiled = precompiledTemplates;
-  done();
-});
 
 await import('../util.js');
 await import('../compiler.js');

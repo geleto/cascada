@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import precompileTestTemplates from './lib/precompile.js';
+import {precompileTestTemplates} from './lib/precompile.js';
 
 precompileTestTemplates()
   .then(() => {

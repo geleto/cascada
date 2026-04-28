@@ -354,4 +354,4 @@ class CompileBoundaries {
   }
 }
 
-export default CompileBoundaries;
+export {CompileBoundaries};

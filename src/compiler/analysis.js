@@ -695,4 +695,4 @@ class CompileAnalysis {
 
 }
 
-export default CompileAnalysis;
+export {CompileAnalysis};

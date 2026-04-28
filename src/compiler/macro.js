@@ -611,4 +611,4 @@ class CompileMacro {
   }
 }
 
-export default CompileMacro;
+export {CompileMacro};

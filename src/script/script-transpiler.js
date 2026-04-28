@@ -2165,5 +2165,5 @@ const scriptToTemplate = transpiler.scriptToTemplate.bind(transpiler);
 const _deconstructPathAssignment = transpiler._deconstructPathAssignment.bind(transpiler);
 
 export {scriptToTemplate, _deconstructPathAssignment};
-export default transpiler;
+export {transpiler};
 

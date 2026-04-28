@@ -508,4 +508,4 @@ class CompileLoop {
   }
 }
 
-export default CompileLoop;
+export {CompileLoop};

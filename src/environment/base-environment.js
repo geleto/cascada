@@ -2,9 +2,9 @@
 import waterfall from 'a-sync-waterfall';
 import {isArray, _entries, without, isFunction} from '../lib.js';
 import * as filters from '../filters.js';
-import {FileSystemLoader, WebLoader, PrecompiledLoader} from '../loader/loaders.js';
+import {FileSystemLoader, WebLoader} from '../loader/loaders.js';
 import * as tests from '../tests.js';
-import globals from '../globals.js';
+import {createGlobals} from '../globals.js';
 import {EmitterObj} from '../object.js';
 import {handleError} from '../runtime/errors.js';
 import expressApp from '../express-app.js';
@@ -84,18 +84,9 @@ class BaseEnvironment extends EmitterObj {
       this.loaders = isArray(loaders) ? loaders : [loaders];
     }
 
-    // It's easy to use precompiled templates: just include them
-    // before you configure nunjucks and this will automatically
-    // pick it up and use it
-    if (typeof window !== 'undefined' && window.nunjucksPrecompiled) {
-      this.loaders.unshift(
-        new PrecompiledLoader(window.nunjucksPrecompiled)
-      );
-    }
-
     this._initLoaders();
 
-    this.globals = globals();
+    this.globals = createGlobals();
     this.filters = {};
     this.tests = {};
     this.asyncFilters = [];

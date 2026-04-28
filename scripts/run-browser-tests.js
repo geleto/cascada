@@ -7,10 +7,10 @@ import {promises as fs} from 'fs';
 let chalk;
 
 import libCoverage from 'istanbul-lib-coverage';
-import getStaticServer from './lib/static-server.js';
+import {getStaticServer} from './lib/static-server.js';
 import {chromium} from 'playwright';
-import precompileTestTemplates from './lib/precompile.js';
-import writeCoverageReports from './lib/coverage-report.js';
+import {precompileTestTemplates} from './lib/precompile.js';
+import {writeCoverageReports} from './lib/coverage-report.js';
 
 process.env.NODE_ENV = 'test';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

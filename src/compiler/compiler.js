@@ -1,11 +1,11 @@
 
 import {parse} from '../parser.js';
 import {transform} from '../transformer.js';
-import CompilerCommon from './compiler-common.js';
-import CompilerBaseAsync from './compiler-base-async.js';
-import CompilerBaseSync from './compiler-base-sync.js';
-import CompilerAsync from './compiler-async.js';
-import CompilerSync from './compiler-sync.js';
+import {CompilerCommon} from './compiler-common.js';
+import {CompilerBaseAsync} from './compiler-base-async.js';
+import {CompilerBaseSync} from './compiler-base-sync.js';
+import {CompilerAsync} from './compiler-async.js';
+import {CompilerSync} from './compiler-sync.js';
 
 function createIdPool() {
   return {

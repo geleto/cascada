@@ -1,6 +1,6 @@
 import {DEFAULT_TEMPLATE_TEXT_CHANNEL} from './buffer.js';
 
-export default class CompileEmit {
+class CompileEmit {
   constructor(compiler) {
     this.scopeClosers = '';
     this.compiler = compiler;
@@ -274,3 +274,5 @@ export default class CompileEmit {
   }
 
 };
+
+export {CompileEmit};

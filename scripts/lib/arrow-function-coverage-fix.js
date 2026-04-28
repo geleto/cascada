@@ -1,7 +1,7 @@
 // Restore old babylon behavior for istanbul.
 // https://github.com/babel/babel/pull/6836
 // https://github.com/istanbuljs/istanbuljs/issues/119
-export default function hacks() {
+function hacks() {
   return {
     visitor: {
       Program: function Program(programPath) {
@@ -15,3 +15,5 @@ export default function hacks() {
     },
   };
 };
+
+export {hacks};

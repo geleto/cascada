@@ -4,8 +4,8 @@ import path from 'path';
 import {_prettifyError} from './lib.js';
 import {compile} from './compiler/compiler.js';
 import {Environment, AsyncEnvironment} from './environment/environment.js';
-import precompileGlobal from './precompile-global.js';
-import precompileEsm from './precompile-esm.js';
+import {precompileGlobal} from './precompile-global.js';
+import {precompileEsm} from './precompile-esm.js';
 
 function match(filename, patterns) {
   if (!Array.isArray(patterns)) {

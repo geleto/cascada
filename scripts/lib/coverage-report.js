@@ -3,7 +3,7 @@ import reports from 'istanbul-reports';
 
 const REPORTERS = ['text', 'html', 'lcov'];
 
-export default function writeCoverageReports(coverageMap, reportDir) {
+function writeCoverageReports(coverageMap, reportDir) {
   const context = libReport.createContext({
     dir: reportDir,
     defaultSummarizer: 'nested',
@@ -14,3 +14,5 @@ export default function writeCoverageReports(coverageMap, reportDir) {
     reports.create(reporter).execute(context);
   }
 }
+
+export {writeCoverageReports};

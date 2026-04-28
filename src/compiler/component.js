@@ -187,4 +187,4 @@ class CompileComponent {
   }
 }
 
-export default CompileComponent;
+export {CompileComponent};

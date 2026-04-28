@@ -566,7 +566,7 @@ Done for the current browser precompiled fixture:
 - `bin/precompile --format esm` exposes the wrapper from the CLI.
 - `tests/browser/precompiled-templates.js` is generated as a native ESM module.
 
-The slim browser harness now imports the precompiled map as ESM, then assigns it to the existing precompiled loader global as a narrow compatibility bridge. A later dedicated precompiled runtime entry should remove that remaining `window.nunjucksPrecompiled` bridge from the native ESM path.
+The slim browser harness now imports the precompiled map as ESM and passes it through an explicit `PrecompiledLoader`. The native ESM browser test path no longer depends on `window.nunjucksPrecompiled`.
 
 ## Node Precompiled Lane
 

@@ -28,4 +28,4 @@ class ValueChannelTarget {
   }
 }
 
-export default ValueChannelTarget;
+export {ValueChannelTarget};

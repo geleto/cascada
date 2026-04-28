@@ -40,4 +40,4 @@ async function precompileTestTemplates() {
   }
 }
 
-export default precompileTestTemplates;
+export {precompileTestTemplates};

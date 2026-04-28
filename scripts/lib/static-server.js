@@ -119,4 +119,4 @@ async function getStaticServer(prt) {
   }
 }
 
-export default getStaticServer;
+export {getStaticServer};

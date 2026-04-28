@@ -20,4 +20,4 @@ function precompileGlobal(templates, opts) {
   return out;
 }
 
-export default precompileGlobal;
+export { precompileGlobal };

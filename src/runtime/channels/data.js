@@ -1,7 +1,7 @@
 
 import {createPoison, isPoison, isPoisonError} from '../errors.js';
 import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base.js';
-import DataChannelTarget from '../../script/data-channel.js';
+import {DataChannelTarget} from '../../script/data-channel.js';
 import {Channel, cloneSnapshotValue, mergePoisonErrors} from './base.js';
 
 class DataCommand extends ChannelCommand {

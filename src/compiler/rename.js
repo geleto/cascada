@@ -158,4 +158,4 @@ class CompileRename {
   }
 }
 
-export default CompileRename;
+export {CompileRename};

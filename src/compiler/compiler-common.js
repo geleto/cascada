@@ -5,16 +5,16 @@ import {ErrorContext} from '../runtime/errors.js';
 import {Obj} from '../object.js';
 
 import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from './validation.js';
-import CompileSequential from './sequential.js';
-import CompileEmit from './emit.js';
-import CompileInheritance from './inheritance.js';
-import CompileLoop from './loop.js';
-import CompileBuffer from './buffer.js';
-import CompileMacro from './macro.js';
-import CompileBoundaries from './boundaries.js';
-import CompileChannel from './channel.js';
-import CompileComponent from './component.js';
-import CompileReturn from './return.js';
+import {CompileSequential} from './sequential.js';
+import {CompileEmit} from './emit.js';
+import {CompileInheritance} from './inheritance.js';
+import {CompileLoop} from './loop.js';
+import {CompileBuffer} from './buffer.js';
+import {CompileMacro} from './macro.js';
+import {CompileBoundaries} from './boundaries.js';
+import {CompileChannel} from './channel.js';
+import {CompileComponent} from './component.js';
+import {CompileReturn} from './return.js';
 
 /**
  * CompilerCommon - Common base class for compiler functionality
@@ -601,5 +601,4 @@ class CompilerCommon extends Obj {
 
 }
 
-export default CompilerCommon;
 export {CompilerCommon};

@@ -8,6 +8,7 @@ let isSlim = false;
 let Loader;
 let templatesPath;
 let expect;
+let precompiledTemplates;
 
 if (isBrowser) {
   nunjucks = window.nunjucks;
@@ -16,6 +17,7 @@ if (isBrowser) {
     nunjucksFull = window.nunjucksFull;
     // These must be the same for instanceof checks to succeed.
     nunjucksFull.runtime.SafeString.prototype = nunjucks.runtime.SafeString.prototype;
+    precompiledTemplates = window.precompiledTemplates;
   } else {
     nunjucksFull = window.nunjucksFull = nunjucks;
   }
@@ -115,7 +117,8 @@ function render(str, ctx, opts, env, cb) {
   let e;
 
   if (isSlim) {
-    e = env || new Environment([], opts);
+    e = env || new Environment([new nunjucks.PrecompiledLoader(precompiledTemplates)], opts);
+    ensureSlimPrecompiledLoader(e);
     loader = e.loaders[0];
   } else {
     loader = new Loader(templatesPath);
@@ -152,8 +155,8 @@ function render(str, ctx, opts, env, cb) {
     tmplName = randomTemplateName();
     const precompileJs = precompileString(str, {
       name: tmplName,
-      asFunction: true,
-      env: e
+      env: e,
+      wrapper: precompileTemplateMapAssignment
     });
     eval(precompileJs); // eslint-disable-line no-eval
   }
@@ -197,6 +200,26 @@ function render(str, ctx, opts, env, cb) {
       doneHandler();
     }
   });
+}
+
+function ensureSlimPrecompiledLoader(env) {
+  if (env.loaders[0] instanceof nunjucks.PrecompiledLoader) {
+    return;
+  }
+
+  env.loaders.unshift(new nunjucks.PrecompiledLoader(precompiledTemplates));
+  env._initLoaders();
+}
+
+function precompileTemplateMapAssignment(templates) {
+  let out = '';
+  for (let i = 0; i < templates.length; i++) {
+    const name = JSON.stringify(templates[i].name);
+    out += 'precompiledTemplates[' + name + '] = (function() {\n' +
+      templates[i].template +
+      '\n})();\n';
+  }
+  return out;
 }
 
 async function expectAsyncError(asyncFn, checkFn) {

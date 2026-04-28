@@ -154,4 +154,4 @@ Object.keys(defaultMethods).forEach((methodName) => {
   DataChannelTarget.prototype.addMethod(methodName, defaultMethods[methodName]);
 });
 
-export default DataChannelTarget;
+export {DataChannelTarget};

@@ -376,4 +376,4 @@ class CompileChannel {
   }
 }
 
-export default CompileChannel;
+export {CompileChannel};

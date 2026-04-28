@@ -1,8 +1,8 @@
 
 import * as nodes from '../nodes.js';
 import {Frame} from '../runtime/frame.js';
-import CompilerBaseSync from './compiler-base-sync.js';
-import CompileBuffer from './buffer.js';
+import {CompilerBaseSync} from './compiler-base-sync.js';
+import {CompileBuffer} from './buffer.js';
 
 class CompilerSync extends CompilerBaseSync {
   init(templateName, options) {
@@ -432,5 +432,4 @@ class CompilerSync extends CompilerBaseSync {
 
 }
 
-export default CompilerSync;
 export {CompilerSync};

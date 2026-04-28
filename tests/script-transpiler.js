@@ -1,4 +1,4 @@
-import scriptTranspiler from '../src/script/script-transpiler.js';
+import {transpiler as scriptTranspiler} from '../src/script/script-transpiler.js';
 import {TOKEN_TYPES} from '../src/script/script-lexer.js';
 import expect from 'expect.js';
 

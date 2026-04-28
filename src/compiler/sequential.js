@@ -1,6 +1,6 @@
 import * as nodes from '../nodes.js';
 
-export default class CompileSequential {
+class CompileSequential {
 
   constructor(compiler) {
     this.compiler = compiler;
@@ -452,3 +452,5 @@ export default class CompileSequential {
     return false;
   }
 };
+
+export {CompileSequential};

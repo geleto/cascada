@@ -3,7 +3,7 @@ import {promises as fs} from 'fs';
 import path from 'path';
 import {fileURLToPath} from 'url';
 import libCoverage from 'istanbul-lib-coverage';
-import writeCoverageReports from './lib/coverage-report.js';
+import {writeCoverageReports} from './lib/coverage-report.js';
 let chalk;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

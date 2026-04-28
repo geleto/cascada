@@ -13,4 +13,4 @@ function precompileEsm(templates) {
   return out;
 }
 
-export default precompileEsm;
+export { precompileEsm };

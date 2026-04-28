@@ -122,7 +122,7 @@ class CompileReturn {
   }
 }
 
-export default CompileReturn;
+export {CompileReturn};
 export {RETURN_CHANNEL_NAME};
 export {RESERVED_RETURN_SENTINEL_SYMBOL_NAME};
 export {RETURN_IS_UNSET_FUNCTION_NAME};
