@@ -9,14 +9,19 @@ const templateDir = path.join(testDir, 'templates');
 const outputFile = path.join(testDir, 'browser/precompiled-templates.js');
 
 async function loadPrecompile() {
-  const candidates = [
-    path.join(projectRoot, 'src/precompile.js'),
-    path.join(projectRoot, 'dist/precompile.js')
-  ];
-  const precompilePath = candidates.find((candidate) => fs.existsSync(candidate));
-  if (!precompilePath) {
-    throw new Error('Unable to find precompile module. Run `npm run build` first.');
+  const sourcePath = path.join(projectRoot, 'src/precompile.js');
+  const distPath = path.join(projectRoot, 'dist/precompile.js');
+  const precompilePath = process.env.CASCADA_TEST_DIST === '1'
+    ? distPath
+    : sourcePath;
+
+  if (!fs.existsSync(precompilePath)) {
+    const message = process.env.CASCADA_TEST_DIST === '1'
+      ? 'Unable to find dist precompile module. Run `npm run build` first.'
+      : 'Unable to find source precompile module.';
+    throw new Error(message);
   }
+
   const precompileModule = await import(pathToFileURL(precompilePath));
   return precompileModule.precompile;
 }

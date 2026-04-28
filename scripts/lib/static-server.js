@@ -9,6 +9,7 @@ import {fileURLToPath} from 'url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const logMissingFiles = process.env.CASCADA_TEST_SERVER_LOG_404 === '1';
+const serveDistForSrc = process.env.CASCADA_TEST_DIST === '1';
 
 async function findAvailablePort(startPort = 3000) {
   return new Promise((resolve, reject) => {
@@ -42,7 +43,10 @@ async function getStaticServer(prt) {
     // Middleware to handle all requests
     app.use(async (req, res, next) => {
       const {pathname} = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      const filePath = path.join(staticRoot, pathname);
+      const servedPathname = serveDistForSrc && pathname.startsWith('/src/')
+        ? `/dist/${pathname.slice('/src/'.length)}`
+        : pathname;
+      const filePath = path.join(staticRoot, servedPathname);
 
       try {
         const stats = await fs.stat(filePath);

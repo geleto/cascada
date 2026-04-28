@@ -69,9 +69,13 @@ async function runTestFile(browser, port, testFile) {
   try {
     const url = `http://localhost:${port}/tests/browser/${testFile}`;
 
-    page.on('console', msg =>
-      console.log(colorConsoleOutput(msg.text()))
-    );
+    page.on('console', msg => {
+      const text = msg.text();
+      if (text === 'Failed to load resource: the server responded with a status of 404 (Not Found)') {
+        return;
+      }
+      console.log(colorConsoleOutput(text));
+    });
     page.on('pageerror', err => console.error(`${testFile} page error:`, err));
 
     const response = await page.goto(url, { waitUntil: 'networkidle' });
