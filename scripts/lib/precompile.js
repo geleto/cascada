@@ -10,8 +10,8 @@ const outputFile = path.join(testDir, 'browser/precompiled-templates.js');
 
 async function loadPrecompile() {
   const candidates = [
-    path.join(projectRoot, 'dist/precompile.js'),
-    path.join(projectRoot, 'src/precompile.js')
+    path.join(projectRoot, 'src/precompile.js'),
+    path.join(projectRoot, 'dist/precompile.js')
   ];
   const precompilePath = candidates.find((candidate) => fs.existsSync(candidate));
   if (!precompilePath) {
@@ -27,6 +27,7 @@ async function precompileTestTemplates() {
     // Generate precompiled content
     const output = precompile(templateDir, {
       include: [/\.(njk|html)$/],
+      format: 'esm'
     });
 
     // Write file with explicit encoding

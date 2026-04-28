@@ -37,7 +37,6 @@
     });
   </script>
 
-  <script src="precompiled-templates.js"></script>
   <script>
     // Prefix all test suite titles with 'slim'
     (function(originalDescribe) {
@@ -45,18 +44,6 @@
         originalDescribe('slim ' + title, fn);
       };
     })(window.describe || window.suite);
-
-    // Reset window.nunjucksPrecompiled so that it doesn't leak between tests
-    (function(precompiled) {
-      beforeEach(function(done) {
-        window.nunjucksPrecompiled = precompiled;
-        done();
-      });
-      afterEach(function(done) {
-        window.nunjucksPrecompiled = precompiled;
-        done();
-      });
-    })(window.nunjucksPrecompiled);
   </script>
 
   <script src="console-reporter.js"></script>

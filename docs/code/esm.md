@@ -516,14 +516,14 @@ This avoids the old Webpack trick where compiler modules are present as empty mo
 
 ## ESM Precompile Output
 
-The current default wrapper writes browser globals:
+The legacy default wrapper writes browser globals:
 
 ```js
 window.nunjucksPrecompiled = window.nunjucksPrecompiled || {};
 window.nunjucksPrecompiled[name] = compiledTemplateObject;
 ```
 
-That should become a legacy/browser-global wrapper only. Add an ESM wrapper that exports the compiled template map:
+That is now a legacy/browser-global wrapper only. The ESM wrapper exports the compiled template map:
 
 ```js
 export default {
@@ -559,7 +559,14 @@ const result = await env.renderTemplate('item.njk', context);
 
 Use `.js` for generated ESM fixtures because the package has `"type": "module"`. Reserve `.mjs` only for files that must remain ESM outside the package boundary.
 
-This removes `window.nunjucksPrecompiled` from the native ESM test path. Do not add a new browser-global compatibility helper unless a separate legacy API decision is made later. The ESM path should use imports.
+Done for the current browser precompiled fixture:
+
+- `src/precompile-esm.js` emits `export default templates`.
+- `precompile(..., { format: 'esm' })` selects the ESM wrapper.
+- `bin/precompile --format esm` exposes the wrapper from the CLI.
+- `tests/browser/precompiled-templates.js` is generated as a native ESM module.
+
+The slim browser harness now imports the precompiled map as ESM, then assigns it to the existing precompiled loader global as a narrow compatibility bridge. A later dedicated precompiled runtime entry should remove that remaining `window.nunjucksPrecompiled` bridge from the native ESM path.
 
 ## Node Precompiled Lane
 

@@ -5,6 +5,7 @@ import {_prettifyError} from './lib.js';
 import {compile} from './compiler/compiler.js';
 import {Environment, AsyncEnvironment} from './environment/environment.js';
 import precompileGlobal from './precompile-global.js';
+import precompileEsm from './precompile-esm.js';
 
 function match(filename, patterns) {
   if (!Array.isArray(patterns)) {
@@ -18,7 +19,7 @@ function precompileString(str, opts) {
   opts = Object.assign((opts ?? {}), { isAsync: false, isScript: false });
   opts.isString = true;
   const env = opts.env || new Environment([]);
-  const wrapper = opts.wrapper || precompileGlobal;
+  const wrapper = getPrecompileWrapper(opts);
 
   if (!opts.name) {
     throw new Error('the "name" option is required when compiling a string');
@@ -65,7 +66,7 @@ function precompile(input, opts) {
 
   opts = opts || {};
   const env = opts.isAsync ? opts.asyncEnv || new AsyncEnvironment([]) : opts.env || new Environment([]);
-  const wrapper = opts.wrapper || precompileGlobal;
+  const wrapper = getPrecompileWrapper(opts);
 
   if (opts.isString) {
     if (opts.isScript) {
@@ -157,6 +158,16 @@ function _precompile(str, name, env, opts) {
   };
 }
 
+function getPrecompileWrapper(opts) {
+  if (opts.wrapper) {
+    return opts.wrapper;
+  }
+  if (opts.format === 'esm') {
+    return precompileEsm;
+  }
+  return precompileGlobal;
+}
+
 function precompileTemplate(str, opts) {
   return precompile(str, opts, false/*async*/, false/*script*/);
 }
@@ -178,5 +189,6 @@ export {
   precompileTemplateString,
   precompileTemplateStringAsync,
   precompileScript,
-  precompileScriptString
+  precompileScriptString,
+  precompileEsm
 };

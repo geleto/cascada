@@ -45,7 +45,7 @@ program
 
 program
   .name('precompile')
-  .usage('[-f|--force] [-a|--filters <filters>] [-n|--name <name>] [-i|--include <regex>] [-x|--exclude <regex>] [-w|--wrapper <wrapper>] <path>')
+  .usage('[-f|--force] [-a|--filters <filters>] [-n|--name <name>] [-i|--include <regex>] [-x|--exclude <regex>] [-w|--wrapper <wrapper>] [--format <format>] <path>')
   .arguments('<path>')
   .helpOption('-h, --help', 'display help for command')
   .option('-f, --force', 'Force compilation to continue on error')
@@ -54,6 +54,7 @@ program
   .option('-i, --include <regex>', 'Include a file or folder which match the regex but would otherwise be excluded. You can use this flag multiple times', concat, ['\\.html$', '\\.jinja$'])
   .option('-x, --exclude <regex>', 'Exclude a file or folder which match the regex but would otherwise be included. You can use this flag multiple times', concat, [])
   .option('-w, --wrapper <wrapper>', 'Load a external plugin to change the output format of the precompiled templates (for example, "-w custom" will load a module named "nunjucks-custom")')
+  .option('--format <format>', 'Output format: global or esm', 'global')
   .action(function (templatePath) {
     cmdpath = templatePath;
   })
@@ -81,11 +82,17 @@ if (opts.wrapper) {
   opts.wrapper = wrapperModule.wrapper || wrapperModule.default?.wrapper;
 }
 
+if (!['global', 'esm'].includes(opts.format)) {
+  console.error(`Invalid precompile format "${opts.format}". Expected "global" or "esm".`);
+  process.exit(1);
+}
+
 console.log(precompile(cmdpath, {
   env: env,
   force: opts.force,
   name: opts.name,
   wrapper: opts.wrapper,
+  format: opts.format,
   include: [].concat(opts.include),
   exclude: [].concat(opts.exclude)
 }));

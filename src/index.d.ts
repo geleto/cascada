@@ -55,6 +55,7 @@ export function precompileTemplateAsync(path: string, opts?: PrecompileOptionsAs
 export function precompileScript(path: string, opts?: PrecompileOptionsAsync): string;
 export function precompileTemplateStringAsync(src: string, opts?: PrecompileOptionsAsync): string;
 export function precompileScriptString(src: string, opts?: PrecompileOptionsAsync): string;
+export function precompileEsm(templates: Array<{ name: string; template: string }>): string;
 
 export interface PrecompileOptionsBase {
   name?: string | undefined;
@@ -62,6 +63,7 @@ export interface PrecompileOptionsBase {
   force?: boolean | undefined;
   include?: string[] | undefined;
   exclude?: string[] | undefined;
+  format?: 'global' | 'esm' | undefined;
   wrapper?(templates: { name: string; template: string }, opts: PrecompileOptions): string;
 }
 

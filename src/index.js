@@ -21,7 +21,8 @@ export {
   precompileTemplateString,
   precompileTemplateStringAsync,
   precompileScript,
-  precompileScriptString
+  precompileScriptString,
+  precompileEsm
 } from './precompile.js';
 export {loadString, clearStringCache, raceLoaders} from './loader/loader-utils.js';
 

@@ -72,5 +72,29 @@ import {fileURLToPath} from 'url';
         done();
       });
     });
+
+    it('should support ESM output', function(done) {
+      var args = [
+        '--format', 'esm',
+        '--name', 'item.njk',
+        'tests/templates/item.njk',
+      ];
+      this.timeout(18000); // execFile can be slow on Windows
+      execPrecompile(args, function(err, stdout, stderr) {
+        if (!fs.existsSync(distEntry)) {
+          expectMissingBuild(err, stdout, stderr, done);
+          return;
+        }
+        if (err) {
+          done(err);
+          return;
+        }
+        expect(stdout).to.contain('const templates = {};');
+        expect(stdout).to.contain('templates["item.njk"] =');
+        expect(stdout).to.contain('export default templates;');
+        expect(filterDebuggerMessages(stderr)).to.equal('');
+        done();
+      });
+    });
   });
 }());

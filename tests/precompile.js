@@ -10,6 +10,17 @@ import {precompile, precompileString} from '../src/precompile.js';
       })).to.be.an('string');
     });
 
+    it('should support an ESM template map wrapper', function() {
+      const output = precompileString('{{ test }}', {
+        name: 'test.njk',
+        format: 'esm'
+      });
+
+      expect(output).to.contain('const templates = {};');
+      expect(output).to.contain('templates["test.njk"] =');
+      expect(output).to.contain('export default templates;');
+    });
+
     describe('templates', function() {
       it('should return *NIX path seperators', function() {
         var fileName;
