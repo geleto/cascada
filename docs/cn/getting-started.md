@@ -11,7 +11,7 @@ pageid: getting-started
 $ npm install nunjucks
 ```
 
-下载后可直接 `require('nunjucks')` 使用
+下载后可通过原生 ESM `import` 使用
 
 ## 浏览器端使用
 

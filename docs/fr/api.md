@@ -185,7 +185,7 @@ le navigateur. Voir [`Chargeur`](#chargeur) pour plus d'informations.
 Aussi dans node, le [`NodeResolveLoader`](#noderesolveloader) est disponible
 pour charger depuis le système de fichiers selon l'algorithme de résolution
 du module node, ce qui est fait par
-[`require.resolve`](https://nodejs.org/api/modules.html#modules_all_together).
+[l'algorithme de rÃ©solution des paquets Node](https://nodejs.org/api/packages.html).
 Cet chargeur n'est pas activé par défaut; il faut passer éxplicitement au
 constructeur de `Environment`.
 
@@ -445,7 +445,7 @@ new NodeResolveLoader([opts])
 Comme le nom le suggère, cet chargeur n'est disponible que dans node.
 Il chargera les templates depuis le système de fichiers selon l'algorithme de
 résolution du module node, ce qui est fait par
-[`require.resolve`](https://nodejs.org/api/modules.html#modules_all_together).
+[l'algorithme de rÃ©solution des paquets Node](https://nodejs.org/api/packages.html).
 
 **opts** est un object avec les même propriétés que
 [`FileSystemLoader`](#filesystemloader).
@@ -807,8 +807,9 @@ argument et n'importe quels arguments qui seront transmis dans l'ordre au filtre
 comme d'autres arguments.
 
 ```js
-var nunjucks = require('nunjucks');
-var env = new nunjucks.Environment();
+import * as nunjucks from 'nunjucks';
+
+const env = new nunjucks.Environment();
 
 env.addFilter('shorten', function(str, count) {
     return str.slice(0, count || 5);

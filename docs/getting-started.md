@@ -23,7 +23,7 @@ pageid: getting-started
 $ npm install nunjucks
 ```
 
-Once installed, simply use `require('nunjucks')` to load it.
+Once installed, import it with native ESM.
 
 To use Nunjuck's built-in watch mode, Chokidar must be installed separately:
 

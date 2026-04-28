@@ -195,7 +195,7 @@ the browser. See [`Loader`](#loader) for more information.
 
 Also only in node, [`NodeResolveLoader`](#noderesolveloader) is
 provided to allow templates to be included using
-[node `require` resolution](https://nodejs.org/api/modules.html#modules_all_together).
+[Node package resolution](https://nodejs.org/api/packages.html).
 This is not enabled by default with [`configure`](#configure), it must be
 explicitly passed into the `Environment` constructor.
 
@@ -455,7 +455,7 @@ new NodeResolveLoader([opts])
 
 As the name suggests, this is also only available in node. It will load
 templates from the filesystem using node's
-[`require.resolve`](https://nodejs.org/api/modules.html#modules_all_together).
+[package resolution algorithm](https://nodejs.org/api/packages.html).
 
 **opts** is an object which takes the same properties as
 [`FileSystemLoader`](#filesystemloader).
@@ -816,8 +816,9 @@ first argument and any arguments passed to the filter as the other
 arguments, in order.
 
 ```js
-var nunjucks = require('nunjucks');
-var env = new nunjucks.Environment();
+import * as nunjucks from 'nunjucks';
+
+const env = new nunjucks.Environment();
 
 env.addFilter('shorten', function(str, count) {
     return str.slice(0, count || 5);

@@ -120,9 +120,10 @@ parentBuffer.add(new VarCommand({ channelName: 'x', args: [t1], pos }), 'x');
 let t2 = computeExpr(); // may return a promise
 parentBuffer.add(new TextCommand({ channelName: '__text__', args: [t2], pos }), '__text__');
 
-// @data.items.push(asyncValue)
+// data result
+// result.items.push(asyncValue)
 let t3 = fetchItem(); // may return a promise
-parentBuffer.add(new DataCommand({ command: 'push', args: [['items'], t3], pos }), 'data');
+parentBuffer.add(new DataCommand({ channelName: 'result', command: 'push', args: [['items'], t3], pos }), 'result');
 ```
 
 All of these are added synchronously. `resolveCommandArgumentsForApply` in the channel awaits the promise when the command is applied.
@@ -471,7 +472,7 @@ During Phase 1 the helper wraps `astate.asyncBlock` so the existing closure-trac
 function runControlFlowBoundary(astate, parentBuffer, usedChannels, f, context, cb, asyncFn, enableWaitApplied = false) {
   void context;
   const asyncMeta = { usedChannels: usedChannels || null };
-  return astate.asyncBlock(asyncFn, module.exports, f, asyncMeta, parentBuffer, true, cb, enableWaitApplied);
+  return astate.asyncBlock(asyncFn, exportedRuntimeApi, f, asyncMeta, parentBuffer, true, cb, enableWaitApplied);
 }
 ```
 

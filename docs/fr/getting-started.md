@@ -11,7 +11,7 @@ pageid: getting-started
 $ npm install nunjucks
 ```
 
-Une fois installé, utilisez simplement `require('nunjucks')` pour le charger.
+Une fois installé, utilisez simplement un import ESM natif pour le charger.
 
 Nunjucks supporte les versions de Node.js qui sont [même supportées par la
 fondation Node.js](https://github.com/nodejs/Release#release-schedule1),

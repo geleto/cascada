@@ -2,7 +2,7 @@
 
 ## Goal
 
-Cascada should be an ESM-only package. The source tree, published Node entry points, browser entry points, tests, and build scripts should use native `import`/`export` instead of CommonJS `require`/`module.exports`.
+Cascada should be an ESM-only package. The source tree, published Node entry points, browser entry points, tests, and build scripts should use native `import`/`export` instead of CommonJS loader/export APIs.
 
 Cascada is not released yet, so this migration does not need to preserve CommonJS compatibility.
 
@@ -10,16 +10,16 @@ Cascada is not released yet, so this migration does not need to preserve CommonJ
 
 - Drop CommonJS package support.
 - Drop generated `dist/cjs`.
-- Drop the `require` export condition from `package.json`.
+- Drop the CommonJS export condition from `package.json`.
 - Drop browser UMD bundles.
 - Keep browser support through native browser ESM.
 - Support only modern browsers with native ESM support.
 - Keep both Node and browser test lanes.
 - Keep Istanbul-format coverage for both Node and browser.
 - Use Istanbul only in test commands and test servers, never in package builds or published files.
-- Do not use lazy `require` to avoid circular dependencies. Fix circular dependencies directly.
+- Do not use lazy CommonJS loader calls to avoid circular dependencies. Fix circular dependencies directly.
 - Avoid package bundling for the Node ESM module. Ship normal ESM files with module boundaries.
-- Require a modern Node version for development, tests, and published Node usage.
+- Use a modern Node version for development, tests, and published Node usage.
 - Do not use `NODE_PATH`; Node's ESM resolver ignores it.
 
 ## Runtime Targets
@@ -83,7 +83,7 @@ If browser and Node surfaces diverge, prefer explicit environment entries:
 
 - Use `import` and `export` in all runtime source files.
 - Use explicit relative file extensions, for example `import lib from './lib.js'`.
-- Do not introduce new `require` calls.
+- Do not introduce new CommonJS loader calls.
 - Do not use lazy imports to hide circular dependencies.
 - Use dynamic `import()` only when the module boundary is genuinely asynchronous or optional by design.
 - Keep Node-only APIs behind Node-specific modules or entry points.
@@ -105,13 +105,13 @@ const __dirname = path.dirname(__filename);
 
 Prefer local names such as `moduleDir` or `projectRoot` in newly touched code instead of recreating `__dirname` by habit.
 
-Replace `require.resolve(...)` with one of:
+Replace CommonJS resolver calls with one of:
 
 - `import.meta.resolve(...)` for package/module resolution,
 - URL construction for relative files,
 - or a dedicated resolver API when the caller needs custom package search paths.
 
-Replace `require.main === module` with an ESM helper based on `process.argv[1]` and `import.meta.url`:
+Replace CommonJS main-module checks with an ESM helper based on `process.argv[1]` and `import.meta.url`:
 
 ```js
 import { fileURLToPath } from 'node:url';
@@ -122,7 +122,7 @@ export function isMainModule(metaUrl) {
 }
 ```
 
-Scripts that currently use `__dirname`, `__filename`, `require.main`, or `require.resolve` must be converted before `"type": "module"` is enabled. Do not add temporary CommonJS script shims for the package migration.
+Scripts that currently use `__dirname`, `__filename`, or CommonJS main/resolver APIs must be converted before `"type": "module"` is enabled. Do not add temporary CommonJS script shims for the package migration.
 
 ## Circular Dependencies
 
@@ -137,7 +137,7 @@ Preferred fixes:
 
 Avoid:
 
-- Lazy `require`.
+- Lazy CommonJS loading.
 - Dynamic `import()` solely to break a cycle.
 - Re-export barrels that create broad accidental cycles.
 
@@ -172,7 +172,7 @@ Babel should not be part of the package build. The supported Node and browser ta
 
 ## Script Transition
 
-When `"type": "module"` is added, every `.js` file becomes ESM. Any `.js` script that still uses `require`, `module.exports`, `__dirname`, or `require.main` will break immediately.
+When `"type": "module"` is added, every `.js` file becomes ESM. Any `.js` script that still uses CommonJS loader/export globals, `__dirname`, or CommonJS main-module checks will break immediately.
 
 Preferred path:
 
@@ -193,7 +193,11 @@ Browser support should be validated through native browser ESM:
   import { AsyncEnvironment } from "/src/index.js";
 
   const env = new AsyncEnvironment();
-  const result = await env.renderScriptString("@data.ok = true\nreturn data.snapshot()");
+  const result = await env.renderScriptString(`
+    data result
+    result.ok = true
+    return result.snapshot()
+  `);
   console.log(result);
 </script>
 ```
@@ -293,7 +297,7 @@ Target commands:
 
 Notes:
 
-- Remove `--require @babel/register`.
+- Remove Babel register preloading.
 - Remove `NODE_PATH`; it is ignored by Node's ESM resolver.
 - Keep Node test stats in `scripts/run-node-tests.js` so the test lane stays native ESM end to end.
 - Keep `coverage/node-tests-stats.json`.
@@ -479,7 +483,7 @@ src/index.js                  full ESM entry: runtime + compiler/precompile APIs
 src/precompiled/index.js      shared precompiled runtime entry, no compiler
 ```
 
-`src/browser/index.js` is not required unless the package later needs a browser-specific full entry. The shared `src/precompiled/index.js` entry is the ESM replacement for the old slim browser runtime.
+`src/browser/index.js` is unnecessary unless the package later needs a browser-specific full entry. The shared `src/precompiled/index.js` entry is the ESM replacement for the old slim browser runtime.
 
 Done:
 
@@ -680,9 +684,9 @@ Browser test pages should use native ESM:
 </script>
 ```
 
-During the test migration, prefer converting shared test files to ESM modules. If a test file is still shared between Node and browser, it should import dependencies explicitly instead of relying on globals created by CommonJS `require`.
+During the test migration, prefer converting shared test files to ESM modules. If a test file is still shared between Node and browser, it should import dependencies explicitly instead of relying on globals created by CommonJS loaders.
 
-For browser compatibility, tests may still expose selected objects on `window` when old browser test helpers require globals. That should be treated as test harness compatibility, not runtime API design.
+For browser compatibility, tests may still expose selected objects on `window` when old browser test helpers need globals. That should be treated as test harness compatibility, not runtime API design.
 
 ## Target Browser Test Server
 
@@ -767,7 +771,7 @@ Example:
 }
 ```
 
-Node coverage should not require Babel or `@babel/register`.
+Node coverage should not use Babel register preloading.
 
 ### Browser Coverage
 
@@ -844,7 +848,7 @@ Remove:
 
 - `build:transpile`
 - browser bundle generation scripts
-- `--require @babel/register` from test commands
+- Babel register preloading from test commands
 - `NODE_PATH=./tests/test-node-pkgs` from test commands
 - Babel-based NYC config
 
@@ -886,10 +890,10 @@ Cleanup targets:
 - Delete the generated browser bundle artifacts from tests and source control once native browser ESM pages replace them. Done for:
   - `tests/browser/nunjucks.min.js`
   - `tests/browser/nunjucks-slim.min.js`
-  - old bundle-only browser harness files that only call `require(...)`
+  - old bundle-only browser harness files that only call CommonJS loaders
 - Remove test helpers such as `esmDefault(module) { return module.default || module; }` once tests use native ESM imports. Done for the converted test suite.
 - Convert shared test utilities such as `tests/util.js` to pure ESM exports. Done. The shared util module now exposes named exports, including `utilApi`, instead of a default utility object.
-- Replace CommonJS `require(...)` in tests with static ESM imports. Where tests need per-test fresh module state, prefer explicit factory helpers or dynamic `import()` with a real asynchronous boundary rather than reintroducing cache-clearing CommonJS patterns.
+- Replace CommonJS loader calls in tests with static ESM imports. Where tests need per-test fresh module state, prefer explicit factory helpers or dynamic `import()` with a real asynchronous boundary rather than reintroducing cache-clearing CommonJS patterns.
 - Remove any `cascada.default || cascada` browser-test fallback. Done. Browser test globals now wrap the namespace import directly and add browser-only shims explicitly.
 - Prefer direct re-exports in barrel-style modules:
 
