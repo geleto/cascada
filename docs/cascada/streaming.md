@@ -1,4 +1,4 @@
-# Streaming
+# Streaming Channel Proposal
 
 This document details a future, not yet implemented feature of Cascada.
 

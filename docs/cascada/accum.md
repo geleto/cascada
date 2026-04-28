@@ -1,4 +1,4 @@
-# Accumulator Channels
+# Accumulator Channels Proposal
 
 Still implemented as a channel (for snapshotting), but commands between snapshots are merged, similar to how snapshot commands will be merged.
 
