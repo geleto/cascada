@@ -867,7 +867,7 @@ Cleanup targets:
   - `tests/browser/nunjucks-slim.min.js`
   - old bundle-only browser harness files that only call `require(...)`
 - Remove test helpers such as `esmDefault(module) { return module.default || module; }` once tests use native ESM imports. Done for the converted test suite.
-- Convert shared test utilities such as `tests/util.js` to pure ESM exports. Remove `if (typeof module !== 'undefined' && module.exports)` branches and browser globals that only exist to share one CommonJS test file across Node and bundled browser tests.
+- Convert shared test utilities such as `tests/util.js` to pure ESM exports. Done. The shared util module now exposes named exports, including `utilApi`, instead of a default utility object.
 - Replace CommonJS `require(...)` in tests with static ESM imports. Where tests need per-test fresh module state, prefer explicit factory helpers or dynamic `import()` with a real asynchronous boundary rather than reintroducing cache-clearing CommonJS patterns.
 - Remove any `cascada.default || cascada` browser-test fallback. Done. Browser test globals now wrap the namespace import directly and add browser-only shims explicitly.
 - Prefer direct re-exports in barrel-style modules:
@@ -880,7 +880,7 @@ export * as runtime from './runtime/runtime.js';
 instead of importing a module only to immediately re-export the same bindings.
 
 - Avoid constructing API objects only to default-export them. Done for `src/index.js`; object registries now use named exports where they remain useful.
-- Revisit remaining default exports in internal modules after the ESM conversion. Default exports are fine for single-owner classes or functions if that is the local style, but modules with multiple public names should prefer named exports.
+- Revisit remaining default exports in internal modules after the ESM conversion. Done for the active source tree. Remaining source defaults are browser shims that intentionally mimic package default imports, plus generated ESM precompile output.
 - For object registries that stay as objects, prefer named exports for the registry itself:
 
 ```js
@@ -895,7 +895,7 @@ rather than anonymous `export default { ... }`, unless the default object is del
 - Remove redundant `'use strict';` prologues from ESM source, tests, and scripts. Done for the active source/test/script tree.
 - Keep one-off helpers near their only owner. For example, callback-to-promise helpers used only by async extension compilation should live in generated compiler output or compiler-owned helpers, not on the global runtime surface.
 - Re-check broad namespace imports after the migration. Use namespace imports only when the namespace itself is part of the public API or when many members are genuinely consumed locally.
-- Re-check mutable test hook surfaces such as `src/runtime/inheritance-call.js`. If native ESM tests can patch collaborators through explicit dependency injection or exported setter helpers, remove mutable default objects that exist only to mimic CommonJS monkeypatching.
+- Re-check mutable test hook surfaces such as `src/runtime/inheritance-call.js`. Done for the default-export part: mutable hook registries now use named exports such as `inheritanceCallApi`, `inheritanceStateApi`, `inheritanceBootstrapApi`, and `lookupApi`. A later refactor can replace the mutable registries themselves with explicit dependency injection or setter helpers if that API is still desirable.
 - Re-check `src/index.js` convenience functions after named imports are canonical. Keep `configure`, `render*`, `compile*`, and `precompile*` only if they are intended top-level API; otherwise move convenience wrappers to a legacy or compatibility entry before final package publication.
 - Remove transitional Rollup-generated ESM output and any `dist/esm` facade once the build copies native ESM source to the final `dist` shape.
 - Normalize import style after the source is fully ESM:

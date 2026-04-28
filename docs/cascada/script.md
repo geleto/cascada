@@ -2686,7 +2686,7 @@ The `AsyncEnvironment` is the primary class for orchestrating and executing Casc
         *   `lstripBlocks` (default: `false`): Strip leading whitespace from a block tag.
 
     ```javascript
-    const { AsyncEnvironment, FileSystemLoader } = require('cascada-engine');
+    import { AsyncEnvironment, FileSystemLoader } from 'cascada-engine';
 
     const env = new AsyncEnvironment(new FileSystemLoader('scripts'), {
       trimBlocks: true
@@ -2755,7 +2755,7 @@ Loaders are objects that tell the environment how to find and load your scripts 
     The **`raceLoaders(loaders)`** function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds.
 
     ```javascript
-    const { raceLoaders, FileSystemLoader, WebLoader } = require('cascada-engine');
+    import { raceLoaders, FileSystemLoader, WebLoader } from 'cascada-engine';
 
     const fastLoader = raceLoaders([
       new WebLoader('https://my-cdn.com/scripts/'),
