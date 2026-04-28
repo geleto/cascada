@@ -1,6 +1,6 @@
 'use strict';
 
-import * as lib from '../lib.js';
+import {extend, keys, TemplateError, indexOf} from '../lib.js';
 import {Obj} from '../object.js';
 import {createPoison, markPromiseHandled} from '../runtime/errors.js';
 
@@ -29,15 +29,15 @@ class Context extends Obj {
     // so async composition can expose it explicitly via `with context`
     // without leaking current local vars/channels.
     const initialRenderCtx = renderCtx === undefined ? ctx : (renderCtx || {});
-    this.renderCtx = lib.extend({}, initialRenderCtx);
-    this.ctx = lib.extend({}, ctx);
-    this.compositionContextVars = lib.extend({}, ctx);
+    this.renderCtx = extend({}, initialRenderCtx);
+    this.ctx = extend({}, ctx);
+    this.compositionContextVars = extend({}, ctx);
     // undefined means no composition payload was supplied; null means an
     // explicit empty payload baseline that should still use payload semantics.
-    this.compositionPayloadVars = compositionPayloadVars === undefined ? null : lib.extend({}, compositionPayloadVars);
+    this.compositionPayloadVars = compositionPayloadVars === undefined ? null : extend({}, compositionPayloadVars);
     this.executionState = executionState || new ContextExecutionState();
 
-    lib.keys(blocks).forEach(name => {
+    keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
     });
   }
@@ -141,7 +141,7 @@ class Context extends Obj {
       return `${name}(${args})${contextSuffix}`;
     };
 
-    throw new lib.TemplateError(
+    throw new TemplateError(
       `block "${name}" signature mismatch: overriding block declares ${formatContract(overridingContract)} but parent declares ${formatContract(parentContract)}`
     );
   }
@@ -155,7 +155,7 @@ class Context extends Obj {
   }
 
   getSyncSuper(env, name, block, frame, runtime, cb) {
-    var idx = lib.indexOf(this.blocks[name] || [], block);
+    var idx = indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
 

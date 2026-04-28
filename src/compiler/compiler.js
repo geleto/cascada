@@ -1,7 +1,7 @@
 'use strict';
 
-import * as parser from '../parser.js';
-import * as transformer from '../transformer.js';
+import {parse} from '../parser.js';
+import {transform} from '../transformer.js';
 import CompilerCommon from './compiler-common.js';
 import CompilerBaseAsync from './compiler-base-async.js';
 import CompilerBaseSync from './compiler-base-sync.js';
@@ -25,8 +25,8 @@ function compile(src, asyncFilters, extensions, name, opts = {}) {
 
   const preprocessors = (extensions || []).map(ext => ext.preprocess).filter(Boolean);
   const processedSrc = preprocessors.reduce((currentSrc, processor) => processor(currentSrc), src);
-  const ast = transformer.transform(
-    parser.parse(processedSrc, extensions, opts),
+  const ast = transform(
+    parse(processedSrc, extensions, opts),
     asyncFilters,
     name,
     compileOptions

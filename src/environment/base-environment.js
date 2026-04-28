@@ -1,7 +1,7 @@
 'use strict';
 
 import waterfall from 'a-sync-waterfall';
-import * as lib from '../lib.js';
+import {isArray, _entries, without, isFunction} from '../lib.js';
 import filters from '../filters.js';
 import {FileSystemLoader, WebLoader, PrecompiledLoader} from '../loader/loaders.js';
 import * as tests from '../tests.js';
@@ -82,7 +82,7 @@ class BaseEnvironment extends EmitterObj {
         this.loaders = [new WebLoader('/views')];
       }
     } else {
-      this.loaders = lib.isArray(loaders) ? loaders : [loaders];
+      this.loaders = isArray(loaders) ? loaders : [loaders];
     }
 
     // It's easy to use precompiled templates: just include them
@@ -103,8 +103,8 @@ class BaseEnvironment extends EmitterObj {
     this.extensions = {};
     this.extensionsList = [];
 
-    lib._entries(filters).forEach(([name, filter]) => this.addFilter(name, filter));
-    lib._entries(tests).forEach(([name, test]) => this.addTest(name, test));
+    _entries(filters).forEach(([name, filter]) => this.addFilter(name, filter));
+    _entries(tests).forEach(([name, test]) => this.addTest(name, test));
   }
 
   _initLoaders() {
@@ -158,7 +158,7 @@ class BaseEnvironment extends EmitterObj {
       return;
     }
 
-    this.extensionsList = lib.without(this.extensionsList, extension);
+    this.extensionsList = without(this.extensionsList, extension);
     delete this.extensions[name];
   }
 
@@ -232,23 +232,23 @@ class BaseEnvironment extends EmitterObj {
       name = name.raw;
     }
 
-    if (lib.isFunction(asyncMode)) {
+    if (isFunction(asyncMode)) {
       cb = asyncMode;
       asyncMode = false;
     }
 
-    if (lib.isFunction(ignoreMissing)) {
+    if (isFunction(ignoreMissing)) {
       cb = ignoreMissing;
       ignoreMissing = false;
     }
 
-    if (lib.isFunction(parentName)) {
+    if (isFunction(parentName)) {
       cb = parentName;
       parentName = null;
       eagerCompile = eagerCompile || false;
     }
 
-    if (lib.isFunction(eagerCompile)) {
+    if (isFunction(eagerCompile)) {
       cb = eagerCompile;
       eagerCompile = false;
     }

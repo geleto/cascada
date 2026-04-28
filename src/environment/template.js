@@ -1,6 +1,6 @@
 'use strict';
 
-import * as lib from '../lib.js';
+import {isObject, isString, _prettifyError, keys} from '../lib.js';
 import {compile} from '../compiler/compiler.js';
 import * as globalRuntime from '../runtime/runtime.js';
 import {Frame} from '../runtime/frame.js';
@@ -20,7 +20,7 @@ class Template extends Obj {
     this.asyncMode = false;
     this.scriptMode = false;
 
-    if (lib.isObject(src)) {
+    if (isObject(src)) {
       switch (src.type) {
         case 'code':
           this.tmplProps = src.obj;
@@ -32,7 +32,7 @@ class Template extends Obj {
           throw new Error(
             `Unexpected template object type ${src.type}; expected 'code', or 'string'`);
       }
-    } else if (lib.isString(src)) {
+    } else if (isString(src)) {
       this.tmplStr = src;
     } else {
       throw new Error('src must be a string or an object describing the source');
@@ -44,7 +44,7 @@ class Template extends Obj {
       try {
         this._compile();
       } catch (err) {
-        throw lib._prettifyError(this.path, this.env.opts.dev, err);
+        throw _prettifyError(this.path, this.env.opts.dev, err);
       }
     } else {
       this.compiled = false;
@@ -64,7 +64,7 @@ class Template extends Obj {
     try {
       this.compile();
     } catch (e) {
-      const err = lib._prettifyError(this.path, this.env.opts.dev, e);
+      const err = _prettifyError(this.path, this.env.opts.dev, e);
       if (cb) {
         return callbackAsap(cb, err);
       }
@@ -82,7 +82,7 @@ class Template extends Obj {
       callbackCalled = true;
 
       if (err) {
-        err = lib._prettifyError(this.path, this.env.opts.dev, err);
+        err = _prettifyError(this.path, this.env.opts.dev, err);
       }
 
       if (cb) {
@@ -115,7 +115,7 @@ class Template extends Obj {
     try {
       this.compile();
     } catch (e) {
-      const err = lib._prettifyError(this.path, this.env.opts.dev, e);
+      const err = _prettifyError(this.path, this.env.opts.dev, e);
       if (cb) {
         return callbackAsap(cb, err);
       } else {
@@ -139,7 +139,7 @@ class Template extends Obj {
       }
 
       if (err) {
-        err = lib._prettifyError(this.path, this.env.opts.dev, err);
+        err = _prettifyError(this.path, this.env.opts.dev, err);
         didError = true;
       }
 
@@ -295,7 +295,7 @@ class Template extends Obj {
   _getBlocks(props, blockContracts) {
     var blocks = {};
 
-    lib.keys(props).forEach((k) => {
+    keys(props).forEach((k) => {
       if (k.slice(0, 2) === 'b_') {
         const blockName = k.slice(2);
         blocks[blockName] = props[k];

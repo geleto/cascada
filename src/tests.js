@@ -1,8 +1,6 @@
 'use strict';
 
-import * as runtime from './runtime/runtime.js';
-
-const {SafeString} = runtime;
+import {SafeString} from './runtime/runtime.js';
 
 /**
  * Returns `true` if the object is a function, otherwise `false`.

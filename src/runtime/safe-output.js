@@ -1,7 +1,13 @@
 'use strict';
 
-import * as lib from '../lib.js';
-import * as errors from './errors.js';
+import {escape} from '../lib.js';
+import {
+  isPoison,
+  isPoisonError,
+  handleError,
+  collectErrors,
+  PoisonError
+} from './errors.js';
 import {RESOLVE_MARKER, resolveAll, resolveSingle} from './resolve.js';
 import {isCommandBuffer} from './buffer-marker.js';
 
@@ -97,7 +103,7 @@ function suppressValue(val, autoescape) {
   val = (val !== undefined && val !== null) ? val : '';
 
   if (autoescape && !(val instanceof SafeString)) {
-    val = lib.escape(val.toString());
+    val = escape(val.toString());
   }
 
   return val;
@@ -106,7 +112,7 @@ function suppressValue(val, autoescape) {
 function suppressValueAsync(val, autoescape, errorContext) {
   val = normalizeBufferValue(val);
   // Poison check - return rejected promise synchronously
-  if (errors.isPoison(val)) {
+  if (isPoison(val)) {
     return val;
   }
 
@@ -125,7 +131,7 @@ function suppressValueAsync(val, autoescape, errorContext) {
 
   // Arrays without promises - handle synchronously
   if (Array.isArray(val)) {
-    const hasPoison = val.some(errors.isPoison);
+    const hasPoison = val.some(isPoison);
     const hasPromises = val.some(item => item && typeof item.then === 'function');
     const hasMarkers = val.some(item => item && item[RESOLVE_MARKER]);
 
@@ -153,11 +159,11 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
         val = await val;
       }
     } catch (err) {
-      if (errors.isPoisonError(err)) {
+      if (isPoisonError(err)) {
         throw err;
       } else {
-        const contextualError = errors.handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        throw new errors.PoisonError([contextualError]);
+        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        throw new PoisonError([contextualError]);
       }
     }
 
@@ -169,11 +175,11 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
       const resolvedArray = await resolveAll(val);
       val = resolvedArray;
     } catch (err) {
-      if (errors.isPoisonError(err)) {
+      if (isPoisonError(err)) {
         throw err;
       }
-      const contextualError = errors.handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-      throw new errors.PoisonError([contextualError]);
+      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      throw new PoisonError([contextualError]);
     }
 
     return suppressValue(val.join(','), autoescape);
@@ -184,7 +190,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
 
 function ensureDefined(val, lineno, colno, context) {
   if (val === null || val === undefined) {
-    const err = errors.handleError(
+    const err = handleError(
       new Error('attempted to output null or undefined value'),
       lineno + 1,
       colno + 1,
@@ -200,7 +206,7 @@ function ensureDefined(val, lineno, colno, context) {
 function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
   val = normalizeBufferValue(val);
   // Poison check - return rejected promise synchronously
-  if (errors.isPoison(val)) {
+  if (isPoison(val)) {
     return val;
   }
 
@@ -218,9 +224,9 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
   val = normalizeBufferValue(val);
   // Handle arrays with possible poison values
   if (Array.isArray(val)) {
-    const collectedErrors = await errors.collectErrors(val);
+    const collectedErrors = await collectErrors(val);
     if (collectedErrors.length > 0) {
-      throw new errors.PoisonError(collectedErrors);
+      throw new PoisonError(collectedErrors);
     }
 
     return val;
@@ -235,11 +241,11 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
         val = await val;
       }
     } catch (err) {
-      if (errors.isPoisonError(err)) {
+      if (isPoisonError(err)) {
         throw err;
       } else {
-        const contextualError = errors.handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        throw new errors.PoisonError([contextualError]);
+        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        throw new PoisonError([contextualError]);
       }
     }
 
@@ -291,11 +297,11 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
       }
     }
   } catch (err) {
-    if (errors.isPoisonError(err)) {
+    if (isPoisonError(err)) {
       throw err;
     } else {
-      const contextualError = errors.handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-      throw new errors.PoisonError([contextualError]);
+      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      throw new PoisonError([contextualError]);
     }
   }
 

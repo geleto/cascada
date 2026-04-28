@@ -1,6 +1,6 @@
 'use strict';
 
-import * as lib from '../lib.js';
+import {isArray, asyncIter, asyncFor, keys as objectKeys} from '../lib.js';
 
 import {
   createPoison,
@@ -18,10 +18,10 @@ const supportsIterators = (
   typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
 );
 function asyncEach(arr, dimen, iter, cb) {
-  if (lib.isArray(arr)) {
+  if (isArray(arr)) {
     const len = arr.length;
 
-    lib.asyncIter(arr, function iterCallback(item, i, next) {
+    asyncIter(arr, function iterCallback(item, i, next) {
       switch (dimen) {
         case 1:
           iter(item, i, len, next);
@@ -38,7 +38,7 @@ function asyncEach(arr, dimen, iter, cb) {
       }
     }, cb);
   } else {
-    lib.asyncFor(arr, function iterCallback(key, val, i, len, next) {
+    asyncFor(arr, function iterCallback(key, val, i, len, next) {
       iter(key, val, i, len, next);
     }, cb);
   }
@@ -58,7 +58,7 @@ function asyncAll(arr, dimen, func, cb) {
     }
   }
 
-  if (lib.isArray(arr)) {
+  if (isArray(arr)) {
     len = arr.length;
     resultArr = new Array(len);
 
@@ -85,7 +85,7 @@ function asyncAll(arr, dimen, func, cb) {
       }
     }
   } else {
-    const keys = lib.keys(arr || {});
+    const keys = objectKeys(arr || {});
     len = keys.length;
     resultArr = new Array(len);
 
@@ -101,7 +101,7 @@ function asyncAll(arr, dimen, func, cb) {
 }
 
 function fromIterator(arr) {
-  if (typeof arr !== 'object' || arr === null || lib.isArray(arr)) {
+  if (typeof arr !== 'object' || arr === null || isArray(arr)) {
     return arr;
   } else if (supportsIterators && Symbol.iterator in arr) {
     return arrayFrom(arr);
