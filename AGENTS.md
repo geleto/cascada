@@ -1,18 +1,72 @@
 # Cascada AI Agent Guide
 
-This guide provides context for developing the Cascada engine. Assist in writing, refactoring, and testing code under supervision, adhering to the architecture and patterns below.
+This guide provides context for developing the Cascada engine. Assist in writing, refactoring, and testing code, adhering to the architecture and patterns below.
 
 **Package**: `cascada-engine`
 **Repository**: https://github.com/geleto/cascada
 
 ## Table of Contents
 
+- [Project Overview](#project-overview)
+- [Glossary](#glossary)
 - [Key Files and Directories](#key-files-and-directories)
 - [Primary Agent Directives & Rules](#primary-agent-directives--rules)
-- [Project Overview](#project-overview)
 - [Implementation Architecture](#implementation-architecture)
 - [Development & Testing Guide](#development--testing-guide)
+- [API & File Reference](#api--file-reference)
 
+
+## Project Overview
+
+Cascada is a parallel-first scripting and templating engine. The core model is **Implicitly Parallel, Explicitly Sequential**: code reads like ordinary synchronous logic, independent operations run concurrently, and explicit `!` markers or channels provide ordering where side effects or assembled output require it.
+
+Scripts are data-orchestration code with named channels (`data result`, `text body`, etc.). Templates are Nunjucks-compatible text generation. Script uses `var x = value` for local variables; this is equivalent to `{% set x = value %}` in Nunjucks templates.
+
+Named channels aggregate output across parallel branches in source order. `result.snapshot()` and `body.snapshot()` materialize the assembled channel state into a plain JS value (object or string) at the point of the `return` statement.
+
+| Channel | Declaration | `return` syntax | Output type |
+|---|---|---|---|
+| `data` | `data result` | `return result.snapshot()` | plain object |
+| `text` | `text body` | `return body.snapshot()` | string |
+| `var` | implicit (`var x = value`) | read as `x` | any value |
+
+Script variables (`var x`) are implicitly backed by a `var` channel — a channel that can only set, hold, and observe a single value. Because it holds exactly one value, `snapshot()` on a `var` channel is a fast direct read, not the ordered-assembly operation that `data` and `text` channels perform. This is why variable access in scripts looks and feels like ordinary synchronous code.
+
+```javascript
+data result
+var user = fetchUser(userId)
+var posts = fetchPosts(userId)
+for post in posts
+  var enriched = enrichPost(post)
+  result.posts.push({ title: enriched.title, status: enriched.status })
+endfor
+db!.log("report", userId)
+return result.snapshot()
+```
+
+For language details, prefer `docs/cascada/script.md`; `docs/cascada/script-agent.md` is a concise AI-optimized reference that will be added shortly but may not be fully up-to-date when present.
+
+---
+
+## Glossary
+
+Brief definitions for terms used throughout this guide. Full mechanics are in the [Implementation Architecture](#implementation-architecture) section.
+
+**Channel** — A named, typed state lane inside a `CommandBuffer`. User-facing channel types are `data` (structured accumulation) and `text` (ordered text output). `var` is also a channel internally — it can only set, hold, and observe a single value, so `snapshot()` on it is a fast direct read rather than an ordered assembly; this is why script variables look and feel like ordinary synchronous values. Other internal types (`sequence`, `error`, `observation`, `timing`, `sequential-path`) are managed by the runtime. Commands enqueued to a channel are applied in source order by the buffer iterator.
+
+**Command Buffer (`CommandBuffer`)** — A runtime tree node that holds source-ordered commands and child buffers. Compiled async code enqueues commands into the *current* buffer rather than mutating state directly. The buffer iterator (`buffer-iterator.js`) walks the tree depth-first in source order, waiting on unfilled child slots.
+
+**Poison / `PoisonedValue`** — A thenable error container carrying an `.errors[]` array. Operations receiving poison as input are skipped and propagate poison instead of executing. Awaiting a `PoisonedValue` throws a `PoisonError`. Detect with `isPoison(value)` before `await`, and `isPoisonError(err)` in `catch` blocks.
+
+**`snapshot()`** — Materializes the current state of any channel into a plain JS value. For `data` and `text` channels this assembles source-ordered commands into an object or string; for `var` channels it is a fast direct read of the held value. Use `return result.snapshot()` / `return body.snapshot()` to capture named channel output.
+
+**Async Boundary** — A compiler-inserted child buffer for code whose command shape is unknown until a value resolves (e.g., `if` conditions, loop iterables, macro calls). The parent buffer preserves the source-order slot; the child buffer is filled later.
+
+**Sync-First Hybrid** — A runtime performance pattern. The outer function is non-`async` and handles synchronous fast paths directly; only cases involving actual promises are delegated to a separate inner `async` helper. Avoids Promise overhead for 30–40% of calls.
+
+**Sequence Lock / `!`** — Runtime mechanism that enforces strict source-order execution for calls on a static path (e.g., `db!.write()`). Each call awaits the prior call on that path before executing.
+
+---
 
 ## Key Files and Directories
 
@@ -34,18 +88,24 @@ This guide provides context for developing the Cascada engine. Assist in writing
 -   `src/runtime/errors.js`: **Poison and error helpers.** Contains `PoisonError`, `isPoison`, `isPoisonError`, `handleError`, and related utilities.
 -   `src/runtime/resolve.js`: **Promise/poison resolution.** Contains `resolveAll`, `resolveSingle`, and related sync-first resolution helpers.
 -   `src/runtime/command-buffer.js`: **Command buffer implementation.** Creates and links runtime buffers and routes commands to channels.
+-   `src/runtime/buffer-iterator.js`: **Buffer iterator.** Walks the command buffer tree depth-first in source order, applying commands and waiting on unfilled child slots.
+-   `src/runtime/async-boundaries.js`: **Async boundary helpers.** Runtime support for compiler-inserted async boundaries.
 -   `src/runtime/channels/*.js`: **Channel and command implementations.** Text, data, var, observation, timing, sequence, sequential-path, and error commands live here.
 -   `src/compiler/compiler.js`: **Main compiler entry.** Chooses sync/async/script compiler behavior and orchestrates code generation.
 -   `src/compiler/compiler-async.js`: **Async statement compiler.** Handles async templates/scripts, statements, output commands, guards, and async boundaries.
+-   `src/compiler/compiler-sync.js`: **Sync statement compiler.** Handles non-async templates and statements.
 -   `src/compiler/compiler-base-async.js`: **Async expression compiler.** Handles expression-level async behavior, lookups, function calls, and waited reads.
+-   `src/compiler/compiler-base-sync.js`: **Sync expression compiler.** Handles expression-level behavior for non-async templates.
 -   `src/compiler/analysis.js`: **Channel analysis.** Computes declarations, `usedChannels`, `mutatedChannels`, and `sequenceLocks`.
 -   `src/compiler/buffer.js`: **Buffer/codegen helpers.** Emits command construction and command-buffer interactions.
+-   `src/compiler/emit.js`: **Code emission helpers.** Low-level code generation primitives used by statement and expression compilers.
+-   `src/compiler/boundaries.js`: **Async boundary emission.** Emits child buffer creation and async boundary wiring in compiled code.
 -   `src/compiler/sequential.js`: **Sequential (`!`) analysis.** Identifies static sequence paths and validates `!` usage.
 -   `src/script/default-data-methods.js`: **Built-in data-channel methods.** Defines default data mutations such as `push`, `merge`, and related helpers.
 -   `src/runtime/channels/data.js`: **Runtime data channel.** Applies `DataCommand` instances and custom data methods registered with `AsyncEnvironment.addDataMethods`.
 -   `src/script/script-transpiler.js`: **Script-to-template transpiler.**
 -   `tests/`: **Test suites.**
-    -   `tests/pasync/`: Tests for advanced asynchronous execution and parallelism.
+    -   `tests/pasync/`: Tests for advanced asynchronous execution and parallelism. Organized by feature: `loops.js`, `conditional.js`, `expressions.js`, `macros.js`, `sequential-*.js`, `script.js`, `extends*.js`, etc. Before writing a new test, scan for an existing file covering the relevant feature.
     -   `tests/poison/`: Tests for the error handling (Poison) system.
     -   `tests/util.js`: Test utilities including `StringLoader` class.
 
@@ -57,9 +117,10 @@ This guide provides context for developing the Cascada engine. Assist in writing
 
 #### Documentation Files
 -   **User Docs** (`docs/cascada/`):
-    -   `script-agent.md`: Intended concise guide to Cascada Script syntax and features for AI agents. It is currently referenced by docs but may not exist in the working tree; if absent, use `script.md` as the source of truth and keep this reference for planned restoration.
+    -   `script-agent.md`: Concise AI-optimized guide to Cascada Script syntax and features. Will be added shortly; when present, may not be fully up-to-date with the latest features.
     -   `script.md`: Comprehensive, human-readable guide to Cascada Script syntax and features, almost always up-to-date with the latest features even before they are developed.
-    -   `template.md`: Very outdated guide to Cascada Template syntax (Nunjucks-compatible). Use your nunjucks knowledge and the scripting docs instead.
+    -   `template.md`: Very outdated guide to Cascada Template syntax (Nunjucks-compatible). Use your Nunjucks knowledge and the scripting docs instead.
+    -   `legacy.md`: Design document describing the old implicit-handler model. Useful when rewriting scripts that use legacy semantics.
 
 -   **Implementation Guides** (`docs/code/`), may not be up-to-date on the latest implementation details:
     -   `Tests.md`: General testing guidelines and philosophy.
@@ -73,6 +134,8 @@ This guide provides context for developing the Cascada engine. Assist in writing
     -   `return.md` and `return-transpile.md`: Return semantics and script transpilation notes.
 
 When docs and implementation disagree, prefer current source and tests. Treat `docs/code/` as design context, not an authority over live behavior.
+
+---
 
 ## Primary Agent Directives & Rules
 
@@ -145,43 +208,28 @@ Development and tests require Node `>=22`.
 *   ❌ **DON'T:** Short-circuit error collection. Always await ALL promises and collect ALL errors before returning/throwing (**"Never Miss Any Error"** principle).
 *   ❌ **DON'T:** Use `instanceof` for poison detection. Always use `isPoison()` and `isPoisonError()` helpers.
 *   ❌ **DON'T:** Construct `TemplateError` directly in `catch` blocks. Always use idempotent `runtime.handleError(e, ...)`.
-*   ❌ **DON'T:** “Fix” missing visibility by reading or waiting on the owner/producer buffer directly.
+*   ❌ **DON'T:** "Fix" missing visibility by reading or waiting on the owner/producer buffer directly.
     *   No ordinary lookup fallback to parent/root buffers.
-    *   No “current position” wait on parent/root buffers.
+    *   No "current position" wait on parent/root buffers.
     *   If the current buffer cannot observe a value in source order, the real bug is missing linked channels, wrong `currentBuffer`, or missing explicit payload wiring.
-
----
-
-## Project Overview
-
-Cascada is a parallel-first scripting and templating engine. The core model is **Implicitly Parallel, Explicitly Sequential**: code reads like ordinary synchronous logic, independent operations run concurrently, and explicit `!` markers or channels provide ordering where side effects or assembled output require it.
-
-Scripts are data-orchestration code with named channels (`data result`, `text body`, etc.). Templates are Nunjucks-compatible text generation. For language details, prefer `docs/cascada/script.md`; `docs/cascada/script-agent.md` is intentionally still referenced but may be absent in the working tree.
-
-```javascript
-data result
-var user = fetchUser(userId)
-var posts = fetchPosts(userId)
-for post in posts
-  var enriched = enrichPost(post)
-  result.posts.push({ title: enriched.title, status: enriched.status })
-endfor
-db!.log("report", userId)
-return result.snapshot()
-```
 
 ---
 
 ## Implementation Architecture
 
+> **You only need to read this section if you are modifying compiler internals (`src/compiler/`), adding new channel types (`src/runtime/channels/`), changing async boundary mechanics, or debugging unexpected runtime behavior. For most tasks — adding data methods, writing tests, fixing script-level bugs — the Overview, Glossary, and Golden Rules are sufficient.**
+
 ### Async Execution Model
 
--   **Core Principle**: Transparently handle promises as first-class values, awaiting only when needed.
--   **Mechanism**: Async-mode compilation emits scheduled boundaries through `src/compiler/emit.js`, `src/compiler/boundaries.js`, and statement/expression compilers. Boundaries use `runtime.createCommandBuffer`, linked channels, and runtime async-boundary helpers rather than ad hoc async IIFEs.
--   **Key Components**: `runtime.resolveAll`, `runtime.resolveSingle`, `CommandBuffer`, channel classes under `src/runtime/channels/`, and compiler analysis metadata from `src/compiler/analysis.js`.
--   **Reference**: See `docs/code/channels-refactor.md`, `docs/code/command-buffer-refactor.md`, `docs/code/expression-channels.md`, and focused subsystem notes in `docs/code/`.
+Cascada's async execution has two phases:
 
-### Variable Synchronization
+1. **Enqueue phase** — Compiled code runs synchronously. Instead of mutating outputs directly, it creates `CommandBuffer` objects and enqueues command objects in source order. Async boundaries insert reserved child-buffer slots into the parent's command stream before any async work begins.
+
+2. **Apply phase** — The buffer iterator (`buffer-iterator.js`) walks the command-buffer tree depth-first in source order. When it reaches an unfilled child-buffer slot, it waits. When the async work completes and fills the slot, the iterator resumes and applies those commands next.
+
+The two phases interleave: enqueue work for one boundary may still be running while the iterator is already applying earlier commands. This is safe because each child buffer reserves its slot synchronously before any async work starts.
+
+### Compile-to-Runtime Pipeline
 
 **Goal:** Prevent race conditions; ensure sequential equivalence when concurrent blocks read/write same outer-scope variables.
 
@@ -192,26 +240,34 @@ return result.snapshot()
 -   **Command Buffer Tree** (`src/runtime/command-buffer.js`): Runtime command buffers hold source-ordered commands and child buffers. Linked channels make values visible where the compiler determined they are used.
 -   **Ordered Application via Buffer Iterator** (`src/runtime/buffer-iterator.js`): A depth-first iterator walks the buffer tree and applies commands in source-code order. It waits on unfilled slots (child buffers not yet finished) before advancing.
 -   **Implicit Variable Synchronization**: Channel observations and `resolveAll`/`resolveSingle` await pending values only when consumed. Data dependencies serialize naturally without explicit locks.
+-   **Linked channels**: When the compiler creates a child buffer, `analysis.js` computes which parent channels the child body reads or mutates (`usedChannels`, `mutatedChannels`). `emit.js`/`buffer.js` pass these as a `linkedChannels` argument to `createCommandBuffer`. At runtime, `CommandBuffer._linkedChannels` registers the links so the child buffer routes commands back to the correct parent channel lanes. If a channel is not linked, commands in the child buffer silently miss their target — the fix is always in analysis/emit, never in the runtime.
 
 ### Commands And Channels
 
 Commands are split by channel under `src/runtime/channels/`. A command is enqueued in the current `CommandBuffer` and applied in source order. Observation commands return promises; mutating commands change channel state. Look up the relevant channel file instead of adding cross-channel special cases.
 
-Use the right observation primitive. `SnapshotCommand` inspects the channel and turns poison into a rejected observation; `RawSnapshotCommand` returns the raw target for narrow overwrite/repair-style paths. To wait for a whole channel result, prefer `channel.finalSnapshot()` over enqueueing a snapshot command unless source-position observation is specifically required.
+Use the right observation primitive. `SnapshotCommand` inspects the channel and turns poison into a rejected observation. `RawSnapshotCommand` captures the raw channel target without poison inspection — used where poisoned leaves may be replaced by an incoming write (e.g., `var`-channel `set_path` overwrites). To wait for a whole channel result, prefer `channel.finalSnapshot()` over enqueueing a snapshot command unless source-position observation is specifically required.
 
 Always add commands through the compiler's active buffer expression: `compiler.buffer.currentBuffer` (often emitted as the runtime variable `currentBuffer` inside boundary callbacks, or `output` at the root). Never skip to a parent/root/producer buffer, and never call a channel directly to "just apply" a command. If the current buffer cannot see the needed channel, fix analysis/linking/current-buffer selection rather than bypassing the buffer tree.
 
+Channels come into existence via `runtime.declareBufferChannel(buffer, name, type, context, null)`, emitted at codegen time. This call creates the `Channel` object, registers it in `_channels`, and binds its iterator. Any new channel type or new declaration form must go through this call.
+
+`WaitCurrentCommand` (`src/runtime/channels/timing.js`) is a timing-only sync point: it resolves when the iterator reaches this source-position slot on a specific channel lane, carrying no snapshot or error semantics. Used by concurrency-limited loops to enforce "slot N must finish before N+1 begins" across async iterations.
+
+Two distinct error-injection commands exist in `src/runtime/channels/error.js`:
+-   **`ErrorCommand`** — placed in the buffer command stream; the iterator throws immediately when it reaches this entry. Used when an entire async boundary has failed and no channel mutation will occur.
+-   **`TargetPoisonCommand`** — writes `PoisonedValue` directly into a specific channel's target. Used to contaminate a channel's output mid-stream when a value-consumption failure occurs without aborting the whole boundary.
+
 ### Command Buffer Mental Model
 
-Compiled async work does not mutate outputs directly. It enqueues commands into the current `CommandBuffer`. When async control flow can produce nested output, the compiler creates a child buffer in the parent buffer's source-order slot. The buffer iterator walks parent and child buffers in source order, waiting for unfilled child slots when needed.
+Command-buffer add helpers return the command's result promise immediately; that promise resolves or rejects only when the buffer iterator reaches and applies the command. This means observation commands (snapshots, error reads) return a pending promise that downstream code can `await` — the actual channel state is read only when the iterator reaches that source position.
 
-Channels are named state lanes inside buffers. `analysis.js` determines which channels a block declares, reads, or mutates; `emit.js` uses that to link parent channels into child buffers. If a value is visible, the current buffer must already have a linked path to observe it. Do not read from producer/root buffers to "fix" visibility.
+"Finished" has three distinct lifecycle stages — be explicit about which you are touching:
+-   **Accept-closed** (`markChannelFinished()` / `markFinished()`): the buffer stops accepting new commands on a lane or all lanes.
+-   **Iterator-exited**: the iterator has applied all commands in the relevant lane and moved on.
+-   **Materialized** (`channel.finalSnapshot()`): waits for iterator completion then returns the fully assembled value.
 
-Mutating commands change channel state. Observation commands, such as snapshots and error reads, are also enqueued in the current buffer. Command-buffer add helpers return the command's result promise immediately; that promise resolves or rejects later when the buffer iterator reaches and applies the command.
-
-"Finished" has three separate meanings. A buffer may stop accepting more commands for one or all channel lanes; the iterator may later exit that buffer after all commands in the relevant lane have been applied; and a channel may be fully consumable when `finalSnapshot()` waits for iterator completion and materializes the result. Be explicit about which lifecycle you are touching.
-
-Observable commands are source-ordered reads, not free side channels. The buffer iterator tracks pending observable command promises and waits for them before applying later mutating commands on the same lane. This preserves ordered reads such as snapshots, `is error`, `getError`, and guard-state capture.
+Observable commands are source-ordered reads, not free side channels. The buffer iterator waits for all pending observable command promises before applying later mutating commands on the same lane. `SnapshotCommand` sets `isUniversalObservationCommand = true`, which blocks mutating commands on *any* lane until it resolves; `RawSnapshotCommand` only blocks its own lane.
 
 ### Async Boundary Mental Model
 
@@ -221,14 +277,24 @@ Child buffers usually represent an async boundary where the future command shape
 
 Once a child buffer is inserted into the parent buffer, its contents may arrive later. That is expected: the parent preserves the source-order slot, and the iterator waits only when it reaches that slot. Do not delay adding an ordinary command merely because one of its arguments is a promise.
 
+Two distinct boundary primitives exist in `src/compiler/boundaries.js`:
+-   **`runControlFlowBoundary`** — statement-level. Errors report via `cb`; no return value into expression context. Used for `if`, `for`, `each`, includes, macros, and similar statements.
+-   **`runValueBoundary`** — expression-level. Returns a value or rejects with `PoisonError` into the expression consumer. Used when an async value must resolve before an expression can proceed.
+
+Using the wrong type causes either silently swallowed errors or broken expression evaluation.
+
+### Loop Parallelism: `for` vs `each`
+
+`for item in list` launches all loop-body iterations concurrently — each gets its own child buffer; `data` and `text` channels guarantee source-order assembly despite out-of-order completion. `each item in list` executes iterations strictly one at a time (each completes before the next begins). Internally these map to `asyncAll` (parallel) and `asyncEach` (sequential) in `src/runtime/loop.js`. Use `each` when the loop body has ordered side effects that don't use a `!` path.
+
 ### Value Resolution Rules
 
 Everything inside Cascada can be either a plain value or a promise for that value. Runtime code should preserve that shape unless it is at a real consumption boundary.
 
 Common runtime value shapes:
 -   **Plain JS values**: strings, numbers, objects, arrays, functions, channel facades, etc.
--   **Promises / `RuntimePromise`**: deferred values that should flow through expressions, command arguments, channels, and variables until consumed. `RuntimePromise` preserves error context for delayed consumption while remaining promise-like.
--   **Lazy objects/arrays with `RESOLVE_MARKER`**: `createObject()` / `createArray()` mark containers whose properties/elements may be async. The object remains usable synchronously; when consumed, its marker promise resolves children, mutates the container in place, and then removes the marker.
+-   **Promises / `RuntimePromise`**: deferred values that flow through expressions, command arguments, channels, and variables until consumed. `RuntimePromise` wraps a native Promise with source-location context (lineno/colno) so that if the promise rejects after flowing far from its creation site, the error still carries the original source location. It remains promise-like so Cascada's value-shape checks continue to work.
+-   **Lazy objects/arrays with `RESOLVE_MARKER`**: `createObject()` / `createArray()` mark containers whose properties/elements may be async — emitted when an object/array literal expression contains async values (e.g., `{ a: asyncFn(), b: other() }`). The object remains usable synchronously; when consumed, its marker promise resolves children, mutates the container in place, and then removes the marker.
 -   **PoisonedValue**: a thenable error container. It is cheap to detect synchronously with `isPoison(value)` and rejects as `PoisonError` if awaited.
 -   **Resolved-value wrappers**: internal thenable fast-path wrappers from `makeResolvedValue()`. They are cheap to detect synchronously with `isResolvedValue(value)` and signal "already resolved" without forcing a real Promise.
 
@@ -240,8 +306,6 @@ Avoid resolving or awaiting values early. Resolution is allowed at true async bo
 
 Command arguments must be resolved only by the command/channel apply path. If a command argument is a promise, enqueue it as-is; the channel applies source-order semantics and resolves arguments when the command is actually applied.
 
-Marking a deferred promise as handled is not resolution. Runtime helpers such as `markPromiseHandled()` and command argument staging attach rejection handlers so delayed Cascada-owned consumption does not produce unhandled-rejection warnings; they must not be replaced with eager `await`/resolution.
-
 When a value depends on prerequisite async work before it can be read, do not `await` that prerequisite in the main execution flow unless you are at a real async boundary. For example, do not write `await compositionReady; return readSharedValue();`. Instead, return a single promise that represents the whole operation, either with `.then(...)` chaining or by wrapping the wait/read sequence in a small async function.
 
 ### Error Handling (Poison System)
@@ -252,6 +316,7 @@ When a value depends on prerequisite async work before it can be read, do not `a
 -   **Detection**:
     -   `isPoison(value)` -> Use **before** `await`. Fast, synchronous check. It identifies existing `PoisonedValue` objects, but it will not `await` a promise to see if it will reject with a `PoisonError`. Ideal for fast-path in Sync-First Hybrid pattern.
     -   `isPoisonError(err)` -> Use **in `catch` block**.
+-   **Suppressing unhandled-rejection warnings**: `markPromiseHandled()` and command argument staging attach rejection handlers to Cascada-owned promises that will be consumed later. This prevents Node's unhandled-rejection warning on promises Cascada deliberately defers. Do not replace with eager `await`/resolution — that would change semantics.
 -   **Reference**: `docs/code/Error Handling Guide.md`, `docs/code/Poisoning - Implementation Principles.md`
 
 #### Error Propagation (Dataflow Poisoning)
@@ -276,7 +341,7 @@ Cascada treats errors as data ("Poison") flowing through system.
 
 -   **Sequence Keys**: Each static `!` path (e.g., `account!.deposit`) maps to a named sequence channel key.
 -   **Compiler Pass** (`src/compiler/sequential.js` + `src/compiler/analysis.js`): `collectSequenceLocks()` identifies `!` markers, validates static paths, and records `sequenceLocks` on analysis metadata.
--   **Runtime Commands**: `SequenceCallCommand` and `SequenceGetCommand` carry a deferred-result promise. The buffer iterator applies them in source order; each call awaits the prior result for that sequence channel before executing.
+-   **Runtime Commands**: `SequenceCallCommand` (for `db!.method()` calls) and `SequenceGetCommand` (for `db!.property` reads) each carry a deferred-result promise. The buffer iterator applies them in source order; each awaits the prior result for that sequence channel before executing.
 -   **Poison propagation**: If a `!`-call fails, `SequentialPathWriteCommand` marks the path poisoned. All subsequent commands on that path see the poison via `_getSequentialPathPoisonErrors()` and skip execution, rejecting their deferred promises.
 
 ---
@@ -311,7 +376,7 @@ Practical instructions for writing and testing code.
 
 ### Running Tests
 
--   **Quick Test (No Build)**: `npm run test:quick`
+-   **Quick Test (No Build)**: `npm run test:quick` — runs the full Node test suite from source without coverage instrumentation, build steps, or browser tests. Fastest way to check the suite.
 -   **Single File (Recommended)**: `npm run mocha -- tests/pasync/loop-phase1-two-pass.js`
 -   **Node Only (from source, with coverage)**: `npm run test:node`
 -   **Browser Only (bundled from source)**: `npm run test:browser`
@@ -322,7 +387,7 @@ Practical instructions for writing and testing code.
 -   **Isolate Tests**: Use `.only()` on `it()` or `describe()` blocks. Standard workflow for focused development.
 
 Test location guide:
--   Compiler/runtime async behavior: `tests/pasync/`
+-   Compiler/runtime async behavior: `tests/pasync/` — organized by feature (`loops.js`, `conditional.js`, `expressions.js`, `macros.js`, `sequential-*.js`, `script.js`, `extends*.js`, etc.). Before writing a new test, scan for an existing file covering the relevant feature.
 -   Poison/error behavior: `tests/poison/`
 -   Script transpiler: `tests/script-transpiler.js`
 -   Public API: `tests/api.js`
@@ -337,9 +402,6 @@ describe.only('My New Feature', () => {
 ```
 
 ### Test Assertions (`expect.js`)
-
-<details>
-<summary><strong>Click to expand common assertions...</strong></summary>
 
 Uses **expect.js**.
 
@@ -373,12 +435,7 @@ it('should throw error', async () => {
 });
 ```
 
-</details>
-
 ### Advanced Testing Techniques
-
-<details>
-<summary><strong>Click to expand advanced testing examples...</strong></summary>
 
 #### Using `StringLoader` for In-Memory Templates
 
@@ -427,12 +484,9 @@ import {transpiler as scriptTranspiler} from '../src/script/script-transpiler.js
 const script = 'data result\nvar user = getUser()\nresult.userName = user.name\nreturn result.snapshot()';
 const template = scriptTranspiler.scriptToTemplate(script);
 
-// Focus directives removed: use explicit returns instead.
 expect(template).to.contain('{%- var user = getUser() -%}');
 expect(template).to.contain('command result.set(["userName"], user.name)');
 ```
-
-</details>
 
 ---
 
@@ -444,11 +498,14 @@ expect(template).to.contain('command result.set(["userName"], user.name)');
 import { AsyncEnvironment } from 'cascada-engine';
 const env = new AsyncEnvironment();
 
-// Execute script and get data output via explicit return
-const result = await env.renderScriptString(script, context, {output: 'data'});
+// Execute script — returns the script's explicit return value
+const result = await env.renderScriptString(script, context);
 
 // Render template to text
 const html = await env.renderTemplateString(template, context);
+
+// Optionally specify a source path for better error messages
+const result = await env.renderScriptString(script, context, { path: 'my-script.casc' });
 
 // Add custom logic
 env.addGlobal('utils', myUtils);
@@ -493,5 +550,5 @@ const source = script._compileSource();
 **Key Methods:**
 - `render(context)` - Lower-level render path; prefer `env.renderScriptString(...)` in normal tests
 - `compile()` - Compiles script (called automatically on first render)
-- `_compileSource()` - Returns generated JavaScript source code (debugging)
-
+- `_compileSource()` - Returns generated 
+JavaScript source code (debugging)
