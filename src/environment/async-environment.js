@@ -195,7 +195,4 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 }
 
-export default {
-  AsyncEnvironment
-};
 export { AsyncEnvironment };

@@ -550,21 +550,4 @@ function peekError(value) {
   return null;
 }
 
-export default {
-  PoisonedValue,
-  PoisonError,
-  RuntimeError,
-  RuntimeFatalError,
-  RuntimePromise,
-  ErrorContext,
-  createPoison,
-  isPoison,
-  isPoisonError,
-  isRuntimeFatalError,
-  isError,
-  collectErrors,
-  handleError,
-  peekError,
-  markPromiseHandled
-};
 export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, ErrorContext, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, handleError, peekError, markPromiseHandled };

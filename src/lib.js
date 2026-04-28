@@ -1,6 +1,6 @@
 'use strict';
 
-import runtimeErrors from './runtime/errors.js';
+import * as runtimeErrors from './runtime/errors.js';
 
 var ArrayProto = Array.prototype;
 var ObjProto = Object.prototype;
@@ -411,7 +411,7 @@ function inOperator(key, val) {
 }
 
 
-export default {
+export {
   hasOwnProp,
   _prettifyError,
   TemplateError,
@@ -430,7 +430,7 @@ export default {
   asyncIter,
   asyncFor,
   indexOf,
-  keys: keys_,
+  keys_ as keys,
   _entries,
   _values,
   _assign,

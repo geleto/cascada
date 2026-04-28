@@ -41,12 +41,6 @@ function sequentialMemberLookupScriptValue(target, key, pathKey, errorContext, r
   );
 }
 
-export default {
-  sequentialCallWrapValue,
-  sequentialContextLookupValue,
-  sequentialMemberLookupAsyncValue,
-  sequentialMemberLookupScriptValue
-};
 export { sequentialCallWrapValue, sequentialContextLookupValue, sequentialMemberLookupAsyncValue, sequentialMemberLookupScriptValue };
 
 function contextLookupOnly(context, name, pathKey) {

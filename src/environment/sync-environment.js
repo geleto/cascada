@@ -1,6 +1,6 @@
 'use strict';
 
-import lib from '../lib.js';
+import * as lib from '../lib.js';
 import {BaseEnvironment} from './base-environment.js';
 import {callbackAsap} from './utils.js';
 import {Template} from './template.js';
@@ -64,7 +64,4 @@ class Environment extends BaseEnvironment {
   }
 }
 
-export default {
-  Environment
-};
 export { Environment };

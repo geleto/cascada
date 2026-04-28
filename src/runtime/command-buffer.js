@@ -624,8 +624,4 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
   return buffer;
 }
 
-export default {
-  CommandBuffer,
-  createCommandBuffer
-};
 export { CommandBuffer, createCommandBuffer };

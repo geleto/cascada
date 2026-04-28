@@ -2,7 +2,7 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment';
-import runtime from '../../src/runtime/runtime';
+import * as runtime from '../../src/runtime/runtime';
 
 const {createPoison, isPoisonError} = runtime;
 

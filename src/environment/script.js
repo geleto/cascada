@@ -1,9 +1,9 @@
 'use strict';
 
-import lib from '../lib.js';
+import * as lib from '../lib.js';
 import scriptTranspiler from '../script/script-transpiler.js';
 import {Template, AsyncTemplate} from './template.js';
-import compiler from '../compiler/compiler.js';
+import * as compiler from '../compiler/compiler.js';
 
 /**
  * Script class - represents a compiled Cascada script.
@@ -51,7 +51,4 @@ class Script extends Template {
   }
 }
 
-export default {
-  Script
-};
 export { Script };

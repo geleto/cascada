@@ -1,7 +1,7 @@
 'use strict';
 
-import nodes from '../nodes.js';
-import lib from '../lib.js';
+import * as nodes from '../nodes.js';
+import * as lib from '../lib.js';
 import {ErrorContext} from '../runtime/errors.js';
 import {Obj} from '../object.js';
 

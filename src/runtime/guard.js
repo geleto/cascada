@@ -248,13 +248,6 @@ async function settleSequenceTransactions(channelGuardState, mode) {
   return errors;
 }
 
-export default {
-  init,
-  initChannelSnapshots,
-  finalizeGuard,
-  repairSequenceOutputs,
-  restoreChannels
-};
 export { init, initChannelSnapshots, finalizeGuard, repairSequenceOutputs, restoreChannels };
 
 function reportAndThrow(cb, err) {

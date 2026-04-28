@@ -2,7 +2,7 @@
 
 import {Command} from './channels/command-base.js';
 import {resolveSingle} from './resolve.js';
-import inheritanceState, {ensureInheritanceSharedSchemaTable} from './inheritance-state.js';
+import * as inheritanceState from './inheritance-state.js';
 import inheritanceCall from './inheritance-call.js';
 import {createCommandBuffer} from './command-buffer.js';
 import {RuntimeFatalError} from './errors.js';
@@ -88,7 +88,7 @@ function _enqueueSharedObservation(instance, observationCommand, errorContext = 
     throw _createComponentError(`Shared channel '${channelName}' was not found`, errorContext);
   }
 
-  const sharedSchema = ensureInheritanceSharedSchemaTable(instance.inheritanceState);
+  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(instance.inheritanceState);
   const channelType = sharedSchema[channelName] ?? null;
 
   if (!channelType) {
@@ -422,11 +422,4 @@ function observeComponentChannel(spec) {
   return command.promise;
 }
 
-export default {
-  ComponentInstance,
-  createComponentInstance,
-  startComponentInstance,
-  callComponentMethod,
-  observeComponentChannel
-};
 export { ComponentInstance, createComponentInstance, startComponentInstance, callComponentMethod, observeComponentChannel };

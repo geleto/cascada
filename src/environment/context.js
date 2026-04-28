@@ -1,6 +1,6 @@
 'use strict';
 
-import lib from '../lib.js';
+import * as lib from '../lib.js';
 import {Obj} from '../object.js';
 import {createPoison, markPromiseHandled} from '../runtime/errors.js';
 
@@ -279,7 +279,4 @@ class Context extends Obj {
   }
 }
 
-export default {
-  Context
-};
 export { Context };

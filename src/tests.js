@@ -1,6 +1,6 @@
 'use strict';
 
-import runtime from './runtime/runtime.js';
+import * as runtime from './runtime/runtime.js';
 
 const {SafeString} = runtime;
 

@@ -61,9 +61,4 @@ function initializeInheritanceSharedChannelDefault(buffer, channelName, channelT
   return channel;
 }
 
-export default {
-  declareInheritanceSharedChannel,
-  claimInheritanceSharedDefault,
-  initializeInheritanceSharedChannelDefault
-};
 export { declareInheritanceSharedChannel, claimInheritanceSharedDefault, initializeInheritanceSharedChannelDefault };

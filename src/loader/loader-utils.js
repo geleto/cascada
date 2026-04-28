@@ -1,6 +1,6 @@
 'use strict';
 
-import lib from '../lib.js';
+import * as lib from '../lib.js';
 
 // WeakMap to store resource caches for each loader (no mutation of loader objects)
 const resourceCaches = new WeakMap();
@@ -423,11 +423,4 @@ function callLoader(loader, name, callback) {
 }
 
 
-export default {
-  loadString,
-  clearStringCache,
-  loadStringFromNativeLoader,
-  callLoaders,
-  raceLoaders
-};
 export { loadString, clearStringCache, loadStringFromNativeLoader, callLoaders, raceLoaders };

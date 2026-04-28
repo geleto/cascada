@@ -1,6 +1,6 @@
 'use strict';
 
-import lib from '../lib.js';
+import * as lib from '../lib.js';
 
 import {
   createPoison,
@@ -858,17 +858,5 @@ async function* whileIterator() {
   }
 }
 
-export default {
-  asyncEach,
-  asyncAll,
-  fromIterator,
-  createLoopBindings,
-  setLoopValueBindings,
-  iterateAsyncSequential,
-  iterateAsyncParallel,
-  poisonLoopEffects,
-  iterate,
-  whileIterator
-};
 export { asyncEach, asyncAll, fromIterator, createLoopBindings, setLoopValueBindings, iterateAsyncSequential, iterateAsyncParallel, poisonLoopEffects, iterate, whileIterator };
 

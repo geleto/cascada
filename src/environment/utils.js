@@ -10,7 +10,4 @@ function callbackAsap(cb, err, res) {
   });
 }
 
-export default {
-  callbackAsap
-};
 export { callbackAsap };

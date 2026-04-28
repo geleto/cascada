@@ -1,6 +1,6 @@
 'use strict';
 
-import nodes from '../nodes.js';
+import * as nodes from '../nodes.js';
 import CompilerCommon from './compiler-common.js';
 
 const compareOps = {

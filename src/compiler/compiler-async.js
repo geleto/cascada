@@ -1,6 +1,6 @@
 'use strict';
 
-import nodes from '../nodes.js';
+import * as nodes from '../nodes.js';
 
 import {
   validateGuardVariablesDeclared,
@@ -33,6 +33,10 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileCallExtension(node) {
     this._compileAsyncCallExtension(node, false);
+  }
+
+  compileCallExtensionAsync(node) {
+    this._compileAsyncCallExtension(node, true);
   }
 
   _compileAsyncCallExtension(node, async) {
@@ -113,9 +117,9 @@ class CompilerAsync extends CompilerBaseAsync {
       }
     } else {
       if (!resolveArgs) {
-        this.emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
+        this.emit(`b___promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
       } else {
-        this.emit(`runtime.resolveArguments(runtime.promisify(${ext}["${node.prop}"].bind(${ext})), 1)(context`);
+        this.emit(`runtime.resolveArguments(b___promisify(${ext}["${node.prop}"].bind(${ext})), 1)(context`);
       }
     }
     emitCallArgs(ext);
@@ -1299,6 +1303,25 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileRoot(node) {
+    if (node.findAll(nodes.CallExtensionAsync).length > 0) {
+      this.emit.lines(
+        'function b___promisify(fn) {',
+        '  return function(...args) {',
+        '    return new Promise((resolvePromise, reject) => {',
+        '      const callback = (error, ...results) => {',
+        '        if (error) {',
+        '          reject(error);',
+        '        } else {',
+        '          resolvePromise(results.length === 1 ? results[0] : results);',
+        '        }',
+        '      };',
+        '      fn(...args, callback);',
+        '    });',
+        '  };',
+        '}'
+      );
+    }
+
     const rootCompileFacts = node._analysis && node._analysis.rootCompileFacts
       ? node._analysis.rootCompileFacts
       : this._getRootCompileFacts(node);

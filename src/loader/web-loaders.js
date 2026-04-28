@@ -93,9 +93,3 @@ const FileSystemLoader = undefined;
 const NodeResolveLoader = undefined;
 
 export { WebLoader, PrecompiledLoader, FileSystemLoader, NodeResolveLoader };
-export default {
-  FileSystemLoader,
-  NodeResolveLoader,
-  PrecompiledLoader,
-  WebLoader
-};

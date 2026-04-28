@@ -1,7 +1,7 @@
 'use strict';
 
-import parser from '../parser.js';
-import transformer from '../transformer.js';
+import * as parser from '../parser.js';
+import * as transformer from '../transformer.js';
 import CompilerCommon from './compiler-common.js';
 import CompilerBaseAsync from './compiler-base-async.js';
 import CompilerBaseSync from './compiler-base-sync.js';
@@ -41,13 +41,4 @@ function compile(src, asyncFilters, extensions, name, opts = {}) {
   return compiler.getCode();
 }
 
-export default {
-  compile,
-  CompilerCommon,
-  CompilerBaseAsync,
-  CompilerBaseSync,
-  CompilerAsync,
-  CompilerSync,
-  Compiler: CompilerSync
-};
 export { compile, CompilerCommon, CompilerBaseAsync, CompilerBaseSync, CompilerAsync, CompilerSync, CompilerSync as Compiler };

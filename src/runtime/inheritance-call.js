@@ -1,7 +1,7 @@
 'use strict';
 
 import {Command} from './channels/command-base.js';
-import inheritanceState from './inheritance-state.js';
+import * as inheritanceState from './inheritance-state.js';
 import {RuntimeFatalError, handleError, isRuntimeFatalError} from './errors.js';
 
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';

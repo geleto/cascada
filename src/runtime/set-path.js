@@ -205,7 +205,4 @@ async function _setPathAsync(rootPromise, headPromise, tail, value) {
   return setSinglePath(root, key, newChild);
 }
 
-export default {
-  setPath
-};
 export { setPath };

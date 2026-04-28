@@ -30,5 +30,4 @@ class EmitterObj extends EventEmitter {
   }
 }
 
-export default { Obj, EmitterObj };
 export { Obj, EmitterObj };

@@ -1,24 +1,55 @@
 'use strict';
 
-import lib from './lib.js';
+import * as lib from './lib.js';
 import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
 import Loader from './loader/loader.js';
-import loaders from './loader/loaders.js';
-import precompileModule from './precompile.js';
-import compiler from './compiler/compiler.js';
-import parser from './parser.js';
-import lexer from './lexer.js';
-import runtime from './runtime/runtime.js';
-import nodes from './nodes.js';
+import {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
+import {
+  precompile,
+  precompileString,
+  precompileTemplate,
+  precompileTemplateAsync,
+  precompileTemplateString,
+  precompileTemplateStringAsync,
+  precompileScript,
+  precompileScriptString
+} from './precompile.js';
+import * as compiler from './compiler/compiler.js';
+import * as parser from './parser.js';
+import * as lexer from './lexer.js';
+import * as runtime from './runtime/runtime.js';
+import * as nodes from './nodes.js';
 import installJinjaCompat from './jinja-compat.js';
-import loaderUtils from './loader/loader-utils.js';
+import {loadString, clearStringCache, raceLoaders} from './loader/loader-utils.js';
+
+export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
+export {default as Loader} from './loader/loader.js';
+export {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
+export * as compiler from './compiler/compiler.js';
+export * as parser from './parser.js';
+export * as lexer from './lexer.js';
+export * as runtime from './runtime/runtime.js';
+export * as lib from './lib.js';
+export * as nodes from './nodes.js';
+export {default as installJinjaCompat} from './jinja-compat.js';
+export {
+  precompile,
+  precompileString,
+  precompileTemplate,
+  precompileTemplateAsync,
+  precompileTemplateString,
+  precompileTemplateStringAsync,
+  precompileScript,
+  precompileScriptString
+} from './precompile.js';
+export {loadString, clearStringCache, raceLoaders} from './loader/loader-utils.js';
 
 // A single instance of an environment, since this is so commonly used
 let e;
 // A single instance of an async environment
 let asyncE;
 
-function configure(templatesPath, opts, forAsync = false) {
+export function configure(templatesPath, opts, forAsync = false) {
   opts = opts || {};
   if (lib.isObject(templatesPath)) {
     opts = templatesPath;
@@ -26,13 +57,13 @@ function configure(templatesPath, opts, forAsync = false) {
   }
 
   let TemplateLoader;
-  if (loaders.FileSystemLoader) {
-    TemplateLoader = new loaders.FileSystemLoader(templatesPath, {
+  if (FileSystemLoader) {
+    TemplateLoader = new FileSystemLoader(templatesPath, {
       watch: opts.watch,
       noCache: opts.noCache
     });
-  } else if (loaders.WebLoader) {
-    TemplateLoader = new loaders.WebLoader(templatesPath, {
+  } else if (WebLoader) {
+    TemplateLoader = new WebLoader(templatesPath, {
       useCache: opts.web && opts.web.useCache,
       async: opts.web && opts.web.async
     });
@@ -53,21 +84,114 @@ function configure(templatesPath, opts, forAsync = false) {
   }
 }
 
-function configureAsync(templatesPath, opts) {
+export function configureAsync(templatesPath, opts) {
   return configure(templatesPath, opts, true);
 }
 
-const indexApi = {
+export function reset() {
+  e = undefined;
+  asyncE = undefined;
+}
+
+/** @deprecated Use compileTemplate instead */
+export function compile(src, env, path, eagerCompile) {
+  if (!e) {
+    configure();
+  }
+  return new Template(src, env, path, eagerCompile);
+}
+
+/** @deprecated Use compileTemplateAsync instead */
+export function compileAsync(src, env, path, eagerCompile) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return new AsyncTemplate(src, env, path, eagerCompile);
+}
+
+export function compileTemplate(src, env, path, eagerCompile) {
+  if (!e) {
+    configure();
+  }
+  return new Template(src, env, path, eagerCompile);
+}
+
+export function compileTemplateAsync(src, env, path, eagerCompile) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return new AsyncTemplate(src, env, path, eagerCompile);
+}
+
+export function compileScript(src, env, path, eagerCompile) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return new Script(src, env, path, eagerCompile);
+}
+
+/** @deprecated Use renderTemplate instead */
+export function render(name, ctx, cb) {
+  if (!e) {
+    configure();
+  }
+  return e.render(name, ctx, cb);
+}
+
+/** @deprecated Use renderTemplateAsync instead */
+export function renderAsync(name, ctx) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return asyncE.renderTemplate(name, ctx);
+}
+
+export function renderString(src, ctx, cb) {
+  if (!e) {
+    configure();
+  }
+  return e.renderString(src, ctx, cb);
+}
+
+export function renderTemplateString(src, ctx, cb) {
+  if (!e) {
+    configure();
+  }
+  return e.renderTemplateString(src, ctx, cb);
+}
+
+export function renderScriptString(src, ctx) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return asyncE.renderScriptString(src, ctx);
+}
+
+export function renderTemplate(name, ctx, cb) {
+  if (!e) {
+    configure();
+  }
+  return e.renderTemplate(name, ctx, cb);
+}
+
+export function renderTemplateAsync(name, ctx) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return asyncE.renderTemplate(name, ctx);
+}
+
+export default {
   Environment,
   AsyncEnvironment,
   Template,
   AsyncTemplate,
   Script,
   Loader,
-  FileSystemLoader: loaders.FileSystemLoader,
-  NodeResolveLoader: loaders.NodeResolveLoader,
-  PrecompiledLoader: loaders.PrecompiledLoader,
-  WebLoader: loaders.WebLoader,
+  FileSystemLoader,
+  NodeResolveLoader,
+  PrecompiledLoader,
+  WebLoader,
   compiler,
   parser,
   lexer,
@@ -76,102 +200,29 @@ const indexApi = {
   nodes,
   installJinjaCompat,
   configure,
-  reset() {
-    e = undefined;
-    asyncE = undefined;
-  },
-  /** @deprecated Use compileTemplate instead */
-  compile(src, env, path, eagerCompile) {
-    if (!e) {
-      configure();
-    }
-    return new Template(src, env, path, eagerCompile);
-  },
-  /** @deprecated Use compileTemplateAsync instead */
-  compileAsync(src, env, path, eagerCompile) {
-    if (!asyncE) {
-      configureAsync();
-    }
-    return new AsyncTemplate(src, env, path, eagerCompile);
-  },
-  compileTemplate(src, env, path, eagerCompile) {
-    if (!e) {
-      configure();
-    }
-    return new Template(src, env, path, eagerCompile);
-  },
-  compileTemplateAsync(src, env, path, eagerCompile) {
-    if (!asyncE) {
-      configureAsync();
-    }
-    return new AsyncTemplate(src, env, path, eagerCompile);
-  },
-  compileScript(src, env, path, eagerCompile) {
-    if (!asyncE) {
-      configureAsync();
-    }
-    return new Script(src, env, path, eagerCompile);
-  },
-  /** @deprecated Use renderTemplate instead */
-  render(name, ctx, cb) {
-    if (!e) {
-      configure();
-    }
-    return e.render(name, ctx, cb);
-  },
-  /** @deprecated Use renderTemplateAsync instead */
-  renderAsync(name, ctx) {
-    if (!asyncE) {
-      configureAsync();
-    }
-    return asyncE.renderTemplate(name, ctx);
-  },
-  renderString(src, ctx, cb) {
-    if (!e) {
-      configure();
-    }
-    return e.renderString(src, ctx, cb);
-  },
-  renderTemplateString(src, ctx, cb) {
-    if (!e) {
-      configure();
-    }
-    return e.renderTemplateString(src, ctx, cb);
-  },
-  renderScriptString(src, ctx) {
-    if (!asyncE) {
-      configureAsync();
-    }
-    return asyncE.renderScriptString(src, ctx);
-  },
-  renderTemplate(name, ctx, cb) {
-    if (!e) {
-      configure();
-    }
-    return e.renderTemplate(name, ctx, cb);
-  },
-  renderTemplateAsync(name, ctx) {
-    if (!asyncE) {
-      configureAsync();
-    }
-    return asyncE.renderTemplate(name, ctx);
-  },
-  /** @deprecated Use precompileTemplate instead */
-  precompile: (precompileModule) ? precompileModule.precompile : undefined,
-  /** @deprecated Use precompileTemplateString instead */
-  precompileString: (precompileModule) ? precompileModule.precompileString : undefined,
-
-  precompileTemplate: (precompileModule) ? precompileModule.precompileTemplate : undefined,
-  precompileTemplateString: (precompileModule) ? precompileModule.precompileTemplateString : undefined,
-
-  precompileTemplateAsync: (precompileModule) ? precompileModule.precompileTemplateAsync : undefined,
-  precompileTemplateStringAsync: (precompileModule) ? precompileModule.precompileTemplateStringAsync : undefined,
-  precompileScript: (precompileModule) ? precompileModule.precompileScript : undefined,
-  precompileScriptString: (precompileModule) ? precompileModule.precompileScriptString : undefined,
-  loadString: loaderUtils.loadString,
-  clearStringCache: loaderUtils.clearStringCache,
-  raceLoaders: loaderUtils.raceLoaders,
+  configureAsync,
+  reset,
+  compile,
+  compileAsync,
+  compileTemplate,
+  compileTemplateAsync,
+  compileScript,
+  render,
+  renderAsync,
+  renderString,
+  renderTemplateString,
+  renderScriptString,
+  renderTemplate,
+  renderTemplateAsync,
+  precompile,
+  precompileString,
+  precompileTemplate,
+  precompileTemplateAsync,
+  precompileTemplateString,
+  precompileTemplateStringAsync,
+  precompileScript,
+  precompileScriptString,
+  loadString,
+  clearStringCache,
+  raceLoaders
 };
-
-export { Environment, AsyncEnvironment, Template, AsyncTemplate, Script, Loader, compiler, parser, lexer, runtime, lib, nodes, installJinjaCompat, configure };
-export default indexApi;

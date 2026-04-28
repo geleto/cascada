@@ -1,7 +1,7 @@
 'use strict';
 
-import lib from '../lib.js';
-import errors from './errors.js';
+import * as lib from '../lib.js';
+import * as errors from './errors.js';
 import {RESOLVE_MARKER, resolveAll, resolveSingle} from './resolve.js';
 import {isCommandBuffer} from './buffer-marker.js';
 
@@ -307,18 +307,4 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
   return suppressValueScriptRaw(val, autoescape);
 }
 
-export default {
-  suppressValue,
-  suppressValueAsync,
-  _suppressValueAsyncComplex,
-  suppressValueScriptRaw,
-  suppressValueScript,
-  SafeString,
-  copySafeness,
-  markSafe,
-  materializeTemplateTextValue,
-  ensureDefined,
-  ensureDefinedAsync,
-  _ensureDefinedAsyncComplex
-};
 export { suppressValue, suppressValueAsync, _suppressValueAsyncComplex, suppressValueScriptRaw, suppressValueScript, SafeString, copySafeness, markSafe, materializeTemplateTextValue, ensureDefined, ensureDefinedAsync, _ensureDefinedAsyncComplex };

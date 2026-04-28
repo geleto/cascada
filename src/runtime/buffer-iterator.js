@@ -263,7 +263,4 @@ class BufferIterator {
   }
 }
 
-export default {
-  BufferIterator
-};
 export { BufferIterator };

@@ -1,6 +1,6 @@
 'use strict';
 
-import nodes from '../nodes.js';
+import * as nodes from '../nodes.js';
 import {RETURN_CHANNEL_NAME} from './return.js';
 
 const CALLER_SCHED_CHANNEL_NAME = '__caller__';

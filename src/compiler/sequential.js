@@ -1,4 +1,4 @@
-import nodes from '../nodes.js';
+import * as nodes from '../nodes.js';
 
 export default class CompileSequential {
 

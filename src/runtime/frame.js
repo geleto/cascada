@@ -135,8 +135,4 @@ function markChannelBufferScope(buffer) {
   }
 }
 
-export default {
-  Frame,
-  markChannelBufferScope
-};
 export { Frame, markChannelBufferScope };

@@ -5,7 +5,7 @@
  * Manages buffer stacks, async buffer operations, and channel command compilation.
  */
 
-import nodes from '../nodes.js';
+import * as nodes from '../nodes.js';
 
 import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
 import {validateChannelObservationCall} from './validation.js';

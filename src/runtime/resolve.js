@@ -491,21 +491,4 @@ function createArray(arr) {
   return arr;
 }
 
-export default {
-  resolveAll,
-  resolveDuo,
-  resolveSingle,
-  resolveSingleArr,
-  resolveObjectProperties,
-  resolveArguments,
-  normalizeFinalPromise,
-
-
-  createObject,
-  createArray,
-  RESOLVE_MARKER,
-  RESOLVED_VALUE_MARKER,
-  isResolvedValue,
-  unwrapResolvedValue
-};
 export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveObjectProperties, resolveArguments, normalizeFinalPromise, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };

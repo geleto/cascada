@@ -1,8 +1,8 @@
 'use strict';
 
-import nodes from './nodes.js';
-import lib from './lib.js';
-import scopeBoundaries from './compiler/scope-boundaries.js';
+import * as nodes from './nodes.js';
+import * as lib from './lib.js';
+import * as scopeBoundaries from './compiler/scope-boundaries.js';
 import {getScriptExtendsSourceOrderViolation} from './compiler/validation.js';
 
 var sym = 0;
@@ -522,7 +522,4 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
 // var ast = transform(parser.parse(src, [new FooExtension()]), ['bar']);
 // nodes.printNodes(ast);
 
-export default {
-  transform: transform
-};
 export { transform };

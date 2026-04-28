@@ -1,6 +1,6 @@
 'use strict';
 
-import inheritanceState from './inheritance-state.js';
+import * as inheritanceState from './inheritance-state.js';
 import inheritanceCall from './inheritance-call.js';
 
 function bootstrapInheritanceMetadata(
@@ -374,13 +374,4 @@ function finalizeInheritanceMetadata(state, context = null) {
   }
 }
 
-export default {
-  bootstrapInheritanceMetadata,
-  bootstrapInheritanceParentScript,
-  runCompiledRootStartup,
-  renderInheritanceParentRoot,
-  linkCurrentBufferToParentChannels,
-  getInheritanceSharedBuffer,
-  finalizeInheritanceMetadata
-};
 export { bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };

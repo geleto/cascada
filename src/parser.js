@@ -1,9 +1,9 @@
 'use strict';
 
-import lexer from './lexer.js';
-import nodes from './nodes.js';
+import * as lexer from './lexer.js';
+import * as nodes from './nodes.js';
 import {Obj} from './object.js';
-import lib from './lib.js';
+import * as lib from './lib.js';
 import {RESERVED_DECLARATION_NAMES} from './compiler/validation.js';
 import {CHANNEL_TYPE_FACTS} from './channel-types.js';
 
@@ -2125,7 +2125,4 @@ function parse(src, extensions, opts) {
   return p.parseAsRoot();
 }
 
-export default {
-  parse,
-  Parser: Parser
-};
+export {parse, Parser};

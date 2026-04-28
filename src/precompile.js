@@ -2,8 +2,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import lib from './lib.js';
-import compiler from './compiler/compiler.js';
+import * as lib from './lib.js';
+import * as compiler from './compiler/compiler.js';
 import {Environment, AsyncEnvironment} from './environment/environment.js';
 import precompileGlobal from './precompile-global.js';
 
@@ -172,19 +172,14 @@ function precompileScript(str, opts) {
   return precompile(str, opts, false/*async*/, true/*script*/);
 }
 
-export default {
+export {
   /** @deprecated Use precompileTemplate instead */
   precompile,
-  /** @deprecated Use precompileTemplateString instead */
   precompileString,
-
-  // Template variants (new names for existing functions)
   precompileTemplate,
   precompileTemplateAsync,
   precompileTemplateString,
   precompileTemplateStringAsync,
-
-  // Script variants
   precompileScript,
-  precompileScriptString,
+  precompileScriptString
 };

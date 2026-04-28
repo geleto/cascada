@@ -1,8 +1,8 @@
 'use strict';
 
-import lib from '../lib.js';
-import compiler from '../compiler/compiler.js';
-import globalRuntime from '../runtime/runtime.js';
+import * as lib from '../lib.js';
+import * as compiler from '../compiler/compiler.js';
+import * as globalRuntime from '../runtime/runtime.js';
 import {Frame} from '../runtime/frame.js';
 import {Obj} from '../object.js';
 import {callbackAsap} from './utils.js';

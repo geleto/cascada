@@ -1,6 +1,6 @@
 'use strict';
 
-import nodes from '../nodes.js';
+import * as nodes from '../nodes.js';
 import {CHANNEL_TYPES, CHANNEL_TYPE_FACTS} from '../channel-types.js';
 
 import {

@@ -11,7 +11,7 @@ import {
 } from './errors.js';
 
 import inheritanceCall from './inheritance-call.js';
-import inheritanceState from './inheritance-state.js';
+import * as inheritanceState from './inheritance-state.js';
 import {resolveDuo} from './resolve.js';
 /**
  * Sync member lookup for templates.
@@ -309,12 +309,4 @@ function channelLookup(name, currentBuffer) {
   return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
 }
 
-export default {
-  memberLookup,
-  memberLookupScriptRaw,
-  memberLookupAsync,
-  memberLookupScript,
-  observeInheritanceSharedChannel,
-  channelLookup,
-};
 export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };

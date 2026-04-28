@@ -173,8 +173,4 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   }
 }
 
-export default {
-  callWrap,
-  callWrapAsync,
-};
 export { callWrap, callWrapAsync };
