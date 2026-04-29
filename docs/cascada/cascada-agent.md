@@ -79,9 +79,10 @@ return title                // ❌ script fails
 ```javascript
 // [VAR-01] RULE: `var name = value` declares; `name = value` reassigns. Both work for tuples.
 // CONSTRAINT: Re-declaring a name visible in any enclosing scope is a compile-time error.
-var x = 1
-var x, y = 100   // ✅ multiple decls, single value
-x, y = 200       // ✅ multi-assign
+var name = "Alice"
+name = "Bob"            // ✅ reassign declared var
+var a, b = 100          // ✅ multiple decls, single value
+a, b = 200              // ✅ multi-assign existing vars
 
 // ❌ Invalid:
 username = "C"   // ERROR: not declared with var
@@ -174,6 +175,15 @@ var rowClass = cycler("even", "odd")
 each item in items
   rows.push({ class: rowClass.next(), value: item })
 endeach
+
+// [EXPR-09] RULE: Nunjucks built-in `joiner([sep])` is STATEFUL — first call returns `""`,
+// subsequent calls return `sep` (default `","`).
+// CONSTRAINT: Call it in sequential context (`each`) when output order matters.
+var comma = joiner(", ")
+var output = ""
+each tag in tags
+  output = output + comma() + tag
+endeach
 ```
 
 ## LOOP — Loops
@@ -257,7 +267,7 @@ default
   // ...
 endswitch
 
-// [CTRL-03] RULE: Each branch creates its own scope — `var` inside is local. See VAR-03.
+// (Block-local scoping for if/switch branches — see VAR-03 / EXEC-04)
 ```
 
 ## CHAN — Channels (Overview)
@@ -421,7 +431,8 @@ var f = input("pass", type="password")
 ## CALL — Call Blocks
 
 ```javascript
-// [CALL-01] RULE: Script `call` blocks REQUIRE assignment form. Bare `call` (no assignment) is unsupported in scripts.
+// [CALL-01] RULE: Script `call` blocks REQUIRE assignment form (`var x = call ...` or `x = call ...`).
+// Bare `call` (no assignment) is unsupported in scripts.
 // CONSTRAINT: Function controls invocation via `caller(args)`; param list declared on call block header.
 function grid(rows, cols)
   data cells = []
@@ -437,6 +448,10 @@ endfunction
 var g = call grid(3, 3)
   (x, y)
   return { pos: [x, y], v: x*10 + y }
+endcall
+var x
+x = call grid(1, 1)
+  return "ok"
 endcall
 
 // [CALL-02] RULE: If no parameters, `()` after `call` header is omitted.
@@ -897,7 +912,7 @@ Theme: {{ this.theme }}
 | Filters | `name | upper` | `{{ name | upper }}` |
 | Exec-only call | `service.notify(u)` | `{% do service.notify(u) %}` |
 | Sequence repair | `user.profile!!` | `{% do user.profile!! %}` |
-| If | `if/elif/else/endif` | `{% if %}/{% elif %}/{% else %}/{% endif %}` |
+| If | `if/elif/else/endif` | `{% if %}/{% elseif %}/{% else %}/{% endif %}` |
 | For | `for x in xs / endfor` | `{% for %} / {% endfor %}` |
 | Each | `each x in xs / endeach` | `{% each %} / {% endeach %}` |
 | While | `while c / endwhile` | `{% while %} / {% endwhile %}` |
@@ -966,8 +981,9 @@ Theme: {{ this.theme }}
 | C40 | Errors short-circuit conditional/loop bodies AND poison every var/channel any branch would write | ERR-02, ERR-03 |
 | C41 | Multiple inheritance not supported (one parent per `extends`) | EXT-11 |
 | C42 | Property access on `none`/null produces an Error Value (not a JS TypeError throw) | LANG-05 |
-| C43 | `cycler.next()` and similar stateful Nunjucks globals must be called in sequential context (`each`) | EXPR-08 |
+| C43 | `cycler.next()`, `joiner()`, and similar stateful Nunjucks globals must be called in sequential context (`each`) | EXPR-08, EXPR-09 |
 | C44 | Scripts use `elif`; templates use `elseif` | CTRL-01, TPL-12 |
+| C45 | Browser/new code uses ESM imports; old UMD bundles and automatic `window.nunjucks` globals are unsupported | API-03 |
 
 ---
 
@@ -1017,6 +1033,9 @@ env.addGlobal(name, value);
 env.addFilter(name, fn, [isAsync]);
 env.addFilterAsync(name, fn);
 env.addDataMethods({ name: (target, ...args) => newValue });
+
+// [API-03] ESM is required for browser/new code; old UMD bundles and automatic `window.nunjucks`
+// globals are unsupported by the ESM package.
 ```
 
 ## Loaders
@@ -1071,9 +1090,9 @@ precompileTemplateStringAsync(source, [opts]);
 |:---|:---|
 | LANG | 01–05 |
 | VAR | 01–08 |
-| EXPR | 01–08 |
+| EXPR | 01–09 |
 | LOOP | 01–08 |
-| CTRL | 01–03 |
+| CTRL | 01–02 |
 | CHAN | 01–04 |
 | TEXT | 01 |
 | DATA | 01–09 |
@@ -1090,7 +1109,7 @@ precompileTemplateStringAsync(source, [opts]);
 | COMPONENT | 01–08 |
 | RETURN | 01–03 |
 | TPL | 01–21 |
-| API | 01–02 |
+| API | 01–03 |
 | EXEC | 01–06 (invariants) |
 
 ## Notes on Source Authority
