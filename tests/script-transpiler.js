@@ -693,6 +693,135 @@ return { text: outText.snapshot() }`;
       expect(template).to.equal(`{%- text outText -%}\n{%- command outText("Hello, " +\n      "World!") -%}\n{%- return { text: outText.snapshot() } -%}`);
     });
 
+    it('should preserve keyword-shaped object keys in multi-line return expressions', () => {
+      const script = `var message = "Hello"
+text output
+output("Done")
+return {
+  data: { greeting: message },
+  text: output.snapshot()
+}`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- ${DECL_TAG} message = "Hello" -%}\n{%- text output -%}\n{%- command output("Done") -%}\n{%- return {\n  data: { greeting: message },\n  text: output.snapshot()\n} -%}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
+    it('should preserve reserved keyword object keys in multi-line variable expressions', () => {
+      const script = `var payload = {
+  var: 1,
+  call: 2,
+  if: 3,
+  endfor: 4,
+  recover: 5,
+  shared: 6
+}
+return payload`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- ${DECL_TAG} payload = {\n  var: 1,\n  call: 2,\n  if: 3,\n  endfor: 4,\n  recover: 5,\n  shared: 6\n} -%}\n{%- return payload -%}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
+    it('should preserve channel-shaped expression lines in multi-line expressions', () => {
+      const script = `text output
+output("Done")
+var values = [
+  output.snapshot()
+]
+return values[0]`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- text output -%}\n{%- command output("Done") -%}\n{%- ${DECL_TAG} values = [\n  output.snapshot()\n] -%}\n{%- return values[0] -%}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
+    it('should preserve multi-line object literals passed to calls and commands', () => {
+      const script = `data result
+result.merge({
+  var: 1,
+  call: 2,
+  data: 3
+})
+return helper({
+  text: result.snapshot()
+})`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- data result -%}\n{%- command result.merge(null,{\n  var: 1,\n  call: 2,\n  data: 3\n}) -%}\n{%- return helper({\n  text: result.snapshot()\n}) -%}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
+    it('should preserve blank and comment-only lines inside multi-line expressions', () => {
+      const script = `return {
+  // keyword-like keys after a comment
+
+  var: 1,
+  data: 2
+}`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- return {\n  \n\n  var: 1,\n  data: 2\n} -%}{#- keyword-like keys after a comment -#}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
+    it('should preserve nested keyword-shaped keys in arrays and objects', () => {
+      const script = `var payload = [
+  {
+    call: 1,
+    endfor: 2
+  },
+  {
+    guard: "*",
+    recover: true
+  }
+]
+return payload`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- ${DECL_TAG} payload = [\n  {\n    call: 1,\n    endfor: 2\n  },\n  {\n    guard: "*",\n    recover: true\n  }\n] -%}\n{%- return payload -%}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
+    it('should preserve keyword-shaped keys in multi-line control conditions', () => {
+      const script = `if check({
+  var: 1,
+  call: 2
+})
+  return "if"
+endif
+while keepGoing({
+  data: 1,
+  endfor: 2
+})
+      return "while"
+endwhile`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- if check({\n  var: 1,\n  call: 2\n}) -%}\n  {%- return "if" -%}\n{%- endif -%}\n{%- if __return_is_unset__() -%}{%- while __return_is_unset__() and (keepGoing({\n  data: 1,\n  endfor: 2\n})) -%}\n      {%- return "while" -%}\n{%- endwhile -%}{%- endif -%}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
+    it('should preserve multi-line tag arguments for composition-style tags', () => {
+      const script = `extends "base-" +
+  suffix
+include "partial-" +
+  suffix
+component Card({
+  data: 1,
+  call: 2
+})`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- extends "base-" +\n  suffix -%}\n{%- include "partial-" +\n  suffix -%}\n{%- component Card({\n  data: 1,\n  call: 2\n}) -%}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
+    it('should preserve keyword-shaped returns in call-assignment bodies', () => {
+      const script = `var made = call wrapper()
+  return {
+    data: 1,
+    call: 2
+  }
+endcall
+return made`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal(`{%- call_assign var made = wrapper() -%}\n  {%- return {\n    data: 1,\n    call: 2\n  } -%}\n{%- endcall_assign -%}\n{%- return made -%}`);
+      expect(template.split('\n')).to.have.length(script.split('\n').length);
+    });
+
     it('should detect continuation at end of line', () => {
       const script = 'if condition &&\n   anotherCondition\nendif';
       const template = scriptTranspiler.scriptToTemplate(script);

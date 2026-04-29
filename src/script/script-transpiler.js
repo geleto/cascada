@@ -805,6 +805,13 @@ class ScriptTranspiler {
     } return false;
   }
 
+  _canLineContinueIntoExpression(line) {
+    return !!(line &&
+      line.tagName !== 'guard' &&
+      !line.terminatesWithSemicolon &&
+      line.continuesToNext);
+  }
+
   /**
    * Checks if a string is a valid JavaScript identifier
    * @param {string} str - The string to check
@@ -1316,7 +1323,7 @@ class ScriptTranspiler {
    * Only 'text' needs more validations and continuation handling because the content is
    * between the '()' and for other cases content goes directly to the template tag unmodified
    */
-  _processLine(line, state, lineIndex, parsedLine = null, updateState = true) {
+  _processLine(line, state, lineIndex, parsedLine = null, updateState = true, forceContinuationCode = false) {
     // Parse line with script parser
     const parseResult = parsedLine || parseTemplateLine(
       line,
@@ -1335,6 +1342,7 @@ class ScriptTranspiler {
     parseResult.isCommentOnly = !this._hasNonWhitespaceCode(codeTokens) && comments.length > 0;
     parseResult.isEmpty = line.trim() === '';
     const rawCodeContent = this._tokensToCode(codeTokens);
+    parseResult.rawCodeContent = rawCodeContent.trimStart();
     parseResult.codeContent = rawCodeContent.trimStart();
     if (/^guard\b/.test(parseResult.codeContent.trim())) {
       parseResult.codeContent = parseResult.codeContent.replace(
@@ -1361,7 +1369,10 @@ class ScriptTranspiler {
     const code = parseResult.codeContent.trim();
     const continuesFromPrev = this._continuesFromPrevious(code);
 
-    if (code.startsWith('@')) {
+    if (forceContinuationCode && !parseResult.isEmpty && !parseResult.isCommentOnly) {
+      parseResult.lineType = 'CODE';
+      parseResult.blockType = null;
+    } else if (code.startsWith('@')) {
       throw new Error(`Legacy '@' channel commands are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'value' && this._isAssignment(code, lineIndex)) {
       throw new Error(`Explicit 'value' declarations are no longer supported at line ${lineIndex + 1}`);
@@ -1424,7 +1435,8 @@ class ScriptTranspiler {
       parseResult.blockType = null;
     }
 
-    parseResult.continuesToNext = parseResult.continuesToNext || this._willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
+    parseResult.continuesToNext = parseResult.continuesToNext ||
+      this._willContinueToNextLine(codeTokens, parseResult.codeContent, forceContinuationCode ? '' : firstWord);
     parseResult.continuesFromPrev = continuesFromPrev;
 
     //update the state used by the parser (it works only with state + current line)
@@ -1595,8 +1607,37 @@ class ScriptTranspiler {
     let tagLineParseResult;
     for (let i = 0; i < parseResults.length; i++) {
       const presult = parseResults[i];
+      const previousResult = prevLineIndex != -1 ? parseResults[prevLineIndex] : null;
+      const canContinueFromPrevious = this._canLineContinueIntoExpression(previousResult) ||
+        (previousResult && !previousResult.terminatesWithSemicolon && presult.continuesFromPrev);
 
-      if (presult.lineType === 'TAG' || presult.lineType === 'TEXT') {
+      if (canContinueFromPrevious && !presult.isEmpty && !presult.isCommentOnly) {
+        // A continuation line may begin with a script keyword used as expression
+        // text, for example an object key in `return { data: ... }`.
+        // Restore token-derived code because line processing may have rewritten
+        // such lines as tags before this source-order pass sees the context.
+        for (let j = prevLineIndex + 1; j <= i; j++) {
+          parseResults[j].isContinuation = true;
+          if (parseResults[j].rawCodeContent !== undefined) {
+            parseResults[j].codeContent = parseResults[j].rawCodeContent;
+          }
+          //merge the comments, the same for all continuation lines
+          tagLineParseResult.comments = tagLineParseResult.comments.concat(parseResults[j].comments);
+        }
+        presult.comments = tagLineParseResult.comments;//we need the comments in the last line of continuation
+        //inherit expectedContinuationEnd to the last continuation line
+        //check if any line in the continuation sequence has expectedContinuationEnd
+        let continuationEnd = tagLineParseResult.expectedContinuationEnd;
+        for (let j = prevLineIndex + 1; j <= i; j++) {
+          if (parseResults[j].expectedContinuationEnd) {
+            continuationEnd = parseResults[j].expectedContinuationEnd;
+            break;
+          }
+        }
+        if (continuationEnd) {
+          presult.expectedContinuationEnd = continuationEnd;
+        }
+      } else if (presult.lineType === 'TAG' || presult.lineType === 'TEXT') {
         //start of a new tag or text, save it for continuation
         tagLineParseResult = presult;
       } else {
@@ -1605,38 +1646,8 @@ class ScriptTranspiler {
           //skip for now, we may add isContinuation = true later
           continue;
         }
-        const previousResult = prevLineIndex != -1 ? parseResults[prevLineIndex] : null;
-        const canContinueFromPrevious = previousResult &&
-          !previousResult.terminatesWithSemicolon &&
-          (previousResult.continuesToNext || presult.continuesFromPrev);
-        if (canContinueFromPrevious) {
-          //this is continuation
-          //mark everything between prevLineIndex+1 and i as continuation
-          for (let j = prevLineIndex + 1; j <= i; j++) {
-            parseResults[j].isContinuation = true;
-            //merge the comments, the same for all continuation lines
-            tagLineParseResult.comments = tagLineParseResult.comments.concat(parseResults[j].comments);
-            //if (presult.lineType === 'TAG') {
-            //  parseResults[j].tagName =  presult.tagName;
-            //}
-          }
-          presult.comments = tagLineParseResult.comments;//we need the comments in the last line of continuation
-          //inherit expectedContinuationEnd to the last continuation line
-          //check if any line in the continuation sequence has expectedContinuationEnd
-          let continuationEnd = tagLineParseResult.expectedContinuationEnd;
-          for (let j = prevLineIndex + 1; j <= i; j++) {
-            if (parseResults[j].expectedContinuationEnd) {
-              continuationEnd = parseResults[j].expectedContinuationEnd;
-              break;
-            }
-          }
-          if (continuationEnd) {
-            presult.expectedContinuationEnd = continuationEnd;
-          }
-        } else {
-          // this is do tag, code not part of continuation but it can be start of continuation
-          tagLineParseResult = presult;//all comments from continuations are added here
-        }
+        // this is do tag, code not part of continuation but it can be start of continuation
+        tagLineParseResult = presult;//all comments from continuations are added here
       }
       prevLineIndex = i;//only empty or comment-only lines are skipped by continueFromIndex, for other cases it is i-1
     }
@@ -1688,6 +1699,10 @@ class ScriptTranspiler {
     }
 
     if (processedLine.isEmpty) {
+      return output + (processedLine.inlineSuffix || '');
+    }
+
+    if (processedLine.isContinuation && processedLine.isCommentOnly) {
       return output + (processedLine.inlineSuffix || '');
     }
 
@@ -2052,6 +2067,7 @@ class ScriptTranspiler {
     // Process each line with lookahead for continuation detection
     const processedLines = [];
     let opaqueBodyDepth = 0;
+    let previousMeaningfulLine = null;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const firstWordForOpaque = this._getFirstWord(line.trimStart());
@@ -2070,12 +2086,14 @@ class ScriptTranspiler {
 
       for (let logicalIndex = 0; logicalIndex < logicalLines.length; logicalIndex++) {
         const logicalLine = logicalLines[logicalIndex];
+        const forceContinuationCode = this._canLineContinueIntoExpression(previousMeaningfulLine);
         const processedLine = this._processLine(
           logicalLine.logicalLineText,
           state,
           i,
           logicalLine,
-          false
+          false,
+          forceContinuationCode
         );
 
         // Store processed line for potential reuse in lookahead
@@ -2094,6 +2112,9 @@ class ScriptTranspiler {
           opaqueBodyDepth -= 1;
         }
 
+        if (!processedLine.isEmpty && !processedLine.isCommentOnly) {
+          previousMeaningfulLine = processedLine;
+        }
       }
 
       state.inMultiLineComment = physicalParseResult.inMultiLineComment;

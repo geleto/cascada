@@ -112,6 +112,212 @@ describe('Cascada Script return', function () {
     expect(events).to.eql(['unset']);
   });
 
+  it('returns multi-line object literals with keyword-shaped keys', async function () {
+    const script = `var message = "Hello"
+text output
+output("Done")
+return {
+  data: { greeting: message },
+  text: output.snapshot()
+}`;
+
+    const result = await env.renderScriptString(script);
+
+    expect(result).to.eql({
+      data: { greeting: 'Hello' },
+      text: 'Done'
+    });
+  });
+
+  it('evaluates multi-line expressions with reserved keys and channel-shaped lines', async function () {
+    const script = `text output
+output("Done")
+var values = [
+  output.snapshot()
+]
+var payload = {
+  var: 1,
+  call: 2,
+  if: 3,
+  endfor: 4,
+  output: values[0]
+}
+return payload`;
+
+    const result = await env.renderScriptString(script);
+
+    expect(result).to.eql({
+      var: 1,
+      call: 2,
+      if: 3,
+      endfor: 4,
+      output: 'Done'
+    });
+  });
+
+  it('evaluates multi-line object literals passed to commands and calls', async function () {
+    const script = `data result
+result.merge({
+  var: 1,
+  call: 2,
+  data: 3
+})
+return helper({
+  text: result.snapshot()
+})`;
+
+    const result = await env.renderScriptString(script, {
+      helper(value) {
+        return value;
+      }
+    });
+
+    expect(result).to.eql({
+      text: {
+        var: 1,
+        call: 2,
+        data: 3
+      }
+    });
+  });
+
+  it('evaluates multi-line expressions with comments and nested keyword-shaped keys', async function () {
+    const script = `var payload = [
+  // first object keeps keyword-looking keys
+  {
+    call: 1,
+    endfor: 2
+  },
+  {
+    guard: "*",
+    recover: true
+  }
+]
+return payload`;
+
+    const result = await env.renderScriptString(script);
+
+    expect(result).to.eql([
+      { call: 1, endfor: 2 },
+      { guard: '*', recover: true }
+    ]);
+  });
+
+  it('evaluates multi-line returns inside functions', async function () {
+    const script = `function make()
+  return {
+    guard: "*",
+    recover: true,
+    data: 3
+  }
+endfunction
+return make()`;
+
+    const result = await env.renderScriptString(script);
+
+    expect(result).to.eql({
+      guard: '*',
+      recover: true,
+      data: 3
+    });
+  });
+
+  it('evaluates semicolon logical lines with multi-line object continuations', async function () {
+    const script = `var a = 1; var b = {
+  call: a + 1,
+  data: 3
+}; return b`;
+
+    const result = await env.renderScriptString(script);
+
+    expect(result).to.eql({
+      call: 2,
+      data: 3
+    });
+  });
+
+  it('evaluates multi-line control conditions with keyword-shaped object keys', async function () {
+    const script = `if check({
+  var: 1,
+  call: 2
+})
+  return "if"
+endif
+while keepGoing({
+  data: 1,
+  endfor: 2
+})
+  return "while"
+endwhile`;
+
+    const result = await env.renderScriptString(script, {
+      check(value) {
+        return value.var === 1 && value.call === 2;
+      },
+      keepGoing() {
+        throw new Error('while should be skipped after if return');
+      }
+    });
+
+    expect(result).to.be('if');
+  });
+
+  it('evaluates multi-line while conditions with keyword-shaped object keys', async function () {
+    const script = `while keepGoing({
+  data: 1,
+  endfor: 2
+})
+  return "while"
+endwhile`;
+
+    const result = await env.renderScriptString(script, {
+      keepGoing(value) {
+        return value.data === 1 && value.endfor === 2;
+      }
+    });
+
+    expect(result).to.be('while');
+  });
+
+  it('evaluates call-assignment bodies that return multi-line objects with keyword-shaped keys', async function () {
+    const script = `function wrapper()
+  return caller()
+endfunction
+var made = call wrapper()
+  return {
+    data: 1,
+    call: 2
+  }
+endcall
+return made`;
+
+    const result = await env.renderScriptString(script);
+
+    expect(result).to.eql({
+      data: 1,
+      call: 2
+    });
+  });
+
+  it('preserves source line numbers for malformed multi-line returns', async function () {
+    const script = [
+      'var before = 1',
+      'return {',
+      '  // comment keeps line',
+      '  data: { ok: true },',
+      '  text: output.snapshot(',
+      '}'
+    ].join('\n');
+
+    try {
+      await env.renderScriptString(script);
+      expect().fail('Should have thrown');
+    } catch (err) {
+      expect(err.message).to.contain('[Line 6');
+      expect(err.message).to.contain('unexpected token: }');
+    }
+  });
+
   describe('guard waterfall', function () {
     it('skips statements after a top-level return', async function () {
       const events = [];
