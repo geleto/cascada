@@ -14,14 +14,14 @@
 
 It uses familiar syntax and language constructs, while offering language-level support for boilerplate-free concurrent workflows, explicit control over side effects, deterministic output construction, and dataflow-based error handling with recovery rollbacks.
 
-**⚠️ Under active development:** Cascada is evolving rapidly — bugs are possible. Issues and contributions are very welcome.
+**⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welco-me.
 
 
 The core execution model:
 
-* ⚡ **Parallel by default**  -  Independent operations — variable assignments, function calls, loop iterations — execute concurrently without `async`, `await`, or promise management.
+* ⚡ **Parallel by default**  -  Independent operations - variable assignments, function calls, loop iterations - execute concurrently without `async`, `await`, or promise management.
 * 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
-* ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs — the rest of the script stays concurrent.
+* ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs - the rest of the script stays concurrent.
 * 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
 * ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated concurrent work to continue safely.
 
@@ -40,10 +40,10 @@ Despite executing concurrently by default, it reads exactly like the synchronous
 var user  = fetchUser(userId)   // ┐ start immediately,
 var posts = fetchPosts(userId)  // ┘ run concurrently
 
-// evaluates as soon as 'user' resolves — posts may still be fetching
+// evaluates as soon as 'user' resolves - posts may still be fetching
 var role = "admin" if user.isAdmin else "member"
 
-// for loop — every iteration runs concurrently
+// for loop - every iteration runs concurrently
 data result  // writes are concurrent, output is assembled in source order
 for post in posts
   var enriched = enrichPost(post)
@@ -60,7 +60,7 @@ db!.updateLastSeen(userId)
 return { name: user.name, role: role, posts: result.snapshot() }  // snapshot waits for all writes
 ```
 
-Every construct above runs exactly as you'd read it — the engine orchestrates all the async concurrency.
+Every construct above runs exactly as you'd read it - the engine orchestrates all the async concurrency.
 
 ## Read First
 
@@ -109,7 +109,7 @@ const script = `
 `;
 ```
 
-No `async`, no `await`. `fetchUser` and `fetchPosts` run concurrently — Cascada handles it.
+No `async`, no `await`. `fetchUser` and `fetchPosts` run concurrently - Cascada handles it.
 
 ### Running a script
 
@@ -138,7 +138,7 @@ To understand how Cascada achieves effortless concurrency, read the next section
 Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts - it explains why the language behaves the way it does and how to leverage its concurrency.
 
 #### ⚡ Parallel by default
-Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**. Independent variable assignments, function calls, loop iterations, and function invocations all run concurrently — no special syntax required.
+Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**. Independent variable assignments, function calls, loop iterations, and function invocations all run concurrently - no special syntax required.
 
 #### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
 In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This applies to all constructs: expressions evaluate as soon as their operands resolve, conditionals wait for their condition, loops wait for their iterable, and function calls wait for their arguments. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
@@ -148,7 +148,7 @@ Forget await. Forget .then(). Forget manually tracking which variables are promi
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
 #### ➡️ Implicitly Parallel, Explicitly Sequential
-While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical — they sequence only what they touch, without affecting the concurrency of the rest of the script.
+While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
 
 #### 📋 Execution is chaotic, but the result is orderly
 While independent operations run concurrently and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
@@ -278,7 +278,7 @@ nums[0] = 99
 copy[0]  // 1 - copy is independent
 ```
 
-This ensures concurrent operations never interfere—each variable owns its data independently.
+This ensures concurrent operations never interfere-each variable owns its data independently.
 
 **Performance Note**
 
@@ -2005,7 +2005,7 @@ If present, it runs only if the guard finishes poisoned:
 * Guarded `data`, `text`, and `sequence` values have already been reverted
 * Guarded sequential paths have already been repaired
 * Guarded variables have already been restored
-* `recover err` binds the final `PoisonError` for inspection via the `#` peek operator — the variable name is optional; bare `recover` (without a binding) is also valid
+* `recover err` binds the final `PoisonError` for inspection via the `#` peek operator - the variable name is optional; bare `recover` (without a binding) is also valid
 
 > Note: If all errors are detected and repaired inside the guard (using `is error`), the guard is considered successful and no recovery occurs.
 
@@ -2082,15 +2082,15 @@ with `null`, the same value used for Cascada `none`.
 
 When a project grows beyond a single file, Cascada Script provides two file-composition tools plus component instances:
 
-- **`import`** — load a library of reusable functions from another file
-- **`extends` / `method`** — inherit a base script's structure and override specific behaviors
-- **`component`** — create isolated, independently-stateful instances of a script hierarchy
+- **`import`** - load a library of reusable functions from another file
+- **`extends` / `method`** - inherit a base script's structure and override specific behaviors
+- **`component`** - create isolated, independently-stateful instances of a script hierarchy
 
 All composition inputs use the same **payload** model: values passed with `with` become bare-name inputs inside the composed file. Payload is copied at the composition boundary and is not shared state. There is no implicit sharing of caller-scope variables.
 
 ### Importing Libraries with `import`
 
-Use `import` to share public root-scope declarations across multiple scripts — helper functions, reusable constants, and assembled channel values — without duplicating them. Public declarations are root-scope names that do not start with `_`. Exported non-`shared` channel declarations are exposed through their final snapshots, so importing a `text` or `data` channel gives the assembled value rather than the channel object itself. `shared` declarations belong to `extends`/`component` state and are accessed through `this.<name>`, not through import namespaces.
+Use `import` to share public root-scope declarations across multiple scripts - helper functions, reusable constants, and assembled channel values - without duplicating them. Public declarations are root-scope names that do not start with `_`. Exported non-`shared` channel declarations are exposed through their final snapshots, so importing a `text` or `data` channel gives the assembled value rather than the channel object itself. `shared` declarations belong to `extends`/`component` state and are accessed through `this.<name>`, not through import namespaces.
 
 #### Importing a Namespace with `as`
 
@@ -2118,7 +2118,7 @@ This returns `{ name: "Alice Durand" }`.
 Pull specific functions directly into the caller's namespace instead:
 
 ```cascada
-// formatters.script — same file as above
+// formatters.script - same file as above
 function formatUser(user)
   return user.firstName + " " + user.lastName
 endfunction
@@ -2162,7 +2162,7 @@ This returns `{ user: "Alice Durand [fr]" }`.
 Instead of passing an explicit var, you can expose the render context as payload:
 
 ```cascada
-// main.script — locale comes from the render context, no child var needed
+// main.script - locale comes from the render context, no child var needed
 import "formatters.script" as fmt with context
 
 var user = fetchUser(1)
@@ -2175,52 +2175,52 @@ This returns `{ user: "Alice Durand [en-GB]" }` when `locale` comes from the ren
 
 ### `with`: Composition Payload
 
-**`with varName, ...`** — passes the named parent `var`s by value into the child. Only `var` declarations can be listed; `data`, `text`, and `sequence` declarations cannot cross a composition boundary.
+**`with varName, ...`** - passes the named parent `var`s by value into the child. Only `var` declarations can be listed; `data`, `text`, and `sequence` declarations cannot cross a composition boundary.
 
-**`with { key: expr, ... }`** — an explicit object literal; keys become named inputs inside the child, values are expressions evaluated in the caller's scope. Merged after named-var entries; overrides on key collision.
+**`with { key: expr, ... }`** - an explicit object literal; keys become named inputs inside the child, values are expressions evaluated in the caller's scope. Merged after named-var entries; overrides on key collision.
 
-**`with context`** — makes the render context (the object passed to the renderer) available to bare-name lookups inside the child. It does **not** expose parent local variables or `data`/`text`/`sequence` declarations, and it does **not** create a variable named `context` inside the child.
+**`with context`** - makes the render context (the object passed to the renderer) available to bare-name lookups inside the child. It does **not** expose parent local variables or `data`/`text`/`sequence` declarations, and it does **not** create a variable named `context` inside the child.
 
-**`without context`** — explicitly opts out of render-context access. Useful to make isolation guarantees visible in code.
+**`without context`** - explicitly opts out of render-context access. Useful to make isolation guarantees visible in code.
 
-All forms can be combined: `with context, var1, { extra: computed() }`. `with` inputs are named value bindings — not a scope reference or JavaScript object — only the names you list cross the boundary.
+All forms can be combined: `with context, var1, { extra: computed() }`. `with` inputs are named value bindings - not a scope reference or JavaScript object - only the names you list cross the boundary.
 
 **Resolution order**: explicit `with` value → `with context` lookup → ordinary globals/unknown-name behavior.
 
 ```cascada
 import "formatters.script" as fmt with context, locale
-// locale — satisfied by the explicit var, which wins over context
+// locale - satisfied by the explicit var, which wins over context
 // other bare payload names are looked up in context
 ```
 
 ### Script Inheritance with `extends`, `shared`, and `method`
 
-Plain `import` is good for sharing utility functions, but when you need multiple scripts to share a common execution flow — with each one customizing specific steps — you need inheritance. A base script defines the overall logic and calls `this.buildBody(...)` at the right moment; different child scripts override `buildBody` to produce different output, without duplicating the fetch-and-orchestrate code. Child scripts can also add new methods, override the constructor, and set different defaults for shared values.
+Plain `import` is good for sharing utility functions, but when you need multiple scripts to share a common execution flow - with each one customizing specific steps - you need inheritance. A base script defines the overall logic and calls `this.buildBody(...)` at the right moment; different child scripts override `buildBody` to produce different output, without duplicating the fetch-and-orchestrate code. Child scripts can also add new methods, override the constructor, and set different defaults for shared values.
 
 Three concepts make this work together:
 
-- **`shared` state** — hierarchy-owned values accessible via `this.<name>` from any constructor or method in the chain, regardless of where in the hierarchy the code runs. This is the equivalent of instance fields in OOP.
-- **`method` overrides** — named override points declared in a base script and called via `this.method(...)`. The most-derived child's version always runs, regardless of where the call site is. A child can extend rather than replace the parent's behavior with `super()`.
-- **Constructor** — the script body (everything after `extends`). It runs the setup and orchestration logic for that level of the chain. Parent constructors run only when the child explicitly calls `super()`.
+- **`shared` state** - hierarchy-owned values accessible via `this.<name>` from any constructor or method in the chain, regardless of where in the hierarchy the code runs. This is the equivalent of instance fields in OOP.
+- **`method` overrides** - named override points declared in a base script and called via `this.method(...)`. The most-derived child's version always runs, regardless of where the call site is. A child can extend rather than replace the parent's behavior with `super()`.
+- **Constructor** - the script body (everything after `extends`). It runs the setup and orchestration logic for that level of the chain. Parent constructors run only when the child explicitly calls `super()`.
 
 There are two ways to run an inheritance chain:
 
-- **Direct render** — run the chain once as a script and return a result. Use this when the chain is the top-level entry point.
-- **Component** — create an isolated instance with its own shared state and constructor run. The caller interacts through method calls and shared-value observation. Multiple independent instances of the same script can coexist.
+- **Direct render** - run the chain once as a script and return a result. Use this when the chain is the top-level entry point.
+- **Component** - create an isolated instance with its own shared state and constructor run. The caller interacts through method calls and shared-value observation. Multiple independent instances of the same script can coexist.
 
-A typical pattern: a base report script fetches data, orchestrates the flow, and calls `this.buildBody(...)` to produce the content. Different child scripts supply their own `buildBody` — one for summaries, one for detailed output — without duplicating the fetch-and-orchestrate logic.
+A typical pattern: a base report script fetches data, orchestrates the flow, and calls `this.buildBody(...)` to produce the content. Different child scripts supply their own `buildBody` - one for summaries, one for detailed output - without duplicating the fetch-and-orchestrate logic.
 
-> If you know class-based OOP, these map onto familiar concepts — see [Comparison to Class Inheritance](#comparison-to-class-inheritance) at the end of this section.
+> If you know class-based OOP, these map onto familiar concepts - see [Comparison to Class Inheritance](#comparison-to-class-inheritance) at the end of this section.
 
 **Quick reference:**
 
-- [`extends`](#extends-base-and-child-flow) — link a script to a base script
-- [`shared`](#shared-shared-state) — declare chain-level state
-- [`method`](#method-inherited-dispatch) — define an overridable behavior
-- [`super()`](#super-and-super) — call the parent's implementation
-- [The `constructor`](#the-constructor-script-body) — the script body; setup logic for one chain level
-- [Direct render](#direct-render) — run the chain once and return a result
-- [`component`](#component-component-instances) — create isolated instances
+- [`extends`](#extends-base-and-child-flow) - link a script to a base script
+- [`shared`](#shared-shared-state) - declare chain-level state
+- [`method`](#method-inherited-dispatch) - define an overridable behavior
+- [`super()`](#super-and-super) - call the parent's implementation
+- [The `constructor`](#the-constructor-script-body) - the script body; setup logic for one chain level
+- [Direct render](#direct-render) - run the chain once and return a result
+- [`component`](#component-component-instances) - create isolated instances
 
 #### `extends`: Base and Child Flow
 
@@ -2279,13 +2279,13 @@ extends "base.script" with context, { initialTheme: "dark", id: 0 }
 
 #### `shared`: Shared State
 
-`shared` declares hierarchy-owned state — values accessible via `this.<name>` from any constructor or method in the chain, regardless of where in the hierarchy the code runs. Unlike local `var` declarations, shared values are not tied to a single constructor scope; they live at the chain level and persist across method calls.
+`shared` declares hierarchy-owned state - values accessible via `this.<name>` from any constructor or method in the chain, regardless of where in the hierarchy the code runs. Unlike local `var` declarations, shared values are not tied to a single constructor scope; they live at the chain level and persist across method calls.
 
 `shared` declarations must appear before `extends`.
 
 **Accessing shared state**
 
-Inside an inheritance chain or component script, shared state is accessed through `this.<name>`, unifying shared-channel reads and writes with inherited method dispatch under a single prefix. From the outside — when calling a component — shared channels are observed through the component binding instead: `ns.theme`, `ns.log.snapshot()`, etc. (see [`component`](#component-component-instances) below). Bare names always follow ordinary ambient lookup (context, globals, composition payload) even when a matching `shared` declaration exists in the same file. `this.theme` reads the shared channel; bare `theme` reads from context.
+Inside an inheritance chain or component script, shared state is accessed through `this.<name>`, unifying shared-channel reads and writes with inherited method dispatch under a single prefix. From the outside - when calling a component - shared channels are observed through the component binding instead: `ns.theme`, `ns.log.snapshot()`, etc. (see [`component`](#component-component-instances) below). Bare names always follow ordinary ambient lookup (context, globals, composition payload) even when a matching `shared` declaration exists in the same file. `this.theme` reads the shared channel; bare `theme` reads from context.
 
 | Form | Meaning |
 |---|---|
@@ -2300,7 +2300,7 @@ Inside an inheritance chain or component script, shared state is accessed throug
 | `this.x is error` | any: true if the channel is poisoned |
 | `this.x#` | any: peek the error message |
 
-**Per-file declaration requirement:** Every script that uses `this.<name>` for a shared channel must declare it in that file. Because each file is compiled independently, the compiler needs to know the channel type at compile time — it cannot infer it from a parent file. A parent declaring `shared var theme` does not authorize `this.theme` in a child file that has not declared it. Any bare name — including one that matches a `shared` declaration in the same file — follows ordinary ambient lookup and does not read the shared channel.
+**Per-file declaration requirement:** Every script that uses `this.<name>` for a shared channel must declare it in that file. Because each file is compiled independently, the compiler needs to know the channel type at compile time - it cannot infer it from a parent file. A parent declaring `shared var theme` does not authorize `this.theme` in a child file that has not declared it. Any bare name - including one that matches a `shared` declaration in the same file - follows ordinary ambient lookup and does not read the shared channel.
 
 **`shared` declaration forms:**
 
@@ -2313,10 +2313,10 @@ Inside an inheritance chain or component script, shared state is accessed throug
 | `shared sequence db` | Declares participation without claiming a default. |
 
 **Default priority rules:**
-- A declaration *without* an initializer (`shared var x`) declares participation only — it does not claim a default value for the channel.
+- A declaration *without* an initializer (`shared var x`) declares participation only - it does not claim a default value for the channel.
 - Only a declaration *with* an initializer (`shared var x = expr`) claims the default.
 - The first assigned default encountered in child-to-parent startup order wins. Later ancestor defaults for the same channel are not evaluated.
-- A shared default expression can read from composition payload — payload values are available at startup time.
+- A shared default expression can read from composition payload - payload values are available at startup time.
 
 The example below uses both surfaces of `this.`: `this.theme` reads the shared var and `this.buildBody(...)` calls the inherited method.
 
@@ -2334,7 +2334,7 @@ return result.snapshot()
 ```
 
 ```cascada
-// child.script — must also declare 'theme' to use this.theme
+// child.script - must also declare 'theme' to use this.theme
 shared var theme = "dark"   // child default wins; base default is not evaluated
 
 extends "base.script"
@@ -2349,14 +2349,14 @@ await env.renderScript("child.script", {
 ```
 
 **`shared` rules:**
-- Every file that accesses a shared channel via `this.<name>` must declare it — parent declarations do not extend to child files.
+- Every file that accesses a shared channel via `this.<name>` must declare it - parent declarations do not extend to child files.
 - Only `shared` declarations are allowed before `extends`. Arbitrary `var` declarations before `extends` are not permitted.
 - Bare assignment to a declared shared name (`theme = value`) is a compile-time error. Use `this.theme = value`.
 - Re-declaring an existing shared channel with a different type is a fatal error. Re-declaring with the same type is a no-op.
 
 #### `method`: Inherited Dispatch
 
-Define override points in the base script with `method ... endmethod`. Call them with `this.methodName(...)` — the `this.` prefix triggers inheritance dispatch and looks up the most-derived override in the chain. A bare `methodName(...)` call is an ordinary local or context call and does not participate in inheritance.
+Define override points in the base script with `method ... endmethod`. Call them with `this.methodName(...)` - the `this.` prefix triggers inheritance dispatch and looks up the most-derived override in the chain. A bare `methodName(...)` call is an ordinary local or context call and does not participate in inheritance.
 
 ```cascada
 // base.script
@@ -2395,25 +2395,25 @@ await env.renderScript("child.script", {
 
 #### `super()` and `super(...)`
 
-Use `super()` when the child wants to augment the parent's result rather than replace it entirely — adding a prefix, wrapping the output, or delegating to the parent for certain inputs.
+Use `super()` when the child wants to augment the parent's result rather than replace it entirely - adding a prefix, wrapping the output, or delegating to the parent for certain inputs.
 
 Bare `super()` calls the parent method with the original invocation arguments:
 
 ```cascada
-// child.script — wraps the parent result
+// child.script - wraps the parent result
 extends "base.script"
 
 method buildBody(title, user)
-  return "URGENT — " + super()
+  return "URGENT - " + super()
 endmethod
 ```
 
-With `title: "Q1 Report"` and `user: { name: "Ada" }`, this renders to `"URGENT — Ada: Q1 Report"`.
+With `title: "Q1 Report"` and `user: { name: "Ada" }`, this renders to `"URGENT - Ada: Q1 Report"`.
 
 `super(...)` lets the child pass different arguments to the parent:
 
 ```cascada
-// child.script — passes modified args to the parent
+// child.script - passes modified args to the parent
 extends "base.script"
 
 method buildBody(title, user)
@@ -2425,7 +2425,7 @@ This renders to `"Anonymous: Q1 Report"`.
 
 #### `method ... with context`
 
-A method can declare `with context` to access render-context values by bare name inside the body. The contract is inherited automatically by child overrides — the child does not need to re-declare it:
+A method can declare `with context` to access render-context values by bare name inside the body. The contract is inherited automatically by child overrides - the child does not need to re-declare it:
 
 ```cascada
 // base.script
@@ -2455,7 +2455,7 @@ await env.renderScript("child.script", {
 // "[Child/Acme] Ada: Q1 Report"
 ```
 
-The default for a method is "without context" unless the base method explicitly declares `with context`. Child overrides and `super()` calls inherit that render-context visibility automatically — the child does not need to re-declare `with context`. Unlike shared channels, which require `this.<name>`, render-context values in a `with context` method are accessible as plain bare names.
+The default for a method is "without context" unless the base method explicitly declares `with context`. Child overrides and `super()` calls inherit that render-context visibility automatically - the child does not need to re-declare `with context`. Unlike shared channels, which require `this.<name>`, render-context values in a `with context` method are accessible as plain bare names.
 
 #### Direct Render
 
@@ -2482,7 +2482,7 @@ super()                       // parent constructor runs here
 result.extra = processed      // runs after the parent constructor completes
 ```
 
-**Return semantics**: `super()` returns the parent constructor's return value to the calling constructor body, where it can be used locally. For direct render, the final script result is the `return` from the active constructor entry — the child's local body if it has one, otherwise the inherited constructor that ran.
+**Return semantics**: `super()` returns the parent constructor's return value to the calling constructor body, where it can be used locally. For direct render, the final script result is the `return` from the active constructor entry - the child's local body if it has one, otherwise the inherited constructor that ran.
 
 `extends` marks an async boundary. The constructor body (everything after `extends`) starts executing after the inheritance chain has been set up and the shared metadata has been registered.
 
@@ -2503,7 +2503,7 @@ endmethod
 return this.buildBody(title, user)
 ```
 
-This is useful when a script sometimes needs `extends` semantics — shared values and `this.method(...)` dispatch — but in other cases should behave as the root of its own hierarchy. At the root, a `this.method(...)` call whose method name was not registered during bootstrap is a fatal structural error. Declaration-only shared vars (`shared var x` with no initializer) are valid at the root and resolve to `none`; undeclared identifiers are not shared access and follow ordinary ambient lookup.
+This is useful when a script sometimes needs `extends` semantics - shared values and `this.method(...)` dispatch - but in other cases should behave as the root of its own hierarchy. At the root, a `this.method(...)` call whose method name was not registered during bootstrap is a fatal structural error. Declaration-only shared vars (`shared var x` with no initializer) are valid at the root and resolve to `none`; undeclared identifiers are not shared access and follow ordinary ambient lookup.
 
 #### `component`: Component Instances
 
@@ -2533,7 +2533,7 @@ var f = footer.render("Footer")
 return { header: h, footer: f }
 ```
 
-The two instances are fully independent — separate shared values, separate method tables, separate execution. Calling a method on one has no effect on the other.
+The two instances are fully independent - separate shared values, separate method tables, separate execution. Calling a method on one has no effect on the other.
 
 **Observing shared state from the caller**
 
@@ -2548,9 +2548,9 @@ var ok   = header.log is error       // true if 'log' is poisoned
 var msg  = header.log#               // peek the error message
 ```
 
-Component shared channels are **read-only from the caller** — writes must go through the component's own constructors and methods. The allowed observation forms are: bare shared-var read (implicit snapshot), nested property read from a shared `var`, `.snapshot()`, `is error`, and `#`. Shared channel names that start with `_` are private to the component and are not observable through the component binding. Anything else is a compile error.
+Component shared channels are **read-only from the caller** - writes must go through the component's own constructors and methods. The allowed observation forms are: bare shared-var read (implicit snapshot), nested property read from a shared `var`, `.snapshot()`, `is error`, and `#`. Shared channel names that start with `_` are private to the component and are not observable through the component binding. Anything else is a compile error.
 
-A nested read such as `header.theme.name` is treated as `header.theme.snapshot().name` — Cascada observes the shared var first, then applies ordinary property lookup to the result. This implicit snapshot only applies to shared `var` channels. For `shared text`, `shared data`, or other channel types, call `.snapshot()` explicitly, because `snapshot()` waits for ordered channel work to finish:
+A nested read such as `header.theme.name` is treated as `header.theme.snapshot().name` - Cascada observes the shared var first, then applies ordinary property lookup to the result. This implicit snapshot only applies to shared `var` channels. For `shared text`, `shared data`, or other channel types, call `.snapshot()` explicitly, because `snapshot()` waits for ordered channel work to finish:
 
 ```cascada
 return header.log.snapshot().length
@@ -2558,7 +2558,7 @@ return header.log.snapshot().length
 
 **Composition payload: `with`**
 
-The values passed in `with` become a **composition payload** — a context-like key/value object accessible by bare name inside every constructor and method in the component's hierarchy. Payload is separate from shared state.
+The values passed in `with` become a **composition payload** - a context-like key/value object accessible by bare name inside every constructor and method in the component's hierarchy. Payload is separate from shared state.
 
 > **Payload does not override shared defaults.** `with { x: value }` does not write into a `shared var x`. Payload keys and shared channel names are independent namespaces that happen to resolve through the same ambient lookup. To initialize a shared var from a payload value, read the payload key in the shared default expression (as shown above with `initialTheme`) or assign it explicitly in the constructor body.
 
@@ -2592,9 +2592,9 @@ Both are callable, but they serve different roles:
 | | `function` | `method` |
 |---|---|---|
 | **Call syntax** | `name(...)` | `this.name(...)` |
-| **Inheritance** | No | Yes — child overrides parent |
+| **Inheritance** | No | Yes - child overrides parent |
 | **`super()`** | Not available | Available inside method body |
-| **Shared channel access** | No — functions are isolated | Yes — declared shared channels |
+| **Shared channel access** | No - functions are isolated | Yes - declared shared channels |
 | **Use case** | Reusable utility logic | Override point for child scripts |
 
 A method body can call functions and read or write shared channels declared in the same file. A function body is isolated: it cannot dispatch inherited methods via `this.method(...)` and does not access shared state.

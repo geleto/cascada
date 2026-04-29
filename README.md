@@ -5,7 +5,7 @@
 
 **Cascada** is a data-orchestration engine for JavaScript and TypeScript applications that inverts the traditional programming model: it is parallel by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
 
-**⚠️ Under active development:** Cascada is evolving rapidly — bugs are possible. Issues and contributions are very welcome.
+**⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welcome.
 
 **Cascada** is designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
@@ -14,7 +14,7 @@
 
 Both share the same core philosophy: **write clear, linear logic while the engine handles concurrent execution, ordering guarantees, and error propagation automatically.**
 
-There's no `async`, no `await`, no `Promise.all` — just clean code that happens to execute concurrently.
+There's no `async`, no `await`, no `Promise.all` - just clean code that happens to execute concurrently.
 
 **The problem they solve:** Traditional async/await often forces you to choose between readable sequential code OR maximum concurrency. Cascada gives you both. Independent operations run concurrently, while the engine manages dependencies and assembles results deterministically.
 
@@ -23,7 +23,7 @@ There's no `async`, no `await`, no `Promise.all` — just clean code that happen
 * ⚡ **Parallel by default** - Independent operations execute concurrently without `async`, `await`, or promise management
 * 🚦 **Data-driven execution** - Operations run automatically when their inputs are ready, eliminating race conditions by design
 * ➡️ **Sequential when needed** - Use a simple `!` marker to enforce ordering for side-effectful operations
-* 📋 **Deterministic outputs** - Concurrent execution, sequential results—final outputs assemble exactly as written
+* 📋 **Deterministic outputs** - Concurrent execution, sequential results-final outputs assemble exactly as written
 * ☣️ **Errors as data** - Failures propagate through the dataflow without stopping unrelated work
 
 **Perfect for:**
@@ -32,7 +32,7 @@ There's no `async`, no `await`, no `Promise.all` — just clean code that happen
 - Agent systems and multi-step planning
 - High-throughput I/O coordination
 
-**In short:** Cascada is a data-orchestration layer that handles the complexity of concurrent async execution while you focus on business logic—whether you're building data structures with Script or generating dynamic content with Templates.
+**In short:** Cascada is a data-orchestration layer that handles the complexity of concurrent async execution while you focus on business logic-whether you're building data structures with Script or generating dynamic content with Templates.
 
 The most **up-to-date and complete information** on the features of Cascada can be found in the **[Cascada Script Documentation](https://geleto.github.io/cascada-script/)**!
 
@@ -285,7 +285,7 @@ account!.withdraw(50)
 
 ### Declarative Data Assembly (Channels)
 
-Cascada provides **channel types** (`data`, `text`, `sequence`) for declarative, ordered output assembly. Channel writes execute concurrently as soon as their inputs are ready, but the final assembled result always matches source-code order—giving you the performance of concurrency with the predictability of sequential code.
+Cascada provides **channel types** (`data`, `text`, `sequence`) for declarative, ordered output assembly. Channel writes execute concurrently as soon as their inputs are ready, but the final assembled result always matches source-code order-giving you the performance of concurrency with the predictability of sequential code.
 
 The `data` channel is particularly powerful for building structured objects and arrays from concurrent for loops. All writes run concurrently, and the assembled result is always in source order.
 
@@ -343,7 +343,7 @@ return report.snapshot()
 
 ### Sequential Execution for Stateful Objects
 
-Some external objects — graphics contexts, state machines, streaming APIs — require every command to be applied in a specific order. Cascada offers two tools for this: the `!` marker, which enforces ordering on individual calls, and the `sequence` channel (script-only), which wraps the object so that every access on it is automatically sequential.
+Some external objects - graphics contexts, state machines, streaming APIs - require every command to be applied in a specific order. Cascada offers two tools for this: the `!` marker, which enforces ordering on individual calls, and the `sequence` channel (script-only), which wraps the object so that every access on it is automatically sequential.
 
 </td>
 <td valign="top">
@@ -406,7 +406,7 @@ Some external objects — graphics contexts, state machines, streaming APIs — 
   <summary><strong>Cascada Script (with <code>sequence</code>)</strong></summary>
 
   ```javascript
-  // sequence wraps the object — all accesses
+  // sequence wraps the object - all accesses
   // are automatically sequential, no ! needed
   sequence turtle = canvasTurtle
 

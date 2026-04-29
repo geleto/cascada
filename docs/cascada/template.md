@@ -13,7 +13,7 @@ Cascada Templates provide an alternative syntax for writing Cascada workflows us
 
 Cascada maintains full compatibility with Nunjucks when running in non-async mode.
 
-**⚠️ Under active development:** Cascada is evolving rapidly — bugs are possible. Issues and contributions are very welcome.
+**⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welcome.
 
 ## Template vs Script: Key Differences
 
