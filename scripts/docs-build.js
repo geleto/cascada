@@ -11,6 +11,55 @@ const GENERATED_DOCS_SCRIPT_DIR = path.join(GENERATED_DOCS_ROOT, 'script');
 const TARGET_README = path.join(GENERATED_DOCS_SCRIPT_DIR, 'README.md');
 const TARGET_INDEX = path.join(GENERATED_DOCS_SCRIPT_DIR, 'index.html');
 const TARGET_NOJEKYLL = path.join(GENERATED_DOCS_SCRIPT_DIR, '.nojekyll');
+const GITHUB_REPO_URL = 'https://github.com/geleto/cascada';
+const GITHUB_REPO_BRANCH = 'master';
+const DOCS_SOURCE_REPO_PATH = 'docs/cascada/script.md';
+
+function splitMarkdownLinkTarget(target) {
+  const trimmed = target.trim();
+  if (trimmed.startsWith('<')) {
+    const closeIndex = trimmed.indexOf('>');
+    if (closeIndex !== -1) {
+      return {
+        href: trimmed.slice(1, closeIndex),
+        title: trimmed.slice(closeIndex + 1)
+      };
+    }
+  }
+
+  const match = trimmed.match(/^(\S+)(.*)$/);
+  return {
+    href: match ? match[1] : '',
+    title: match ? match[2] : ''
+  };
+}
+
+function isRelativeLink(href) {
+  return href !== ''
+    && !href.startsWith('#')
+    && !href.startsWith('/')
+    && !href.startsWith('//')
+    && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(href);
+}
+
+function githubLinkForRelativePath(href, sourceRepoPath) {
+  const suffixIndex = href.search(/[?#]/);
+  const filePath = suffixIndex === -1 ? href : href.slice(0, suffixIndex);
+  const suffix = suffixIndex === -1 ? '' : href.slice(suffixIndex);
+  const repoPath = path.posix.normalize(path.posix.join(path.posix.dirname(sourceRepoPath), filePath));
+  return `${GITHUB_REPO_URL}/blob/${GITHUB_REPO_BRANCH}/${repoPath}${suffix}`;
+}
+
+function prefixRelativeMarkdownLinks(markdown, sourceRepoPath) {
+  return markdown.replace(/(!?\[[^\]]*\])\(([^)\r\n]+)\)/g, (match, label, target) => {
+    const { href, title } = splitMarkdownLinkTarget(target);
+    if (!isRelativeLink(href)) {
+      return match;
+    }
+
+    return `${label}(${githubLinkForRelativePath(href, sourceRepoPath)}${title})`;
+  });
+}
 
 // Ensure directory exists
 if (fs.existsSync(GENERATED_DOCS_SCRIPT_DIR)) {
@@ -23,6 +72,7 @@ fs.mkdirSync(GENERATED_DOCS_SCRIPT_DIR, { recursive: true });
 let content = fs.readFileSync(DOCS_SOURCE, 'utf8');
 // Remove the first H1 heading (# Tile)
 content = content.replace(/^#\s+.+\r?\n/, '');
+content = prefixRelativeMarkdownLinks(content, DOCS_SOURCE_REPO_PATH);
 fs.writeFileSync(TARGET_README, content);
 console.log(`Processed and copied ${DOCS_SOURCE} to ${TARGET_README}`);
 
