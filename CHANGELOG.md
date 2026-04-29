@@ -4,6 +4,12 @@ All notable changes to `cascada-engine` are documented here.
 
 This project follows SemVer. While Cascada is still in `0.x`, minor releases may include breaking language and runtime changes.
 
+## [0.5.1] - 2026-04-29
+
+### Fixed
+
+- Fixed the published package install hook. `scripts/dev-install.js` is now included in the npm package and exits immediately when installed as a dependency, while still installing Playwright for local source checkouts.
+
 ## [0.5.0] - 2026-04-29
 
 ### Highlights
