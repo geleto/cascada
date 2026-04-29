@@ -40,7 +40,7 @@ db!.log("report", userId)
 return result.snapshot()
 ```
 
-Language syntax: `docs/cascada/script.md` (authoritative). `docs/cascada/script-agent.md` is an AI-optimized reference — will be added shortly, may lag.
+Language syntax: `docs/cascada/script.md` (authoritative). `docs/cascada/cascada-agent.md` is an AI-optimized reference for both Cascada Script and Cascada Template. Nay lag the reference documents.
 
 ---
 

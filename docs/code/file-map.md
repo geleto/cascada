@@ -92,7 +92,7 @@ Complete source and documentation file reference. The most critical files for da
 ### User Docs (`docs/cascada/`)
 
 -   `script.md` — Comprehensive, human-readable Cascada Script syntax and features reference. Authoritative — almost always up-to-date even before features are developed.
--   `script-agent.md` — Concise AI-optimized guide to Cascada Script. Will be added shortly; when present, may lag `script.md`.
+-   `cascada-agent.md` — Concise AI-optimized guide to Cascada Script and Cascada Template, may lag `script.md`.
 -   `template.md` — Outdated Nunjucks-compatible template syntax guide. Use Nunjucks knowledge and scripting docs instead.
 -   `legacy.md` — Design document describing the old implicit-handler model. Useful when rewriting scripts that use legacy semantics.
 -   `streaming.md` — Async iterable inputs and streaming support.

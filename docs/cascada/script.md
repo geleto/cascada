@@ -2,7 +2,7 @@
 
 [Download as Markdown](https://raw.githubusercontent.com/geleto/cascada/master/docs/cascada/script.md)
 
-[Markdown for AI Coding Agents](https://raw.githubusercontent.com/geleto/cascada/refs/heads/master/docs/cascada/script-agent.md)
+[Markdown for AI Coding Agents - Script and Template syntax](https://raw.githubusercontent.com/geleto/cascada/refs/heads/master/docs/cascada/cascada-agent.md)
 
 [Cascada Github](https://github.com/geleto/cascada)
 
