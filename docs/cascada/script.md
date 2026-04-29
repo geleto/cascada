@@ -1901,7 +1901,7 @@ recover err
   // - db! is repaired and safe to use
 
   db!.rollback()
-  out.error = "Transaction failed: " + err#message
+  out.error = "Transaction failed: " + err.message
 endguard
 
 return out.snapshot()
@@ -2007,7 +2007,7 @@ If present, it runs only if the guard finishes poisoned:
 * Guarded `data`, `text`, and `sequence` values have already been reverted
 * Guarded sequential paths have already been repaired
 * Guarded variables have already been restored
-* `recover err` binds the final `PoisonError` for inspection via the `#` peek operator - the variable name is optional; bare `recover` (without a binding) is also valid
+* `recover err` binds the final `PoisonError`; read `err.message` for a combined message or inspect `err.errors` in host JavaScript. The variable name is optional; bare `recover` (without a binding) is also valid
 
 > Note: If all errors are detected and repaired inside the guard (using `is error`), the guard is considered successful and no recovery occurs.
 

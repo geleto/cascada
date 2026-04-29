@@ -9,6 +9,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(scriptDir, '..');
 const defaultSpecs = [
   {path: 'tests', recursive: false},
+  {path: 'tests/examples', recursive: true},
   {path: 'tests/pasync', recursive: true},
   {path: 'tests/poison', recursive: true}
 ];

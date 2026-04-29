@@ -531,7 +531,7 @@ guard
 recover err
   // Handle failure
   // guarded state already restored
-  result = { error: "Failed: " + err#message }
+  result = { error: "Failed: " + err.message }
 endguard
 return result
 ```
