@@ -1,6 +1,6 @@
 {
   "name": "cascada-engine",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "The parallel-first scripting & templating engine with transparent async support and automatic, implicit concurrency.",
   "type": "module",
   "license": "BSD-2-Clause",
