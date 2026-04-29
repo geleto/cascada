@@ -24,7 +24,7 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 * **No channels** — The `data`, `text`, and `sequence` channel types are script-only; templates only output text
 * **Tags use `{% %}`** — All logic goes inside tag delimiters (use standard Nunjucks whitespace control where needed)
 * **`set` for variables and assignment** — Use Nunjucks `{% set %}` syntax instead of Script's `var` and `=`
-* **`do` for execution-only expressions** — Standalone calls and sequence path repair (`!!`) use `{% do %}`
+* **`do` for execution-only expressions** — Standalone calls and sequential path repair (`!!`) use `{% do %}`
 
 ## Render vs Return: The Core Difference
 
@@ -78,16 +78,16 @@ Posts:
 
 The `{% do %}` tag executes expressions without rendering any output. In Script mode, the equivalent is simply writing the expression on its own line.
 
-### Sequence Path Repair (`!!`)
+### Sequential Path Repair (`!!`)
 
-The sequence path repair operator `!!` repairs poisoned sequence paths. In templates, it must be used with `{% do %}`:
+The sequential path repair operator `!!` repairs poisoned `!` paths. In templates, it must be used with `{% do %}`. A path must first be established with `!` before it can be checked or repaired:
 
 ```nunjucks
-{# Repair sequence path #}
-{% do config.database.connection!! %}
+{% do api!.connect() %}
 
-{# Now safe to use #}
-Database: {{ config.database.connection.host }}
+{% if api! is error %}
+  {% do api!! %}
+{% endif %}
 ```
 
 ## Script ↔ Template Syntax Reference
@@ -104,10 +104,10 @@ Database: {{ config.database.connection.host }}
 | **Filters**              | `t(name \| upper)`                                         | `{{ name \| upper }}`                                                        |
 | **Filter with Args**     | `t(items \| join(", "))`                                   | `{{ items \| join(", ") }}`                                                  |
 | **Execution-only Call**  | `service.notify(user)`                                     | `{% do service.notify(user) %}`                                              |
-| **Sequence Path Repair** | `user.profile!!`                                           | `{% do user.profile!! %}`                                                    |
-| **If Statement**         | `if user.age >= 18`<br>  `...`<br>`elseif ...`<br>  `...`<br>`else`<br>  `...`<br>`endif` | `{% if user.age >= 18 %}`<br>  `...`<br>`{% elseif ... %}`<br>  `...`<br>`{% else %}`<br>  `...`<br>`{% endif %}` |
+| **Sequential Path Repair** | `api!!`                                                  | `{% do api!! %}`                                                             |
+| **If Statement**         | `if user.age >= 18`<br>  `...`<br>`elif ...`<br>  `...`<br>`else`<br>  `...`<br>`endif` | `{% if user.age >= 18 %}`<br>  `...`<br>`{% elseif ... %}` or `{% elif ... %}`<br>  `...`<br>`{% else %}`<br>  `...`<br>`{% endif %}` |
 | **For Loop**             | `for item in items`<br>  `...`<br>`endfor`                 | `{% for item in items %}`<br>  `...`<br>`{% endfor %}`                       |
-| **Each Loop**            | `each item in items`<br>  `...`<br>`endeach`               | `{% each item in items %}`<br>  `...`<br>`{% endeach %}`                     |
+| **Each Loop**            | `each item in items`<br>  `...`<br>`endeach`               | `{% asyncEach item in items %}`<br>  `...`<br>`{% endeach %}`                |
 | **While Loop**           | `while count < 10`<br>  `...`<br>`endwhile`                | `{% while count < 10 %}`<br>  `...`<br>`{% endwhile %}`                      |
 | **Switch**               | `switch value`<br>  `case 1`<br>    `...`<br>`endswitch`   | `{% switch value %}`<br>  `{% case 1 %}`<br>    `...`<br>`{% endswitch %}`   |
 | **Function Definition**  | `function greet(name)`<br>  `...`<br>`endfunction`         | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
@@ -129,7 +129,6 @@ Database: {{ config.database.connection.host }}
 | **Import names**         | `from "file" import helper`                                | `{% from "file" import helper %}`                                            |
 | **From import with inputs** | `from "file" import helper with context, var1`          | `{% from "file" import helper with context, var1 %}`                         |
 | **Guard Block**          | `guard`<br>  `...`<br>  `recover`<br>  `...`<br>`endguard` | `{% guard %}`<br>  `...`<br>  `{% recover %}`<br>  `...`<br>`{% endguard %}` |
-| **Revert**               | `revert`                                                   | `{% revert %}`                                                               |
 
 ## Call Blocks and `caller()`
 
@@ -160,20 +159,17 @@ endcall
 ```
 
 
-## `guard`, `recover`, and `revert`
+## `guard` and `recover`
 
 `guard` and `recover` work the same as in scripts. In templates, the relevant effect is that **text output from the guarded scope is discarded** if the guard fails (rather than restoring channel state, which is the script use case).
 
-### `revert`
+### Manual `revert`
 
-`revert` unconditionally triggers rollback of the current guard scope, discarding its output and running the `recover` block if present.
+Manual `revert` is not available yet in async templates. Use ordinary error flow inside a `guard`: if the guarded block remains poisoned, Cascada discards its output and runs `recover`.
 
 ```nunjucks
 {% guard %}
   {% set result = riskyCall() %}
-  {% if result is error %}
-    {% revert %}
-  {% endif %}
   Result: {{ result }}
 {% recover %}
   Could not load result.

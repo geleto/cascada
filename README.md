@@ -285,7 +285,7 @@ account!.withdraw(50)
 
 ### Declarative Data Assembly (Channels)
 
-Cascada provides **channel types** (`data`, `text`, `sequence`) for declarative, ordered output assembly. Channel writes execute concurrently as soon as their inputs are ready, but the final assembled result always matches source-code order-giving you the performance of concurrency with the predictability of sequential code.
+Cascada provides **channels** for ordered work: `data` and `text` assemble output in source order, while `sequence` serializes access to stateful external objects. Channel writes execute concurrently as soon as their inputs are ready, but the final assembled result always matches source-code order-giving you the performance of concurrency with the predictability of sequential code.
 
 The `data` channel is particularly powerful for building structured objects and arrays from concurrent for loops. All writes run concurrently, and the assembled result is always in source order.
 
@@ -563,9 +563,9 @@ Cascada's parallel-first core powers two distinct syntaxes, each tailored for a 
 
 ### Data-First: Cascada Script
 
-For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's concurrency capabilities and adds **channels** (`data`, `text`, `sequence`) for structured output assembly.
+For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's concurrency capabilities and adds **channels** (`data`, `text`, `sequence`) for structured output assembly and ordered external interaction.
 - **Clean, delimiter-free syntax**
-- **Channels for structured output**: `data`, `text`, `sequence`
+- **Channels**: `data` and `text` for structured output, `sequence` for ordered external interaction
 - **Focus on logic and orchestration**
 
 </td>
@@ -590,9 +590,9 @@ for step in plan.steps
   })
 endfor
 
-// 3. Summarize the results once complete
-result.summary = summarize(
-  result.snapshot().stepResults)
+// 3. Summarize the results once the loop writes finish
+var steps = result.snapshot().stepResults
+result.summary = summarize(steps)
 return result.snapshot()
 ```
 </details>
@@ -681,7 +681,7 @@ const context = {
   username: Promise.resolve('World')
 };
 
-const html = await env.renderString(
+const html = await env.renderTemplateString(
   tpl,
   context
 );
