@@ -1,4 +1,4 @@
-import {copyFileSync, mkdirSync} from 'fs';
+import {copyFileSync, existsSync, mkdirSync} from 'fs';
 import path from 'path';
 
 const tasks = {
@@ -8,6 +8,8 @@ const tasks = {
   ],
   docs: [
     ['docs/cascada/script.md', 'dist/docs/script.md'],
+    ['docs/cascada/template.md', 'dist/docs/template.md'],
+    ['docs/cascada/cascada-agent.md', 'dist/docs/cascada-agent.md', {optional: true}],
     ['README.md', 'dist/docs/README.md']
   ],
   bin: [
@@ -24,7 +26,10 @@ if (!task) {
   process.exit(1);
 }
 
-task.forEach(([from, to]) => {
+task.forEach(([from, to, options = {}]) => {
+  if (options.optional && !existsSync(from)) {
+    return;
+  }
   mkdirSync(path.dirname(to), {recursive: true});
   copyFileSync(from, to);
 });
