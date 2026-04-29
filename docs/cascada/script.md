@@ -14,6 +14,9 @@
 
 It uses familiar syntax and language constructs, while offering language-level support for boilerplate-free concurrent workflows, explicit control over side effects, deterministic output construction, and dataflow-based error handling with recovery rollbacks.
 
+**⚠️ Under active development:** Cascada is evolving rapidly — bugs are possible. Issues and contributions are very welcome.
+
+
 The core execution model:
 
 * ⚡ **Parallel by default**  -  Independent operations — variable assignments, function calls, loop iterations — execute concurrently without `async`, `await`, or promise management.
@@ -2884,9 +2887,6 @@ cascada-precompile script.casc --mode script --format esm
 **For a comprehensive guide on precompilation options, see the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
 
 ## Development Status and Roadmap
-
-### Development Status
-Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. I am working hard to improve everything and welcome your contributions and feedback.
 
 ### Differences from classic Nunjucks
 

@@ -5,6 +5,8 @@
 
 **Cascada** is a data-orchestration engine for JavaScript and TypeScript applications that inverts the traditional programming model: it is parallel by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
 
+**⚠️ Under active development:** Cascada is evolving rapidly — bugs are possible. Issues and contributions are very welcome.
+
 **Cascada** is designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
 - **[Cascada Script](https://geleto.github.io/cascada-script/)** - A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
@@ -61,8 +63,6 @@ While independent operations run concurrently and may start and complete in any 
 
 ### [☣️ Dataflow Poisoning - Errors that flow like data](https://geleto.github.io/cascada-script/#error-handling)
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output. For example, if `fetchPosts()` fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. You can detect and repair these errors, providing fallbacks and logging without derailing your entire workflow.
-
-**⚠️ Heads up!** Cascada is a new project. You might run into bugs, and the documentation is catching up with the code. Your feedback and contributions are welcome as we build the future of asynchronous programming.
 
 ## Quick Start
 1.  Install Cascada:
