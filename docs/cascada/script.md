@@ -262,6 +262,8 @@ var profile = {
 var summary = [user.id, fullName, role]
 ```
 
+Object literal keys are always explicit. Cascada Script does not support JavaScript object-property shorthand, so write `{ name: name }`, not `{ name }`.
+
 This works especially well when you want to create a new value instead of mutating an existing one.
 
 **Assignment creates an independent copy.** Objects and arrays are deep copied, not shared by reference.
@@ -439,7 +441,7 @@ You can use standard literals for common data types:
 *   **Strings**: `"Hello"`, `'World'`
 *   **Numbers**: `42`, `3.14159`
 *   **Arrays**: `[1, "apple", true]`
-*   **Dicts (Objects)**: `{ key: "value", "another-key": 100 }`
+*   **Dicts (Objects)**: `{ key: "value", "another-key": 100 }`; keys must be explicit (`{ name: name }`, not `{ name }`)
 *   **Booleans**: `true`, `false`
 
 #### Math

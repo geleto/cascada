@@ -161,9 +161,12 @@ endif
 var t = "hi" | upper
 var s = items | join(", ")
 
-// [EXPR-06] RULE: Object literal uses `{key: expr}`; array literal uses `[a, b]`.
-var p = { id: 1, "k-2": 100 }
+// [EXPR-06] RULE: Object literal uses explicit `{key: expr}`; array literal uses `[a, b]`.
+var name = "Ada"
+var p = { id: 1, name: name, "k-2": 100 }
 var a = [1, "x", true]
+// âŒ Invalid: JS shorthand object keys are NOT supported.
+var bad = { name }
 
 // [EXPR-07] RULE: Member access `obj.prop` or `arr[i]`; works in expression position.
 
@@ -984,6 +987,7 @@ Theme: {{ this.theme }}
 | C43 | `cycler.next()`, `joiner()`, and similar stateful Nunjucks globals must be called in sequential context (`each`) | EXPR-08, EXPR-09 |
 | C44 | Scripts use `elif`; templates use `elseif` | CTRL-01, TPL-12 |
 | C45 | Browser/new code uses ESM imports; old UMD bundles and automatic `window.nunjucks` globals are unsupported | API-03 |
+| C46 | Object literals require explicit keys (`{ name: name }`, not `{ name }`) | EXPR-06 |
 
 ---
 
