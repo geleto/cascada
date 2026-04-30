@@ -46,7 +46,18 @@ The most important current facts are:
   mechanism; alias/canonical-name handling must therefore be part of the
   refactor plan, not treated as an optional afterthought
 - command taxonomy has also moved since some earlier notes: both
-  `WaitResolveCommand` and `WaitCurrentCommand` exist in the runtime, and
+  `WaitResolveCommand` and `WaitCurrentCommand` exist in the runtime
+- `_channelTypes` is not currently dead state: composition payload capture uses
+  it to avoid redeclaring existing channels
+- `_channelRegistry` still appears to be write-only, but it should be audited
+  before deletion rather than removed together with `_channelTypes`
+- `createCommandBuffer(...)` call sites do not all share `_channels` the same
+  way: some linked buffers pass `parent = null` and `linkedParent =
+  parentBuffer`, so the registry problem is broad but irregular rather than a
+  single uniform parent-chain behavior
+- runtime-dynamic declaration paths still exist, especially compatibility paths
+  that emit `declareBufferChannel(..., name, ...)`; these must be removed or
+  converted before static/eager lane assertions become unconditional
 
 So the overall direction of this document remains valid, but the migration
 sequence should be read as "update from the current narrowed runtime" rather
@@ -563,10 +574,15 @@ This applies to:
 
 Related cleanup:
 
-- `targetBuffer._channelTypes[channelName] = channelType` appears to be dead write-only state today
-  channels also appears to be dead write-only state today
-- if lane specs become constructor-time metadata, channel type should live there instead of in a parallel runtime map
-  removed rather than surviving as a second unused parallel registry
+- `targetBuffer._channelRegistry[channelName] = channel` appears to be
+  write-only state today and is a good deletion candidate after an audit
+- `targetBuffer._channelTypes[channelName] = channelType` is still used by
+  composition payload capture and must not be removed until that consumer has a
+  replacement
+- if lane specs become constructor-time metadata, channel type should live
+  there instead of in a parallel runtime map
+- after composition payload capture no longer reads `_channelTypes`, the map
+  should be removed rather than surviving as a second unused parallel registry
 
 This section is more urgent now than when the document was first drafted:
 
@@ -1184,7 +1200,41 @@ This is the practical cleanup-first sequence to use when implementing the
 remaining runtime cleanup work. It is intentionally narrower than the full
 architectural refactor above and is meant to keep changes reviewable.
 
-### Phase 0. Lock in the current cleanup baseline
+Preflight notes for the current codebase:
+
+- treat `_channelTypes` as live until composition payload capture no longer
+  reads it
+- treat `_channelRegistry` as an audit-first cleanup candidate, not as
+  architecturally meaningful state
+- do not make eager/static lane assertions unconditional while runtime-dynamic
+  declaration paths such as `declareBufferChannel(..., name, ...)` still exist
+- account for both buffer creation shapes:
+  - `createCommandBuffer(context, parent, ...)`, where `_channels` is inherited
+    from `parent`
+  - `createCommandBuffer(context, null, linkedChannels, linkedParent)`, where
+    structural linking exists without `_channels` inheritance
+
+Recommended implementation stages:
+
+1. **Stage 1: Baseline and registration cleanup** combines the old Phases 0-2.
+   These changes are low-level cleanup and can be implemented together if the
+   validation stays focused.
+2. **Stage 2: Static lane metadata and eager structure** combines the old
+   Phases 3-5. These changes are tightly coupled because lane metadata, eager
+   arrays, and finish accounting all need the same lane source of truth.
+3. **Stage 3: Local addressability and `_channels` removal** combines the old
+   Phases 6-7. Finished snapshots, `findChannel(...)`, and shared observation
+   should move to the same explicit addressability model in one stage.
+4. **Stage 4: Compatibility cleanup and final invariants** combines the old
+   Phases 8-9. This is the final deletion pass after the new model is carrying
+   all behavior.
+
+The stage boundaries are intentional. Work inside a stage can be combined, but
+do not merge Stage 2 with Stage 3 until static lane metadata is stable, and do
+not start Stage 4 until late-linked/shared inheritance scenarios have dedicated
+coverage.
+
+### Stage 1A. Lock in the current cleanup baseline
 
 Goal:
 
@@ -1207,16 +1257,21 @@ Primary files:
 - [tests/pasync/snapshots.js](C:\Projects\cascada\tests\pasync\snapshots.js)
 - [tests/pasync/loop-concurrent-limit.js](C:\Projects\cascada\tests\pasync\loop-concurrent-limit.js)
 
-### Phase 1. Remove dead write-only cleanup targets
+### Stage 1B. Audit and remove dead write-only cleanup targets
 
 Goal:
 
-- delete state that is not part of the actual runtime contract
+- delete state that is not part of the actual runtime contract without removing
+  maps that still have live compatibility consumers
 
 Work:
 
-- remove `_channelTypes`
-- remove `_channelRegistry` if no runtime reads remain
+- confirm `_channelRegistry` has no runtime readers, then remove it if the audit
+  stays clean
+- keep `_channelTypes` for now because composition payload capture reads it
+- add a replacement plan for `_channelTypes` before the static lane metadata
+  stage; likely replacement: declared lane/channel-type metadata installed on
+  the buffer
 - remove the dead `if (!this._channels)` initialization guard in
   `_registerChannel(...)`
 
@@ -1224,13 +1279,15 @@ Primary files:
 
 - [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
+- [src/runtime/composition-payload.js](C:\Projects\cascada\src\runtime\composition-payload.js)
 
 Validation:
 
 - run focused declaration/snapshot tests
-  registry state
+- run at least one composition/import/export test that exercises payload
+  declaration skipping
 
-### Phase 2. Clean up duplicate registration
+### Stage 1C. Clean up duplicate registration
 
 Goal:
 
@@ -1249,10 +1306,13 @@ Work:
   - data
   - sequence
   - sequential path / `sequential_path`
+- keep `_channelTypes` updates in `declareBufferChannel(...)` during this stage
+  unless the Stage 1B replacement has already landed
 
 Primary files:
 
 - [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
+- [src/runtime/channels/base.js](C:\Projects\cascada\src\runtime\channels\base.js)
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
 
 Validation:
@@ -1260,13 +1320,13 @@ Validation:
 - run snapshot tests
 - run tests that declare channels through normal environment/render entry points
 
-### Phase 3. Introduce static lane metadata without changing behavior yet
+### Stage 2A. Introduce static lane metadata without changing behavior yet
 
 Goal:
 
 - prepare the runtime for eager arrays and simpler finish accounting
 
-This phase is mostly plumbing, not new compiler analysis work.
+This stage is mostly plumbing, not new compiler analysis work.
 
 `declaredChannels` already exists on node `_analysis` objects today. The work
 here is to thread that existing information into buffer construction, not to
@@ -1282,6 +1342,8 @@ Work:
 - add a helper parallel to `getLinkedChannelsArg(...)` for declared lanes
 - thread declared-lane information from compiler analysis into
   `createCommandBuffer(...)`
+- inventory and either eliminate or mark as temporary every runtime-dynamic
+  declaration site before using the new metadata for hard assertions
 
 Primary files:
 
@@ -1293,13 +1355,15 @@ Primary files:
 - [src/compiler/buffer.js](C:\Projects\cascada\src\compiler\buffer.js)
 - [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
 - [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js)
+- [src/compiler/inheritance.js](C:\Projects\cascada\src\compiler\inheritance.js)
+- [src/compiler/loop.js](C:\Projects\cascada\src\compiler\loop.js)
 
 Validation:
 
 - add focused compile-source tests for declared-lane plumbing
 - keep existing integration suites green
 
-### Phase 4. Make lane creation eager
+### Stage 2B. Make lane creation eager
 
 Goal:
 
@@ -1315,6 +1379,9 @@ Work:
   the start
 - add assertions for any attempted add/snapshot against a missing lane
 - initially keep the assertion behind a debug/development gate if needed
+- keep lazy lane creation as a temporary compatibility fallback for any
+  explicitly inventoried runtime-dynamic declaration paths until those paths are
+  converted or removed
 
 Primary files:
 
@@ -1329,7 +1396,7 @@ Validation:
   - missing-lane add failures
   - missing linked-parent lane failures
 
-### Phase 5. Move finish accounting onto static lane metadata
+### Stage 2C. Move finish accounting onto static lane metadata
 
 Goal:
 
@@ -1352,7 +1419,7 @@ Validation:
 - verify `getFinishedPromise()` still resolves correctly
 - verify child buffers still complete correctly under iterator traversal
 
-### Phase 6. Remove `_channels` by converting finished snapshots to local addressability
+### Stage 3A. Remove `_channels` by converting finished snapshots to local addressability
 
 Goal:
 
@@ -1374,11 +1441,11 @@ Work:
 
 Clarification:
 
-- this phase introduces the new local map and routes finished snapshots and
+- this stage introduces the new local map and routes finished snapshots and
   lookup through it
 - the remaining ancestor-walk fallback in `findChannel(...)` may stay in place
-  temporarily during this phase for migration safety
-- Phase 7 is where that fallback is removed entirely
+  temporarily during this stage for migration safety
+- Stage 3B is where that fallback is removed entirely
 
 Primary files:
 
@@ -1390,7 +1457,7 @@ Validation:
 - keep snapshot suites green
 - add explicit tests for finished snapshot behavior after `_channels` removal
 
-### Phase 7. Remove ambient ancestor lookup
+### Stage 3B. Remove ambient ancestor lookup
 
 Goal:
 
@@ -1412,7 +1479,7 @@ Validation:
 - add tests proving parent lookups cannot see child-scope-only declarations
 - keep explicit linked-lane observation tests green
 
-### Phase 8. Remove remaining compatibility finish/link state
+### Stage 4A. Remove remaining compatibility finish/link state
 
 Goal:
 
@@ -1456,7 +1523,7 @@ Validation:
   `_linkedChannels`
 - verify aggregate finish still works for buffers with unused eager lanes
 
-### Phase 9. Final cleanup pass
+### Stage 4B. Final cleanup pass
 
 Goal:
 
@@ -1489,4 +1556,4 @@ Deferred scope:
 - scope-unique `__return__#<scopeId>` ownership is intentionally deferred from
   this cleanup-first execution plan
 - it remains part of the larger architectural refactor above, but it is not a
-  prerequisite for the narrower cleanup phases listed here
+  prerequisite for the narrower cleanup stages listed here
