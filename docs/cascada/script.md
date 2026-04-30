@@ -6,9 +6,9 @@
 
 [Cascada Github](https://github.com/geleto/cascada)
 
-**Cascada Script** inverts the traditional programming model: it is parallel by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
+**Cascada Script** inverts the traditional programming model: it is concurrent by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
 
-## Cascada Script  -  Implicitly Parallel, Explicitly Sequential
+## Cascada Script  -  Implicitly Concurrent, Explicitly Sequential
 
 **Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
@@ -19,7 +19,7 @@ It uses familiar syntax and language constructs, while offering language-level s
 
 The core execution model:
 
-* ⚡ **Parallel by default**  -  Independent operations - variable assignments, function calls, loop iterations - execute concurrently without `async`, `await`, or promise management.
+* ⚡ **Concurrent by default**  -  Independent operations - variable assignments, function calls, loop iterations - execute concurrently without `async`, `await`, or promise management.
 * 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
 * ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs - the rest of the script stays concurrent.
 * 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
@@ -137,8 +137,8 @@ To understand how Cascada achieves effortless concurrency, read the next section
 
 Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts - it explains why the language behaves the way it does and how to leverage its concurrency.
 
-#### ⚡ Parallel by default
-Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**. Independent variable assignments, function calls, loop iterations, and function invocations all run concurrently - no special syntax required.
+#### ⚡ Concurrent by default
+Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **concurrent by default**. Independent variable assignments, function calls, loop iterations, and function invocations all run concurrently - no special syntax required.
 
 #### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
 In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This applies to all constructs: expressions evaluate as soon as their operands resolve, conditionals wait for their condition, loops wait for their iterable, and function calls wait for their arguments. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
@@ -147,8 +147,8 @@ In Cascada, any independent operations - like API calls, LLM requests, and datab
 Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
-#### ➡️ Implicitly Parallel, Explicitly Sequential
-While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
+#### ➡️ Implicitly Concurrent, Explicitly Sequential
+While this "concurrency-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
 
 #### 📋 Execution is chaotic, but the result is orderly
 While independent operations run concurrently and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.

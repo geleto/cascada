@@ -277,7 +277,7 @@ The child's `{% set this.theme = "dark" %}` writes the shared var before the con
 
 ### Concurrency Isolation
 
-In async mode, every construct that can run concurrently gets its own isolated scope, preventing race conditions between parallel branches or iterations:
+In async mode, every construct that can run concurrently gets its own isolated scope, preventing race conditions between concurrent branches or iterations:
 
 | Construct | Classic Nunjucks / sync | Async Cascada Template |
 |---|---|---|
