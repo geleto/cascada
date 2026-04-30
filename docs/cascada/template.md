@@ -2,14 +2,14 @@
 
 **Reference Documentation:**
 
-* [Cascada Script Documentation](https://geleto.github.io/cascada-script/) — Complete reference for Cascada Script features
+* [CascadaScript Documentation](https://geleto.github.io/cascada-script/) — Complete reference for CascadaScript features
 * [Nunjucks Templating Documentation](https://mozilla.github.io/nunjucks/templating.html) — Nunjucks syntax and features
 
-This document focuses on the **differences** between Cascada Script and Cascada Template syntax. For complete coverage of features, consult the reference documentation above.
+This document focuses on the **differences** between CascadaScript and Cascada Template syntax. For complete coverage of features, consult the reference documentation above.
 
 ---
 
-Cascada Templates provide an alternative syntax for writing Cascada workflows using a template-based approach similar to Nunjucks/Jinja2. While Cascada Script is optimized for data orchestration with explicit channel declarations, Cascada Templates are ideal for text generation with embedded logic.
+Cascada Templates provide an alternative syntax for writing Cascada workflows using a template-based approach similar to Nunjucks/Jinja2. While CascadaScript is optimized for data orchestration with explicit channel declarations, Cascada Templates are ideal for text generation with embedded logic.
 
 Cascada maintains full compatibility with Nunjucks when running in non-async mode.
 
@@ -17,7 +17,7 @@ Cascada maintains full compatibility with Nunjucks when running in non-async mod
 
 ## Template vs Script: Key Differences
 
-Cascada Templates are built on top of Nunjucks and support most Cascada Script **control-flow and expression** features, but with these key differences:
+Cascada Templates are built on top of Nunjucks and support most CascadaScript **control-flow and expression** features, but with these key differences:
 
 * **Text output is the default** — Content outside tags renders as text; in scripts, use a `text` channel to build text output explicitly
 * **Expressions in `{{ }}`** — Use double braces for value interpolation
@@ -30,7 +30,7 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 
 Scripts **return** values; templates **render** text. This applies uniformly to every callable construct:
 
-| | Cascada Script | Cascada Template |
+| | CascadaScript | Cascada Template |
 |---|---|---|
 | **Overall result** | Explicit `return value` or `return ch.snapshot()` | Text accumulated in the output stream |
 | **Function / macro** | Returns a value — `var result = fn(args)` | Renders text inline — `{{ macro(args) }}` |
@@ -92,7 +92,7 @@ The sequential path repair operator `!!` repairs poisoned `!` paths. In template
 
 ## Script ↔ Template Syntax Reference
 
-| Feature                  | Cascada Script                                             | Cascada Template                                                             |
+| Feature                  | CascadaScript                                             | Cascada Template                                                             |
 | ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | **Text channel**         | `text t`                                                   | *(text output is implicit — no declaration needed)*                          |
 | **Text channel write**   | `t("Hello " + user.name)`                                  | `Hello {{ user.name }}`                                                      |
@@ -321,7 +321,7 @@ All Cascada composition operations support `with` for passing data across isolat
 * Rendered text is predominantly static with dynamic insertions
 * Working with existing Nunjucks templates
 
-**Use Cascada Script when:**
+**Use CascadaScript when:**
 
 * Building structured data (JSON objects/arrays)
 * Complex data orchestration workflows
@@ -330,7 +330,7 @@ All Cascada composition operations support `with` for passing data across isolat
 
 ## API Notes
 
-Cascada keeps Nunjucks-compatible API names where useful, but new code should use the `cascada-engine` package name and Cascada class/function names. See the [Cascada Script API section](script.md#api-reference) for the canonical API surface.
+Cascada keeps Nunjucks-compatible API names where useful, but new code should use the `cascada-engine` package name and Cascada class/function names. See the [CascadaScript API section](script.md#api-reference) for the canonical API surface.
 
 ### ESM And Browser Usage
 

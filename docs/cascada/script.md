@@ -1,4 +1,4 @@
-# Cascada Script Documentation
+# CascadaScript Documentation
 
 [Download as Markdown](https://raw.githubusercontent.com/geleto/cascada/master/docs/cascada/script.md)
 
@@ -6,11 +6,11 @@
 
 [Cascada Github](https://github.com/geleto/cascada)
 
-**Cascada Script** inverts the traditional programming model: it is concurrent by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
+**CascadaScript** inverts the traditional programming model: it is concurrent by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
 
-## Cascada Script  -  Implicitly Concurrent, Explicitly Sequential
+## CascadaScript  -  Implicitly Concurrent, Explicitly Sequential
 
-**Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
+**CascadaScript** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
 It uses familiar syntax and language constructs, while offering language-level support for boilerplate-free concurrent workflows, explicit control over side effects, deterministic output construction, and dataflow-based error handling with recovery rollbacks.
 
@@ -25,7 +25,7 @@ The core execution model:
 * 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
 * ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated concurrent work to continue safely.
 
-Cascada Script is particularly well suited for:
+CascadaScript is particularly well suited for:
 
 * AI and LLM orchestration
 * Data pipelines and ETL workflows
@@ -66,7 +66,7 @@ Every construct above runs exactly as you'd read it - the engine orchestrates al
 
 **Articles:**
 
-- [Cascada Script Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to Cascada Script's syntax, features, and how it solves real async programming challenges
+- [CascadaScript Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to CascadaScript's syntax, features, and how it solves real async programming challenges
 
 - [The Kitchen Chef's Guide to Concurrent Programming with Cascada](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes concurrent execution feel as natural as following a recipe
 
@@ -135,7 +135,7 @@ To understand how Cascada achieves effortless concurrency, read the next section
 
 ## Cascada's Execution Model
 
-Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts - it explains why the language behaves the way it does and how to leverage its concurrency.
+Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective CascadaScripts - it explains why the language behaves the way it does and how to leverage its concurrency.
 
 #### ⚡ Concurrent by default
 Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **concurrent by default**. Independent variable assignments, function calls, loop iterations, and function invocations all run concurrently - no special syntax required.
@@ -157,14 +157,14 @@ While independent operations run concurrently and may start and complete in any 
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. Poisoning is conservative with control flow: if an `if` condition is an Error Value, neither branch runs and every variable that either branch would have modified becomes poisoned. You can detect and repair these errors using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
 
 #### 💡 Clean, Expressive Syntax
-Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `function`, which supports default values and keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
+CascadaScript offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `function`, which supports default values and keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
 
 
 ## Language Fundamentals
 
 ### Features at a Glance
 
-What makes Cascada Script remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages - but without the async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic, the engine handles the concurrency.
+What makes CascadaScript remarkable is how unremarkable it looks. Despite executing concurrently by default, the language offers the same familiar constructs found in Python, JavaScript, and similar languages - but without the async keyword, no callbacks, no promise chains. You write straightforward sequential-looking logic, the engine handles the concurrency.
 
 | Feature | Syntax | Notes |
 |---|---|---|
@@ -216,7 +216,7 @@ Everything above is the language you already know. Cascada adds a small set of s
   ```
 
 ### Variable Declaration and Assignment
-Cascada Script uses a strict and explicit variable handling model that separates declaration from assignment for better clarity and safety.
+CascadaScript uses a strict and explicit variable handling model that separates declaration from assignment for better clarity and safety.
 
 #### Declaring Local Variables with `var`
 Use `var` to declare a new, script-local variable. Re-declaring a variable that already exists in a visible scope will cause a compile-time error. If no initial value is provided, the variable defaults to `none`.
@@ -262,7 +262,7 @@ var profile = {
 var summary = [user.id, fullName, role]
 ```
 
-Object literal keys are always explicit. Cascada Script does not support JavaScript object-property shorthand, so write `{ name: name }`, not `{ name }`.
+Object literal keys are always explicit. CascadaScript does not support JavaScript object-property shorthand, so write `{ name: name }`, not `{ name }`.
 
 This works especially well when you want to create a new value instead of mutating an existing one.
 
@@ -394,7 +394,7 @@ endif
 
 **Handling `none` (null)**
 
-The keyword `none` represents `null` in Cascada Script. Accessing a property on `none` produces an `Error Value`, so any dependent expression or assignment becomes poisoned. Variables declared without an initial value default to `none`:
+The keyword `none` represents `null` in CascadaScript. Accessing a property on `none` produces an `Error Value`, so any dependent expression or assignment becomes poisoned. Variables declared without an initial value default to `none`:
 
 ```javascript
 var report  // defaults to none (null)
@@ -434,7 +434,7 @@ config.debug = true
 
 ### Literals, Operators, and Expressions
 
-Cascada Script supports a wide range of expressions, similar to JavaScript.
+CascadaScript supports a wide range of expressions, similar to JavaScript.
 
 #### Literals
 You can use standard literals for common data types:
@@ -483,7 +483,7 @@ endif
 
 ### Filters and Global Functions
 
-Cascada Script supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions).
+CascadaScript supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions).
 
 #### Filters
 Filters are applied with the pipe `|` operator.
@@ -784,7 +784,7 @@ For details on detecting and recovering from errors in your scripts, see the [Er
 
 ## Channels
 
-Channels are named values you build over time. You write into them with assignments and method calls, and read the current assembled value with `snapshot()`. They are the main tool for ordered writes and external interactions in Cascada Script: their writes run as soon as their inputs are ready, and the final assembled result still follows source-code order.
+Channels are named values you build over time. You write into them with assignments and method calls, and read the current assembled value with `snapshot()`. They are the main tool for ordered writes and external interactions in CascadaScript: their writes run as soon as their inputs are ready, and the final assembled result still follows source-code order.
 
 Channels also participate in Cascada's error-propagation model; for the full rules on poisoning, detection, and recovery, see [Error Handling](#error-handling).
 
@@ -804,7 +804,7 @@ Before diving into the details, here's a simple `text` channel example:
 <tr>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 text log
@@ -872,7 +872,7 @@ Here's a simple example:
 <tr>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 data out
@@ -1137,7 +1137,7 @@ env.addDataMethods({
   }
 });
 
-// --- In your Cascada Script ---
+// --- In your CascadaScript ---
 data out
 out.users.upsert({ id: 1, name: "Alice" })
 out.users.upsert({ id: 1, name: "Alice", status: "active" })
@@ -1301,7 +1301,7 @@ Support for using `!` through `function` parameters is planned, but it is not im
 
 ## Functions and Reusable Components
 
-Functions in Cascada Script are declared with `function ... endfunction`. They let you define reusable chunks of logic that build and return values. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
+Functions in CascadaScript are declared with `function ... endfunction`. They let you define reusable chunks of logic that build and return values. They operate in a completely isolated scope and are the primary way to create modular, reusable components in CascadaScript.
 
 These functions use `return` to return values. If no `return` runs, the
 function returns `none`. Channels declared inside a function are local to that
@@ -1315,7 +1315,7 @@ A function can call async functions and use `return` to provide its result. Like
 <tr>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 function buildDepartment(deptId)
@@ -2082,7 +2082,7 @@ with `null`, the same value used for Cascada `none`.
 
 ## Composition and Loading
 
-When a project grows beyond a single file, Cascada Script provides two file-composition tools plus component instances:
+When a project grows beyond a single file, CascadaScript provides two file-composition tools plus component instances:
 
 - **`import`** - load a library of reusable functions from another file
 - **`extends` / `method`** - inherit a base script's structure and override specific behaviors
@@ -2646,7 +2646,7 @@ The detailed loader API is documented in [API Reference](#api-reference).
 
 ## API Reference
 
-Cascada builds upon the robust Nunjucks API, extending it with a powerful new execution model for scripts. This reference focuses on the APIs specific to Cascada Script.
+Cascada builds upon the robust Nunjucks API, extending it with a powerful new execution model for scripts. This reference focuses on the APIs specific to CascadaScript.
 
 For details on features inherited from Nunjucks, such as the full range of built-in filters and advanced loader options, please consult the official [Nunjucks API documentation](https://mozilla.github.io/nunjucks/api.html).
 
@@ -2674,7 +2674,7 @@ import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled'
 
 ### AsyncEnvironment Class
 
-The `AsyncEnvironment` is the primary class for orchestrating and executing Cascada Scripts. All its rendering methods return Promises.
+The `AsyncEnvironment` is the primary class for orchestrating and executing CascadaScripts. All its rendering methods return Promises.
 
 #### Execution
 
@@ -2845,7 +2845,7 @@ When you compile an asset, you get a reusable object that can be rendered effici
 
 #### `Script`
 
-Represents a compiled Cascada Script.
+Represents a compiled CascadaScript.
 
 *   `asyncScript.render([context])`
     Executes the compiled script with the given `context`, returning a `Promise` that resolves with the result.

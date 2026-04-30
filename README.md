@@ -9,7 +9,7 @@
 
 **Cascada** is designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
-- **[Cascada Script](https://geleto.github.io/cascada-script/)** - A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
+- **[CascadaScript](https://geleto.github.io/cascada-script/)** - A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
 - **[Cascada Template](docs/cascada/template.md)** - Template syntax with the same concurrent execution capabilities for dynamic content generation
 
 Both share the same core philosophy: **write clear, linear logic while the engine handles concurrent execution, ordering guarantees, and error propagation automatically.**
@@ -34,7 +34,7 @@ There's no `async`, no `await`, no `Promise.all` - just clean code that happens 
 
 **In short:** Cascada is a data-orchestration layer that handles the complexity of concurrent async execution while you focus on business logic-whether you're building data structures with Script or generating dynamic content with Templates.
 
-The most **up-to-date and complete information** on the features of Cascada can be found in the **[Cascada Script Documentation](https://geleto.github.io/cascada-script/)**!
+The most **up-to-date and complete information** on the features of Cascada can be found in the **[CascadaScript Documentation](https://geleto.github.io/cascada-script/)**!
 
 ## Overview
 
@@ -91,7 +91,7 @@ Cascada replaces traditional try/catch exceptions with a data-centric error mode
 ## Read First
 
 **Articles:**
-- [Cascada Script Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to Cascada Script's syntax, features, and how it solves real async programming challenges
+- [CascadaScript Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to CascadaScript's syntax, features, and how it solves real async programming challenges
 
 - [The Kitchen Chef's Guide to Concurrent Programming with Cascada](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes concurrent execution feel as natural as following a recipe
 
@@ -115,7 +115,7 @@ Cascada automatically identifies and executes **independent operations concurren
 </td>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 // The fetchUser() and fetchConfig() calls
@@ -158,7 +158,7 @@ While independent operations run concurrently, Cascada ensures that **dependent 
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 // getUser(), getFooter() run concurrently.
@@ -199,7 +199,7 @@ Work with **promises, `async` functions, and `async` iterators** as if they were
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 // fetchPost is an async function.
@@ -249,7 +249,7 @@ For functions with **side effects** (e.g., database writes), the `!` marker enfo
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 // 'account' is provided via context
@@ -292,7 +292,7 @@ The `data` channel is particularly powerful for building structured objects and 
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 // Assume fetchProductDetails for
@@ -380,7 +380,7 @@ Some external objects - graphics contexts, state machines, streaming APIs - requ
   ```
 </details>
 <details open>
-  <summary><strong>Cascada Script (with `!`)</strong></summary>
+  <summary><strong>CascadaScript (with `!`)</strong></summary>
 
   ```javascript
   // Draw an 8-sided star using canvas
@@ -403,7 +403,7 @@ Some external objects - graphics contexts, state machines, streaming APIs - requ
   ```
 </details>
 <details>
-  <summary><strong>Cascada Script (with <code>sequence</code>)</strong></summary>
+  <summary><strong>CascadaScript (with <code>sequence</code>)</strong></summary>
 
   ```javascript
   // sequence wraps the object - all accesses
@@ -442,7 +442,7 @@ Functions (in scripts) and macros (in templates) let you define reusable chunks 
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script (Data-Building Function)</strong></summary>
+<summary><strong>CascadaScript (Data-Building Function)</strong></summary>
 
 ```javascript
 // Fetches a user's details and recent
@@ -520,7 +520,7 @@ Handle runtime errors gracefully with `guard`/`recover`. This structure lets you
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>CascadaScript</strong></summary>
 
 ```javascript
 var result
@@ -561,9 +561,9 @@ Cascada's concurrency-first core powers two distinct syntaxes, each tailored for
 <tr>
 <td width="50%" valign="top">
 
-### Data-First: Cascada Script
+### Data-First: CascadaScript
 
-For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's concurrency capabilities and adds **channels** (`data`, `text`, `sequence`) for structured output assembly and ordered external interaction.
+For logic-heavy tasks, data pipelines, and **AI agent orchestration**, CascadaScript offers a cleaner, delimiter-free syntax. It maintains all of Cascada's concurrency capabilities and adds **channels** (`data`, `text`, `sequence`) for structured output assembly and ordered external interaction.
 - **Clean, delimiter-free syntax**
 - **Channels**: `data` and `text` for structured output, `sequence` for ordered external interaction
 - **Focus on logic and orchestration**
@@ -751,9 +751,9 @@ console.log(JSON.stringify(result, null, 2));
 
 ## Further Reading
 
-- **Cascada Script Documentation:** [https://geleto.github.io/cascada-script/](https://geleto.github.io/cascada-script/)
+- **CascadaScript Documentation:** [https://geleto.github.io/cascada-script/](https://geleto.github.io/cascada-script/)
 - **Cascada Template Documentation:** [docs/cascada/template.md](docs/cascada/template.md)
 - **Nunjucks (Original Engine):** [https://mozilla.github.io/nunjucks/](https://mozilla.github.io/nunjucks/)
 
 ## Development Status and Roadmap
-See the roadmap section in the Cascada Script documentation: [https://geleto.github.io/cascada-script/#development-status-and-roadmap](https://geleto.github.io/cascada-script/#development-status-and-roadmap)
+See the roadmap section in the CascadaScript documentation: [https://geleto.github.io/cascada-script/#development-status-and-roadmap](https://geleto.github.io/cascada-script/#development-status-and-roadmap)
