@@ -93,19 +93,20 @@ class CompileEmit {
       const linkedChannelsArg = Array.isArray(linkedChannels) && linkedChannels.length > 0
         ? JSON.stringify(linkedChannels)
         : 'null';
+      const declaredChannelsArg = this.getDeclaredChannelsArg(node);
       if (!this.compiler.scriptMode) {
         this.line(
           `let ${this.compiler.buffer.currentBuffer} = ` +
           `(compositionMode && parentBuffer)` +
           ` ? parentBuffer` +
-          ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
+          ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer, ${declaredChannelsArg});`
         );
       } else {
         this.line(
           `let ${this.compiler.buffer.currentBuffer} = ` +
           `(compositionMode && parentBuffer)` +
           ` ? parentBuffer` +
-          ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
+          ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer, ${declaredChannelsArg});`
         );
       }
       if (!this.compiler.scriptMode) {
@@ -121,7 +122,8 @@ class CompileEmit {
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChannelVar,
-        linkedChannels
+        linkedChannels,
+        this.getDeclaredChannelsArg(node)
       );
     }
     this.line('try {');
@@ -181,6 +183,7 @@ class CompileEmit {
     let parentBufferId = null;
     let bufferId = null;
     let linkedChannels = null;
+    let declaredChannels = null;
     if (createScopeRootBuffer) {
       parentBufferId = parentBufferOverride !== undefined
         ? parentBufferOverride
@@ -193,6 +196,7 @@ class CompileEmit {
         // must observe the same function-local return channel in source order.
         const used = Array.from(analysisNode._analysis.usedChannels || []);
         const declared = new Set((analysisNode._analysis.declaredChannels || new Map()).keys());
+        declaredChannels = Array.from(declared);
         linkedChannels = used.filter((name) => {
           if (name === this.compiler.buffer.currentTextChannelName) {
             return false;
@@ -209,7 +213,10 @@ class CompileEmit {
           bufferId,
           parentBufferId,
           `${bufferId}_textOutputVar`,
-          linkedChannels
+          linkedChannels,
+          Array.isArray(declaredChannels) && declaredChannels.length > 0
+            ? JSON.stringify(declaredChannels)
+            : 'null'
         );
         if (typeof emitFunc === 'function') {
           emitFunc(nextFrame, bufferId);
@@ -271,6 +278,14 @@ class CompileEmit {
     // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
     // Nested control-flow buffers are applied through their own channels/iterators.
     return linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
+  }
+
+  getDeclaredChannelsArg(node) {
+    if (!node || !node._analysis || !(node._analysis.declaredChannels instanceof Map)) {
+      return 'null';
+    }
+    const declaredChannels = Array.from(node._analysis.declaredChannels.keys());
+    return declaredChannels.length > 0 ? JSON.stringify(declaredChannels) : 'null';
   }
 
 };

@@ -25,12 +25,13 @@ class CompileBoundaries {
   compileExpressionControlFlowBoundary(bufferCompiler, node, emitBody) {
     const parentBufferArg = bufferCompiler.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
 
     // Reserve a structural child buffer synchronously before any async
     // condition/operand resolution so later sibling operands stay ordered.
     // Expression boundaries must return a value/rejection to their expression
     // consumer; control-flow boundaries report errors through cb instead.
-    this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, async (currentBuffer) => {`);
+    this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${declaredChannelsArg}, async (currentBuffer) => {`);
     this.compiler.emit.asyncClosureDepth++;
     bufferCompiler.withBufferState({ currentBuffer: 'currentBuffer' }, () => {
       emitBody.call(this.compiler);
@@ -42,10 +43,11 @@ class CompileBoundaries {
   compileValueBoundary(bufferCompiler, node, emitValue, positionNode = node) {
     const parentBufferArg = bufferCompiler.currentBuffer || 'null';
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
     const resultId = this.compiler._tmpid();
 
     this.compiler.emit.line(
-      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, async (currentBuffer) => {`
+      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${declaredChannelsArg}, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -76,10 +78,11 @@ class CompileBoundaries {
 
     const parentBufferArg = bufferCompiler.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
     const controlFlowPromiseId = this.compiler._tmpid();
 
     this.compiler.emit(
-      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${declaredChannelsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -101,11 +104,12 @@ class CompileBoundaries {
   _compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc = null) {
     const parentBufferArg = bufferCompiler.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
     const controlFlowWaitedChannelName = `__waited__${this.compiler._tmpid()}`;
     const controlFlowPromiseId = this.compiler._tmpid();
 
     this.compiler.emit(
-      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${declaredChannelsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -222,6 +226,7 @@ class CompileBoundaries {
     {
       parentBufferExpr = bufferCompiler.currentBuffer,
       linkedChannelsArg,
+      declaredChannelsArg = 'null',
       callbackParams,
       targetChannelName,
       targetBufferExpr,
@@ -235,7 +240,7 @@ class CompileBoundaries {
     const boundaryPrefix = boundaryPromiseId ? `const ${boundaryPromiseId} = ` : '';
 
     this.compiler.emit.line(
-      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChannelsArg}, context, cb, async ${callbackParams} => {`
+      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChannelsArg}, ${declaredChannelsArg}, context, cb, async ${callbackParams} => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -287,6 +292,7 @@ class CompileBoundaries {
     return this._compileAsyncTextBoundary(bufferCompiler, {
       parentBufferExpr: bufferCompiler.currentBuffer,
       linkedChannelsArg: this.compiler.emit.getLinkedChannelsArg(node),
+      declaredChannelsArg: this.compiler.emit.getDeclaredChannelsArg(node),
       callbackParams: '(currentBuffer)',
       targetChannelName: bufferCompiler.currentTextChannelName,
       targetBufferExpr: 'currentBuffer',
@@ -313,6 +319,7 @@ class CompileBoundaries {
     this._compileAsyncTextBoundary(bufferCompiler, {
       parentBufferExpr: bufferCompiler.currentBuffer,
       linkedChannelsArg: JSON.stringify([bufferCompiler.currentTextChannelName]),
+      declaredChannelsArg: this.compiler.emit.getDeclaredChannelsArg(node),
       callbackParams: '(blockBuffer)',
       targetChannelName: bufferCompiler.currentTextChannelName,
       targetBufferExpr: 'blockBuffer',
@@ -326,10 +333,11 @@ class CompileBoundaries {
   compileCaptureBoundary(bufferCompiler, node, innerBodyFunction, positionNode = node) {
     const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
     const outerParentBuffer = bufferCompiler.currentBuffer;
 
     this.compiler.emit(
-      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChannelsArg}, ${declaredChannelsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 

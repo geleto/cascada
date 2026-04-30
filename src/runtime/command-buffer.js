@@ -11,7 +11,7 @@ import {BufferIterator} from './buffer-iterator.js';
 import {markCommandBuffer} from './buffer-marker.js';
 
 class CommandBuffer {
-  constructor(context, parent = null) {
+  constructor(context, parent = null, laneNames = null) {
     markCommandBuffer(this);
     this._context = context;
     this.parent = parent;
@@ -29,7 +29,8 @@ class CommandBuffer {
     // Channels declared/owned by this specific buffer. We keep this separate
     // because `_channels` is shared across the whole hierarchy.
     this._ownedChannels = Object.create(null);
-    // Create arrays namespace (channels created lazily on first write/snapshot).
+    // Per-lane command arrays. Static metadata creates these eagerly; remaining
+    // dynamic compatibility declarations enter through _ensureLane().
     this.arrays = Object.create(null);
     // Shared registry of Channel objects for this buffer hierarchy.
     // @todo - only usedChannels
@@ -45,13 +46,34 @@ class CommandBuffer {
       // caller-owned runtime channels.
       this._inheritChannelAliases(parent._channelAliases);
     }
+    this._installInitialLanes(laneNames);
+  }
+
+  _installInitialLanes(laneNames) {
+    if (!laneNames) {
+      return;
+    }
+    for (let i = 0; i < laneNames.length; i++) {
+      this._ensureLane(laneNames[i]);
+    }
+  }
+
+  _ensureLane(channelName) {
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    if (!resolvedChannelName) {
+      return null;
+    }
+    if (!(resolvedChannelName in this.arrays)) {
+      this.arrays[resolvedChannelName] = [];
+    }
+    return resolvedChannelName;
   }
 
   _registerChannel(channelName, channel) {
     // Channel declarations also honor explicit alias bindings so a formal name
     // can attach to a caller-owned runtime channel name when a feature such as
     // macro by-reference uses this buffer-level mechanism.
-    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    const resolvedChannelName = this._ensureLane(channelName);
     this._channels.set(resolvedChannelName, channel);
     this._ownedChannels[resolvedChannelName] = channel;
     this._finishKnownChannelIfRequested(resolvedChannelName);
@@ -80,7 +102,7 @@ class CommandBuffer {
       return;
     }
     this._finishAllChannelsRequested = true;
-    const channelNames = this._collectKnownChannelNames();
+    const channelNames = Object.keys(this.arrays);
     for (let i = 0; i < channelNames.length; i++) {
       this.requestChannelFinish(channelNames[i]);
     }
@@ -108,7 +130,7 @@ class CommandBuffer {
   }
 
   isFinished(channelName = null) {
-    if (channelName === null || channelName === undefined) {
+    if (channelName == null) {
       return this.finished;
     }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
@@ -119,7 +141,7 @@ class CommandBuffer {
     if (!iterator || !channelName) {
       return;
     }
-    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    const resolvedChannelName = this._ensureLane(channelName);
     this._visitingIterators.set(resolvedChannelName, iterator);
   }
 
@@ -137,6 +159,7 @@ class CommandBuffer {
   _add(value, channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     checkFinishedBuffer(this, resolvedChannelName);
+    this._ensureLane(resolvedChannelName);
     assertChannelLaneAvailable(this, resolvedChannelName);
     // Normalize command channel/path keys at ingress so all downstream runtime
     // lookups operate on the resolved runtime channel name. This is why the
@@ -144,15 +167,12 @@ class CommandBuffer {
     // the rest of the runtime should not need to care whether it came from a
     // formal alias such as a by-reference macro parameter.
     if (!(value instanceof CommandBuffer) && value && typeof value === 'object') {
-      if (Object.prototype.hasOwnProperty.call(value, 'channelName')) {
+      if (Object.hasOwn(value, 'channelName')) {
         value.channelName = resolvedChannelName;
       }
-      if (Object.prototype.hasOwnProperty.call(value, 'pathKey')) {
+      if (Object.hasOwn(value, 'pathKey')) {
         value.pathKey = resolvedChannelName;
       }
-    }
-    if (!this.arrays[resolvedChannelName]) {
-      this.arrays[resolvedChannelName] = [];
     }
     const target = this.arrays[resolvedChannelName];
     target.push(value);
@@ -189,7 +209,7 @@ class CommandBuffer {
     if (isFinishedBufferObservationCommand(cmd)) {
       const resolvedChannelName = this._resolveAliasedChannelName(channelName);
       const output = this._channels.get(resolvedChannelName);
-      const path = (this._context && this._context.path) ? this._context.path : null;
+      const path = this._context?.path || null;
       if (!output._buffer.isFinished(resolvedChannelName)) {
         throw new RuntimeFatalError(
           `${cmd.constructor.name} on finished buffer is allowed only if the target channel stream is finished`,
@@ -202,11 +222,11 @@ class CommandBuffer {
       return this._runFinishedSnapshotCommand(cmd, resolvedChannelName);
     }
 
-    const path = (this._context && this._context.path) ? this._context.path : null;
+    const path = this._context?.path || null;
     throw new RuntimeFatalError(
-      `Adding command '${cmd && cmd.constructor ? cmd.constructor.name : 'unknown'}' is not allowed on a finished CommandBuffer`,
-      cmd && cmd.pos ? cmd.pos.lineno : 0,
-      cmd && cmd.pos ? cmd.pos.colno : 0,
+      `Adding command '${cmd?.constructor ? cmd.constructor.name : 'unknown'}' is not allowed on a finished CommandBuffer`,
+      cmd?.pos ? cmd.pos.lineno : 0,
+      cmd?.pos ? cmd.pos.colno : 0,
       null,
       path
     );
@@ -214,7 +234,7 @@ class CommandBuffer {
 
   _runFinishedSnapshotCommand(cmd, channelName) {
     const channel = this._channels.get(channelName);
-    const path = (this._context && this._context.path) ? this._context.path : null;
+    const path = this._context?.path || null;
 
     const applySnapshot = () => {
       try {
@@ -248,7 +268,7 @@ class CommandBuffer {
     if (!this._finishAllChannelsRequested) {
       return;
     }
-    const channelNames = this._collectKnownChannelNames();
+    const channelNames = Object.keys(this.arrays);
     for (let i = 0; i < channelNames.length; i++) {
       if (!this._finishedChannels[channelNames[i]]) {
         return;
@@ -304,12 +324,7 @@ class CommandBuffer {
     // Narrow runtime substrate for explicit channel binding, such as future
     // macro by-reference aliases. This must not be treated as a generic
     // ambient composition-visibility mechanism.
-    this._channelAliases = Object.create(null);
-    const keys = Object.keys(map);
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      this._channelAliases[key] = map[key];
-    }
+    this._channelAliases = Object.assign(Object.create(null), map);
   }
 
   _inheritChannelAliases(parentMap) {
@@ -322,19 +337,7 @@ class CommandBuffer {
       this._channelAliases = parentMap;
       return;
     }
-    const inherited = Object.create(null);
-    const own = this._channelAliases;
-    const parentKeys = Object.keys(parentMap);
-    for (let i = 0; i < parentKeys.length; i++) {
-      const key = parentKeys[i];
-      inherited[key] = parentMap[key];
-    }
-    const ownKeys = Object.keys(own);
-    for (let i = 0; i < ownKeys.length; i++) {
-      const key = ownKeys[i];
-      inherited[key] = own[key];
-    }
-    this._channelAliases = inherited;
+    this._channelAliases = Object.assign(Object.create(null), parentMap, this._channelAliases);
   }
 
   _resolveAliasedChannelName(name) {
@@ -352,40 +355,21 @@ class CommandBuffer {
     return mapped || name;
   }
 
-  _collectKnownChannelNames() {
-    const names = new Set();
-    const arrayNames = Object.keys(this.arrays);
-    for (let i = 0; i < arrayNames.length; i++) {
-      names.add(arrayNames[i]);
-    }
-    const ownedNames = Object.keys(this._ownedChannels);
-    for (let i = 0; i < ownedNames.length; i++) {
-      names.add(ownedNames[i]);
-    }
-    const linkedNames = Object.keys(this._linkedChannels);
-    for (let i = 0; i < linkedNames.length; i++) {
-      names.add(linkedNames[i]);
-    }
-    const iteratorNames = Array.from(this._visitingIterators.keys());
-    for (let i = 0; i < iteratorNames.length; i++) {
-      names.add(iteratorNames[i]);
-    }
-    return Array.from(names);
-  }
-
   _markChannelFinished(channelName) {
-    if (!channelName || this._finishedChannels[channelName]) {
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    if (!resolvedChannelName || this._finishedChannels[resolvedChannelName]) {
       return;
     }
-    this._finishedChannels[channelName] = true;
-    this._notifyChannelFinished(channelName);
+    this._ensureLane(resolvedChannelName);
+    this._finishedChannels[resolvedChannelName] = true;
+    this._notifyChannelFinished(resolvedChannelName);
   }
 
   _registerLinkedChannel(channelName) {
     if (!channelName) {
       return;
     }
-    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    const resolvedChannelName = this._ensureLane(channelName);
     this._linkedChannels[resolvedChannelName] = true;
     this._finishKnownChannelIfRequested(resolvedChannelName);
   }
@@ -417,10 +401,7 @@ class CommandBuffer {
       this._markChannelFinished(channelName);
       return;
     }
-    const finishRequested = !!(
-      this._finishRequestedChannels &&
-      this._finishRequestedChannels[channelName]
-    );
+    const finishRequested = this._finishRequestedChannels && this._finishRequestedChannels[channelName];
     if (this._finishAllChannelsRequested || finishRequested) {
       this._markChannelFinished(channelName);
     }
@@ -443,8 +424,9 @@ function ensureChannelIterator(channel) {
   return channel._iterator;
 }
 
-function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null) {
-  const buffer = new CommandBuffer(context, parent);
+function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null, declaredChannels = null) {
+  const laneNames = mergeLaneNames(linkedChannels, declaredChannels);
+  const buffer = new CommandBuffer(context, parent, laneNames);
   const linkTarget = linkedParent || parent;
   if (linkTarget && Array.isArray(linkedChannels)) {
     for (let i = 0; i < linkedChannels.length; i++) {
@@ -452,6 +434,19 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
     }
   }
   return buffer;
+}
+
+function mergeLaneNames(linkedChannels, declaredChannels) {
+  if (!linkedChannels) {
+    return declaredChannels;
+  }
+  if (!declaredChannels) {
+    return linkedChannels;
+  }
+  return Array.from(new Set([
+    ...linkedChannels,
+    ...declaredChannels
+  ]));
 }
 
 export { CommandBuffer, createCommandBuffer };

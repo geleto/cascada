@@ -701,7 +701,7 @@ class CompileInheritance {
 
   _emitTemplateExtendsBoundaryFromSelection(deferredSelectionVar) {
     const linkedChannelsArg = '["__text__"]';
-    this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
+    this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, context, cb, async (currentBuffer) => {`);
     const resolvedSelectionVar = this.compiler._tmpid();
     this.emit.line(`  const ${resolvedSelectionVar} = await runtime.resolveSingle(${deferredSelectionVar});`);
     this.emit.line(`  if (${resolvedSelectionVar}) {`);
@@ -1120,7 +1120,7 @@ class CompileInheritance {
       // child buffer so any post-extends constructor work stays ordered behind
       // the boundary slot for the channels currently known at the call site.
       const linkedChannelsArg = 'Object.keys((inheritanceState && inheritanceState.sharedSchema) || {})';
-      this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, context, cb, async (currentBuffer) => {`);
+      this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, context, cb, async (currentBuffer) => {`);
       this._emitParentRootRender({
         indent: '  ',
         templateExpr: parentTemplateId,

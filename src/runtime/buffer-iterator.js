@@ -213,7 +213,7 @@ class BufferIterator {
     if (!buffer || !this.channelName || !buffer.arrays) {
       return;
     }
-    if (!Object.prototype.hasOwnProperty.call(buffer.arrays, this.channelName)) {
+    if (!(this.channelName in buffer.arrays)) {
       return;
     }
     buffer.arrays[this.channelName] = null;

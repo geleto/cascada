@@ -8,6 +8,7 @@ import {
   DataCommand,
   SequenceCallCommand,
   CommandBuffer,
+  createCommandBuffer,
   declareBufferChannel,
   createSequenceChannel,
   createPoison,
@@ -210,6 +211,31 @@ describe('channel.finalSnapshot', function () {
       expect(result).to.eql(['ok']);
       expect(sequenceChannel._sequenceTargetReady).to.be(true);
       expect(sequenceChannel._sequenceTargetReadyPromise).to.be(null);
+    });
+
+    it('eagerly creates declared lanes and finishes unused lanes', function () {
+      const buffer = createCommandBuffer(context, null, null, null, ['unused']);
+
+      expect(Object.keys(buffer.arrays)).to.eql(['unused']);
+      expect(buffer.arrays.unused).to.eql([]);
+
+      buffer.markFinishedAndPatchLinks();
+
+      expect(buffer.finished).to.be(true);
+      expect(buffer.isFinished('unused')).to.be(true);
+    });
+
+    it('eagerly creates linked and declared lanes during buffer construction', function () {
+      const parent = createCommandBuffer(context, null, null, null, ['text']);
+      const child = createCommandBuffer(context, null, ['text'], parent, ['local']);
+
+      expect(Object.keys(parent.arrays)).to.eql(['text']);
+      expect(parent.arrays.text).to.have.length(1);
+      expect(parent.arrays.text[0]).to.be(child);
+      expect(Object.keys(child.arrays)).to.eql(['text', 'local']);
+      expect(child.arrays.text).to.eql([]);
+      expect(child.arrays.local).to.eql([]);
+      expect(child.isLinkedChannel('text')).to.be(true);
     });
   });
 
