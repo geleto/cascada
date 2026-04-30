@@ -12,6 +12,7 @@ import {
 import {inheritanceCallApi as inheritanceCall} from './inheritance-call.js';
 import * as inheritanceState from './inheritance-state.js';
 import {resolveDuo} from './resolve.js';
+import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './channels/observation.js';
 /**
  * Sync member lookup for templates.
  * Returns undefined if obj is undefined or null.
@@ -226,13 +227,13 @@ function _addObservationCommand(targetBuffer, channelName, pos, mode) {
   }
 
   if (mode === 'snapshot') {
-    return targetBuffer.addSnapshot(channelName, pos);
+    return targetBuffer.addCommand(new SnapshotCommand({ channelName, pos }), channelName);
   }
   if (mode === 'isError') {
-    return targetBuffer.addIsError(channelName, pos);
+    return targetBuffer.addCommand(new IsErrorCommand({ channelName, pos }), channelName);
   }
   if (mode === 'getError') {
-    return targetBuffer.addGetError(channelName, pos);
+    return targetBuffer.addCommand(new GetErrorCommand({ channelName, pos }), channelName);
   }
 
   throw new Error(`Unsupported shared-channel observation mode '${mode}'`);
@@ -305,7 +306,10 @@ function channelLookup(name, currentBuffer) {
   if (!channel) {
     return undefined;
   }
-  return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  return currentBuffer.addCommand(new SnapshotCommand({
+    channelName: name,
+    pos: { lineno: 0, colno: 0 }
+  }), name);
 }
 
 let memberLookupHook = memberLookupImpl;

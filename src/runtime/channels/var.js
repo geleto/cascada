@@ -80,7 +80,7 @@ class VarChannel extends Channel {
 
     if (!this._buffer) return;
 
-    this._buffer.add(new VarCommand({
+    this._buffer.addCommand(new VarCommand({
 
       channelName: this._channelName,
 

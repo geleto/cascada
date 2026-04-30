@@ -732,7 +732,7 @@ describe('Phase 8 - Component Observations', function () {
 
     const sharedRootBuffer = runtimeModule.createCommandBuffer(makeContext('Component.script'), null, null, null);
     runtimeModule.declareBufferChannel(sharedRootBuffer, 'status', 'var', ownerContext, null);
-    sharedRootBuffer.add(new runtimeModule.VarCommand({
+    sharedRootBuffer.addCommand(new runtimeModule.VarCommand({
       channelName: 'status',
       args: ['ok'],
       pos: { lineno: 1, colno: 1 }
@@ -748,17 +748,17 @@ describe('Phase 8 - Component Observations', function () {
       inheritanceState
     });
 
-    ownerBuffer.add(new runtimeModule.VarCommand({
+    ownerBuffer.addCommand(new runtimeModule.VarCommand({
       channelName: 'nsBinding',
       args: [componentInstance],
       pos: { lineno: 1, colno: 1 }
     }), 'nsBinding');
 
     const seenAdds = [];
-    const originalAdd = sharedRootBuffer.add.bind(sharedRootBuffer);
-    sharedRootBuffer.add = function(value, channelName) {
+    const originalAddCommand = sharedRootBuffer.addCommand.bind(sharedRootBuffer);
+    sharedRootBuffer.addCommand = function(value, channelName) {
       seenAdds.push({ value, channelName });
-      return originalAdd(value, channelName);
+      return originalAddCommand(value, channelName);
     };
 
     const observationPromise = runtimeModule.observeComponentChannel({
@@ -777,7 +777,7 @@ describe('Phase 8 - Component Observations', function () {
     await bindingSnapshot;
     const observed = await observationPromise;
 
-    sharedRootBuffer.add = originalAdd;
+    sharedRootBuffer.addCommand = originalAddCommand;
 
     expect(observed).to.be('ok');
     expect(seenAdds.length).to.be.greaterThan(0);
@@ -809,7 +809,7 @@ describe('Phase 8 - Component Observations', function () {
     inheritanceState.sharedRootBuffer = sharedRootBuffer;
     inheritanceState.sharedSchema.status = 'var';
 
-    ownerBuffer.add(new runtimeModule.VarCommand({
+    ownerBuffer.addCommand(new runtimeModule.VarCommand({
       channelName: 'nsBinding',
       args: [new ComponentInstance({
         context: makeContext('Component.script'),
@@ -1207,7 +1207,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       }, 20);
     });
 
-    ownerBuffer.add(new runtimeModule.WaitResolveCommand({
+    ownerBuffer.addCommand(new runtimeModule.WaitResolveCommand({
       channelName: 'nsBinding',
       args: [gate],
       pos: { lineno: 1, colno: 1 }
@@ -1367,7 +1367,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
     });
 
-    ownerBuffer.add(new runtimeModule.VarCommand({
+    ownerBuffer.addCommand(new runtimeModule.VarCommand({
       channelName: 'nsBinding',
       args: [componentInstance],
       pos: { lineno: 1, colno: 1 }

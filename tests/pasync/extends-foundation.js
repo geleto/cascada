@@ -377,7 +377,7 @@ describe('Extends Foundation', function () {
       expect(runtime.claimInheritanceSharedDefault(sharedBuffer, 'theme')).to.be(true);
       expect(runtime.claimInheritanceSharedDefault(sharedBuffer, 'theme')).to.be(false);
 
-      sharedBuffer.add(new runtime.VarCommand({
+      sharedBuffer.addCommand(new runtime.VarCommand({
         channelName: 'theme',
         args: ['parent'],
         initializeIfNotSet: true,
@@ -1038,13 +1038,13 @@ describe('Extends Foundation', function () {
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
       runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
-      childBuffer.add(new runtime.VarCommand({
+      childBuffer.addCommand(new runtime.VarCommand({
         channelName: 'theme',
         args: ['dark'],
         initializeIfNotSet: true,
         pos: { lineno: 1, colno: 1 }
       }), 'theme');
-      rootBuffer.add(new runtime.VarCommand({
+      rootBuffer.addCommand(new runtime.VarCommand({
         channelName: 'theme',
         args: ['light'],
         initializeIfNotSet: true,
@@ -2024,7 +2024,7 @@ describe('Extends Foundation', function () {
         const latePromise = Promise.resolve(startupPromise).then(() => new Promise((resolve, reject) => {
           setTimeout(() => {
             try {
-              outputArg.add(new runtimeArg.VarCommand({
+              outputArg.addCommand(new runtimeArg.VarCommand({
                 channelName: '__return__',
                 args: ['late'],
                 pos: { lineno: 1, colno: 0 }

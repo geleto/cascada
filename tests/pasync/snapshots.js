@@ -4,6 +4,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {expectAsyncError} from '../util.js';
 import {
   TextCommand,
+  SnapshotCommand,
   DataCommand,
   SequenceCallCommand,
   CommandBuffer,
@@ -21,25 +22,25 @@ describe('channel.finalSnapshot', function () {
     const cb = new CommandBuffer(ctx || null, null);
     const addItem = (buffer, item) => {
       if (item instanceof CommandBuffer) {
-        buffer.add(item, targetName);
+        buffer.addBuffer(item, targetName);
         return;
       }
       if (Array.isArray(item)) {
         const nested = new CommandBuffer(ctx || null, null);
         item.forEach((child) => addItem(nested, child));
         nested.markFinishedAndPatchLinks();
-        buffer.add(nested, targetName);
+        buffer.addBuffer(nested, targetName);
         return;
       }
       if (item instanceof TextCommand || item instanceof DataCommand || item instanceof SequenceCallCommand) {
-        buffer.add(item, targetName);
+        buffer.addCommand(item, targetName);
         return;
       }
       if (targetName === 'text') {
-        buffer.add(new TextCommand({ channelName: 'text', args: [item], pos: { lineno: 0, colno: 0 } }), targetName);
+        buffer.addCommand(new TextCommand({ channelName: 'text', args: [item], pos: { lineno: 0, colno: 0 } }), targetName);
         return;
       }
-      buffer.add(item, targetName);
+      buffer._add(item, targetName);
     };
     if (Array.isArray(input)) {
       input.forEach((item) => addItem(cb, item));
@@ -66,7 +67,7 @@ describe('channel.finalSnapshot', function () {
       buffer._channels.set(channelName, sequenceChannel);
     }
 
-    commands.forEach((entry) => buffer.add(entry, channelName));
+    commands.forEach((entry) => buffer.addCommand(entry, channelName));
     sequenceChannel.finalSnapshot();
     return sequence;
   };
@@ -94,12 +95,12 @@ describe('channel.finalSnapshot', function () {
       const buffer = new CommandBuffer(context, null);
       const channel = createChannel(buffer, 'text', context, 'text');
 
-      buffer.add(new TextCommand({
+      buffer.addCommand(new TextCommand({
         channelName: 'text',
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
       }), 'text');
-      buffer.add(new TextCommand({
+      buffer.addCommand(new TextCommand({
         channelName: 'text',
         args: ['B'],
         pos: { lineno: 1, colno: 2 }
@@ -116,15 +117,15 @@ describe('channel.finalSnapshot', function () {
       const child = new CommandBuffer(context, null);
       const channel = createChannel(parent, 'text', context, 'text');
 
-      child.add(new TextCommand({
+      child.addCommand(new TextCommand({
         channelName: 'text',
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
       }), 'text');
       child.markFinishedAndPatchLinks();
 
-      parent.add(child, 'text');
-      parent.add(new TextCommand({
+      parent.addBuffer(child, 'text');
+      parent.addCommand(new TextCommand({
         channelName: 'text',
         args: ['B'],
         pos: { lineno: 1, colno: 2 }
@@ -143,7 +144,7 @@ describe('channel.finalSnapshot', function () {
       const channel = createChannel(buffer, 'text', context, 'text');
       const iterator = channel._iterator;
 
-      buffer.add(new TextCommand({
+      buffer.addCommand(new TextCommand({
         channelName: 'text',
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
@@ -166,7 +167,7 @@ describe('channel.finalSnapshot', function () {
       const buffer = new CommandBuffer(context, null);
       const channel = createChannel(buffer, 'text', context, 'text');
 
-      buffer.add(new TextCommand({
+      buffer.addCommand(new TextCommand({
         channelName: 'text',
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
@@ -185,7 +186,7 @@ describe('channel.finalSnapshot', function () {
       const buffer = new CommandBuffer(context, null);
       const channel = createChannel(buffer, 'text', context, 'text');
 
-      buffer.add(new TextCommand({
+      buffer.addCommand(new TextCommand({
         channelName: 'text',
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
@@ -345,7 +346,10 @@ describe('channel.finalSnapshot', function () {
       const textOut = createChannel(buffer, 'text', context, 'text');
 
       textOut('A');
-      const snap = buffer.addSnapshot('text', { lineno: 0, colno: 0 });
+      const snap = buffer.addCommand(new SnapshotCommand({
+        channelName: 'text',
+        pos: { lineno: 0, colno: 0 }
+      }), 'text');
       textOut('B');
       buffer.markFinishedAndPatchLinks();
 
@@ -394,7 +398,10 @@ describe('channel.finalSnapshot', function () {
       expect(buffer.isFinished('text')).to.be(false);
       expect(buffer.finished).to.be(false);
 
-      const dataSnapshot = await buffer.addSnapshot('data', { lineno: 0, colno: 0 });
+      const dataSnapshot = await buffer.addCommand(new SnapshotCommand({
+        channelName: 'data',
+        pos: { lineno: 0, colno: 0 }
+      }), 'data');
       expect(dataSnapshot).to.eql({ ready: 1 });
 
       text(' now');
@@ -439,7 +446,7 @@ describe('channel.finalSnapshot', function () {
 
     it('should reject CommandBuffer values inside TextCommand arguments', async function () {
       const nested = new CommandBuffer(context, null);
-      nested.add(new TextCommand({ channelName: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
+      nested.addCommand(new TextCommand({ channelName: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
       const buffer = createBuffer([
         new TextCommand({ channelName: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })
       ], context, 'text');

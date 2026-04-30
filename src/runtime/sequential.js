@@ -2,6 +2,12 @@
 import {memberLookupAsync, memberLookupScript} from './lookup.js';
 import {callWrapAsync} from './call.js';
 import {ensureSequentialPathChannel} from './checks.js';
+import {
+  SequentialPathReadCommand,
+  RepairReadCommand,
+  SequentialPathWriteCommand,
+  RepairWriteCommand,
+} from './channels/sequential-path.js';
 
 function withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair, isWrite, operation) {
   if (!currentBuffer) {
@@ -11,9 +17,16 @@ function withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair,
   }
   ensureSequentialPathChannel(currentBuffer, pathKey);
   const pos = { lineno: errorContext?.lineno ?? 0, colno: errorContext?.colno ?? 0 };
-  return isWrite
-    ? currentBuffer.addSequentialPathWrite(pathKey, operation, pos, repair)
-    : currentBuffer.addSequentialPathRead(pathKey, operation, pos, repair);
+  const CommandClass = isWrite
+    ? (repair ? RepairWriteCommand : SequentialPathWriteCommand)
+    : (repair ? RepairReadCommand : SequentialPathReadCommand);
+  return currentBuffer.addCommand(new CommandClass({
+    channelName: pathKey,
+    pathKey,
+    operation,
+    pos,
+    withDeferredResult: true
+  }), pathKey);
 }
 
 function sequentialCallWrapValue(func, funcName, context, args, pathKey, errorContext, repair = false, currentBuffer) {

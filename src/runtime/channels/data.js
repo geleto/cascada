@@ -149,7 +149,7 @@ class DataChannel extends Channel {
 
           if (!this._buffer) return;
 
-          this._buffer.add(new DataCommand({
+          this._buffer.addCommand(new DataCommand({
 
             channelName: this._channelName,
 

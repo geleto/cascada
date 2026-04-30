@@ -11,6 +11,8 @@ import {
 } from './errors.js';
 
 import {VarCommand} from './channels/var.js';
+import {ErrorCommand} from './channels/error.js';
+import {ReturnIsUnsetCommand} from './channels/observation.js';
 
 const arrayFrom = Array.from;
 const supportsIterators = (
@@ -659,7 +661,7 @@ function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   // Poison body channel effects.
   if (asyncOptions.bodyChannels && asyncOptions.bodyChannels.length > 0) {
     for (const channelName of asyncOptions.bodyChannels) {
-      buffer.addPoison(errors, channelName);
+      buffer.addCommand(new ErrorCommand(errors), channelName);
     }
   }
 
@@ -670,7 +672,7 @@ function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   // Poison else channel effects.
   if (asyncOptions.elseChannels && asyncOptions.elseChannels.length > 0) {
     for (const channelName of asyncOptions.elseChannels) {
-      buffer.addPoison(errors, channelName);
+      buffer.addCommand(new ErrorCommand(errors), channelName);
     }
   }
 }
@@ -709,10 +711,10 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   // Called between sequential iterations. The ordered channel observation may
   // be async because it is enqueued on the loop's command buffer.
   const returnAdvanceCheck = asyncOptions && asyncOptions.returnCheckChannelName
-    ? (() => buffer.addReturnIsUnset(
-      asyncOptions.returnCheckChannelName,
-      { lineno: errorContext?.lineno || 0, colno: errorContext?.colno || 0 }
-    ))
+    ? (() => buffer.addCommand(new ReturnIsUnsetCommand({
+      channelName: asyncOptions.returnCheckChannelName,
+      pos: { lineno: errorContext?.lineno || 0, colno: errorContext?.colno || 0 }
+    }), asyncOptions.returnCheckChannelName))
     : null;
 
   if (arr && typeof arr === 'object' && !Array.isArray(arr) && !(isAsync && typeof arr[Symbol.asyncIterator] === 'function')) {

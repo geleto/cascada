@@ -103,7 +103,7 @@ class TextChannel extends Channel {
 
     if (args.length === 0) return;
 
-    this._buffer.add(new TextCommand({
+    this._buffer.addCommand(new TextCommand({
 
       channelName: this._channelName,
 

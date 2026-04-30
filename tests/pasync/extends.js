@@ -620,7 +620,7 @@ describe('Extends Runtime', function () {
             void envArg;
             void contextArg;
             void cbArg;
-            output.add(new runtimeArg.VarCommand({
+            output.addCommand(new runtimeArg.VarCommand({
               channelName: 'trace',
               args: ['done'],
               pos: { lineno: 1, colno: 1 }

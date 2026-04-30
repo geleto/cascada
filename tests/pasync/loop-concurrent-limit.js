@@ -2,7 +2,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader, delay} from '../util.js';
-import {createPoison, isPoisonError, TextCommand, CommandBuffer, createChannel} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, TextCommand, SnapshotCommand, CommandBuffer, createChannel} from '../../src/runtime/runtime.js';
 import * as parser from '../../src/parser.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
@@ -2609,13 +2609,13 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
   });
 
   describe('CommandBuffer channel alias canonicalization', function () {
-    it('maps formal channel names to resolved aliases in add()', function () {
+    it('maps formal channel names to resolved aliases in addCommand()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null);
       createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setChannelAliases({ loop: 'loop#4' });
 
-      buffer.add(new TextCommand({
+      buffer.addCommand(new TextCommand({
         channelName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
@@ -2625,16 +2625,23 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       expect(buffer.arrays['loop#4']).to.have.length(1);
     });
 
-    it('resolves addSnapshot() through channel aliases', async function () {
+    it('resolves SnapshotCommand through channel aliases', async function () {
       const ctx = { path: 'alias-snapshot.njk' };
       const buffer = new CommandBuffer(ctx, null);
       createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setChannelAliases({ loop: 'loop#4' });
 
-      buffer.addText('A', { lineno: 1, colno: 1 }, 'loop');
+      buffer.addCommand(new TextCommand({
+        channelName: 'loop',
+        args: ['A'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'loop');
       buffer.markFinishedAndPatchLinks();
 
-      const snap = await buffer.addSnapshot('loop', { lineno: 1, colno: 1 });
+      const snap = await buffer.addCommand(new SnapshotCommand({
+        channelName: 'loop',
+        pos: { lineno: 1, colno: 1 }
+      }), 'loop');
       expect(snap).to.be('A');
     });
 
@@ -2648,7 +2655,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
       expect(child._channelAliases.loop).to.be('loop#4');
       expect(child._channelAliases.someVar).to.be('someVar#9');
-      child.add(new TextCommand({
+      child.addCommand(new TextCommand({
         channelName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
@@ -2689,7 +2696,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       createChannel(buffer, 'loop#4', ctx, 'text');
       buffer._setChannelAliases({ loop: 'loop#4' });
 
-      buffer.add(new TextCommand({
+      buffer.addCommand(new TextCommand({
         channelName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }

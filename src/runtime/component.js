@@ -101,7 +101,7 @@ function _enqueueSharedObservation(instance, observationCommand, errorContext = 
   }
 
   const sharedRootBuffer = instance._getSharedRootBuffer();
-  sharedRootBuffer.add(observationCommand, channelName);
+  sharedRootBuffer.addCommand(observationCommand, channelName);
   return observationCommand.promise;
 }
 
@@ -379,7 +379,7 @@ function startComponentInstance(spec) {
     bindingName,
     errorContext
   });
-  currentBuffer.add(command, bindingName);
+  currentBuffer.addCommand(command, bindingName);
   return command.promise;
 }
 
@@ -400,7 +400,7 @@ function callComponentMethod(spec) {
     cb,
     errorContext
   });
-  currentBuffer.add(command, bindingName);
+  currentBuffer.addCommand(command, bindingName);
   return command.promise;
 }
 
@@ -417,7 +417,7 @@ function observeComponentChannel(spec) {
     errorContext,
     implicitVarRead
   });
-  currentBuffer.add(command, bindingName || observationCommand.channelName);
+  currentBuffer.addCommand(command, bindingName || observationCommand.channelName);
   return command.promise;
 }
 

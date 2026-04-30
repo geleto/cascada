@@ -1,26 +1,10 @@
 
-import {ErrorCommand} from './channels/error.js';
-import {TextCommand} from './channels/text.js';
-import {SequenceCallCommand, SequenceGetCommand} from './channels/sequence.js';
-
-import {
-  SequentialPathReadCommand,
-  RepairReadCommand,
-  SequentialPathWriteCommand,
-  RepairWriteCommand,
-} from './channels/sequential-path.js';
-
 import {
   SnapshotCommand,
   RawSnapshotCommand,
   ReturnIsUnsetCommand,
-  IsErrorCommand,
-  GetErrorCommand,
-  CaptureGuardStateCommand,
-  RestoreGuardStateCommand,
 } from './channels/observation.js';
 
-import {WaitCurrentCommand} from './channels/timing.js';
 import {assertChannelLaneAvailable, checkFinishedBuffer} from './checks.js';
 import {handleError, RuntimeFatalError} from './errors.js';
 import {BufferIterator} from './buffer-iterator.js';
@@ -153,25 +137,7 @@ class CommandBuffer {
     }
   }
 
-  addText(value, pos = null, channelName = 'text') {
-    const textPos = pos && typeof pos === 'object'
-      ? pos
-      : { lineno: 0, colno: 0 };
-    const cmd = new TextCommand({
-      channelName: 'text',
-      args: [value],
-      pos: textPos
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addPoison(errors, channelName) {
-    const errs = Array.isArray(errors) ? errors : [errors];
-    const cmd = new ErrorCommand(errs);
-    return this._addCommand(cmd, channelName);
-  }
-
-  add(value, channelName) {
+  _add(value, channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     checkFinishedBuffer(this, resolvedChannelName);
     assertChannelLaneAvailable(this, resolvedChannelName);
@@ -209,174 +175,34 @@ class CommandBuffer {
     return slot;
   }
 
+  addCommand(cmd, channelName = null) {
+    return this._addCommand(cmd, channelName || (cmd && cmd.channelName));
+  }
+
   addBuffer(buffer, channelName) {
-    return this.add(buffer, channelName);
-  }
-
-  addSequenceGet(channelName, command, subpath = null, pos = null) {
-    const cmd = new SequenceGetCommand({
-      channelName,
-      command: command || null,
-      subpath: Array.isArray(subpath) ? subpath : [],
-      pos: pos || { lineno: 0, colno: 0 },
-      withDeferredResult: true
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addSequenceCall(channelName, command, subpath = null, args = null, pos = null) {
-    const cmd = new SequenceCallCommand({
-      channelName,
-      command: command || null,
-      subpath: Array.isArray(subpath) ? subpath : [],
-      args: Array.isArray(args) ? args : [],
-      pos: pos || { lineno: 0, colno: 0 },
-      withDeferredResult: true
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addSequentialPathRead(channelName, operation, pos = null, repair = false) {
-    const CommandClass = repair ? RepairReadCommand : SequentialPathReadCommand;
-    const cmd = new CommandClass({
-      channelName,
-      pathKey: channelName,
-      operation,
-      pos: pos || { lineno: 0, colno: 0 },
-      withDeferredResult: true
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addSequentialPathWrite(channelName, operation, pos = null, repair = false) {
-    const CommandClass = repair ? RepairWriteCommand : SequentialPathWriteCommand;
-    const cmd = new CommandClass({
-      channelName,
-      pathKey: channelName,
-      operation,
-      pos: pos || { lineno: 0, colno: 0 },
-      withDeferredResult: true
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addSnapshot(channelName, pos = null) {
-    const cmd = new SnapshotCommand({
-      channelName,
-      pos
-    });
-    if (this.isFinished(channelName)) {
-      const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-      const output = this._channels.get(resolvedChannelName);
-      const path = (this._context && this._context.path) ? this._context.path : null;
-      if (!output._buffer.isFinished(resolvedChannelName)) {
-        throw new RuntimeFatalError(
-          'Snapshot command on finished buffer is allowed only if the target channel stream is finished',
-          pos?.lineno ?? 0,
-          pos?.colno ?? 0,
-          null,
-          path
-        );
-      }
-      return this._runFinishedSnapshotCommand(cmd, resolvedChannelName);
-    }
-    return this._addCommand(cmd, channelName);
-  }
-
-  // addRawSnapshot enqueues an ordered raw read command.
-  // Unlike addSnapshot, this does not inspect nested poison state; it returns
-  // the current channel target directly.
-  addRawSnapshot(channelName, pos = null) {
-    const cmd = new RawSnapshotCommand({
-      channelName,
-      pos
-    });
-    if (this.isFinished(channelName)) {
-      const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-      const output = this._channels.get(resolvedChannelName);
-      const path = (this._context && this._context.path) ? this._context.path : null;
-      if (!output._buffer.isFinished(resolvedChannelName)) {
-        throw new RuntimeFatalError(
-          'Raw snapshot command on finished buffer is allowed only if the target channel stream is finished',
-          pos?.lineno ?? 0,
-          pos?.colno ?? 0,
-          null,
-          path
-        );
-      }
-      return this._runFinishedSnapshotCommand(cmd, resolvedChannelName);
-    }
-    return this._addCommand(cmd, channelName);
-  }
-
-  addReturnIsUnset(channelName, pos = null) {
-    const cmd = new ReturnIsUnsetCommand({
-      channelName,
-      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
-    });
-    if (this.isFinished(channelName)) {
-      const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-      const output = this._channels.get(resolvedChannelName);
-      const path = (this._context && this._context.path) ? this._context.path : null;
-      if (!output._buffer.isFinished(resolvedChannelName)) {
-        throw new RuntimeFatalError(
-          'Return-state command on finished buffer is allowed only if the target channel stream is finished',
-          pos?.lineno ?? 0,
-          pos?.colno ?? 0,
-          null,
-          path
-        );
-      }
-      return this._runFinishedSnapshotCommand(cmd, resolvedChannelName);
-    }
-    return this._addCommand(cmd, channelName);
-  }
-
-  addIsError(channelName, pos = null) {
-    const cmd = new IsErrorCommand({
-      channelName,
-      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addWaitCurrent(channelName, pos = null) {
-    const cmd = new WaitCurrentCommand({
-      channelName,
-      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addGetError(channelName, pos = null) {
-    const cmd = new GetErrorCommand({
-      channelName,
-      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addCaptureGuardState(channelName, pos = null) {
-    const cmd = new CaptureGuardStateCommand({
-      channelName,
-      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
-    });
-    return this._addCommand(cmd, channelName);
-  }
-
-  addRestoreGuardState(channelName, target, pos = null) {
-    const cmd = new RestoreGuardStateCommand({
-      channelName,
-      target,
-      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
-    });
-    return this._addCommand(cmd, channelName);
+    return this._add(buffer, channelName);
   }
 
   _addCommand(cmd, channelName) {
     if (!this.isFinished(channelName)) {
-      this.add(cmd, channelName);
+      this._add(cmd, channelName);
       return cmd.promise;
+    }
+
+    if (isFinishedBufferObservationCommand(cmd)) {
+      const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+      const output = this._channels.get(resolvedChannelName);
+      const path = (this._context && this._context.path) ? this._context.path : null;
+      if (!output._buffer.isFinished(resolvedChannelName)) {
+        throw new RuntimeFatalError(
+          `${cmd.constructor.name} on finished buffer is allowed only if the target channel stream is finished`,
+          cmd.pos?.lineno ?? 0,
+          cmd.pos?.colno ?? 0,
+          null,
+          path
+        );
+      }
+      return this._runFinishedSnapshotCommand(cmd, resolvedChannelName);
     }
 
     const path = (this._context && this._context.path) ? this._context.path : null;
@@ -602,6 +428,14 @@ class CommandBuffer {
       this._markChannelFinished(channelName);
     }
   }
+}
+
+function isFinishedBufferObservationCommand(cmd) {
+  return (
+    cmd instanceof SnapshotCommand ||
+    cmd instanceof RawSnapshotCommand ||
+    cmd instanceof ReturnIsUnsetCommand
+  );
 }
 
 function ensureChannelIterator(channel) {

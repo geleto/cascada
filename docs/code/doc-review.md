@@ -60,7 +60,7 @@ All major architectural claims verified against `src/compiler/macro.js` and
   Buffers) fully matches implementation ✓
 - `WaitResolveCommand` used for `__caller__` timing bookkeeping ✓
 - `CommandBuffer.getFinishedPromise()` exists ✓ (command-buffer.js:85)
-- `addSnapshot("__caller__", {...})` → await → `allCallersBuffer.markFinishedAndPatchLinks()` finalization sequence ✓
+- `addCommand(new SnapshotCommand({ channelName: "__caller__", ... }), "__caller__")` → await → `allCallersBuffer.markFinishedAndPatchLinks()` finalization sequence ✓
 - `_macroUsesCaller()` detection, `__callerUsedChannels` metadata ✓
 - All Runtime/Compiler Touchpoints verified ✓
 - `__caller__` vs `__waited__` distinction is accurate ✓

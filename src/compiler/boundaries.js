@@ -18,7 +18,7 @@ class CompileBoundaries {
 
   _emitTextChannelSnapshot(bufferExpr, channelName, positionNode, resultId) {
     this.compiler.emit.line(
-      `let ${resultId} = ${bufferExpr}.addSnapshot("${channelName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`
+      `let ${resultId} = ${bufferExpr}.addCommand(new runtime.SnapshotCommand({ channelName: "${channelName}", pos: {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}} }), "${channelName}");`
     );
   }
 
@@ -214,7 +214,7 @@ class CompileBoundaries {
     normalizeTextArgs = false
   ) {
     const valueExpr = bufferCompiler._emitTemplateTextCommandExpression(resultId, positionNode, normalizeTextArgs);
-    this.compiler.emit.line(`${targetBufferExpr}.add(${valueExpr}, "${targetChannelName}");`);
+    this.compiler.emit.line(`${targetBufferExpr}.addCommand(${valueExpr}, "${targetChannelName}");`);
   }
 
   _compileAsyncTextBoundary(

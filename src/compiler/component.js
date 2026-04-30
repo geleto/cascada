@@ -50,7 +50,7 @@ class CompileComponent {
     this.emit.line('  cb,');
     this.emit.line(`  errorContext: ${errorContextJson}`);
     this.emit.line('});');
-    this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${targetName}', args: [${instanceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${targetName}');`);
+    this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${targetName}', args: [${instanceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${targetName}');`);
 
     if (targetName.charAt(0) !== '_' && this.compiler.analysis.isRootScopeOwner(node._analysis)) {
       this.emit.line(`context.addDeferredExport("${targetName}", "${targetName}", ${this.compiler.buffer.currentBuffer});`);

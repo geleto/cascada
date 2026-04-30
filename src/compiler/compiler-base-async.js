@@ -817,7 +817,7 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(`let ${resultId} = `);
     this._compileExpression(node, null, positionNode);
     this.emit('; ');
-    this.emit(`${waitedOwnerBuffer}.add(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${resultId}], pos: ${posLiteral} }), "${waitedChannelName}"); `);
+    this.emit(`${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${resultId}], pos: ${posLiteral} }), "${waitedChannelName}"); `);
     this.emit(`return ${resultId}; `);
     this.emit('})()');
   }

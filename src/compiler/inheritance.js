@@ -59,7 +59,7 @@ class CompileInheritance {
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(
-      `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
     );
     if (this.compiler.analysis.isRootScopeOwner(node._analysis)) {
       this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.compiler.buffer.currentBuffer});`);
@@ -755,7 +755,7 @@ class CompileInheritance {
     const blockValueId = this.compiler._tmpid();
     this.emit.line(`  runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, name, "var", context, null);`);
     this.emit.line(`  const ${blockValueId} = ${blockPayloadOriginalArgsVar}[name];`);
-    this.emit.line(`  ${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
+    this.emit.line(`  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
     this.emit.line('}');
     this.emit.line('}');
   }
@@ -1282,7 +1282,7 @@ class CompileInheritance {
       // finalSnapshot() as the structural completion signal rather than adding an
       // extra point-in-time snapshot command for that boundary.
       this.emit.line(`let ${includeTextPromise} = composed.getChannel("${includeOutputChannelName}").finalSnapshot();`);
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
       // Include boundary completion in limited-loop waited output.
       // Wait on the composed include snapshot promise (timing unit), not on the
       // command object created for parent enqueue.

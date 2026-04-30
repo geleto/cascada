@@ -125,7 +125,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit(')');
     this.emit.line(';');
     const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
-    this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
+    this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
   }
 
   analyzeCallAssign(node, analysisPass) {
@@ -300,7 +300,7 @@ class CompilerAsync extends CompilerBaseAsync {
       const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
 
       if (hasAssignedValue) {
-        this.emit.line(`${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
+        this.emit.line(`${this.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
       }
 
       if (name.charAt(0) !== '_' && hasAssignedValue && facts && facts.exportFromRootScope && !facts.isSharedDeclaration) {
@@ -463,7 +463,7 @@ class CompilerAsync extends CompilerBaseAsync {
       for (const channelName of (node._analysis.poisonChannels || [])) {
         this.emit.insertLine(
           catchPoisonPos,
-          `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`
+          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`
         );
       }
     });
@@ -578,7 +578,7 @@ class CompilerAsync extends CompilerBaseAsync {
           if (node.errorVar) {
             this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
             this.emit.line(
-              `${this.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
+              `${this.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
             );
           }
           this.compile(node.recoveryBody, null);
@@ -815,7 +815,7 @@ class CompilerAsync extends CompilerBaseAsync {
       for (const channelName of (node._analysis.poisonChannels || [])) {
         this.emit.insertLine(
           catchPoisonPos,
-          `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`
+          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`
         );
       }
     });
@@ -890,7 +890,7 @@ class CompilerAsync extends CompilerBaseAsync {
         this.compileExpression(child, null, child);
         this.emit.line(';');
         const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
-        this.emit.line(`${this.buffer.currentBuffer}.add(${textCmdExpr}, "${textChannelName}");`);
+        this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${textChannelName}");`);
       }
     });
   }

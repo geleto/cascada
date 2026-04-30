@@ -276,7 +276,7 @@ class CompileLoop {
         if (whileConditionNode && catchPoisonPos !== null) {
           const bodyChannels = new Set(node.body._analysis.usedChannels || []);
           for (const channelName of bodyChannels) {
-            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${channelName}");`);
+            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`);
           }
         }
 
@@ -396,13 +396,13 @@ class CompileLoop {
 
   _emitLoopValueAssignment(node, channelName, valueExpr) {
     this.compiler.emit.line(
-      `${this.compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${channelName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${channelName}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${channelName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${channelName}');`
     );
   }
 
   _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast) {
     this.compiler.emit.line(
-      `${this.compiler.buffer.currentBuffer}.add(runtime.setLoopValueBindings('${node.loopRuntimeName}', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}}), '${node.loopRuntimeName}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(runtime.setLoopValueBindings('${node.loopRuntimeName}', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}}), '${node.loopRuntimeName}');`
     );
   }
 

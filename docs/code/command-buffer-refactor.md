@@ -58,7 +58,7 @@ described."
 The refactor should move toward these rules:
 
 1. Channel/lane structure must be static for each buffer.
-2. `add()` must never create missing lanes.
+2. `_add()` must never create missing lanes.
 3. `findChannel()` must be local-only and O(1).
 4. The command buffer should not understand lexical scoping beyond what compile-time analysis already encoded.
 5. `usedChannels` is the real source of truth; runtime visibility is just its materialized form.
@@ -116,7 +116,7 @@ This matters not only for name resolution, but also for ordered traversal semant
 
 ### 2. Lazy structural creation
 
-Current `add(...)` still does:
+Current `_add(...)` still does:
 
 ```js
 if (!this.arrays[resolvedChannelName]) {
@@ -132,7 +132,7 @@ It silently hides:
 - missing link bugs
 - mismatches between compiler analysis and runtime structure
 
-In the new model, a missing lane in `add(...)` must be a hard internal error.
+In the new model, a missing lane in `_add(...)` must be a hard internal error.
 
 ### 3. Shared/global registry
 
@@ -341,11 +341,11 @@ But values inside those lanes can still remain lazy:
 
 So the change here is "make the shape of the buffer tree static and explicit", not "force all runtime data to become precomputed or synchronous."
 
-### What `add(...)` should do
+### What `_add(...)` should do
 
 After the refactor:
 
-- `add(...)` should assume the lane already exists
+- `_add(...)` should assume the lane already exists
 - a missing `arrays[name]` should be an internal assertion/error
 - the lazy fallback should be removed
 
@@ -599,8 +599,8 @@ That guard should be deleted even in any intermediate stage.
 
 Current note:
 
-- `_channels` is still load-bearing for finished snapshots and finished raw
-  snapshots in `addSnapshot(...)`, `addRawSnapshot(...)`, and
+- `_channels` is still load-bearing for finished `SnapshotCommand` /
+  `RawSnapshotCommand` handling in `addCommand(...)` and
   `_runFinishedSnapshotCommand(...)`
 - ordinary lookup no longer uses `_channels`, which means `_channels` removal is
   now more concentrated and more realistic than when this document was first
@@ -750,8 +750,8 @@ What changes is not its existence, but what resolves it:
 The refactor should preserve and strengthen invariants such as:
 
 - `findChannel()` is local-only
-- `add()` cannot create lanes
-- missing lane in `add()` is an internal error
+- `_add()` cannot create lanes
+- missing lane in `_add()` is an internal error
 - `_linkedChannels` is removed
 - child lexical scope never becomes visible to the parent through buffer traversal
 - no runtime-dynamic channel names remain
@@ -771,7 +771,7 @@ Because the current runtime still tolerates incomplete analysis in a few places,
 
 This is especially important for:
 
-- `add()` missing-lane checks
+- `_add()` missing-lane checks
 - removal of ancestor/global fallback behavior from lookup and finished snapshots
 
 ## Implementation Plan
@@ -859,7 +859,7 @@ Changes:
   - `buffer._totalLaneCount`
 - keep child/parent structural insertion separate from lane creation
 - assert at construction time that every parent-linked lane resolves on the effective link target (`linkedParent` where present, otherwise `parent`)
-- do not remove `_registerLinkedChannel(...)` calls from `add()` yet; that compatibility cleanup belongs to Step 9 when finish bookkeeping is collapsed
+- do not remove `_registerLinkedChannel(...)` calls from `_add()` yet; that compatibility cleanup belongs to Step 9 when finish bookkeeping is collapsed
 
 Tests for this step:
 
@@ -1000,12 +1000,12 @@ Primary files:
 
 Changes:
 
-- remove the lazy `if (!this.arrays[name]) this.arrays[name] = []` path from `add(...)`
+- remove the lazy `if (!this.arrays[name]) this.arrays[name] = []` path from `_add(...)`
 - assert that every add/snapshot path targets a known static lane
 - keep this assertion behind a development/debug gate at first
 - do not make it unconditional until after the remaining runtime-dynamic lane cases are gone; Step 10 is where it should become unconditional
 - acknowledge that `_addCommand(...)` will now fail through the same missing-lane assertion path, which is the desired outcome for an invalid compiled/runtime contract
-- leave `_registerLinkedChannel(...)` calls in `add()` alone for now if they are still carrying finish-accounting compatibility; that cleanup belongs to Step 9
+- leave `_registerLinkedChannel(...)` calls in `_add()` alone for now if they are still carrying finish-accounting compatibility; that cleanup belongs to Step 9
 
 Tests for this step:
 
@@ -1013,7 +1013,7 @@ Tests for this step:
 
 Still-unimplemented tests to add here:
 
-- targeted runtime test: missing lane in `add()` throws immediately
+- targeted runtime test: missing lane in `_add()` throws immediately
 - targeted runtime test: missing linked parent channel at buffer creation throws immediately
 
 ### Step 7. Remove dead transitional runtime state
@@ -1062,8 +1062,8 @@ Changes:
 
 - remove `_channels`
 - remove its dead initialization guard in `_registerChannel(...)`
-- route `addSnapshot(...)`, `addRawSnapshot(...)`, and especially `_runFinishedSnapshotCommand(...)` through the local addressability map
-- update the finished-buffer fast path in `addSnapshot(...)` / `addRawSnapshot(...)` so both channel retrieval and the `output._buffer.isFinished(...)` guard use the local addressability map instead of `_channels`
+- route finished `SnapshotCommand` / `RawSnapshotCommand` handling and especially `_runFinishedSnapshotCommand(...)` through the local addressability map
+- update the finished-buffer fast path in `addCommand(...)` so both channel retrieval and the `output._buffer.isFinished(...)` guard use the local addressability map instead of `_channels`
 - narrow `_registerChannel(...)` so it no longer manages `_channels`; if `_ownedChannels` remains as debug metadata, its write can stay there
 
 Tests for this step:
@@ -1090,7 +1090,7 @@ Changes:
 
 - remove `_linkedChannels`
 - remove `_registerLinkedChannel(...)`
-- remove the `_registerLinkedChannel(...)` call from `add()`
+- remove the `_registerLinkedChannel(...)` call from `_add()`
 - remove `_finishRequestedChannels`
 - remove `_finishKnownChannelIfRequested(...)`
 - remove the backward-compatibility alias `markChannelFinished(...)` if it no longer serves a purpose
@@ -1158,7 +1158,7 @@ Final verification for this step:
 The refactor should proceed with these goals:
 
 1. Remove `_channels`.
-2. Remove lazy lane creation from `add()`.
+2. Remove lazy lane creation from `_add()`.
 3. Replace `_collectKnownChannelNames()` with a static per-buffer lane set.
 4. Track aggregate finish only for this buffer's own lanes.
 5. Make `findChannel()` local-only and O(1).
@@ -1368,8 +1368,8 @@ Work:
 - assert when a statically linked parent channel ref cannot be installed, so
   missing linkage fails at construction time instead of being masked by the
   old ancestor-walk fallback
-- route `findChannel(...)`, `addSnapshot(...)`, `addRawSnapshot(...)`, and
-  `_runFinishedSnapshotCommand(...)` through that local map
+- route `findChannel(...)`, finished observation handling in `addCommand(...)`,
+  and `_runFinishedSnapshotCommand(...)` through that local map
 - remove `_channels`
 
 Clarification:
@@ -1426,7 +1426,7 @@ Work:
 - remove `_finishKnownChannelIfRequested(...)`
 - remove `_linkedChannels`
 - remove `_registerLinkedChannel(...)`
-- remove the `_registerLinkedChannel(...)` call from `add()`
+- remove the `_registerLinkedChannel(...)` call from `_add()`
 - remove `markChannelFinished(...)` if it is no longer needed
 
 Important coordination:

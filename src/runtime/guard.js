@@ -1,3 +1,12 @@
+import {
+  CaptureGuardStateCommand,
+  RestoreGuardStateCommand,
+  GetErrorCommand,
+} from './channels/observation.js';
+import {
+  RepairWriteCommand,
+} from './channels/sequential-path.js';
+
 function init(cb = null) {
   const guardState = {
     sequenceErrors: [],
@@ -49,7 +58,10 @@ function initChannelSnapshots(channelNames = null, buffer = null, cb = null) {
       state.sequentialPathChannels.push(channelName);
       continue;
     }
-    const capturePromise = buffer.addCaptureGuardState(channelName, { lineno: 0, colno: 0 })
+    const capturePromise = buffer.addCommand(new CaptureGuardStateCommand({
+      channelName,
+      pos: { lineno: 0, colno: 0 }
+    }), channelName)
       .then((capturedState) => {
         state.snapshots[channelName] = capturedState;
       });
@@ -69,11 +81,11 @@ async function restoreChannels(buffer, channelGuardState) {
   const snapshotNames = Object.keys(channelGuardState.snapshots || {});
   if (snapshotNames.length > 0) {
     const restorePromises = snapshotNames.map((channelName) =>
-      buffer.addRestoreGuardState(
+      buffer.addCommand(new RestoreGuardStateCommand({
         channelName,
-        channelGuardState.snapshots[channelName],
-        { lineno: 0, colno: 0 }
-      ).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
+        target: channelGuardState.snapshots[channelName],
+        pos: { lineno: 0, colno: 0 }
+      }), channelName).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
     );
     await Promise.all(restorePromises);
   }
@@ -83,12 +95,13 @@ async function restoreChannels(buffer, channelGuardState) {
     : [];
   if (sequentialPathChannels.length > 0) {
     const repairPromises = sequentialPathChannels.map((channelName) =>
-      buffer.addSequentialPathWrite(
+      buffer.addCommand(new RepairWriteCommand({
         channelName,
-        () => true,
-        { lineno: 0, colno: 0 },
-        true
-      ).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
+        pathKey: channelName,
+        operation: () => true,
+        pos: { lineno: 0, colno: 0 },
+        withDeferredResult: true
+      }), channelName).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
     );
     await Promise.all(repairPromises);
   }
@@ -139,7 +152,10 @@ async function collectChannelErrors(buffer, allowedChannels) {
   const allErrors = [];
 
   for (const channelName of names) {
-    const channelError = await buffer.addGetError(channelName, { lineno: 0, colno: 0 });
+    const channelError = await buffer.addCommand(new GetErrorCommand({
+      channelName,
+      pos: { lineno: 0, colno: 0 }
+    }), channelName);
     if (!channelError) {
       continue;
     }
@@ -176,7 +192,10 @@ function repairSequenceOutputs(buffer, guardState, lockNames) {
   }
 
   for (const lockName of lockNames) {
-    const detectPromise = buffer.addGetError(lockName, { lineno: 0, colno: 0 })
+    const detectPromise = buffer.addCommand(new GetErrorCommand({
+      channelName: lockName,
+      pos: { lineno: 0, colno: 0 }
+    }), lockName)
       .then((channelError) => {
         if (!channelError) {
           return true;
@@ -190,13 +209,14 @@ function repairSequenceOutputs(buffer, guardState, lockNames) {
       })
       .catch((err) => reportAndThrow(guardState.fatalCb, err));
 
-    const repairPromise = buffer.addSequentialPathWrite(
-      lockName,
+    const repairPromise = buffer.addCommand(new RepairWriteCommand({
+      channelName: lockName,
+      pathKey: lockName,
       // Repair is unconditional: clear poison and publish a healthy lock state.
-      () => true,
-      { lineno: 0, colno: 0 },
-      true
-    ).catch((err) => reportAndThrow(guardState.fatalCb, err));
+      operation: () => true,
+      pos: { lineno: 0, colno: 0 },
+      withDeferredResult: true
+    }), lockName).catch((err) => reportAndThrow(guardState.fatalCb, err));
 
     guardState.detectionPromises.push(Promise.all([detectPromise, repairPromise]).then(() => true));
   }

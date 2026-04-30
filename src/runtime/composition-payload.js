@@ -20,7 +20,7 @@ function declareCompositionPayloadChannels(commandBuffer, context, skipNames = n
       return;
     }
     declareBufferChannel(commandBuffer, name, 'var', context, null);
-    commandBuffer.add(new VarCommand({ channelName: name, args: [payloadContext[name]] }), name);
+    commandBuffer.addCommand(new VarCommand({ channelName: name, args: [payloadContext[name]] }), name);
   });
 }
 

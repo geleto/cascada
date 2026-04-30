@@ -902,7 +902,7 @@ function _admitResolvedMethodInvocation({
     errorContext
   });
 
-  invocationBuffer.add(command, '__invoke__');
+  invocationBuffer.addCommand(command, '__invoke__');
   command.apply();
   return command.promise;
 }

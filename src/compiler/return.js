@@ -79,7 +79,7 @@ class CompileReturn {
     // Unlike an ordinary function call or comparison, this internal guard uses
     // ReturnIsUnsetCommand and therefore cannot surface poison stored in the
     // returned value.
-    compiler.emit(`${compiler.buffer.currentBuffer}.addReturnIsUnset("${RETURN_CHANNEL_NAME}", {lineno: ${node.lineno}, colno: ${node.colno}})`);
+    compiler.emit(`${compiler.buffer.currentBuffer}.addCommand(new runtime.ReturnIsUnsetCommand({ channelName: "${RETURN_CHANNEL_NAME}", pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}")`);
   }
 
   emitDeclareChannel(bufferExpr) {
@@ -91,7 +91,7 @@ class CompileReturn {
   emitChannelWrite(node, resultVar) {
     const compiler = this.compiler;
     compiler.emit.line(
-      `${compiler.buffer.currentBuffer}.add(new runtime.VarCommand({ channelName: '${RETURN_CHANNEL_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}");`
+      `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${RETURN_CHANNEL_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}");`
     );
   }
 
