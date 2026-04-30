@@ -2,7 +2,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader, delay} from '../util.js';
-import {createPoison, isPoisonError, TextCommand, SnapshotCommand, CommandBuffer, createChannel} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChannel} from '../../src/runtime/runtime.js';
 import * as parser from '../../src/parser.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
@@ -2612,7 +2612,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
     it('maps formal channel names to resolved aliases in addCommand()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      createChannel(buffer, 'loop#4', ctx, 'text');
+      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.addCommand(new TextCommand({
@@ -2628,7 +2628,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
     it('resolves SnapshotCommand through channel aliases', async function () {
       const ctx = { path: 'alias-snapshot.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      createChannel(buffer, 'loop#4', ctx, 'text');
+      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.addCommand(new TextCommand({
@@ -2693,7 +2693,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      createChannel(buffer, 'loop#4', ctx, 'text');
+      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChannelAliases({ loop: 'loop#4' });
 
       buffer.addCommand(new TextCommand({

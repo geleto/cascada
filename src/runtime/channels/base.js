@@ -33,9 +33,6 @@ class Channel {
       this._resolveCompletion = resolve;
     });
 
-    if (this._buffer) {
-      this._buffer._registerChannel(this._channelName, this);
-    }
   }
 
   _getTarget() {

@@ -1,5 +1,4 @@
 
-import {CHANNEL_TYPE_FACTS} from '../../channel-types.js';
 import {Channel, createCallableChannelFacade, inspectTargetForErrors} from './base.js';
 import {TextChannel} from './text.js';
 import {VarChannel} from './var.js';
@@ -26,7 +25,7 @@ function createChannel(buffer, channelName, context, channelType = null, initial
 }
 
 function createSequenceChannel(buffer, channelName, context, targetObject) {
-  return createChannel(buffer, channelName, context, 'sequence', targetObject);
+  return declareBufferChannel(buffer, channelName, 'sequence', context, targetObject);
 }
 
 function declareBufferChannel(buffer, channelName, channelType, context, initializer) {
@@ -40,17 +39,11 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
   targetBuffer._channelTypes = targetBuffer._channelTypes || Object.create(null);
   targetBuffer._channelTypes[channelName] = channelType;
 
-  const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
   const channel = createChannel(targetBuffer, channelName, context, channelType, initializer);
 
   channel._buffer = targetBuffer;
 
   targetBuffer._registerChannel(channelName, channel);
-
-  if (channelFacts && channelFacts.usesInitializerAsTarget) {
-    targetBuffer._channelRegistry = targetBuffer._channelRegistry || Object.create(null);
-    targetBuffer._channelRegistry[channelName] = channel;
-  }
 
   return channel;
 }

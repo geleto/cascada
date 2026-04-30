@@ -8,7 +8,7 @@ import {
   DataCommand,
   SequenceCallCommand,
   CommandBuffer,
-  createChannel,
+  declareBufferChannel,
   createSequenceChannel,
   createPoison,
   isPoisonError
@@ -52,7 +52,7 @@ describe('channel.finalSnapshot', function () {
   };
   const makeChannel = (buffer, ctx, channelName) => {
     const name = channelName || 'text';
-    return createChannel(buffer, name, ctx || null, name);
+    return declareBufferChannel(buffer, name, name, ctx || null, null);
   };
   const flatten = (buffer, ctx, channelName) => (
     makeChannel(buffer, ctx, channelName).finalSnapshot()
@@ -60,12 +60,6 @@ describe('channel.finalSnapshot', function () {
   const flattenSequence = (commands, ctx, channelName, sequence) => {
     const buffer = new CommandBuffer(ctx, null);
     const sequenceChannel = createSequenceChannel(buffer, channelName, ctx || null, sequence);
-
-    buffer._channelTypes = Object.create(null);
-    buffer._channelTypes[channelName] = 'sequence';
-    if (buffer._channels instanceof Map) {
-      buffer._channels.set(channelName, sequenceChannel);
-    }
 
     commands.forEach((entry) => buffer.addCommand(entry, channelName));
     sequenceChannel.finalSnapshot();
@@ -93,7 +87,7 @@ describe('channel.finalSnapshot', function () {
   describe('buffer entry cleanup', function () {
     it('releases applied command entries after finalSnapshot completes', async function () {
       const buffer = new CommandBuffer(context, null);
-      const channel = createChannel(buffer, 'text', context, 'text');
+      const channel = declareBufferChannel(buffer, 'text', 'text', context, null);
 
       buffer.addCommand(new TextCommand({
         channelName: 'text',
@@ -115,7 +109,7 @@ describe('channel.finalSnapshot', function () {
     it('releases finished child buffers after the iterator leaves them', async function () {
       const parent = new CommandBuffer(context, null);
       const child = new CommandBuffer(context, null);
-      const channel = createChannel(parent, 'text', context, 'text');
+      const channel = declareBufferChannel(parent, 'text', 'text', context, null);
 
       child.addCommand(new TextCommand({
         channelName: 'text',
@@ -141,7 +135,7 @@ describe('channel.finalSnapshot', function () {
 
     it('disposes finished iterator state after completion', async function () {
       const buffer = new CommandBuffer(context, null);
-      const channel = createChannel(buffer, 'text', context, 'text');
+      const channel = declareBufferChannel(buffer, 'text', 'text', context, null);
       const iterator = channel._iterator;
 
       buffer.addCommand(new TextCommand({
@@ -165,7 +159,7 @@ describe('channel.finalSnapshot', function () {
 
     it('clears channel completion promise state after completion', async function () {
       const buffer = new CommandBuffer(context, null);
-      const channel = createChannel(buffer, 'text', context, 'text');
+      const channel = declareBufferChannel(buffer, 'text', 'text', context, null);
 
       buffer.addCommand(new TextCommand({
         channelName: 'text',
@@ -184,7 +178,7 @@ describe('channel.finalSnapshot', function () {
 
     it('clears finished-buffer request bookkeeping once finished', async function () {
       const buffer = new CommandBuffer(context, null);
-      const channel = createChannel(buffer, 'text', context, 'text');
+      const channel = declareBufferChannel(buffer, 'text', 'text', context, null);
 
       buffer.addCommand(new TextCommand({
         channelName: 'text',
@@ -343,7 +337,7 @@ describe('channel.finalSnapshot', function () {
   describe('Error Handling & Edge Cases', function () {
     it('should resolve snapshot at command position before later writes', async function () {
       const buffer = new CommandBuffer(context, null);
-      const textOut = createChannel(buffer, 'text', context, 'text');
+      const textOut = declareBufferChannel(buffer, 'text', 'text', context, null);
 
       textOut('A');
       const snap = buffer.addCommand(new SnapshotCommand({
@@ -370,7 +364,7 @@ describe('channel.finalSnapshot', function () {
 
     it('finalSnapshot should wait for owning channel completion', async function () {
       const buffer = new CommandBuffer(context, null);
-      const out = createChannel(buffer, 'text', context, 'text');
+      const out = declareBufferChannel(buffer, 'text', 'text', context, null);
       out('late');
 
       const early = await Promise.race([
@@ -386,8 +380,8 @@ describe('channel.finalSnapshot', function () {
 
     it('tracks finished state per channel', async function () {
       const buffer = new CommandBuffer(context, null);
-      const text = createChannel(buffer, 'text', context, 'text');
-      const data = createChannel(buffer, 'data', context, 'data');
+      const text = declareBufferChannel(buffer, 'text', 'text', context, null);
+      const data = declareBufferChannel(buffer, 'data', 'data', context, null);
 
       text('later');
       data.set(['ready'], 1);

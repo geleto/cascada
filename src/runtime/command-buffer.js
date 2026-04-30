@@ -52,9 +52,6 @@ class CommandBuffer {
     // can attach to a caller-owned runtime channel name when a feature such as
     // macro by-reference uses this buffer-level mechanism.
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    if (!this._channels) {
-      this._channels = new Map();
-    }
     this._channels.set(resolvedChannelName, channel);
     this._ownedChannels[resolvedChannelName] = channel;
     this._finishKnownChannelIfRequested(resolvedChannelName);
