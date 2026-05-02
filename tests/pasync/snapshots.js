@@ -29,9 +29,9 @@ describe('channel.finalSnapshot', function () {
       }
       if (Array.isArray(item)) {
         const nested = new CommandBuffer(ctx || null, null);
-        const linkedChannel = buffer.findChannel(targetName);
+        const linkedChannel = buffer.getChannel(targetName);
         if (linkedChannel) {
-          nested._registerLinkedChannel(targetName, linkedChannel);
+          nested._installLinkedChannel(targetName, linkedChannel);
         }
         item.forEach((child) => addItem(nested, child));
         nested.markFinishedAndPatchLinks();
@@ -116,6 +116,7 @@ describe('channel.finalSnapshot', function () {
       const parent = new CommandBuffer(context, null);
       const child = new CommandBuffer(context, null);
       const channel = declareBufferChannel(parent, 'text', 'text', context, null);
+      child._installLinkedChannel('text', channel);
 
       child.addCommand(new TextCommand({
         channelName: 'text',
@@ -182,7 +183,7 @@ describe('channel.finalSnapshot', function () {
       expect(channel._resolveCompletion).to.be(null);
     });
 
-    it('clears finished-buffer request bookkeeping once finished', async function () {
+    it('finishes aggregate buffer state after all lanes close', async function () {
       const buffer = new CommandBuffer(context, null);
       const channel = declareBufferChannel(buffer, 'text', 'text', context, null);
 
@@ -197,8 +198,6 @@ describe('channel.finalSnapshot', function () {
 
       expect(result).to.be('A');
       expect(buffer.finished).to.be(true);
-      expect(buffer._finishRequestedChannels).to.be(null);
-      expect(buffer._finishAllChannelsRequested).to.be(null);
     });
 
     it('clears resolved sequence promise cache after async sequence target resolution', async function () {
@@ -241,7 +240,8 @@ describe('channel.finalSnapshot', function () {
       expect(Object.keys(child.arrays)).to.eql(['text', 'local']);
       expect(child.arrays.text).to.eql([]);
       expect(child.arrays.local).to.eql([]);
-      expect(child.isLinkedChannel('text')).to.be(true);
+      expect(child.hasChannel('text')).to.be(true);
+      expect(child.getOwnChannel('text')).to.be(undefined);
     });
 
     it('deduplicates linked lanes before structurally inserting a child buffer', function () {
@@ -260,6 +260,7 @@ describe('channel.finalSnapshot', function () {
       expect(() => createCommandBuffer(context, null, ['text'], parent)).to.throwError((err) => {
         expect(err.message).to.contain("Cannot link channel 'text' without a registered channel object");
       });
+      expect(parent.arrays.text).to.have.length(0);
     });
 
     it('finds channels only through local declarations and explicit links', function () {
@@ -267,14 +268,14 @@ describe('channel.finalSnapshot', function () {
       const child = new CommandBuffer(context, parent);
       const channel = declareBufferChannel(parent, 'text', 'text', context, null);
 
-      expect(parent.findChannel('text')).to.be(channel);
-      expect(child.findChannel('text')).to.be(undefined);
+      expect(parent.getChannel('text')).to.be(channel);
+      expect(child.hasChannel('text')).to.be(false);
 
       parent.addBuffer(child, 'text');
 
-      expect(child.findChannel('text')).to.be(channel);
+      expect(child.getChannel('text')).to.be(channel);
       expect(child.getOwnChannel('text')).to.be(undefined);
-      expect(child.isLinkedChannel('text')).to.be(true);
+      expect(child.hasChannel('text')).to.be(true);
     });
   });
 
@@ -451,7 +452,7 @@ describe('channel.finalSnapshot', function () {
       text('later');
       data.set(['ready'], 1);
 
-      buffer.markChannelFinished('data');
+      buffer.requestChannelFinish('data');
 
       expect(buffer.isFinished('data')).to.be(true);
       expect(buffer.isFinished('text')).to.be(false);
@@ -464,7 +465,7 @@ describe('channel.finalSnapshot', function () {
       expect(dataSnapshot).to.eql({ ready: 1 });
 
       text(' now');
-      buffer.markChannelFinished('text');
+      buffer.requestChannelFinish('text');
 
       expect(buffer.finished).to.be(false);
       buffer.markFinishedAndPatchLinks();
@@ -505,6 +506,7 @@ describe('channel.finalSnapshot', function () {
 
     it('should reject CommandBuffer values inside TextCommand arguments', async function () {
       const nested = new CommandBuffer(context, null);
+      declareBufferChannel(nested, 'text', 'text', context, null);
       nested.addCommand(new TextCommand({ channelName: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
       const buffer = createBuffer([
         new TextCommand({ channelName: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })

@@ -840,8 +840,8 @@ describe('Extends Runtime', function () {
                 ...(Array.isArray(spec.methodData.mergedUsedChannels) ? spec.methodData.mergedUsedChannels : []),
                 ...(Array.isArray(spec.methodData.mergedMutatedChannels) ? spec.methodData.mergedMutatedChannels : [])
               ])),
-              late: invocationBuffer.isLinkedChannel('late'),
-              trace: invocationBuffer.isLinkedChannel('trace')
+              late: invocationBuffer.hasChannel('late') && !invocationBuffer.getOwnChannel('late'),
+              trace: invocationBuffer.hasChannel('trace') && !invocationBuffer.getOwnChannel('trace')
             };
           }
           return originalCreateInheritanceInvocationCommand.apply(this, arguments);
@@ -967,8 +967,8 @@ describe('Extends Runtime', function () {
                 ...(Array.isArray(spec.methodData.mergedUsedChannels) ? spec.methodData.mergedUsedChannels : []),
                 ...(Array.isArray(spec.methodData.mergedMutatedChannels) ? spec.methodData.mergedMutatedChannels : [])
               ])),
-              late: invocationBuffer.isLinkedChannel('late'),
-              trace: invocationBuffer.isLinkedChannel('trace')
+              late: invocationBuffer.hasChannel('late') && !invocationBuffer.getOwnChannel('late'),
+              trace: invocationBuffer.hasChannel('trace') && !invocationBuffer.getOwnChannel('trace')
             };
           }
           return originalCreateInheritanceInvocationCommand.apply(this, arguments);
@@ -1047,7 +1047,9 @@ describe('Extends Runtime', function () {
           if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
             const invocationBuffer = spec.invocationBuffer;
             seenInvocationLate = {
-              late: invocationBuffer ? invocationBuffer.isLinkedChannel('late') : null,
+              late: invocationBuffer
+                ? invocationBuffer.hasChannel('late') && !invocationBuffer.getOwnChannel('late')
+                : null,
               usesOwnInvocationBuffer: spec.invocationBuffer === invocationBuffer
             };
           }

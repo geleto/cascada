@@ -1496,15 +1496,16 @@ These are known residuals after Stages 1-3. They should not block the Stage 3
 end state, but they must stay visible so the final cleanup does not normalize
 the migration scaffolding into permanent design.
 
-- `_add(...)`, `onEnterBuffer(...)`, `_markChannelFinished(...)`, and
-  `_registerLinkedChannel(...)` still reach `_ensureLane(...)`. This preserves
-  runtime-dynamic compatibility, but it also means missing-lane assertions are
-  not yet enforcing the final static-lane invariant. Stage 4 must audit each
+- `_add(...)`, `onEnterBuffer(...)`, `_registerChannel(...)`, and
+  `_installLinkedChannel(...)` still reach `_ensureLane(...)`. This preserves
+  runtime-dynamic compatibility for internal channels such as `__invoke__`,
+  waited-loop channels, alias-linked child buffers, and shared/inheritance
+  runtime-created lanes. The analysis-channel refactor must audit each
   remaining `_ensureLane(...)` call and either remove it or document the
   explicit dynamic path that still owns it.
-- Missing-lane add/snapshot failures remain Stage 4 validation, because the
-  current compatibility fallback intentionally creates those lanes before the
-  assertion can fire.
+- Missing-lane add/snapshot failures remain analysis-channel/final-invariant
+  validation, because the current compatibility fallback intentionally creates
+  several internal runtime lanes before the assertion can fire.
 - Macro/caller, component, and inheritance-created buffers still contain some
   runtime-dynamic lane creation paths. Before hard missing-lane assertions become
   unconditional, each of those creation paths must either receive static lane
@@ -1523,27 +1524,30 @@ Goal:
 
 Work:
 
-- remove `_finishRequestedChannels`
-- remove `_finishAllChannelsRequested`
-- remove `_finishKnownChannelIfRequested(...)`
-- remove `_linkedChannels`
-- remove `_registerLinkedChannel(...)`
-- remove the `_registerLinkedChannel(...)` call from `_add()`
-- remove `markChannelFinished(...)` if it is no longer needed
+- remove `_finishRequestedChannels` (**done**)
+- remove `_finishAllChannelsRequested` (**done**)
+- remove `_finishKnownChannelIfRequested(...)` (**done**)
+- remove `_linkedChannels` (**done**)
+- remove `_registerLinkedChannel(...)` (**done**; replaced by
+  `_installLinkedChannel(...)` writing into the single local addressability map)
+- remove the `_registerLinkedChannel(...)` call from `_add()` (**done**)
+- remove `markChannelFinished(...)` if it is no longer needed (**done**; tests
+  now use `requestChannelFinish(...)` directly)
 
 Important coordination:
 
-- `_linkedChannels` / `isLinkedChannel(...)` currently participate in the
-  late-linked-child readability path in
-  [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
-- do not remove them until that late-link path has been replaced, narrowed, or
-  proven unnecessary
-- before deleting `_linkedChannels`, add a focused test that exercises the
+- `hasLinkedBuffer(...)` now derives its answer from concrete channel refs in
+  the local `_channels` map; it no longer relies on separate `_linkedChannels`
+  storage
+- `isLinkedChannel(...)` was test-only after this refactor and has been removed;
+  tests assert linked addressability through `hasChannel(...)` plus
+  `getOwnChannel(...)`
+- before removing `hasLinkedBuffer(...)`, add a focused test that exercises the
   late-linked-child scenario explicitly: a child buffer linked to a parent lane
   created after the ancestor lane is already finished
 - only remove the fallback once that scenario is either:
   - handled correctly by eager/local lane installation without
-    `isLinkedChannel(...)`, or
+    `hasLinkedBuffer(...)`, or
   - replaced by a narrower explicit mechanism
 
 Primary files:
@@ -1571,19 +1575,25 @@ Goal:
 Work:
 
 - decide whether `_ownedChannels` remains as assertion/debug metadata or is
-  removed entirely
+  removed entirely (**done**; ownership is derived from `channel._buffer`)
 - if linked channels and owned channels both store concrete channel objects by
   this point, merge `_ownedChannels` and `_linkedChannels` into a single
-  local addressability map, likely `_channels`
+  local addressability map, likely `_channels` (**done**)
 - derive ownership from the channel object itself, for example
   `channel._buffer === this`, instead of maintaining a second lookup table just
   for ownership
 - keep channel access behind `CommandBuffer` methods rather than reading
-  `_channels` directly from other modules
+  `_channels` directly from other modules (**done**)
 - replace the current `findChannel(...)` name with clearer accessors:
   - `getChannel(name)` for must-exist lookups that throw
-  - `getChannelIfExists(name)` for optional local-only lookup
+  - `hasChannel(name)` for boolean local-only existence checks
+  - `getChannelIfExists(name)` for optional local-only lookups that need the
+    channel object and where absence is a valid branch
   - `getOwnChannel(name)` for local ownership checks
+  (**done**)
+- keep `getChannelIfExists(...)` rare and auditable; when a missing channel
+  would indicate bad linking, declaration ordering, or analysis metadata, call
+  `getChannel(...)` instead so the invariant fails loudly
 - preserve the invariant that these accessors are local-only and never walk
   `parent`
 - revisit buffer-construction arguments such as `linkedChannelsArg` and

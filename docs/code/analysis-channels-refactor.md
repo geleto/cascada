@@ -237,18 +237,32 @@ Validation:
 Goal:
 
 - remove cleanup debt left by broad `usedChannels` / `mutatedChannels`
+- make runtime linking/buffer decisions consume analysis/callable link metadata
+  instead of rediscovering link shape from buffer state
 
 Work:
 
 - run the audit checklist below across compiler and runtime
 - delete obsolete maybe-link guards, capture/caller/import patches, duplicated
   channel-set builders, and synthetic-name heuristics
+- audit every runtime "do we link this now?" decision:
+  - identify the analysis/callable metadata that should have requested the link
+  - replace runtime availability/path probing with installation or assertion
+    against that metadata where possible
+  - keep runtime checks only for hard invariant validation, such as "requested
+    linked channel is missing from the immediate parent"
+- audit inheritance/component invocation linking separately from ordinary
+  control-flow boundaries, because callable metadata currently merges
+  transitive used/mutated footprints at runtime
 - document any remaining divergence from analysis-provided links as an explicit
   semantic rule
 
 Validation:
 
 - run the broader async suite after focused boundary coverage is green
+- add focused tests for invocation/shared-root links where runtime used to skip
+  or add links based on `hasChannel(...)`, `hasLinkedBuffer(...)`, or ancestry
+  probing
 
 ## Validation
 
@@ -290,6 +304,8 @@ duplicated linked-channel calculation:
   `linkedChannelsArg` logic in boundary/compiler helpers
 - runtime "maybe link" guards that check whether a parent has a channel and
   silently skip linking when it does not
+- runtime structural-link probes, such as checking whether a buffer path is
+  already linked before deciding to link it
 - tests that manually declare/register channels only because metadata claims a
   link without a real provider
 - duplicated declared-channel threading and repeated linked/declared merge logic
@@ -305,6 +321,32 @@ duplicated linked-channel calculation:
   macro text, caller text, component render text, and current-text aliases
 - alias-related patches where analysis emits formal names but runtime needs
   canonical names; these may be valid but should stay explicit and narrow
+
+### Runtime Link-Decision Audit
+
+Runtime should validate and install requested links; it should not discover
+which links are needed by inspecting the buffer tree.
+
+Audit every helper that asks a question shaped like:
+
+```text
+Does this buffer already have this link?
+Can this parent currently provide this channel?
+Should we link through the caller, the shared root, or both?
+```
+
+For each case, classify the decision:
+
+- **Metadata-owned:** the analysis/callable `linkedChannels` set should already
+  specify the link. Runtime should install it or throw if the immediate parent
+  cannot provide it.
+- **Runtime invariant:** the runtime check remains valid only as an assertion
+  that the metadata-requested link is possible.
+- **True runtime semantic:** the runtime genuinely has information analysis
+  cannot know. Keep the decision, but document why it is not an analysis fact.
+
+Default assumption: "maybe link if present" and "skip if already linked" logic
+is compatibility debt unless a true runtime semantic is documented.
 
 ### Known Marker
 
@@ -326,6 +368,17 @@ Current examples to audit:
 - `src/compiler/inheritance.js#collectMethodChannelNames(...)`: currently
   filters callable-local implementation channels out of inheritance method
   footprints; should collapse to analysis-owned callable/boundary metadata.
+- `src/runtime/command-buffer.js#hasLinkedBuffer(...)`: currently answers
+  runtime structural-link questions; should be replaced by analysis-owned link
+  specs or a narrower assertion/installer.
+- `src/runtime/inheritance-call.js#hasLinkedChannelPath(...)`: currently probes
+  runtime buffer ancestry before deciding whether to add a shared-root link.
+- `src/runtime/inheritance-call.js#_registerInvocationChannelLink(...)` and
+  `_createAdmittedInvocationBuffer(...)`: currently choose caller/shared-root
+  link paths from runtime channel availability.
+- `src/runtime/inheritance-bootstrap.js#linkCurrentBufferToParentChannels(...)`:
+  currently performs shared/inheritance runtime link decisions that should be
+  driven by final boundary/callable link metadata.
 
 When implementing this refactor, grep for the marker first, then continue with
 the broader audit checklist above. New code should not add more marker comments

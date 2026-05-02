@@ -30,7 +30,7 @@ function initChannelSnapshots(channelNames = null, buffer = null, cb = null) {
   const targets = channelNames ?? [];
 
   for (const channelName of targets) {
-    const channel = buffer.findChannel(channelName);
+    const channel = buffer.getChannelIfExists(channelName);
     if (!channel) {
       continue;
     }

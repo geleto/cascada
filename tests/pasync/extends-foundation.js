@@ -2304,14 +2304,11 @@ describe('Extends Foundation', function () {
         return;
       }
       const fakeBuffer = {
-        isLinkedChannel() {
-          return false;
-        },
         isFinished() {
           return false;
         },
         addBuffer() {},
-        _registerLinkedChannel() {},
+        _installLinkedChannel() {},
         markFinishedAndPatchLinks() {},
         getFinishedPromise() {
           return Promise.reject(cleanupError);

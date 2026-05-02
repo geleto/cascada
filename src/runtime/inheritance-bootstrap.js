@@ -323,6 +323,10 @@ function runCompiledRootStartupImpl(spec) {
 }
 
 function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames) {
+  // ANALYSIS-CHANNELS-REFACTOR: this helper performs runtime structural-link
+  // decisions for shared/inheritance buffers. Once boundary/callable
+  // linkedChannels are final metadata, this should become a narrow installer or
+  // disappear in favor of createCommandBuffer/link specs.
   if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
@@ -338,7 +342,7 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
       continue;
     }
     if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
-      currentBuffer._registerLinkedChannel(channelName, parentBuffer.findChannel(channelName));
+      currentBuffer._installLinkedChannel(channelName, parentBuffer.getChannel(channelName));
       continue;
     }
     parentBuffer.addBuffer(currentBuffer, channelName);

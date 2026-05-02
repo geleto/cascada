@@ -484,6 +484,9 @@ function _findMethodDataForOwner(methodData, ownerKey) {
 }
 
 function _getMethodLinkedChannels(methodData) {
+  // ANALYSIS-CHANNELS-REFACTOR: callable linked channels should eventually be
+  // published as final linkage metadata instead of recomputed from broad
+  // merged used/mutated footprints at each runtime admission site.
   return _mergeChannelNames(
     methodData?.mergedUsedChannels,
     methodData?.mergedMutatedChannels
@@ -650,22 +653,26 @@ function _createMethodPayload(methodData, args, errorContext, label, context = n
 }
 
 function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channelName) {
+  // ANALYSIS-CHANNELS-REFACTOR: this routine still chooses the structural
+  // link path at runtime. Once boundary/callable linkedChannels are final
+  // analysis metadata, callers should mostly install/assert those links rather
+  // than deciding them from current buffer state.
   if (!channelName) {
     return false;
   }
-  const channel = currentBuffer.findChannel(channelName);
+  const channel = currentBuffer.getChannelIfExists(channelName);
   if (!channel) {
     throw _createMissingInvocationChannelError(channelName, invocationBuffer?._context ?? currentBuffer?._context ?? null);
   }
   if (currentBuffer === invocationBuffer) {
-    invocationBuffer._registerLinkedChannel(channelName, channel);
+    invocationBuffer._installLinkedChannel(channelName, channel);
     return true;
   }
   if (currentBuffer.hasLinkedBuffer(invocationBuffer, channelName)) {
     return true;
   }
   if (currentBuffer.isFinished(channelName) || currentBuffer.finished) {
-    invocationBuffer._registerLinkedChannel(channelName, channel);
+    invocationBuffer._installLinkedChannel(channelName, channel);
     return true;
   }
   currentBuffer.addBuffer(invocationBuffer, channelName);
@@ -673,6 +680,8 @@ function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channel
 }
 
 function hasLinkedChannelPath(rootBuffer, buffer, channelName) {
+  // ANALYSIS-CHANNELS-REFACTOR: runtime path probing is a workaround for
+  // linking decisions that are not fully owned by analysis/callable metadata.
   let current = buffer;
   while (current && current.parent) {
     const parent = current.parent;
@@ -835,6 +844,10 @@ function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKe
 }
 
 function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue, currentBuffer, methodData) {
+  // ANALYSIS-CHANNELS-REFACTOR: this still derives caller/shared-root linking
+  // choices from runtime availability. Audit against final callable
+  // linkedChannels and remove availability-based additions/removals where the
+  // analysis metadata can be the source of truth.
   const sharedRootBuffer = inheritanceStateValue.sharedRootBuffer ?? currentBuffer;
   const linkedChannels = _getMethodLinkedChannels(methodData);
   const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue);
@@ -850,7 +863,7 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
     // in the composed chain.
     const channelName = linkedChannels[i];
     const isSharedChannel = Object.prototype.hasOwnProperty.call(sharedSchema, channelName);
-    const callerHasChannel = !!currentBuffer.findChannel(channelName);
+    const callerHasChannel = currentBuffer.hasChannel(channelName);
     const linkedFromCaller = callerHasChannel
       ? _registerInvocationChannelLink(currentBuffer, invocationBuffer, channelName)
       : false;
@@ -862,7 +875,7 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
       sharedRootBuffer !== currentBuffer &&
       !hasLinkedChannelPath(sharedRootBuffer, invocationBuffer, channelName)
     ) {
-      const linkedFromSharedRoot = sharedRootBuffer.findChannel(channelName)
+      const linkedFromSharedRoot = sharedRootBuffer.hasChannel(channelName)
         ? _registerInvocationChannelLink(sharedRootBuffer, invocationBuffer, channelName)
         : false;
       if (isSharedChannel && !linkedFromSharedRoot) {

@@ -59,10 +59,7 @@ function ensureSequentialPathChannel(currentBuffer, pathKey) {
 }
 
 function assertChannelLaneAvailable(buffer, channelName) {
-  if (buffer._ownedChannels && buffer._ownedChannels[channelName]) {
-    return;
-  }
-  if (buffer._linkedChannels && buffer._linkedChannels[channelName]) {
+  if (buffer.hasChannel && buffer.hasChannel(channelName)) {
     return;
   }
   if (buffer.arrays && channelName in buffer.arrays) {

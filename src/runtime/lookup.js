@@ -212,7 +212,7 @@ function _getObservationPosition(errorContext) {
 
 function _addObservationCommand(targetBuffer, channelName, pos, mode) {
   if (targetBuffer.isFinished(channelName)) {
-    const channel = targetBuffer.findChannel(channelName);
+    const channel = targetBuffer.getChannelIfExists(channelName);
     if (channel) {
       if (mode === 'snapshot') {
         return channel._getResultOrThrow();
@@ -302,7 +302,7 @@ function observeInheritanceSharedChannelImpl(name, currentBuffer, errorContext =
  * local lane assertion so lookup cannot silently create invisible lanes.
  */
 function channelLookup(name, currentBuffer) {
-  const channel = currentBuffer.findChannel(name);
+  const channel = currentBuffer.getChannelIfExists(name);
   if (!channel) {
     return undefined;
   }

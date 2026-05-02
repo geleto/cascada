@@ -367,8 +367,8 @@ describe('Phase 8 - Component Method Calls', function () {
               ...(Array.isArray(spec.methodData.mergedUsedChannels) ? spec.methodData.mergedUsedChannels : []),
               ...(Array.isArray(spec.methodData.mergedMutatedChannels) ? spec.methodData.mergedMutatedChannels : [])
             ])),
-            late: invocationBuffer.isLinkedChannel('late'),
-            trace: invocationBuffer.isLinkedChannel('trace')
+            late: invocationBuffer.hasChannel('late') && !invocationBuffer.getOwnChannel('late'),
+            trace: invocationBuffer.hasChannel('trace') && !invocationBuffer.getOwnChannel('trace')
           };
         }
         return originalCreateInheritanceInvocationCommand.apply(this, arguments);

@@ -17,19 +17,9 @@ class CommandBuffer {
     this.parent = parent;
     this.finished = false;
     this._finishedChannels = Object.create(null);
-    // Per-channel close requests. A requested channel may finish immediately if
-    // nothing else can still arrive on that lane for this buffer.
-    this._finishRequestedChannels = Object.create(null);
-    // Buffer-wide close request. This remains distinct from per-channel state
-    // because the runtime still needs an explicit "all lanes are closing now"
-    // transition before aggregate `finished` can be derived safely.
-    this._finishAllChannelsRequested = false;
-    // Channels referenced by nested buffers. A link is addressable only when
-    // the linked channel object is known; missing channels indicate bad
-    // analysis or declaration ordering and should fail at the link site.
-    this._linkedChannels = Object.create(null);
-    // Channels declared/owned by this specific buffer.
-    this._ownedChannels = Object.create(null);
+    // Local addressability map. Entries may be owned by this buffer or linked
+    // from an explicit parent lane; ownership is derived from channel._buffer.
+    this._channels = Object.create(null);
     // Per-lane command arrays. Static metadata creates these eagerly; remaining
     // dynamic compatibility declarations enter through _ensureLane().
     this.arrays = Object.create(null);
@@ -56,6 +46,9 @@ class CommandBuffer {
     }
   }
 
+  // ANALYSIS-CHANNELS-REFACTOR: when linked/declared lane metadata is fully
+  // authoritative, this should become an assertion-backed lane lookup instead
+  // of the runtime path that creates compatibility lanes.
   _ensureLane(channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!resolvedChannelName) {
@@ -72,11 +65,7 @@ class CommandBuffer {
     // can attach to a caller-owned runtime channel name when a feature such as
     // macro by-reference uses this buffer-level mechanism.
     const resolvedChannelName = this._ensureLane(channelName);
-    this._ownedChannels[resolvedChannelName] = channel;
-    if (this._linkedChannels[resolvedChannelName]) {
-      this._linkedChannels[resolvedChannelName] = channel;
-    }
-    this._finishKnownChannelIfRequested(resolvedChannelName);
+    this._channels[resolvedChannelName] = channel;
 
     const iterator = ensureChannelIterator(channel);
     if (iterator) {
@@ -101,12 +90,11 @@ class CommandBuffer {
     if (this.finished) {
       return;
     }
-    this._finishAllChannelsRequested = true;
     const channelNames = Object.keys(this.arrays);
     for (let i = 0; i < channelNames.length; i++) {
-      this.requestChannelFinish(channelNames[i]);
+      this._markChannelFinished(channelNames[i]);
     }
-    this._tryCompleteFinish();
+    this._completeFinishIfAllLanesFinished();
   }
 
   //@todo - rename this, maybe to finishChannelAndLetIteratorExit
@@ -118,15 +106,7 @@ class CommandBuffer {
     if (!resolvedChannelName) {
       return;
     }
-    this._finishRequestedChannels[resolvedChannelName] = true;
-    this._finishKnownChannelIfRequested(resolvedChannelName);
-    this._tryCompleteFinish();
-  }
-
-  markChannelFinished(channelName) {
-    // Backward-compatible alias. Channel finish is now a request lifecycle, not
-    // a separate immediate state transition API.
-    this.requestChannelFinish(channelName);
+    this._markChannelFinished(resolvedChannelName);
   }
 
   isFinished(channelName = null) {
@@ -174,10 +154,9 @@ class CommandBuffer {
         value.pathKey = resolvedChannelName;
       }
     }
-    const target = this.arrays[resolvedChannelName];
-    target.push(value);
-    const slot = target.length - 1;
     if (value instanceof CommandBuffer) {
+      const channel = this.getChannelIfExists(resolvedChannelName);
+      value._assertCanInstallLinkedChannel(resolvedChannelName, channel);
       value.parent = this;
       if (this._channelAliases) {
         // Nested child buffers must preserve the same explicit alias bindings,
@@ -185,9 +164,12 @@ class CommandBuffer {
         // names to the caller-owned runtime channels they were bound to.
         value._inheritChannelAliases(this._channelAliases);
       }
-      value._registerLinkedChannel(resolvedChannelName, this.findChannel(resolvedChannelName));
+      value._installLinkedChannel(resolvedChannelName, channel);
     }
 
+    const target = this.arrays[resolvedChannelName];
+    target.push(value);
+    const slot = target.length - 1;
     this._notifyCommandOrBufferAdded(resolvedChannelName);
     return slot;
   }
@@ -208,7 +190,7 @@ class CommandBuffer {
 
     if (isFinishedBufferObservationCommand(cmd)) {
       const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-      const output = this.findChannel(resolvedChannelName);
+      const output = this.getChannelIfExists(resolvedChannelName);
       const path = this._context?.path || null;
       if (!output) {
         throw new RuntimeFatalError(
@@ -242,7 +224,7 @@ class CommandBuffer {
   }
 
   _runFinishedSnapshotCommand(cmd, channelName) {
-    const channel = this.findChannel(channelName);
+    const channel = this.getChannelIfExists(channelName);
     const path = this._context?.path || null;
     if (!channel) {
       throw new RuntimeFatalError(
@@ -279,11 +261,8 @@ class CommandBuffer {
     }
   }
 
-  _tryCompleteFinish() {
+  _completeFinishIfAllLanesFinished() {
     if (this.finished) {
-      return;
-    }
-    if (!this._finishAllChannelsRequested) {
       return;
     }
     const channelNames = Object.keys(this.arrays);
@@ -298,8 +277,6 @@ class CommandBuffer {
       this._finishedResolver = null;
       this._finishedPromise = null;
     }
-    this._finishRequestedChannels = null;
-    this._finishAllChannelsRequested = null;
   }
 
   _notifyChannelFinished(channelName) {
@@ -310,7 +287,7 @@ class CommandBuffer {
   }
 
   getChannel(channelName = 'text') {
-    const output = this.findChannel(channelName);
+    const output = this.getChannelIfExists(channelName);
     if (!output) {
       const resolvedChannelName = this._resolveAliasedChannelName(channelName);
       throw new Error(`CommandBuffer channel '${resolvedChannelName}' is unavailable`);
@@ -320,15 +297,20 @@ class CommandBuffer {
 
   getOwnChannel(channelName = 'text') {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    return this._ownedChannels[resolvedChannelName];
+    const channel = this._channels[resolvedChannelName];
+    return channel && channel._buffer === this ? channel : undefined;
   }
 
-  findChannel(channelName = 'text') {
+  hasChannel(channelName = 'text') {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    if (this._ownedChannels[resolvedChannelName]) {
-      return this._ownedChannels[resolvedChannelName];
-    }
-    return this._linkedChannels[resolvedChannelName];
+    return !!this._channels[resolvedChannelName];
+  }
+
+  // Optional local-only channel probe for runtime paths where absence is a
+  // valid branch. Use getChannel(...) when missing channels are invariant bugs.
+  getChannelIfExists(channelName = 'text') {
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    return this._channels[resolvedChannelName];
   }
 
   _setChannelAliases(map) {
@@ -374,16 +356,22 @@ class CommandBuffer {
     if (!resolvedChannelName || this._finishedChannels[resolvedChannelName]) {
       return;
     }
-    this._ensureLane(resolvedChannelName);
+    assertChannelLaneAvailable(this, resolvedChannelName);
     this._finishedChannels[resolvedChannelName] = true;
     this._notifyChannelFinished(resolvedChannelName);
   }
 
-  _registerLinkedChannel(channelName, channel = null) {
+  _installLinkedChannel(channelName, channel = null) {
     if (!channelName) {
       return;
     }
-    const resolvedChannelName = this._ensureLane(channelName);
+    const resolvedChannelName = this._assertCanInstallLinkedChannel(channelName, channel);
+    this._ensureLane(resolvedChannelName);
+    this._channels[resolvedChannelName] = channel;
+  }
+
+  _assertCanInstallLinkedChannel(channelName, channel) {
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!channel) {
       const path = this._context?.path || null;
       throw new RuntimeFatalError(
@@ -394,41 +382,23 @@ class CommandBuffer {
         path
       );
     }
-    this._linkedChannels[resolvedChannelName] = channel;
-    this._finishKnownChannelIfRequested(resolvedChannelName);
-  }
-
-  isLinkedChannel(channelName) {
-    if (!channelName) {
-      return false;
-    }
-    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    return !!this._linkedChannels[resolvedChannelName];
+    return resolvedChannelName;
   }
 
   hasLinkedBuffer(buffer, channelName) {
+    // ANALYSIS-CHANNELS-REFACTOR: this is a runtime structural-link probe.
+    // Prefer analysis-provided linked-channel decisions over asking the buffer
+    // tree whether a link already exists.
     if (!buffer || !channelName) {
       return false;
     }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    const channel = this.getChannelIfExists(resolvedChannelName);
     return (
       buffer.parent === this &&
-      buffer.isLinkedChannel(resolvedChannelName)
+      channel &&
+      buffer.getChannelIfExists(resolvedChannelName) === channel
     );
-  }
-
-  _finishKnownChannelIfRequested(channelName) {
-    if (!channelName) {
-      return;
-    }
-    if (this.finished) {
-      this._markChannelFinished(channelName);
-      return;
-    }
-    const finishRequested = this._finishRequestedChannels && this._finishRequestedChannels[channelName];
-    if (this._finishAllChannelsRequested || finishRequested) {
-      this._markChannelFinished(channelName);
-    }
   }
 }
 
