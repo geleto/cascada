@@ -197,6 +197,10 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('})');
   }
 
+  analyzeInlineIf() {
+    return { createsLinkedChildBuffer: true };
+  }
+
   compileIs(node) {
     const testFacts =
       (node._analysis && node._analysis.isTest) ||

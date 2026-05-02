@@ -213,6 +213,8 @@ Validation:
 Goal:
 
 - make analysis the single source of truth for parent-link channel sets
+- Stage 2 implementation owns the analysis metadata. Remaining compiler/runtime
+  migration work belongs to Stage 3 or Stage 4, not another Stage 2 pass.
 
 Work:
 
@@ -224,10 +226,14 @@ Work:
   analyzer that knows it emits a linked child buffer should set the flag
 - cover every child-buffer surface explicitly:
   - control-flow and value boundaries
+  - conditional expression boundaries, including inline-if and short-circuit
+    `and` / `or` boundaries that create buffers only when command effects are
+    present
   - capture boundaries
   - render/custom-extension body fragments
   - loops
-  - macro caller buffers
+  - macro caller buffers, with caller invocation lane metadata derived from
+    analysis-owned boundary links rather than local caller-specific subtraction
   - inheritance/component/callable invocation metadata
 - derive it from filtered `usedChannels` / `mutatedChannels` minus channels
   owned by that boundary
@@ -239,6 +245,8 @@ Validation:
 
 - capture, loop, include/import/from-import, macro caller, component, and
   inheritance boundary cases
+- inline-if and short-circuit expression boundaries with parent-owned channel
+  effects
 - missing parent link still fails fatally at runtime
 
 ### Stage 3. Move Emitters To Analysis Links

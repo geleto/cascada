@@ -9,6 +9,7 @@ import {CompilerAsync} from '../../src/compiler/compiler.js';
 import * as nodes from '../../src/nodes.js';
 import * as runtime from '../../src/runtime/runtime.js';
 import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js';
+import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler.js';
 
 (function () {
   function createIdPool() {
@@ -29,6 +30,18 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
     };
     const compiler = new CompilerAsync(name, opts);
     const ast = transform(parse(src, [], opts), [], name, opts);
+    compiler.analysis.run(ast);
+    return ast;
+  }
+
+  function analyzeScriptSource(src, name = 'analysis-test.casc') {
+    const opts = {
+      asyncMode: true,
+      scriptMode: true,
+      idPool: createIdPool()
+    };
+    const compiler = new CompilerAsync(name, opts);
+    const ast = transform(parse(scriptTranspiler.scriptToTemplate(src), [], opts), [], name, opts);
     compiler.analysis.run(ast);
     return ast;
   }
@@ -180,6 +193,32 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
       expect(Array.from(includeNode._analysis.linkedChannels || [])).to.eql(['__text__']);
       expect(Array.from(extendsNode._analysis.linkedChannels || [])).to.eql(['__text__']);
       expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__']);
+    });
+
+    it('should derive inline-if boundary links for parent-owned command effects', function () {
+      const ast = analyzeScriptSource([
+        'data result',
+        'var item = result.push("a") if flag else ""',
+        'return result.snapshot()'
+      ].join('\n'), 'inline-if-linked-analysis.casc');
+      const inlineIfNode = collectNodesByType(ast, 'InlineIf')[0];
+
+      expect(inlineIfNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(Array.from(inlineIfNode._analysis.linkedChannels || [])).to.eql(['result']);
+    });
+
+    it('should derive caller invocation links from analysis-owned caller facts', function () {
+      const ast = analyzeTemplateSource(
+        '{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}' +
+        '{% set x = "v" %}' +
+        '{% call wrap("span") %}X{{ x }}Y{% endcall %}',
+        'caller-linked-analysis.njk'
+      );
+      const callerNode = collectNodesByType(ast, 'Caller')[0];
+
+      expect(callerNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(Array.from(callerNode._analysis.linkedChannels || [])).to.eql(['x']);
+      expect(Array.from(callerNode._analysis.declaredChannels.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
     it('should not emit caller scheduling machinery for macros without caller()', function () {
@@ -539,7 +578,7 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
     it('should keep caller scheduling machinery on async macros that use caller()', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate(
-        '{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}{% call wrap("span") %}X{{ value }}Y{% endcall %}',
+        '{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}{% set x = "v" %}{% call wrap("span") %}X{{ x }}Y{% endcall %}',
         env,
         'macro-caller-scheduling.njk'
       );
@@ -548,6 +587,8 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
       expect(source).to.contain('__caller__');
       expect(source).to.contain('__callerUsedChannels');
       expect(source).to.contain('__callerDeclaredChannels');
+      expect(source).to.contain('__callerUsedChannels = ["x"];');
+      expect(source).to.contain('__callerDeclaredChannels = ["caller","__return__","__text__"];');
       expect(source).to.contain('.__callerUsedChannels || null, null, ');
       expect(source).to.contain('.__callerDeclaredChannels || null');
       expect(source).to.contain('WaitResolveCommand({ channelName: "__caller__"');

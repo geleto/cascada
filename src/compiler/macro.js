@@ -52,6 +52,12 @@ class CompileMacro {
       { name: 'caller', type: 'var', initializer: null },
       this.compiler.return.createChannelDeclaration()
     ];
+    const textChannelName = !this.compiler.scriptMode
+      ? this.compiler.analysis.getCurrentTextChannel(node._analysis)
+      : null;
+    if (textChannelName) {
+      declares.push({ name: textChannelName, type: 'text', initializer: null, internal: true });
+    }
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
         arg._analysis = { declarationTarget: true };
@@ -63,34 +69,13 @@ class CompileMacro {
       scopeBoundary: false,
       parentReadOnly: true,
       declares,
-      compiledMacroFuncId
+      compiledMacroFuncId,
+      createsLinkedChildBuffer: true
     };
   }
 
-  // Return the parent-owned channels that a caller body may observe, so the
-  // caller buffer can be linked only on those lanes.
-  _getCallerParentVisibleUsedChannels(node) {
-    const compiler = this.compiler;
-    if (!compiler.asyncMode || !node) {
-      return [];
-    }
-    const textChannelName = compiler.analysis && typeof compiler.analysis.getCurrentTextChannel === 'function'
-      ? compiler.analysis.getCurrentTextChannel(node._analysis)
-      : null;
-    const used = Array.from(node._analysis.usedChannels || []);
-    const declared = new Set((node._analysis.declaredChannels || new Map()).keys());
-    return used.filter((name) => {
-      if (!name || name === textChannelName) {
-        return false;
-      }
-      const decl = compiler.analysis && compiler.analysis.findDeclaration
-        ? compiler.analysis.findDeclaration(node._analysis, name)
-        : null;
-      if (compiler.return.isReturnChannelReference(name, decl)) {
-        return false;
-      }
-      return !declared.has(name);
-    });
+  _getCallerLinkedChannels(node) {
+    return Array.from(node._analysis.linkedChannels || []);
   }
 
   _getCallerDeclaredChannels(node) {
@@ -109,7 +94,7 @@ class CompileMacro {
 
   _compileAsyncCaller(node) {
     const funcId = this._compileAsyncMacro(node);
-    const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
+    const callerUsedChannels = this._getCallerLinkedChannels(node);
     const callerDeclaredChannels = this._getCallerDeclaredChannels(node);
     this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
     this.compiler.emit.line(`${funcId}.__callerDeclaredChannels = ${JSON.stringify(callerDeclaredChannels)};`);
