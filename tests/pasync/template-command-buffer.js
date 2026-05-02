@@ -95,10 +95,10 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
           this.tags = ['test'];
         }
 
-        parse(parser, nodes) {
+        parse(parser, nodesArg) {
           parser.advanceAfterBlockEnd();
           const content = parser.parseUntilBlocks('endtest');
-          const tag = new nodes.CallExtension(this, 'run', null, [content]);
+          const tag = new nodesArg.CallExtension(this, 'run', null, [content]);
           parser.advanceAfterBlockEnd();
           return tag;
         }

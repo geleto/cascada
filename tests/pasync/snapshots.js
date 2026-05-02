@@ -235,7 +235,7 @@ describe('channel.finalSnapshot', function () {
       const parent = createCommandBuffer(context, null, null, null, ['text']);
 
       expect(() => createCommandBuffer(context, null, ['text'], parent)).to.throwError((err) => {
-        expect(err.message).to.contain("Cannot link channel 'text' without a registered channel object");
+        expect(err.message).to.contain('Cannot link channel \'text\' without a registered channel object');
       });
       expect(parent.arrays.text).to.have.length(0);
     });
@@ -278,7 +278,7 @@ describe('channel.finalSnapshot', function () {
 
       expect(() => buffer.requestChannelFinish('missing')).to.throwError((err) => {
         expect(err.name).to.be('RuntimeFatalError');
-        expect(err.message).to.contain("Channel 'missing' is visible but this buffer has no linked lane");
+        expect(err.message).to.contain('Channel \'missing\' is visible but this buffer has no linked lane');
       });
     });
 
