@@ -1,0 +1,366 @@
+# Analysis Channels Refactor
+
+## Purpose
+
+This note tracks the compiler-analysis side of channel cleanup. It is separate
+from [command-buffer-refactor.md](C:\Projects\cascada\docs\code\command-buffer-refactor.md),
+which focuses on runtime state, local addressability, and command-buffer
+invariants.
+
+The problem to solve here is that the analysis pass already computes a filtered
+upward aggregate, but the stored per-node `usedChannels` and `mutatedChannels`
+values are saved before that filtering.
+
+Today `_finalizeOutputUsage(...)` starts from direct node facts:
+
+- `analysis.uses`
+- `analysis.mutates`
+
+It merges child aggregates into a local aggregate. Before returning that
+aggregate to the parent, it already applies two important rules:
+
+- channels declared/owned at the current analysis node are removed from the set
+  returned upward
+- scope boundaries return an empty set upward
+
+That means upward propagation mostly already follows the rule that child-owned
+channels should not leak to ancestors.
+
+The awkward part is that `analysis.usedChannels` / `analysis.mutatedChannels`
+are assigned before the parent-facing filtering. Consumers that read
+`node._analysis.usedChannels` or `node._analysis.mutatedChannels` therefore see
+broader subtree sets, which can include names owned by nested child boundaries.
+
+This makes `usedChannels` appear to answer more than one question:
+
+- "Which channels are touched by this node/body?"
+- "Which channels should a boundary link from its immediate parent?"
+
+The same issue applies to `mutatedChannels`. A node/body should not claim usage
+or mutation of channels owned by nested child boundaries, such as nested
+set-block capture text outputs. Those channels belong to the child boundary's
+own analysis facts and must not become parent-link requests for the outer
+boundary.
+
+## Target Model
+
+### Channel Set Contracts
+
+Keep the stored `usedChannels` as a current-owner analysis fact:
+
+- channels touched by this node/body
+- including locally declared channels when that is useful for lane setup or
+  diagnostics
+- excluding channels owned by nested child boundaries
+
+Keep `mutatedChannels` aligned with the same ownership rule:
+
+- channels mutated by this node/body
+- excluding channels owned by nested child boundaries
+- mutations also count as usage for link purposes, because a parent-owned
+  channel that is mutated by a boundary must still be linked from the immediate
+  parent
+
+Add a derived boundary-link fact, computed by analysis:
+
+- channels this boundary uses or mutates but does not own locally
+- channels that must be imported/linked from the immediate parent
+- no nested child-boundary-owned channels
+- stored only on boundary nodes that need runtime parent linking
+
+The boundary-link set is not "channels not found in the parent." Compile-time
+analysis does not inspect a runtime parent buffer. It means "channels not owned
+by this boundary"; the runtime still validates that the immediate parent can
+provide every requested link.
+
+For this purpose, "owned by this boundary" must follow declaration ownership
+metadata, not just syntax proximity. Parent-owned declarations introduced from a
+child construct must not be treated as locally owned by the child boundary.
+
+Compiler boundary emitters should consume that derived link set directly. They
+should not derive parent links by hand with node-specific subtraction rules.
+
+## Current Smell
+
+`compileCaptureBoundary(...)` currently has to subtract capture text outputs
+from `node._analysis.usedChannels` before creating `linkedChannelsArg`.
+
+That subtraction is correct behavior, but it is in the wrong layer. Capture text
+outputs are local declarations/owned lanes of their capture boundary. The
+analysis pass already keeps those names out of the aggregate returned to the
+outer parent; the stored per-node `usedChannels` and `mutatedChannels` should
+reflect the same ownership boundary, or the analysis pass should expose a
+separate derived boundary-link set for compiler emitters.
+
+## Desired Outcome
+
+- stored `usedChannels` means "channels touched by this node/body, excluding
+  channels owned by nested child boundaries."
+- stored `mutatedChannels` means "channels mutated by this node/body, excluding
+  channels owned by nested child boundaries."
+- the filtered upward aggregate and the stored per-node analysis facts do not
+  disagree about child-owned channels.
+- only boundary nodes store `linkedChannels`.
+- boundary `linkedChannels` means "channels used or mutated by this boundary
+  that are not owned by this boundary and must therefore be provided by the
+  immediate parent."
+- analysis produces a separate parent-link set for each boundary node that
+  creates a runtime child buffer.
+- boundary compilers pass the derived parent-link set to runtime.
+- boundary emitters do not calculate linked channels in multiple places; the
+  analysis pass is the single source of truth.
+- manual filtering of `usedChannels` in boundary emitters is evaluated for
+  removal. Some filters may turn out to encode valid boundary-specific
+  semantics, but the default expectation is that linked-channel filtering
+  belongs in analysis metadata.
+- if a boundary emitter has to remove text channels, declarations, capture
+  outputs, synthetic channels, or any other implementation detail from
+  `usedChannels`, audit whether that is a valid local semantic rule or an
+  analysis bug/missing analysis metadata.
+- runtime continues to enforce that every requested linked channel exists in
+  the immediate parent.
+- workarounds introduced because `usedChannels` or `mutatedChannels` were
+  broader than the boundary link contract are identified and removed or
+  justified. Filtering is one visible workaround, but the audit should also
+  look for special-case linking, silent skips, synthetic-name checks, defensive
+  missing-channel handling, and duplicated channel-set calculations.
+- any place where the analysis-derived `linkedChannels` set is not the final
+  linked set emitted or used at runtime must be treated as suspicious. There
+  may be valid local semantic additions/removals, but the default assumption is
+  that a mismatch indicates an analysis bug, missing metadata, or a lingering
+  workaround.
+
+## Implementation Direction
+
+1. Fix stored per-node `usedChannels` / `mutatedChannels` so they obey the same
+   child-ownership filtering as the aggregate returned upward.
+2. Add boundary-only `linkedChannels` metadata during analysis finalization.
+3. Define boundary `linkedChannels` from the already-filtered current node
+   usage:
+   - start from channels used or mutated by the boundary body
+   - remove channels declared/owned by the boundary itself
+   - do not include child-boundary-owned channels, because they should already
+     be absent from the boundary's stored `usedChannels` / `mutatedChannels`
+4. Update compiler boundary emitters to consume `node._analysis.linkedChannels`
+   instead of recomputing links from `usedChannels`.
+5. Delete duplicated linked-channel calculations from compiler helpers once the
+   analysis-provided `linkedChannels` set is available.
+6. Audit boundary-local `usedChannels` filters such as the capture-boundary
+   text-output filter. Remove filters that are only compensating for missing
+   analysis metadata; keep only filters that represent a real local semantic
+   distinction.
+7. Search for broader `usedChannels` workarounds outside obvious filters:
+   - synthetic channel name checks
+   - `findChannel(...)` / missing-channel guards before linking
+   - duplicated `usedChannels - declaredChannels` calculations
+   - caller/capture/import-specific channel-set patches
+   - tests that had to manually register channels only because metadata claimed
+     a link without a provider
+   Remove the workaround when the new analysis metadata makes it unnecessary,
+   or document why it remains a real semantic rule.
+8. Compare analysis-provided `linkedChannels` with final emitted/runtime link
+   sets. If a compiler path adds or removes channels after analysis, investigate
+   it first as a likely bug or missing analysis fact. Keep the adjustment only
+   when it represents a documented local semantic rule that analysis should not
+   own.
+
+## Proposed Stages
+
+### Stage 1. Normalize Stored Channel Facts
+
+Goal:
+
+- make stored per-node `usedChannels` and `mutatedChannels` obey the same
+  ownership boundaries as the aggregate returned upward
+
+Work:
+
+- adjust `_finalizeOutputUsage(...)` so stored facts do not include channels
+  owned by nested child boundaries
+- keep direct node facts (`uses`, `mutates`, `declares`) intact
+- verify nested capture text outputs stay on the nested capture's analysis, not
+  the outer capture's stored channel facts
+- audit `declaredChannels`, `declares`, `declaresInParent`, and `textOutput`
+  while changing ownership behavior
+
+Validation:
+
+- nested set-block captures
+- loops/includes inside captures
+- parent-owned channel reads and mutations inside child boundaries
+
+### Stage 2. Derive Boundary `linkedChannels`
+
+Goal:
+
+- make analysis the single source of truth for parent-link channel sets
+
+Work:
+
+- add boundary-only `linkedChannels` metadata for nodes that create runtime
+  child buffers
+- derive it from filtered `usedChannels` / `mutatedChannels` minus channels
+  owned by that boundary
+- include external mutations as links, because writes to parent-owned channels
+  must land in the parent lane in source order
+- keep runtime strict: every requested link must exist in the immediate parent
+
+Validation:
+
+- capture, loop, include/import/from-import, macro caller, component, and
+  inheritance boundary cases
+- missing parent link still fails fatally at runtime
+
+### Stage 3. Move Emitters To Analysis Links
+
+Goal:
+
+- remove duplicated linked-channel calculations from compiler emitters
+
+Work:
+
+- update boundary emitters to consume `node._analysis.linkedChannels`
+- evaluate and remove local `usedChannels` filters and synthetic-name checks
+  that only compensated for broad stored channel facts
+- keep only emitter-side channel adjustments that represent documented local
+  semantics
+- compare final emitted/runtime link sets against analysis `linkedChannels`
+  during the transition
+
+Validation:
+
+- focused boundary suites plus compile-source tests that assert emitted
+  `linkedChannelsArg` no longer contains child-owned implementation channels
+
+### Stage 4. Audit And Delete Workarounds
+
+Goal:
+
+- remove cleanup debt left by broad `usedChannels` / `mutatedChannels`
+
+Work:
+
+- run the audit checklist below across compiler and runtime
+- delete obsolete maybe-link guards, capture/caller/import patches, duplicated
+  channel-set builders, and synthetic-name heuristics
+- document any remaining divergence from analysis-provided links as an explicit
+  semantic rule
+
+Validation:
+
+- run the broader async suite after focused boundary coverage is green
+
+## Validation
+
+Add or preserve tests for these behaviors:
+
+- nested set-block captures do not leak inner capture text outputs into the
+  outer capture's `linkedChannels`
+- capture bodies still link legitimate parent-visible reads such as loop
+  metadata, ordinary variables, and explicit channel observations
+- mutations of parent-owned channels inside boundaries are included in
+  `linkedChannels`
+- macro caller boundaries keep caller-local bindings local while linking real
+  parent-visible dependencies
+- import/from-import/include boundaries do not link unrelated locals
+- inheritance method metadata does not include constructor-local non-shared
+  channels in later invocation links
+- runtime still throws when a requested linked channel is missing from the
+  immediate parent
+
+## Audit Checklist
+
+Guiding question for every channel-set adjustment:
+
+```text
+If analysis linkedChannels were correct, would this code still need to alter the channel set?
+```
+
+If the answer is no, the code is likely cleanup debt. If the answer is yes,
+document the semantic reason next to the code or move that semantic distinction
+into analysis metadata.
+
+Likely cruft families caused by broad `usedChannels` / `mutatedChannels` or
+duplicated linked-channel calculation:
+
+- synthetic-name heuristics, such as checks for `__text__t_`, `__return__`,
+  `caller`, `loop#`, or `__waited__`
+- boundary-specific link builders, including local
+  `Array.from(usedChannels).filter(...)`, `used - declared`, or hand-built
+  `linkedChannelsArg` logic in boundary/compiler helpers
+- runtime "maybe link" guards that check whether a parent has a channel and
+  silently skip linking when it does not
+- tests that manually declare/register channels only because metadata claims a
+  link without a real provider
+- duplicated declared-channel threading and repeated linked/declared merge logic
+- capture, caller, import/from-import, include, loop, component, and inheritance
+  special cases that patch channel sets locally
+- finished-buffer fallback logic that finds channels through a path other than
+  the explicit local-addressability/link model
+- error/poison observation paths that derive channel sets differently from the
+  success path
+- shared/inheritance method metadata inflation, especially merged channel sets
+  that include names not visible at invocation time
+- text-output overlinking beyond set capture, including template block text,
+  macro text, caller text, component render text, and current-text aliases
+- alias-related patches where analysis emits formal names but runtime needs
+  canonical names; these may be valid but should stay explicit and narrow
+
+### Known Marker
+
+Code that is already suspected to be transitional for this refactor should use
+this marker:
+
+```text
+ANALYSIS-CHANNELS-REFACTOR
+```
+
+Current examples to audit:
+
+- `src/compiler/emit.js#getLinkedChannelsArg(...)`: currently calculates
+  linked channels and applies local filters; should become a serializer for
+  analysis-provided `linkedChannels` or disappear.
+- `src/compiler/boundaries.js#_collectTextOutputNames(...)`: currently filters
+  child-owned capture text outputs out of capture links; should disappear once
+  stored channel facts and boundary `linkedChannels` respect child ownership.
+- `src/compiler/inheritance.js#collectMethodChannelNames(...)`: currently
+  filters callable-local implementation channels out of inheritance method
+  footprints; should collapse to analysis-owned callable/boundary metadata.
+
+When implementing this refactor, grep for the marker first, then continue with
+the broader audit checklist above. New code should not add more marker comments
+unless it is deliberately documenting a temporary workaround that this refactor
+is expected to remove.
+
+## Adjacent Analysis Facts To Audit
+
+The primary refactor targets are `usedChannels`, `mutatedChannels`, and the new
+boundary-only `linkedChannels`. While changing those, audit nearby analysis
+facts that can affect channel ownership or linking:
+
+- `declaredChannels`: should remain owner-scoped. Check ambiguity between
+  declared here, declared in parent, and declared in nested child boundaries.
+- `declares` / `declaresInParent`: these feed `declaredChannels`; ownership
+  mistakes here will corrupt used/mutated/link derivation.
+- `textOutput`: this is the ownership marker for capture/block text channels.
+  Nested text outputs should belong to their own boundary facts, not leak into
+  an outer boundary's linked set.
+- `sequenceLocks`: audit if any boundary/runtime link behavior depends on lock
+  metadata; broad root collection may be fine, but boundary-local semantics
+  should be checked before reusing it as a channel-like fact.
+- imported binding facts, direct macro-call facts, caller facts, component
+  binding facts, and explicit-this dispatch facts: these are not channel sets,
+  but they influence which compiler path emits links. Any path that patches
+  channel sets based on one of these facts should be revisited.
+- alias/canonical-name metadata: valid aliases should remain explicit and
+  narrow. Do not let alias handling become a replacement for correct ownership
+  and linked-channel analysis.
+
+## Relationship To Command Buffer Refactor
+
+This work should happen after the command-buffer local-addressability model is
+stable enough to make missing links fatal.
+
+The command-buffer refactor can keep temporary compiler-side filters while the
+runtime invariant is being established. This analysis refactor removes those
+filters by producing the right boundary-link metadata at the source.
