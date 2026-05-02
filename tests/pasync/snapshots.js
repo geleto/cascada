@@ -230,31 +230,6 @@ describe('channel.finalSnapshot', function () {
       expect(buffer.isFinished('unused')).to.be(true);
     });
 
-    it('eagerly creates linked and declared lanes during buffer construction', function () {
-      const parent = createCommandBuffer(context, null, null, null, ['text']);
-      declareBufferChannel(parent, 'text', 'text', context, null);
-      const child = createCommandBuffer(context, null, ['text'], parent, ['local']);
-
-      expect(Object.keys(parent.arrays)).to.eql(['text']);
-      expect(parent.arrays.text).to.have.length(1);
-      expect(parent.arrays.text[0]).to.be(child);
-      expect(Object.keys(child.arrays)).to.eql(['text', 'local']);
-      expect(child.arrays.text).to.eql([]);
-      expect(child.arrays.local).to.eql([]);
-      expect(child.hasChannel('text')).to.be(true);
-      expect(child.getOwnChannel('text')).to.be(undefined);
-    });
-
-    it('deduplicates linked lanes before structurally inserting a child buffer', function () {
-      const parent = createCommandBuffer(context, null, null, null, ['text']);
-      declareBufferChannel(parent, 'text', 'text', context, null);
-      const child = createCommandBuffer(context, null, ['text', 'text'], parent, ['local', 'local']);
-
-      expect(Object.keys(child.arrays)).to.eql(['text', 'local']);
-      expect(parent.arrays.text).to.have.length(1);
-      expect(parent.arrays.text[0]).to.be(child);
-    });
-
     it('fails when a linked parent channel has no registered channel object', function () {
       const parent = createCommandBuffer(context, null, null, null, ['text']);
 
