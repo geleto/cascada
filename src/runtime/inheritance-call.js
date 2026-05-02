@@ -651,20 +651,25 @@ function _createMethodPayload(methodData, args, errorContext, label, context = n
 
 function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channelName) {
   if (!channelName) {
-    return;
+    return false;
+  }
+  const channel = currentBuffer.findChannel(channelName);
+  if (!channel) {
+    throw _createMissingInvocationChannelError(channelName, invocationBuffer?._context ?? currentBuffer?._context ?? null);
   }
   if (currentBuffer === invocationBuffer) {
-    invocationBuffer._registerLinkedChannel(channelName);
-    return;
+    invocationBuffer._registerLinkedChannel(channelName, channel);
+    return true;
   }
   if (currentBuffer.hasLinkedBuffer(invocationBuffer, channelName)) {
-    return;
+    return true;
   }
   if (currentBuffer.isFinished(channelName) || currentBuffer.finished) {
-    invocationBuffer._registerLinkedChannel(channelName);
-    return;
+    invocationBuffer._registerLinkedChannel(channelName, channel);
+    return true;
   }
   currentBuffer.addBuffer(invocationBuffer, channelName);
+  return true;
 }
 
 function hasLinkedChannelPath(rootBuffer, buffer, channelName) {
@@ -832,6 +837,7 @@ function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKe
 function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue, currentBuffer, methodData) {
   const sharedRootBuffer = inheritanceStateValue.sharedRootBuffer ?? currentBuffer;
   const linkedChannels = _getMethodLinkedChannels(methodData);
+  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue);
   const invocationBuffer = runtime.createCommandBuffer(
     context,
     sharedRootBuffer,
@@ -842,16 +848,51 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
     // The caller link preserves local source order; the shared-root link lets
     // hierarchy-wide shared observations wait on method output from anywhere
     // in the composed chain.
-    _registerInvocationChannelLink(currentBuffer, invocationBuffer, linkedChannels[i]);
+    const channelName = linkedChannels[i];
+    const isSharedChannel = Object.prototype.hasOwnProperty.call(sharedSchema, channelName);
+    const callerHasChannel = !!currentBuffer.findChannel(channelName);
+    const linkedFromCaller = callerHasChannel
+      ? _registerInvocationChannelLink(currentBuffer, invocationBuffer, channelName)
+      : false;
+    if (!callerHasChannel && !isSharedChannel) {
+      throw _createMissingInvocationChannelError(channelName, context);
+    }
     if (
       sharedRootBuffer &&
       sharedRootBuffer !== currentBuffer &&
-      !hasLinkedChannelPath(sharedRootBuffer, invocationBuffer, linkedChannels[i])
+      !hasLinkedChannelPath(sharedRootBuffer, invocationBuffer, channelName)
     ) {
-      _registerInvocationChannelLink(sharedRootBuffer, invocationBuffer, linkedChannels[i]);
+      const linkedFromSharedRoot = sharedRootBuffer.findChannel(channelName)
+        ? _registerInvocationChannelLink(sharedRootBuffer, invocationBuffer, channelName)
+        : false;
+      if (isSharedChannel && !linkedFromSharedRoot) {
+        throw _createMissingSharedChannelError(channelName, context);
+      }
+    } else if (isSharedChannel && !linkedFromCaller && sharedRootBuffer === currentBuffer) {
+      throw _createMissingSharedChannelError(channelName, context);
     }
   }
   return invocationBuffer;
+}
+
+function _createMissingInvocationChannelError(channelName, context = null) {
+  return new RuntimeFatalError(
+    `method channel '${channelName}' was registered for linking but no runtime channel is available in the linking parent`,
+    context?.lineno ?? 0,
+    context?.colno ?? 0,
+    context?.errorContextString ?? null,
+    context?.path ?? null
+  );
+}
+
+function _createMissingSharedChannelError(channelName, context = null) {
+  return new RuntimeFatalError(
+    `shared channel '${channelName}' was registered but no runtime channel is available for linking`,
+    context?.lineno ?? 0,
+    context?.colno ?? 0,
+    context?.errorContextString ?? null,
+    context?.path ?? null
+  );
 }
 
 function _invokeWhenMetadataReady(metadataReadyPromise, invokeFn) {

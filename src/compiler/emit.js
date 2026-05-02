@@ -1,4 +1,5 @@
 import {DEFAULT_TEMPLATE_TEXT_CHANNEL} from './buffer.js';
+import * as nodes from '../nodes.js';
 
 class CompileEmit {
   constructor(compiler) {
@@ -261,16 +262,30 @@ class CompileEmit {
     );
   }
 
-  // @todo - optimize this:
-  // similar for writes we can do some optimizations
+  // ANALYSIS-CHANNELS-REFACTOR: Transitional until analysis-channels-refactor.md gives boundaries
+  // analysis-owned linkedChannels, making this helper a serializer rather than
+  // the owner of linked-channel semantics.
   getLinkedChannelsArg(node) {
     const usedChannels = Array.from(node._analysis.usedChannels || []);
     const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
+    const containsDirectMacroCall = !!(
+      node._analysis.directMacroCall ||
+      (typeof node.findAll === 'function' && node.findAll(nodes.FunCall).some((child) => (
+        child._analysis && child._analysis.directMacroCall
+      )))
+    );
     // __return__ is deliberately included when used: child control-flow buffers
     // must observe the same function-local return channel in source order.
     const linkedChannels = usedChannels.filter((name) => {
+      const declaration = this.compiler.analysis.findDeclaration(node._analysis, name);
+      if (name === 'caller' && (containsDirectMacroCall || !declaration)) {
+        return false;
+      }
+      if (/^__text__t_\d+$/.test(name) && name !== this.compiler.buffer.currentTextChannelName) {
+        return false;
+      }
       if (name === this.compiler.buffer.currentTextChannelName) {
-        return true;
+        return !declaredChannels.has(name);
       }
       return !declaredChannels.has(name);
     });

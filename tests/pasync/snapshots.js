@@ -21,6 +21,7 @@ describe('channel.finalSnapshot', function () {
   const createBuffer = (input, ctx, channelName) => {
     const targetName = channelName || 'text';
     const cb = new CommandBuffer(ctx || null, null);
+    makeChannel(cb, ctx, targetName);
     const addItem = (buffer, item) => {
       if (item instanceof CommandBuffer) {
         buffer.addBuffer(item, targetName);
@@ -28,6 +29,10 @@ describe('channel.finalSnapshot', function () {
       }
       if (Array.isArray(item)) {
         const nested = new CommandBuffer(ctx || null, null);
+        const linkedChannel = buffer.findChannel(targetName);
+        if (linkedChannel) {
+          nested._registerLinkedChannel(targetName, linkedChannel);
+        }
         item.forEach((child) => addItem(nested, child));
         nested.markFinishedAndPatchLinks();
         buffer.addBuffer(nested, targetName);
@@ -53,7 +58,7 @@ describe('channel.finalSnapshot', function () {
   };
   const makeChannel = (buffer, ctx, channelName) => {
     const name = channelName || 'text';
-    return declareBufferChannel(buffer, name, name, ctx || null, null);
+    return buffer.getOwnChannel(name) || declareBufferChannel(buffer, name, name, ctx || null, null);
   };
   const flatten = (buffer, ctx, channelName) => (
     makeChannel(buffer, ctx, channelName).finalSnapshot()
@@ -227,6 +232,7 @@ describe('channel.finalSnapshot', function () {
 
     it('eagerly creates linked and declared lanes during buffer construction', function () {
       const parent = createCommandBuffer(context, null, null, null, ['text']);
+      declareBufferChannel(parent, 'text', 'text', context, null);
       const child = createCommandBuffer(context, null, ['text'], parent, ['local']);
 
       expect(Object.keys(parent.arrays)).to.eql(['text']);
@@ -235,6 +241,39 @@ describe('channel.finalSnapshot', function () {
       expect(Object.keys(child.arrays)).to.eql(['text', 'local']);
       expect(child.arrays.text).to.eql([]);
       expect(child.arrays.local).to.eql([]);
+      expect(child.isLinkedChannel('text')).to.be(true);
+    });
+
+    it('deduplicates linked lanes before structurally inserting a child buffer', function () {
+      const parent = createCommandBuffer(context, null, null, null, ['text']);
+      declareBufferChannel(parent, 'text', 'text', context, null);
+      const child = createCommandBuffer(context, null, ['text', 'text'], parent, ['local', 'local']);
+
+      expect(Object.keys(child.arrays)).to.eql(['text', 'local']);
+      expect(parent.arrays.text).to.have.length(1);
+      expect(parent.arrays.text[0]).to.be(child);
+    });
+
+    it('fails when a linked parent channel has no registered channel object', function () {
+      const parent = createCommandBuffer(context, null, null, null, ['text']);
+
+      expect(() => createCommandBuffer(context, null, ['text'], parent)).to.throwError((err) => {
+        expect(err.message).to.contain("Cannot link channel 'text' without a registered channel object");
+      });
+    });
+
+    it('finds channels only through local declarations and explicit links', function () {
+      const parent = new CommandBuffer(context, null);
+      const child = new CommandBuffer(context, parent);
+      const channel = declareBufferChannel(parent, 'text', 'text', context, null);
+
+      expect(parent.findChannel('text')).to.be(channel);
+      expect(child.findChannel('text')).to.be(undefined);
+
+      parent.addBuffer(child, 'text');
+
+      expect(child.findChannel('text')).to.be(channel);
+      expect(child.getOwnChannel('text')).to.be(undefined);
       expect(child.isLinkedChannel('text')).to.be(true);
     });
   });

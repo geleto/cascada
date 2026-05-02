@@ -667,6 +667,8 @@ describe('Extends Runtime', function () {
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
       const inheritanceState = runtime.createInheritanceState();
       const rootBuffer = runtime.createCommandBuffer(context);
+      runtime.declareBufferChannel(rootBuffer, 'theme', 'var', context, null);
+      runtime.declareBufferChannel(rootBuffer, 'trace', 'var', context, null);
 
       inheritanceState.methods.build = {
         fn() {

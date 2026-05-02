@@ -1,6 +1,7 @@
 
 import {inheritanceStateApi as inheritanceState} from './inheritance-state.js';
 import {inheritanceCallApi as inheritanceCall} from './inheritance-call.js';
+import {declareInheritanceSharedChannel} from './inheritance-shared-channels.js';
 
 function bootstrapInheritanceMetadataImpl(
   stateValue,
@@ -29,7 +30,8 @@ function bootstrapInheritanceMetadataImpl(
       return acc;
     }, Object.create(null));
   }
-  inheritanceState.registerInheritanceSharedSchema(state, sharedSchema, context);
+  const registeredSharedSchema = inheritanceState.registerInheritanceSharedSchema(state, sharedSchema, context);
+  declareInheritanceSharedSchemaChannels(state.sharedRootBuffer, registeredSharedSchema, context);
   if (shouldLinkNewSharedChannels) {
     const newlyRegisteredChannels = Object.keys(sharedSchema).filter((name) =>
       !previousSharedNames[name]
@@ -43,6 +45,17 @@ function bootstrapInheritanceMetadataImpl(
   inheritanceState.registerInheritanceMethods(state, methods, context);
   inheritanceState.registerInheritanceInvokedMethods(state, invokedMethods, context);
   return state;
+}
+
+function declareInheritanceSharedSchemaChannels(sharedRootBuffer, sharedSchema, context = null) {
+  if (!sharedRootBuffer || !sharedSchema) {
+    return;
+  }
+  const names = Object.keys(sharedSchema);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    declareInheritanceSharedChannel(sharedRootBuffer, name, sharedSchema[name], context);
+  }
 }
 
 async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheritanceStateValue, componentMode) {
@@ -325,7 +338,7 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
       continue;
     }
     if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
-      currentBuffer._registerLinkedChannel(channelName);
+      currentBuffer._registerLinkedChannel(channelName, parentBuffer.findChannel(channelName));
       continue;
     }
     parentBuffer.addBuffer(currentBuffer, channelName);

@@ -1028,6 +1028,11 @@ class CompileInheritance {
     return !!(block && block.body && block.body.findAll(nodes.Super).length > 0);
   }
 
+  // ANALYSIS-CHANNELS-REFACTOR: This helper compensates for broad stored
+  // used/mutated channel sets by filtering callable-local implementation
+  // channels out of inheritance method footprints. Once analysis owns
+  // callable/boundary linked-channel metadata, this should collapse to reading
+  // that metadata directly.
   collectMethodChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
     if (!analysis) {
       return [];
@@ -1044,6 +1049,14 @@ class CompileInheritance {
       if (ownerNode && (ownerNode instanceof nodes.Block || ownerNode instanceof nodes.MethodDefinition)) {
         const declarationOwner = this.compiler.analysis.findDeclarationOwner(analysis, name);
         if (declarationOwner === ownerNode._analysis || declarationOwner === ownerNode.body._analysis) {
+          return false;
+        }
+        if (
+          ownerNode instanceof nodes.MethodDefinition &&
+          declaration &&
+          !declaration.shared &&
+          !declaration.imported
+        ) {
           return false;
         }
         if (

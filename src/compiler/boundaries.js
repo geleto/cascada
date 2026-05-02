@@ -331,9 +331,23 @@ class CompileBoundaries {
   }
 
   compileCaptureBoundary(bufferCompiler, node, innerBodyFunction, positionNode = node) {
-    const captureTextOutputName = node && node._analysis ? node._analysis.textOutput : null;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
+    const captureTextOutputName = node._analysis.textOutput;
+    const declaredChannelNames = new Set(node._analysis.declaredChannels?.keys() ?? []);
+    const captureTextOutputNames = this._collectTextOutputNames(node);
+    if (captureTextOutputName) {
+      declaredChannelNames.add(captureTextOutputName);
+    }
+    const linkedChannelNames = Array.from(node?._analysis?.usedChannels || []).filter((name) => (
+      name &&
+      !captureTextOutputNames.has(name) &&
+      !declaredChannelNames.has(name)
+    ));
+    const linkedChannelsArg = linkedChannelNames.length > 0
+      ? JSON.stringify(linkedChannelNames)
+      : 'null';
+    const declaredChannelsArg = declaredChannelNames.size > 0
+      ? JSON.stringify(Array.from(declaredChannelNames))
+      : 'null';
     const outerParentBuffer = bufferCompiler.currentBuffer;
 
     this.compiler.emit(
@@ -359,6 +373,30 @@ class CompileBoundaries {
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit('})');
 
+  }
+
+  // ANALYSIS-CHANNELS-REFACTOR: Transitional until analysis-channels-refactor.md gives boundaries
+  // analysis-owned linkedChannels that already exclude child-owned text
+  // outputs.
+  _collectTextOutputNames(node, names = new Set()) {
+    if (!node) {
+      return names;
+    }
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        this._collectTextOutputNames(node[i], names);
+      }
+      return names;
+    }
+    if (node._analysis?.textOutput) {
+      names.add(node._analysis.textOutput);
+    }
+    if (Array.isArray(node.fields)) {
+      for (let i = 0; i < node.fields.length; i++) {
+        this._collectTextOutputNames(node[node.fields[i]], names);
+      }
+    }
+    return names;
   }
 }
 

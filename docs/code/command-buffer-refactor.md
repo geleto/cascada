@@ -74,6 +74,9 @@ The refactor should move toward these rules:
 4. The command buffer should not understand lexical scoping beyond what compile-time analysis already encoded.
 5. `usedChannels` is the real source of truth; runtime visibility is just its materialized form.
 6. Command-buffer parent/child structure must not be confused with lexical scope ownership.
+7. The refactor must reduce long-lived `CommandBuffer` state overall. Do not
+   add new persistent maps, counters, or properties unless the same stage
+   removes or repurposes existing state so the structure gets simpler.
 
 ## Current Runtime State
 
@@ -97,10 +100,14 @@ The refactor is not just about deleting one of these maps. The real problem is t
 - some describe structural child-buffer linking
 - one bypasses all of the above
 
-The target model should separate those concerns much more sharply:
+The target model should separate those concerns much more sharply while also
+reducing the number of overlapping `CommandBuffer` properties:
 
-- one local addressability map for lookup
-- static lane metadata for structure/finish
+- one local addressability mechanism for lookup, preferably by repurposing
+  existing ownership/registry state during the same stage that removes
+  `_channels`
+- `arrays` as the lane structure/finish source, not a parallel lane-name list
+  or lane counter
 - optional ownership metadata only if it remains useful for assertions/debugging
 - alias resolution sequenced before lane/addressability installation
 
@@ -197,16 +204,18 @@ The first two populations are already compiler-known and should be eagerly mater
 
 The third population is the current blocker to "everything is static", and it should be eliminated as part of this refactor rather than preserved as a special runtime escape hatch.
 
-### Local addressability map
+### Local addressability
 
-The runtime should maintain a local map of channels addressable from this buffer.
+The runtime should maintain local channel addressability for this buffer without
+adding another overlapping long-lived registry.
 
-That map should include:
+That addressability mechanism should include:
 
 - local channels actually declared in this buffer
 - parent-linked channels that static analysis says this buffer may read/write through
 
-`findChannel(name)` should just look up the resolved/canonical name in that local map.
+`findChannel(name)` should just look up the resolved/canonical name through
+that local mechanism.
 
 That means:
 
@@ -214,7 +223,9 @@ That means:
 - no descendant recursion
 - no global fallback registry
 
-Common-case lookup should be O(1).
+Common-case lookup should be O(1). If a new map is temporarily introduced
+during migration, it must replace `_channels` and/or `_ownedChannels` in the
+same stage rather than becoming another permanent `CommandBuffer` property.
 
 ### Scope ownership vs child buffers
 
@@ -270,7 +281,7 @@ In other words:
 
 This is why "visible channels" only make sense as explicit runtime materialization of static analysis, not as a discovery mechanism.
 
-In the stricter model, the local addressability map is the runtime form of:
+In the stricter model, local addressability is the runtime form of:
 
 - parent-linked `usedChannels`
 - plus local declarations that belong to this buffer's own lane set
@@ -282,13 +293,15 @@ Not as an existing structure. The current runtime does not have a live
 
 But it still needs the concept the earlier document was trying to name:
 
-- one local addressability map
+- one local addressability mechanism
 - populated explicitly from compile-time lane/link information
 - used by `findChannel(...)`, finished snapshots, and shared observation
 
 So the recommendation remains:
 
-- introduce or repurpose one local map for explicit addressability
+- repurpose existing state for explicit addressability where possible
+- if a new local map is temporarily introduced, remove the state it replaces in
+  the same stage
 - do not reintroduce `_visibleChannels` as a second overlapping runtime system
 
 ### Do we need `_ownedChannels`?
@@ -308,7 +321,7 @@ However, `_ownedChannels` may still be useful as metadata for:
 
 So the likely target is:
 
-- one local addressability map used by `findChannel(...)`
+- one local addressability mechanism used by `findChannel(...)`
 - optional ownership metadata retained only if it still serves a clear purpose
 
 The important point is: `_ownedChannels` should not drive cross-buffer lookup behavior.
@@ -373,21 +386,14 @@ Its current job is to infer:
 
 In the target model, it should be replaced by the static lane set for the buffer.
 
-Possible forms:
-
-- `buffer._laneNames`
-- `buffer._totalLaneCount`
-
 Because arrays are eager, `Object.keys(arrays)` is already structurally that list.
 
-For efficiency and clarity, we should store lane metadata explicitly at construction rather than recomputing it later.
+The practical choice is therefore:
 
-The practical choice is:
-
-- `buffer._laneNames` as the authoritative static lane list
-- `buffer._totalLaneCount = buffer._laneNames.length`
-
-Then `Object.keys(arrays)` becomes only a debugging sanity check, not the runtime source of truth.
+- `arrays` is the authoritative static lane structure
+- `Object.keys(arrays)` is the lane list for finish accounting during this
+  migration
+- do not add parallel `_laneNames` / `_totalLaneCount` state
 
 ### `_visitingIterators`
 
@@ -453,14 +459,11 @@ The iterator handles child buffers structurally when it encounters them.
 
 ### What may replace repeated lane scans
 
-Once lane counts are truly static, finish can become counter-based:
-
-- `_totalLaneCount`
-- `_finishedLaneCount`
-
-Then `_tryCompleteFinish()` no longer needs to rescan lane names every time.
-
-This optimization is valid only once runtime-dynamic channel names are gone.
+Repeated `Object.keys(arrays)` scans are acceptable during the migration because
+they avoid adding more persistent buffer state. If performance later proves this
+path is hot, any counter-based optimization must replace existing finish state
+in the same change rather than adding `_totalLaneCount` / `_finishedLaneCount`
+beside it.
 
 ### Can the two-stage finish lifecycle collapse?
 
@@ -536,7 +539,7 @@ Then it should:
 2. resolve the effective link target
 3. establish canonical-name/alias resolution
 4. eagerly create all lane arrays
-5. install the local addressability map
+5. install local addressability without adding an overlapping permanent map
 6. register locally declared channels
 7. install external channel refs for statically used parent channels
 
@@ -597,7 +600,7 @@ The shared `_channels` registry should be removed.
 
 It currently leaks into finished-snapshot handling and bypasses explicit structure.
 
-The most concentrated dependency is `_runFinishedSnapshotCommand(...)`, which currently does direct `_channels.get(channelName)` lookup for the finished-buffer snapshot fast path. That method should be converted to use the local addressability map just like the rest of the runtime.
+The most concentrated dependency is `_runFinishedSnapshotCommand(...)`, which currently does direct `_channels.get(channelName)` lookup for the finished-buffer snapshot fast path. That method should be converted to use local addressability just like the rest of the runtime.
 
 This asymmetry is important. Normal command traversal is already much closer to the intended structural model because it walks buffer lanes and child-buffer entries in order. The finished-snapshot fast path is broader: it can answer from a global registry even when the current buffer was never explicitly linked to that lane. That is why `_channels` removal is not just cleanup; it closes one of the biggest remaining "ambient visibility" loopholes.
 
@@ -742,12 +745,12 @@ If any such bypass still exists, it should be removed early.
 If buffer structure becomes fully static, the strongest simplification is:
 
 - compile-time analysis determines the full set of channel names a buffer can address
-- runtime materializes one local map for those names
+- runtime materializes local addressability for those names
 - optional ownership metadata may survive only for assertions/debugging
 
 So the likely end state is:
 
-- local addressability map is the real runtime structure
+- local addressability is the real runtime structure
 - `_ownedChannels` is optional metadata, not a separate visibility system
 
 ## `getFinishedPromise()`
@@ -870,9 +873,8 @@ Changes:
 - update the compiler call sites that currently pass only linked channels so they also pass declared-lane specs
 - eagerly create `arrays[name] = []` for the full static lane set
 - move alias inheritance/canonical-name setup into construction-time buffer initialization, before populating any local addressability entries
-- store:
-  - `buffer._laneNames`
-  - `buffer._totalLaneCount`
+- use `arrays` itself as the materialized lane structure; do not store a
+  parallel lane-name list or lane-count property
 - keep child/parent structural insertion separate from lane creation
 - assert at construction time that every parent-linked lane resolves on the effective link target (`linkedParent` where present, otherwise `parent`)
 - do not remove `_registerLinkedChannel(...)` calls from `_add()` yet; that compatibility cleanup belongs to Step 9 when finish bookkeeping is collapsed
@@ -890,15 +892,16 @@ Still-unimplemented tests to add here:
 
 Clarification:
 
-- `buffer._laneNames` / `buffer._totalLaneCount` are introduced here as constructor-time metadata
-- Step 5 will start using them for finish accounting; it does not reintroduce them
+- lane names are constructor inputs, not new long-lived `CommandBuffer`
+  properties
+- Step 5 will use eager `arrays` keys for finish accounting
 - alias setup here is a sequencing change to existing behavior, not a new alias feature
 
-### Step 3. Introduce the local addressability map and clean up channel registration
+### Step 3. Introduce local addressability and clean up channel registration
 
 Goal:
 
-- make one local map the source of channel resolution
+- make one local mechanism the source of channel resolution
 
 Primary files:
 
@@ -909,11 +912,15 @@ Changes:
 
 - make `declareBufferChannel(...)` the single canonical registration path
 - remove registration from `Channel` construction
-- introduce one unified local addressability map during migration so it becomes
-  the single primary runtime lookup structure
-- install locally declared channel objects into that map
-- install parent-linked channel refs from static analysis into that same map
-- keep `_ownedChannels` only as optional assertions/debug metadata; it must no longer participate in lookup
+- establish one unified local addressability mechanism during migration so it
+  becomes the single primary runtime lookup structure
+- prefer repurposing existing `_ownedChannels`/registration state over adding a
+  new permanent map
+- install locally declared channel objects into that mechanism
+- install parent-linked channel refs from static analysis into that same mechanism
+- if `_ownedChannels` remains after this step, keep it only as optional
+  assertions/debug metadata; it must no longer participate in cross-buffer
+  lookup
 - remove dead `_channelTypes` state if nothing reads it
 - move iterator binding along with the registration cleanup so channel iterators still bind to the owning buffer correctly
 - establish and enforce the construction-order invariant for parent-linked refs:
@@ -946,7 +953,7 @@ Changes:
 - remove ancestor walk from `findChannel(...)`
 - re-evaluate `channelLookup(...)` routing so it uses the local map semantics directly instead of relying on ambient ancestry assumptions
 - route shared-observation readability checks through the same explicit local
-  addressability model
+  addressability mechanism
 - during migration, temporarily convert any remaining unexpected ambient lookup
   success into an assertion/debug trap
 
@@ -973,7 +980,7 @@ Still-unimplemented tests to add here:
 
 Goal:
 
-- introduce explicit lane metadata and prepare finish logic for later simplification
+- use eager lane structure for finish accounting without adding finish counters
 
 Primary files:
 
@@ -982,17 +989,16 @@ Primary files:
 
 Changes:
 
-- replace `_collectKnownChannelNames()` with the constructor-time lane list
+- replace `_collectKnownChannelNames()` with `Object.keys(buffer.arrays)`
 - keep `_visitingIterators` only as a notification mechanism
-- introduce `_totalLaneCount`
-- introduce `_finishedLaneCount` alongside the existing scan-based aggregate check and assert that the two agree during migration
-- increment `_finishedLaneCount` in `_markChannelFinished(...)`, which remains the per-lane finished-state transition point
+- do not introduce `_totalLaneCount` or `_finishedLaneCount`
 - do not fully remove `_linkedChannels` / `_finishRequestedChannels` yet if runtime-dynamic lanes or lazy lane creation still exist anywhere
-- simplify `markFinishedAndPatchLinks()` to iterate the constructor-time lane list directly
+- simplify `markFinishedAndPatchLinks()` to iterate eager `arrays` keys directly
 
 Clarification:
 
-- `_collectKnownChannelNames()` should stop driving the main finish path here, but it may remain temporarily for assertion parity until Step 9 removes the old finish scaffolding completely
+- `_collectKnownChannelNames()` should disappear rather than surviving as
+  another lane enumeration helper
 - `_linkedChannels` / `_finishRequestedChannels` survive until static lane completion is fully in place; Step 9 is where they are actually removed
 
 Tests for this step:
@@ -1078,8 +1084,8 @@ Changes:
 
 - remove `_channels`
 - remove its dead initialization guard in `_registerChannel(...)`
-- route finished `SnapshotCommand` / `RawSnapshotCommand` handling and especially `_runFinishedSnapshotCommand(...)` through the local addressability map
-- update the finished-buffer fast path in `addCommand(...)` so both channel retrieval and the `output._buffer.isFinished(...)` guard use the local addressability map instead of `_channels`
+- route finished `SnapshotCommand` / `RawSnapshotCommand` handling and especially `_runFinishedSnapshotCommand(...)` through the local addressability mechanism
+- update the finished-buffer fast path in `addCommand(...)` so both channel retrieval and the `output._buffer.isFinished(...)` guard use local addressability instead of `_channels`
 - narrow `_registerChannel(...)` so it no longer manages `_channels`; if `_ownedChannels` remains as debug metadata, its write can stay there
 
 Tests for this step:
@@ -1115,10 +1121,8 @@ Changes:
   - assert the lane exists
   - call `_markChannelFinished(...)`
   - notify iterators / update aggregate completion through the surviving finish path
-- update `_tryCompleteFinish()` so it stops scanning lane names and instead resolves completion when `_finishedLaneCount === _totalLaneCount`
-- make aggregate finish rely on:
-  - `_totalLaneCount`
-  - `_finishedLaneCount`
+- keep aggregate finish based on the lane keys in `arrays` unless a later change
+  removes equivalent finish state at the same time it adds counters
 - keep per-lane finished flags
 - keep `_visitingIterators` only for notifications
 - keep `_ownedChannels` as debug/assert metadata only unless Step 10 proves it is no longer useful
@@ -1320,11 +1324,12 @@ Validation:
 - run snapshot tests
 - run tests that declare channels through normal environment/render entry points
 
-### Stage 2A. Introduce static lane metadata without changing behavior yet
+### Stage 2A. Thread static lane metadata without adding buffer state
 
 Goal:
 
-- prepare the runtime for eager arrays and simpler finish accounting
+- prepare the runtime for eager arrays and simpler finish accounting without
+  adding parallel lane-list or lane-count properties
 
 This stage is mostly plumbing, not new compiler analysis work.
 
@@ -1334,11 +1339,12 @@ create a new analysis pass.
 
 Work:
 
-- add constructor-time lane metadata such as:
-  - `_laneNames`
-  - `_totalLaneCount`
+- thread constructor-time lane names into `createCommandBuffer(...)`
+- use eager `arrays[name] = []` as the materialized lane structure
+- do not add persistent `_laneNames`, `_laneNameSet`, `_totalLaneCount`, or
+  `_finishedLaneCount` properties
 - keep current behavior temporarily, but assert that runtime-discovered lane
-  names match the static lane metadata
+  names match the eager `arrays` keys where useful
 - add a helper parallel to `getLinkedChannelsArg(...)` for declared lanes
 - thread declared-lane information from compiler analysis into
   `createCommandBuffer(...)`
@@ -1405,8 +1411,10 @@ Goal:
 Work:
 
 - replace `_collectKnownChannelNames()` as the driver of finish accounting
-- introduce `_finishedLaneCount`
-- make `_markChannelFinished(...)` update counter-based finish state
+- use `Object.keys(buffer.arrays)` as the fixed lane list during the migration
+  state
+- do not introduce a separate finished-lane counter while dynamic
+  compatibility lanes still exist
 - keep `_visitingIterators` only for notifications
 
 Primary files:
@@ -1427,8 +1435,10 @@ Goal:
 
 Work:
 
-- add one explicit local addressability map
-- seed that map in two stages:
+- establish one explicit local addressability mechanism
+- prefer repurposing `_ownedChannels` during this stage rather than adding a new
+  permanent map
+- seed that mechanism in two stages:
   - linked parent channel refs installed during buffer construction
   - locally declared channel refs installed when `declareBufferChannel(...)`
     runs
@@ -1436,13 +1446,14 @@ Work:
   missing linkage fails at construction time instead of being masked by the
   old ancestor-walk fallback
 - route `findChannel(...)`, finished observation handling in `addCommand(...)`,
-  and `_runFinishedSnapshotCommand(...)` through that local map
+  and `_runFinishedSnapshotCommand(...)` through that local mechanism
 - remove `_channels`
+- keep the net `CommandBuffer` property count flat or lower in this stage
 
 Clarification:
 
-- this stage introduces the new local map and routes finished snapshots and
-  lookup through it
+- this stage routes finished snapshots and lookup through the local
+  addressability mechanism
 - the remaining ancestor-walk fallback in `findChannel(...)` may stay in place
   temporarily during this stage for migration safety
 - Stage 3B is where that fallback is removed entirely
@@ -1478,6 +1489,30 @@ Validation:
 
 - add tests proving parent lookups cannot see child-scope-only declarations
 - keep explicit linked-lane observation tests green
+
+### Post-Stage 3 review follow-ups
+
+These are known residuals after Stages 1-3. They should not block the Stage 3
+end state, but they must stay visible so the final cleanup does not normalize
+the migration scaffolding into permanent design.
+
+- `_add(...)`, `onEnterBuffer(...)`, `_markChannelFinished(...)`, and
+  `_registerLinkedChannel(...)` still reach `_ensureLane(...)`. This preserves
+  runtime-dynamic compatibility, but it also means missing-lane assertions are
+  not yet enforcing the final static-lane invariant. Stage 4 must audit each
+  remaining `_ensureLane(...)` call and either remove it or document the
+  explicit dynamic path that still owns it.
+- Missing-lane add/snapshot failures remain Stage 4 validation, because the
+  current compatibility fallback intentionally creates those lanes before the
+  assertion can fire.
+- Macro/caller, component, and inheritance-created buffers still contain some
+  runtime-dynamic lane creation paths. Before hard missing-lane assertions become
+  unconditional, each of those creation paths must either receive static lane
+  metadata or be replaced by a narrower explicit mechanism.
+- `uniqueLaneNames(...)` in `CommandBuffer` is marked
+  `ANALYSIS-CHANNELS-REFACTOR`; after analysis-owned linked/declared lane
+  metadata becomes authoritative, duplicate lane names should be treated as an
+  assertion failure rather than normalized defensively.
 
 ### Stage 4A. Remove remaining compatibility finish/link state
 
@@ -1528,11 +1563,39 @@ Validation:
 Goal:
 
 - remove any metadata that no longer provides runtime value
+- collapse the remaining channel-addressability API into one clear surface
+- remove the compiler/runtime split between linked-channel lists and
+  declared-channel lists where a single structured local-addressability payload
+  can carry the same information more clearly
 
 Work:
 
 - decide whether `_ownedChannels` remains as assertion/debug metadata or is
   removed entirely
+- if linked channels and owned channels both store concrete channel objects by
+  this point, merge `_ownedChannels` and `_linkedChannels` into a single
+  local addressability map, likely `_channels`
+- derive ownership from the channel object itself, for example
+  `channel._buffer === this`, instead of maintaining a second lookup table just
+  for ownership
+- keep channel access behind `CommandBuffer` methods rather than reading
+  `_channels` directly from other modules
+- replace the current `findChannel(...)` name with clearer accessors:
+  - `getChannel(name)` for must-exist lookups that throw
+  - `getChannelIfExists(name)` for optional local-only lookup
+  - `getOwnChannel(name)` for local ownership checks
+- preserve the invariant that these accessors are local-only and never walk
+  `parent`
+- revisit buffer-construction arguments such as `linkedChannelsArg` and
+  `declaredChannelsArg`; once local addressability has one runtime map, prefer
+  a single structured channel/lane payload over parallel linked/declared
+  arrays
+- as part of that consolidation, remove capture-boundary glue that manually
+  filters nested capture text outputs out of `linkedChannelsArg`; capture text
+  outputs should be represented as local declarations/owned lanes in the
+  analysis channel metadata described in
+  [analysis-channels-refactor.md](C:\Projects\cascada\docs\code\analysis-channels-refactor.md)
+  instead of filtered by custom boundary code
 - delete any temporary migration assertions or debug-only fallback paths
 - re-audit `parent` vs `linkedParent`
 - confirm that cleanup still nulls:

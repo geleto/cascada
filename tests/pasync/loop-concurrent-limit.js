@@ -2650,6 +2650,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       const parent = new CommandBuffer(ctx, null);
       const child = new CommandBuffer(ctx, null);
       parent._setChannelAliases({ loop: 'loop#4', someVar: 'someVar#9' });
+      declareBufferChannel(parent, 'loop#4', 'text', ctx, null);
 
       parent.addBuffer(child, 'loop');
 
@@ -2669,6 +2670,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       const parent = new CommandBuffer(ctx, null);
       const child = new CommandBuffer(ctx, null);
       parent._setChannelAliases({ loop: 'loop#4' });
+      declareBufferChannel(parent, 'loop#4', 'text', ctx, null);
 
       parent.addBuffer(child, 'loop');
 
@@ -2681,6 +2683,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       const child = new CommandBuffer(ctx, null);
       parent._setChannelAliases({ loop: 'loop#4', shared: 'shared#1' });
       child._setChannelAliases({ own: 'own#7', shared: 'shared#9' });
+      declareBufferChannel(parent, 'loop#4', 'text', ctx, null);
 
       parent.addBuffer(child, 'loop');
 

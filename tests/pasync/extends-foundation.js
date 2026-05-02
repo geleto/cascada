@@ -1035,8 +1035,8 @@ describe('Extends Foundation', function () {
 
     it('should let an earlier child-buffer shared default win over a later parent-buffer default', async function () {
       const rootBuffer = runtime.createCommandBuffer(null);
+      runtime.declareInheritanceSharedChannel(rootBuffer, 'theme', 'var', null, undefined);
       const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
-      runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
       childBuffer.addCommand(new runtime.VarCommand({
         channelName: 'theme',
@@ -1054,17 +1054,15 @@ describe('Extends Foundation', function () {
       childBuffer.markFinishedAndPatchLinks();
       rootBuffer.markFinishedAndPatchLinks();
 
-      const result = await childBuffer.getOwnChannel('theme').finalSnapshot();
+      const result = await rootBuffer.getOwnChannel('theme').finalSnapshot();
       expect(result).to.be('dark');
     });
 
     it('should keep shared channel ownership on the child/shared buffer rather than the parent buffer', function () {
-      const rootBuffer = runtime.createCommandBuffer(null);
-      const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
+      const childBuffer = runtime.createCommandBuffer(null);
       const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
       expect(sharedChannel._buffer).to.be(childBuffer);
-      expect(rootBuffer.getOwnChannel('theme')).to.be(undefined);
     });
 
     it('should link newly registered shared lanes from the shared root to the active composition buffer', function () {
@@ -1088,7 +1086,7 @@ describe('Extends Foundation', function () {
 
     it('should keep shared declarations owned by the shared buffer instead of reusing an unrelated parent channel', function () {
       const rootBuffer = runtime.createCommandBuffer(null);
-      const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
+      const childBuffer = runtime.createCommandBuffer(null, rootBuffer);
       const parentChannel = runtime.declareBufferChannel(rootBuffer, 'theme', 'var', null, null);
       const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
