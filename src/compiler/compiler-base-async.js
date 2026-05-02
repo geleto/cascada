@@ -3,6 +3,7 @@ import * as nodes from '../nodes.js';
 import {CompileAnalysis} from './analysis.js';
 import {CompileRename} from './rename.js';
 import {CompilerCommon} from './compiler-common.js';
+import {CALLER_SCHED_CHANNEL_NAME} from './macro.js';
 
 const compareOps = {
   '==': '==',
@@ -551,6 +552,11 @@ class CompilerBaseAsync extends CompilerCommon {
           uses.push(textChannel);
           mutates.push(textChannel);
         }
+        // caller() is a reserved macro call-block binding in async mode. Its
+        // invocation scheduling uses the macro-local __caller__ lane, so any
+        // nested child boundary containing caller() must link that lane.
+        uses.push(CALLER_SCHED_CHANNEL_NAME);
+        mutates.push(CALLER_SCHED_CHANNEL_NAME);
         return { uses, mutates, directCallerCall };
       }
     }

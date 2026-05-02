@@ -1,5 +1,4 @@
 import {DEFAULT_TEMPLATE_TEXT_CHANNEL} from './buffer.js';
-import * as nodes from '../nodes.js';
 
 class CompileEmit {
   constructor(compiler) {
@@ -184,20 +183,21 @@ class CompileEmit {
         ? parentBufferOverride
         : (this.compiler.buffer.currentBuffer || null);
       if (parentBufferId && analysisNode && analysisNode._analysis) {
-        // For locally-created scope-root buffers, structural parent-visible lanes
-        // should be attached at buffer creation time rather than in a later
-        // runtime prelink step.
-        // __return__ is deliberately included when used: child return guards
-        // must observe the same function-local return channel in source order.
-        const used = Array.from(analysisNode._analysis.usedChannels || []);
-        const declared = new Set((analysisNode._analysis.declaredChannels || new Map()).keys());
-        declaredChannels = Array.from(declared);
-        linkedChannels = used.filter((name) => {
-          if (name === this.compiler.buffer.currentTextChannelName) {
-            return false;
-          }
-          return !declared.has(name);
-        });
+        declaredChannels = this.getDeclaredChannels(analysisNode);
+        linkedChannels = this.getLinkedChannels(analysisNode);
+        if (!analysisNode._analysis.createsLinkedChildBuffer) {
+          // ANALYSIS-CHANNELS-REFACTOR: managed callable/body buffers are not
+          // boundary nodes, so they do not own boundary linkedChannels yet.
+          // Keep the old body-scope link derivation here until callable body
+          // metadata supplies final link sets directly.
+          const used = Array.from(analysisNode._analysis.usedChannels || []);
+          const declared = new Set(declaredChannels);
+          linkedChannels = used.filter((name) => (
+            name &&
+            name !== this.compiler.buffer.currentTextChannelName &&
+            !declared.has(name)
+          ));
+        }
       }
       bufferId = this.compiler._tmpid();
       this.compiler.buffer.withBufferState({
@@ -256,41 +256,37 @@ class CompileEmit {
     );
   }
 
-  // ANALYSIS-CHANNELS-REFACTOR: Transitional until analysis-channels-refactor.md gives boundaries
-  // analysis-owned linkedChannels, making this helper a serializer rather than
-  // the owner of linked-channel semantics.
   getLinkedChannelsArg(node) {
-    const usedChannels = Array.from(node._analysis.usedChannels || []);
-    const declaredChannels = new Set((node._analysis.declaredChannels || new Map()).keys());
-    const containsDirectMacroCall = !!(
-      node._analysis.directMacroCall ||
-      (typeof node.findAll === 'function' && node.findAll(nodes.FunCall).some((child) => (
-        child._analysis && child._analysis.directMacroCall
-      )))
-    );
-    // __return__ is deliberately included when used: child control-flow buffers
-    // must observe the same function-local return channel in source order.
-    const linkedChannels = usedChannels.filter((name) => {
-      const declaration = this.compiler.analysis.findDeclaration(node._analysis, name);
-      if (name === 'caller' && (containsDirectMacroCall || !declaration)) {
-        return false;
-      }
-      if (/^__text__t_\d+$/.test(name) && name !== this.compiler.buffer.currentTextChannelName) {
-        return false;
-      }
-      return !declaredChannels.has(name);
-    });
-    // Do not link currentWaitedChannelName here.
-    // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
-    // Nested control-flow buffers are applied through their own channels/iterators.
+    const linkedChannels = this.getLinkedChannels(node);
     return linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
   }
 
-  getDeclaredChannelsArg(node) {
-    if (!(node._analysis.declaredChannels instanceof Map)) {
-      return 'null';
+  _getAnalysis(node, helperName) {
+    if (!node || !node._analysis) {
+      const nodeType = node && (node.typename || node.constructor && node.constructor.name);
+      throw new Error(`${helperName} requires analysis metadata for ${nodeType || 'unknown node'}`);
     }
-    const declaredChannels = Array.from(node._analysis.declaredChannels.keys());
+    return node._analysis;
+  }
+
+  getLinkedChannels(node) {
+    const analysis = this._getAnalysis(node, 'getLinkedChannels');
+    // Do not link currentWaitedChannelName here.
+    // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
+    // Nested control-flow buffers are applied through their own channels/iterators.
+    return Array.from(analysis.linkedChannels || []);
+  }
+
+  getDeclaredChannels(node) {
+    const analysis = this._getAnalysis(node, 'getDeclaredChannels');
+    if (!(analysis.declaredChannels instanceof Map)) {
+      return [];
+    }
+    return Array.from(analysis.declaredChannels.keys());
+  }
+
+  getDeclaredChannelsArg(node) {
+    const declaredChannels = this.getDeclaredChannels(node);
     return declaredChannels.length > 0 ? JSON.stringify(declaredChannels) : 'null';
   }
 

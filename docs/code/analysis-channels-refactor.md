@@ -259,14 +259,19 @@ Goal:
 Work:
 
 - update boundary emitters to consume `node._analysis.linkedChannels`
-- resolve template output granularity before consuming links: `Output` nodes
-  aggregate child expressions, while `compileOutput(...)` emits per-child text
-  boundaries only for command-effect children. Stage 3 should consume the
-  linked metadata for the actual boundary node/expression being emitted, not
-  the broader output aggregate.
+- resolve template output granularity before consuming links: `compileOutput(...)`
+  emits per-child text boundaries, but each emitted text boundary represents
+  the `Output` node's source-order slot and must link the output-level channel
+  facts, including text output and sequence-lock lanes touched by the emitted
+  expression.
 - document render/custom-extension boundaries as isolated render buffers unless
   a real parent-link semantic is identified; migrate their declared-lane
   serialization separately from ordinary linked-channel boundaries.
+- keep template-extends startup and inherited block text boundaries on their
+  current text-only link workaround only as a temporary safety measure. These
+  should be able to use analysis/callable-owned links like other child buffers;
+  if linking shared lanes there breaks inheritance timing, treat that as a bug
+  in inheritance/shared-buffer routing to investigate in Stage 4.
 - evaluate and remove local `usedChannels` filters and synthetic-name checks
   that only compensated for broad stored channel facts
 - keep only emitter-side channel adjustments that represent documented local
@@ -286,12 +291,19 @@ Goal:
 - remove cleanup debt left by broad `usedChannels` / `mutatedChannels`
 - make runtime linking/buffer decisions consume analysis/callable link metadata
   instead of rediscovering link shape from buffer state
+- make inheritance, component, macro/caller, and callable-body paths use the
+  same standard `usedChannels`, `mutatedChannels`, and `linkedChannels` model
+  wherever they create a normal child buffer
 
 Work:
 
 - run the audit checklist below across compiler and runtime
 - delete obsolete maybe-link guards, capture/caller/import patches, duplicated
   channel-set builders, and synthetic-name heuristics
+- treat every inheritance/component/callable deviation from analysis-owned
+  linking as a suspected bug first. Do not preserve text-only, shared-schema,
+  ancestry-probe, or runtime-maybe-link behavior just because existing tests
+  depended on it.
 - audit every runtime "do we link this now?" decision:
   - identify the analysis/callable metadata that should have requested the link
   - replace runtime availability/path probing with installation or assertion
@@ -306,10 +318,15 @@ Work:
 - audit inheritance/component invocation linking separately from ordinary
   control-flow boundaries, because callable metadata currently merges
   transitive used/mutated footprints at runtime
+- investigate the inherited block text-boundary and template-extends startup
+  text-only workarounds. The expected end state is normal analysis/callable-owned
+  linking. Replace the workaround unless a narrow, intentional semantic is
+  proven, named in the plan, and documented with focused tests.
 - replace or remove lane-list normalization helpers, such as linked/declared
   deduplication and merging, once analysis-owned metadata is authoritative
 - document any remaining divergence from analysis-provided links as an explicit
-  semantic rule
+  semantic rule only after the standard-linking path has been tried and the
+  reason it is wrong is understood
 
 Validation:
 
@@ -317,6 +334,9 @@ Validation:
 - add focused tests for invocation/shared-root links where runtime used to skip
   or add links based on `hasChannel(...)`, `hasLinkedBuffer(...)`, or ancestry
   probing
+- add regression tests for any remaining special inheritance/component/callable
+  link rule, showing both why standard links are insufficient and what invariant
+  the special rule preserves
 
 ## Validation
 
@@ -418,22 +438,24 @@ ANALYSIS-CHANNELS-REFACTOR
 
 Current examples to audit:
 
-- `src/compiler/emit.js#getLinkedChannelsArg(...)`: currently calculates
-  linked channels and applies local filters; should become a serializer for
-  analysis-provided `linkedChannels` or disappear.
-- `src/compiler/boundaries.js#compileCaptureBoundary(...)`: currently derives
-  linked and declared lanes locally from stored facts; Stage 3 should consume
-  analysis-owned boundary metadata directly.
 - `src/compiler/boundaries.js#_getRenderBoundaryDeclaredChannelsArg(...)`:
   currently patches render/custom-extension body-local declared lanes, including
   current text; analysis should provide complete declared metadata for these
   fragments.
-- `src/compiler/inheritance.js#collectMethodChannelNames(...)`: currently
-  filters callable-local implementation channels out of inheritance method
-  footprints; should collapse to analysis-owned callable/boundary metadata.
-- `src/compiler/macro.js#_getCallerParentVisibleUsedChannels(...)`: currently
-  derives macro caller links by subtracting declared channels locally; should
-  consume analysis-owned caller boundary links.
+- `src/compiler/emit.js#managedBlock(...)`: callable/body scope-root buffers
+  still fall back to deriving links from `usedChannels` when they are not
+  represented by boundary `linkedChannels`; callable metadata should provide the
+  final link set directly.
+- `src/compiler/inheritance.js#collectMethodChannelNames(...)`: Stage 3
+  evaluated the `__return__` and template-text filters as valid local
+  semantics because those lanes are callable-local implementation channels, not
+  inherited shared footprints. Stage 4 should still replace the used/mutated
+  source with final callable-owned metadata once callable body link facts have a
+  single source of truth.
+- `src/compiler/inheritance.js#compileAsyncExtends(...)`: script inheritance
+  startup still links `inheritanceState.sharedSchema` at runtime; should be
+  replaced by final callable/inheritance link metadata or documented as a true
+  runtime semantic.
 - `src/runtime/command-buffer.js#uniqueLaneNames(...)` and
   `src/runtime/command-buffer.js#mergeLaneNames(...)`: currently normalize and
   merge linked/declared lane arrays defensively; should become unnecessary or

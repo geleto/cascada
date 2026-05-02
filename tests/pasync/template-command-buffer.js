@@ -221,6 +221,20 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       expect(Array.from(callerNode._analysis.declaredChannels.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
+    it('should keep call-block caller locals out of emitted parent boundary links', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate(
+        '{% macro wrap() %}{{ caller() }}{% endmacro %}' +
+        '{% call wrap() %}{% do seq!.run() %}{% endcall %}',
+        env,
+        'caller-parent-link-analysis.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('runtime.runControlFlowBoundary(output, ["__text__","wrap","!seq"]');
+      expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","wrap","caller"');
+    });
+
     it('should keep loop and include-owned facts local inside captures', function () {
       const ast = analyzeTemplateSource(
         '{% set outer %}' +
@@ -236,6 +250,33 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       expect(captureNode._analysis.usedChannels.has('loop')).to.be(false);
       expect(captureNode._analysis.usedChannels.has('item')).to.be(false);
       expect(captureNode._analysis.usedChannels.has('includeTemplate')).to.be(false);
+    });
+
+    it('should emit capture links from analysis-owned linked channels', function () {
+      const env = new AsyncEnvironment();
+      const templateSource =
+        '{% set x = "v" %}' +
+        '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}';
+      const tmpl = new AsyncTemplate(
+        templateSource,
+        env,
+        'capture-analysis-linked-emission.njk'
+      );
+      const ast = analyzeTemplateSource(templateSource, 'capture-analysis-linked-emission.njk');
+      const captures = collectNodesByType(ast, 'Capture');
+      const outerCapture = captures[0];
+      const innerCapture = captures[1];
+      const source = tmpl._compileSource();
+      const outerBoundaryStart =
+        `runtime.runControlFlowBoundary(output, ["x"], ["${outerCapture._analysis.textOutput}","inner"]`;
+      const innerBoundaryStart =
+        `runtime.runControlFlowBoundary(currentBuffer, ["x"], ["${innerCapture._analysis.textOutput}"]`;
+
+      expect(source).to.contain(outerBoundaryStart);
+      expect(source).to.contain(innerBoundaryStart);
+      expect(source).to.not.contain(
+        `runtime.runControlFlowBoundary(output, ["x","${innerCapture._analysis.textOutput}"]`
+      );
     });
 
     it('should not mark scope-isolated macro or root nodes as linked child buffers', function () {
@@ -287,7 +328,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const tmpl = new AsyncTemplate('{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}', env);
       const source = tmpl._compileSource();
       expect(source).to.not.contain('__caller__');
-      expect(source).to.not.contain('__callerUsedChannels');
+      expect(source).to.not.contain('__callerLinkedChannels');
       expect(source).to.not.contain('__callerDeclaredChannels');
     });
 
@@ -630,7 +671,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       expect(source).to.not.contain('context.getAsyncSuper(');
       expect(source).to.not.contain('context.createSuperInheritancePayload(');
       expect(source).to.not.contain('__caller__');
-      expect(source).to.not.contain('__callerUsedChannels');
+      expect(source).to.not.contain('__callerLinkedChannels');
       expect(source).to.not.contain('__callerDeclaredChannels');
       expect(source).to.not.contain('CALLER_SCHED_CHANNEL_NAME');
       expect(source).to.not.contain('WaitResolveCommand({ channelName: "__caller__"');
@@ -646,11 +687,11 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const source = tmpl._compileSource();
 
       expect(source).to.contain('__caller__');
-      expect(source).to.contain('__callerUsedChannels');
+      expect(source).to.contain('__callerLinkedChannels');
       expect(source).to.contain('__callerDeclaredChannels');
-      expect(source).to.contain('__callerUsedChannels = ["x"];');
+      expect(source).to.contain('__callerLinkedChannels = ["x"];');
       expect(source).to.contain('__callerDeclaredChannels = ["caller","__return__","__text__"];');
-      expect(source).to.contain('.__callerUsedChannels || null, null, ');
+      expect(source).to.contain('.__callerLinkedChannels || null, null, ');
       expect(source).to.contain('.__callerDeclaredChannels || null');
       expect(source).to.contain('WaitResolveCommand({ channelName: "__caller__"');
     });

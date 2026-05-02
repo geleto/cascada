@@ -700,6 +700,11 @@ class CompileInheritance {
   }
 
   _emitTemplateExtendsBoundaryFromSelection(deferredSelectionVar) {
+    // ANALYSIS-CHANNELS-REFACTOR: template extends startup should eventually
+    // use analysis/callable-owned links instead of this text-only workaround.
+    // Linking shared lanes here currently exposes an inheritance/shared-buffer
+    // timing bug; Stage 4 must fix the underlying cause or document a narrower
+    // explicit semantic if one is proven.
     const linkedChannelsArg = '["__text__"]';
     this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, context, cb, async (currentBuffer) => {`);
     const resolvedSelectionVar = this.compiler._tmpid();
@@ -1028,11 +1033,13 @@ class CompileInheritance {
     return !!(block && block.body && block.body.findAll(nodes.Super).length > 0);
   }
 
-  // ANALYSIS-CHANNELS-REFACTOR: This helper compensates for broad stored
-  // used/mutated channel sets by filtering callable-local implementation
-  // channels out of inheritance method footprints. Once analysis owns
-  // callable/boundary linked-channel metadata, this should collapse to reading
-  // that metadata directly.
+  // ANALYSIS-CHANNELS-REFACTOR: Stage 3 evaluated this helper as callable /
+  // inheritance footprint metadata, not an ordinary boundary emitter. The
+  // __return__ and template text filters are valid local semantics: those lanes
+  // are callable-local implementation channels, not inherited shared
+  // footprints. Stage 4 should still replace the used/mutated source with final
+  // callable-owned metadata once callable body link facts have a single source
+  // of truth.
   collectMethodChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
     if (!analysis) {
       return [];
@@ -1129,6 +1136,10 @@ class CompileInheritance {
       });
 
       const parentTemplateId = this.compileAsyncGetTemplateOrScript(node, true, false, true);
+      // ANALYSIS-CHANNELS-REFACTOR: script inheritance startup still links the
+      // chain-level shared schema at runtime. Stage 4 should replace this with
+      // final callable/inheritance link metadata or document why it remains a
+      // true runtime semantic.
       // This first channel set links the caller's root buffer to the boundary
       // child buffer so any post-extends constructor work stays ordered behind
       // the boundary slot for the channels currently known at the call site.

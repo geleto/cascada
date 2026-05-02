@@ -342,6 +342,11 @@ class CompileBoundaries {
 
     this._compileAsyncTextBoundary(bufferCompiler, {
       parentBufferExpr: bufferCompiler.currentBuffer,
+      // ANALYSIS-CHANNELS-REFACTOR: inherited block text boundaries should be
+      // able to use the same analysis-owned links as other child buffers. They
+      // currently stay text-only because linking shared lanes here exposes an
+      // inheritance/shared-buffer timing bug. Stage 4 must find and fix that
+      // cause, then replace this workaround with analysis-owned links.
       linkedChannelsArg: JSON.stringify([bufferCompiler.currentTextChannelName]),
       declaredChannelsArg: this.compiler.emit.getDeclaredChannelsArg(node),
       callbackParams: '(blockBuffer)',
@@ -355,22 +360,9 @@ class CompileBoundaries {
   }
 
   compileCaptureBoundary(bufferCompiler, node, innerBodyFunction, positionNode = node) {
-    // ANALYSIS-CHANNELS-REFACTOR: Stage 1 removed child-owned text outputs
-    // from usedChannels and Stage 2 derives node._analysis.linkedChannels.
-    // Stage 3 should migrate this local calculation to serialize that analysis
-    // metadata directly.
     const captureTextOutputName = node._analysis.textOutput;
-    const declaredChannelNames = new Set(node._analysis.declaredChannels?.keys() ?? []);
-    const linkedChannelNames = Array.from(node?._analysis?.usedChannels || []).filter((name) => (
-      name &&
-      !declaredChannelNames.has(name)
-    ));
-    const linkedChannelsArg = linkedChannelNames.length > 0
-      ? JSON.stringify(linkedChannelNames)
-      : 'null';
-    const declaredChannelsArg = declaredChannelNames.size > 0
-      ? JSON.stringify(Array.from(declaredChannelNames))
-      : 'null';
+    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
+    const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
     const outerParentBuffer = bufferCompiler.currentBuffer;
 
     this.compiler.emit(

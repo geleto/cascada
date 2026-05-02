@@ -35,7 +35,7 @@ class CompileMacro {
     const invocationBufferId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    compiler.emit.line(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerUsedChannels || null, null, ${activeContext.rawCallerVar}.__callerDeclaredChannels || null);`);
+    compiler.emit.line(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerLinkedChannels || null, null, ${activeContext.rawCallerVar}.__callerDeclaredChannels || null);`);
     compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit.line(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     compiler.emit.line(`let ${invocationResultId} = Promise.resolve(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.markFinishedAndPatchLinks());`);
@@ -48,6 +48,7 @@ class CompileMacro {
 
   analyzeCaller(node) {
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
+    node.name._analysis = Object.assign({}, node.name._analysis, { declarationTarget: true });
     const declares = [
       { name: 'caller', type: 'var', initializer: null },
       this.compiler.return.createChannelDeclaration()
@@ -96,7 +97,7 @@ class CompileMacro {
     const funcId = this._compileAsyncMacro(node);
     const callerUsedChannels = this._getCallerLinkedChannels(node);
     const callerDeclaredChannels = this._getCallerDeclaredChannels(node);
-    this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
+    this.compiler.emit.line(`${funcId}.__callerLinkedChannels = ${JSON.stringify(callerUsedChannels)};`);
     this.compiler.emit.line(`${funcId}.__callerDeclaredChannels = ${JSON.stringify(callerDeclaredChannels)};`);
     return funcId;
   }
@@ -116,6 +117,7 @@ class CompileMacro {
     const declares = [];
     const declaresInParent = [];
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
+    node.name._analysis = Object.assign({}, node.name._analysis, { declarationTarget: true });
     declares.push(this.compiler.return.createChannelDeclaration());
     declares.push({ name: 'caller', type: 'var', initializer: null });
     node.args.children.forEach((arg) => {
@@ -207,7 +209,7 @@ class CompileMacro {
     // all-callers buffer so multiple invocations can schedule independently.
     compiler.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
     compiler.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
-    compiler.emit(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerUsedChannels || null, null, ${rawCallerVar}.__callerDeclaredChannels || null);`);
+    compiler.emit(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerLinkedChannels || null, null, ${rawCallerVar}.__callerDeclaredChannels || null);`);
     compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${lineno}, colno: ${colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     // __caller__ timing is owned only by caller invocation code. Track both:
@@ -231,7 +233,7 @@ class CompileMacro {
     compiler.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
     // The all-callers buffer is parent-linked because caller() may emit
     // parent-visible observable commands, unlike the isolated macro buffer.
-    compiler.emit.line(`  ${allCallersBufferId} = runtime.createCommandBuffer(context, macroParentBuffer || null, ${rawCallerVar}.__callerUsedChannels || null, null, ${rawCallerVar}.__callerDeclaredChannels || null);`);
+    compiler.emit.line(`  ${allCallersBufferId} = runtime.createCommandBuffer(context, macroParentBuffer || null, ${rawCallerVar}.__callerLinkedChannels || null, null, ${rawCallerVar}.__callerDeclaredChannels || null);`);
     compiler.emit.line('}');
   }
 
@@ -605,4 +607,4 @@ class CompileMacro {
   }
 }
 
-export {CompileMacro};
+export {CompileMacro, CALLER_SCHED_CHANNEL_NAME};
