@@ -441,9 +441,9 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
   return buffer;
 }
 
-// ANALYSIS-CHANNELS-REFACTOR: Once analysis-owned linked/declared lane metadata
-// is the source of truth, duplicate lane names should become an assertion rather
-// than runtime normalization.
+// ANALYSIS-CHANNELS-REFACTOR: Once analysis-owned lane metadata is the source
+// of truth, linked/declared lanes should arrive as one validated payload.
+// Runtime deduplication and merging should become assertions or disappear.
 function uniqueLaneNames(laneNames) {
   if (!Array.isArray(laneNames)) {
     return null;
@@ -451,6 +451,8 @@ function uniqueLaneNames(laneNames) {
   return Array.from(new Set(laneNames));
 }
 
+// ANALYSIS-CHANNELS-REFACTOR: merging linked and declared lane arrays is
+// transitional; final analysis metadata should provide the complete lane set.
 function mergeLaneNames(linkedChannels, declaredChannels) {
   if (!linkedChannels) {
     return declaredChannels;

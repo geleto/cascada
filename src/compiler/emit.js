@@ -284,7 +284,7 @@ class CompileEmit {
   }
 
   getDeclaredChannelsArg(node) {
-    if (!node || !node._analysis || !(node._analysis.declaredChannels instanceof Map)) {
+    if (!(node._analysis.declaredChannels instanceof Map)) {
       return 'null';
     }
     const declaredChannels = Array.from(node._analysis.declaredChannels.keys());

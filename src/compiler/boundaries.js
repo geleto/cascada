@@ -355,6 +355,11 @@ class CompileBoundaries {
   }
 
   compileCaptureBoundary(bufferCompiler, node, innerBodyFunction, positionNode = node) {
+    // ANALYSIS-CHANNELS-REFACTOR: Capture boundaries still derive linked and
+    // declared lanes locally because usedChannels is broader than the
+    // boundary-visible lane set. Once analysis owns final boundary
+    // linked/declared metadata, this block should collapse to serializing that
+    // metadata directly.
     const captureTextOutputName = node._analysis.textOutput;
     const declaredChannelNames = new Set(node._analysis.declaredChannels?.keys() ?? []);
     const captureTextOutputNames = this._collectTextOutputNames(node);

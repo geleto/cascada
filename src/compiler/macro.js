@@ -94,10 +94,10 @@ class CompileMacro {
   }
 
   _getCallerDeclaredChannels(node) {
-    if (!this.compiler.asyncMode || !node || !(node._analysis.declaredChannels instanceof Map)) {
+    if (!(node._analysis.declaredChannels instanceof Map)) {
       return [];
     }
-    return Array.from(node._analysis.declaredChannels.keys()).filter(Boolean);
+    return Array.from(node._analysis.declaredChannels.keys());
   }
 
   compileAsyncCaller(node) {
