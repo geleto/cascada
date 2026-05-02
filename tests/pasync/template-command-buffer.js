@@ -235,6 +235,35 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","wrap","caller"');
     });
 
+    it('should emit inherited block text placement boundaries without shared callable links', function () {
+      const env = new AsyncEnvironment();
+      const templateSource = '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]';
+      const ast = analyzeTemplateSource(templateSource, 'block-text-placement-links.njk');
+      const blockNode = collectNodesByType(ast, 'Block')[0];
+      const tmpl = new AsyncTemplate(templateSource, env, 'block-text-placement-links.njk');
+      const source = tmpl._compileSource();
+
+      expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__', 'theme']);
+      expect(source).to.contain('runtime.runControlFlowBoundary(output, ["__text__"], null, context, cb, async (blockBuffer)');
+      expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","theme"]');
+    });
+
+    it('should emit template extends startup without shared callable links', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate(
+        '{% shared var theme = "light" %}' +
+        '{% extends layout %}' +
+        '{% set theme = "dark" %}' +
+        '{% block body %}{{ theme }}{% endblock %}',
+        env,
+        'extends-startup-text-placement-links.njk'
+      );
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__"], null, context, cb, async (currentBuffer)');
+      expect(source).to.not.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__","theme"]');
+    });
+
     it('should keep loop and include-owned facts local inside captures', function () {
       const ast = analyzeTemplateSource(
         '{% set outer %}' +
@@ -487,6 +516,70 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       } catch (err) {
         expect(err.message).to.contain('export failed');
       }
+    });
+
+    it('should read post-extends shared mutations from invocation-time block links', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]');
+      loader.addTemplate(
+        'child.njk',
+        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set theme = "dark" %}{% block body %}{{ theme }}{% endblock %}'
+      );
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('Base[dark]');
+    });
+
+    it('should keep inherited text placement boundaries out of shared invocation lanes', async function () {
+      const createRootBuffer = () => {
+        const rootBuffer = runtime.createCommandBuffer(null, null, null, null, ['__text__', 'theme']);
+        runtime.declareBufferChannel(rootBuffer, '__text__', 'text', null, null);
+        runtime.declareBufferChannel(rootBuffer, 'theme', 'var', null, null);
+        rootBuffer.addCommand(new runtime.VarCommand({
+          channelName: 'theme',
+          args: ['dark'],
+          pos: { lineno: 1, colno: 1 }
+        }), 'theme');
+        return rootBuffer;
+      };
+
+      const blockedRoot = createRootBuffer();
+      // This sibling buffer represents the incorrect text-placement boundary
+      // shape: linking it into the shared lane creates an earlier source-order
+      // slot that the invocation snapshot must wait behind.
+      const sharedLaneSibling = runtime.createCommandBuffer(null, null, ['theme'], blockedRoot);
+      const invocationBuffer = runtime.createCommandBuffer(null, null, ['theme'], blockedRoot);
+      const blockedRead = invocationBuffer.addCommand(new runtime.SnapshotCommand({
+        channelName: 'theme',
+        pos: { lineno: 1, colno: 1 }
+      }), 'theme');
+      let blockedReadSettled = false;
+      blockedRead.then(() => {
+        blockedReadSettled = true;
+      });
+
+      await Promise.resolve();
+      expect(blockedReadSettled).to.be(false);
+      sharedLaneSibling.markFinishedAndPatchLinks();
+      invocationBuffer.markFinishedAndPatchLinks();
+      blockedRoot.markFinishedAndPatchLinks();
+      expect(await blockedRead).to.be('dark');
+
+      const textRoot = createRootBuffer();
+      const textPlacementBoundary = runtime.createCommandBuffer(null, null, ['__text__'], textRoot);
+      const admittedInvocation = runtime.createCommandBuffer(null, null, ['theme'], textRoot);
+      const admittedRead = admittedInvocation.addCommand(new runtime.SnapshotCommand({
+        channelName: 'theme',
+        pos: { lineno: 1, colno: 1 }
+      }), 'theme');
+
+      expect(await admittedRead).to.be('dark');
+      textPlacementBoundary.markFinishedAndPatchLinks();
+      admittedInvocation.markFinishedAndPatchLinks();
+      textRoot.markFinishedAndPatchLinks();
     });
 
     it('should collect multiple exported value failures before rejecting the exported namespace', async function () {

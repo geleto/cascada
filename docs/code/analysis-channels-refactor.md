@@ -267,11 +267,9 @@ Work:
 - document render/custom-extension boundaries as isolated render buffers unless
   a real parent-link semantic is identified; migrate their declared-lane
   serialization separately from ordinary linked-channel boundaries.
-- keep template-extends startup and inherited block text boundaries on their
-  current text-only link workaround only as a temporary safety measure. These
-  should be able to use analysis/callable-owned links like other child buffers;
-  if linking shared lanes there breaks inheritance timing, treat that as a bug
-  in inheritance/shared-buffer routing to investigate in Stage 4.
+- keep template-extends startup and inherited block text boundaries text-only
+  until Stage 5 resolves whether that is a temporary workaround or a true
+  text-scheduling semantic.
 - evaluate and remove local `usedChannels` filters and synthetic-name checks
   that only compensated for broad stored channel facts
 - keep only emitter-side channel adjustments that represent documented local
@@ -319,12 +317,9 @@ Work:
   control-flow boundaries, because callable metadata currently merges
   transitive used/mutated footprints at runtime
 - investigate the inherited block text-boundary and template-extends startup
-  text-only workarounds. The expected end state is normal analysis/callable-owned
-  linking. Replace the workaround unless a narrow, intentional semantic is
-  proven, named in the plan, and documented with focused tests. A Stage 4
-  standard-link attempt for inherited block text boundaries exposed shared-buffer
-  deadlocks/stale reads, so treat this as an active routing bug rather than a
-  settled semantic.
+  text-only paths. A Stage 5 audit proved these are narrow text-scheduling
+  semantics: the shared work is linked later by callable admission, while these
+  boundaries preserve parent-render text placement.
 - replace or remove lane-list normalization helpers, such as linked/declared
   deduplication and merging, once analysis-owned metadata is authoritative
 - document any remaining divergence from analysis-provided links as an explicit
@@ -350,31 +345,73 @@ Stage 4 implementation notes:
 - command-buffer lane metadata now validates duplicate, invalid, and
   linked-plus-declared conflicts instead of silently deduping them
 - inherited block text boundaries were tried with ordinary analysis-owned
-  links; that exposed shared-buffer deadlocks/stale reads. Keep the text-only
-  workaround until the routing bug is fixed in Stage 5.
+  links; that exposed shared-buffer deadlocks/stale reads and led to the Stage 5
+  text-scheduling semantic.
 
-### Stage 5. Resolve Inheritance Shared-Buffer Routing
+### Stage 5. Resolve Inheritance Text Scheduling Semantics
 
 Goal:
 
-- remove the remaining inheritance/shared-buffer link workarounds that Stage 4
-  could not safely delete
-- make inherited block text boundaries and template-extends startup use normal
-  analysis/callable-owned links
-- replace runtime path probing with explicit shared-root/caller link metadata or
-  a documented true runtime semantic
+- resolve the inherited block/template-extends standard-link failure found in
+  Stage 4
+- name the true text-scheduling semantic for boundaries that only carry parent
+  render text placement
+- keep shared reads/writes owned by the admitted callable invocation buffers
+  where the observations actually happen
 
 Work:
 
 - reproduce the shared-buffer timing bug found when inherited block text
   boundaries use ordinary `linkedChannels`
+- identify why linking shared lanes on the inherited block text placement boundary moves
+  observations from method-invocation time to parent-render scheduling time
+- document the text-only text-placement semantic in
+  `src/compiler/boundaries.js#compileBlockTextBoundary(...)`
+- document the same scheduling semantic in
+  `src/compiler/inheritance.js#_emitTemplateExtendsBoundaryFromSelection(...)`
+- keep inherited block text placement boundaries structural and text-only: the
+  boundary itself creates parent text placement, while non-text links from the
+  block's analysis-owned callable footprint remain owned by callable admission.
+- keep shared links on callable admission and callable body buffers, where the
+  shared observations/mutations are enqueued
+
+Validation:
+
+- focused regression for the failing standard-link inherited block cases:
+  parent/child async-template shared vars, template method dispatch with shared
+  reads, top-level constructor state plus block bodies, and post-extends shared
+  mutations observed in overriding blocks
+- full quick suite after the inheritance/shared-routing changes
+
+Stage 5 implementation notes:
+
+- inherited block text boundaries are intentionally text-only. They are created
+  at parent-render scheduling time, but their shared work is performed by the
+  admitted inherited method invocation. Linking shared lanes on the text
+  placement boundary creates an early shared-lane barrier before child
+  constructor/post-extends mutations are enqueued. The boundary uses the
+  compiler's current text lane because that is the structural lane it fills.
+  Non-text callable links
+  from analysis-owned metadata are installed by the invocation buffer, whose
+  execution point is the actual observation point.
+- template extends startup follows the same rule: it preserves parent-render
+  text placement, while shared observations are linked by the eventual callable
+  admission path.
+
+### Stage 6. Remove Runtime Link Path Probing
+
+Goal:
+
+- replace runtime path probing with explicit shared-root/caller link metadata or
+  a documented true runtime semantic
+- finish converting callable footprint/link decisions to analysis-owned
+  metadata
+
+Work:
+
 - identify whether invocation buffers need separate caller-link and
   shared-root-link metadata, or whether current merged callable links can be
   installed through one authoritative parent path
-- replace the text-only workaround in
-  `src/compiler/boundaries.js#compileBlockTextBoundary(...)`
-- replace the text-only workaround in
-  `src/compiler/inheritance.js#_emitTemplateExtendsBoundaryFromSelection(...)`
 - remove or narrow `hasLinkedBuffer(...)`, `hasLinkedChannelPath(...)`,
   `_registerInvocationChannelLink(...)`, and
   `linkCurrentBufferToParentChannels(...)` once link path ownership is explicit
@@ -387,13 +424,9 @@ Work:
 
 Validation:
 
-- focused regression for the failing standard-link inherited block cases:
-  parent/child async-template shared vars, template method dispatch with shared
-  reads, top-level constructor state plus block bodies, and post-extends shared
-  mutations observed in overriding blocks
 - tests that distinguish caller-local links from shared-root links when both
   are requested by callable metadata
-- full quick suite after the inheritance/shared-routing changes
+- full quick suite after runtime link-path probing changes
 
 ## Validation
 
@@ -498,45 +531,45 @@ Current examples to audit:
 - `src/compiler/boundaries.js#_getRenderBoundaryDeclaredChannelsArg(...)`:
   currently patches render/custom-extension body-local declared lanes, including
   current text; analysis should provide complete declared metadata for these
-  fragments. Stage 5 should decide whether this belongs to callable/render
+  fragments. Stage 6 should decide whether this belongs to callable/render
   analysis metadata or a separate isolated-render semantic.
 - `src/compiler/emit.js#managedBlock(...)`: callable/body scope-root buffers
   still fall back to deriving links from `usedChannels` when they are not
   represented by boundary `linkedChannels`; callable metadata should provide the
-  final link set directly in Stage 5.
+  final link set directly in Stage 6.
 - `src/compiler/inheritance.js#collectMethodChannelNames(...)`: Stage 4 now
   publishes `ownLinkedChannels` / `mergedLinkedChannels` for callable admission,
   but those facts still originate from this filtered used/mutated footprint. The
   `__return__` and template-text filters are valid local semantics because those
   lanes are callable-local implementation channels, not inherited shared
   footprints. The remaining cleanup is to move this footprint decision into
-  analysis-owned callable metadata directly in Stage 5.
+  analysis-owned callable metadata directly in Stage 6.
 - `src/compiler/inheritance.js#compileAsyncExtends(...)`: script inheritance
   startup still links `inheritanceState.sharedSchema` at runtime; should be
-  replaced by final callable/inheritance link metadata in Stage 5 or documented
+  replaced by final callable/inheritance link metadata in Stage 6 or documented
   as a true runtime semantic.
 - `src/runtime/command-buffer.js#validateLaneNames(...)` and
   `src/runtime/command-buffer.js#combineLaneNames(...)`: runtime now validates
   linked/declared lane metadata instead of silently deduping it. The remaining
   question is whether linked/declared should arrive as one compiler-owned lane
-  payload rather than two arrays; evaluate in Stage 5.
+  payload rather than two arrays; evaluate in Stage 6.
 - `src/runtime/command-buffer.js#hasLinkedBuffer(...)`: currently answers
-  runtime structural-link questions; Stage 5 should replace it with
+  runtime structural-link questions; Stage 6 should replace it with
   analysis-owned link specs or a narrower assertion/installer.
 - `src/runtime/inheritance-call.js#hasLinkedChannelPath(...)`: currently probes
   runtime buffer ancestry before deciding whether to add a shared-root link;
-  resolve in Stage 5.
+  resolve in Stage 6.
 - `src/runtime/inheritance-call.js#_registerInvocationChannelLink(...)` and
   `_createAdmittedInvocationBuffer(...)`: currently choose caller/shared-root
-  link paths from runtime channel availability; Stage 5 should make this
+  link paths from runtime channel availability; Stage 6 should make this
   metadata-owned or document the true runtime semantic.
 - `src/runtime/inheritance-call.js#_getMethodLinkedChannels(...)`: still has a
   temporary fallback to used/mutated footprints for method data without explicit
-  `mergedLinkedChannels`; Stage 5 should remove this once callable metadata
+  `mergedLinkedChannels`; Stage 6 should remove this once callable metadata
   shape is fully authoritative.
 - `src/runtime/inheritance-bootstrap.js#linkCurrentBufferToParentChannels(...)`:
   currently performs shared/inheritance runtime link decisions that should be
-  driven by final boundary/callable link metadata in Stage 5.
+  driven by final boundary/callable link metadata in Stage 6.
 
 When implementing this refactor, grep for the marker first, then continue with
 the broader audit checklist above. New code should not add more marker comments

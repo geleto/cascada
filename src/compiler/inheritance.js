@@ -438,6 +438,10 @@ class CompileInheritance {
       return;
     }
 
+    // Inherited block text boundaries carry text placement only. Shared reads
+    // and writes inside the block are enqueued by the admitted method
+    // invocation at call time; linking those lanes here would place shared
+    // observations at the earlier parent-render scheduling point.
     this.compiler.boundaries.compileBlockTextBoundary(
       this.compiler.buffer,
       node,
@@ -700,12 +704,12 @@ class CompileInheritance {
   }
 
   _emitTemplateExtendsBoundaryFromSelection(deferredSelectionVar) {
-    // ANALYSIS-CHANNELS-REFACTOR: template extends startup should eventually
-    // use analysis/callable-owned links instead of this text-only workaround.
-    // Linking shared lanes here currently exposes the same inheritance/shared-
-    // buffer timing bug as inherited block text boundaries; fix that routing
-    // bug before replacing this workaround.
-    const linkedChannelsArg = '["__text__"]';
+    // Template extends startup carries parent-render text placement only.
+    // Shared reads/writes from inherited blocks are linked by the admitted
+    // method invocation at the actual call site; linking shared lanes here
+    // would move those observations to the earlier extends scheduling point.
+    // In template mode this is the root text output lane.
+    const linkedChannelsArg = JSON.stringify([this.compiler.buffer.currentTextChannelName]);
     this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, context, cb, async (currentBuffer) => {`);
     const resolvedSelectionVar = this.compiler._tmpid();
     this.emit.line(`  const ${resolvedSelectionVar} = await runtime.resolveSingle(${deferredSelectionVar});`);
@@ -917,7 +921,7 @@ class CompileInheritance {
       'mutatedChannels'
     );
     // Mutations are included in usedChannels today, so linked channels match
-    // the used footprint until Stage 5 moves callable links to analysis-owned
+    // the used footprint until Stage 6 moves callable links to analysis-owned
     // metadata that can diverge from used/mutated footprints.
     const ownLinkedChannelNames = ownUsedChannelNames;
     const ownUsedChannels = JSON.stringify(ownUsedChannelNames);

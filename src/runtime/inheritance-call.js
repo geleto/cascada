@@ -192,7 +192,7 @@ function _buildResolvedMethodDataBase(entry) {
   const ownUsedChannels = _mergeChannelNames(entry.ownUsedChannels);
   const ownMutatedChannels = _mergeChannelNames(entry.ownMutatedChannels);
   // Entries emitted after Stage 4 must provide ownLinkedChannels. The fallback
-  // keeps manually-constructed metadata shapes usable until Stage 5 makes the
+  // keeps manually-constructed metadata shapes usable until Stage 6 makes the
   // callable metadata contract strict.
   const ownLinkedChannels = Array.isArray(entry.ownLinkedChannels)
     ? _mergeChannelNames(entry.ownLinkedChannels)
@@ -499,7 +499,7 @@ function _getMethodLinkedChannels(methodData) {
   if (Array.isArray(methodData?.mergedLinkedChannels)) {
     return methodData.mergedLinkedChannels;
   }
-  // Stage 5 should remove this fallback once all callable metadata is finalized
+  // Stage 6 should remove this fallback once all callable metadata is finalized
   // with an explicit mergedLinkedChannels array.
   return _mergeChannelNames(methodData?.mergedUsedChannels, methodData?.mergedMutatedChannels);
 }
@@ -557,7 +557,7 @@ function _finalizeChannelFootprints(state, errorContext = null) {
       // Invalid resolved metadata shapes remain fail-fast invariants. Super-chain
       // channel growth stays folded into this same fixed-point walk so we do not
       // reintroduce a second parent-to-child merge phase. mergedLinkedChannels
-      // currently mirrors the used footprint; Stage 5 will let it diverge once
+      // currently mirrors the used footprint; Stage 6 will let it diverge once
       // callable link metadata stops being derived from usedChannels.
       const nextUsedChannels = _mergeChannelNames(
         methodData.mergedUsedChannels,

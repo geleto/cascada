@@ -46,7 +46,7 @@ class CommandBuffer {
     }
   }
 
-  // ANALYSIS-CHANNELS-REFACTOR: Stage 5 should turn this into an assertion-
+  // ANALYSIS-CHANNELS-REFACTOR: Stage 6 should turn this into an assertion-
   // backed lane lookup once all dynamic lane creation has explicit metadata.
   _ensureLane(channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
