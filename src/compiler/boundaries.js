@@ -144,7 +144,8 @@ class CompileBoundaries {
       }
     };
 
-    emitCompiler.line(`runtime.runRenderBoundary(context, cb, async (currentBuffer) =>{`);
+    const declaredChannelsArg = this._getRenderBoundaryDeclaredChannelsArg(positionNode || node);
+    emitCompiler.line(`runtime.runRenderBoundary(context, ${declaredChannelsArg}, cb, async (currentBuffer) =>{`);
     const resultId = this.compiler._tmpid();
 
     const textChannelName = this.compiler.buffer.currentTextChannelName;
@@ -207,6 +208,29 @@ class CompileBoundaries {
 
   compileSyncCallbackRenderBoundary(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {
     return this._compileSyncRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode);
+  }
+
+  // ANALYSIS-CHANNELS-REFACTOR: Transitional render-boundary declared-lane
+  // serializer. Once analysis provides final local/declared lanes for render
+  // fragments directly, delete this helper and use the shared declared-channel
+  // serializer instead.
+  _getRenderBoundaryDeclaredChannelsArg(node) {
+    const declared = new Set();
+    if (node?._analysis?.declaredChannels instanceof Map) {
+      for (const name of node._analysis.declaredChannels.keys()) {
+        if (name) {
+          declared.add(name);
+        }
+      }
+    }
+    if (!this.compiler.scriptMode && this.compiler.buffer.currentTextChannelName) {
+      declared.add(this.compiler.buffer.currentTextChannelName);
+    }
+    // Custom-extension content bodies may arrive as NodeList fragments whose
+    // local var declarations are not yet summarized on the fragment analysis
+    // object. The render text lane is static here; any remaining body-local
+    // lanes should come from the analysis-channel refactor.
+    return declared.size > 0 ? JSON.stringify(Array.from(declared)) : 'null';
   }
 
   _emitBoundaryTextCommand(

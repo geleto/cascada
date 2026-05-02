@@ -33,6 +33,33 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
       expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer, ["__return__","x"])');
     });
 
+    it('should serialize render-boundary text lanes into runRenderBoundary', function () {
+      class TestExtension {
+        constructor() {
+          this.tags = ['test'];
+        }
+
+        parse(parser, nodes) {
+          parser.advanceAfterBlockEnd();
+          const content = parser.parseUntilBlocks('endtest');
+          const tag = new nodes.CallExtension(this, 'run', null, [content]);
+          parser.advanceAfterBlockEnd();
+          return tag;
+        }
+
+        run(context, content) {
+          return content();
+        }
+      }
+
+      const env = new AsyncEnvironment();
+      env.addExtension('TestExtension', new TestExtension());
+      const tmpl = new AsyncTemplate('{% test %}{{ value }}{% endtest %}', env, 'render-boundary-lanes.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('runtime.runRenderBoundary(context, ["__text__"], cb, async');
+    });
+
     it('should not emit caller scheduling machinery for macros without caller()', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}', env);

@@ -1516,6 +1516,13 @@ the migration scaffolding into permanent design.
   [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js) now
   threads caller-visible linked channels and caller-local declared lanes through
   `__callerUsedChannels` and `__callerDeclaredChannels`.
+- Async render-boundary buffer creation in
+  [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
+  now threads the render text lane into `runRenderBoundary(...)`. Custom
+  extension content bodies can still arrive as fragments whose body-local
+  declarations are not summarized on the fragment analysis object; this is
+  marked `ANALYSIS-CHANNELS-REFACTOR` in code and should be resolved by the
+  analysis-channel refactor rather than by ad hoc render-boundary filtering.
 - `uniqueLaneNames(...)` in `CommandBuffer` is marked
   `ANALYSIS-CHANNELS-REFACTOR`; after analysis-owned linked/declared lane
   metadata becomes authoritative, duplicate lane names should be treated as an

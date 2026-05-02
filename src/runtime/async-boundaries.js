@@ -66,8 +66,8 @@ async function runWaitedControlFlowBoundary(parentBuffer, usedChannels, declared
  * into the parent tree. The asyncFn receives (childBuffer)
  * and should synchronously emit the boundary body into that child buffer.
  */
-async function runRenderBoundary(context, cb, asyncFn) {
-  const { childBuffer } = _createChildBoundary(null, null, null, context || null);
+async function runRenderBoundary(context, declaredChannels, cb, asyncFn) {
+  const { childBuffer } = _createChildBoundary(null, null, declaredChannels, context || null);
 
   try {
     return await asyncFn(childBuffer);
