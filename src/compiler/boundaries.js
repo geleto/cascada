@@ -343,10 +343,9 @@ class CompileBoundaries {
     this._compileAsyncTextBoundary(bufferCompiler, {
       parentBufferExpr: bufferCompiler.currentBuffer,
       // ANALYSIS-CHANNELS-REFACTOR: inherited block text boundaries should be
-      // able to use the same analysis-owned links as other child buffers. They
-      // currently stay text-only because linking shared lanes here exposes an
-      // inheritance/shared-buffer timing bug. Stage 4 must find and fix that
-      // cause, then replace this workaround with analysis-owned links.
+      // able to use the same analysis-owned links as other child buffers. A
+      // standard-link attempt exposed an inheritance/shared-buffer timing bug;
+      // fix that routing bug before replacing this text-only workaround.
       linkedChannelsArg: JSON.stringify([bufferCompiler.currentTextChannelName]),
       declaredChannelsArg: this.compiler.emit.getDeclaredChannelsArg(node),
       callbackParams: '(blockBuffer)',

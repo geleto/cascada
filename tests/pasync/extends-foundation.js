@@ -1173,6 +1173,7 @@ describe('Extends Foundation', function () {
       expect(typeof script.inheritanceSpec.methods.build.fn).to.be('function');
       expect(script.inheritanceSpec.methods.build.ownUsedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.build.ownMutatedChannels).to.be.an(Array);
+      expect(script.inheritanceSpec.methods.build.ownLinkedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.build.super).to.be(false);
       expect(script.inheritanceSpec.methods.build.superOrigin).to.be(null);
       expect(script.inheritanceSpec.methods.build.signature).to.eql({ argNames: ['user'], withContext: false });
@@ -1191,6 +1192,8 @@ describe('Extends Foundation', function () {
       expect(script.inheritanceSpec.methods.build.ownUsedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.build.ownMutatedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.build.ownMutatedChannels).not.to.contain('theme');
+      expect(script.inheritanceSpec.methods.build.ownLinkedChannels).to.contain('theme');
+      expect(script.inheritanceSpec.methods.build.ownLinkedChannels).to.contain('trace');
     });
 
     it('should expose __constructor__ in the compiled methods map with internal metadata', function () {
@@ -1202,8 +1205,10 @@ describe('Extends Foundation', function () {
       expect(typeof script.inheritanceSpec.methods.__constructor__.fn).to.be('function');
       expect(script.inheritanceSpec.methods.__constructor__.ownUsedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.__constructor__.ownMutatedChannels).to.be.an(Array);
+      expect(script.inheritanceSpec.methods.__constructor__.ownLinkedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.__constructor__.ownUsedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.__constructor__.ownMutatedChannels).to.contain('trace');
+      expect(script.inheritanceSpec.methods.__constructor__.ownLinkedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.__constructor__.super).to.be(false);
       expect(script.inheritanceSpec.methods.__constructor__.superOrigin).to.be(null);
       expect(script.inheritanceSpec.methods.__constructor__.signature).to.eql({ argNames: [], withContext: false });
@@ -1403,12 +1408,15 @@ describe('Extends Foundation', function () {
       const buildData = inheritanceCallModule.getMethodData(inheritanceState, 'build');
       expect(buildData.mergedUsedChannels).to.be.an(Array);
       expect(buildData.mergedMutatedChannels).to.be.an(Array);
+      expect(buildData.mergedLinkedChannels).to.be.an(Array);
       expect(buildData.invokedMethods).to.be(undefined);
       expect(buildData.ownUsedChannels).to.be(undefined);
       expect(buildData.ownMutatedChannels).to.be(undefined);
+      expect(buildData.ownLinkedChannels).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').invokedMethods).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownUsedChannels).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownMutatedChannels).to.be(undefined);
+      expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownLinkedChannels).to.be(undefined);
     });
 
     it('should fail finalization when invoked method metadata cannot resolve a target', function () {
@@ -1462,12 +1470,18 @@ describe('Extends Foundation', function () {
       expect(betaData.invokedMethods).to.be(undefined);
       expect(alphaData.ownUsedChannels).to.be(undefined);
       expect(alphaData.ownMutatedChannels).to.be(undefined);
+      expect(alphaData.ownLinkedChannels).to.be(undefined);
       expect(betaData.ownUsedChannels).to.be(undefined);
       expect(betaData.ownMutatedChannels).to.be(undefined);
+      expect(betaData.ownLinkedChannels).to.be(undefined);
       expect(alphaData.mergedMutatedChannels).to.contain('alphaTrace');
       expect(alphaData.mergedMutatedChannels).to.contain('betaTrace');
+      expect(alphaData.mergedLinkedChannels).to.contain('alphaTrace');
+      expect(alphaData.mergedLinkedChannels).to.contain('betaTrace');
       expect(betaData.mergedMutatedChannels).to.contain('alphaTrace');
       expect(betaData.mergedMutatedChannels).to.contain('betaTrace');
+      expect(betaData.mergedLinkedChannels).to.contain('alphaTrace');
+      expect(betaData.mergedLinkedChannels).to.contain('betaTrace');
     });
 
     it('should include invoked method footprints in caller-visible merged channels', function () {

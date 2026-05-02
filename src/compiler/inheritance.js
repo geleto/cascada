@@ -702,9 +702,9 @@ class CompileInheritance {
   _emitTemplateExtendsBoundaryFromSelection(deferredSelectionVar) {
     // ANALYSIS-CHANNELS-REFACTOR: template extends startup should eventually
     // use analysis/callable-owned links instead of this text-only workaround.
-    // Linking shared lanes here currently exposes an inheritance/shared-buffer
-    // timing bug; Stage 4 must fix the underlying cause or document a narrower
-    // explicit semantic if one is proven.
+    // Linking shared lanes here currently exposes the same inheritance/shared-
+    // buffer timing bug as inherited block text boundaries; fix that routing
+    // bug before replacing this workaround.
     const linkedChannelsArg = '["__text__"]';
     this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, context, cb, async (currentBuffer) => {`);
     const resolvedSelectionVar = this.compiler._tmpid();
@@ -910,13 +910,20 @@ class CompileInheritance {
   }
 
   compileMethodMetadataEntry({ methodName, fnExpr, analysis, ownerNode, superExpr, superOriginExpr, invokedMethodsExpr, signatureExpr, ownerKey }) {
-    const ownUsedChannels = JSON.stringify(this.collectMethodChannelNames(analysis, ownerNode));
-    const ownMutatedChannels = JSON.stringify(this.collectMethodChannelNames(
+    const ownUsedChannelNames = this.collectMethodChannelNames(analysis, ownerNode);
+    const ownMutatedChannelNames = this.collectMethodChannelNames(
       analysis,
       ownerNode,
       'mutatedChannels'
-    ));
-    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownUsedChannels: ${ownUsedChannels}, ownMutatedChannels: ${ownMutatedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
+    );
+    // Mutations are included in usedChannels today, so linked channels match
+    // the used footprint until Stage 5 moves callable links to analysis-owned
+    // metadata that can diverge from used/mutated footprints.
+    const ownLinkedChannelNames = ownUsedChannelNames;
+    const ownUsedChannels = JSON.stringify(ownUsedChannelNames);
+    const ownMutatedChannels = JSON.stringify(ownMutatedChannelNames);
+    const ownLinkedChannels = JSON.stringify(ownLinkedChannelNames);
+    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownUsedChannels: ${ownUsedChannels}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
   }
 
   collectDirectInvokedMethodRefsForCallable(callableNode) {
@@ -1033,13 +1040,12 @@ class CompileInheritance {
     return !!(block && block.body && block.body.findAll(nodes.Super).length > 0);
   }
 
-  // ANALYSIS-CHANNELS-REFACTOR: Stage 3 evaluated this helper as callable /
-  // inheritance footprint metadata, not an ordinary boundary emitter. The
-  // __return__ and template text filters are valid local semantics: those lanes
-  // are callable-local implementation channels, not inherited shared
-  // footprints. Stage 4 should still replace the used/mutated source with final
-  // callable-owned metadata once callable body link facts have a single source
-  // of truth.
+  // ANALYSIS-CHANNELS-REFACTOR: callable metadata now publishes explicit
+  // ownLinkedChannels, but those facts still originate from this filtered
+  // used/mutated footprint. The __return__ and template text filters are valid
+  // local semantics: those lanes are callable-local implementation channels,
+  // not inherited shared footprints. The remaining cleanup is to move this
+  // footprint decision into analysis-owned callable metadata directly.
   collectMethodChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
     if (!analysis) {
       return [];

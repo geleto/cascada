@@ -46,9 +46,8 @@ class CommandBuffer {
     }
   }
 
-  // ANALYSIS-CHANNELS-REFACTOR: when linked/declared lane metadata is fully
-  // authoritative, this should become an assertion-backed lane lookup instead
-  // of the runtime path that creates compatibility lanes.
+  // ANALYSIS-CHANNELS-REFACTOR: Stage 5 should turn this into an assertion-
+  // backed lane lookup once all dynamic lane creation has explicit metadata.
   _ensureLane(channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!resolvedChannelName) {
@@ -428,9 +427,9 @@ function ensureChannelIterator(channel) {
 }
 
 function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null, declaredChannels = null) {
-  const linkedLaneNames = uniqueLaneNames(linkedChannels);
-  const declaredLaneNames = uniqueLaneNames(declaredChannels);
-  const laneNames = mergeLaneNames(linkedLaneNames, declaredLaneNames);
+  const linkedLaneNames = validateLaneNames(linkedChannels, 'linkedChannels', context);
+  const declaredLaneNames = validateLaneNames(declaredChannels, 'declaredChannels', context);
+  const laneNames = combineLaneNames(linkedLaneNames, declaredLaneNames, context);
   const buffer = new CommandBuffer(context, parent, laneNames);
   const linkTarget = linkedParent || parent;
   if (linkTarget && linkedLaneNames) {
@@ -441,29 +440,67 @@ function createCommandBuffer(context, parent = null, linkedChannels = null, link
   return buffer;
 }
 
-// ANALYSIS-CHANNELS-REFACTOR: Once analysis-owned lane metadata is the source
-// of truth, linked/declared lanes should arrive as one validated payload.
-// Runtime deduplication and merging should become assertions or disappear.
-function uniqueLaneNames(laneNames) {
-  if (!Array.isArray(laneNames)) {
-    return null;
-  }
-  return Array.from(new Set(laneNames));
+function createLaneMetadataError(message, renderContext = null) {
+  // Buffer creation receives a runtime render Context, not a source-position
+  // error context, so metadata errors are positionless but still carry path.
+  return new RuntimeFatalError(
+    message,
+    0,
+    0,
+    null,
+    renderContext?.path ?? null
+  );
 }
 
-// ANALYSIS-CHANNELS-REFACTOR: merging linked and declared lane arrays is
-// transitional; final analysis metadata should provide the complete lane set.
-function mergeLaneNames(linkedChannels, declaredChannels) {
-  if (!linkedChannels) {
-    return declaredChannels;
+function validateLaneNames(laneNames, label, context = null) {
+  if (laneNames == null) {
+    return null;
   }
-  if (!declaredChannels) {
-    return linkedChannels;
+  if (!Array.isArray(laneNames)) {
+    throw createLaneMetadataError(`${label} must be an array when provided`, context);
   }
-  return Array.from(new Set([
-    ...linkedChannels,
-    ...declaredChannels
-  ]));
+  const seen = new Set();
+  for (let i = 0; i < laneNames.length; i++) {
+    const name = laneNames[i];
+    if (!name) {
+      throw createLaneMetadataError(`${label} contains an empty channel name`, context);
+    }
+    if (typeof name !== 'string') {
+      throw createLaneMetadataError(`${label} contains a non-string channel name`, context);
+    }
+    if (seen.has(name)) {
+      throw createLaneMetadataError(`${label} contains duplicate channel '${name}'`, context);
+    }
+    seen.add(name);
+  }
+  return laneNames;
+}
+
+function combineLaneNames(linkedChannels, declaredChannels, context = null) {
+  if (!linkedChannels && !declaredChannels) {
+    return null;
+  }
+  const combined = [];
+  const seen = new Set();
+  const add = (names) => {
+    if (!names) {
+      return;
+    }
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      if (seen.has(name)) {
+        throw createLaneMetadataError(
+          `Channel '${name}' is declared locally but also appears in linkedChannels; each channel must appear in at most one lane metadata set`,
+          context
+        );
+      }
+      seen.add(name);
+      combined.push(name);
+    }
+  };
+  add(linkedChannels);
+  add(declaredChannels);
+  return combined;
 }
 
 export { CommandBuffer, createCommandBuffer };

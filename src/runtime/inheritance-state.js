@@ -328,6 +328,9 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
   clonedEntry.ownMutatedChannels = Array.isArray(entry.ownMutatedChannels)
     ? entry.ownMutatedChannels.slice()
     : [];
+  clonedEntry.ownLinkedChannels = Array.isArray(entry.ownLinkedChannels)
+    ? entry.ownLinkedChannels.slice()
+    : [];
   clonedEntry.invokedMethods = cloneInvokedMethodsMap(entry.invokedMethods);
   clonedEntry.superOrigin = entry.superOrigin ? Object.assign({}, entry.superOrigin) : null;
   clonedEntry.signature = entry.signature
@@ -384,6 +387,7 @@ function createEmptyConstructorEntry(context = null) {
     },
     ownUsedChannels: [],
     ownMutatedChannels: [],
+    ownLinkedChannels: [],
     invokedMethods: Object.create(null),
     super: null,
     signature: { argNames: [], withContext: false },

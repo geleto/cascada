@@ -363,10 +363,7 @@ describe('Phase 8 - Component Method Calls', function () {
         if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
           const invocationBuffer = spec.invocationBuffer;
           seenLinkedChannels = {
-            mergedLinkedChannels: Array.from(new Set([
-              ...(Array.isArray(spec.methodData.mergedUsedChannels) ? spec.methodData.mergedUsedChannels : []),
-              ...(Array.isArray(spec.methodData.mergedMutatedChannels) ? spec.methodData.mergedMutatedChannels : [])
-            ])),
+            mergedLinkedChannels: spec.methodData.mergedLinkedChannels,
             late: invocationBuffer.hasChannel('late') && !invocationBuffer.getOwnChannel('late'),
             trace: invocationBuffer.hasChannel('trace') && !invocationBuffer.getOwnChannel('trace')
           };

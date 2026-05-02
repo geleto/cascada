@@ -191,12 +191,19 @@ function _buildResolvedMethodDataBase(entry) {
 
   const ownUsedChannels = _mergeChannelNames(entry.ownUsedChannels);
   const ownMutatedChannels = _mergeChannelNames(entry.ownMutatedChannels);
+  // Entries emitted after Stage 4 must provide ownLinkedChannels. The fallback
+  // keeps manually-constructed metadata shapes usable until Stage 5 makes the
+  // callable metadata contract strict.
+  const ownLinkedChannels = Array.isArray(entry.ownLinkedChannels)
+    ? _mergeChannelNames(entry.ownLinkedChannels)
+    : ownUsedChannels;
   const resolvedData = {
     fn: entry.fn,
     ownerKey: entry.ownerKey ?? null,
     signature: _normalizeMethodSignature(entry.signature, null),
     mergedUsedChannels: ownUsedChannels,
     mergedMutatedChannels: ownMutatedChannels,
+    mergedLinkedChannels: ownLinkedChannels,
     super: null,
     invokedMethods: Object.create(null)
   };
@@ -214,6 +221,10 @@ function _finalizeResolvedMethodData(resolvedData, entry, superData = null, invo
   resolvedData.mergedMutatedChannels = _mergeChannelNames(
     resolvedData.mergedMutatedChannels,
     superData?.mergedMutatedChannels
+  );
+  resolvedData.mergedLinkedChannels = _mergeChannelNames(
+    resolvedData.mergedLinkedChannels,
+    superData?.mergedLinkedChannels
   );
   return resolvedData;
 }
@@ -440,6 +451,7 @@ function _pruneExecutionMethodData(methodData, seen) {
   _pruneExecutionMethodData(methodData.super, seen);
   delete methodData.ownUsedChannels;
   delete methodData.ownMutatedChannels;
+  delete methodData.ownLinkedChannels;
   delete methodData.invokedMethods;
 }
 
@@ -484,13 +496,12 @@ function _findMethodDataForOwner(methodData, ownerKey) {
 }
 
 function _getMethodLinkedChannels(methodData) {
-  // ANALYSIS-CHANNELS-REFACTOR: callable linked channels should eventually be
-  // published as final linkage metadata instead of recomputed from broad
-  // merged used/mutated footprints at each runtime admission site.
-  return _mergeChannelNames(
-    methodData?.mergedUsedChannels,
-    methodData?.mergedMutatedChannels
-  );
+  if (Array.isArray(methodData?.mergedLinkedChannels)) {
+    return methodData.mergedLinkedChannels;
+  }
+  // Stage 5 should remove this fallback once all callable metadata is finalized
+  // with an explicit mergedLinkedChannels array.
+  return _mergeChannelNames(methodData?.mergedUsedChannels, methodData?.mergedMutatedChannels);
 }
 
 function getCallableBodyLinkedChannelsImpl(methodData, errorContext = null) {
@@ -545,7 +556,9 @@ function _finalizeChannelFootprints(state, errorContext = null) {
       const invokedMethods = _collectInvokedMethodData(methodData, errorContext);
       // Invalid resolved metadata shapes remain fail-fast invariants. Super-chain
       // channel growth stays folded into this same fixed-point walk so we do not
-      // reintroduce a second parent-to-child merge phase.
+      // reintroduce a second parent-to-child merge phase. mergedLinkedChannels
+      // currently mirrors the used footprint; Stage 5 will let it diverge once
+      // callable link metadata stops being derived from usedChannels.
       const nextUsedChannels = _mergeChannelNames(
         methodData.mergedUsedChannels,
         methodData.super?.mergedUsedChannels,
@@ -556,12 +569,21 @@ function _finalizeChannelFootprints(state, errorContext = null) {
         methodData.super?.mergedMutatedChannels,
         ...invokedMethods.map((entry) => entry.mergedMutatedChannels)
       );
+      const nextLinkedChannels = _mergeChannelNames(
+        methodData.mergedLinkedChannels,
+        methodData.super?.mergedLinkedChannels,
+        ...invokedMethods.map((entry) => entry.mergedLinkedChannels)
+      );
       if (!_channelArraysEqual(methodData.mergedUsedChannels, nextUsedChannels)) {
         methodData.mergedUsedChannels = nextUsedChannels;
         changed = true;
       }
       if (!_channelArraysEqual(methodData.mergedMutatedChannels, nextMutatedChannels)) {
         methodData.mergedMutatedChannels = nextMutatedChannels;
+        changed = true;
+      }
+      if (!_channelArraysEqual(methodData.mergedLinkedChannels, nextLinkedChannels)) {
+        methodData.mergedLinkedChannels = nextLinkedChannels;
         changed = true;
       }
     }
@@ -844,10 +866,11 @@ function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKe
 }
 
 function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue, currentBuffer, methodData) {
-  // ANALYSIS-CHANNELS-REFACTOR: this still derives caller/shared-root linking
-  // choices from runtime availability. Audit against final callable
-  // linkedChannels and remove availability-based additions/removals where the
-  // analysis metadata can be the source of truth.
+  // ANALYSIS-CHANNELS-REFACTOR: linkedChannels now come from callable metadata,
+  // but this routine still chooses which parent path installs each link
+  // (caller buffer, shared root, or both) from runtime availability. Replace
+  // that path choice with explicit callable/shared-root link metadata if the
+  // remaining inheritance audit proves it is not a true runtime semantic.
   const sharedRootBuffer = inheritanceStateValue.sharedRootBuffer ?? currentBuffer;
   const linkedChannels = _getMethodLinkedChannels(methodData);
   const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue);

@@ -13,7 +13,8 @@ import {
   createSequenceChannel,
   createPoison,
   isPoisonError,
-  linkCurrentBufferToParentChannels
+  linkCurrentBufferToParentChannels,
+  runControlFlowBoundary
 } from '../../src/runtime/runtime.js';
 
 describe('channel.finalSnapshot', function () {
@@ -237,6 +238,25 @@ describe('channel.finalSnapshot', function () {
         expect(err.message).to.contain("Cannot link channel 'text' without a registered channel object");
       });
       expect(parent.arrays.text).to.have.length(0);
+    });
+
+    it('rejects duplicate linked or declared lane metadata', function () {
+      expect(() => createCommandBuffer(context, null, ['text', 'text'], null, null)).to.throwError(/linkedChannels contains duplicate channel 'text'/);
+      expect(() => createCommandBuffer(context, null, null, null, ['text', 'text'])).to.throwError(/declaredChannels contains duplicate channel 'text'/);
+      expect(() => createCommandBuffer(context, null, ['text'], null, ['text'])).to.throwError(/declared locally but also appears in linkedChannels/);
+      expect(() => createCommandBuffer(context, null, [42], null, null)).to.throwError(/linkedChannels contains a non-string channel name/);
+    });
+
+    it('does not hide invalid async-boundary lane metadata', async function () {
+      const parent = createCommandBuffer(context, null, null, null, ['text']);
+      declareBufferChannel(parent, 'text', 'text', context, null);
+      try {
+        await runControlFlowBoundary(parent, 'text', null, context, () => {}, async () => null);
+        throw new Error('expected invalid linked channel metadata to fail');
+      } catch (err) {
+        expect(err.name).to.be('RuntimeFatalError');
+        expect(err.message).to.contain('linkedChannels must be an array when provided');
+      }
     });
 
     it('links a child to an already-finished parent channel without structural insertion', function () {

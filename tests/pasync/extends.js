@@ -632,6 +632,7 @@ describe('Extends Runtime', function () {
           ownerKey: 'Main.script',
           ownUsedChannels: [],
           ownMutatedChannels: ['trace'],
+          ownLinkedChannels: ['trace'],
           super: null
         };
         const admission = runtime.invokeInheritedMethod(
@@ -678,6 +679,7 @@ describe('Extends Runtime', function () {
         ownerKey: 'Main.script',
         ownUsedChannels: ['theme'],
         ownMutatedChannels: ['trace'],
+        ownLinkedChannels: ['theme', 'trace'],
         super: null
       };
 
@@ -708,6 +710,8 @@ describe('Extends Runtime', function () {
       expect(methodMeta.signature).to.eql({ argNames: [], withContext: false });
       expect(methodMeta.mergedUsedChannels).to.contain('theme');
       expect(methodMeta.mergedMutatedChannels).to.contain('trace');
+      expect(methodMeta.mergedLinkedChannels).to.contain('theme');
+      expect(methodMeta.mergedLinkedChannels).to.contain('trace');
     });
 
     it('should let finishInvocationBuffer own sync invocation-buffer cleanup', async function () {
@@ -836,10 +840,7 @@ describe('Extends Runtime', function () {
           if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
             const invocationBuffer = spec.invocationBuffer;
             seenLinkedChannels = {
-              mergedLinkedChannels: Array.from(new Set([
-                ...(Array.isArray(spec.methodData.mergedUsedChannels) ? spec.methodData.mergedUsedChannels : []),
-                ...(Array.isArray(spec.methodData.mergedMutatedChannels) ? spec.methodData.mergedMutatedChannels : [])
-              ])),
+              mergedLinkedChannels: spec.methodData.mergedLinkedChannels,
               late: invocationBuffer.hasChannel('late') && !invocationBuffer.getOwnChannel('late'),
               trace: invocationBuffer.hasChannel('trace') && !invocationBuffer.getOwnChannel('trace')
             };
@@ -963,10 +964,7 @@ describe('Extends Runtime', function () {
           ) {
             const invocationBuffer = spec.invocationBuffer;
             seenLinkedChannels = {
-              mergedLinkedChannels: Array.from(new Set([
-                ...(Array.isArray(spec.methodData.mergedUsedChannels) ? spec.methodData.mergedUsedChannels : []),
-                ...(Array.isArray(spec.methodData.mergedMutatedChannels) ? spec.methodData.mergedMutatedChannels : [])
-              ])),
+              mergedLinkedChannels: spec.methodData.mergedLinkedChannels,
               late: invocationBuffer.hasChannel('late') && !invocationBuffer.getOwnChannel('late'),
               trace: invocationBuffer.hasChannel('trace') && !invocationBuffer.getOwnChannel('trace')
             };
