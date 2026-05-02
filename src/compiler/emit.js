@@ -110,12 +110,15 @@ class CompileEmit {
         );
       }
     } else {
+      const declaredChannelsArg = this.compiler.asyncMode
+        ? this.getDeclaredChannelsArg(node)
+        : 'null';
       this.compiler.buffer.initManagedBuffer(
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChannelVar,
         linkedChannels,
-        this.getDeclaredChannelsArg(node)
+        declaredChannelsArg
       );
     }
     this.line('try {');

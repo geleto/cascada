@@ -3,10 +3,53 @@ import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Context, Script} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import {DEFAULT_TEMPLATE_TEXT_OUTPUT} from '../../src/compiler/buffer.js';
+import {parse} from '../../src/parser.js';
+import {transform} from '../../src/transformer.js';
+import {CompilerAsync} from '../../src/compiler/compiler.js';
+import * as nodes from '../../src/nodes.js';
 import * as runtime from '../../src/runtime/runtime.js';
 import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js';
 
 (function () {
+  function createIdPool() {
+    return {
+      value: 0,
+      next() {
+        this.value += 1;
+        return this.value;
+      }
+    };
+  }
+
+  function analyzeTemplateSource(src, name = 'analysis-test.njk') {
+    const opts = {
+      asyncMode: true,
+      scriptMode: false,
+      idPool: createIdPool()
+    };
+    const compiler = new CompilerAsync(name, opts);
+    const ast = transform(parse(src, [], opts), [], name, opts);
+    compiler.analysis.run(ast);
+    return ast;
+  }
+
+  function collectNodesByType(node, typename, out = []) {
+    if (!node) {
+      return out;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((child) => collectNodesByType(child, typename, out));
+      return out;
+    }
+    if (!(node instanceof nodes.Node)) {
+      return out;
+    }
+    if (node.typename === typename) {
+      out.push(node);
+    }
+    node.fields.forEach((field) => collectNodesByType(node[field], typename, out));
+    return out;
+  }
 
   describe('Async template command buffering parity', function () {
     it('should compile async template output to text commands on text output', function () {
@@ -58,6 +101,42 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
       const source = tmpl._compileSource();
 
       expect(source).to.contain('runtime.runRenderBoundary(context, ["__text__"], cb, async');
+    });
+
+    it('should keep nested capture text outputs out of outer stored channel facts', function () {
+      const ast = analyzeTemplateSource(
+        '{% set x = "v" %}' +
+        '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}',
+        'nested-capture-analysis.njk'
+      );
+      const captures = collectNodesByType(ast, 'Capture');
+      const outer = captures[0]._analysis;
+      const inner = captures[1]._analysis;
+
+      expect(Array.from(outer.usedChannels || [])).to.eql([outer.textOutput, 'x']);
+      expect(Array.from(outer.mutatedChannels || [])).to.eql([outer.textOutput]);
+      expect(Array.from(inner.usedChannels || [])).to.eql([inner.textOutput, 'x']);
+      expect(Array.from(inner.mutatedChannels || [])).to.eql([inner.textOutput]);
+      expect(outer.usedChannels.has(inner.textOutput)).to.be(false);
+      expect(outer.mutatedChannels.has(inner.textOutput)).to.be(false);
+    });
+
+    it('should preserve parent-owned mutations in stored capture channel facts', function () {
+      const ast = analyzeTemplateSource(
+        '{% set x = "v" %}' +
+        '{% set outer %}{% set x = "outer" %}{% set inner %}{{ x }}{% set x = "inner" %}{% endset %}{% endset %}',
+        'nested-capture-mutation-analysis.njk'
+      );
+      const captures = collectNodesByType(ast, 'Capture');
+      const outer = captures[0]._analysis;
+      const inner = captures[1]._analysis;
+
+      expect(Array.from(outer.usedChannels || [])).to.eql(['x']);
+      expect(Array.from(outer.mutatedChannels || [])).to.eql(['x']);
+      expect(Array.from(inner.usedChannels || [])).to.eql([inner.textOutput, 'x']);
+      expect(Array.from(inner.mutatedChannels || [])).to.eql([inner.textOutput, 'x']);
+      expect(outer.usedChannels.has(inner.textOutput)).to.be(false);
+      expect(outer.mutatedChannels.has(inner.textOutput)).to.be(false);
     });
 
     it('should not emit caller scheduling machinery for macros without caller()', function () {

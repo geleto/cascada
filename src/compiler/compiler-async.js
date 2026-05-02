@@ -825,10 +825,12 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.scriptMode) {
       this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
     }
+    const textOutput = `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL}${this._tmpid()}`;
     return {
       createScope: true,
       scopeBoundary: false,
-      textOutput: `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL}${this._tmpid()}`
+      declares: [{ name: textOutput, type: 'text', initializer: null, internal: true }],
+      textOutput
     };
   }
 

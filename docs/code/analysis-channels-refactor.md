@@ -19,7 +19,7 @@ Today `_finalizeOutputUsage(...)` starts from direct node facts:
 It merges child aggregates into a local aggregate. Before returning that
 aggregate to the parent, it already applies two important rules:
 
-- channels declared/owned at the current analysis node are removed from the set
+- channels declared at the current analysis node are removed from the set
   returned upward
 - scope boundaries return an empty set upward
 
@@ -69,13 +69,15 @@ Add a derived boundary-link fact, computed by analysis:
 - stored only on boundary nodes that need runtime parent linking
 
 The boundary-link set is not "channels not found in the parent." Compile-time
-analysis does not inspect a runtime parent buffer. It means "channels not owned
-by this boundary"; the runtime still validates that the immediate parent can
-provide every requested link.
+analysis does not inspect a runtime parent buffer. It means "channels not
+declared by this boundary"; the runtime still validates that the immediate
+parent can provide every requested link.
 
-For this purpose, "owned by this boundary" must follow declaration ownership
-metadata, not just syntax proximity. Parent-owned declarations introduced from a
-child construct must not be treated as locally owned by the child boundary.
+For this purpose, declaration ownership metadata is the ownership model. Any
+compiler-generated channel that belongs to a boundary, such as capture text
+output, must be represented as an internal declaration in `declaredChannels`.
+Parent-owned declarations introduced from a child construct must not be treated
+as local declarations of the child boundary.
 
 Compiler boundary emitters should consume that derived link set directly. They
 should not derive parent links by hand with node-specific subtraction rules.
@@ -86,11 +88,11 @@ should not derive parent links by hand with node-specific subtraction rules.
 from `node._analysis.usedChannels` before creating `linkedChannelsArg`.
 
 That subtraction is correct behavior, but it is in the wrong layer. Capture text
-outputs are local declarations/owned lanes of their capture boundary. The
-analysis pass already keeps those names out of the aggregate returned to the
-outer parent; the stored per-node `usedChannels` and `mutatedChannels` should
-reflect the same ownership boundary, or the analysis pass should expose a
-separate derived boundary-link set for compiler emitters.
+outputs are local internal declarations of their capture boundary. The analysis
+pass already keeps declared names out of the aggregate returned to the outer
+parent; the stored per-node `usedChannels` and `mutatedChannels` should reflect
+the same declaration boundary, or the analysis pass should expose a separate
+derived boundary-link set for compiler emitters.
 
 ## Desired Outcome
 
@@ -100,9 +102,13 @@ separate derived boundary-link set for compiler emitters.
   channels owned by nested child boundaries."
 - the filtered upward aggregate and the stored per-node analysis facts do not
   disagree about child-owned channels.
+- `usedChannels` / `mutatedChannels` may still include locally declared
+  channels when the current node/body actually touches them. `linkedChannels`
+  is the derived boundary subset that removes channels declared by that
+  boundary.
 - only boundary nodes store `linkedChannels`.
 - boundary `linkedChannels` means "channels used or mutated by this boundary
-  that are not owned by this boundary and must therefore be provided by the
+  that are not declared by this boundary and must therefore be provided by the
   immediate parent."
 - analysis produces a separate parent-link set for each boundary node that
   creates a runtime child buffer.
@@ -138,7 +144,7 @@ separate derived boundary-link set for compiler emitters.
 3. Define boundary `linkedChannels` from the already-filtered current node
    usage:
    - start from channels used or mutated by the boundary body
-   - remove channels declared/owned by the boundary itself
+   - remove channels declared by the boundary itself
    - do not include child-boundary-owned channels, because they should already
      be absent from the boundary's stored `usedChannels` / `mutatedChannels`
 4. Update compiler boundary emitters to consume `node._analysis.linkedChannels`
@@ -178,10 +184,14 @@ Work:
 - adjust `_finalizeOutputUsage(...)` so stored facts do not include channels
   owned by nested child boundaries
 - keep direct node facts (`uses`, `mutates`, `declares`) intact
+- represent compiler-generated boundary-local channels as internal
+  declarations instead of a separate owned-channel mechanism
 - verify nested capture text outputs stay on the nested capture's analysis, not
   the outer capture's stored channel facts
 - audit `declaredChannels`, `declares`, `declaresInParent`, and `textOutput`
-  while changing ownership behavior
+  while changing ownership behavior; `textOutput` should identify the current
+  text output but declaration ownership should still come from
+  `declaredChannels`
 
 Validation:
 
@@ -199,6 +209,13 @@ Work:
 
 - add boundary-only `linkedChannels` metadata for nodes that create runtime
   child buffers
+- cover every child-buffer surface explicitly:
+  - control-flow and value boundaries
+  - capture boundaries
+  - render/custom-extension body fragments
+  - loops
+  - macro caller buffers
+  - inheritance/component/callable invocation metadata
 - derive it from filtered `usedChannels` / `mutatedChannels` minus channels
   owned by that boundary
 - include external mutations as links, because writes to parent-owned channels
@@ -254,6 +271,8 @@ Work:
 - audit inheritance/component invocation linking separately from ordinary
   control-flow boundaries, because callable metadata currently merges
   transitive used/mutated footprints at runtime
+- replace or remove lane-list normalization helpers, such as linked/declared
+  deduplication and merging, once analysis-owned metadata is authoritative
 - document any remaining divergence from analysis-provided links as an explicit
   semantic rule
 
@@ -309,6 +328,8 @@ duplicated linked-channel calculation:
 - tests that manually declare/register channels only because metadata claims a
   link without a real provider
 - duplicated declared-channel threading and repeated linked/declared merge logic
+- render/custom-extension body-local lane patches, especially helpers that
+  manually add current text or fragment-local declarations
 - capture, caller, import/from-import, include, loop, component, and inheritance
   special cases that patch channel sets locally
 - finished-buffer fallback logic that finds channels through a path other than
@@ -365,9 +386,23 @@ Current examples to audit:
 - `src/compiler/boundaries.js#_collectTextOutputNames(...)`: currently filters
   child-owned capture text outputs out of capture links; should disappear once
   stored channel facts and boundary `linkedChannels` respect child ownership.
+- `src/compiler/boundaries.js#compileCaptureBoundary(...)`: currently derives
+  linked and declared lanes locally from broad stored facts; should consume
+  analysis-owned boundary metadata.
+- `src/compiler/boundaries.js#_getRenderBoundaryDeclaredChannelsArg(...)`:
+  currently patches render/custom-extension body-local declared lanes, including
+  current text; analysis should provide complete declared metadata for these
+  fragments.
 - `src/compiler/inheritance.js#collectMethodChannelNames(...)`: currently
   filters callable-local implementation channels out of inheritance method
   footprints; should collapse to analysis-owned callable/boundary metadata.
+- `src/compiler/macro.js#_getCallerParentVisibleUsedChannels(...)`: currently
+  derives macro caller links by subtracting declared channels locally; should
+  consume analysis-owned caller boundary links.
+- `src/runtime/command-buffer.js#uniqueLaneNames(...)` and
+  `src/runtime/command-buffer.js#mergeLaneNames(...)`: currently normalize and
+  merge linked/declared lane arrays defensively; should become unnecessary or
+  narrow assertions once analysis emits authoritative lane metadata.
 - `src/runtime/command-buffer.js#hasLinkedBuffer(...)`: currently answers
   runtime structural-link questions; should be replaced by analysis-owned link
   specs or a narrower assertion/installer.
@@ -395,9 +430,10 @@ facts that can affect channel ownership or linking:
   declared here, declared in parent, and declared in nested child boundaries.
 - `declares` / `declaresInParent`: these feed `declaredChannels`; ownership
   mistakes here will corrupt used/mutated/link derivation.
-- `textOutput`: this is the ownership marker for capture/block text channels.
-  Nested text outputs should belong to their own boundary facts, not leak into
-  an outer boundary's linked set.
+- `textOutput`: this identifies the current text-output channel, but should not
+  be a separate ownership mechanism. Generated text outputs should also be
+  internal declarations in `declaredChannels`. Nested text outputs should belong
+  to their own boundary facts, not leak into an outer boundary's linked set.
 - `sequenceLocks`: audit if any boundary/runtime link behavior depends on lock
   metadata; broad root collection may be fine, but boundary-local semantics
   should be checked before reusing it as a channel-like fact.
