@@ -238,8 +238,16 @@ class CompilerBaseAsync extends CompilerCommon {
     this._compileAsyncBinOpShortCircuit(node, true);
   }
 
+  analyzeOr() {
+    return { createsLinkedChildBuffer: true };
+  }
+
   compileAnd(node) {
     this._compileAsyncBinOpShortCircuit(node, false);
+  }
+
+  analyzeAnd() {
+    return { createsLinkedChildBuffer: true };
   }
 
   compilePeekError(node) {
@@ -633,7 +641,8 @@ class CompilerBaseAsync extends CompilerCommon {
       importedCallable,
       directCallerCall,
       directMacroCall,
-      explicitThisDispatchMethodName
+      explicitThisDispatchMethodName,
+      createsLinkedChildBuffer: !!importedCallable
     };
   }
 

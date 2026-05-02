@@ -97,6 +97,8 @@ class CompileAnalysis {
       declaredChannels: null,
       usedChannels: null,
       mutatedChannels: null,
+      linkedChannels: null,
+      createsLinkedChildBuffer: false,
       ...existingAnalysis,
       parent: parentAnalysis,
       inheritedSequenceFunCallLockKey
@@ -650,6 +652,14 @@ class CompileAnalysis {
     analysis.usedChannels = usedChannels.size > 0 ? usedChannels : null;
     analysis.mutatedChannels = mutatedChannels.size > 0 ? mutatedChannels : null;
 
+    const declaredHere = analysis.declaredChannels instanceof Map ? analysis.declaredChannels : null;
+    analysis.linkedChannels = this._deriveBoundaryLinkedChannels(
+      analysis,
+      usedChannels,
+      mutatedChannels,
+      declaredHere
+    );
+
     if (analysis.scopeBoundary) {
       return {
         usedChannels: new Set(),
@@ -657,7 +667,6 @@ class CompileAnalysis {
       };
     }
 
-    const declaredHere = analysis.declaredChannels instanceof Map ? analysis.declaredChannels : null;
     if (!declaredHere || declaredHere.size === 0) {
       return {
         usedChannels,
@@ -680,6 +689,33 @@ class CompileAnalysis {
       usedChannels: parentUsedChannels,
       mutatedChannels: parentMutatedChannels
     };
+  }
+
+  _deriveBoundaryLinkedChannels(analysis, usedChannels, mutatedChannels, declaredChannels) {
+    if (!this._storesBoundaryLinkedChannels(analysis)) {
+      return null;
+    }
+    const linkedChannels = new Set();
+    usedChannels.forEach((name) => {
+      if (name) {
+        linkedChannels.add(name);
+      }
+    });
+    mutatedChannels.forEach((name) => {
+      if (name) {
+        linkedChannels.add(name);
+      }
+    });
+    if (declaredChannels) {
+      declaredChannels.forEach((_decl, name) => {
+        linkedChannels.delete(name);
+      });
+    }
+    return linkedChannels.size > 0 ? linkedChannels : null;
+  }
+
+  _storesBoundaryLinkedChannels(analysis) {
+    return !!(analysis && analysis.parent && analysis.createsLinkedChildBuffer);
   }
 
   getCurrentTextChannel(analysis) {

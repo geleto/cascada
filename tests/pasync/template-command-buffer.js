@@ -139,6 +139,49 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
       expect(outer.mutatedChannels.has(inner.textOutput)).to.be(false);
     });
 
+    it('should derive boundary linked channels from stored facts minus declarations', function () {
+      const ast = analyzeTemplateSource(
+        '{% set x = "v" %}' +
+        '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}',
+        'nested-capture-linked-analysis.njk'
+      );
+      const captures = collectNodesByType(ast, 'Capture');
+
+      expect(Array.from(captures[0]._analysis.linkedChannels || [])).to.eql(['x']);
+      expect(Array.from(captures[1]._analysis.linkedChannels || [])).to.eql(['x']);
+    });
+
+    it('should include parent-owned mutations in derived boundary linked channels', function () {
+      const ast = analyzeTemplateSource(
+        '{% set x = "v" %}' +
+        '{% if flag %}{{ x }}{% set x = "updated" %}{% var local = "local" %}{{ local }}{% endif %}',
+        'if-linked-mutation-analysis.njk'
+      );
+      const ifNode = collectNodesByType(ast, 'If')[0];
+
+      expect(Array.from(ifNode._analysis.linkedChannels || [])).to.eql(['__text__', 'x']);
+    });
+
+    it('should mark include, extends, and block nodes as linked child buffers', function () {
+      const ast = analyzeTemplateSource(
+        '{% extends parentTemplate %}' +
+        '{% include includeTemplate %}' +
+        '{% block body %}{{ value }}{% endblock %}',
+        'linked-child-buffer-surfaces.njk'
+      );
+
+      const includeNode = collectNodesByType(ast, 'Include')[0];
+      const extendsNode = collectNodesByType(ast, 'Extends')[0];
+      const blockNode = collectNodesByType(ast, 'Block')[0];
+
+      expect(includeNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(extendsNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(blockNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(Array.from(includeNode._analysis.linkedChannels || [])).to.eql(['__text__']);
+      expect(Array.from(extendsNode._analysis.linkedChannels || [])).to.eql(['__text__']);
+      expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__']);
+    });
+
     it('should not emit caller scheduling machinery for macros without caller()', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}', env);

@@ -68,6 +68,15 @@ Add a derived boundary-link fact, computed by analysis:
 - no nested child-boundary-owned channels
 - stored only on boundary nodes that need runtime parent linking
 
+Analysis should mark those nodes explicitly with a child-buffer/linking fact
+such as `createsLinkedChildBuffer`. Do not infer this from node type names, and
+do not reuse `createScope` or `scopeBoundary`:
+
+- `createScope` is lexical compiler scope, not command-buffer creation.
+- `scopeBoundary` controls analysis propagation/visibility, not linking.
+- emitter-local arguments such as `createScopeRootBuffer` describe a specific
+  codegen helper, not the general boundary-link analysis contract.
+
 The boundary-link set is not "channels not found in the parent." Compile-time
 analysis does not inspect a runtime parent buffer. It means "channels not
 declared by this boundary"; the runtime still validates that the immediate
@@ -209,6 +218,10 @@ Work:
 
 - add boundary-only `linkedChannels` metadata for nodes that create runtime
   child buffers
+- add an explicit analysis flag, such as `createsLinkedChildBuffer`, for nodes
+  that create a child command buffer whose channels may need parent links
+- do not maintain a central node-type allowlist for link derivation; the node
+  analyzer that knows it emits a linked child buffer should set the flag
 - cover every child-buffer surface explicitly:
   - control-flow and value boundaries
   - capture boundaries
@@ -268,6 +281,11 @@ Work:
     against that metadata where possible
   - keep runtime checks only for hard invariant validation, such as "requested
     linked channel is missing from the immediate parent"
+- audit every compile-time child-buffer creation site and ensure it is either:
+  - represented by analysis metadata via `createsLinkedChildBuffer` and
+    `linkedChannels`
+  - documented as a root/scope-root/runtime-only buffer that does not belong to
+    boundary-link analysis
 - audit inheritance/component invocation linking separately from ordinary
   control-flow boundaries, because callable metadata currently merges
   transitive used/mutated footprints at runtime
@@ -321,6 +339,9 @@ duplicated linked-channel calculation:
 - boundary-specific link builders, including local
   `Array.from(usedChannels).filter(...)`, `used - declared`, or hand-built
   `linkedChannelsArg` logic in boundary/compiler helpers
+- central node-type allowlists that try to infer which AST nodes need
+  `linkedChannels`; child-buffer/link behavior should be explicit analysis
+  metadata set by the relevant analyzer
 - runtime "maybe link" guards that check whether a parent has a channel and
   silently skip linking when it does not
 - runtime structural-link probes, such as checking whether a buffer path is
@@ -426,6 +447,9 @@ The primary refactor targets are `usedChannels`, `mutatedChannels`, and the new
 boundary-only `linkedChannels`. While changing those, audit nearby analysis
 facts that can affect channel ownership or linking:
 
+- `createsLinkedChildBuffer`: should be the explicit marker that a node creates
+  a child command buffer whose linked channels are analysis-owned. Keep it
+  distinct from lexical scope facts.
 - `declaredChannels`: should remain owner-scoped. Check ambiguity between
   declared here, declared in parent, and declared in nested child boundaries.
 - `declares` / `declaresInParent`: these feed `declaredChannels`; ownership

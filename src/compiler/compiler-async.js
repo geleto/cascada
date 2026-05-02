@@ -347,9 +347,9 @@ class CompilerAsync extends CompilerBaseAsync {
           createScope: true
         });
       }
-      return {};
+      return { createsLinkedChildBuffer: true };
     }
-    return { createScope: true, declares };
+    return { createScope: true, declares, createsLinkedChildBuffer: true };
   }
 
   analyzeWhile(node, analysisPass) {
@@ -404,7 +404,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.default) {
       node.default._analysis = { createScope: true };
     }
-    return {};
+    return { createsLinkedChildBuffer: true };
   }
 
   finalizeOutputAnalyzeSwitch(node) {
@@ -483,7 +483,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     const guardTargets = this._getGuardTargets(node);
     validateGuardVariablesDeclared(guardTargets.variableValidationTargets, this, node);
-    return { guardTargets };
+    return { guardTargets, createsLinkedChildBuffer: true };
   }
 
   finalizeOutputAnalyzeGuard(node) {
@@ -774,7 +774,11 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.else_) {
       node.else_._analysis = { createScope: true };
     }
-    return {};
+    return { createsLinkedChildBuffer: true };
+  }
+
+  analyzeIfAsync(node) {
+    return this.analyzeIf(node);
   }
 
   finalizeOutputAnalyzeIf(node) {
@@ -830,7 +834,8 @@ class CompilerAsync extends CompilerBaseAsync {
       createScope: true,
       scopeBoundary: false,
       declares: [{ name: textOutput, type: 'text', initializer: null, internal: true }],
-      textOutput
+      textOutput,
+      createsLinkedChildBuffer: true
     };
   }
 
@@ -860,7 +865,8 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.scriptMode ? {}
       : {
         uses: [textChannel],
-        mutates: [textChannel]
+        mutates: [textChannel],
+        createsLinkedChildBuffer: true
       };
   }
 
@@ -992,7 +998,12 @@ class CompilerAsync extends CompilerBaseAsync {
         declares: ((node.body._analysis && node.body._analysis.declares) || []).concat(declares)
       });
     }
-    return { createScope: true, scopeBoundary: false, parentReadOnly: true };
+    return {
+      createScope: true,
+      scopeBoundary: false,
+      parentReadOnly: true,
+      createsLinkedChildBuffer: true
+    };
   }
 
   compileBlock(node) {
@@ -1020,8 +1031,15 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeExtends(node) {
-    void node;
-    return {};
+    if (this.scriptMode) {
+      return { createsLinkedChildBuffer: true };
+    }
+    const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
+    return {
+      uses: textChannel ? [textChannel] : [],
+      mutates: textChannel ? [textChannel] : [],
+      createsLinkedChildBuffer: true
+    };
   }
 
   compileExtends(node) {
@@ -1035,7 +1053,8 @@ class CompilerAsync extends CompilerBaseAsync {
     const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
     return {
       uses: textChannel ? [textChannel] : [],
-      mutates: textChannel ? [textChannel] : []
+      mutates: textChannel ? [textChannel] : [],
+      createsLinkedChildBuffer: true
     };
   }
 
