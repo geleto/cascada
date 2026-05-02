@@ -33,7 +33,7 @@ function checkFrameBalance(frame, parent) {
  * @throws {Error} If buffer is finished
  */
 function checkFinishedBuffer(buffer, channelName = null) {
-  const isFinished = (channelName !== null && channelName !== undefined)
+  const isFinished = channelName != null
     ? buffer.isFinished(channelName)
     : buffer.finished;
   if (isFinished) {
@@ -46,7 +46,7 @@ function checkFinishedBuffer(buffer, channelName = null) {
 }
 
 function ensureSequentialPathChannel(currentBuffer, pathKey) {
-  const channel = currentBuffer.getChannel(pathKey);
+  const channel = currentBuffer.getChannelIfExists(pathKey);
 
   if (!channel) {
     throw new Error(`Sequential path '${pathKey}' was not predeclared as a channel (expected compile-time declaration)`);
@@ -59,7 +59,7 @@ function ensureSequentialPathChannel(currentBuffer, pathKey) {
 }
 
 function assertChannelLaneAvailable(buffer, channelName) {
-  if (buffer.hasChannel && buffer.hasChannel(channelName)) {
+  if (buffer.hasChannel(channelName)) {
     return;
   }
   if (buffer.arrays && channelName in buffer.arrays) {

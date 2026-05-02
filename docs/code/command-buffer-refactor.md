@@ -1120,7 +1120,9 @@ Changes:
   - resolve canonical name
   - assert the lane exists
   - call `_markChannelFinished(...)`
-  - notify iterators / update aggregate completion through the surviving finish path
+  - notify iterators through the surviving finish path
+- keep aggregate buffer completion gated by `markFinishedAndPatchLinks(...)`;
+  per-lane finish requests must not complete the aggregate buffer by themselves
 - keep aggregate finish based on the lane keys in `arrays` unless a later change
   removes equivalent finish state at the same time it adds counters
 - keep per-lane finished flags
@@ -1510,6 +1512,10 @@ the migration scaffolding into permanent design.
   runtime-dynamic lane creation paths. Before hard missing-lane assertions become
   unconditional, each of those creation paths must either receive static lane
   metadata or be replaced by a narrower explicit mechanism.
+- Macro/caller invocation buffer creation in
+  [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js) now
+  threads caller-visible linked channels and caller-local declared lanes through
+  `__callerUsedChannels` and `__callerDeclaredChannels`.
 - `uniqueLaneNames(...)` in `CommandBuffer` is marked
   `ANALYSIS-CHANNELS-REFACTOR`; after analysis-owned linked/declared lane
   metadata becomes authoritative, duplicate lane names should be treated as an
@@ -1533,6 +1539,9 @@ Work:
 - remove the `_registerLinkedChannel(...)` call from `_add()` (**done**)
 - remove `markChannelFinished(...)` if it is no longer needed (**done**; tests
   now use `requestChannelFinish(...)` directly)
+- `requestChannelFinish(...)` is now the direct per-lane finish request path
+  (**done**); it does not complete aggregate buffer state by itself. Aggregate
+  completion remains gated by `markFinishedAndPatchLinks(...)`.
 
 Important coordination:
 
@@ -1544,7 +1553,7 @@ Important coordination:
   `getOwnChannel(...)`
 - before removing `hasLinkedBuffer(...)`, add a focused test that exercises the
   late-linked-child scenario explicitly: a child buffer linked to a parent lane
-  created after the ancestor lane is already finished
+  created after the ancestor lane is already finished (**done**)
 - only remove the fallback once that scenario is either:
   - handled correctly by eager/local lane installation without
     `hasLinkedBuffer(...)`, or
@@ -1561,6 +1570,8 @@ Validation:
 - add one dedicated late-linked-child regression test before deleting
   `_linkedChannels`
 - verify aggregate finish still works for buffers with unused eager lanes
+- verify `requestChannelFinish(...)` rejects unknown lane names instead of
+  silently creating or finishing them
 
 ### Stage 4B. Final cleanup pass
 

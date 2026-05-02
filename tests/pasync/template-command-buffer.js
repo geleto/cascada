@@ -1,6 +1,6 @@
 
 import expect from 'expect.js';
-import {AsyncEnvironment, AsyncTemplate, Context} from '../../src/environment/environment.js';
+import {AsyncEnvironment, AsyncTemplate, Context, Script} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import {DEFAULT_TEMPLATE_TEXT_OUTPUT} from '../../src/compiler/buffer.js';
 import * as runtime from '../../src/runtime/runtime.js';
@@ -17,12 +17,29 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
       expect(source).to.contain('new runtime.TextCommand');
     });
 
+    it('should serialize root declared lanes into createCommandBuffer', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% set x = "a" %}{{ x }}', env, 'declared-lanes.njk');
+      const source = tmpl._compileSource();
+
+      expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer, ["__text__","x"])');
+    });
+
+    it('should serialize script root declared lanes into createCommandBuffer', function () {
+      const env = new AsyncEnvironment();
+      const script = new Script('var x = "a"\nreturn x', env, 'declared-lanes.casc');
+      const source = script._compileSource();
+
+      expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer, ["__return__","x"])');
+    });
+
     it('should not emit caller scheduling machinery for macros without caller()', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}', env);
       const source = tmpl._compileSource();
       expect(source).to.not.contain('__caller__');
       expect(source).to.not.contain('__callerUsedChannels');
+      expect(source).to.not.contain('__callerDeclaredChannels');
     });
 
     it('should preserve literal/interpolation parity and source ordering', async function () {
@@ -365,6 +382,7 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
       expect(source).to.not.contain('context.createSuperInheritancePayload(');
       expect(source).to.not.contain('__caller__');
       expect(source).to.not.contain('__callerUsedChannels');
+      expect(source).to.not.contain('__callerDeclaredChannels');
       expect(source).to.not.contain('CALLER_SCHED_CHANNEL_NAME');
       expect(source).to.not.contain('WaitResolveCommand({ channelName: "__caller__"');
     });
@@ -380,6 +398,9 @@ import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js
 
       expect(source).to.contain('__caller__');
       expect(source).to.contain('__callerUsedChannels');
+      expect(source).to.contain('__callerDeclaredChannels');
+      expect(source).to.contain('.__callerUsedChannels || null, null, ');
+      expect(source).to.contain('.__callerDeclaredChannels || null');
       expect(source).to.contain('WaitResolveCommand({ channelName: "__caller__"');
     });
 

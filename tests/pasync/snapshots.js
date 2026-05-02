@@ -12,7 +12,8 @@ import {
   declareBufferChannel,
   createSequenceChannel,
   createPoison,
-  isPoisonError
+  isPoisonError,
+  linkCurrentBufferToParentChannels
 } from '../../src/runtime/runtime.js';
 
 describe('channel.finalSnapshot', function () {
@@ -261,6 +262,29 @@ describe('channel.finalSnapshot', function () {
         expect(err.message).to.contain("Cannot link channel 'text' without a registered channel object");
       });
       expect(parent.arrays.text).to.have.length(0);
+    });
+
+    it('links a child to an already-finished parent channel without structural insertion', function () {
+      const parent = createCommandBuffer(context, null, null, null, ['text']);
+      const channel = declareBufferChannel(parent, 'text', 'text', context, null);
+      parent.markFinishedAndPatchLinks();
+
+      const child = createCommandBuffer(context, null, null, null, ['text']);
+      linkCurrentBufferToParentChannels(parent, child, ['text']);
+
+      expect(child.getChannel('text')).to.be(channel);
+      expect(parent.arrays.text).to.be(null);
+      expect(parent.hasLinkedBuffer(child, 'text')).to.be(false);
+    });
+
+    it('fails when finishing an unknown lane', function () {
+      const buffer = createCommandBuffer(context, null, null, null, ['text']);
+      declareBufferChannel(buffer, 'text', 'text', context, null);
+
+      expect(() => buffer.requestChannelFinish('missing')).to.throwError((err) => {
+        expect(err.name).to.be('RuntimeFatalError');
+        expect(err.message).to.contain("Channel 'missing' is visible but this buffer has no linked lane");
+      });
     });
 
     it('finds channels only through local declarations and explicit links', function () {

@@ -99,6 +99,8 @@ class CommandBuffer {
 
   //@todo - rename this, maybe to finishChannelAndLetIteratorExit
   requestChannelFinish(channelName) {
+    // Finishing an individual lane only wakes channel iterators. Aggregate
+    // buffer completion is still gated by markFinishedAndPatchLinks().
     if (this.finished) {
       return;
     }
@@ -140,6 +142,8 @@ class CommandBuffer {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     checkFinishedBuffer(this, resolvedChannelName);
     this._ensureLane(resolvedChannelName);
+    // ANALYSIS-CHANNELS-REFACTOR: once _ensureLane(...) is removed from this
+    // ingress path, this assertion becomes the hard lane-existence guard.
     assertChannelLaneAvailable(this, resolvedChannelName);
     // Normalize command channel/path keys at ingress so all downstream runtime
     // lookups operate on the resolved runtime channel name. This is why the
@@ -164,7 +168,7 @@ class CommandBuffer {
         // names to the caller-owned runtime channels they were bound to.
         value._inheritChannelAliases(this._channelAliases);
       }
-      value._installLinkedChannel(resolvedChannelName, channel);
+      value._installLinkedChannelResolved(resolvedChannelName, channel);
     }
 
     const target = this.arrays[resolvedChannelName];
@@ -366,8 +370,12 @@ class CommandBuffer {
       return;
     }
     const resolvedChannelName = this._assertCanInstallLinkedChannel(channelName, channel);
-    this._ensureLane(resolvedChannelName);
+    this._installLinkedChannelResolved(resolvedChannelName, channel);
+  }
+
+  _installLinkedChannelResolved(resolvedChannelName, channel) {
     this._channels[resolvedChannelName] = channel;
+    this._ensureLane(resolvedChannelName);
   }
 
   _assertCanInstallLinkedChannel(channelName, channel) {
@@ -388,7 +396,8 @@ class CommandBuffer {
   hasLinkedBuffer(buffer, channelName) {
     // ANALYSIS-CHANNELS-REFACTOR: this is a runtime structural-link probe.
     // Prefer analysis-provided linked-channel decisions over asking the buffer
-    // tree whether a link already exists.
+    // tree whether a link already exists. Keep the finished-parent regression
+    // covered before replacing this helper.
     if (!buffer || !channelName) {
       return false;
     }

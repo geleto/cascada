@@ -1063,6 +1063,7 @@ describe('Extends Foundation', function () {
       const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
       expect(sharedChannel._buffer).to.be(childBuffer);
+      expect(childBuffer.getOwnChannel('theme')).to.be(sharedChannel);
     });
 
     it('should link newly registered shared lanes from the shared root to the active composition buffer', function () {

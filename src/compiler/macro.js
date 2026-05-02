@@ -35,7 +35,7 @@ class CompileMacro {
     const invocationBufferId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    compiler.emit.line(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerUsedChannels || null);`);
+    compiler.emit.line(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerUsedChannels || null, null, ${activeContext.rawCallerVar}.__callerDeclaredChannels || null);`);
     compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit.line(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     compiler.emit.line(`let ${invocationResultId} = Promise.resolve(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.markFinishedAndPatchLinks());`);
@@ -93,6 +93,13 @@ class CompileMacro {
     });
   }
 
+  _getCallerDeclaredChannels(node) {
+    if (!this.compiler.asyncMode || !node || !(node._analysis.declaredChannels instanceof Map)) {
+      return [];
+    }
+    return Array.from(node._analysis.declaredChannels.keys()).filter(Boolean);
+  }
+
   compileAsyncCaller(node) {
     const compiler = this.compiler;
     compiler.emit('(function (){');
@@ -103,7 +110,9 @@ class CompileMacro {
   _compileAsyncCaller(node) {
     const funcId = this._compileAsyncMacro(node);
     const callerUsedChannels = this._getCallerParentVisibleUsedChannels(node);
+    const callerDeclaredChannels = this._getCallerDeclaredChannels(node);
     this.compiler.emit.line(`${funcId}.__callerUsedChannels = ${JSON.stringify(callerUsedChannels)};`);
+    this.compiler.emit.line(`${funcId}.__callerDeclaredChannels = ${JSON.stringify(callerDeclaredChannels)};`);
     return funcId;
   }
 
@@ -213,7 +222,7 @@ class CompileMacro {
     // all-callers buffer so multiple invocations can schedule independently.
     compiler.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
     compiler.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
-    compiler.emit(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerUsedChannels || null);`);
+    compiler.emit(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerUsedChannels || null, null, ${rawCallerVar}.__callerDeclaredChannels || null);`);
     compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${lineno}, colno: ${colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     // __caller__ timing is owned only by caller invocation code. Track both:
@@ -237,7 +246,7 @@ class CompileMacro {
     compiler.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
     // The all-callers buffer is parent-linked because caller() may emit
     // parent-visible observable commands, unlike the isolated macro buffer.
-    compiler.emit.line(`  ${allCallersBufferId} = runtime.createCommandBuffer(context, macroParentBuffer || null, ${rawCallerVar}.__callerUsedChannels || null);`);
+    compiler.emit.line(`  ${allCallersBufferId} = runtime.createCommandBuffer(context, macroParentBuffer || null, ${rawCallerVar}.__callerUsedChannels || null, null, ${rawCallerVar}.__callerDeclaredChannels || null);`);
     compiler.emit.line('}');
   }
 

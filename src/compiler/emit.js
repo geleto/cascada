@@ -95,21 +95,12 @@ class CompileEmit {
         ? JSON.stringify(linkedChannels)
         : 'null';
       const declaredChannelsArg = this.getDeclaredChannelsArg(node);
-      if (!this.compiler.scriptMode) {
-        this.line(
-          `let ${this.compiler.buffer.currentBuffer} = ` +
-          `(compositionMode && parentBuffer)` +
-          ` ? parentBuffer` +
-          ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer, ${declaredChannelsArg});`
-        );
-      } else {
-        this.line(
-          `let ${this.compiler.buffer.currentBuffer} = ` +
-          `(compositionMode && parentBuffer)` +
-          ` ? parentBuffer` +
-          ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer, ${declaredChannelsArg});`
-        );
-      }
+      this.line(
+        `let ${this.compiler.buffer.currentBuffer} = ` +
+        `(compositionMode && parentBuffer)` +
+        ` ? parentBuffer` +
+        ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer, ${declaredChannelsArg});`
+      );
       if (!this.compiler.scriptMode) {
         this.line(
           `let ${this.compiler.buffer.currentTextChannelVar} = ` +
@@ -283,9 +274,6 @@ class CompileEmit {
       }
       if (/^__text__t_\d+$/.test(name) && name !== this.compiler.buffer.currentTextChannelName) {
         return false;
-      }
-      if (name === this.compiler.buffer.currentTextChannelName) {
-        return !declaredChannels.has(name);
       }
       return !declaredChannels.has(name);
     });
