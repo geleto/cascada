@@ -99,6 +99,7 @@ class CompileAnalysis {
       mutatedChannels: null,
       linkedChannels: null,
       createsLinkedChildBuffer: false,
+      linkedChildBufferRequiresCommandEffects: false,
       ...existingAnalysis,
       parent: parentAnalysis,
       inheritedSequenceFunCallLockKey
@@ -651,14 +652,15 @@ class CompileAnalysis {
 
     analysis.usedChannels = usedChannels.size > 0 ? usedChannels : null;
     analysis.mutatedChannels = mutatedChannels.size > 0 ? mutatedChannels : null;
+    if (
+      analysis.linkedChildBufferRequiresCommandEffects &&
+      (!analysis.mutatedChannels || analysis.mutatedChannels.size === 0)
+    ) {
+      analysis.createsLinkedChildBuffer = false;
+    }
 
     const declaredHere = analysis.declaredChannels instanceof Map ? analysis.declaredChannels : null;
-    analysis.linkedChannels = this._deriveBoundaryLinkedChannels(
-      analysis,
-      usedChannels,
-      mutatedChannels,
-      declaredHere
-    );
+    analysis.linkedChannels = this._deriveBoundaryLinkedChannels(analysis, usedChannels, declaredHere);
 
     if (analysis.scopeBoundary) {
       return {
@@ -691,17 +693,12 @@ class CompileAnalysis {
     };
   }
 
-  _deriveBoundaryLinkedChannels(analysis, usedChannels, mutatedChannels, declaredChannels) {
-    if (!this._storesBoundaryLinkedChannels(analysis)) {
+  _deriveBoundaryLinkedChannels(analysis, usedChannels, declaredChannels) {
+    if (!this._shouldDeriveBoundaryLinkedChannels(analysis)) {
       return null;
     }
     const linkedChannels = new Set();
     usedChannels.forEach((name) => {
-      if (name) {
-        linkedChannels.add(name);
-      }
-    });
-    mutatedChannels.forEach((name) => {
       if (name) {
         linkedChannels.add(name);
       }
@@ -714,8 +711,16 @@ class CompileAnalysis {
     return linkedChannels.size > 0 ? linkedChannels : null;
   }
 
-  _storesBoundaryLinkedChannels(analysis) {
-    return !!(analysis && analysis.parent && analysis.createsLinkedChildBuffer);
+  _shouldDeriveBoundaryLinkedChannels(analysis) {
+    return !!(
+      analysis &&
+      analysis.parent &&
+      analysis.createsLinkedChildBuffer &&
+      (
+        !analysis.linkedChildBufferRequiresCommandEffects ||
+        (analysis.mutatedChannels && analysis.mutatedChannels.size > 0)
+      )
+    );
   }
 
   getCurrentTextChannel(analysis) {

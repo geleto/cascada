@@ -221,6 +221,67 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       expect(Array.from(callerNode._analysis.declaredChannels.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
+    it('should keep loop and include-owned facts local inside captures', function () {
+      const ast = analyzeTemplateSource(
+        '{% set outer %}' +
+        '{% for item in items %}{{ loop.index }}{{ item }}{% endfor %}' +
+        '{% include includeTemplate %}' +
+        '{% var local = "local" %}{{ local }}' +
+        '{% endset %}',
+        'capture-loop-include-linked-analysis.njk'
+      );
+      const captureNode = collectNodesByType(ast, 'Capture')[0];
+
+      expect(Array.from(captureNode._analysis.linkedChannels || [])).to.eql([]);
+      expect(captureNode._analysis.usedChannels.has('loop')).to.be(false);
+      expect(captureNode._analysis.usedChannels.has('item')).to.be(false);
+      expect(captureNode._analysis.usedChannels.has('includeTemplate')).to.be(false);
+    });
+
+    it('should not mark scope-isolated macro or root nodes as linked child buffers', function () {
+      const ast = analyzeTemplateSource(
+        '{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}',
+        'scope-boundary-linked-analysis.njk'
+      );
+      const macroNode = collectNodesByType(ast, 'Macro')[0];
+
+      expect(ast._analysis.createsLinkedChildBuffer).to.be(false);
+      expect(ast._analysis.linkedChannels).to.be(null);
+      expect(macroNode._analysis.createsLinkedChildBuffer).to.be(false);
+      expect(macroNode._analysis.linkedChannels).to.be(null);
+    });
+
+    it('should derive short-circuit expression links only when command effects are present', function () {
+      const valueOnlyAst = analyzeTemplateSource(
+        '{% set x = "a" %}{{ x and "b" }}{{ x or "c" }}{{ "a" if x else "b" }}',
+        'value-only-short-circuit-analysis.njk'
+      );
+      const valueAndNode = collectNodesByType(valueOnlyAst, 'And')[0];
+      const valueOrNode = collectNodesByType(valueOnlyAst, 'Or')[0];
+      const valueInlineIfNode = collectNodesByType(valueOnlyAst, 'InlineIf')[0];
+
+      expect(valueAndNode._analysis.createsLinkedChildBuffer).to.be(false);
+      expect(valueAndNode._analysis.linkedChannels).to.be(null);
+      expect(valueOrNode._analysis.createsLinkedChildBuffer).to.be(false);
+      expect(valueOrNode._analysis.linkedChannels).to.be(null);
+      expect(valueInlineIfNode._analysis.createsLinkedChildBuffer).to.be(false);
+      expect(valueInlineIfNode._analysis.linkedChannels).to.be(null);
+
+      const commandEffectAst = analyzeScriptSource([
+        'data result',
+        'var a = flag and result.push("a")',
+        'var b = flag or result.push("b")',
+        'return result.snapshot()'
+      ].join('\n'), 'effectful-short-circuit-analysis.casc');
+      const commandAndNode = collectNodesByType(commandEffectAst, 'And')[0];
+      const commandOrNode = collectNodesByType(commandEffectAst, 'Or')[0];
+
+      expect(commandAndNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(Array.from(commandAndNode._analysis.linkedChannels || [])).to.eql(['result']);
+      expect(commandOrNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(Array.from(commandOrNode._analysis.linkedChannels || [])).to.eql(['result']);
+    });
+
     it('should not emit caller scheduling machinery for macros without caller()', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}', env);

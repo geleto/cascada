@@ -198,7 +198,10 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   analyzeInlineIf() {
-    return { createsLinkedChildBuffer: true };
+    return {
+      createsLinkedChildBuffer: true,
+      linkedChildBufferRequiresCommandEffects: true
+    };
   }
 
   compileIs(node) {
@@ -243,7 +246,10 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   analyzeOr() {
-    return { createsLinkedChildBuffer: true };
+    return {
+      createsLinkedChildBuffer: true,
+      linkedChildBufferRequiresCommandEffects: true
+    };
   }
 
   compileAnd(node) {
@@ -251,7 +257,10 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   analyzeAnd() {
-    return { createsLinkedChildBuffer: true };
+    return {
+      createsLinkedChildBuffer: true,
+      linkedChildBufferRequiresCommandEffects: true
+    };
   }
 
   compilePeekError(node) {
@@ -646,6 +655,9 @@ class CompilerBaseAsync extends CompilerCommon {
       directCallerCall,
       directMacroCall,
       explicitThisDispatchMethodName,
+      // Direct same-scope macro calls reuse the current buffer through
+      // runtime.invokeMacro(..., currentBuffer). Imported callable calls need a
+      // value boundary, so only those are marked as linked child buffers here.
       createsLinkedChildBuffer: !!importedCallable
     };
   }

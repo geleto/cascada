@@ -93,15 +93,15 @@ should not derive parent links by hand with node-specific subtraction rules.
 
 ## Current Smell
 
-`compileCaptureBoundary(...)` currently has to subtract capture text outputs
-from `node._analysis.usedChannels` before creating `linkedChannelsArg`.
+Historically `compileCaptureBoundary(...)` had to subtract nested capture text
+outputs from `node._analysis.usedChannels` before creating `linkedChannelsArg`.
+Stage 1 removed that specific workaround by making generated capture text
+outputs internal declarations and by keeping child-owned channels out of stored
+usage facts.
 
-That subtraction is correct behavior, but it is in the wrong layer. Capture text
-outputs are local internal declarations of their capture boundary. The analysis
-pass already keeps declared names out of the aggregate returned to the outer
-parent; the stored per-node `usedChannels` and `mutatedChannels` should reflect
-the same declaration boundary, or the analysis pass should expose a separate
-derived boundary-link set for compiler emitters.
+The remaining smell is that emitters still derive links from stored facts
+instead of serializing the Stage 2 `linkedChannels` metadata directly. That
+migration belongs to Stage 3.
 
 ## Desired Outcome
 
@@ -160,10 +160,9 @@ derived boundary-link set for compiler emitters.
    instead of recomputing links from `usedChannels`.
 5. Delete duplicated linked-channel calculations from compiler helpers once the
    analysis-provided `linkedChannels` set is available.
-6. Audit boundary-local `usedChannels` filters such as the capture-boundary
-   text-output filter. Remove filters that are only compensating for missing
-   analysis metadata; keep only filters that represent a real local semantic
-   distinction.
+6. Audit boundary-local `usedChannels` filters. Remove filters that are only
+   compensating for missing analysis metadata; keep only filters that represent
+   a real local semantic distinction.
 7. Search for broader `usedChannels` workarounds outside obvious filters:
    - synthetic channel name checks
    - `findChannel(...)` / missing-channel guards before linking
@@ -230,7 +229,9 @@ Work:
     `and` / `or` boundaries that create buffers only when command effects are
     present
   - capture boundaries
-  - render/custom-extension body fragments
+  - render/custom-extension body fragments for ownership/declared-lane
+    analysis; these use isolated render buffers today, so any linked-channel
+    semantics must be documented during the Stage 3 emitter migration
   - loops
   - macro caller buffers, with caller invocation lane metadata derived from
     analysis-owned boundary links rather than local caller-specific subtraction
@@ -258,6 +259,14 @@ Goal:
 Work:
 
 - update boundary emitters to consume `node._analysis.linkedChannels`
+- resolve template output granularity before consuming links: `Output` nodes
+  aggregate child expressions, while `compileOutput(...)` emits per-child text
+  boundaries only for command-effect children. Stage 3 should consume the
+  linked metadata for the actual boundary node/expression being emitted, not
+  the broader output aggregate.
+- document render/custom-extension boundaries as isolated render buffers unless
+  a real parent-link semantic is identified; migrate their declared-lane
+  serialization separately from ordinary linked-channel boundaries.
 - evaluate and remove local `usedChannels` filters and synthetic-name checks
   that only compensated for broad stored channel facts
 - keep only emitter-side channel adjustments that represent documented local
@@ -412,12 +421,9 @@ Current examples to audit:
 - `src/compiler/emit.js#getLinkedChannelsArg(...)`: currently calculates
   linked channels and applies local filters; should become a serializer for
   analysis-provided `linkedChannels` or disappear.
-- `src/compiler/boundaries.js#_collectTextOutputNames(...)`: currently filters
-  child-owned capture text outputs out of capture links; should disappear once
-  stored channel facts and boundary `linkedChannels` respect child ownership.
 - `src/compiler/boundaries.js#compileCaptureBoundary(...)`: currently derives
-  linked and declared lanes locally from broad stored facts; should consume
-  analysis-owned boundary metadata.
+  linked and declared lanes locally from stored facts; Stage 3 should consume
+  analysis-owned boundary metadata directly.
 - `src/compiler/boundaries.js#_getRenderBoundaryDeclaredChannelsArg(...)`:
   currently patches render/custom-extension body-local declared lanes, including
   current text; analysis should provide complete declared metadata for these
