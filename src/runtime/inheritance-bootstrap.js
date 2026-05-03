@@ -349,7 +349,7 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
         null
       );
     }
-    if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
+    if (parentBuffer.isChannelFinished(channelName) || parentBuffer.isFinished()) {
       currentBuffer._installLinkedChannel(channelName, channel);
       if (linkedMutatedChannelSet.has(channelName)) {
         currentBuffer._markLinkedMutatedChannel(channelName);

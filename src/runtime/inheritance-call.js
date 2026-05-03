@@ -734,7 +734,7 @@ function _installInvocationChannelLink(parentBuffer, invocationBuffer, channelNa
     }
     return true;
   }
-  if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
+  if (parentBuffer.isChannelFinished(channelName) || parentBuffer.isFinished()) {
     invocationBuffer._installLinkedChannel(channelName, channel);
     if (isLinkedMutation) {
       invocationBuffer._markLinkedMutatedChannel(channelName);

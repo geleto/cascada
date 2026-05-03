@@ -97,7 +97,7 @@ class CommandBuffer {
     for (let i = 0; i < channelNames.length; i++) {
       this._markChannelFinished(channelNames[i]);
     }
-    this._completeFinishIfAllLanesFinished();
+    this._completeBufferIfAllChannelsFinished();
   }
 
   finishChannel(channelName) {
@@ -113,10 +113,11 @@ class CommandBuffer {
     this._markChannelFinished(resolvedChannelName);
   }
 
-  isFinished(channelName = null) {
-    if (channelName == null) {
-      return this.finished;
-    }
+  isFinished() {
+    return this.finished;
+  }
+
+  isChannelFinished(channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     return this._finishedChannels[resolvedChannelName] === true;
   }
@@ -189,7 +190,7 @@ class CommandBuffer {
   }
 
   _addCommand(cmd, channelName) {
-    if (!this.isFinished(channelName)) {
+    if (!this.isChannelFinished(channelName)) {
       this._add(cmd, channelName);
       return cmd.promise;
     }
@@ -207,7 +208,7 @@ class CommandBuffer {
           path
         );
       }
-      if (!channel._buffer.isFinished(resolvedChannelName)) {
+      if (!channel._buffer.isChannelFinished(resolvedChannelName)) {
         throw new RuntimeFatalError(
           `${cmd.constructor.name} on finished buffer is allowed only if the target channel stream is finished`,
           cmd.pos?.lineno ?? 0,
@@ -267,7 +268,7 @@ class CommandBuffer {
     }
   }
 
-  _completeFinishIfAllLanesFinished() {
+  _completeBufferIfAllChannelsFinished() {
     if (this.finished) {
       return;
     }

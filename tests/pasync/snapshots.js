@@ -228,7 +228,7 @@ describe('channel.finalSnapshot', function () {
       buffer.finish();
 
       expect(buffer.finished).to.be(true);
-      expect(buffer.isFinished('unused')).to.be(true);
+      expect(buffer.isChannelFinished('unused')).to.be(true);
     });
 
     it('fails when a linked parent channel has no registered channel object', function () {
@@ -491,8 +491,8 @@ describe('channel.finalSnapshot', function () {
 
       buffer.finishChannel('data');
 
-      expect(buffer.isFinished('data')).to.be(true);
-      expect(buffer.isFinished('text')).to.be(false);
+      expect(buffer.isChannelFinished('data')).to.be(true);
+      expect(buffer.isChannelFinished('text')).to.be(false);
       expect(buffer.finished).to.be(false);
 
       const dataSnapshot = await buffer.addCommand(new SnapshotCommand({

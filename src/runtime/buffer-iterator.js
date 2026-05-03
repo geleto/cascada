@@ -7,6 +7,7 @@ function isCommandBufferLike(value) {
     typeof value === 'object' &&
     value.arrays &&
     typeof value.isFinished === 'function' &&
+    typeof value.isChannelFinished === 'function' &&
     typeof value.onEnterBuffer === 'function'
   );
 }
@@ -110,9 +111,9 @@ class BufferIterator {
           this._releaseProcessedEntry(buffer, nextIndex);
         }
       }
-      else if (buffer.isFinished(this.channelName) && this.stack.length > 1) {
+      else if (buffer.isChannelFinished(this.channelName) && this.stack.length > 1) {
         this._leaveCurrentToParent();
-      } else if (buffer.isFinished(this.channelName)) {
+      } else if (buffer.isChannelFinished(this.channelName)) {
         this.stack.pop();
         this._setCurrentBuffer(null);
         this.finished = true;

@@ -34,8 +34,8 @@ function checkFrameBalance(frame, parent) {
  */
 function checkFinishedBuffer(buffer, channelName = null) {
   const isFinished = channelName != null
-    ? buffer.isFinished(channelName)
-    : buffer.finished;
+    ? buffer.isChannelFinished(channelName)
+    : buffer.isFinished();
   if (isFinished) {
     throw new Error(
       'Cannot add command to finished CommandBuffer. ' +

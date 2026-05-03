@@ -434,7 +434,7 @@ The iterator in [src/runtime/buffer-iterator.js](C:\Projects\cascada\src\runtime
 
 - it walks `buffer.arrays[channelName]`
 - when it encounters a child buffer entry, it enters it
-- it leaves that child only when `childBuffer.isFinished(channelName)` is true
+- it leaves that child only when `childBuffer.isChannelFinished(channelName)` is true
 
 So there are two separate concerns:
 
@@ -1085,7 +1085,7 @@ Changes:
 - remove `_channels`
 - remove its dead initialization guard in `_registerChannel(...)`
 - route finished `SnapshotCommand` / `RawSnapshotCommand` handling and especially `_runFinishedSnapshotCommand(...)` through the local addressability mechanism
-- update the finished-buffer fast path in `addCommand(...)` so both channel retrieval and the `output._buffer.isFinished(...)` guard use local addressability instead of `_channels`
+- update the finished-buffer fast path in `addCommand(...)` so both channel retrieval and the `output._buffer.isChannelFinished(...)` guard use local addressability instead of `_channels`
 - narrow `_registerChannel(...)` so it no longer manages `_channels`; if `_ownedChannels` remains as debug metadata, its write can stay there
 
 Tests for this step:
