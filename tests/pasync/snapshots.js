@@ -247,6 +247,12 @@ describe('channel.finalSnapshot', function () {
       expect(() => createCommandBuffer(context, null, [42], null, null)).to.throwError(/linkedChannels contains a non-string channel name/);
     });
 
+    it('treats repeated initial lane creation as an invariant failure', function () {
+      const buffer = createCommandBuffer(context, null, null, null, ['text']);
+
+      expect(() => buffer._createLane('text')).to.throwError(/registered more than once/);
+    });
+
     it('does not hide invalid async-boundary lane metadata', async function () {
       const parent = createCommandBuffer(context, null, null, null, ['text']);
       declareBufferChannel(parent, 'text', 'text', context, null);

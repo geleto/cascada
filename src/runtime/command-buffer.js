@@ -47,8 +47,23 @@ class CommandBuffer {
       return;
     }
     for (let i = 0; i < laneNames.length; i++) {
-      this._ensureLane(laneNames[i]);
+      this._createLane(laneNames[i]);
     }
+  }
+
+  _createLane(channelName) {
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    if (!resolvedChannelName) {
+      return null;
+    }
+    if (resolvedChannelName in this.arrays) {
+      throw createLaneMetadataError(
+        `Channel '${resolvedChannelName}' was registered more than once on the same CommandBuffer`,
+        this._context
+      );
+    }
+    this.arrays[resolvedChannelName] = [];
+    return resolvedChannelName;
   }
 
   // Dynamic declarations are the sanctioned source of late lanes. Static buffer
