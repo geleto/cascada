@@ -3,7 +3,7 @@ import * as nodes from '../nodes.js';
 import {CompileAnalysis} from './analysis.js';
 import {CompileRename} from './rename.js';
 import {CompilerCommon} from './compiler-common.js';
-import {CALLER_SCHED_CHANNEL_NAME} from './macro.js';
+import {CompileCall} from './call.js';
 
 const compareOps = {
   '==': '==',
@@ -21,6 +21,7 @@ class CompilerBaseAsync extends CompilerCommon {
     super.init(Object.assign({}, options, { asyncMode: true }));
     this.analysis = new CompileAnalysis(this);
     this.rename = new CompileRename(this);
+    this.call = new CompileCall(this);
     this.templateUsesInheritanceSurface = false;
   }
 
@@ -301,7 +302,6 @@ class CompilerBaseAsync extends CompilerCommon {
     let thisSharedAccessFacts = null;
     let componentBindingRoot = null;
     let componentBindingFacts = null;
-    let explicitThisDispatchMethodName = null;
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
     node._analysis.sequenceLockLookup = sequenceLockLookup;
     if (sequenceLockLookup) {
@@ -331,9 +331,8 @@ class CompilerBaseAsync extends CompilerCommon {
       return { uses, mutates, sequenceChannelLookup, thisSharedAccessFacts };
     }
 
-    explicitThisDispatchMethodName = this.inheritance.supportsExplicitThisDispatch()
-      ? this.inheritance.getExplicitThisDispatchMethodName(node)
-      : null;
+    const explicitThisDispatchMethodName =
+      this.inheritance.analyzeExplicitThisDispatchLookup(node);
 
     componentBindingRoot = this.component.getBindingRoot(node);
     componentBindingFacts = this.component.getBindingFacts(node);
@@ -435,19 +434,7 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    const explicitThisDispatchMethodName =
-      node._analysis.explicitThisDispatchMethodName ||
-      (this.inheritance.supportsExplicitThisDispatch()
-        ? this.inheritance.getExplicitThisDispatchMethodName(node)
-        : null);
-    if (explicitThisDispatchMethodName && !node._analysis.allowExplicitThisDispatchCall) {
-      this.fail(
-        `bare inherited-method references are not supported; bare this.${explicitThisDispatchMethodName} references are not allowed; use this.${explicitThisDispatchMethodName}(...)`,
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
+    this.inheritance.validateBareExplicitThisDispatchLookup(node);
 
     const componentBindingRoot =
       node._analysis.componentBindingRoot ||
@@ -513,269 +500,15 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   analyzeFunCall(node, analysisPass) {
-    const uses = [];
-    const mutates = [];
-    let specialChannelCall = null;
-    let importedCallable = null;
-    let directCallerCall = false;
-    let directMacroCall = null;
-    let explicitThisDispatchMethodName = null;
-    const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
-    node._analysis.sequenceLockLookup = sequenceLockLookup;
-    if (this.return.isUnsetCall(node)) {
-      return this.return.analyzeIsUnsetCall(node);
-    }
-
-    if (sequenceLockLookup) {
-      const thisSharedFacts = this.channel.getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
-      if (thisSharedFacts) {
-        this.fail(
-          'Sequence marker (!) is only supported on context paths, not this.<shared> channels.',
-          node.lineno,
-          node.colno,
-          node
-        );
-      }
-      this._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
-      uses.push(sequenceLockLookup.key);
-      mutates.push(sequenceLockLookup.key);
-      return { uses, mutates };
-    }
-
-    if (node.name) {
-      const isCallerCall =
-          (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
-          this.sequential._extractStaticPathRoot(node.name) === 'caller';
-      if (isCallerCall) {
-        directCallerCall = true;
-        const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
-        if (textChannel) {
-          uses.push(textChannel);
-          mutates.push(textChannel);
-        }
-        // caller() is a reserved macro call-block binding in async mode. Its
-        // invocation scheduling uses the macro-local __caller__ lane, so any
-        // nested child boundary containing caller() must link that lane.
-        uses.push(CALLER_SCHED_CHANNEL_NAME);
-        mutates.push(CALLER_SCHED_CHANNEL_NAME);
-        return { uses, mutates, directCallerCall };
-      }
-    }
-
-    if (node.name instanceof nodes.Symbol && analysisPass.findDeclaration) {
-      const macroDecl = analysisPass.findDeclaration(node._analysis, node.name.value);
-      if (macroDecl && macroDecl.isMacro) {
-        directMacroCall = {
-          binding: macroDecl.declarationOrigin?.compiledMacroFuncId ?? null
-        };
-      }
-    }
-
-    if (node.name && analysisPass.findDeclaration) {
-      const importedRoot = this.sequential._extractStaticPathRoot(node.name);
-      const importedDecl = importedRoot ? analysisPass.findDeclaration(node._analysis, importedRoot) : null;
-      const isImportedCallable =
-        (importedDecl && importedDecl.imported) ||
-        (!importedDecl && importedRoot && this.importedBindings && this.importedBindings.has(importedRoot));
-      if (isImportedCallable) {
-        importedCallable = true;
-        const importedChannelName = importedDecl && (importedDecl.runtimeName || importedRoot);
-        if (importedChannelName) {
-          uses.push(importedChannelName);
-        }
-        const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
-        if (textChannel) {
-          uses.push(textChannel);
-        }
-      }
-    }
-    if (this.inheritance.supportsExplicitThisDispatch()) {
-      const explicitThisDispatchMethodNameForCall =
-        this.inheritance.getExplicitThisDispatchMethodName(node.name);
-      const thisSharedDispatch = this.channel.getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
-      if (explicitThisDispatchMethodNameForCall && !thisSharedDispatch) {
-        explicitThisDispatchMethodName = explicitThisDispatchMethodNameForCall;
-      }
-    }
-
-    const callFacts =
-      this.scriptMode &&
-      node.name &&
-      !node._analysis.sequenceLockLookup
-        ? (() => {
-          const thisSharedFacts = this.channel.getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
-          if (thisSharedFacts) {
-            const methodName = thisSharedFacts.channelPath.length >= 2
-              ? thisSharedFacts.channelPath[thisSharedFacts.channelPath.length - 1]
-              : null;
-            return {
-              channelName: thisSharedFacts.channelName,
-              channelType: thisSharedFacts.channelType,
-              shared: true,
-              methodName,
-              pathPrefix: thisSharedFacts.pathPrefix,
-              isObservation:
-                thisSharedFacts.channelPath.length === 2 &&
-                (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
-            };
-          }
-
-          const sequencePath = this.sequential._extractStaticPath(node.name);
-          if (!sequencePath || sequencePath.length < 2) {
-            return null;
-          }
-
-          const channelName = sequencePath[0];
-          const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
-          if (!channelDecl || channelDecl.shared) {
-            return null;
-          }
-
-          const methodName = sequencePath[sequencePath.length - 1];
-          return {
-            channelName,
-            channelType: channelDecl.type,
-            shared: channelDecl.shared,
-            methodName,
-            pathPrefix: sequencePath.slice(1, -1),
-            isObservation:
-                sequencePath.length === 2 &&
-                (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
-          };
-        })()
-        : null;
-    if (callFacts) {
-      uses.push(callFacts.channelName);
-      if (!callFacts.isObservation) {
-        mutates.push(callFacts.channelName);
-      }
-      specialChannelCall = callFacts;
-    }
-
-    return {
-      uses,
-      mutates,
-      specialChannelCall,
-      importedCallable,
-      directCallerCall,
-      directMacroCall,
-      explicitThisDispatchMethodName,
-      // Direct same-scope macro calls reuse the current buffer through
-      // runtime.invokeMacro(..., currentBuffer). Imported callable calls need a
-      // value boundary, so only those are marked as linked child buffers here.
-      createsLinkedChildBuffer: importedCallable
-    };
+    return this.call.analyzeFunCall(node, analysisPass);
   }
 
   finalizeAnalyzeFunCall(node) {
-    const thisSharedFacts = node.name
-      ? this.channel.getThisSharedAccessFacts(node.name, this.analysis, node._analysis)
-      : null;
-    const explicitThisDispatchMethodName =
-      this.inheritance.supportsExplicitThisDispatch() && !thisSharedFacts
-        ? this.inheritance.getExplicitThisDispatchMethodName(node.name)
-        : null;
-    if (explicitThisDispatchMethodName && node.name) {
-      (node.name._analysis || (node.name._analysis = {})).allowExplicitThisDispatchCall = true;
-    }
-
-    return {
-      funCallThisSharedAccessFacts: thisSharedFacts,
-      componentBindingRoot: node.name ? this.component.getBindingRoot(node.name) : null,
-      componentBindingFacts: node.name ? this.component.getBindingFacts(node.name, { forCall: true }) : null,
-      explicitThisDispatchMethodName: explicitThisDispatchMethodName ??
-        node._analysis.explicitThisDispatchMethodName ??
-        null
-    };
+    return this.call.finalizeAnalyzeFunCall(node);
   }
 
   compileFunCall(node) {
-    if (this.return.isUnsetCall(node)) {
-      this.return.emitIsUnsetCall(node);
-      return;
-    }
-
-    const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
-    const directMacroCall = node._analysis.directMacroCall;
-    const directMacroBinding = directMacroCall?.binding ?? null;
-    const isDirectMacroCall = !!directMacroCall;
-    const importedCallableFacts = node._analysis.importedCallable;
-    const explicitThisDispatchMethodName =
-      node._analysis.explicitThisDispatchMethodName ??
-      null;
-    const componentBindingRoot =
-      node._analysis.componentBindingRoot ??
-      this.component.getBindingRoot(node.name);
-    const componentBindingFacts =
-      node._analysis.componentBindingFacts ??
-      this.component.getBindingFacts(node.name, { forCall: true });
-
-    if (componentBindingFacts) {
-      if (componentBindingFacts.kind === 'method-call') {
-        this.component.compileMethodCall(componentBindingFacts, node);
-        return;
-      }
-
-      this.component.emitChannelObservation(componentBindingFacts, node);
-      return;
-    }
-    if (componentBindingRoot) {
-      this.component.failUnsupportedUsage(
-        node.name,
-        componentBindingRoot.bindingName,
-        '`ns.method(...)` calls, `ns.x.snapshot()` observations, and `ns.x is error` / `ns.x#` error observations'
-      );
-    }
-
-    if (this.channel.compileSpecialChannelFunCall(node)) {
-      return;
-    }
-
-    if (this.macro && this.macro.isDirectCallerCall(node)) {
-      this.macro._emitCallerCallDispatch({
-        bufferId: this.buffer.currentBuffer,
-        node
-      });
-      return;
-    }
-
-    const sequenceLockLookup = node._analysis.sequenceLockLookup;
-    const sequenceLockKey = sequenceLockLookup?.key;
-    if (sequenceLockKey) {
-      const errorContextJson = JSON.stringify(this._createErrorContext(node));
-      this.emit('runtime.sequentialCallWrapValue(');
-      this.compile(node.name, null);
-      this.emit(`, "${funcName}", context, `);
-      this._compileAggregate(node.args, null, '[', ']', false, false);
-      this.emit(`, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-      return;
-    }
-    if (isDirectMacroCall) {
-      this.emit('runtime.invokeMacro(');
-      if (directMacroBinding) {
-        this.emit(directMacroBinding);
-      } else {
-        this.compile(node.name, null);
-      }
-      this.emit(', context, ');
-      this._compileAggregate(node.args, null, '[', ']', false, false);
-      this.emit(`, ${this.buffer.currentBuffer})`);
-      return;
-    }
-    if (importedCallableFacts) {
-      this.boundaries.compileValueBoundary(this.buffer, node, (n) => {
-        this._emitAsyncDynamicCall(n, 'currentBuffer');
-      });
-      return;
-    }
-    if (explicitThisDispatchMethodName) {
-      const errorContextJson = JSON.stringify(this._createErrorContext(node));
-      this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${explicitThisDispatchMethodName}", `);
-      this._compileAggregate(node.args, null, '[', ']', false, false);
-      this.emit(`, context, env, runtime, cb, ${this.buffer.currentBuffer}, ${errorContextJson})`);
-      return;
-    }
-    this._emitAsyncDynamicCall(node, this.buffer.currentBuffer);
+    this.call.compileFunCall(node);
   }
 
   _emitThisSharedVarNestedLookup(thisSharedFacts, node) {

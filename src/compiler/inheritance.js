@@ -56,6 +56,66 @@ class CompileInheritance {
       : null;
   }
 
+  analyzeExplicitThisDispatchLookup(nameNode) {
+    return this.supportsExplicitThisDispatch()
+      ? this.getExplicitThisDispatchMethodName(nameNode)
+      : null;
+  }
+
+  analyzeExplicitThisDispatchCall(node, analysisPass) {
+    const methodName = node && node.name
+      ? this.analyzeExplicitThisDispatchLookup(node.name)
+      : null;
+    if (!methodName) {
+      return null;
+    }
+    const thisSharedDispatch = this.compiler.channel.getThisSharedAccessFacts(
+      node.name,
+      analysisPass,
+      node._analysis
+    );
+    return thisSharedDispatch ? null : methodName;
+  }
+
+  finalizeAnalyzeExplicitThisDispatchCall(node, thisSharedFacts = null) {
+    if (thisSharedFacts) {
+      return null;
+    }
+    const methodName = node && node.name
+      ? this.analyzeExplicitThisDispatchLookup(node.name)
+      : null;
+    if (methodName) {
+      (node.name._analysis || (node.name._analysis = {})).allowExplicitThisDispatchCall = true;
+    }
+    return methodName;
+  }
+
+  validateBareExplicitThisDispatchLookup(node) {
+    const methodName =
+      node._analysis.explicitThisDispatchMethodName ||
+      this.analyzeExplicitThisDispatchLookup(node);
+    if (methodName && !node._analysis.allowExplicitThisDispatchCall) {
+      this.compiler.fail(
+        `bare inherited-method references are not supported; bare this.${methodName} references are not allowed; use this.${methodName}(...)`,
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+  }
+
+  compileExplicitThisDispatchCall(node) {
+    const methodName = node._analysis.explicitThisDispatchMethodName ?? null;
+    if (!methodName) {
+      return false;
+    }
+    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${methodName}", `);
+    this.compiler._compileAggregate(node.args, null, '[', ']', false, false);
+    this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
+    return true;
+  }
+
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(
