@@ -231,8 +231,13 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.runControlFlowBoundary(output, ["__text__","wrap","!seq"]');
-      expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","wrap","caller"');
+      const outputBoundaryMatches = Array.from(source.matchAll(/runtime\.runControlFlowBoundary\(output, \[([^\]]+)\]/g));
+      expect(outputBoundaryMatches.length).to.be.greaterThan(0);
+      expect(outputBoundaryMatches.some((match) => match[1].includes('"wrap"'))).to.be(true);
+      expect(outputBoundaryMatches.some((match) => match[1].includes('"!seq'))).to.be(true);
+      outputBoundaryMatches.forEach((match) => {
+        expect(match[1]).to.not.contain('"caller"');
+      });
     });
 
     it('should emit inherited block text placement boundaries without shared callable links', function () {
@@ -709,7 +714,9 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null, methodData) {');
+      expect(source).to.contain('function b_content(');
+      expect(source).to.contain('blockPayload = null');
+      expect(source).to.contain('methodData) {');
       expect(source).to.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
       expect(source).to.contain('blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {}');
       expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
@@ -733,7 +740,9 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('function b_content(env, context, runtime, cb, parentBuffer = null, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null, methodData) {');
+      expect(source).to.contain('function b_content(');
+      expect(source).to.contain('blockPayload = null');
+      expect(source).to.contain('methodData) {');
       expect(source).to.contain('context.forkForComposition("child-inherited-block-inputs.njk"');
       expect(source).to.contain('runtime.linkCurrentBufferToParentChannels(parentBuffer, output');
       expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');

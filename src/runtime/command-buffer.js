@@ -20,8 +20,8 @@ class CommandBuffer {
     // Local addressability map. Entries may be owned by this buffer or linked
     // from an explicit parent lane; ownership is derived from channel._buffer.
     this._channels = Object.create(null);
-    // Per-lane command arrays. Static metadata creates these eagerly; remaining
-    // dynamic compatibility declarations enter through _ensureLane().
+    // Per-lane command arrays. Static metadata creates these eagerly; runtime
+    // declarations enter through _ensureLane().
     this.arrays = Object.create(null);
     this._finishedPromise = null;
     this._finishedResolver = null;
@@ -46,9 +46,8 @@ class CommandBuffer {
     }
   }
 
-  // Dynamic declarations still enter through this compatibility path. Static
-  // buffer creation validates lane metadata up front; runtime declarations are
-  // the remaining sanctioned source of late lanes.
+  // Dynamic declarations are the sanctioned source of late lanes. Static buffer
+  // creation validates lane metadata up front.
   _ensureLane(channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!resolvedChannelName) {
@@ -85,7 +84,6 @@ class CommandBuffer {
     return this._finishedPromise;
   }
 
-  //@todo - rename this, maybe to finishBufferAndLetIteratorsExit
   markFinishedAndPatchLinks() {
     if (this.finished) {
       return;
@@ -97,7 +95,6 @@ class CommandBuffer {
     this._completeFinishIfAllLanesFinished();
   }
 
-  //@todo - rename this, maybe to finishChannelAndLetIteratorExit
   requestChannelFinish(channelName) {
     // Finishing an individual lane only wakes channel iterators. Aggregate
     // buffer completion is still gated by markFinishedAndPatchLinks().
@@ -447,11 +444,11 @@ function validateLaneNames(laneNames, label, context = null) {
   const seen = new Set();
   for (let i = 0; i < laneNames.length; i++) {
     const name = laneNames[i];
-    if (!name) {
-      throw createLaneMetadataError(`${label} contains an empty channel name`, context);
-    }
     if (typeof name !== 'string') {
       throw createLaneMetadataError(`${label} contains a non-string channel name`, context);
+    }
+    if (!name) {
+      throw createLaneMetadataError(`${label} contains an empty channel name`, context);
     }
     if (seen.has(name)) {
       throw createLaneMetadataError(`${label} contains duplicate channel '${name}'`, context);

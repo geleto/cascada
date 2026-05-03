@@ -19,7 +19,7 @@ mostly implemented:
 - inheritance chains are loaded before constructor/root execution
 - method metadata is direct and synchronous after finalization
 - shared state usage requires explicit per-file declarations
-- normal execution uses `mergedUsedChannels` / `mergedMutatedChannels`
+- normal execution uses `mergedLinkedChannels` / `mergedMutatedChannels`
 - bootstrap-only metadata is released after finalization
 
 The remaining opportunity is not another semantic redesign. It is to reduce the
@@ -46,7 +46,7 @@ The most important current facts are:
   - `signature`
   - `ownerKey`
   - `super`
-  - `mergedUsedChannels`
+  - `mergedLinkedChannels`
   - `mergedMutatedChannels`
 - raw method entries are bootstrap/finalization input only; after successful
   finalization, `state.methods[name]` is direct execution method data
@@ -118,7 +118,7 @@ Raw compiled method entries are still the bootstrap input shape:
 - `fn`
 - `signature`
 - `ownerKey`
-- `ownUsedChannels`
+- `ownLinkedChannels`
 - `ownMutatedChannels`
 - `super`
 - `superOrigin`
@@ -139,7 +139,7 @@ Pruned execution method data is the post-finalization dispatch shape:
 - `signature`
 - `ownerKey`
 - `super`
-- `mergedUsedChannels`
+- `mergedLinkedChannels`
 - `mergedMutatedChannels`
 
 During finalization, resolved data temporarily also has callable-local
@@ -223,7 +223,7 @@ than carrying their own method metadata model.
 ### 1. Documentation shape drift
 
 The architecture documents still describe finalized method metadata as carrying
-`ownUsedChannels`, `ownMutatedChannels`, and `invokedMethods`.
+`ownLinkedChannels`, `ownMutatedChannels`, and `invokedMethods`.
 
 That was true during finalization, but it is no longer the post-finalization
 execution shape after pruning.
@@ -297,7 +297,7 @@ likely be reduced to one "universal observational command" gate.
 
 The test suite has been improved, but a few tests still construct method data
 objects manually with fields that are not part of the final execution shape,
-such as `ownUsedChannels` or `invokedMethods`.
+such as `ownLinkedChannels` or `invokedMethods`.
 
 Those tests are valuable while they cover runtime helpers directly, but they
 should gradually be replaced with behavior-level coverage or with explicitly
@@ -452,7 +452,7 @@ Work:
   - async block functions are not public compiled props
   - finalized state-level `invokedMethods` is empty
   - resolved execution method data does not retain `invokedMethods`
-  - resolved execution method data does not retain `ownUsedChannels`
+  - resolved execution method data does not retain `ownLinkedChannels`
   - resolved execution method data does not retain `ownMutatedChannels`
   - callable body linking uses merged channel footprints
 - add or keep at least one behavior test for async imports that confirms

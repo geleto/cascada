@@ -2351,6 +2351,8 @@ describe('Extends Foundation', function () {
       expect(state.methods.build).to.be(resolvedBuild);
       expect(state.methods.build._resolvedMethodData).to.be(undefined);
       expect(resolvedBuild.mergedLinkedChannels).to.contain('trace');
+      // Pre-existing metadata cleanup guard: sharedLookupChannels belonged to
+      // an older inheritance shape and should not reappear in resolved entries.
       expect(Object.keys(resolvedBuild)).not.to.contain('sharedLookupChannels');
     });
 
@@ -2554,13 +2556,13 @@ describe('Extends Foundation', function () {
         fn() {
           return null;
         },
-        ownerKey: 'legacy-resolved.script',
+        ownerKey: 'malformed-linked-resolved.script',
         signature: { argNames: [], withContext: false },
         mergedMutatedChannels: ['localWrite'],
         super: null
       })).to.throwException((error) => {
         expect(error.name).to.be('RuntimeFatalError');
-        expect(String(error)).to.contain('legacy-resolved.script');
+        expect(String(error)).to.contain('malformed-linked-resolved.script');
         expect(String(error)).to.contain('missing mergedLinkedChannels');
       });
     });

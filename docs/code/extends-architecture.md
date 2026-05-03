@@ -62,7 +62,7 @@ Blocks/methods move to a separate AST node in the transformer.
 
 That node compiles into a key-value object (`methods`) at the start of the JS
 file. The keys are the method/block names. The values contain both metadata
-(like used/mutated channels), the function, as well as the `super` object. The
+(like linked/mutated channels), the function, as well as the `super` object. The
 constructor is part of this too, named `__constructor__` or similar.
 
 Blocks and methods should share the same runtime model and syntax. The main
@@ -115,7 +115,7 @@ directly from the local method/block AST:
 
 - `fn`
 - `signature`
-- `ownUsedChannels`
+- `ownLinkedChannels`
 - `ownMutatedChannels`
 - `super`
 - `superOrigin`
@@ -150,7 +150,7 @@ compute the transitive callable footprint:
 - `ownerKey`
 - `super`
 - `invokedMethods`
-- `mergedUsedChannels`
+- `mergedLinkedChannels`
 - `mergedMutatedChannels`
 
 After finalization, normal execution uses the pruned execution method metadata
@@ -160,14 +160,14 @@ shape:
 - `signature`
 - `ownerKey`
 - `super`
-- `mergedUsedChannels`
+- `mergedLinkedChannels`
 - `mergedMutatedChannels`
 
-`mergedUsedChannels` and `mergedMutatedChannels` are the full transitive
+`mergedLinkedChannels` and `mergedMutatedChannels` are the full transitive
 callable footprint: the callable's own channels, its reachable `super()` chain,
 and all ordinary inherited methods it may invoke.
 
-Compiled `ownUsedChannels`, `ownMutatedChannels`, `superOrigin`, and
+Compiled `ownLinkedChannels`, `ownMutatedChannels`, `superOrigin`, and
 callable-local `invokedMethods` are bootstrap/finalization inputs. They are not
 part of the long-lived execution method data once the footprint has been
 computed.
@@ -337,7 +337,7 @@ Bootstrap order should stay deterministic:
 5. Build the final override-resolved method table.
 6. Resolve owner-relative `super()` metadata.
 7. Resolve file-level and per-callable `invokedMethods`.
-8. Compute final `mergedUsedChannels` and `mergedMutatedChannels`.
+8. Compute final `mergedLinkedChannels` and `mergedMutatedChannels`.
 9. Finalize shared-root ownership.
 
 Parent methods are registered before child methods, then child overrides replace
@@ -432,7 +432,7 @@ direct metadata object.
 Each method call should still create its own child invocation buffer after the
 target metadata is finalized. That child invocation buffer lives inside the
 shared command-buffer tree. Linking uses the call target's final
-`mergedUsedChannels` and `mergedMutatedChannels`.
+`mergedLinkedChannels` and `mergedMutatedChannels`.
 
 ## Direct Metadata and Linking
 
@@ -440,10 +440,10 @@ Normal execution should not use runtime-pending metadata helpers. Admission and
 method entry startup receive direct method metadata that bootstrap has already
 finalized.
 
-Call sites should not read `ownUsedChannels` / `ownMutatedChannels` for
+Call sites should not read `ownLinkedChannels` / `ownMutatedChannels` for
 admission. They should use:
 
-- `mergedUsedChannels`
+- `mergedLinkedChannels`
 - `mergedMutatedChannels`
 
 Those merged fields are conservative for the full callable footprint, including
@@ -471,9 +471,9 @@ both templates and scripts:
 
 Current-call linkage uses the call target's merged channel effect set:
 
-- compiled `ownUsedChannels` / `ownMutatedChannels` describe the local body only
+- compiled `ownLinkedChannels` / `ownMutatedChannels` describe the local body only
   during finalization
-- `mergedUsedChannels` / `mergedMutatedChannels` describe the current callable
+- `mergedLinkedChannels` / `mergedMutatedChannels` describe the current callable
   level plus the reachable inherited work from `super()` and `this.method()`
 
 So inherited execution remains lazy, but channel metadata is conservative:
@@ -600,7 +600,7 @@ Components use the same shared metadata object model. On the caller side,
 
 - look up the method in the shared component metadata object
 - read the finalized direct method metadata
-- perform linking from the method's final `mergedUsedChannels` and
+- perform linking from the method's final `mergedLinkedChannels` and
   `mergedMutatedChannels`
 
 Multiple component instantiations are fully independent instances with separate

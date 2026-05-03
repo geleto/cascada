@@ -628,7 +628,7 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
 }
 
 function _assertResolvedMethodData(methodData) {
-  // Give partially migrated metadata specific errors; the generic check below
+  // Give incomplete resolved metadata specific errors; the generic check below
   // still covers null, missing fn, and entries with both channel arrays absent.
   if (
     methodData &&
@@ -660,6 +660,8 @@ function _assertResolvedMethodData(methodData) {
       null
     );
   }
+  // Catches null, missing fn, and both arrays absent; the specific checks
+  // above only fire when one channel array is present.
   if (!_isResolvedMethodData(methodData)) {
     throw new RuntimeFatalError(
       'Inherited dispatch resolved to an invalid method entry',

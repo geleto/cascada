@@ -81,6 +81,10 @@ class CompileAnalysis {
           : parentAnalysis.inheritedSequenceFunCallLockKey || null
       )
       : null;
+    // Analysis facts are populated in phases: node analyzers seed local
+    // declarations/uses/boundary flags during the walk, declaration ownership
+    // is finalized after traversal, and aggregate used/mutated/linked facts are
+    // derived once child analysis is complete.
     node._analysis = {
       node,
       createScope: false,

@@ -8,7 +8,7 @@ blocking inheritance-chain bootstrap:
 - the inheritance chain is fully loaded before constructor/root execution starts
 - method metadata is accessed directly, not through pending promise structs
 - `super()` remains special and owner-relative
-- `mergedUsedChannels` / `mergedMutatedChannels` include all invoked inherited
+- `mergedLinkedChannels` / `mergedMutatedChannels` include all invoked inherited
   methods, not only the `super()` chain
 
 The central new metadata is `invokedMethods`. It is represented at two levels:
@@ -135,7 +135,7 @@ Execution is allowed to assume:
 - `inheritanceState.methods[name]` is either a direct resolved method metadata
   object or missing
 - `methodMeta.super` is either a direct resolved metadata object or `null`
-- `methodMeta.mergedUsedChannels` and `methodMeta.mergedMutatedChannels`
+- `methodMeta.mergedLinkedChannels` and `methodMeta.mergedMutatedChannels`
   already contain the full transitive callable footprint
 - callable-local `invokedMethods` has already been consumed by finalization and
   is not part of normal execution method data
@@ -157,7 +157,7 @@ Compiled callable metadata should have at least:
 - `fn`
 - `signature`
 - `ownerKey`
-- `ownUsedChannels`
+- `ownLinkedChannels`
 - `ownMutatedChannels`
 - `super`
 - `superOrigin`
@@ -170,7 +170,7 @@ Finalization work metadata temporarily has:
 - `ownerKey`
 - `super`
 - `invokedMethods`
-- `mergedUsedChannels`
+- `mergedLinkedChannels`
 - `mergedMutatedChannels`
 
 Pruned execution method metadata has:
@@ -179,7 +179,7 @@ Pruned execution method metadata has:
 - `signature`
 - `ownerKey`
 - `super`
-- `mergedUsedChannels`
+- `mergedLinkedChannels`
 - `mergedMutatedChannels`
 
 Where:
@@ -219,7 +219,7 @@ Compiled callable metadata shape:
   fn,
   signature: { argNames: ["name"], withContext: false },
   ownerKey: "C.script",
-  ownUsedChannels: ["trace"],
+  ownLinkedChannels: ["trace"],
   ownMutatedChannels: ["theme"],
   super: true,
   superOrigin: { path: "C.script", lineno: 3, colno: 2 },
@@ -242,7 +242,7 @@ Bootstrap/finalization rewrites that to finalization work metadata:
     readTheme: resolvedReadThemeMeta,
     applyTheme: resolvedApplyThemeMeta
   },
-  mergedUsedChannels: [...],
+  mergedLinkedChannels: [...],
   mergedMutatedChannels: [...]
 }
 ```
@@ -255,7 +255,7 @@ After the fixed-point footprint pass, normal execution retains only:
   signature: { argNames: ["name"], withContext: false },
   ownerKey: "C.script",
   super: parentBuildMeta,
-  mergedUsedChannels: [...],
+  mergedLinkedChannels: [...],
   mergedMutatedChannels: [...]
 }
 ```
@@ -372,7 +372,7 @@ principle for structural metadata: once the chain is available, missing
 `super()` targets, missing `invokedMethods` targets, and invalid metadata shapes
 should all be surfaced together when possible.
 
-## Meaning of `mergedUsedChannels` / `mergedMutatedChannels`
+## Meaning of `mergedLinkedChannels` / `mergedMutatedChannels`
 
 These fields should change meaning slightly.
 
@@ -391,8 +391,8 @@ In the new model they should describe the full callable footprint:
 
 So:
 
-- `mergedUsedChannels`
-  - full transitive used-channel footprint of the callable
+- `mergedLinkedChannels`
+  - full transitive linked-channel footprint of the callable
 - `mergedMutatedChannels`
   - full transitive mutated-channel footprint of the callable
 
@@ -408,7 +408,7 @@ recursive metadata resolution:
 
 1. Register parent methods before child methods.
 2. Compute each implementation's inherited/super footprint parent-to-child:
-   - start with the method's own used/mutated channels
+   - start with the method's own linked/mutated channels
    - if the method has a parent/super implementation, merge the parent's
      already-computed merged channels
    - deduplicate channels
@@ -456,7 +456,7 @@ replaced.
 Caller-side linking should use:
 
 - current method meta
-- full `mergedUsedChannels`
+- full `mergedLinkedChannels`
 - full `mergedMutatedChannels`
 
 That automatically includes:
@@ -479,7 +479,7 @@ Instead:
 So entry startup can:
 
 - link parent/invocation buffers with the final merged channels
-- use `methodData.mergedUsedChannels` and `methodData.mergedMutatedChannels`
+- use `methodData.mergedLinkedChannels` and `methodData.mergedMutatedChannels`
   directly
 
 No separate `resolveMethods(...)` helper is needed in the final execution path
@@ -500,13 +500,13 @@ helpers that read `methodData.invokedMethods.*`.
 During metadata finalization, the runtime computes the full callable footprint
 from:
 
-- the compiled local `ownUsedChannels` / `ownMutatedChannels`
+- the compiled local `ownLinkedChannels` / `ownMutatedChannels`
 - the owner-relative `super()` chain
 - ordinary inherited calls represented by finalization-time `invokedMethods`
 
 The result is stored on the execution method data as:
 
-- `mergedUsedChannels`
+- `mergedLinkedChannels`
 - `mergedMutatedChannels`
 
 Caller-side admission and callable body startup read those merged fields
@@ -718,7 +718,7 @@ Goal:
 - any method can inspect all its directly invoked inherited methods without any
   await or promise resolution
 
-### Step 3 - Redefine `mergedUsedChannels` / `mergedMutatedChannels`
+### Step 3 - Redefine `mergedLinkedChannels` / `mergedMutatedChannels`
 
 Change merged-channel semantics from:
 
@@ -779,7 +779,7 @@ collection with direct use of the new final metadata.
 Work:
 
 - stop using only the `super()` chain for caller-side linking
-- use final direct `methodMeta.mergedUsedChannels`
+- use final direct `methodMeta.mergedLinkedChannels`
 - use final direct `methodMeta.mergedMutatedChannels`
 - remove the partial unresolved-linked-channel correctness path
 - remove provisional invocation-buffer creation for known direct entries; once
@@ -808,7 +808,7 @@ compiled constructor/method/block bodies.
 Work:
 
 - where callable bodies need channel lists, use direct
-  `methodData.mergedUsedChannels` and `methodData.mergedMutatedChannels`
+  `methodData.mergedLinkedChannels` and `methodData.mergedMutatedChannels`
 - treat missing invoked-method metadata as a finalization-time structural error,
   not as an empty channel list
 - keep entry-local code simple because bootstrap already did the hard work

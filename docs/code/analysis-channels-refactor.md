@@ -315,7 +315,7 @@ Work:
     boundary-link analysis
 - audit inheritance/component invocation linking separately from ordinary
   control-flow boundaries, because callable metadata currently merges
-  transitive used/mutated footprints at runtime
+  transitive linked/mutated footprints at runtime
 - investigate the inherited block text-boundary and template-extends startup
   text-only paths. A Stage 5 audit proved these are narrow text-scheduling
   semantics: the shared work is linked later by callable admission, while these
@@ -480,10 +480,9 @@ Validation:
 Implementation notes:
 
 - Stage 7 spans the managed-buffer cleanup and the callable metadata cleanup.
-  `managedBlock(...)` no longer has a compatibility path that reconstructs
-  links from broad `usedChannels`; ordinary async child buffers must use
-  analysis-owned link metadata, and non-boundary managed buffers do not link
-  parent channels implicitly.
+  `managedBlock(...)` no longer reconstructs links from broad `usedChannels`;
+  ordinary async child buffers must use analysis-owned link metadata, and
+  non-boundary managed buffers do not link parent channels implicitly.
 - inherited/component callable metadata no longer emits or resolves
   `ownUsedChannels` / `mergedUsedChannels`. Invocation admission uses
   `ownLinkedChannels` / `mergedLinkedChannels` only.
@@ -584,23 +583,11 @@ For each case, classify the decision:
 Default assumption: "maybe link if present" and "skip if already linked" logic
 is compatibility debt unless a true runtime semantic is documented.
 
-### Known Marker
+### Marker Cleanup
 
-Code that is already suspected to be transitional for this refactor should use
-this marker:
-
-```text
-ANALYSIS-CHANNELS-REFACTOR
-```
-
-Current examples to audit:
-
-- none in source as of Stage 7.
-
-When implementing this refactor, grep for the marker first, then continue with
-the broader audit checklist above. New code should not add more marker comments
-unless it is deliberately documenting a temporary workaround that this refactor
-is expected to remove.
+The transitional source markers have been removed as of Stage 7. New
+channel-linking cleanup should use ordinary code comments that describe the
+current semantic rather than reintroducing phase markers.
 
 ## Adjacent Analysis Facts To Audit
 

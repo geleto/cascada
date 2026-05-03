@@ -172,7 +172,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     targets.forEach((target) => {
       if (target instanceof nodes.Symbol) {
-        target._analysis = { declarationTarget: true };
+        target._analysis = Object.assign({}, target._analysis, { declarationTarget: true });
         const name = target.value;
         const declaration = analysisPass.findDeclaration(node._analysis, name);
         if (this.scriptMode && !isDeclaration && declaration && declaration.shared) {
@@ -315,10 +315,10 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _analyzeLoopNodeDeclarations(node, analysisPass, declarationsInBody = false) {
     if (node.name instanceof nodes.Symbol) {
-      node.name._analysis = { declarationTarget: true };
+      node.name._analysis = Object.assign({}, node.name._analysis, { declarationTarget: true });
     } else if (node.name instanceof nodes.Array || node.name instanceof nodes.NodeList) {
       node.name.children.forEach((child) => {
-        child._analysis = { declarationTarget: true };
+        child._analysis = Object.assign({}, child._analysis, { declarationTarget: true });
       });
     }
     const declares = [];
@@ -476,7 +476,7 @@ class CompilerAsync extends CompilerBaseAsync {
       if (typeof node.errorVar === 'string' && node.errorVar) {
         recoveryAnalysis.declares = [{ name: node.errorVar, type: 'var', initializer: null }];
       } else if (node.errorVar instanceof nodes.Symbol) {
-        node.errorVar._analysis = { declarationTarget: true };
+        node.errorVar._analysis = Object.assign({}, node.errorVar._analysis, { declarationTarget: true });
         recoveryAnalysis.declares = [{ name: node.errorVar.value, type: 'var', initializer: null }];
       }
       node.recoveryBody._analysis = recoveryAnalysis;
@@ -866,6 +866,10 @@ class CompilerAsync extends CompilerBaseAsync {
       : {
         uses: [textChannel],
         mutates: [textChannel],
+        // Output is analyzed as one source-order text slot even though
+        // compileOutput emits per-child text boundaries. The aggregate link set
+        // keeps every child expression attached to the channels needed by the
+        // full output slot.
         createsLinkedChildBuffer: true
       };
   }
@@ -882,6 +886,9 @@ class CompilerAsync extends CompilerBaseAsync {
         return;
       }
       if (child._analysis?.mutatedChannels?.size > 0) {
+        // The boundary is emitted for this mutating child expression, but the
+        // link metadata comes from the parent Output aggregate so all child
+        // boundaries participate in the same source-order text slot.
         this.boundaries.compileAsyncTextBoundary(
           this.buffer,
           node,
@@ -927,7 +934,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeImport(node) {
-    node.target._analysis = { declarationTarget: true };
+    node.target._analysis = Object.assign({}, node.target._analysis, { declarationTarget: true });
     this.importedBindings.add(node.target.value);
     return {
       declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }]
@@ -950,11 +957,11 @@ class CompilerAsync extends CompilerBaseAsync {
     const declares = [];
     node.names.children.forEach((nameNode) => {
       if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
-        nameNode.value._analysis = { declarationTarget: true };
+        nameNode.value._analysis = Object.assign({}, nameNode.value._analysis, { declarationTarget: true });
         this.importedBindings.add(nameNode.value.value);
         declares.push({ name: nameNode.value.value, type: 'var', initializer: null, imported: true });
       } else if (nameNode instanceof nodes.Symbol) {
-        nameNode._analysis = { declarationTarget: true };
+        nameNode._analysis = Object.assign({}, nameNode._analysis, { declarationTarget: true });
         this.importedBindings.add(nameNode.value);
         declares.push({ name: nameNode.value, type: 'var', initializer: null, imported: true });
       }

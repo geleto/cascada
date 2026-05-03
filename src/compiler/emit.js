@@ -158,12 +158,6 @@ class CompileEmit {
     this.compiler.buffer.currentWaitedChannelName = null;
   }
 
-  //todo: use only simple async block if you know that:
-  // - the block has no output
-  // - this is the only async block child of the parent that has output
-  // - there is only one active child (e.g. if/else) that has output
-  //in all other cases, use AsyncBlockBufferNode
-  //to make sure there are no race conditions for the buffer position
   // Managed block for direct scope/frame handling (optionally with a scope-root buffer).
   // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer creation
   // site. The callback body is compiled between initialization and caller-managed finalization.

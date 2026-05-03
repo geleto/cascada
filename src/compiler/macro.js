@@ -61,7 +61,7 @@ class CompileMacro {
     }
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
-        arg._analysis = { declarationTarget: true };
+        arg._analysis = Object.assign({}, arg._analysis, { declarationTarget: true });
         declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       }
     });
@@ -95,9 +95,9 @@ class CompileMacro {
 
   _compileAsyncCaller(node) {
     const funcId = this._compileAsyncMacro(node);
-    const callerUsedChannels = this._getCallerLinkedChannels(node);
+    const callerLinkedChannels = this._getCallerLinkedChannels(node);
     const callerDeclaredChannels = this._getCallerDeclaredChannels(node);
-    this.compiler.emit.line(`${funcId}.__callerLinkedChannels = ${JSON.stringify(callerUsedChannels)};`);
+    this.compiler.emit.line(`${funcId}.__callerLinkedChannels = ${JSON.stringify(callerLinkedChannels)};`);
     this.compiler.emit.line(`${funcId}.__callerDeclaredChannels = ${JSON.stringify(callerDeclaredChannels)};`);
     return funcId;
   }
@@ -122,7 +122,7 @@ class CompileMacro {
     declares.push({ name: 'caller', type: 'var', initializer: null });
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
-        arg._analysis = { declarationTarget: true };
+        arg._analysis = Object.assign({}, arg._analysis, { declarationTarget: true });
         declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       } else if (arg instanceof nodes.Dict) {
         arg.children.forEach((pair) => {
