@@ -2656,13 +2656,13 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
       expect(child._channelAliases.loop).to.be('loop#4');
       expect(child._channelAliases.someVar).to.be('someVar#9');
-      child.addCommand(new TextCommand({
+      expect(() => child.addCommand(new TextCommand({
         channelName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
-      }), 'someVar');
+      }), 'someVar')).to.throwError(/has no linked lane/);
       expect(child.arrays.someVar).to.be(undefined);
-      expect(child.arrays['someVar#9']).to.have.length(1);
+      expect(child.arrays['someVar#9']).to.be(undefined);
     });
 
     it('reuses parent alias map reference when child has no own aliases', function () {

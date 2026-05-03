@@ -314,6 +314,26 @@ describe('channel.finalSnapshot', function () {
       expect(child.getOwnChannel('text')).to.be(undefined);
       expect(child.hasChannel('text')).to.be(true);
     });
+
+    it('fails instead of lazily creating a lane when adding to an unlinked channel', function () {
+      const buffer = createCommandBuffer(context);
+
+      expect(() => {
+        buffer.addCommand(new TextCommand({
+          channelName: 'text',
+          args: ['hidden'],
+          pos: { lineno: 1, colno: 1 }
+        }), 'text');
+      }).to.throwError(/has no linked lane/);
+    });
+
+    it('fails instead of lazily creating a lane when an iterator enters an unlinked channel', function () {
+      const buffer = createCommandBuffer(context);
+
+      expect(() => {
+        buffer.onEnterBuffer({ onBufferFinished() {} }, 'text');
+      }).to.throwError(/has no linked lane/);
+    });
   });
 
   describe('Data Assembly (@put, @push, etc.)', function () {

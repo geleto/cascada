@@ -169,6 +169,17 @@ class CompileAnalysis {
     }
   }
 
+  getChannelsUsedFromParent(node) {
+    const analysis = node?._analysis;
+    const channels = new Set(analysis?.usedChannels ?? []);
+    if (analysis?.declaredChannels instanceof Map) {
+      for (const name of analysis.declaredChannels.keys()) {
+        channels.delete(name);
+      }
+    }
+    return channels;
+  }
+
   extractSymbols(targetNode) {
     if (!targetNode) {
       return [];

@@ -110,6 +110,7 @@ class CompileBoundaries {
     const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
     const linkedMutatedChannelsArg = this.compiler.emit.getLinkedMutatedChannelsArg(node);
     const controlFlowWaitedChannelName = `__waited__${this.compiler._tmpid()}`;
+    const controlFlowWaitedOwnerBufferId = this.compiler._tmpid();
     const controlFlowPromiseId = this.compiler._tmpid();
 
     this.compiler.emit(
@@ -120,9 +121,10 @@ class CompileBoundaries {
     bufferCompiler.withBufferState({
       currentBuffer: 'currentBuffer',
       currentWaitedChannelName: controlFlowWaitedChannelName,
-      currentWaitedOwnerBuffer: 'currentBuffer'
+      currentWaitedOwnerBuffer: controlFlowWaitedOwnerBufferId
     }, () => {
       this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
+      this.compiler.emit.line(`const ${controlFlowWaitedOwnerBufferId} = currentBuffer;`);
 
       if (emitFunc) {
         emitFunc();

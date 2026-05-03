@@ -71,7 +71,7 @@ class CompileLoop {
         loopVarNames
       );
 
-      const bodyChannels = new Set(node.body._analysis.usedChannels ?? []);
+      const bodyChannels = this.compiler.analysis.getChannelsUsedFromParent(node.body);
       const returnCheckChannelName = this.compiler.return.getSequentialLoopAdvanceCheckChannel({
         sequentialLoopBody,
         whileConditionNode,
@@ -86,7 +86,7 @@ class CompileLoop {
         this.compiler.emit('(async function() {');
         this.compiler.compile(node.else_, null);
         this.compiler.emit.line('}).bind(context);');
-        elseChannels = new Set(node.else_._analysis.usedChannels ?? []);
+        elseChannels = this.compiler.analysis.getChannelsUsedFromParent(node.else_);
       }
 
       const asyncOptionsCode = `{
@@ -302,7 +302,9 @@ class CompileLoop {
       if (!limitedWaitedChannelName) {
         compileIterationBody();
       } else {
-        this.compiler.buffer.withOwnWaitedChannel(limitedWaitedChannelName, compileIterationBody);
+        const waitedOwnerBufferId = this.compiler._tmpid();
+        this.compiler.emit.line(`const ${waitedOwnerBufferId} = ${this.compiler.buffer.currentBuffer};`);
+        this.compiler.buffer.withOwnWaitedChannel(limitedWaitedChannelName, compileIterationBody, waitedOwnerBufferId);
       }
 
     });

@@ -904,7 +904,8 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
     context,
     sharedRootBuffer,
     null,
-    currentBuffer
+    currentBuffer,
+    ['__invoke__']
   );
   for (let i = 0; i < linkedChannels.length; i++) {
     const channelName = linkedChannels[i];

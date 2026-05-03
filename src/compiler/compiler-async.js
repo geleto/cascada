@@ -252,10 +252,10 @@ class CompilerAsync extends CompilerBaseAsync {
   finalizeOutputAnalyzeSwitch(node) {
     const allChannels = new Set();
     node.cases.forEach((c) => {
-      (c.body._analysis.usedChannels ?? []).forEach(ch => allChannels.add(ch));
+      this.analysis.getChannelsUsedFromParent(c.body).forEach(ch => allChannels.add(ch));
     });
     if (node.default) {
-      (node.default._analysis.usedChannels ?? []).forEach(ch => allChannels.add(ch));
+      this.analysis.getChannelsUsedFromParent(node.default).forEach(ch => allChannels.add(ch));
     }
     return {
       poisonChannels: Array.from(allChannels)
@@ -336,9 +336,9 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   finalizeOutputAnalyzeIf(node) {
-    const trueBranchChannels = new Set(node.body._analysis.usedChannels ?? []);
+    const trueBranchChannels = this.analysis.getChannelsUsedFromParent(node.body);
     const falseBranchChannels = node.else_
-      ? new Set(node.else_._analysis.usedChannels ?? [])
+      ? this.analysis.getChannelsUsedFromParent(node.else_)
       : new Set();
     return {
       poisonChannels: Array.from(new Set([...trueBranchChannels, ...falseBranchChannels]))

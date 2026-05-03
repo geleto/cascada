@@ -82,11 +82,11 @@ class CompileBuffer {
 
   // Scope current waited channel binding for the emitted code region.
   // Pass null to explicitly compile without an own waited channel.
-  withOwnWaitedChannel(waitedChannelName, emitFunc) {
+  withOwnWaitedChannel(waitedChannelName, emitFunc, ownerBufferExpr = null) {
     const prevWaitedChannelName = this.currentWaitedChannelName;
     const prevWaitedOwnerBuffer = this.currentWaitedOwnerBuffer;
     this.currentWaitedChannelName = waitedChannelName;
-    this.currentWaitedOwnerBuffer = waitedChannelName ? this.currentBuffer : null;
+    this.currentWaitedOwnerBuffer = waitedChannelName ? (ownerBufferExpr || this.currentBuffer) : null;
     try {
       return emitFunc();
     } finally {

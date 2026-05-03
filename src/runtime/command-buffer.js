@@ -126,7 +126,8 @@ class CommandBuffer {
     if (!iterator || !channelName) {
       return;
     }
-    const resolvedChannelName = this._ensureLane(channelName);
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    assertChannelLaneAvailable(this, resolvedChannelName);
     this._visitingIterators.set(resolvedChannelName, iterator);
   }
 
@@ -144,9 +145,6 @@ class CommandBuffer {
   _add(value, channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     checkFinishedBuffer(this, resolvedChannelName);
-    this._ensureLane(resolvedChannelName);
-    // Runtime declarations may still create lanes lazily before this point;
-    // the assertion protects paths that only link an existing channel object.
     assertChannelLaneAvailable(this, resolvedChannelName);
     // Normalize command channel/path keys at ingress so all downstream runtime
     // lookups operate on the resolved runtime channel name. This is why the
