@@ -628,7 +628,7 @@ class CompileInheritance {
     this.compiler.return.emitFinalSnapshot(this.compiler.buffer.currentBuffer, returnVar);
     this.emit.line(`    await ${this.compiler.buffer.currentBuffer}.getFinishedPromise();`);
     this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) {`);
-    this.emit.line('      inheritanceState.sharedRootBuffer.markFinishedAndPatchLinks();');
+    this.emit.line('      inheritanceState.sharedRootBuffer.finish();');
     this.emit.line('      await inheritanceState.sharedRootBuffer.getFinishedPromise();');
     this.emit.line('    }');
     this.emit.line(`    cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
@@ -641,8 +641,8 @@ class CompileInheritance {
     if (this.compiler.hasDeferredDynamicExtends) {
       this._emitDynamicTemplateParentRender(`    `);
     }
-    this.emit.line(`    ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-    this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) { inheritanceState.sharedRootBuffer.markFinishedAndPatchLinks(); }`);
+    this.emit.line(`    ${this.compiler.buffer.currentBuffer}.finish();`);
+    this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) { inheritanceState.sharedRootBuffer.finish(); }`);
     this.emit.line(`    cb(null, await ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot());`);
   }
 
@@ -690,7 +690,7 @@ class CompileInheritance {
     if (this.compiler.hasDeferredDynamicExtends) {
       this._emitDynamicTemplateParentRender(`      `);
     }
-    this.emit.line(`      ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this.emit.line(`      ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('    }).catch((e) => {');
     this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
@@ -702,7 +702,7 @@ class CompileInheritance {
       const finishPromiseVar = this.compiler._tmpid();
       this.emit.line(`    const ${finishPromiseVar} = (async () => {`);
       this._emitDynamicTemplateParentRender(`      `);
-      this.emit.line(`      ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      this.emit.line(`      ${this.compiler.buffer.currentBuffer}.finish();`);
       this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
       this.emit.line('    })();');
       this.emit.line(`    ${ROOT_STARTUP_PROMISE_VAR} = ${finishPromiseVar};`);
@@ -712,7 +712,7 @@ class CompileInheritance {
       this.emit.line('      cb(err);');
       this.emit.line('    });');
     } else {
-      this.emit.line(`    ${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      this.emit.line(`    ${this.compiler.buffer.currentBuffer}.finish();`);
     }
     this.emit.line('  }');
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
@@ -909,10 +909,10 @@ class CompileInheritance {
       // The invocation command waits on the per-call invocation buffer after
       // this local buffer closes, so caller-visible completion still covers the
       // full inherited call.
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
       this.emit.line(`return runtime.normalizeFinalPromise(${resultVar});`);
     } else {
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
       this.emit.line(`return ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot();`);
     }
     this.emit.endEntryFunction(block, true);

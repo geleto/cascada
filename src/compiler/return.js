@@ -97,7 +97,7 @@ class CompileReturn {
 
   emitFinalSnapshot(bufferExpr, resultVar) {
     const compiler = this.compiler;
-    compiler.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
+    compiler.emit.line(`${bufferExpr}.finish();`);
     compiler.emit.line(
       `const ${resultVar}_snapshot = ${bufferExpr}.getChannel("${RETURN_CHANNEL_NAME}").finalSnapshot();`
     );

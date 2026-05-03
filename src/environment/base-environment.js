@@ -94,7 +94,7 @@ const noopTmplSrcAsync = {
         }
         const output = runtime.createCommandBuffer(context, null);
         runtime.declareBufferChannel(output, '__text__', 'text', context, null);
-        output.markFinishedAndPatchLinks();
+        output.finish();
         return output;
       } catch (e) {
         const err = handleError(e, null, null, null, context ? context.path : null);

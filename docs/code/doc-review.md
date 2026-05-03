@@ -60,7 +60,7 @@ All major architectural claims verified against `src/compiler/macro.js` and
   Buffers) fully matches implementation ✓
 - `WaitResolveCommand` used for `__caller__` timing bookkeeping ✓
 - `CommandBuffer.getFinishedPromise()` exists ✓ (command-buffer.js:85)
-- `addCommand(new SnapshotCommand({ channelName: "__caller__", ... }), "__caller__")` → await → `allCallersBuffer.markFinishedAndPatchLinks()` finalization sequence ✓
+- `addCommand(new SnapshotCommand({ channelName: "__caller__", ... }), "__caller__")` → await → `allCallersBuffer.finish()` finalization sequence ✓
 - `_macroUsesCaller()` detection, `__callerUsedChannels` metadata ✓
 - All Runtime/Compiler Touchpoints verified ✓
 - `__caller__` vs `__waited__` distinction is accurate ✓
@@ -205,7 +205,7 @@ All three factual claims verified:
 All technical claims verified:
 - `runtime.runWaitedControlFlowBoundary(parentBuffer, usedChannels, context, cb, asyncFn, waitedChannelName)` exists exactly as documented in `src/runtime/async-boundaries.js:51-62` ✓
 - All Key Files exist ✓
-- `markFinishedAndPatchLinks()`, `getChannel()`, `finalSnapshot()` all present ✓
+- `finish()`, `getChannel()`, `finalSnapshot()` all present ✓
 - `WaitResolveCommand` in `channels/timing.js` ✓
 - While loop `false`/`true` return (no STOP_WHILE sentinel) ✓
 - Nested loop propagation rules ✓
@@ -216,7 +216,7 @@ signature is a clear improvement — it gives contributors an actual entry point
 The Key Files section is also a useful addition.
 
 ### Should restore
-- The deadlock explanation for why `markFinishedAndPatchLinks()` must precede
+- The deadlock explanation for why `finish()` must precede
   `finalSnapshot()` was reduced to one consequence sentence. The causal cycle
   (snapshot waits for the iterator, iterator waits for the buffer to be marked
   finished) is non-obvious and important for anyone touching loop coordination.

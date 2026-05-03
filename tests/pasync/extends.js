@@ -363,7 +363,7 @@ describe('Extends Runtime', function () {
       const script = new Script('extends "A.script"\nreturn "C"', env, 'C.script');
       const source = script._compileSource();
 
-      expect(source).to.contain('output.markFinishedAndPatchLinks();');
+      expect(source).to.contain('output.finish();');
       expect(source).to.not.contain('context.asyncExtendsBlocksPromise');
     });
   });
@@ -625,7 +625,7 @@ describe('Extends Runtime', function () {
               args: ['done'],
               pos: { lineno: 1, colno: 1 }
             }), 'trace');
-            output.markFinishedAndPatchLinks();
+            output.finish();
             return 'result';
           },
           signature: { argNames: [], withContext: false },
@@ -646,7 +646,7 @@ describe('Extends Runtime', function () {
           { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
         );
 
-        rootBuffer.markFinishedAndPatchLinks();
+        rootBuffer.finish();
 
         const value = await admission;
         const trace = await traceSnapshot;
@@ -699,7 +699,7 @@ describe('Extends Runtime', function () {
         { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
       );
 
-      rootBuffer.markFinishedAndPatchLinks();
+      rootBuffer.finish();
       const value = await admission;
 
       expect(value).to.be('done');
@@ -718,7 +718,7 @@ describe('Extends Runtime', function () {
       }
       const fakeBuffer = {
         finishCount: 0,
-        markFinishedAndPatchLinks() {
+        finish() {
           this.finishCount += 1;
         },
         getFinishedPromise() {

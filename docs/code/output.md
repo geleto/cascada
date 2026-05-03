@@ -57,7 +57,7 @@ Important behavior:
 
 - child buffers are linked to parent lanes through explicit linked-channel lists
 - `add(...)` appends commands to the current buffer lane
-- `markFinishedAndPatchLinks()` closes the buffer for further command insertion
+- `finish()` closes the buffer for further command insertion
   and releases waiting iterators
 - observation helpers enqueue ordered read commands while the buffer is active
 - post-finish observations run through the registered channel path

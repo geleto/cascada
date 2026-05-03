@@ -749,7 +749,7 @@ function _installInvocationChannelLink(parentBuffer, invocationBuffer, channelNa
 }
 
 function _markBufferFinish(buffer) {
-  buffer.markFinishedAndPatchLinks();
+  buffer.finish();
 }
 
 function _invokeResolvedMethodData(command, methodData, invocationBuffer) {

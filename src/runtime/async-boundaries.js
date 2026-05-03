@@ -37,7 +37,7 @@ async function runControlFlowBoundary(parentBuffer, linkedChannelNames, declared
     _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
   } finally {
-    childBuffer.markFinishedAndPatchLinks();
+    childBuffer.finish();
   }
 }
 
@@ -55,7 +55,7 @@ async function runWaitedControlFlowBoundary(parentBuffer, linkedChannelNames, de
     _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
   } finally {
-    childBuffer.markFinishedAndPatchLinks();
+    childBuffer.finish();
     await childBuffer.getChannel(waitedChannelName).finalSnapshot();
   }
 }
@@ -74,7 +74,7 @@ async function runRenderBoundary(context, declaredChannelNames, cb, asyncFn) {
     _reportBoundaryError(err, 'RenderAsyncBlock', context, cb);
     return null;
   } finally {
-    childBuffer.markFinishedAndPatchLinks();
+    childBuffer.finish();
   }
 }
 
@@ -90,7 +90,7 @@ function runValueBoundary(parentBuffer, linkedChannelNames, declaredChannelNames
   const promise = Promise.resolve()
     .then(() => asyncFn(childBuffer))
     .finally(() => {
-      childBuffer.markFinishedAndPatchLinks();
+      childBuffer.finish();
     });
   markPromiseHandled(promise);
   return promise;

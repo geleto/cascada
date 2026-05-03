@@ -471,7 +471,7 @@ Probably yes, once static lane creation is complete.
 
 Today `_finishRequestedChannels` and `_finishKnownChannelIfRequested(...)` exist because finish requests can arrive before a lane or channel has been materialized.
 
-With eager lane creation, `requestChannelFinish(name)` should be able to:
+With eager lane creation, `finishChannel(name)` should be able to:
 
 1. resolve the canonical lane name
 2. assert that the lane exists in the static lane set
@@ -993,7 +993,7 @@ Changes:
 - keep `_visitingIterators` only as a notification mechanism
 - do not introduce `_totalLaneCount` or `_finishedLaneCount`
 - do not fully remove `_linkedChannels` / `_finishRequestedChannels` yet if runtime-dynamic lanes or lazy lane creation still exist anywhere
-- simplify `markFinishedAndPatchLinks()` to iterate eager `arrays` keys directly
+- simplify `finish()` to iterate eager `arrays` keys directly
 
 Clarification:
 
@@ -1116,12 +1116,12 @@ Changes:
 - remove `_finishRequestedChannels`
 - remove `_finishKnownChannelIfRequested(...)`
 - remove the backward-compatibility alias `markChannelFinished(...)` if it no longer serves a purpose
-- make `requestChannelFinish(...)` the direct lane-finish path:
+- make `finishChannel(...)` the direct lane-finish path:
   - resolve canonical name
   - assert the lane exists
   - call `_markChannelFinished(...)`
   - notify iterators through the surviving finish path
-- keep aggregate buffer completion gated by `markFinishedAndPatchLinks(...)`;
+- keep aggregate buffer completion gated by `finish(...)`;
   per-lane finish requests must not complete the aggregate buffer by themselves
 - keep aggregate finish based on the lane keys in `arrays` unless a later change
   removes equivalent finish state at the same time it adds counters
@@ -1545,10 +1545,10 @@ Work:
   `_installLinkedChannel(...)` writing into the single local addressability map)
 - remove the `_registerLinkedChannel(...)` call from `_add()` (**done**)
 - remove `markChannelFinished(...)` if it is no longer needed (**done**; tests
-  now use `requestChannelFinish(...)` directly)
-- `requestChannelFinish(...)` is now the direct per-lane finish request path
+  now use `finishChannel(...)` directly)
+- `finishChannel(...)` is now the direct per-lane finish request path
   (**done**); it does not complete aggregate buffer state by itself. Aggregate
-  completion remains gated by `markFinishedAndPatchLinks(...)`.
+  completion remains gated by `finish(...)`.
 
 Important coordination:
 
@@ -1577,7 +1577,7 @@ Validation:
 - add one dedicated late-linked-child regression test before deleting
   `_linkedChannels`
 - verify aggregate finish still works for buffers with unused eager lanes
-- verify `requestChannelFinish(...)` rejects unknown lane names instead of
+- verify `finishChannel(...)` rejects unknown lane names instead of
   silently creating or finishing them
 
 ### Stage 4B. Final cleanup pass

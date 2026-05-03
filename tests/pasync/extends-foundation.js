@@ -383,7 +383,7 @@ describe('Extends Foundation', function () {
         initializeIfNotSet: true,
         pos: { lineno: 1, colno: 1 }
       }), 'theme');
-      sharedBuffer.markFinishedAndPatchLinks();
+      sharedBuffer.finish();
 
       const result = await sharedBuffer.getOwnChannel('theme').finalSnapshot();
       expect(result).to.be('parent');
@@ -445,7 +445,7 @@ describe('Extends Foundation', function () {
           }
         });
       }
-      sharedBuffer.markFinishedAndPatchLinks();
+      sharedBuffer.finish();
 
       const db = await sharedBuffer.getOwnChannel('db').finalSnapshot();
       const result = db.get();
@@ -1051,8 +1051,8 @@ describe('Extends Foundation', function () {
         pos: { lineno: 2, colno: 1 }
       }), 'theme');
 
-      childBuffer.markFinishedAndPatchLinks();
-      rootBuffer.markFinishedAndPatchLinks();
+      childBuffer.finish();
+      rootBuffer.finish();
 
       const result = await rootBuffer.getOwnChannel('theme').finalSnapshot();
       expect(result).to.be('dark');
@@ -1115,7 +1115,7 @@ describe('Extends Foundation', function () {
             args: ['hit|'],
             pos: { lineno: 1, colno: 1 }
           }), 'log');
-          output.markFinishedAndPatchLinks();
+          output.finish();
           return 'done';
         },
         signature: { argNames: [], withContext: false },
@@ -1139,8 +1139,8 @@ describe('Extends Foundation', function () {
         { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
       );
 
-      currentBuffer.markFinishedAndPatchLinks();
-      sharedRootBuffer.markFinishedAndPatchLinks();
+      currentBuffer.finish();
+      sharedRootBuffer.finish();
 
       expect(result).to.be('done');
       expect(await logSnapshot).to.be('hit|');
@@ -2408,7 +2408,7 @@ describe('Extends Foundation', function () {
         },
         addBuffer() {},
         _installLinkedChannel() {},
-        markFinishedAndPatchLinks() {},
+        finish() {},
         getFinishedPromise() {
           return Promise.reject(cleanupError);
         }

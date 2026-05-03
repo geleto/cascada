@@ -72,7 +72,7 @@ class ComponentInstance {
       return;
     }
     this.closed = true;
-    this.rootBuffer.markFinishedAndPatchLinks();
+    this.rootBuffer.finish();
   }
 }
 

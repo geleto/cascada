@@ -76,7 +76,7 @@ For each caller invocation, compiler-emitted code:
 Two `WaitResolveCommand` entries are added to the `__caller__` channel per
 invocation: one for `invocationBuffer.getFinishedPromise()` (structural buffer
 completion — when command emission into the child buffer is done) and one for
-the invocation result promise wrapped with `.finally(() => invocationBuffer.markFinishedAndPatchLinks())` (result settling — when the invoked caller body's
+the invocation result promise wrapped with `.finally(() => invocationBuffer.finish())` (result settling — when the invoked caller body's
 returned value resolves or rejects). Both signals must be recorded so the macro
 knows that structure is fully committed and the value has settled before it can
 safely close the all-callers buffer.

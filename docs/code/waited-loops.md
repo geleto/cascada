@@ -41,7 +41,7 @@ That helper:
 The mark-before-snapshot order is essential. The parent iterator cannot descend
 into the child buffer until it is marked finished, and the waited-channel
 snapshot cannot complete until the iterator has applied that channel. If
-`finalSnapshot()` were called before `markFinishedAndPatchLinks()`, the system
+`finalSnapshot()` were called before `finish()`, the system
 would deadlock: the snapshot waits for the iterator to apply the waited channel,
 the iterator waits for the child buffer to be marked finished, and the child
 buffer never gets marked finished because the iteration body is still waiting on

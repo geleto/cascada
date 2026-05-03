@@ -125,7 +125,7 @@ class CompileBuffer {
       ? `Promise.resolve(${finalExpr}).then((value) => ${transformExpr.replace(/__VALUE__/g, 'value')})`
       : finalExpr;
 
-    this.compiler.emit.line(`${bufferExpr}.markFinishedAndPatchLinks();`);
+    this.compiler.emit.line(`${bufferExpr}.finish();`);
     this.compiler.emit.line(`const ${textPromiseId} = ${chainedExpr};`);
     if (addToCurrentWaited && this.compiler.asyncMode && this.currentWaitedChannelName) {
       this.compiler.emit.line(

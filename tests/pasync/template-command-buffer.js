@@ -578,9 +578,9 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
       await Promise.resolve();
       expect(blockedReadSettled).to.be(false);
-      sharedLaneSibling.markFinishedAndPatchLinks();
-      invocationBuffer.markFinishedAndPatchLinks();
-      blockedRoot.markFinishedAndPatchLinks();
+      sharedLaneSibling.finish();
+      invocationBuffer.finish();
+      blockedRoot.finish();
       expect(await blockedRead).to.be('dark');
 
       const textRoot = createRootBuffer();
@@ -592,9 +592,9 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       }), 'theme');
 
       expect(await admittedRead).to.be('dark');
-      textPlacementBoundary.markFinishedAndPatchLinks();
-      admittedInvocation.markFinishedAndPatchLinks();
-      textRoot.markFinishedAndPatchLinks();
+      textPlacementBoundary.finish();
+      admittedInvocation.finish();
+      textRoot.finish();
     });
 
     it('should collect multiple exported value failures before rejecting the exported namespace', async function () {

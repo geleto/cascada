@@ -770,7 +770,7 @@ describe('Phase 8 - Component Observations', function () {
     });
 
     const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
-    ownerBuffer.markFinishedAndPatchLinks();
+    ownerBuffer.finish();
     await bindingSnapshot;
     const observed = await observationPromise;
 
@@ -827,7 +827,7 @@ describe('Phase 8 - Component Observations', function () {
       errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
     });
 
-    ownerBuffer.markFinishedAndPatchLinks();
+    ownerBuffer.finish();
 
     try {
       await observationPromise;
@@ -1231,7 +1231,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
-    ownerBuffer.markFinishedAndPatchLinks();
+    ownerBuffer.finish();
     await bindingSnapshot;
     await startupPromise;
 
@@ -1319,7 +1319,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
-    ownerBuffer.markFinishedAndPatchLinks();
+    ownerBuffer.finish();
     await bindingSnapshot;
     await startupPromise;
 
@@ -1371,7 +1371,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     }), 'nsBinding');
 
     const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
-    ownerBuffer.markFinishedAndPatchLinks();
+    ownerBuffer.finish();
     await bindingSnapshot;
 
     expect(() => componentInstance.callMethod(
@@ -1394,7 +1394,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     const componentInstance = new ComponentInstance({
       context: { path: 'Component.script' },
-      rootBuffer: { markFinishedAndPatchLinks() {} },
+      rootBuffer: { finish() {} },
       inheritanceState: {},
     });
 

@@ -89,7 +89,7 @@ class CommandBuffer {
     return this._finishedPromise;
   }
 
-  markFinishedAndPatchLinks() {
+  finish() {
     if (this.finished) {
       return;
     }
@@ -100,9 +100,9 @@ class CommandBuffer {
     this._completeFinishIfAllLanesFinished();
   }
 
-  requestChannelFinish(channelName) {
+  finishChannel(channelName) {
     // Finishing an individual lane only wakes channel iterators. Aggregate
-    // buffer completion is still gated by markFinishedAndPatchLinks().
+    // buffer completion is still gated by finish().
     if (this.finished) {
       return;
     }

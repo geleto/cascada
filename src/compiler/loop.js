@@ -284,7 +284,7 @@ class CompileLoop {
 
         if (shouldAwaitLoopBody) {
           const waitedSnapshotId = this.compiler._tmpid();
-          this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+          this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
           this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChannel("${limitedWaitedChannelName}").finalSnapshot();`);
           if (whileConditionNode) {
             this.compiler.emit.line(`await ${waitedSnapshotId};`);

@@ -36,7 +36,7 @@ describe('channel.finalSnapshot', function () {
           nested._installLinkedChannel(targetName, linkedChannel);
         }
         item.forEach((child) => addItem(nested, child));
-        nested.markFinishedAndPatchLinks();
+        nested.finish();
         buffer.addBuffer(nested, targetName);
         return;
       }
@@ -55,7 +55,7 @@ describe('channel.finalSnapshot', function () {
     } else if (input !== null && input !== undefined) {
       addItem(cb, input);
     }
-    cb.markFinishedAndPatchLinks();
+    cb.finish();
     return cb;
   };
   const makeChannel = (buffer, ctx, channelName) => {
@@ -107,7 +107,7 @@ describe('channel.finalSnapshot', function () {
         args: ['B'],
         pos: { lineno: 1, colno: 2 }
       }), 'text');
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
 
       const result = await channel.finalSnapshot();
       expect(result).to.be('AB');
@@ -125,7 +125,7 @@ describe('channel.finalSnapshot', function () {
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
       }), 'text');
-      child.markFinishedAndPatchLinks();
+      child.finish();
 
       parent.addBuffer(child, 'text');
       parent.addCommand(new TextCommand({
@@ -133,7 +133,7 @@ describe('channel.finalSnapshot', function () {
         args: ['B'],
         pos: { lineno: 1, colno: 2 }
       }), 'text');
-      parent.markFinishedAndPatchLinks();
+      parent.finish();
 
       const result = await channel.finalSnapshot();
       expect(result).to.be('AB');
@@ -152,7 +152,7 @@ describe('channel.finalSnapshot', function () {
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
       }), 'text');
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
 
       const first = await channel.finalSnapshot();
       const second = await channel.finalSnapshot();
@@ -175,7 +175,7 @@ describe('channel.finalSnapshot', function () {
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
       }), 'text');
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
 
       const result = await channel.finalSnapshot();
 
@@ -194,7 +194,7 @@ describe('channel.finalSnapshot', function () {
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
       }), 'text');
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
 
       const result = await channel.finalSnapshot();
 
@@ -210,7 +210,7 @@ describe('channel.finalSnapshot', function () {
         }
       }));
 
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
 
       const result = await sequenceChannel.finalSnapshot();
 
@@ -225,7 +225,7 @@ describe('channel.finalSnapshot', function () {
       expect(Object.keys(buffer.arrays)).to.eql(['unused']);
       expect(buffer.arrays.unused).to.eql([]);
 
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
 
       expect(buffer.finished).to.be(true);
       expect(buffer.isFinished('unused')).to.be(true);
@@ -280,7 +280,7 @@ describe('channel.finalSnapshot', function () {
     it('links a child to an already-finished parent channel without structural insertion', function () {
       const parent = createCommandBuffer(context, null, null, null, ['text']);
       const channel = declareBufferChannel(parent, 'text', 'text', context, null);
-      parent.markFinishedAndPatchLinks();
+      parent.finish();
 
       const child = createCommandBuffer(context, null, null, null, ['text']);
       linkCurrentBufferToParentChannels(parent, child, ['text']);
@@ -294,7 +294,7 @@ describe('channel.finalSnapshot', function () {
       const buffer = createCommandBuffer(context, null, null, null, ['text']);
       declareBufferChannel(buffer, 'text', 'text', context, null);
 
-      expect(() => buffer.requestChannelFinish('missing')).to.throwError((err) => {
+      expect(() => buffer.finishChannel('missing')).to.throwError((err) => {
         expect(err.name).to.be('RuntimeFatalError');
         expect(err.message).to.contain('Channel \'missing\' is visible but this buffer has no linked lane');
       });
@@ -448,7 +448,7 @@ describe('channel.finalSnapshot', function () {
         pos: { lineno: 0, colno: 0 }
       }), 'text');
       textOut('B');
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
 
       const early = await snap;
       const final = await textOut.finalSnapshot();
@@ -476,7 +476,7 @@ describe('channel.finalSnapshot', function () {
       ]);
       expect(early).to.equal('__timeout__');
 
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
       const resolved = await out.finalSnapshot();
       expect(resolved).to.equal('late');
     });
@@ -489,7 +489,7 @@ describe('channel.finalSnapshot', function () {
       text('later');
       data.set(['ready'], 1);
 
-      buffer.requestChannelFinish('data');
+      buffer.finishChannel('data');
 
       expect(buffer.isFinished('data')).to.be(true);
       expect(buffer.isFinished('text')).to.be(false);
@@ -502,10 +502,10 @@ describe('channel.finalSnapshot', function () {
       expect(dataSnapshot).to.eql({ ready: 1 });
 
       text(' now');
-      buffer.requestChannelFinish('text');
+      buffer.finishChannel('text');
 
       expect(buffer.finished).to.be(false);
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
       expect(buffer.finished).to.be(true);
       const textSnapshot = await text.finalSnapshot();
       expect(textSnapshot).to.equal('later now');

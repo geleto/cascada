@@ -2636,7 +2636,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
       }), 'loop');
-      buffer.markFinishedAndPatchLinks();
+      buffer.finish();
 
       const snap = await buffer.addCommand(new SnapshotCommand({
         channelName: 'loop',
