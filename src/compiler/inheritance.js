@@ -28,13 +28,13 @@ class CompileInheritance {
     };
   }
 
-  isHiddenFromCurrentCallable(node, name, declaredOutput, opts = {}) {
+  isHiddenFromCurrentCallable(node, name, declaredChannel, opts = {}) {
     const { includeImported = false } = opts;
     const { declarationOwner, callableOwner, callableBodyOwner } =
       this.getCurrentCallableBindingOwners(node, name);
     const isVisibleFromCurrentCallable = !!(
-      declaredOutput.shared ||
-      (includeImported && declaredOutput.imported) ||
+      declaredChannel.shared ||
+      (includeImported && declaredChannel.imported) ||
       declarationOwner === callableOwner ||
       declarationOwner === callableBodyOwner
     );

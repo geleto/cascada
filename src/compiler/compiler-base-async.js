@@ -68,35 +68,35 @@ class CompilerBaseAsync extends CompilerCommon {
       this.emit(name);
       return;
     }
-    const declaredOutput = this.analysis.findDeclaration(node._analysis, name);
-    if (declaredOutput && this.scriptMode && declaredOutput.shared) {
+    const declaredChannel = this.analysis.findDeclaration(node._analysis, name);
+    if (declaredChannel && this.scriptMode && declaredChannel.shared) {
       this._compileScriptAmbientOnlySymbolLookup(node, name);
       return;
     }
-    if (declaredOutput) {
-      this._compileDeclaredSymbolLookup(node, name, declaredOutput);
+    if (declaredChannel) {
+      this._compileDeclaredSymbolLookup(node, name, declaredChannel);
       return;
     }
     this._compileAmbientSymbolLookup(node, name);
   }
 
-  _compileDeclaredSymbolLookup(node, name, declaredOutput) {
+  _compileDeclaredSymbolLookup(node, name, declaredChannel) {
     if (this.scriptMode && this.currentCallableDefinition) {
-      if (this.inheritance.isHiddenFromCurrentCallable(node, name, declaredOutput, { includeImported: true })) {
+      if (this.inheritance.isHiddenFromCurrentCallable(node, name, declaredChannel, { includeImported: true })) {
         this.emit('undefined');
         return;
       }
     }
-    if (!this.scriptMode && this.currentCallableDefinition && this.inBlock && declaredOutput.type === 'var') {
-      if (this.inheritance.isHiddenFromCurrentCallable(node, name, declaredOutput)) {
+    if (!this.scriptMode && this.currentCallableDefinition && this.inBlock && declaredChannel.type === 'var') {
+      if (this.inheritance.isHiddenFromCurrentCallable(node, name, declaredChannel)) {
         this.emit('undefined');
         return;
       }
     }
     if (node.sequential || node.sequentialRepair) {
-      this._failNonContextSequenceRoot(node, declaredOutput);
+      this._failNonContextSequenceRoot(node, declaredChannel);
     }
-    if (declaredOutput.type !== 'var') {
+    if (declaredChannel.type !== 'var') {
       this.fail(
         `Channel '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
         node.lineno,
@@ -104,7 +104,7 @@ class CompilerBaseAsync extends CompilerCommon {
         node
       );
     }
-    if (declaredOutput.shared) {
+    if (declaredChannel.shared) {
       this.channel.emitSharedChannelObservation(name, node, 'snapshot', true);
       return;
     }
@@ -140,9 +140,9 @@ class CompilerBaseAsync extends CompilerCommon {
     if (!keyRoot) {
       return;
     }
-    const keyRootOutput = analysisPass.findDeclaration(node._analysis, keyRoot);
-    if (keyRootOutput) {
-      this._failNonContextSequenceRoot(node, keyRootOutput);
+    const keyRootChannel = analysisPass.findDeclaration(node._analysis, keyRoot);
+    if (keyRootChannel) {
+      this._failNonContextSequenceRoot(node, keyRootChannel);
     }
   }
 

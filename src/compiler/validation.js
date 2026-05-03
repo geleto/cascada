@@ -43,7 +43,7 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
  * @param {Frame} options.frame - Current frame
  * @param {Node} options.node - Statement node
  * @param {Node} options.target - Assignment target node (for precise position)
- * @param {string} options.name - Variable/output name
+ * @param {string} options.name - Variable/channel name
  * @param {boolean} options.mutatingOuterRef - True when assignment targets an outer-scope binding
  */
 /**

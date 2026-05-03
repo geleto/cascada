@@ -28,27 +28,27 @@ class CompileRename {
     return `loop#${this.loopCounter}`;
   }
 
-  _renameOutputName(name, binding) {
+  _renameChannelReference(name, binding) {
     if (!name || name !== 'loop' || !binding || binding.kind !== 'loop') {
       return name;
     }
     return binding.runtimeName;
   }
 
-  _renameOutputList(values, binding) {
+  _renameChannelReferences(values, binding) {
     if (!Array.isArray(values) || values.length === 0) {
       return values;
     }
     for (let i = 0; i < values.length; i++) {
-      values[i] = this._renameOutputName(values[i], binding);
+      values[i] = this._renameChannelReference(values[i], binding);
     }
     return values;
   }
 
   _applyLocalRenames(node, binding) {
-    this._renameOutputList(node._analysis.uses, binding);
-    this._renameOutputList(node._analysis.mutates, binding);
-    this._renameOutputList(node._analysis.declaresInParent, binding);
+    this._renameChannelReferences(node._analysis.uses, binding);
+    this._renameChannelReferences(node._analysis.mutates, binding);
+    this._renameChannelReferences(node._analysis.declaresInParent, binding);
   }
 
   _enterScope(node, parentBinding) {
