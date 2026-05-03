@@ -102,10 +102,13 @@ class CompileAnalysis {
       usedChannels: null,
       mutatedChannels: null,
       linkedChannels: null,
+      // Parent-owned linked channels this boundary may mutate. Future command-buffer
+      // scheduling can use this to distinguish read-only child buffers.
+      linkedMutatedChannels: null,
       methodLinkedChannels: null,
       methodMutatedChannels: null,
       createsLinkedChildBuffer: false,
-      linkedChildBufferRequiresCommandEffects: false,
+      expressionControlFlowBoundary: false,
       ...existingAnalysis,
       parent: parentAnalysis,
       inheritedSequenceFunCallLockKey
@@ -658,15 +661,19 @@ class CompileAnalysis {
 
     analysis.usedChannels = usedChannels.size > 0 ? usedChannels : null;
     analysis.mutatedChannels = mutatedChannels.size > 0 ? mutatedChannels : null;
-    if (
-      analysis.linkedChildBufferRequiresCommandEffects &&
-      (!analysis.mutatedChannels || analysis.mutatedChannels.size === 0)
-    ) {
-      analysis.createsLinkedChildBuffer = false;
-    }
-
     const declaredHere = analysis.declaredChannels instanceof Map ? analysis.declaredChannels : null;
     analysis.linkedChannels = this._deriveBoundaryLinkedChannels(analysis, usedChannels, declaredHere);
+    analysis.linkedMutatedChannels = this._deriveBoundaryLinkedChannels(analysis, mutatedChannels, declaredHere);
+    if (analysis.expressionControlFlowBoundary) {
+      analysis.createsLinkedChildBuffer = !!(
+        analysis.linkedMutatedChannels &&
+        analysis.linkedMutatedChannels.size > 0
+      );
+      if (!analysis.createsLinkedChildBuffer) {
+        analysis.linkedChannels = null;
+        analysis.linkedMutatedChannels = null;
+      }
+    }
 
     if (analysis.scopeBoundary) {
       return {
@@ -721,11 +728,7 @@ class CompileAnalysis {
     return !!(
       analysis &&
       analysis.parent &&
-      analysis.createsLinkedChildBuffer &&
-      (
-        !analysis.linkedChildBufferRequiresCommandEffects ||
-        (analysis.mutatedChannels && analysis.mutatedChannels.size > 0)
-      )
+      analysis.createsLinkedChildBuffer
     );
   }
 

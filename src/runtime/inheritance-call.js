@@ -513,6 +513,10 @@ function _getMethodLinkedChannels(methodData) {
   return _assertResolvedMethodData(methodData).mergedLinkedChannels;
 }
 
+function _getMethodMutatedChannels(methodData) {
+  return _assertResolvedMethodData(methodData).mergedMutatedChannels;
+}
+
 function getCallableBodyLinkedChannelsImpl(methodData, errorContext = null) {
   const resolvedMethodData = _assertResolvedMethodData(methodData);
   if (resolvedMethodData.super && !_isResolvedMethodData(resolvedMethodData.super)) {
@@ -520,6 +524,15 @@ function getCallableBodyLinkedChannelsImpl(methodData, errorContext = null) {
   }
 
   return _getMethodLinkedChannels(resolvedMethodData);
+}
+
+function getCallableBodyMutatedChannelsImpl(methodData, errorContext = null) {
+  const resolvedMethodData = _assertResolvedMethodData(methodData);
+  if (resolvedMethodData.super && !_isResolvedMethodData(resolvedMethodData.super)) {
+    throw _createInvalidSuperMetadataError(resolvedMethodData, errorContext);
+  }
+
+  return _getMethodMutatedChannels(resolvedMethodData);
 }
 
 function _finalizeInvokedMethodCatalog(state, errorContext = null, errors) {
@@ -709,20 +722,29 @@ function _createMethodPayload(methodData, args, errorContext, label, context = n
   };
 }
 
-function _installInvocationChannelLink(parentBuffer, invocationBuffer, channelName) {
+function _installInvocationChannelLink(parentBuffer, invocationBuffer, channelName, isLinkedMutation = false) {
   const channel = parentBuffer.getChannelIfExists(channelName);
   if (!channel) {
     throw _createMissingInvocationChannelError(channelName, invocationBuffer?._context ?? parentBuffer?._context ?? null);
   }
   if (parentBuffer === invocationBuffer) {
     invocationBuffer._installLinkedChannel(channelName, channel);
+    if (isLinkedMutation) {
+      invocationBuffer._markLinkedMutatedChannel(channelName);
+    }
     return true;
   }
   if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
     invocationBuffer._installLinkedChannel(channelName, channel);
+    if (isLinkedMutation) {
+      invocationBuffer._markLinkedMutatedChannel(channelName);
+    }
     return true;
   }
   parentBuffer.addBuffer(invocationBuffer, channelName);
+  if (isLinkedMutation) {
+    invocationBuffer._markLinkedMutatedChannel(channelName);
+  }
   return true;
 }
 
@@ -876,6 +898,7 @@ function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKe
 function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue, currentBuffer, methodData) {
   const sharedRootBuffer = inheritanceStateValue.sharedRootBuffer ?? currentBuffer;
   const linkedChannels = _getMethodLinkedChannels(methodData);
+  const mutatedChannelSet = new Set(_getMethodMutatedChannels(methodData));
   const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue);
   const invocationBuffer = runtime.createCommandBuffer(
     context,
@@ -892,7 +915,7 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
       throw _createMissingInvocationChannelError(channelName, context);
     }
     if (callerHasChannel) {
-      _installInvocationChannelLink(currentBuffer, invocationBuffer, channelName);
+      _installInvocationChannelLink(currentBuffer, invocationBuffer, channelName, mutatedChannelSet.has(channelName));
     }
     if (isSharedChannel && sharedRootBuffer !== currentBuffer) {
       const sharedRootChannel = sharedRootBuffer
@@ -907,7 +930,7 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
         // duplicate the method body in that lane.
         continue;
       }
-      _installInvocationChannelLink(sharedRootBuffer, invocationBuffer, channelName);
+      _installInvocationChannelLink(sharedRootBuffer, invocationBuffer, channelName, mutatedChannelSet.has(channelName));
     } else if (isSharedChannel && !callerHasChannel) {
       throw _createMissingSharedChannelError(channelName, context);
     }
@@ -1054,6 +1077,7 @@ function invokeComponentMethod(inheritanceStateValue, methodName, args, context,
 
 let createInheritanceInvocationCommandHook = createInheritanceInvocationCommandImpl;
 let getCallableBodyLinkedChannelsHook = getCallableBodyLinkedChannelsImpl;
+let getCallableBodyMutatedChannelsHook = getCallableBodyMutatedChannelsImpl;
 
 const inheritanceCallApi = {};
 Object.defineProperties(inheritanceCallApi, {
@@ -1064,6 +1088,10 @@ Object.defineProperties(inheritanceCallApi, {
   getCallableBodyLinkedChannels: {
     get: () => getCallableBodyLinkedChannelsHook,
     set: (value) => { getCallableBodyLinkedChannelsHook = value; }
+  },
+  getCallableBodyMutatedChannels: {
+    get: () => getCallableBodyMutatedChannelsHook,
+    set: (value) => { getCallableBodyMutatedChannelsHook = value; }
   },
   getMethodData: { value: getMethodData },
   finalizeResolvedMethodMetadata: { value: finalizeResolvedMethodMetadata },
@@ -1082,4 +1110,8 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
   return getCallableBodyLinkedChannelsHook.apply(this, arguments);
 }
 
-export { inheritanceCallApi, createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };
+function getCallableBodyMutatedChannels(methodData, errorContext = null) {
+  return getCallableBodyMutatedChannelsHook.apply(this, arguments);
+}
+
+export { inheritanceCallApi, createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, getCallableBodyLinkedChannels, getCallableBodyMutatedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };

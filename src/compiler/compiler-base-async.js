@@ -156,8 +156,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileInlineIf(node) {
-    const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
-    if (hasCommandEffects) {
+    const hasLinkedMutations = !!(node._analysis && node._analysis.linkedMutatedChannels && node._analysis.linkedMutatedChannels.size > 0);
+    if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const cond = await runtime.resolveSingle(');
         this.compile(node.cond, null);
@@ -201,7 +201,7 @@ class CompilerBaseAsync extends CompilerCommon {
   analyzeInlineIf() {
     return {
       createsLinkedChildBuffer: true,
-      linkedChildBufferRequiresCommandEffects: true
+      expressionControlFlowBoundary: true
     };
   }
 
@@ -249,7 +249,7 @@ class CompilerBaseAsync extends CompilerCommon {
   analyzeOr() {
     return {
       createsLinkedChildBuffer: true,
-      linkedChildBufferRequiresCommandEffects: true
+      expressionControlFlowBoundary: true
     };
   }
 
@@ -260,7 +260,7 @@ class CompilerBaseAsync extends CompilerCommon {
   analyzeAnd() {
     return {
       createsLinkedChildBuffer: true,
-      linkedChildBufferRequiresCommandEffects: true
+      expressionControlFlowBoundary: true
     };
   }
 
@@ -966,8 +966,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileAsyncBinOpShortCircuit(node, isOr) {
-    const hasCommandEffects = !!(node._analysis && node._analysis.mutatedChannels && node._analysis.mutatedChannels.size > 0);
-    if (hasCommandEffects) {
+    const hasLinkedMutations = !!(node._analysis && node._analysis.linkedMutatedChannels && node._analysis.linkedMutatedChannels.size > 0);
+    if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const left = await runtime.resolveSingle(');
         this.compile(node.left, null);

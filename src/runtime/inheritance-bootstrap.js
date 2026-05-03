@@ -323,17 +323,21 @@ function runCompiledRootStartupImpl(spec) {
   return startupPromise;
 }
 
-function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames) {
+function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames, linkedMutatedChannelNames = null) {
   if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
 
+  const linkedMutatedChannelSet = new Set(linkedMutatedChannelNames || []);
   for (const channelName of channelNames) {
     if (!channelName) {
       continue;
     }
     const channel = parentBuffer.getChannel(channelName);
     if (currentBuffer.getChannelIfExists(channelName) === channel) {
+      if (linkedMutatedChannelSet.has(channelName)) {
+        currentBuffer._markLinkedMutatedChannel(channelName);
+      }
       continue;
     }
     if (currentBuffer.hasChannel(channelName)) {
@@ -347,9 +351,15 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
     }
     if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
       currentBuffer._installLinkedChannel(channelName, channel);
+      if (linkedMutatedChannelSet.has(channelName)) {
+        currentBuffer._markLinkedMutatedChannel(channelName);
+      }
       continue;
     }
     parentBuffer.addBuffer(currentBuffer, channelName);
+    if (linkedMutatedChannelSet.has(channelName)) {
+      currentBuffer._markLinkedMutatedChannel(channelName);
+    }
   }
 
   return currentBuffer;

@@ -11,7 +11,7 @@ import {BufferIterator} from './buffer-iterator.js';
 import {markCommandBuffer} from './buffer-marker.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, laneNames = null) {
+  constructor(context, parent = null, laneNames = null, linkedMutatedLaneNames = null) {
     markCommandBuffer(this);
     this._context = context;
     this.parent = parent;
@@ -23,6 +23,11 @@ class CommandBuffer {
     // Per-lane command arrays. Static metadata creates these eagerly; runtime
     // declarations enter through _ensureLane().
     this.arrays = Object.create(null);
+    // Linked parent lanes this buffer may mutate. This is metadata for future
+    // scheduling that can let read-only child buffers stop blocking siblings.
+    this._linkedMutatedChannels = linkedMutatedLaneNames
+      ? new Set(linkedMutatedLaneNames)
+      : null;
     this._finishedPromise = null;
     this._finishedResolver = null;
 
@@ -314,6 +319,31 @@ class CommandBuffer {
     return this._channels[resolvedChannelName];
   }
 
+  isLinkedMutatedChannel(channelName) {
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    return !!(this._linkedMutatedChannels && this._linkedMutatedChannels.has(resolvedChannelName));
+  }
+
+  _markLinkedMutatedChannel(channelName) {
+    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
+    if (!resolvedChannelName) {
+      return;
+    }
+    if (!this.hasChannel(resolvedChannelName)) {
+      throw new RuntimeFatalError(
+        `Cannot mark channel '${resolvedChannelName}' as linked-mutated because it is not linked on this buffer`,
+        0,
+        0,
+        null,
+        this._context?.path ?? null
+      );
+    }
+    if (!this._linkedMutatedChannels) {
+      this._linkedMutatedChannels = new Set();
+    }
+    this._linkedMutatedChannels.add(resolvedChannelName);
+  }
+
   _setChannelAliases(map) {
     if (!map) {
       return;
@@ -408,11 +438,16 @@ function ensureChannelIterator(channel) {
   return channel._iterator;
 }
 
-function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null, declaredChannels = null) {
+function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null, declaredChannels = null, linkedMutatedChannels = null) {
   const linkedLaneNames = validateLaneNames(linkedChannels, 'linkedChannels', context);
+  const linkedMutatedLaneNames = validateLinkedMutatedLaneNames(
+    linkedMutatedChannels,
+    linkedLaneNames,
+    context
+  );
   const declaredLaneNames = validateLaneNames(declaredChannels, 'declaredChannels', context);
   const laneNames = combineLaneNames(linkedLaneNames, declaredLaneNames, context);
-  const buffer = new CommandBuffer(context, parent, laneNames);
+  const buffer = new CommandBuffer(context, parent, laneNames, linkedMutatedLaneNames);
   const linkTarget = linkedParent || parent;
   if (linkTarget && linkedLaneNames) {
     for (let i = 0; i < linkedLaneNames.length; i++) {
@@ -456,6 +491,24 @@ function validateLaneNames(laneNames, label, context = null) {
     seen.add(name);
   }
   return laneNames;
+}
+
+function validateLinkedMutatedLaneNames(laneNames, linkedLaneNames, context = null) {
+  const linkedMutatedLaneNames = validateLaneNames(laneNames, 'linkedMutatedChannels', context);
+  if (!linkedMutatedLaneNames) {
+    return null;
+  }
+  const linkedLaneNameSet = new Set(linkedLaneNames || []);
+  for (let i = 0; i < linkedMutatedLaneNames.length; i++) {
+    const name = linkedMutatedLaneNames[i];
+    if (!linkedLaneNameSet.has(name)) {
+      throw createLaneMetadataError(
+        `Channel '${name}' appears in linkedMutatedChannels but not linkedChannels`,
+        context
+      );
+    }
+  }
+  return linkedMutatedLaneNames;
 }
 
 function combineLaneNames(linkedChannels, declaredChannels, context = null) {

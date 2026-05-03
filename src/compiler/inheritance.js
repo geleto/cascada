@@ -710,7 +710,8 @@ class CompileInheritance {
     // would move those observations to the earlier extends scheduling point.
     // In template mode this is the root text output lane.
     const linkedChannelsArg = JSON.stringify([this.compiler.buffer.currentTextChannelName]);
-    this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, context, cb, async (currentBuffer) => {`);
+    const linkedMutatedChannelsArg = linkedChannelsArg;
+    this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`);
     const resolvedSelectionVar = this.compiler._tmpid();
     this.emit.line(`  const ${resolvedSelectionVar} = await runtime.resolveSingle(${deferredSelectionVar});`);
     this.emit.line(`  if (${resolvedSelectionVar}) {`);
@@ -820,7 +821,8 @@ class CompileInheritance {
     this.emit.line(
       `runtime.linkCurrentBufferToParentChannels(` +
       `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
-      `runtime.getCallableBodyLinkedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(block))})` +
+      `runtime.getCallableBodyLinkedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(block))}), ` +
+      `runtime.getCallableBodyMutatedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(block))})` +
       `);`
     );
     if (!isScriptMethod) {
@@ -1163,7 +1165,8 @@ class CompileInheritance {
       // dynamically, and this boundary must preserve post-extends constructor
       // ordering for the channels available at that runtime call site.
       const linkedChannelsArg = 'Object.keys((inheritanceState && inheritanceState.sharedSchema) || {})';
-      this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, context, cb, async (currentBuffer) => {`);
+      const linkedMutatedChannelsArg = linkedChannelsArg;
+      this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`);
       this._emitParentRootRender({
         indent: '  ',
         templateExpr: parentTemplateId,

@@ -972,6 +972,7 @@ import * as runtime from '../../src/runtime/runtime.js';
         null,
         null,
         null,
+        null,
         asyncBody
       ).then(() => {
         done(new Error('runValueBoundary should have rejected'));

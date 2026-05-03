@@ -244,6 +244,11 @@ class CompileEmit {
     return linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
   }
 
+  getLinkedMutatedChannelsArg(node) {
+    const linkedMutatedChannels = this.getLinkedMutatedChannels(node);
+    return linkedMutatedChannels.length > 0 ? JSON.stringify(linkedMutatedChannels) : 'null';
+  }
+
   _getAnalysis(node, helperName) {
     if (!node || !node._analysis) {
       const nodeType = node && (node.typename || node.constructor && node.constructor.name);
@@ -258,6 +263,11 @@ class CompileEmit {
     // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
     // Nested control-flow buffers are applied through their own channels/iterators.
     return Array.from(analysis.linkedChannels || []);
+  }
+
+  getLinkedMutatedChannels(node) {
+    const analysis = this._getAnalysis(node, 'getLinkedMutatedChannels');
+    return Array.from(analysis.linkedMutatedChannels || []);
   }
 
   getDeclaredChannels(node) {

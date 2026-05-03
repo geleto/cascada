@@ -161,7 +161,9 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const captures = collectNodesByType(ast, 'Capture');
 
       expect(Array.from(captures[0]._analysis.linkedChannels || [])).to.eql(['x']);
+      expect(Array.from(captures[0]._analysis.linkedMutatedChannels || [])).to.eql([]);
       expect(Array.from(captures[1]._analysis.linkedChannels || [])).to.eql(['x']);
+      expect(Array.from(captures[1]._analysis.linkedMutatedChannels || [])).to.eql([]);
     });
 
     it('should include parent-owned mutations in derived boundary linked channels', function () {
@@ -173,6 +175,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const ifNode = collectNodesByType(ast, 'If')[0];
 
       expect(Array.from(ifNode._analysis.linkedChannels || [])).to.eql(['__text__', 'x']);
+      expect(Array.from(ifNode._analysis.linkedMutatedChannels || [])).to.eql(['__text__', 'x']);
     });
 
     it('should mark include, extends, and block nodes as linked child buffers', function () {
@@ -205,6 +208,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
       expect(inlineIfNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(inlineIfNode._analysis.linkedChannels || [])).to.eql(['result']);
+      expect(Array.from(inlineIfNode._analysis.linkedMutatedChannels || [])).to.eql(['result']);
     });
 
     it('should derive caller invocation links from analysis-owned caller facts', function () {
@@ -249,7 +253,8 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const source = tmpl._compileSource();
 
       expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__', 'theme']);
-      expect(source).to.contain('runtime.runControlFlowBoundary(output, ["__text__"], null, context, cb, async (blockBuffer)');
+      expect(Array.from(blockNode._analysis.linkedMutatedChannels || [])).to.eql(['__text__']);
+      expect(source).to.contain('runtime.runControlFlowBoundary(output, ["__text__"], null, ["__text__"], context, cb, async (blockBuffer)');
       expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","theme"]');
     });
 
@@ -265,7 +270,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__"], null, context, cb, async (currentBuffer)');
+      expect(source).to.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__"], null, ["__text__"], context, cb, async (currentBuffer)');
       expect(source).to.not.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__","theme"]');
     });
 
@@ -337,10 +342,13 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
       expect(valueAndNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(valueAndNode._analysis.linkedChannels).to.be(null);
+      expect(valueAndNode._analysis.linkedMutatedChannels).to.be(null);
       expect(valueOrNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(valueOrNode._analysis.linkedChannels).to.be(null);
+      expect(valueOrNode._analysis.linkedMutatedChannels).to.be(null);
       expect(valueInlineIfNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(valueInlineIfNode._analysis.linkedChannels).to.be(null);
+      expect(valueInlineIfNode._analysis.linkedMutatedChannels).to.be(null);
 
       const commandEffectAst = analyzeScriptSource([
         'data result',
@@ -353,8 +361,10 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
       expect(commandAndNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(commandAndNode._analysis.linkedChannels || [])).to.eql(['result']);
+      expect(Array.from(commandAndNode._analysis.linkedMutatedChannels || [])).to.eql(['result']);
       expect(commandOrNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(commandOrNode._analysis.linkedChannels || [])).to.eql(['result']);
+      expect(Array.from(commandOrNode._analysis.linkedMutatedChannels || [])).to.eql(['result']);
     });
 
     it('should not emit caller scheduling machinery for macros without caller()', function () {

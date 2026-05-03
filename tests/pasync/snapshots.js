@@ -251,12 +251,30 @@ describe('channel.finalSnapshot', function () {
       const parent = createCommandBuffer(context, null, null, null, ['text']);
       declareBufferChannel(parent, 'text', 'text', context, null);
       try {
-        await runControlFlowBoundary(parent, 'text', null, context, () => {}, async () => null);
+        await runControlFlowBoundary(parent, 'text', null, null, context, () => {}, async () => null);
         throw new Error('expected invalid linked channel metadata to fail');
       } catch (err) {
         expect(err.name).to.be('RuntimeFatalError');
         expect(err.message).to.contain('linkedChannels must be an array when provided');
       }
+    });
+
+    it('rejects linked mutated lane metadata outside linked lanes', function () {
+      expect(() => createCommandBuffer(context, null, ['text'], null, null, ['data'])).to.throwError(/appears in linkedMutatedChannels but not linkedChannels/);
+    });
+
+    it('stores linked mutated metadata for construction-time and late links', function () {
+      const parent = createCommandBuffer(context, null, null, null, ['text', 'data']);
+      declareBufferChannel(parent, 'text', 'text', context, null);
+      declareBufferChannel(parent, 'data', 'data', context, null);
+
+      const constructedChild = createCommandBuffer(context, null, ['text'], parent, null, ['text']);
+      expect(constructedChild.isLinkedMutatedChannel('text')).to.be(true);
+
+      const lateLinkedChild = createCommandBuffer(context, null);
+      linkCurrentBufferToParentChannels(parent, lateLinkedChild, ['text', 'data'], ['data']);
+      expect(lateLinkedChild.isLinkedMutatedChannel('text')).to.be(false);
+      expect(lateLinkedChild.isLinkedMutatedChannel('data')).to.be(true);
     });
 
     it('links a child to an already-finished parent channel without structural insertion', function () {
