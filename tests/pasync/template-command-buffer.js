@@ -73,23 +73,27 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       expect(source).to.contain('new runtime.TextCommand');
     });
 
-    it('should serialize root declared lanes into createCommandBuffer', function () {
+    it('should declare root template channels after creating the command buffer', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% set x = "a" %}{{ x }}', env, 'declared-lanes.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer, ["__text__","x"])');
+      expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer)');
+      expect(source).to.contain('runtime.declareBufferChannel(output, "__text__", "text", context, null)');
+      expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null)');
     });
 
-    it('should serialize script root declared lanes into createCommandBuffer', function () {
+    it('should declare script root channels after creating the command buffer', function () {
       const env = new AsyncEnvironment();
       const script = new Script('var x = "a"\nreturn x', env, 'declared-lanes.casc');
       const source = script._compileSource();
 
-      expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer, ["__return__","x"])');
+      expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer)');
+      expect(source).to.contain('runtime.declareBufferChannel(output, "__return__", "var", context, runtime.RETURN_UNSET)');
+      expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null)');
     });
 
-    it('should serialize render-boundary text lanes into runRenderBoundary', function () {
+    it('should declare render-boundary text channels after creating the boundary buffer', function () {
       class TestExtension {
         constructor() {
           this.tags = ['test'];
@@ -113,7 +117,8 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const tmpl = new AsyncTemplate('{% test %}{{ value }}{% endtest %}', env, 'render-boundary-lanes.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.runRenderBoundary(context, ["__text__"], cb, async');
+      expect(source).to.contain('runtime.runRenderBoundary(context, cb, async');
+      expect(source).to.contain('runtime.declareBufferChannel(currentBuffer, "__text__", "text", context, null)');
     });
 
     it('should keep nested capture text outputs out of outer stored channel facts', function () {
@@ -254,7 +259,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
       expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__', 'theme']);
       expect(Array.from(blockNode._analysis.linkedMutatedChannels || [])).to.eql(['__text__']);
-      expect(source).to.contain('runtime.runControlFlowBoundary(output, ["__text__"], null, ["__text__"], context, cb, async (blockBuffer)');
+      expect(source).to.contain('runtime.runControlFlowBoundary(output, ["__text__"], ["__text__"], context, cb, async (blockBuffer)');
       expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","theme"]');
     });
 
@@ -270,7 +275,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       );
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__"], null, ["__text__"], context, cb, async (currentBuffer)');
+      expect(source).to.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__"], ["__text__"], context, cb, async (currentBuffer)');
       expect(source).to.not.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__","theme"]');
     });
 
@@ -307,12 +312,15 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const innerCapture = captures[1];
       const source = tmpl._compileSource();
       const outerBoundaryStart =
-        `runtime.runControlFlowBoundary(output, ["x"], ["${outerCapture._analysis.textOutput}","inner"]`;
+        'runtime.runControlFlowBoundary(output, ["x"], null';
       const innerBoundaryStart =
-        `runtime.runControlFlowBoundary(currentBuffer, ["x"], ["${innerCapture._analysis.textOutput}"]`;
+        'runtime.runControlFlowBoundary(currentBuffer, ["x"], null';
 
       expect(source).to.contain(outerBoundaryStart);
       expect(source).to.contain(innerBoundaryStart);
+      expect(source).to.contain(`runtime.declareBufferChannel(currentBuffer, "${outerCapture._analysis.textOutput}", "text", context, null)`);
+      expect(source).to.contain('runtime.declareBufferChannel(currentBuffer, "inner", "var", context, null)');
+      expect(source).to.contain(`runtime.declareBufferChannel(currentBuffer, "${innerCapture._analysis.textOutput}", "text", context, null)`);
       expect(source).to.not.contain(
         `runtime.runControlFlowBoundary(output, ["x","${innerCapture._analysis.textOutput}"]`
       );
@@ -550,7 +558,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
     it('should keep inherited text placement boundaries out of shared invocation lanes', async function () {
       const createRootBuffer = () => {
-        const rootBuffer = runtime.createCommandBuffer(null, null, null, null, ['__text__', 'theme']);
+        const rootBuffer = runtime.createCommandBuffer(null);
         runtime.declareBufferChannel(rootBuffer, '__text__', 'text', null, null);
         runtime.declareBufferChannel(rootBuffer, 'theme', 'var', null, null);
         rootBuffer.addCommand(new runtime.VarCommand({
@@ -800,11 +808,8 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
       expect(source).to.contain('__caller__');
       expect(source).to.contain('__callerLinkedChannels');
-      expect(source).to.contain('__callerDeclaredChannels');
       expect(source).to.contain('__callerLinkedChannels = ["x"];');
-      expect(source).to.contain('__callerDeclaredChannels = ["caller","__return__","__text__"];');
       expect(source).to.contain('.__callerLinkedChannels || null, null, ');
-      expect(source).to.contain('.__callerDeclaredChannels || null');
       expect(source).to.contain('WaitResolveCommand({ channelName: "__caller__"');
     });
 

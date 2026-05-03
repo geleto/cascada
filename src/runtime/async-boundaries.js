@@ -2,14 +2,13 @@
 import {RuntimeError, handleError, markPromiseHandled} from './errors.js';
 import {createCommandBuffer} from './command-buffer.js';
 
-function _createChildBoundary(parentBuffer, linkedChannelNames, declaredChannelNames = null, linkedMutatedChannelNames = null, isolatedContext = null) {
+function _createChildBoundary(parentBuffer, linkedChannelNames, linkedMutatedChannelNames = null, isolatedContext = null) {
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
   const childBuffer = createCommandBuffer(
     bufferContext,
     null,
     linkedChannelNames,
     parentBuffer || null,
-    declaredChannelNames,
     linkedMutatedChannelNames
   );
   return { childBuffer };
@@ -28,8 +27,8 @@ function _reportBoundaryError(err, boundaryName, context, cb) {
  * The asyncFn receives (childBuffer) and runs the branch body inside that
  * single child boundary.
  */
-async function runControlFlowBoundary(parentBuffer, linkedChannelNames, declaredChannelNames, linkedMutatedChannelNames, context, cb, asyncFn) {
-  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChannelNames, declaredChannelNames, linkedMutatedChannelNames);
+async function runControlFlowBoundary(parentBuffer, linkedChannelNames, linkedMutatedChannelNames, context, cb, asyncFn) {
+  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChannelNames, linkedMutatedChannelNames);
 
   try {
     return await asyncFn(childBuffer);
@@ -46,8 +45,8 @@ async function runControlFlowBoundary(parentBuffer, linkedChannelNames, declared
  * waited channel. This is loop-specific structural behavior and stays out of
  * the generic control-flow helper.
  */
-async function runWaitedControlFlowBoundary(parentBuffer, linkedChannelNames, declaredChannelNames, linkedMutatedChannelNames, context, cb, asyncFn, waitedChannelName) {
-  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChannelNames, declaredChannelNames, linkedMutatedChannelNames);
+async function runWaitedControlFlowBoundary(parentBuffer, linkedChannelNames, linkedMutatedChannelNames, context, cb, asyncFn, waitedChannelName) {
+  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChannelNames, linkedMutatedChannelNames);
 
   try {
     return await asyncFn(childBuffer);
@@ -65,8 +64,8 @@ async function runWaitedControlFlowBoundary(parentBuffer, linkedChannelNames, de
  * into the parent tree. The asyncFn receives (childBuffer)
  * and should synchronously emit the boundary body into that child buffer.
  */
-async function runRenderBoundary(context, declaredChannelNames, cb, asyncFn) {
-  const { childBuffer } = _createChildBoundary(null, null, declaredChannelNames, null, context || null);
+async function runRenderBoundary(context, cb, asyncFn) {
+  const { childBuffer } = _createChildBoundary(null, null, null, context || null);
 
   try {
     return await asyncFn(childBuffer);
@@ -85,8 +84,8 @@ async function runRenderBoundary(context, declaredChannelNames, cb, asyncFn) {
  * Unlike runControlFlowBoundary(...), this helper preserves normal expression
  * rejection semantics: errors are rethrown to the awaiting caller.
  */
-function runValueBoundary(parentBuffer, linkedChannelNames, declaredChannelNames, linkedMutatedChannelNames, asyncFn) {
-  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChannelNames, declaredChannelNames, linkedMutatedChannelNames);
+function runValueBoundary(parentBuffer, linkedChannelNames, linkedMutatedChannelNames, asyncFn) {
+  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChannelNames, linkedMutatedChannelNames);
   const promise = Promise.resolve()
     .then(() => asyncFn(childBuffer))
     .finally(() => {

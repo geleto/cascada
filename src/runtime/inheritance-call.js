@@ -1,5 +1,6 @@
 
 import {Command} from './channels/command-base.js';
+import {declareBufferChannel} from './channels/index.js';
 import * as inheritanceState from './inheritance-state.js';
 import {RuntimeFatalError, handleError, isRuntimeFatalError} from './errors.js';
 
@@ -904,9 +905,9 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
     context,
     sharedRootBuffer,
     null,
-    currentBuffer,
-    ['__invoke__']
+    currentBuffer
   );
+  declareBufferChannel(invocationBuffer, '__invoke__', 'var', context, null);
   for (let i = 0; i < linkedChannels.length; i++) {
     const channelName = linkedChannels[i];
     const isSharedChannel = Object.prototype.hasOwnProperty.call(sharedSchema, channelName);

@@ -36,14 +36,13 @@ function declareBufferChannel(buffer, channelName, channelType, context, initial
     throw new Error(`Channel "${channelName}" declared without an active CommandBuffer`);
   }
 
-  targetBuffer._channelTypes = targetBuffer._channelTypes || Object.create(null);
-  targetBuffer._channelTypes[channelName] = channelType;
-
   const channel = createChannel(targetBuffer, channelName, context, channelType, initializer);
 
   channel._buffer = targetBuffer;
 
   targetBuffer._registerChannel(channelName, channel);
+  targetBuffer._channelTypes = targetBuffer._channelTypes || Object.create(null);
+  targetBuffer._channelTypes[channelName] = channelType;
 
   return channel;
 }

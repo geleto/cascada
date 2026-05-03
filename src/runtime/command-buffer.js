@@ -11,7 +11,7 @@ import {BufferIterator} from './buffer-iterator.js';
 import {markCommandBuffer} from './buffer-marker.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, laneNames = null, linkedMutatedLaneNames = null) {
+  constructor(context, parent = null, linkedMutatedLaneNames = null) {
     markCommandBuffer(this);
     this._context = context;
     this.parent = parent;
@@ -20,8 +20,8 @@ class CommandBuffer {
     // Local addressability map. Entries may be owned by this buffer or linked
     // from an explicit parent lane; ownership is derived from channel._buffer.
     this._channels = Object.create(null);
-    // Per-lane command arrays. Static metadata creates these eagerly; runtime
-    // declarations enter through _ensureLane().
+    // Per-lane command arrays. Local channel declarations and linked parent
+    // channels are the lane sources.
     this.arrays = Object.create(null);
     // Linked parent lanes this buffer may mutate. This is metadata for future
     // scheduling that can let read-only child buffers stop blocking siblings.
@@ -38,16 +38,6 @@ class CommandBuffer {
       // nested child buffers can continue routing formal names to the same
       // caller-owned runtime channels.
       this._inheritChannelAliases(parent._channelAliases);
-    }
-    this._installInitialLanes(laneNames);
-  }
-
-  _installInitialLanes(laneNames) {
-    if (!laneNames) {
-      return;
-    }
-    for (let i = 0; i < laneNames.length; i++) {
-      this._createLane(laneNames[i]);
     }
   }
 
@@ -66,8 +56,8 @@ class CommandBuffer {
     return resolvedChannelName;
   }
 
-  // Dynamic declarations are the sanctioned source of late lanes. Static buffer
-  // creation validates lane metadata up front.
+  // Permissive lane creation for linked channels, whose owner channel object
+  // may arrive before or after other link metadata.
   _ensureLane(channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!resolvedChannelName) {
@@ -83,7 +73,7 @@ class CommandBuffer {
     // Channel declarations also honor explicit alias bindings so a formal name
     // can attach to a caller-owned runtime channel name when a feature such as
     // macro by-reference uses this buffer-level mechanism.
-    const resolvedChannelName = this._ensureLane(channelName);
+    const resolvedChannelName = this._createLane(channelName);
     this._channels[resolvedChannelName] = channel;
 
     const iterator = ensureChannelIterator(channel);
@@ -452,16 +442,14 @@ function ensureChannelIterator(channel) {
   return channel._iterator;
 }
 
-function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null, declaredChannels = null, linkedMutatedChannels = null) {
+function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null, linkedMutatedChannels = null) {
   const linkedLaneNames = validateLaneNames(linkedChannels, 'linkedChannels', context);
   const linkedMutatedLaneNames = validateLinkedMutatedLaneNames(
     linkedMutatedChannels,
     linkedLaneNames,
     context
   );
-  const declaredLaneNames = validateLaneNames(declaredChannels, 'declaredChannels', context);
-  const laneNames = combineLaneNames(linkedLaneNames, declaredLaneNames, context);
-  const buffer = new CommandBuffer(context, parent, laneNames, linkedMutatedLaneNames);
+  const buffer = new CommandBuffer(context, parent, linkedMutatedLaneNames);
   const linkTarget = linkedParent || parent;
   if (linkTarget && linkedLaneNames) {
     for (let i = 0; i < linkedLaneNames.length; i++) {
@@ -523,33 +511,6 @@ function validateLinkedMutatedLaneNames(laneNames, linkedLaneNames, context = nu
     }
   }
   return linkedMutatedLaneNames;
-}
-
-function combineLaneNames(linkedChannels, declaredChannels, context = null) {
-  if (!linkedChannels && !declaredChannels) {
-    return null;
-  }
-  const combined = [];
-  const seen = new Set();
-  const add = (names) => {
-    if (!names) {
-      return;
-    }
-    for (let i = 0; i < names.length; i++) {
-      const name = names[i];
-      if (seen.has(name)) {
-        throw createLaneMetadataError(
-          `Channel '${name}' is declared locally but also appears in linkedChannels; each channel must appear in at most one lane metadata set`,
-          context
-        );
-      }
-      seen.add(name);
-      combined.push(name);
-    }
-  };
-  add(linkedChannels);
-  add(declaredChannels);
-  return combined;
 }
 
 export { CommandBuffer, createCommandBuffer };

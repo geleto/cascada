@@ -93,12 +93,11 @@ class CompileEmit {
       const linkedChannelsArg = Array.isArray(linkedChannels) && linkedChannels.length > 0
         ? JSON.stringify(linkedChannels)
         : 'null';
-      const declaredChannelsArg = this.getDeclaredChannelsArg(node);
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
         `(compositionMode && parentBuffer)` +
         ` ? parentBuffer` +
-        ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer, ${declaredChannelsArg});`
+        ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
       );
       if (!this.compiler.scriptMode) {
         this.line(
@@ -109,15 +108,11 @@ class CompileEmit {
         );
       }
     } else {
-      const declaredChannelsArg = this.compiler.asyncMode
-        ? this.getDeclaredChannelsArg(node)
-        : 'null';
       this.compiler.buffer.initManagedBuffer(
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChannelVar,
-        linkedChannels,
-        declaredChannelsArg
+        linkedChannels
       );
     }
     this.line('try {');
@@ -171,13 +166,11 @@ class CompileEmit {
     let parentBufferId = null;
     let bufferId = null;
     let linkedChannels = null;
-    let declaredChannels = null;
     if (createScopeRootBuffer) {
       parentBufferId = parentBufferOverride !== undefined
         ? parentBufferOverride
         : (this.compiler.buffer.currentBuffer || null);
       if (parentBufferId && analysisNode && analysisNode._analysis) {
-        declaredChannels = this.getDeclaredChannels(analysisNode);
         linkedChannels = analysisNode._analysis.createsLinkedChildBuffer
           ? this.getLinkedChannels(analysisNode)
           : null;
@@ -191,10 +184,7 @@ class CompileEmit {
           bufferId,
           parentBufferId,
           `${bufferId}_textOutputVar`,
-          linkedChannels,
-          Array.isArray(declaredChannels) && declaredChannels.length > 0
-            ? JSON.stringify(declaredChannels)
-            : 'null'
+          linkedChannels
         );
         if (typeof emitFunc === 'function') {
           emitFunc(nextFrame, bufferId);
@@ -268,19 +258,6 @@ class CompileEmit {
   getLinkedMutatedChannels(node) {
     const analysis = this._getAnalysis(node, 'getLinkedMutatedChannels');
     return Array.from(analysis.linkedMutatedChannels ?? []);
-  }
-
-  getDeclaredChannels(node) {
-    const analysis = this._getAnalysis(node, 'getDeclaredChannels');
-    if (!(analysis.declaredChannels instanceof Map)) {
-      return [];
-    }
-    return Array.from(analysis.declaredChannels.keys());
-  }
-
-  getDeclaredChannelsArg(node) {
-    const declaredChannels = this.getDeclaredChannels(node);
-    return declaredChannels.length > 0 ? JSON.stringify(declaredChannels) : 'null';
   }
 
 };

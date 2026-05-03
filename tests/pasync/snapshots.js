@@ -219,9 +219,11 @@ describe('channel.finalSnapshot', function () {
       expect(sequenceChannel._sequenceTargetReadyPromise).to.be(null);
     });
 
-    it('eagerly creates declared lanes and finishes unused lanes', function () {
-      const buffer = createCommandBuffer(context, null, null, null, ['unused']);
+    it('creates declared channel lanes and finishes unused lanes', function () {
+      const buffer = createCommandBuffer(context);
+      const channel = declareBufferChannel(buffer, 'unused', 'var', context, null);
 
+      expect(buffer.getChannel('unused')).to.be(channel);
       expect(Object.keys(buffer.arrays)).to.eql(['unused']);
       expect(buffer.arrays.unused).to.eql([]);
 
@@ -232,7 +234,9 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('fails when a linked parent channel has no registered channel object', function () {
-      const parent = createCommandBuffer(context, null, null, null, ['text']);
+      const parent = createCommandBuffer(context);
+      declareBufferChannel(parent, 'text', 'text', context, null);
+      delete parent._channels.text;
 
       expect(() => createCommandBuffer(context, null, ['text'], parent)).to.throwError((err) => {
         expect(err.message).to.contain('Cannot link channel \'text\' without a registered channel object');
@@ -240,24 +244,31 @@ describe('channel.finalSnapshot', function () {
       expect(parent.arrays.text).to.have.length(0);
     });
 
-    it('rejects duplicate linked or declared lane metadata', function () {
+    it('rejects duplicate linked lane metadata', function () {
       expect(() => createCommandBuffer(context, null, ['text', 'text'], null, null)).to.throwError(/linkedChannels contains duplicate channel 'text'/);
-      expect(() => createCommandBuffer(context, null, null, null, ['text', 'text'])).to.throwError(/declaredChannels contains duplicate channel 'text'/);
-      expect(() => createCommandBuffer(context, null, ['text'], null, ['text'])).to.throwError(/declared locally but also appears in linkedChannels/);
       expect(() => createCommandBuffer(context, null, [42], null, null)).to.throwError(/linkedChannels contains a non-string channel name/);
     });
 
-    it('treats repeated initial lane creation as an invariant failure', function () {
-      const buffer = createCommandBuffer(context, null, null, null, ['text']);
+    it('treats repeated lane creation as an invariant failure', function () {
+      const buffer = createCommandBuffer(context);
+      declareBufferChannel(buffer, 'text', 'text', context, null);
 
-      expect(() => buffer._createLane('text')).to.throwError(/registered more than once/);
+      expect(() => declareBufferChannel(buffer, 'text', 'text', context, null)).to.throwError(/registered more than once/);
+    });
+
+    it('does not overwrite channel type metadata when duplicate declaration fails', function () {
+      const buffer = createCommandBuffer(context);
+      declareBufferChannel(buffer, 'text', 'text', context, null);
+
+      expect(() => declareBufferChannel(buffer, 'text', 'var', context, null)).to.throwError(/registered more than once/);
+      expect(buffer._channelTypes.text).to.be('text');
     });
 
     it('does not hide invalid async-boundary lane metadata', async function () {
-      const parent = createCommandBuffer(context, null, null, null, ['text']);
+      const parent = createCommandBuffer(context);
       declareBufferChannel(parent, 'text', 'text', context, null);
       try {
-        await runControlFlowBoundary(parent, 'text', null, null, context, () => {}, async () => null);
+        await runControlFlowBoundary(parent, 'text', null, context, () => {}, async () => null);
         throw new Error('expected invalid linked channel metadata to fail');
       } catch (err) {
         expect(err.name).to.be('RuntimeFatalError');
@@ -266,15 +277,15 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('rejects linked mutated lane metadata outside linked lanes', function () {
-      expect(() => createCommandBuffer(context, null, ['text'], null, null, ['data'])).to.throwError(/appears in linkedMutatedChannels but not linkedChannels/);
+      expect(() => createCommandBuffer(context, null, ['text'], null, ['data'])).to.throwError(/appears in linkedMutatedChannels but not linkedChannels/);
     });
 
     it('stores linked mutated metadata for construction-time and late links', function () {
-      const parent = createCommandBuffer(context, null, null, null, ['text', 'data']);
+      const parent = createCommandBuffer(context);
       declareBufferChannel(parent, 'text', 'text', context, null);
       declareBufferChannel(parent, 'data', 'data', context, null);
 
-      const constructedChild = createCommandBuffer(context, null, ['text'], parent, null, ['text']);
+      const constructedChild = createCommandBuffer(context, null, ['text'], parent, ['text']);
       expect(constructedChild.isLinkedMutatedChannel('text')).to.be(true);
 
       const lateLinkedChild = createCommandBuffer(context, null);
@@ -284,11 +295,11 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('links a child to an already-finished parent channel without structural insertion', function () {
-      const parent = createCommandBuffer(context, null, null, null, ['text']);
+      const parent = createCommandBuffer(context);
       const channel = declareBufferChannel(parent, 'text', 'text', context, null);
       parent.finish();
 
-      const child = createCommandBuffer(context, null, null, null, ['text']);
+      const child = createCommandBuffer(context);
       linkCurrentBufferToParentChannels(parent, child, ['text']);
 
       expect(child.getChannel('text')).to.be(channel);
@@ -297,7 +308,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('fails when finishing an unknown lane', function () {
-      const buffer = createCommandBuffer(context, null, null, null, ['text']);
+      const buffer = createCommandBuffer(context);
       declareBufferChannel(buffer, 'text', 'text', context, null);
 
       expect(() => buffer.finishChannel('missing')).to.throwError((err) => {

@@ -216,10 +216,9 @@ class CompileLoop {
     const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
     const parentBufferArg = this.compiler.buffer.currentBuffer;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const declaredChannelsArg = this.compiler.emit.getDeclaredChannelsArg(node);
     const linkedMutatedChannelsArg = this.compiler.emit.getLinkedMutatedChannelsArg(node);
     this.compiler.emit(
-      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${declaredChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
