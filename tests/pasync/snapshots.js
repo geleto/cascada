@@ -139,7 +139,7 @@ describe('channel.finalSnapshot', function () {
       expect(result).to.be('AB');
       expect(parent.arrays.text).to.be(null);
       expect(child.arrays.text).to.be(null);
-      expect(parent.hasLinkedBuffer(child, 'text')).to.be(true);
+      expect(child.getChannelIfExists('text')).to.be(channel);
     });
 
     it('disposes finished iterator state after completion', async function () {
@@ -269,7 +269,7 @@ describe('channel.finalSnapshot', function () {
 
       expect(child.getChannel('text')).to.be(channel);
       expect(parent.arrays.text).to.be(null);
-      expect(parent.hasLinkedBuffer(child, 'text')).to.be(false);
+      expect(child.parent).to.be(null);
     });
 
     it('fails when finishing an unknown lane', function () {

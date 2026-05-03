@@ -98,6 +98,7 @@ class CompileAnalysis {
       usedChannels: null,
       mutatedChannels: null,
       linkedChannels: null,
+      methodChannelFootprint: null,
       createsLinkedChildBuffer: false,
       linkedChildBufferRequiresCommandEffects: false,
       ...existingAnalysis,

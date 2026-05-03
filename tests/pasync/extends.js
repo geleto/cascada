@@ -745,6 +745,7 @@ describe('Extends Runtime', function () {
           ownMutatedChannels: [],
           mergedUsedChannels: [],
           mergedMutatedChannels: [],
+          mergedLinkedChannels: [],
           super: null
         },
         args: [],

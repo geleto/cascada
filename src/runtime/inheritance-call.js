@@ -178,25 +178,34 @@ function _normalizeMethodSignature(signature, inheritedSignature = null) {
   return normalizedSignature;
 }
 
-function _buildResolvedMethodDataBase(entry) {
+function _getMethodIdentity(entry, methodName = null) {
+  const ownerKey = entry?.ownerKey ? ` in ${entry.ownerKey}` : '';
+  return `${methodName || 'unknown'}${ownerKey}`;
+}
+
+function _buildResolvedMethodDataBase(entry, methodName = null, errorContext = null) {
   if (!entry || typeof entry.fn !== 'function') {
     throw new RuntimeFatalError(
-      'Inherited dispatch resolved to an invalid method entry',
-      0,
-      0,
-      null,
-      null
+      `Inherited dispatch for method '${methodName || 'unknown'}' resolved to an invalid method entry`,
+      errorContext?.lineno ?? 0,
+      errorContext?.colno ?? 0,
+      errorContext?.errorContextString ?? null,
+      errorContext?.path ?? null
     );
   }
 
   const ownUsedChannels = _mergeChannelNames(entry.ownUsedChannels);
   const ownMutatedChannels = _mergeChannelNames(entry.ownMutatedChannels);
-  // Entries emitted after Stage 4 must provide ownLinkedChannels. The fallback
-  // keeps manually-constructed metadata shapes usable until Stage 6 makes the
-  // callable metadata contract strict.
-  const ownLinkedChannels = Array.isArray(entry.ownLinkedChannels)
-    ? _mergeChannelNames(entry.ownLinkedChannels)
-    : ownUsedChannels;
+  if (!Array.isArray(entry.ownLinkedChannels)) {
+    throw new RuntimeFatalError(
+      `Inherited method '${_getMethodIdentity(entry, methodName)}' metadata is missing ownLinkedChannels; recompile the template`,
+      errorContext?.lineno ?? 0,
+      errorContext?.colno ?? 0,
+      errorContext?.errorContextString ?? null,
+      errorContext?.path ?? null
+    );
+  }
+  const ownLinkedChannels = _mergeChannelNames(entry.ownLinkedChannels);
   const resolvedData = {
     fn: entry.fn,
     ownerKey: entry.ownerKey ?? null,
@@ -235,7 +244,8 @@ function _isResolvedMethodData(value) {
     typeof value === 'object' &&
     typeof value.fn === 'function' &&
     Array.isArray(value.mergedUsedChannels) &&
-    Array.isArray(value.mergedMutatedChannels)
+    Array.isArray(value.mergedMutatedChannels) &&
+    Array.isArray(value.mergedLinkedChannels)
   );
 }
 
@@ -406,7 +416,7 @@ function _getMethodDataFromResolvedEntry(
     return resolvedEntry._resolvedMethodData;
   }
 
-  const resolvedMethodData = _buildResolvedMethodDataBase(resolvedEntry);
+  const resolvedMethodData = _buildResolvedMethodDataBase(resolvedEntry, methodName, errorContext);
   // This cached base object exists so recursive super/invoked resolution can
   // share one identity; the metadata-ready barrier prevents external callers
   // from observing it before finalization fills in the remaining graph fields.
@@ -496,12 +506,7 @@ function _findMethodDataForOwner(methodData, ownerKey) {
 }
 
 function _getMethodLinkedChannels(methodData) {
-  if (Array.isArray(methodData?.mergedLinkedChannels)) {
-    return methodData.mergedLinkedChannels;
-  }
-  // Stage 6 should remove this fallback once all callable metadata is finalized
-  // with an explicit mergedLinkedChannels array.
-  return _mergeChannelNames(methodData?.mergedUsedChannels, methodData?.mergedMutatedChannels);
+  return _assertResolvedMethodData(methodData).mergedLinkedChannels;
 }
 
 function getCallableBodyLinkedChannelsImpl(methodData, errorContext = null) {
@@ -556,9 +561,7 @@ function _finalizeChannelFootprints(state, errorContext = null) {
       const invokedMethods = _collectInvokedMethodData(methodData, errorContext);
       // Invalid resolved metadata shapes remain fail-fast invariants. Super-chain
       // channel growth stays folded into this same fixed-point walk so we do not
-      // reintroduce a second parent-to-child merge phase. mergedLinkedChannels
-      // currently mirrors the used footprint; Stage 6 will let it diverge once
-      // callable link metadata stops being derived from usedChannels.
+      // reintroduce a second parent-to-child merge phase.
       const nextUsedChannels = _mergeChannelNames(
         methodData.mergedUsedChannels,
         methodData.super?.mergedUsedChannels,
@@ -627,7 +630,23 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
 }
 
 function _assertResolvedMethodData(methodData) {
-  if (!methodData || typeof methodData.fn !== 'function') {
+  if (
+    methodData &&
+    typeof methodData === 'object' &&
+    typeof methodData.fn === 'function' &&
+    Array.isArray(methodData.mergedUsedChannels) &&
+    Array.isArray(methodData.mergedMutatedChannels) &&
+    !Array.isArray(methodData.mergedLinkedChannels)
+  ) {
+    throw new RuntimeFatalError(
+      `Inherited method '${_getMethodIdentity(methodData)}' resolved metadata is missing mergedLinkedChannels`,
+      0,
+      0,
+      null,
+      null
+    );
+  }
+  if (!_isResolvedMethodData(methodData)) {
     throw new RuntimeFatalError(
       'Inherited dispatch resolved to an invalid method entry',
       0,
@@ -674,48 +693,21 @@ function _createMethodPayload(methodData, args, errorContext, label, context = n
   };
 }
 
-function _registerInvocationChannelLink(currentBuffer, invocationBuffer, channelName) {
-  // ANALYSIS-CHANNELS-REFACTOR: this routine still chooses the structural
-  // link path at runtime. Once boundary/callable linkedChannels are final
-  // analysis metadata, callers should mostly install/assert those links rather
-  // than deciding them from current buffer state.
-  if (!channelName) {
-    return false;
-  }
-  const channel = currentBuffer.getChannelIfExists(channelName);
+function _installInvocationChannelLink(parentBuffer, invocationBuffer, channelName) {
+  const channel = parentBuffer.getChannelIfExists(channelName);
   if (!channel) {
-    throw _createMissingInvocationChannelError(channelName, invocationBuffer?._context ?? currentBuffer?._context ?? null);
+    throw _createMissingInvocationChannelError(channelName, invocationBuffer?._context ?? parentBuffer?._context ?? null);
   }
-  if (currentBuffer === invocationBuffer) {
+  if (parentBuffer === invocationBuffer) {
     invocationBuffer._installLinkedChannel(channelName, channel);
     return true;
   }
-  if (currentBuffer.hasLinkedBuffer(invocationBuffer, channelName)) {
-    return true;
-  }
-  if (currentBuffer.isFinished(channelName) || currentBuffer.finished) {
+  if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
     invocationBuffer._installLinkedChannel(channelName, channel);
     return true;
   }
-  currentBuffer.addBuffer(invocationBuffer, channelName);
+  parentBuffer.addBuffer(invocationBuffer, channelName);
   return true;
-}
-
-function hasLinkedChannelPath(rootBuffer, buffer, channelName) {
-  // ANALYSIS-CHANNELS-REFACTOR: runtime path probing is a workaround for
-  // linking decisions that are not fully owned by analysis/callable metadata.
-  let current = buffer;
-  while (current && current.parent) {
-    const parent = current.parent;
-    if (!parent.hasLinkedBuffer(current, channelName)) {
-      return false;
-    }
-    if (parent === rootBuffer) {
-      return true;
-    }
-    current = parent;
-  }
-  return false;
 }
 
 function _markBufferFinish(buffer) {
@@ -866,11 +858,6 @@ function _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKe
 }
 
 function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue, currentBuffer, methodData) {
-  // ANALYSIS-CHANNELS-REFACTOR: linkedChannels now come from callable metadata,
-  // but this routine still chooses which parent path installs each link
-  // (caller buffer, shared root, or both) from runtime availability. Replace
-  // that path choice with explicit callable/shared-root link metadata if the
-  // remaining inheritance audit proves it is not a true runtime semantic.
   const sharedRootBuffer = inheritanceStateValue.sharedRootBuffer ?? currentBuffer;
   const linkedChannels = _getMethodLinkedChannels(methodData);
   const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue);
@@ -881,30 +868,31 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
     currentBuffer
   );
   for (let i = 0; i < linkedChannels.length; i++) {
-    // The caller link preserves local source order; the shared-root link lets
-    // hierarchy-wide shared observations wait on method output from anywhere
-    // in the composed chain.
     const channelName = linkedChannels[i];
     const isSharedChannel = Object.prototype.hasOwnProperty.call(sharedSchema, channelName);
-    const callerHasChannel = currentBuffer.hasChannel(channelName);
-    const linkedFromCaller = callerHasChannel
-      ? _registerInvocationChannelLink(currentBuffer, invocationBuffer, channelName)
-      : false;
+    const callerChannel = currentBuffer.getChannelIfExists(channelName);
+    const callerHasChannel = !!callerChannel;
     if (!callerHasChannel && !isSharedChannel) {
       throw _createMissingInvocationChannelError(channelName, context);
     }
-    if (
-      sharedRootBuffer &&
-      sharedRootBuffer !== currentBuffer &&
-      !hasLinkedChannelPath(sharedRootBuffer, invocationBuffer, channelName)
-    ) {
-      const linkedFromSharedRoot = sharedRootBuffer.hasChannel(channelName)
-        ? _registerInvocationChannelLink(sharedRootBuffer, invocationBuffer, channelName)
-        : false;
-      if (isSharedChannel && !linkedFromSharedRoot) {
+    if (callerHasChannel) {
+      _installInvocationChannelLink(currentBuffer, invocationBuffer, channelName);
+    }
+    if (isSharedChannel && sharedRootBuffer !== currentBuffer) {
+      const sharedRootChannel = sharedRootBuffer
+        ? sharedRootBuffer.getChannelIfExists(channelName)
+        : null;
+      if (!sharedRootChannel) {
         throw _createMissingSharedChannelError(channelName, context);
       }
-    } else if (isSharedChannel && !linkedFromCaller && sharedRootBuffer === currentBuffer) {
+      if (callerChannel === sharedRootChannel) {
+        // The caller path already addresses the shared-root channel object, so
+        // installing the same invocation buffer through the shared root would
+        // duplicate the method body in that lane.
+        continue;
+      }
+      _installInvocationChannelLink(sharedRootBuffer, invocationBuffer, channelName);
+    } else if (isSharedChannel && !callerHasChannel) {
       throw _createMissingSharedChannelError(channelName, context);
     }
   }
@@ -1063,7 +1051,6 @@ Object.defineProperties(inheritanceCallApi, {
   },
   getMethodData: { value: getMethodData },
   finalizeResolvedMethodMetadata: { value: finalizeResolvedMethodMetadata },
-  hasLinkedChannelPath: { value: hasLinkedChannelPath },
   resolveInheritanceSharedChannel: { value: resolveInheritanceSharedChannel },
   invokeInheritedMethod: { value: invokeInheritedMethod },
   invokeSuperMethod: { value: invokeSuperMethod },
@@ -1079,4 +1066,4 @@ function getCallableBodyLinkedChannels(methodData, errorContext = null) {
   return getCallableBodyLinkedChannelsHook.apply(this, arguments);
 }
 
-export { inheritanceCallApi, createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, hasLinkedChannelPath, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };
+export { inheritanceCallApi, createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, getCallableBodyLinkedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };

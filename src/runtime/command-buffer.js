@@ -46,8 +46,9 @@ class CommandBuffer {
     }
   }
 
-  // ANALYSIS-CHANNELS-REFACTOR: Stage 6 should turn this into an assertion-
-  // backed lane lookup once all dynamic lane creation has explicit metadata.
+  // Dynamic declarations still enter through this compatibility path. Static
+  // buffer creation validates lane metadata up front; runtime declarations are
+  // the remaining sanctioned source of late lanes.
   _ensureLane(channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!resolvedChannelName) {
@@ -141,8 +142,8 @@ class CommandBuffer {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     checkFinishedBuffer(this, resolvedChannelName);
     this._ensureLane(resolvedChannelName);
-    // ANALYSIS-CHANNELS-REFACTOR: once _ensureLane(...) is removed from this
-    // ingress path, this assertion becomes the hard lane-existence guard.
+    // Runtime declarations may still create lanes lazily before this point;
+    // the assertion protects paths that only link an existing channel object.
     assertChannelLaneAvailable(this, resolvedChannelName);
     // Normalize command channel/path keys at ingress so all downstream runtime
     // lookups operate on the resolved runtime channel name. This is why the
@@ -392,22 +393,6 @@ class CommandBuffer {
     return resolvedChannelName;
   }
 
-  hasLinkedBuffer(buffer, channelName) {
-    // ANALYSIS-CHANNELS-REFACTOR: this is a runtime structural-link probe.
-    // Prefer analysis-provided linked-channel decisions over asking the buffer
-    // tree whether a link already exists. Keep the finished-parent regression
-    // covered before replacing this helper.
-    if (!buffer || !channelName) {
-      return false;
-    }
-    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    const channel = this.getChannelIfExists(resolvedChannelName);
-    return (
-      buffer.parent === this &&
-      channel &&
-      buffer.getChannelIfExists(resolvedChannelName) === channel
-    );
-  }
 }
 
 function isFinishedBufferObservationCommand(cmd) {

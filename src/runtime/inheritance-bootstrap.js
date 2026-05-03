@@ -2,6 +2,7 @@
 import {inheritanceStateApi as inheritanceState} from './inheritance-state.js';
 import {inheritanceCallApi as inheritanceCall} from './inheritance-call.js';
 import {declareInheritanceSharedChannel} from './inheritance-shared-channels.js';
+import {RuntimeFatalError} from './errors.js';
 
 function bootstrapInheritanceMetadataImpl(
   stateValue,
@@ -323,10 +324,6 @@ function runCompiledRootStartupImpl(spec) {
 }
 
 function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelNames) {
-  // ANALYSIS-CHANNELS-REFACTOR: this helper performs runtime structural-link
-  // decisions for shared/inheritance buffers. Once boundary/callable
-  // linkedChannels are final metadata, this should become a narrow installer or
-  // disappear in favor of createCommandBuffer/link specs.
   if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
@@ -335,14 +332,21 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
     if (!channelName) {
       continue;
     }
-    if (inheritanceCall.hasLinkedChannelPath(parentBuffer, currentBuffer, channelName)) {
+    const channel = parentBuffer.getChannel(channelName);
+    if (currentBuffer.getChannelIfExists(channelName) === channel) {
       continue;
     }
-    if (parentBuffer.hasLinkedBuffer(currentBuffer, channelName)) {
-      continue;
+    if (currentBuffer.hasChannel(channelName)) {
+      throw new RuntimeFatalError(
+        `Cannot link channel '${channelName}' because the current buffer already has a different channel object`,
+        0,
+        0,
+        null,
+        null
+      );
     }
     if (parentBuffer.isFinished(channelName) || parentBuffer.finished) {
-      currentBuffer._installLinkedChannel(channelName, parentBuffer.getChannel(channelName));
+      currentBuffer._installLinkedChannel(channelName, channel);
       continue;
     }
     parentBuffer.addBuffer(currentBuffer, channelName);

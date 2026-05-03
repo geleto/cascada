@@ -1010,6 +1010,10 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance.compileAsyncBlock(node);
   }
 
+  finalizeOutputAnalyzeBlock(node) {
+    return this.inheritance.createMethodChannelFootprint(node);
+  }
+
   compileSuper(node) {
     this.inheritance.compileAsyncSuper(node);
   }
@@ -1389,6 +1393,10 @@ class CompilerAsync extends CompilerBaseAsync {
   compileMethodDefinition() {
     // Method definitions are compiled through upfront metadata and dedicated
     // async entry functions, not by inline root-body emission.
+  }
+
+  finalizeOutputAnalyzeMethodDefinition(node) {
+    return this.inheritance.createMethodChannelFootprint(node);
   }
 }
 

@@ -913,21 +913,23 @@ class CompileInheritance {
     return `{ ${methodEntries.join(', ')} }`;
   }
 
-  compileMethodMetadataEntry({ methodName, fnExpr, analysis, ownerNode, superExpr, superOriginExpr, invokedMethodsExpr, signatureExpr, ownerKey }) {
-    const ownUsedChannelNames = this.collectMethodChannelNames(analysis, ownerNode);
-    const ownMutatedChannelNames = this.collectMethodChannelNames(
-      analysis,
-      ownerNode,
-      'mutatedChannels'
-    );
-    // Mutations are included in usedChannels today, so linked channels match
-    // the used footprint until Stage 6 moves callable links to analysis-owned
-    // metadata that can diverge from used/mutated footprints.
-    const ownLinkedChannelNames = ownUsedChannelNames;
+  compileMethodMetadataEntry({ methodName, fnExpr, ownerNode, superExpr, superOriginExpr, invokedMethodsExpr, signatureExpr, ownerKey }) {
+    const methodChannelFootprint = ownerNode && ownerNode._analysis
+      ? ownerNode._analysis.methodChannelFootprint
+      : null;
+    const ownUsedChannelNames = this.getMethodFootprintChannels(methodChannelFootprint, 'used');
+    const ownMutatedChannelNames = this.getMethodFootprintChannels(methodChannelFootprint, 'mutated');
+    const ownLinkedChannelNames = this.getMethodFootprintChannels(methodChannelFootprint, 'linked');
     const ownUsedChannels = JSON.stringify(ownUsedChannelNames);
     const ownMutatedChannels = JSON.stringify(ownMutatedChannelNames);
     const ownLinkedChannels = JSON.stringify(ownLinkedChannelNames);
     return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownUsedChannels: ${ownUsedChannels}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
+  }
+
+  // fieldName is one of: used, mutated, linked.
+  getMethodFootprintChannels(methodChannelFootprint, fieldName) {
+    const value = methodChannelFootprint && methodChannelFootprint[fieldName];
+    return Array.isArray(value) ? value : [];
   }
 
   collectDirectInvokedMethodRefsForCallable(callableNode) {
@@ -1044,13 +1046,25 @@ class CompileInheritance {
     return !!(block && block.body && block.body.findAll(nodes.Super).length > 0);
   }
 
-  // ANALYSIS-CHANNELS-REFACTOR: callable metadata now publishes explicit
-  // ownLinkedChannels, but those facts still originate from this filtered
-  // used/mutated footprint. The __return__ and template text filters are valid
-  // local semantics: those lanes are callable-local implementation channels,
-  // not inherited shared footprints. The remaining cleanup is to move this
-  // footprint decision into analysis-owned callable metadata directly.
-  collectMethodChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
+  createMethodChannelFootprint(ownerNode) {
+    const bodyAnalysis = ownerNode && ownerNode.body && ownerNode.body._analysis;
+    const methodUsedChannels = this.collectMethodFootprintChannelNames(bodyAnalysis, ownerNode);
+    const methodMutatedChannels = this.collectMethodFootprintChannelNames(
+      bodyAnalysis,
+      ownerNode,
+      'mutatedChannels'
+    );
+    return {
+      methodChannelFootprint: {
+        used: methodUsedChannels,
+        mutated: methodMutatedChannels,
+        linked: methodUsedChannels
+      }
+    };
+  }
+
+  // fieldName is one of: usedChannels, mutatedChannels.
+  collectMethodFootprintChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
     if (!analysis) {
       return [];
     }
@@ -1065,7 +1079,7 @@ class CompileInheritance {
       }
       if (ownerNode && (ownerNode instanceof nodes.Block || ownerNode instanceof nodes.MethodDefinition)) {
         const declarationOwner = this.compiler.analysis.findDeclarationOwner(analysis, name);
-        if (declarationOwner === ownerNode._analysis || declarationOwner === ownerNode.body._analysis) {
+        if (declarationOwner === ownerNode._analysis) {
           return false;
         }
         if (
@@ -1146,13 +1160,11 @@ class CompileInheritance {
       });
 
       const parentTemplateId = this.compileAsyncGetTemplateOrScript(node, true, false, true);
-      // ANALYSIS-CHANNELS-REFACTOR: script inheritance startup still links the
-      // chain-level shared schema at runtime. Stage 4 should replace this with
-      // final callable/inheritance link metadata or document why it remains a
-      // true runtime semantic.
-      // This first channel set links the caller's root buffer to the boundary
-      // child buffer so any post-extends constructor work stays ordered behind
-      // the boundary slot for the channels currently known at the call site.
+      // Script inheritance startup links the chain-level shared schema known
+      // at runtime after parent metadata has been bootstrapped. This is not a
+      // local analysis fact for the extending script: parent schemas can arrive
+      // dynamically, and this boundary must preserve post-extends constructor
+      // ordering for the channels available at that runtime call site.
       const linkedChannelsArg = 'Object.keys((inheritanceState && inheritanceState.sharedSchema) || {})';
       this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, null, context, cb, async (currentBuffer) => {`);
       this._emitParentRootRender({

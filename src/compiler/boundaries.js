@@ -210,10 +210,10 @@ class CompileBoundaries {
     return this._compileSyncRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode);
   }
 
-  // ANALYSIS-CHANNELS-REFACTOR: Transitional render-boundary declared-lane
-  // serializer. Once analysis provides final local/declared lanes for render
-  // fragments directly, delete this helper and use the shared declared-channel
-  // serializer instead.
+  // Render boundaries create isolated render buffers. Their current text lane
+  // is owned by the boundary even when the source fragment has no explicit text
+  // declaration, so render-boundary declaration serialization stays separate
+  // from ordinary linked child-buffer serialization.
   _getRenderBoundaryDeclaredChannelsArg(node) {
     const declared = new Set();
     if (node?._analysis?.declaredChannels instanceof Map) {
@@ -226,10 +226,6 @@ class CompileBoundaries {
     if (!this.compiler.scriptMode && this.compiler.buffer.currentTextChannelName) {
       declared.add(this.compiler.buffer.currentTextChannelName);
     }
-    // Custom-extension content bodies may arrive as NodeList fragments whose
-    // local var declarations are not yet summarized on the fragment analysis
-    // object. The render text lane is static here; any remaining body-local
-    // lanes should come from the analysis-channel refactor.
     return declared.size > 0 ? JSON.stringify(Array.from(declared)) : 'null';
   }
 

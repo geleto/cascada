@@ -189,7 +189,7 @@ class CompileEmit {
           // ANALYSIS-CHANNELS-REFACTOR: managed callable/body buffers are not
           // boundary nodes, so they do not own boundary linkedChannels yet.
           // Keep the old body-scope link derivation here until callable body
-          // metadata supplies final link sets directly.
+          // metadata supplies final link sets directly in Stage 7.
           const used = Array.from(analysisNode._analysis.usedChannels || []);
           const declared = new Set(declaredChannels);
           linkedChannels = used.filter((name) => (

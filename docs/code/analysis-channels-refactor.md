@@ -402,31 +402,65 @@ Stage 5 implementation notes:
 
 Goal:
 
-- replace runtime path probing with explicit shared-root/caller link metadata or
-  a documented true runtime semantic
-- finish converting callable footprint/link decisions to analysis-owned
-  metadata
+- replace runtime path probing with explicit shared-root/caller link
+  installation or a documented true runtime semantic
+- finish converting inherited callable footprint/link decisions to
+  analysis-owned metadata
 
 Work:
 
-- identify whether invocation buffers need separate caller-link and
-  shared-root-link metadata, or whether current merged callable links can be
-  installed through one authoritative parent path
-- remove or narrow `hasLinkedBuffer(...)`, `hasLinkedChannelPath(...)`,
-  `_registerInvocationChannelLink(...)`, and
-  `linkCurrentBufferToParentChannels(...)` once link path ownership is explicit
-- move callable footprint filtering currently done by
-  `collectMethodChannelNames(...)` into analysis-owned callable metadata
-- remove the `_getMethodLinkedChannels(...)` fallback from used/mutated
-  footprints once all resolved method metadata requires `mergedLinkedChannels`
-- evaluate whether `validateLaneNames(...)` / `combineLaneNames(...)` can be
-  replaced by one compiler-owned lane payload plus runtime assertions
+- `hasLinkedBuffer(...)` and `hasLinkedChannelPath(...)` were removed from
+  runtime link decisions. Invocation admission now installs requested inherited
+  method links explicitly from the caller buffer and, for shared channels, from
+  the shared root buffer. If both paths already address the same shared channel
+  object, the shared-root installation is skipped to avoid enqueueing the same
+  invocation buffer twice in one lane.
+- `_registerInvocationChannelLink(...)` was replaced by a narrow installer that
+  validates the requested parent channel and inserts the invocation buffer
+  without asking the buffer tree whether a path already exists.
+- `linkCurrentBufferToParentChannels(...)` is now a local installer for
+  explicit shared/inheritance channels. It skips only when the current buffer
+  already addresses the same channel object and fails if a different local
+  channel is present.
+- inherited method footprint filtering moved from compile-time
+  `collectMethodChannelNames(...)` into analysis-owned
+  `methodChannelFootprint` facts on inherited method/block nodes.
+- resolved method metadata now requires `mergedLinkedChannels`; the fallback
+  from used/mutated footprints was removed.
+- script inheritance startup was classified as a true runtime semantic:
+  parent shared schemas can arrive dynamically, so the startup boundary links
+  the runtime chain-level schema rather than a local analysis set.
+- render boundary declaration serialization was classified as an isolated
+  render-buffer semantic: the boundary owns its current text lane even when the
+  source fragment has no explicit declaration.
 
 Validation:
 
 - tests that distinguish caller-local links from shared-root links when both
   are requested by callable metadata
 - full quick suite after runtime link-path probing changes
+
+### Stage 7. Collapse Remaining Managed Buffer Link Fallbacks
+
+Goal:
+
+- remove the last non-inheritance managed-buffer fallback that derives links
+  from broad `usedChannels`
+
+Work:
+
+- replace the fallback in `src/compiler/emit.js#managedBlock(...)` with
+  explicit analysis metadata for macro/import/render/body scope-root buffers,
+  or split the true scope-root semantics into separate named helpers
+- evaluate whether `validateLaneNames(...)` / `combineLaneNames(...)` should
+  remain as runtime validation for the two-array API or be replaced by one
+  compiler-owned lane payload plus runtime assertions
+
+Validation:
+
+- macro caller, import/from-import, loop, and render-boundary compile-source
+  tests continue to prove that unrelated locals are not linked
+- full quick suite
 
 ## Validation
 
@@ -528,48 +562,16 @@ ANALYSIS-CHANNELS-REFACTOR
 
 Current examples to audit:
 
-- `src/compiler/boundaries.js#_getRenderBoundaryDeclaredChannelsArg(...)`:
-  currently patches render/custom-extension body-local declared lanes, including
-  current text; analysis should provide complete declared metadata for these
-  fragments. Stage 6 should decide whether this belongs to callable/render
-  analysis metadata or a separate isolated-render semantic.
-- `src/compiler/emit.js#managedBlock(...)`: callable/body scope-root buffers
+- `src/compiler/emit.js#managedBlock(...)`: non-inheritance scope-root buffers
   still fall back to deriving links from `usedChannels` when they are not
-  represented by boundary `linkedChannels`; callable metadata should provide the
-  final link set directly in Stage 6.
-- `src/compiler/inheritance.js#collectMethodChannelNames(...)`: Stage 4 now
-  publishes `ownLinkedChannels` / `mergedLinkedChannels` for callable admission,
-  but those facts still originate from this filtered used/mutated footprint. The
-  `__return__` and template-text filters are valid local semantics because those
-  lanes are callable-local implementation channels, not inherited shared
-  footprints. The remaining cleanup is to move this footprint decision into
-  analysis-owned callable metadata directly in Stage 6.
-- `src/compiler/inheritance.js#compileAsyncExtends(...)`: script inheritance
-  startup still links `inheritanceState.sharedSchema` at runtime; should be
-  replaced by final callable/inheritance link metadata in Stage 6 or documented
-  as a true runtime semantic.
+  represented by boundary `linkedChannels`; Stage 7 should replace this with
+  explicit analysis metadata for those managed-buffer families or split true
+  scope-root semantics into separate helpers.
 - `src/runtime/command-buffer.js#validateLaneNames(...)` and
   `src/runtime/command-buffer.js#combineLaneNames(...)`: runtime now validates
   linked/declared lane metadata instead of silently deduping it. The remaining
   question is whether linked/declared should arrive as one compiler-owned lane
-  payload rather than two arrays; evaluate in Stage 6.
-- `src/runtime/command-buffer.js#hasLinkedBuffer(...)`: currently answers
-  runtime structural-link questions; Stage 6 should replace it with
-  analysis-owned link specs or a narrower assertion/installer.
-- `src/runtime/inheritance-call.js#hasLinkedChannelPath(...)`: currently probes
-  runtime buffer ancestry before deciding whether to add a shared-root link;
-  resolve in Stage 6.
-- `src/runtime/inheritance-call.js#_registerInvocationChannelLink(...)` and
-  `_createAdmittedInvocationBuffer(...)`: currently choose caller/shared-root
-  link paths from runtime channel availability; Stage 6 should make this
-  metadata-owned or document the true runtime semantic.
-- `src/runtime/inheritance-call.js#_getMethodLinkedChannels(...)`: still has a
-  temporary fallback to used/mutated footprints for method data without explicit
-  `mergedLinkedChannels`; Stage 6 should remove this once callable metadata
-  shape is fully authoritative.
-- `src/runtime/inheritance-bootstrap.js#linkCurrentBufferToParentChannels(...)`:
-  currently performs shared/inheritance runtime link decisions that should be
-  driven by final boundary/callable link metadata in Stage 6.
+  payload rather than two arrays; evaluate in Stage 7.
 
 When implementing this refactor, grep for the marker first, then continue with
 the broader audit checklist above. New code should not add more marker comments

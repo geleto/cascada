@@ -1081,8 +1081,8 @@ describe('Extends Foundation', function () {
         null
       );
 
-      expect(sharedRootBuffer.hasLinkedBuffer(compositionBuffer, 'theme')).to.be(true);
-      expect(sharedRootBuffer.hasLinkedBuffer(compositionBuffer, 'log')).to.be(true);
+      expect(compositionBuffer.getChannelIfExists('theme')).to.be(sharedRootBuffer.getChannel('theme'));
+      expect(compositionBuffer.getChannelIfExists('log')).to.be(sharedRootBuffer.getChannel('log'));
     });
 
     it('should keep shared declarations owned by the shared buffer instead of reusing an unrelated parent channel', function () {
@@ -1094,6 +1094,57 @@ describe('Extends Foundation', function () {
       expect(sharedChannel).not.to.be(parentChannel);
       expect(childBuffer.getOwnChannel('theme')).to.be(sharedChannel);
       expect(rootBuffer.getOwnChannel('theme')).to.be(parentChannel);
+    });
+
+    it('should not install inherited invocation links twice for shared channels already visible from the caller', async function () {
+      const context = new Context({}, {}, env, 'Main.script', true, {}, {});
+      const sharedRootBuffer = runtime.createCommandBuffer(context);
+      const inheritanceState = runtime.createInheritanceState();
+      inheritanceState.sharedRootBuffer = sharedRootBuffer;
+      inheritanceState.sharedSchema.log = 'text';
+      runtime.declareInheritanceSharedChannel(sharedRootBuffer, 'log', 'text', context, null);
+      const currentBuffer = runtime.createCommandBuffer(context, sharedRootBuffer, ['log'], sharedRootBuffer);
+
+      inheritanceState.methods.build = {
+        fn(envArg, contextArg, runtimeArg, cbArg, output) {
+          void envArg;
+          void contextArg;
+          void cbArg;
+          output.addCommand(new runtimeArg.TextCommand({
+            channelName: 'log',
+            args: ['hit|'],
+            pos: { lineno: 1, colno: 1 }
+          }), 'log');
+          output.markFinishedAndPatchLinks();
+          return 'done';
+        },
+        signature: { argNames: [], withContext: false },
+        ownerKey: 'Main.script',
+        ownUsedChannels: ['log'],
+        ownMutatedChannels: ['log'],
+        ownLinkedChannels: ['log'],
+        super: null,
+        invokedMethods: {}
+      };
+
+      const logSnapshot = sharedRootBuffer.getChannel('log').finalSnapshot();
+      const result = await runtime.invokeInheritedMethod(
+        inheritanceState,
+        'build',
+        [],
+        context,
+        env,
+        runtime,
+        () => {},
+        currentBuffer,
+        { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
+      );
+
+      currentBuffer.markFinishedAndPatchLinks();
+      sharedRootBuffer.markFinishedAndPatchLinks();
+
+      expect(result).to.be('done');
+      expect(await logSnapshot).to.be('hit|');
     });
 
   });
@@ -1630,6 +1681,7 @@ describe('Extends Foundation', function () {
         signature: { argNames: [], withContext: false },
         mergedUsedChannels: [],
         mergedMutatedChannels: [],
+        mergedLinkedChannels: [],
         super: null,
         invokedMethods: { beta: 'beta' }
       };
@@ -1644,6 +1696,27 @@ describe('Extends Foundation', function () {
         expect(String(error)).to.contain('Invoked method \'beta\'');
         expect(String(error)).to.contain('has invalid metadata');
       }
+    });
+
+    it('should reject inherited method entries missing own linked-channel metadata', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      inheritanceState.methods.build = {
+        fn() {
+          return null;
+        },
+        ownerKey: 'legacy-metadata.script',
+        signature: { argNames: [], withContext: false },
+        ownUsedChannels: ['theme'],
+        ownMutatedChannels: []
+      };
+
+      expect(() => {
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'legacy-metadata.script' });
+      }).to.throwException((error) => {
+        expect(error.name).to.be('RuntimeFatalError');
+        expect(String(error)).to.contain('build in legacy-metadata.script');
+        expect(String(error)).to.contain('missing ownLinkedChannels');
+      });
     });
 
     it('should keep per-callable invoked method metadata limited to direct calls', function () {
@@ -2341,6 +2414,7 @@ describe('Extends Foundation', function () {
           ownMutatedChannels: [],
           mergedUsedChannels: [],
           mergedMutatedChannels: [],
+          mergedLinkedChannels: [],
           super: null,
           ownerKey: 'A.script'
         },
@@ -2397,6 +2471,7 @@ describe('Extends Foundation', function () {
         ownMutatedChannels: [],
         mergedUsedChannels: ['helperRead'],
         mergedMutatedChannels: ['helperWrite'],
+        mergedLinkedChannels: ['helperRead', 'helperWrite'],
         super: null,
         invokedMethods: Object.create(null)
       };
@@ -2410,6 +2485,14 @@ describe('Extends Foundation', function () {
         ownMutatedChannels: ['localWrite'],
         mergedUsedChannels: ['localRead', 'superRead', 'helperRead'],
         mergedMutatedChannels: ['localWrite', 'superWrite', 'helperWrite'],
+        mergedLinkedChannels: [
+          'localRead',
+          'localWrite',
+          'superRead',
+          'superWrite',
+          'helperRead',
+          'helperWrite'
+        ],
         super: {
           fn() {
             return null;
@@ -2420,6 +2503,7 @@ describe('Extends Foundation', function () {
           ownMutatedChannels: [],
           mergedUsedChannels: ['superRead'],
           mergedMutatedChannels: ['superWrite'],
+          mergedLinkedChannels: ['superRead', 'superWrite'],
           super: null,
           invokedMethods: Object.create(null)
         },
@@ -2456,11 +2540,34 @@ describe('Extends Foundation', function () {
         signature: { argNames: [], withContext: false },
         mergedUsedChannels: ['localRead'],
         mergedMutatedChannels: ['localWrite'],
+        mergedLinkedChannels: ['localRead', 'localWrite'],
         super: null
       });
 
       expect(linkedChannels).to.contain('localRead');
       expect(linkedChannels).to.contain('localWrite');
+    });
+
+    it('should reject resolved callable-body metadata without merged linked channels', function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
+
+      expect(() => inheritanceCallModule.getCallableBodyLinkedChannels({
+        fn() {
+          return null;
+        },
+        ownerKey: 'legacy-resolved.script',
+        signature: { argNames: [], withContext: false },
+        mergedUsedChannels: ['localRead'],
+        mergedMutatedChannels: ['localWrite'],
+        super: null
+      })).to.throwException((error) => {
+        expect(error.name).to.be('RuntimeFatalError');
+        expect(String(error)).to.contain('legacy-resolved.script');
+        expect(String(error)).to.contain('missing mergedLinkedChannels');
+      });
     });
 
     it('should fail callable-body linking when direct super metadata is malformed', function () {
@@ -2480,6 +2587,7 @@ describe('Extends Foundation', function () {
           ownMutatedChannels: [],
           mergedUsedChannels: [],
           mergedMutatedChannels: [],
+          mergedLinkedChannels: [],
           super: {
             ownerKey: 'Parent.script'
           },
