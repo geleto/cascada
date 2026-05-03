@@ -4,6 +4,7 @@ import {CompileAnalysis} from './analysis.js';
 import {CompileRename} from './rename.js';
 import {CompilerCommon} from './compiler-common.js';
 import {CompileCall} from './call.js';
+import {CompileLookup} from './lookup.js';
 
 const compareOps = {
   '==': '==',
@@ -22,6 +23,7 @@ class CompilerBaseAsync extends CompilerCommon {
     this.analysis = new CompileAnalysis(this);
     this.rename = new CompileRename(this);
     this.call = new CompileCall(this);
+    this.lookup = new CompileLookup(this);
     this.templateUsesInheritanceSurface = false;
   }
 
@@ -296,80 +298,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   analyzeLookupVal(node, analysisPass) {
-    const uses = [];
-    const mutates = [];
-    let sequenceChannelLookup = null;
-    let thisSharedAccessFacts = null;
-    let componentBindingRoot = null;
-    let componentBindingFacts = null;
-    const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
-    node._analysis.sequenceLockLookup = sequenceLockLookup;
-    if (sequenceLockLookup) {
-      this._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
-      uses.push(sequenceLockLookup.key);
-      if (sequenceLockLookup.repair) {
-        mutates.push(sequenceLockLookup.key);
-      }
-    }
-
-    const thisSharedFacts = this.channel.getThisSharedAccessFacts(node, analysisPass);
-    if (thisSharedFacts) {
-      thisSharedAccessFacts = thisSharedFacts;
-      uses.push(thisSharedFacts.channelName);
-      if (
-        this.scriptMode &&
-        thisSharedFacts.channelType === 'sequence' &&
-        thisSharedFacts.channelPath.length >= 2 &&
-        thisSharedFacts.propertyName !== 'snapshot'
-      ) {
-        sequenceChannelLookup = {
-          channelName: thisSharedFacts.channelName,
-          propertyName: thisSharedFacts.propertyName,
-          subpath: thisSharedFacts.pathPrefix
-        };
-      }
-      return { uses, mutates, sequenceChannelLookup, thisSharedAccessFacts };
-    }
-
-    const explicitThisDispatchMethodName =
-      this.inheritance.analyzeExplicitThisDispatchLookup(node);
-
-    componentBindingRoot = this.component.getBindingRoot(node);
-    componentBindingFacts = this.component.getBindingFacts(node);
-
-    if (this.scriptMode) {
-      const sequencePath = this.sequential._extractStaticPath(node);
-      const lookupFacts =
-        sequencePath && sequencePath.length >= 2
-          ? (() => {
-            const channelName = sequencePath[0];
-            const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
-            const propertyName = sequencePath[sequencePath.length - 1];
-            if (!channelDecl || channelDecl.shared || channelDecl.type !== 'sequence' || propertyName === 'snapshot') {
-              return null;
-            }
-            return {
-              channelName,
-              propertyName,
-              subpath: sequencePath.slice(1, -1)
-            };
-          })()
-          : null;
-      if (lookupFacts) {
-        uses.push(lookupFacts.channelName);
-        sequenceChannelLookup = lookupFacts;
-      }
-    }
-
-    return {
-      uses,
-      mutates,
-      sequenceChannelLookup,
-      thisSharedAccessFacts,
-      componentBindingRoot,
-      componentBindingFacts,
-      explicitThisDispatchMethodName
-    };
+    return this.lookup.analyzeLookupVal(node, analysisPass);
   }
 
   finalizeAnalyzeIs(node) {
@@ -387,116 +316,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileLookupVal(node) {
-    if (
-      !this.scriptMode &&
-      this.templateUsesInheritanceSurface &&
-      node.target instanceof nodes.Symbol &&
-      node.target.value === 'this' &&
-      !(node.val instanceof nodes.Literal && typeof node.val.value === 'string')
-    ) {
-      // Analysis rejects this first for inheritance templates; this keeps
-      // direct compile calls on the same structural-error path.
-      this.fail(
-        'Dynamic this[...] shared access is not supported in templates.',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
-    const thisSharedFacts =
-      node._analysis.thisSharedAccessFacts ||
-      this.channel.getThisSharedAccessFacts(node);
-    if (thisSharedFacts) {
-      const sequenceChannelLookup =
-        node._analysis.sequenceChannelLookup;
-      if (this.scriptMode && sequenceChannelLookup) {
-        this.buffer.emitAddSequenceGet(
-          sequenceChannelLookup.channelName,
-          sequenceChannelLookup.propertyName,
-          sequenceChannelLookup.subpath,
-          node
-        );
-        return;
-      }
-      if (thisSharedFacts.channelType !== 'var') {
-        this.fail(
-          `Channel '${thisSharedFacts.channelName}' cannot be used as a bare symbol. Use '${thisSharedFacts.channelName}.snapshot()' instead.`,
-          node.lineno,
-          node.colno,
-          node
-        );
-      }
-      if (thisSharedFacts.channelPath.length === 1) {
-        this.channel.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
-        return;
-      }
-      this._emitThisSharedVarNestedLookup(thisSharedFacts, node);
-      return;
-    }
-
-    this.inheritance.validateBareExplicitThisDispatchLookup(node);
-
-    const componentBindingRoot =
-      node._analysis.componentBindingRoot ||
-      this.component.getBindingRoot(node);
-    const componentBindingFacts =
-      node._analysis.componentBindingFacts ||
-      this.component.getBindingFacts(node);
-    if (componentBindingFacts && componentBindingFacts.kind === 'shared-read') {
-      this.component.emitChannelObservation(componentBindingFacts, node);
-      return;
-    }
-    if (componentBindingRoot && componentBindingRoot.staticPath.length > 2) {
-      this.component.emitSharedVarNestedLookup(componentBindingRoot, node);
-      return;
-    }
-    if (componentBindingRoot) {
-      this.component.failUnsupportedUsage(
-        node,
-        componentBindingRoot.bindingName,
-        '`ns.x` / `ns.x.y` shared-var reads, `ns.x.snapshot()` observations, `ns.x is error`, `ns.x#`, and `ns.method(...)` calls'
-      );
-    }
-
-    const sequenceChannelLookup =
-      node._analysis.sequenceChannelLookup;
-    if (this.scriptMode && sequenceChannelLookup) {
-      this.buffer.emitAddSequenceGet(
-        sequenceChannelLookup.channelName,
-        sequenceChannelLookup.propertyName,
-        sequenceChannelLookup.subpath,
-        node
-      );
-      return;
-    }
-
-    const sequenceLockLookup = node._analysis.sequenceLockLookup;
-    const nodeStaticPathKey = sequenceLockLookup?.key;
-    if (nodeStaticPathKey) {
-      this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-      const errorContextJson = JSON.stringify(this._createErrorContext(node));
-      if (this.scriptMode) {
-        this.emit('runtime.sequentialMemberLookupScriptValue((');
-      } else {
-        this.emit('runtime.sequentialMemberLookupAsyncValue((');
-      }
-      this.compile(node.target, null);
-      this.emit('),');
-      this.compile(node.val, null);
-      this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
-      return;
-    }
-
-    const errorContextJson = JSON.stringify(this._createErrorContext(node));
-    if (this.scriptMode) {
-      this.emit('runtime.memberLookupScript((');
-    } else {
-      this.emit('runtime.memberLookupAsync((');
-    }
-    this.compile(node.target, null);
-    this.emit('),');
-    this.compile(node.val, null);
-    this.emit(`, ${errorContextJson})`);
+    this.lookup.compileLookupVal(node);
   }
 
   analyzeFunCall(node, analysisPass) {
@@ -509,20 +329,6 @@ class CompilerBaseAsync extends CompilerCommon {
 
   compileFunCall(node) {
     this.call.compileFunCall(node);
-  }
-
-  _emitThisSharedVarNestedLookup(thisSharedFacts, node) {
-    const nestedPath = thisSharedFacts.channelPath.slice(1);
-    const errorContextJson = JSON.stringify(this._createErrorContext(node));
-    const memberLookupHelper = this.scriptMode ? 'memberLookupScript' : 'memberLookupAsync';
-
-    nestedPath.forEach(() => {
-      this.emit(`runtime.${memberLookupHelper}((`);
-    });
-    this.channel.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
-    nestedPath.forEach((propertyName) => {
-      this.emit(`), ${JSON.stringify(propertyName)}, ${errorContextJson})`);
-    });
   }
 
   compileFilter(node) {

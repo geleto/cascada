@@ -2,13 +2,14 @@
 import * as nodes from '../nodes.js';
 
 import {
-  validateGuardVariablesDeclared,
   validateScriptExtendsSourceOrder,
   validateLocalSharedMethodNameCollisions,
 } from './validation.js';
 
 import {CompilerBaseAsync} from './compiler-base-async.js';
 import {CompileBuffer} from './buffer.js';
+import {CompileGuard} from './guard.js';
+import {CompileAssignment} from './assignment.js';
 import {ROOT_STARTUP_PROMISE_VAR} from './inheritance.js';
 
 const COMPILED_METHODS_VAR = '__compiledMethods';
@@ -18,6 +19,8 @@ const COMPILED_INVOKED_METHODS_VAR = '__compiledInvokedMethods';
 class CompilerAsync extends CompilerBaseAsync {
   init(templateName, options) {
     super.init(Object.assign({}, options, { asyncMode: true, templateName }));
+    this.guard = new CompileGuard(this);
+    this.assignment = new CompileAssignment(this);
   }
 
   analyzeCallExtension(node) {
@@ -129,186 +132,27 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeCallAssign(node, analysisPass) {
-    return this.analyzeSet(node, analysisPass);
+    return this.assignment.analyzeSet(node, analysisPass);
   }
 
   finalizeAnalyzeCallAssign(node) {
-    return this.finalizeAnalyzeSet(node);
+    return this.assignment.finalizeAnalyzeSet(node);
   }
 
   analyzeSet(node, analysisPass) {
-    const declares = [];
-    const uses = [];
-    const mutates = [];
-    const isDeclaration = node.varType === 'declaration';
-    const targets = node.targets;
-    if (this.scriptMode) {
-      switch (node.varType) {
-        case 'declaration':
-        case 'assignment':
-          break;
-        default:
-          this.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
-      }
-    } else if (node.varType !== 'assignment' && node.varType !== 'declaration') {
-      this.fail(`'${node.varType}' is not allowed in template mode. Use 'set' or declaration tags.`, node.lineno, node.colno, node);
-    }
-    if (node.body) {
-      node.body._analysis = { createScope: true };
-    }
-    if (node.path && targets.length !== 1) {
-      this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
-    }
-    const thisSharedPath = this.channel.getThisSharedSetPathFacts(node, analysisPass);
-    if (thisSharedPath) {
-      uses.push(thisSharedPath.name);
-      mutates.push(thisSharedPath.name);
-      return {
-        declares,
-        uses,
-        mutates,
-        thisSharedSetPath: thisSharedPath
-      };
-    }
-    targets.forEach((target) => {
-      if (target instanceof nodes.Symbol) {
-        target._analysis = Object.assign({}, target._analysis, { declarationTarget: true });
-        const name = target.value;
-        const declaration = analysisPass.findDeclaration(node._analysis, name);
-        if (this.scriptMode && !isDeclaration && declaration && declaration.shared) {
-          this.fail(
-            `Bare shared assignment to '${name}' is not supported. Use this.${name} = ... instead.`,
-            target.lineno,
-            target.colno,
-            node,
-            target
-          );
-        }
-        const shouldDeclareImplicitTemplateVar = !this.scriptMode &&
-          !isDeclaration &&
-          !declaration;
-        if (isDeclaration || shouldDeclareImplicitTemplateVar) {
-          declares.push({ name, type: 'var', initializer: null, explicit: !!isDeclaration });
-        } else {
-          mutates.push(name);
-        }
-      }
-    });
-    return {
-      declares,
-      uses,
-      mutates
-    };
+    return this.assignment.analyzeSet(node, analysisPass);
   }
 
   finalizeAnalyzeSet(node) {
-    if (node._analysis.thisSharedSetPath) {
-      return {};
-    }
-
-    const exportFromRootScope = this.analysis.isRootScopeOwner(node._analysis);
-    const targetFacts = [];
-    (node.targets || []).forEach((target) => {
-      if (!(target instanceof nodes.Symbol)) {
-        targetFacts.push(null);
-        return;
-      }
-      const name = target.value;
-      const visibleDeclaration = this.analysis.findDeclaration(node._analysis, name);
-      targetFacts.push({
-        name,
-        isOwnDeclaration: visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis,
-        isVarDeclaration: visibleDeclaration && visibleDeclaration.type === 'var',
-        isSharedDeclaration: visibleDeclaration && visibleDeclaration.shared,
-        exportFromRootScope
-      });
-    });
-    return { setTargetFacts: targetFacts };
+    return this.assignment.finalizeAnalyzeSet(node);
   }
 
   compileSet(node) {
-    const thisSharedPath = node._analysis.thisSharedSetPath;
-    if (thisSharedPath) {
-      this.channel.compileThisSharedSetPath(node, thisSharedPath);
-      return;
-    }
-
-    const ids = [];
-    const isDeclarationOnly = !!node.declarationOnly;
-    const targetFacts = node._analysis.setTargetFacts ?? null;
-
-    node.targets.forEach((target, i) => {
-      const name = target.value;
-      const facts = targetFacts && targetFacts[i]
-        ? targetFacts[i]
-        : {
-          isOwnDeclaration: false,
-          isVarDeclaration: false
-        };
-
-      if (facts.isOwnDeclaration) {
-        this.emit(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
-      } else if (!facts.isVarDeclaration) {
-        this.fail(
-          `Compiler error: analysis did not resolve a visible var declaration for '${name}'.`,
-          target.lineno,
-          target.colno,
-          node,
-          target
-        );
-      }
-
-      const id = this._tmpid();
-      this.emit.line(`let ${id};`);
-      ids.push(id);
-    });
-
-    let hasAssignedValue = false;
-    if (node.path) {
-      const targetName = node.targets[0].value;
-      const pathValueId = this._tmpid();
-      this.emit(`let ${pathValueId} = `);
-      this.compileExpression(node.value, null, node.value);
-      this.emit.line(';');
-      this.emit(ids[0] + ' = ');
-      this.emit('runtime.setPath(');
-      this.buffer.emitAddRawSnapshot(targetName, node);
-      this.emit(', ');
-      this._compileAggregate(node.path, null, '[', ']', false, false);
-      this.emit(', ');
-      this.emit(pathValueId);
-      this.emit(')');
-      this.emit.line(';');
-      hasAssignedValue = true;
-    } else if (node.value && !isDeclarationOnly) {
-      this.emit(ids.join(' = ') + ' = ');
-      this.compileExpression(node.value, null, node.value);
-      this.emit.line(';');
-      hasAssignedValue = true;
-    } else if (node.body) {
-      this.emit(ids.join(' = ') + ' = ');
-      this.compile(node.body, null);
-      this.emit.line(';');
-      hasAssignedValue = true;
-    }
-
-    node.targets.forEach((target, i) => {
-      const name = target.value;
-      const valueId = ids[i];
-      const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
-
-      if (hasAssignedValue) {
-        this.emit.line(`${this.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
-      }
-
-      if (name.charAt(0) !== '_' && hasAssignedValue && facts && facts.exportFromRootScope && !facts.isSharedDeclaration) {
-        this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.buffer.currentBuffer});`);
-      }
-    });
+    this.assignment.compileSet(node);
   }
 
   compileCallAssign(node) {
-    this.compileSet(node);
+    this.assignment.compileSet(node);
   }
 
   _analyzeLoopNodeDeclarations(node, analysisPass, declarationsInBody = false) {
@@ -468,294 +312,15 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeGuard(node) {
-    node.body._analysis = { createScope: true };
-    if (node.recoveryBody) {
-      const recoveryAnalysis = { createScope: true };
-      if (typeof node.errorVar === 'string' && node.errorVar) {
-        recoveryAnalysis.declares = [{ name: node.errorVar, type: 'var', initializer: null }];
-      } else if (node.errorVar instanceof nodes.Symbol) {
-        node.errorVar._analysis = Object.assign({}, node.errorVar._analysis, { declarationTarget: true });
-        recoveryAnalysis.declares = [{ name: node.errorVar.value, type: 'var', initializer: null }];
-      }
-      node.recoveryBody._analysis = recoveryAnalysis;
-    }
-    const guardTargets = this._getGuardTargets(node);
-    validateGuardVariablesDeclared(guardTargets.variableValidationTargets, this, node);
-    return { guardTargets, createsLinkedChildBuffer: true };
+    return this.guard.analyzeGuard(node);
   }
 
   finalizeOutputAnalyzeGuard(node) {
-    const guardTargets = node._analysis.guardTargets;
-    const bodyUsedChannels = Array.from(node.body._analysis.usedChannels ?? []);
-    const modifiedLocks = new Set();
-    bodyUsedChannels.forEach((channelName) => {
-      if (channelName && channelName.startsWith('!')) {
-        modifiedLocks.add(channelName);
-      }
-    });
-
-    const resolvedSequenceTargets = this._getResolvedGuardSequenceTargets(
-      node,
-      guardTargets,
-      modifiedLocks
-    );
-    const guardChannels = this._getResolvedGuardChannelNames(
-      node,
-      guardTargets,
-      bodyUsedChannels,
-      resolvedSequenceTargets
-    );
-    const hasSequenceTargets = guardTargets.sequenceTargets;
-
-    return {
-      guardFacts: {
-        targets: guardTargets,
-        needsGuardState: guardTargets.variableTargetsAll || hasSequenceTargets,
-        resolvedSequenceTargets,
-        guardChannels
-      }
-    };
+    return this.guard.finalizeOutputAnalyzeGuard(node);
   }
 
   compileGuard(node) {
-    const guardFacts = node._analysis.guardFacts;
-    const needsGuardState = guardFacts.needsGuardState;
-    const guardStateVar = needsGuardState ? this._tmpid() : null;
-
-    this.buffer._compileAsyncControlFlowBoundary(node, () => {
-      const previousGuardDepth = this.guardDepth;
-      this.guardDepth = previousGuardDepth + 1;
-
-      try {
-        this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
-        let guardRepairLinePos = null;
-        const channelGuardInitLinePos = this.codebuf.length;
-        let channelGuardStateVar = null;
-        this.emit.line('');
-        if (guardStateVar) {
-          this.emit.line(`const ${guardStateVar} = runtime.guard.init(cb);`);
-        }
-        guardRepairLinePos = this.codebuf.length;
-        this.emit.line('');
-
-        this.compile(node.body, null);
-
-        const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets ?? [];
-        const guardChannels = guardFacts.guardChannels ?? [];
-        if (resolvedSequenceTargets.length > 0) {
-          this.emit.insertLine(
-            guardRepairLinePos,
-            `runtime.guard.repairSequenceOutputs(${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)});`
-          );
-        }
-
-        if (guardChannels.length > 0) {
-          channelGuardStateVar = this._tmpid();
-          this.emit.insertLine(
-            channelGuardInitLinePos,
-            `const ${channelGuardStateVar} = runtime.guard.initChannelSnapshots(${JSON.stringify(guardChannels)}, ${this.buffer.currentBuffer}, cb);`
-          );
-        }
-
-        const guardErrorsVar = this._tmpid();
-        this.emit.line(
-          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardChannels)}, ${channelGuardStateVar || 'null'});`
-        );
-        this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
-
-        if (node.recoveryBody) {
-          if (node.errorVar) {
-            this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
-            this.emit.line(
-              `${this.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
-            );
-          }
-          this.compile(node.recoveryBody, null);
-        }
-
-        this.emit.line('} else {');
-        this.emit.line('}');
-      } finally {
-        this.guardDepth = previousGuardDepth;
-      }
-    });
-  }
-
-  _getResolvedGuardSequenceTargets(node, guardTargets, modifiedLocks) {
-    const resolvedSequenceTargets = new Set();
-    const shouldGuardAllSequencesImplicitly =
-      guardTargets.variableTargetsAll &&
-      (!guardTargets.sequenceTargets || guardTargets.sequenceTargets.length === 0);
-
-    if (guardTargets.sequenceTargets && guardTargets.sequenceTargets.length > 0) {
-      for (const target of guardTargets.sequenceTargets) {
-        let matchFound = false;
-
-        if (target === '!') {
-          for (const lock of modifiedLocks) {
-            resolvedSequenceTargets.add(lock);
-            matchFound = true;
-          }
-        } else {
-          const baseKey = '!' + target.slice(0, -1);
-
-          for (const lock of modifiedLocks) {
-            if (lock === baseKey || lock.startsWith(baseKey + '!')) {
-              resolvedSequenceTargets.add(lock);
-              matchFound = true;
-            }
-          }
-
-          if (!matchFound) {
-            this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
-          }
-        }
-      }
-    } else if (shouldGuardAllSequencesImplicitly) {
-      for (const lock of modifiedLocks) {
-        resolvedSequenceTargets.add(lock);
-      }
-    }
-
-    return Array.from(resolvedSequenceTargets);
-  }
-
-  _getResolvedGuardChannelNames(node, guardTargets, bodyUsedChannels, resolvedSequenceTargets) {
-    const merged = new Set(this._getGuardedChannelNames(
-      bodyUsedChannels,
-      guardTargets,
-      node.body._analysis
-    ));
-    for (const lockName of resolvedSequenceTargets) {
-      merged.add(lockName);
-    }
-    const bodyDeclaredChannels = Array.from((node.body._analysis.declaredChannels ?? new Map()).keys());
-    for (const name of bodyDeclaredChannels) {
-      merged.add(name);
-    }
-    return this.return.excludeGuardCaptureChannels(merged);
-  }
-
-  _getGuardedChannelNames(usedChannels, guardTargets, analysis) {
-    let used = [];
-    if (usedChannels instanceof Set) {
-      used = Array.from(usedChannels);
-    } else if (Array.isArray(usedChannels)) {
-      used = usedChannels;
-    }
-
-    if (!guardTargets) {
-      return [];
-    }
-
-    if (guardTargets.channelSelector === '*') {
-      return used;
-    }
-
-    const hasNamedChannels = Array.isArray(guardTargets.channelSelector) && guardTargets.channelSelector.length > 0;
-    const hasTypedChannels = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
-    if (hasNamedChannels || hasTypedChannels) {
-      const guardedSet = new Set(hasNamedChannels ? guardTargets.channelSelector : []);
-      if (!this.scriptMode && guardedSet.has('text')) {
-        guardedSet.add(this.analysis.getCurrentTextChannel(analysis));
-      }
-      const guardedTypes = new Set(hasTypedChannels ? guardTargets.typeTargets : []);
-      return used.filter((name) => {
-        if (guardedSet.has(name)) {
-          return true;
-        }
-        if (guardedTypes.size === 0) {
-          return false;
-        }
-        const channelDecl = this.analysis.findDeclaration(analysis, name);
-        if (channelDecl) {
-          return guardedTypes.has(channelDecl.type);
-        }
-        if (!this.scriptMode && name === this.analysis.getCurrentTextChannel(analysis) && guardedTypes.has('text')) {
-          return true;
-        }
-        return guardedTypes.has(name);
-      });
-    }
-
-    if (guardTargets.variableTargetsAll) {
-      return used.filter((name) => {
-        if (name && name.charAt(0) === '!') {
-          return false;
-        }
-        const channelDecl = this.analysis.findDeclaration(analysis, name);
-        return channelDecl && channelDecl.type === 'var';
-      });
-    }
-
-    if (!guardTargets.hasAnySelectors) {
-      return used;
-    }
-
-    return [];
-  }
-
-  _getGuardTargets(guardNode) {
-    const channelTargetsRaw = Array.isArray(guardNode && guardNode.channelTargets) &&
-      guardNode.channelTargets.length > 0
-      ? guardNode.channelTargets
-      : null;
-    let channelSelector = !channelTargetsRaw
-      ? null
-      : (channelTargetsRaw.includes('@') ? '*' : channelTargetsRaw);
-    const typeTargets = Array.isArray(guardNode && guardNode.typeTargets) && guardNode.typeTargets.length > 0
-      ? guardNode.typeTargets
-      : null;
-
-    const variableTargetsRaw = guardNode && guardNode.variableTargets === '*'
-      ? '*'
-      : (Array.isArray(guardNode && guardNode.variableTargets) && guardNode.variableTargets.length > 0
-        ? guardNode.variableTargets
-        : null);
-    const variableTargetsAll = variableTargetsRaw === '*';
-    const hasVariableTargetsSelector = variableTargetsRaw !== null;
-    const variableValidationTargets = [];
-
-    if (Array.isArray(variableTargetsRaw) && variableTargetsRaw.length > 0) {
-      const resolvedChannels = new Set(Array.isArray(channelSelector) ? channelSelector : []);
-
-      for (const name of variableTargetsRaw) {
-        const channelDecl = this.analysis.findDeclaration(guardNode._analysis, name);
-        const isDeclaredVar = channelDecl && channelDecl.type === 'var';
-
-        if (isDeclaredVar) {
-          variableValidationTargets.push(name);
-        }
-        if (channelDecl) {
-          resolvedChannels.add(name);
-        }
-        if (!this.scriptMode && !isDeclaredVar && !channelDecl && name === 'text') {
-          resolvedChannels.add(this.analysis.getCurrentTextChannel(guardNode._analysis));
-          continue;
-        }
-        if (!isDeclaredVar && !channelDecl) {
-          variableValidationTargets.push(name);
-        }
-      }
-
-      if (channelSelector !== '*') {
-        channelSelector = resolvedChannels.size > 0 ? Array.from(resolvedChannels) : null;
-      }
-    }
-    const sequenceTargets = Array.isArray(guardNode && guardNode.sequenceTargets) && guardNode.sequenceTargets.length > 0
-      ? guardNode.sequenceTargets
-      : null;
-
-    const hasAnySelectors = !!channelSelector || !!typeTargets || hasVariableTargetsSelector || !!sequenceTargets;
-
-    return {
-      channelSelector,
-      typeTargets,
-      variableTargetsAll,
-      variableValidationTargets: variableValidationTargets.length > 0 ? variableValidationTargets : null,
-      sequenceTargets,
-      hasAnySelectors
-    };
+    this.guard.compileGuard(node);
   }
 
   analyzeIf(node) {
