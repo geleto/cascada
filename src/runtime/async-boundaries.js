@@ -22,13 +22,6 @@ function _reportBoundaryError(err, boundaryName, context, cb) {
   cb(reportedError);
 }
 
-async function _finalizeBoundary(childBuffer, waitedChannelName = null) {
-  childBuffer.markFinishedAndPatchLinks();
-  if (waitedChannelName) {
-    await childBuffer.getChannel(waitedChannelName).finalSnapshot();
-  }
-}
-
 /**
  * Run a control-flow boundary (if/switch body) as a single async child buffer.
  *
@@ -44,7 +37,7 @@ async function runControlFlowBoundary(parentBuffer, linkedChannelNames, declared
     _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
   } finally {
-    await _finalizeBoundary(childBuffer);
+    childBuffer.markFinishedAndPatchLinks();
   }
 }
 
@@ -62,7 +55,8 @@ async function runWaitedControlFlowBoundary(parentBuffer, linkedChannelNames, de
     _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
     return null;
   } finally {
-    await _finalizeBoundary(childBuffer, waitedChannelName);
+    childBuffer.markFinishedAndPatchLinks();
+    await childBuffer.getChannel(waitedChannelName).finalSnapshot();
   }
 }
 
@@ -80,7 +74,7 @@ async function runRenderBoundary(context, declaredChannelNames, cb, asyncFn) {
     _reportBoundaryError(err, 'RenderAsyncBlock', context, cb);
     return null;
   } finally {
-    await _finalizeBoundary(childBuffer);
+    childBuffer.markFinishedAndPatchLinks();
   }
 }
 
@@ -95,7 +89,9 @@ function runValueBoundary(parentBuffer, linkedChannelNames, declaredChannelNames
   const { childBuffer } = _createChildBoundary(parentBuffer, linkedChannelNames, declaredChannelNames, linkedMutatedChannelNames);
   const promise = Promise.resolve()
     .then(() => asyncFn(childBuffer))
-    .finally(() => _finalizeBoundary(childBuffer));
+    .finally(() => {
+      childBuffer.markFinishedAndPatchLinks();
+    });
   markPromiseHandled(promise);
   return promise;
 }
