@@ -202,7 +202,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   finalizeAnalyzeSet(node) {
-    if (node._analysis && node._analysis.thisSharedSetPath) {
+    if (node._analysis.thisSharedSetPath) {
       return {};
     }
 
@@ -217,9 +217,9 @@ class CompilerAsync extends CompilerBaseAsync {
       const visibleDeclaration = this.analysis.findDeclaration(node._analysis, name);
       targetFacts.push({
         name,
-        isOwnDeclaration: !!(visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis),
-        isVarDeclaration: !!(visibleDeclaration && visibleDeclaration.type === 'var'),
-        isSharedDeclaration: !!(visibleDeclaration && visibleDeclaration.shared),
+        isOwnDeclaration: visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis,
+        isVarDeclaration: visibleDeclaration && visibleDeclaration.type === 'var',
+        isSharedDeclaration: visibleDeclaration && visibleDeclaration.shared,
         exportFromRootScope
       });
     });
@@ -227,7 +227,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileSet(node) {
-    const thisSharedPath = node._analysis && node._analysis.thisSharedSetPath;
+    const thisSharedPath = node._analysis.thisSharedSetPath;
     if (thisSharedPath) {
       this.channel.compileThisSharedSetPath(node, thisSharedPath);
       return;
@@ -235,9 +235,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
     const ids = [];
     const isDeclarationOnly = !!node.declarationOnly;
-    const targetFacts = node._analysis && Array.isArray(node._analysis.setTargetFacts)
-      ? node._analysis.setTargetFacts
-      : null;
+    const targetFacts = node._analysis.setTargetFacts ?? null;
 
     node.targets.forEach((target, i) => {
       const name = target.value;
@@ -410,10 +408,10 @@ class CompilerAsync extends CompilerBaseAsync {
   finalizeOutputAnalyzeSwitch(node) {
     const allChannels = new Set();
     node.cases.forEach((c) => {
-      (c.body._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
+      (c.body._analysis.usedChannels ?? []).forEach(ch => allChannels.add(ch));
     });
     if (node.default) {
-      (node.default._analysis.usedChannels || []).forEach(ch => allChannels.add(ch));
+      (node.default._analysis.usedChannels ?? []).forEach(ch => allChannels.add(ch));
     }
     return {
       poisonChannels: Array.from(allChannels)
@@ -460,7 +458,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('');
       this.emit('}');
 
-      for (const channelName of (node._analysis.poisonChannels || [])) {
+      for (const channelName of (node._analysis.poisonChannels ?? [])) {
         this.emit.insertLine(
           catchPoisonPos,
           `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`
@@ -487,10 +485,8 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   finalizeOutputAnalyzeGuard(node) {
-    const guardTargets = node._analysis && node._analysis.guardTargets
-      ? node._analysis.guardTargets
-      : this._getGuardTargets(node);
-    const bodyUsedChannels = Array.from(node.body._analysis.usedChannels || []);
+    const guardTargets = node._analysis.guardTargets;
+    const bodyUsedChannels = Array.from(node.body._analysis.usedChannels ?? []);
     const modifiedLocks = new Set();
     bodyUsedChannels.forEach((channelName) => {
       if (channelName && channelName.startsWith('!')) {
@@ -509,12 +505,12 @@ class CompilerAsync extends CompilerBaseAsync {
       bodyUsedChannels,
       resolvedSequenceTargets
     );
-    const hasSequenceTargets = !!guardTargets.sequenceTargets;
+    const hasSequenceTargets = guardTargets.sequenceTargets;
 
     return {
       guardFacts: {
         targets: guardTargets,
-        needsGuardState: !!(guardTargets.variableTargetsAll || hasSequenceTargets),
+        needsGuardState: guardTargets.variableTargetsAll || hasSequenceTargets,
         resolvedSequenceTargets,
         guardChannels
       }
@@ -522,14 +518,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileGuard(node) {
-    const guardFacts = node._analysis && node._analysis.guardFacts
-      ? node._analysis.guardFacts
-      : {
-        targets: this._getGuardTargets(node),
-        needsGuardState: false,
-        resolvedSequenceTargets: [],
-        guardChannels: []
-      };
+    const guardFacts = node._analysis.guardFacts;
     const needsGuardState = guardFacts.needsGuardState;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
 
@@ -551,8 +540,8 @@ class CompilerAsync extends CompilerBaseAsync {
 
         this.compile(node.body, null);
 
-        const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets || [];
-        const guardChannels = guardFacts.guardChannels || [];
+        const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets ?? [];
+        const guardChannels = guardFacts.guardChannels ?? [];
         if (resolvedSequenceTargets.length > 0) {
           this.emit.insertLine(
             guardRepairLinePos,
@@ -640,7 +629,7 @@ class CompilerAsync extends CompilerBaseAsync {
     for (const lockName of resolvedSequenceTargets) {
       merged.add(lockName);
     }
-    const bodyDeclaredChannels = Array.from((node.body._analysis.declaredChannels || new Map()).keys());
+    const bodyDeclaredChannels = Array.from((node.body._analysis.declaredChannels ?? new Map()).keys());
     for (const name of bodyDeclaredChannels) {
       merged.add(name);
     }
@@ -695,7 +684,7 @@ class CompilerAsync extends CompilerBaseAsync {
           return false;
         }
         const channelDecl = this.analysis.findDeclaration(analysis, name);
-        return !!(channelDecl && channelDecl.type === 'var');
+        return channelDecl && channelDecl.type === 'var';
       });
     }
 
@@ -732,7 +721,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
       for (const name of variableTargetsRaw) {
         const channelDecl = this.analysis.findDeclaration(guardNode._analysis, name);
-        const isDeclaredVar = !!(channelDecl && channelDecl.type === 'var');
+        const isDeclaredVar = channelDecl && channelDecl.type === 'var';
 
         if (isDeclaredVar) {
           variableValidationTargets.push(name);
@@ -782,9 +771,9 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   finalizeOutputAnalyzeIf(node) {
-    const trueBranchChannels = new Set(node.body._analysis.usedChannels || []);
+    const trueBranchChannels = new Set(node.body._analysis.usedChannels ?? []);
     const falseBranchChannels = node.else_
-      ? new Set(node.else_._analysis.usedChannels || [])
+      ? new Set(node.else_._analysis.usedChannels ?? [])
       : new Set();
     return {
       poisonChannels: Array.from(new Set([...trueBranchChannels, ...falseBranchChannels]))
@@ -816,7 +805,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('');
       this.emit('}');
 
-      for (const channelName of (node._analysis.poisonChannels || [])) {
+      for (const channelName of (node._analysis.poisonChannels ?? [])) {
         this.emit.insertLine(
           catchPoisonPos,
           `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`
@@ -1109,9 +1098,7 @@ class CompilerAsync extends CompilerBaseAsync {
         });
       });
     }
-    const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
-      ? node._analysis.sequenceLocks
-      : [];
+    const sequenceLocks = node._analysis.sequenceLocks ?? [];
     sequenceLocks.forEach((lockName) => {
       declares.push({ name: lockName, type: 'sequential_path', initializer: null });
     });
@@ -1201,12 +1188,11 @@ class CompilerAsync extends CompilerBaseAsync {
       ? methodDefinitions.concat([constructorDefinition])
       : methodDefinitions;
     const invokedMethodRefs = this.inheritance.collectAllInvokedMethodRefsFromNode(node);
-    const needsInheritanceState = !!(
+    const needsInheritanceState =
       hasExtends ||
       this._getSharedDeclarations(node).length > 0 ||
       callableDefinitions.length > 0 ||
-      Object.keys(invokedMethodRefs).length > 0
-    );
+      Object.keys(invokedMethodRefs).length > 0;
 
     return {
       topLevelDynamicExtends,
@@ -1284,7 +1270,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRootSetupEntry(node, hasGenericScriptBody = false) {
     const isTemplateRoot = !this.scriptMode;
-    const skipGenericSetup = !!(this.scriptMode && this._getConstructorDefinition(node));
+    const skipGenericSetup = this.scriptMode && this._getConstructorDefinition(node);
 
     this.inheritance._withAsyncConstructorEntryState(isTemplateRoot, () => {
       this.emit.line('function b___setup__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
@@ -1299,9 +1285,7 @@ class CompilerAsync extends CompilerBaseAsync {
       if (this.scriptMode) {
         this.return.emitDeclareChannel(this.buffer.currentBuffer);
       }
-      const sequenceLocks = Array.isArray(node._analysis.sequenceLocks)
-        ? node._analysis.sequenceLocks
-        : [];
+      const sequenceLocks = node._analysis.sequenceLocks ?? [];
       for (const name of sequenceLocks) {
         this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
       }
@@ -1353,9 +1337,7 @@ class CompilerAsync extends CompilerBaseAsync {
       );
     }
 
-    const rootCompileFacts = node._analysis && node._analysis.rootCompileFacts
-      ? node._analysis.rootCompileFacts
-      : this._getRootCompileFacts(node);
+    const rootCompileFacts = node._analysis.rootCompileFacts;
     this.topLevelDynamicExtends = rootCompileFacts.topLevelDynamicExtends;
     this.hasStaticExtends = rootCompileFacts.hasStaticExtends;
     this.hasDynamicExtends = rootCompileFacts.hasDynamicExtends;
@@ -1391,7 +1373,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node && node.isSyntheticConstructor) {
       analysis.parentReadOnly = false;
     }
-    analysis.declares = (analysis.declares || []).concat([
+    analysis.declares = (analysis.declares ?? []).concat([
       this.return.createChannelDeclaration()
     ]);
     return analysis;

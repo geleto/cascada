@@ -156,7 +156,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileInlineIf(node) {
-    const hasLinkedMutations = !!(node._analysis && node._analysis.linkedMutatedChannels && node._analysis.linkedMutatedChannels.size > 0);
+    const hasLinkedMutations = node._analysis.linkedMutatedChannels &&
+      node._analysis.linkedMutatedChannels.size > 0;
     if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const cond = await runtime.resolveSingle(');
@@ -207,7 +208,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
   compileIs(node) {
     const testFacts =
-      (node._analysis && node._analysis.isTest) ||
+      node._analysis.isTest ||
       this._getIsTestFacts(node);
     const testName = testFacts.name;
     const testFunc = `env.getTest("${testName}")`;
@@ -266,7 +267,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
   compilePeekError(node) {
     const observationFacts =
-      (node._analysis && node._analysis.errorObservation) ||
+      node._analysis.errorObservation ||
       this._getErrorObservationFacts(node.target);
     if (observationFacts) {
       this._emitErrorObservation(observationFacts, node.target, 'getError');
@@ -404,11 +405,11 @@ class CompilerBaseAsync extends CompilerCommon {
       );
     }
     const thisSharedFacts =
-      (node._analysis && node._analysis.thisSharedAccessFacts) ||
+      node._analysis.thisSharedAccessFacts ||
       this.channel.getThisSharedAccessFacts(node);
     if (thisSharedFacts) {
       const sequenceChannelLookup =
-        node._analysis && node._analysis.sequenceChannelLookup;
+        node._analysis.sequenceChannelLookup;
       if (this.scriptMode && sequenceChannelLookup) {
         this.buffer.emitAddSequenceGet(
           sequenceChannelLookup.channelName,
@@ -434,12 +435,12 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    const explicitThisDispatchMethodName = node._analysis
-      ? node._analysis.explicitThisDispatchMethodName
-      : this.inheritance.supportsExplicitThisDispatch()
+    const explicitThisDispatchMethodName =
+      node._analysis.explicitThisDispatchMethodName ||
+      (this.inheritance.supportsExplicitThisDispatch()
         ? this.inheritance.getExplicitThisDispatchMethodName(node)
-        : null;
-    if (explicitThisDispatchMethodName && !(node._analysis && node._analysis.allowExplicitThisDispatchCall)) {
+        : null);
+    if (explicitThisDispatchMethodName && !node._analysis.allowExplicitThisDispatchCall) {
       this.fail(
         `bare inherited-method references are not supported; bare this.${explicitThisDispatchMethodName} references are not allowed; use this.${explicitThisDispatchMethodName}(...)`,
         node.lineno,
@@ -449,10 +450,10 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     const componentBindingRoot =
-      (node._analysis && node._analysis.componentBindingRoot) ||
+      node._analysis.componentBindingRoot ||
       this.component.getBindingRoot(node);
     const componentBindingFacts =
-      (node._analysis && node._analysis.componentBindingFacts) ||
+      node._analysis.componentBindingFacts ||
       this.component.getBindingFacts(node);
     if (componentBindingFacts && componentBindingFacts.kind === 'shared-read') {
       this.component.emitChannelObservation(componentBindingFacts, node);
@@ -471,7 +472,7 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     const sequenceChannelLookup =
-      node._analysis && node._analysis.sequenceChannelLookup;
+      node._analysis.sequenceChannelLookup;
     if (this.scriptMode && sequenceChannelLookup) {
       this.buffer.emitAddSequenceGet(
         sequenceChannelLookup.channelName,
@@ -482,8 +483,8 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
-    const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
+    const sequenceLockLookup = node._analysis.sequenceLockLookup;
+    const nodeStaticPathKey = sequenceLockLookup?.key;
     if (nodeStaticPathKey) {
       this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
       const errorContextJson = JSON.stringify(this._createErrorContext(node));
@@ -565,18 +566,17 @@ class CompilerBaseAsync extends CompilerCommon {
       const macroDecl = analysisPass.findDeclaration(node._analysis, node.name.value);
       if (macroDecl && macroDecl.isMacro) {
         directMacroCall = {
-          binding: macroDecl.declarationOrigin ? macroDecl.declarationOrigin.compiledMacroFuncId : null
+          binding: macroDecl.declarationOrigin?.compiledMacroFuncId ?? null
         };
       }
     }
 
-    if (node?.name && analysisPass.findDeclaration) {
+    if (node.name && analysisPass.findDeclaration) {
       const importedRoot = this.sequential._extractStaticPathRoot(node.name);
       const importedDecl = importedRoot ? analysisPass.findDeclaration(node._analysis, importedRoot) : null;
-      const isImportedCallable = !!(
+      const isImportedCallable =
         (importedDecl && importedDecl.imported) ||
-        (!importedDecl && importedRoot && this.importedBindings && this.importedBindings.has(importedRoot))
-      );
+        (!importedDecl && importedRoot && this.importedBindings && this.importedBindings.has(importedRoot));
       if (isImportedCallable) {
         importedCallable = true;
         const importedChannelName = importedDecl && (importedDecl.runtimeName || importedRoot);
@@ -600,9 +600,8 @@ class CompilerBaseAsync extends CompilerCommon {
 
     const callFacts =
       this.scriptMode &&
-      node &&
       node.name &&
-      !(node._analysis && node._analysis.sequenceLockLookup)
+      !node._analysis.sequenceLockLookup
         ? (() => {
           const thisSharedFacts = this.channel.getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
           if (thisSharedFacts) {
@@ -636,7 +635,7 @@ class CompilerBaseAsync extends CompilerCommon {
           return {
             channelName,
             channelType: channelDecl.type,
-            shared: !!channelDecl.shared,
+            shared: channelDecl.shared,
             methodName,
             pathPrefix: sequencePath.slice(1, -1),
             isObservation:
@@ -664,7 +663,7 @@ class CompilerBaseAsync extends CompilerCommon {
       // Direct same-scope macro calls reuse the current buffer through
       // runtime.invokeMacro(..., currentBuffer). Imported callable calls need a
       // value boundary, so only those are marked as linked child buffers here.
-      createsLinkedChildBuffer: !!importedCallable
+      createsLinkedChildBuffer: importedCallable
     };
   }
 
@@ -684,8 +683,8 @@ class CompilerBaseAsync extends CompilerCommon {
       funCallThisSharedAccessFacts: thisSharedFacts,
       componentBindingRoot: node.name ? this.component.getBindingRoot(node.name) : null,
       componentBindingFacts: node.name ? this.component.getBindingFacts(node.name, { forCall: true }) : null,
-      explicitThisDispatchMethodName: explicitThisDispatchMethodName ||
-        (node._analysis && node._analysis.explicitThisDispatchMethodName) ||
+      explicitThisDispatchMethodName: explicitThisDispatchMethodName ??
+        node._analysis.explicitThisDispatchMethodName ??
         null
     };
   }
@@ -698,17 +697,17 @@ class CompilerBaseAsync extends CompilerCommon {
 
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
     const directMacroCall = node._analysis.directMacroCall;
-    const directMacroBinding = directMacroCall ? directMacroCall.binding : null;
+    const directMacroBinding = directMacroCall?.binding ?? null;
     const isDirectMacroCall = !!directMacroCall;
     const importedCallableFacts = node._analysis.importedCallable;
     const explicitThisDispatchMethodName =
-      node._analysis.explicitThisDispatchMethodName ||
+      node._analysis.explicitThisDispatchMethodName ??
       null;
     const componentBindingRoot =
-      node._analysis.componentBindingRoot ||
+      node._analysis.componentBindingRoot ??
       this.component.getBindingRoot(node.name);
     const componentBindingFacts =
-      node._analysis.componentBindingFacts ||
+      node._analysis.componentBindingFacts ??
       this.component.getBindingFacts(node.name, { forCall: true });
 
     if (componentBindingFacts) {
@@ -740,8 +739,8 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
-    const sequenceLockKey = sequenceLockLookup && sequenceLockLookup.key;
+    const sequenceLockLookup = node._analysis.sequenceLockLookup;
+    const sequenceLockKey = sequenceLockLookup?.key;
     if (sequenceLockKey) {
       const errorContextJson = JSON.stringify(this._createErrorContext(node));
       this.emit('runtime.sequentialCallWrapValue(');
@@ -935,8 +934,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileScriptSymbolLookup(node, name) {
-    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
-    const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
+    const sequenceLockLookup = node._analysis.sequenceLockLookup;
+    const nodeStaticPathKey = sequenceLockLookup?.key;
     if (nodeStaticPathKey) {
       this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
       this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
@@ -954,8 +953,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileAsyncTemplateSymbolLookup(node, name) {
-    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
-    const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
+    const sequenceLockLookup = node._analysis.sequenceLockLookup;
+    const nodeStaticPathKey = sequenceLockLookup?.key;
     if (nodeStaticPathKey) {
       this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
       this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
@@ -966,7 +965,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileAsyncBinOpShortCircuit(node, isOr) {
-    const hasLinkedMutations = !!(node._analysis && node._analysis.linkedMutatedChannels && node._analysis.linkedMutatedChannels.size > 0);
+    const hasLinkedMutations = node._analysis.linkedMutatedChannels &&
+      node._analysis.linkedMutatedChannels.size > 0;
     if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const left = await runtime.resolveSingle(');

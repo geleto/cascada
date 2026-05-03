@@ -927,7 +927,7 @@ class CompileInheritance {
     if (fieldName !== 'methodLinkedChannels' && fieldName !== 'methodMutatedChannels') {
       throw new Error(`Unsupported method footprint field '${fieldName}'`);
     }
-    const channels = ownerNode?._analysis?.[fieldName];
+    const channels = ownerNode?._analysis?.[fieldName] ?? [];
     return Array.isArray(channels) ? channels : [];
   }
 
@@ -1068,7 +1068,7 @@ class CompileInheritance {
       return [];
     }
 
-    return Array.from(analysis[fieldName] || []).filter((name) => {
+    return Array.from(analysis[fieldName] ?? []).filter((name) => {
       if (!name || name === '__return__' || name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL) {
         return false;
       }

@@ -46,21 +46,18 @@ class CompileRename {
   }
 
   _applyLocalRenames(node, binding) {
-    if (!node || !node._analysis) {
-      return;
-    }
     this._renameOutputList(node._analysis.uses, binding);
     this._renameOutputList(node._analysis.mutates, binding);
     this._renameOutputList(node._analysis.declaresInParent, binding);
   }
 
   _enterScope(node, parentBinding) {
-    const analysis = node && node._analysis ? node._analysis : null;
-    if (!analysis || !analysis.createScope) {
+    const analysis = node._analysis;
+    if (!analysis.createScope) {
       return parentBinding;
     }
 
-    const localDeclares = Array.isArray(analysis.declares) ? analysis.declares : [];
+    const localDeclares = analysis.declares;
     let nextBinding = parentBinding;
     let hasUserLoopShadow = false;
 
@@ -70,7 +67,7 @@ class CompileRename {
         continue;
       }
       if (decl.isLoopMeta) {
-        const ownerNode = (node._analysis && node._analysis.loopOwner) || node;
+        const ownerNode = node._analysis.loopOwner || node;
         if (!ownerNode.loopRuntimeName) {
           ownerNode.loopRuntimeName = this._nextLoopRuntimeName();
         }
@@ -99,7 +96,7 @@ class CompileRename {
     if (!(node instanceof nodes.Symbol) || node.value !== 'loop') {
       return;
     }
-    if (node.isCompilerInternal || (node._analysis && node._analysis.declarationTarget)) {
+    if (node.isCompilerInternal || node._analysis.declarationTarget) {
       return;
     }
     if (!binding || binding.kind !== 'loop') {

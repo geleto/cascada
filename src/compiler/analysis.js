@@ -70,15 +70,15 @@ class CompileAnalysis {
   }
 
   _ensureAnalysis(node, parentNode, parentField) {
-    const parentAnalysis = parentNode && parentNode._analysis ? parentNode._analysis : null;
-    const existingAnalysis = node._analysis || {};
+    const parentAnalysis = parentNode?._analysis ?? null;
+    const existingAnalysis = node._analysis ?? {};
     const inheritedSequenceFunCallLockKey = parentAnalysis
       ? (
         parentNode instanceof nodes.FunCall &&
         parentField === 'name' &&
         parentAnalysis.sequenceFunCallLockKey
           ? parentAnalysis.sequenceFunCallLockKey
-          : parentAnalysis.inheritedSequenceFunCallLockKey || null
+          : parentAnalysis.inheritedSequenceFunCallLockKey ?? null
       )
       : null;
     // Keep this base shape limited to cross-cutting analysis facts that this

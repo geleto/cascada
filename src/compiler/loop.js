@@ -71,7 +71,7 @@ class CompileLoop {
         loopVarNames
       );
 
-      const bodyChannels = new Set(node.body._analysis.usedChannels || []);
+      const bodyChannels = new Set(node.body._analysis.usedChannels ?? []);
       const returnCheckChannelName = this.compiler.return.getSequentialLoopAdvanceCheckChannel({
         sequentialLoopBody,
         whileConditionNode,
@@ -86,7 +86,7 @@ class CompileLoop {
         this.compiler.emit('(async function() {');
         this.compiler.compile(node.else_, null);
         this.compiler.emit.line('}).bind(context);');
-        elseChannels = new Set(node.else_._analysis.usedChannels || []);
+        elseChannels = new Set(node.else_._analysis.usedChannels ?? []);
       }
 
       const asyncOptionsCode = `{
@@ -276,7 +276,7 @@ class CompileLoop {
         });
 
         if (whileConditionNode && catchPoisonPos !== null) {
-          const bodyChannels = new Set(node.body._analysis.usedChannels || []);
+          const bodyChannels = new Set(node.body._analysis.usedChannels ?? []);
           for (const channelName of bodyChannels) {
             this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`);
           }

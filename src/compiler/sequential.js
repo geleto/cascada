@@ -7,10 +7,7 @@ class CompileSequential {
   }
 
   getSequenceLockLookup(node) {
-    const analysis = node && node._analysis;
-    if (!analysis) {
-      return null;
-    }
+    const analysis = node._analysis;
     const sequenceLocks = this._getSequenceLockSet(analysis);
     const funCallLockKey = analysis.inheritedSequenceFunCallLockKey || null;
     const parent = analysis.parent ? analysis.parent.node : null;
@@ -49,7 +46,7 @@ class CompileSequential {
           }
         }
       } else if (node instanceof nodes.Symbol && parent instanceof nodes.LookupVal) {
-        const parentLockKey = parent._analysis && parent._analysis.sequenceLockLookup && parent._analysis.sequenceLockLookup.key;
+        const parentLockKey = parent._analysis.sequenceLockLookup?.key;
         if (parentLockKey && parentLockKey === '!' + node.value) {
           return null;
         }

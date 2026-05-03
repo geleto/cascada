@@ -262,12 +262,12 @@ class CompileEmit {
     // Do not link currentWaitedChannelName here.
     // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
     // Nested control-flow buffers are applied through their own channels/iterators.
-    return Array.from(analysis.linkedChannels || []);
+    return Array.from(analysis.linkedChannels ?? []);
   }
 
   getLinkedMutatedChannels(node) {
     const analysis = this._getAnalysis(node, 'getLinkedMutatedChannels');
-    return Array.from(analysis.linkedMutatedChannels || []);
+    return Array.from(analysis.linkedMutatedChannels ?? []);
   }
 
   getDeclaredChannels(node) {

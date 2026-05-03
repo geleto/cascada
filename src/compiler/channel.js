@@ -260,7 +260,7 @@ class CompileChannel {
     if (!compiler.scriptMode) {
       return false;
     }
-    const specialChannelCall = node._analysis && node._analysis.specialChannelCall;
+    const specialChannelCall = node._analysis.specialChannelCall;
     if (!specialChannelCall) {
       return false;
     }

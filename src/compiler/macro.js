@@ -76,11 +76,11 @@ class CompileMacro {
   }
 
   _getCallerLinkedChannels(node) {
-    return Array.from(node._analysis.linkedChannels || []);
+    return Array.from(node._analysis.linkedChannels ?? []);
   }
 
   _getCallerLinkedMutatedChannels(node) {
-    return Array.from(node._analysis.linkedMutatedChannels || []);
+    return Array.from(node._analysis.linkedMutatedChannels ?? []);
   }
 
   _getCallerDeclaredChannels(node) {
