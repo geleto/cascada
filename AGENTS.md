@@ -132,6 +132,7 @@ Development and tests require Node `>=22`.
 
 *   ❌ **DON'T:** Write tests depending on completion order of concurrent operations when verifying correctness. **Test the final, deterministic output, not the intermediate race.**
     *   **Exception:** When specifically testing concurrency mechanism itself (e.g., using mocks with delays to prove `for` runs parallel while `each` runs sequential).
+*   ❌ **DON'T:** Add runtime fallbacks for stale precompiled scripts/templates unless backwards compatibility is an explicit requirement; precompiled artifacts are build outputs.
 
 #### **Compiler Implementation (Modifying `src/compiler/*.js`)**
 
