@@ -196,9 +196,9 @@ class CommandBuffer {
 
     if (isFinishedBufferObservationCommand(cmd)) {
       const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-      const output = this.getChannelIfExists(resolvedChannelName);
+      const channel = this.getChannelIfExists(resolvedChannelName);
       const path = this._context?.path || null;
-      if (!output) {
+      if (!channel) {
         throw new RuntimeFatalError(
           `Channel '${resolvedChannelName}' is unavailable on finished CommandBuffer`,
           cmd.pos?.lineno ?? 0,
@@ -207,7 +207,7 @@ class CommandBuffer {
           path
         );
       }
-      if (!output._buffer.isFinished(resolvedChannelName)) {
+      if (!channel._buffer.isFinished(resolvedChannelName)) {
         throw new RuntimeFatalError(
           `${cmd.constructor.name} on finished buffer is allowed only if the target channel stream is finished`,
           cmd.pos?.lineno ?? 0,
@@ -293,12 +293,12 @@ class CommandBuffer {
   }
 
   getChannel(channelName = 'text') {
-    const output = this.getChannelIfExists(channelName);
-    if (!output) {
+    const channel = this.getChannelIfExists(channelName);
+    if (!channel) {
       const resolvedChannelName = this._resolveAliasedChannelName(channelName);
       throw new Error(`CommandBuffer channel '${resolvedChannelName}' is unavailable`);
     }
-    return output;
+    return channel;
   }
 
   getOwnChannel(channelName = 'text') {

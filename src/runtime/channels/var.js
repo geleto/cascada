@@ -1,5 +1,5 @@
 
-import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base.js';
+import {ChannelCommand, runWithResolvedArguments, contextualizeChannelError} from './command-base.js';
 import {Channel} from './base.js';
 
 class VarCommand extends ChannelCommand {
@@ -51,7 +51,7 @@ class VarCommand extends ChannelCommand {
       }
       if (args.length > 1) {
         channel._setTarget(this.toPoisonValue([
-          contextualizeOutputError(channel, this.pos, new Error('var channel accepts exactly one argument'))
+          contextualizeChannelError(channel, this.pos, new Error('var channel accepts exactly one argument'))
         ]));
         return;
       }

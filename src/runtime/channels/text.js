@@ -2,7 +2,7 @@
 import {isPoison, PoisonError, createPoison} from '../errors.js';
 import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve.js';
 import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output.js';
-import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base.js';
+import {ChannelCommand, runWithResolvedArguments, contextualizeChannelError} from './command-base.js';
 import {Channel} from './base.js';
 
 class TextCommand extends ChannelCommand {
@@ -59,7 +59,7 @@ class TextCommand extends ChannelCommand {
       if (this.command === 'set') {
         if (args.length !== 1) {
           channel._setTarget(this.toPoisonValue([
-            contextualizeOutputError(channel, this.pos, new Error('text.set() accepts exactly one argument'))
+            contextualizeChannelError(channel, this.pos, new Error('text.set() accepts exactly one argument'))
           ]));
           return;
         }
@@ -69,7 +69,7 @@ class TextCommand extends ChannelCommand {
         channel._setTarget([]);
       } else if (this.command !== null) {
         channel._setTarget(this.toPoisonValue([
-          contextualizeOutputError(channel, this.pos, new Error(`Unsupported text channel command '${this.command}'`))
+          contextualizeChannelError(channel, this.pos, new Error(`Unsupported text channel command '${this.command}'`))
         ]));
         return;
       }
@@ -163,19 +163,19 @@ class TextChannel extends Channel {
 
 }
 
-function normalizeTextCommandArg(value, output, pos) {
-  const materialized = materializeTemplateTextValue(value, buildTextErrorContext(output, pos));
+function normalizeTextCommandArg(value, channel, pos) {
+  const materialized = materializeTemplateTextValue(value, buildTextErrorContext(channel, pos));
   if (materialized && typeof materialized.then === 'function') {
-    return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, output, pos));
+    return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, channel, pos));
   }
-  return normalizeMaterializedTextArg(materialized, output, pos);
+  return normalizeMaterializedTextArg(materialized, channel, pos);
 }
 
 // Text commands have a second consumption boundary after top-level argument
 // resolution: text values may still need snapshot/finalSnapshot materialization
 // before autoescape/suppression turns them into concrete text.
-function materializeTextCommandArgs(values, output, pos) {
-  const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, output, pos));
+function materializeTextCommandArgs(values, channel, pos) {
+  const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, channel, pos));
   const resolvedArgs = resolveAll(normalizedArgs);
   if (isResolvedValue(resolvedArgs)) {
     return unwrapResolvedValue(resolvedArgs);
@@ -191,19 +191,19 @@ function materializeTextCommandArgs(values, output, pos) {
   });
 }
 
-function normalizeMaterializedTextArg(value, output, pos) {
-  const throwOnUndefined = isThrowOnUndefinedEnabled(output);
+function normalizeMaterializedTextArg(value, channel, pos) {
+  const throwOnUndefined = isThrowOnUndefinedEnabled(channel);
   if (throwOnUndefined && (value === null || value === undefined)) {
-    throw contextualizeOutputError(output, pos, new Error('attempted to output null or undefined value'));
+    throw contextualizeChannelError(channel, pos, new Error('attempted to output null or undefined value'));
   }
-  const autoescape = isAutoescapeEnabled(output);
-  if (isScriptOutputMode(output)) {
+  const autoescape = isAutoescapeEnabled(channel);
+  if (isScriptOutputMode(channel)) {
     return suppressValueScriptRaw(value, autoescape);
   }
   return suppressValue(value, autoescape);
 }
 
-function appendTextValues(output, values, pos) {
+function appendTextValues(channel, values, pos) {
   const args = Array.isArray(values) ? values : [values];
   const commandPos = pos || { lineno: 0, colno: 0 };
   for (const value of args) {
@@ -212,43 +212,43 @@ function appendTextValues(output, values, pos) {
     }
     const type = typeof value;
     if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
-      output._target.push(value);
+      channel._target.push(value);
       continue;
     }
     if (type === 'object') {
       const hasCustomToString = value.toString && value.toString !== Object.prototype.toString;
       if (hasCustomToString) {
-        output._target.push(value);
+        channel._target.push(value);
         continue;
       }
     }
     const argType = Array.isArray(value) ? 'array' : type;
     throw new Error(`Invalid TextCommand argument type '${argType}' at ${commandPos.lineno}:${commandPos.colno}. TextCommand only accepts text-like scalar values.`);
   }
-  output._markStateChanged();
+  channel._markStateChanged();
 }
 
-function buildTextErrorContext(output, pos) {
+function buildTextErrorContext(channel, pos) {
   return {
     lineno: pos && typeof pos.lineno === 'number' ? pos.lineno : 0,
     colno: pos && typeof pos.colno === 'number' ? pos.colno : 0,
     errorContextString: null,
-    path: output && output._context ? output._context.path || null : null
+    path: channel && channel._context ? channel._context.path || null : null
   };
 }
 
-function isAutoescapeEnabled(output) {
-  const opts = output && output._context && output._context.env ? output._context.env.opts : null;
+function isAutoescapeEnabled(channel) {
+  const opts = channel && channel._context && channel._context.env ? channel._context.env.opts : null;
   return !!(opts && opts.autoescape);
 }
 
-function isThrowOnUndefinedEnabled(output) {
-  const opts = output && output._context && output._context.env ? output._context.env.opts : null;
+function isThrowOnUndefinedEnabled(channel) {
+  const opts = channel && channel._context && channel._context.env ? channel._context.env.opts : null;
   return !!(opts && opts.throwOnUndefined);
 }
 
-function isScriptOutputMode(output) {
-  return !!(output && output._context && output._context.scriptMode);
+function isScriptOutputMode(channel) {
+  return !!(channel && channel._context && channel._context.scriptMode);
 }
 
 export { TextChannel, TextCommand };

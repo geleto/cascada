@@ -228,7 +228,7 @@ class CompileLoop {
       currentTextChannelVar: null
     }, () => {
       const limitedWaitedChannelName = (hasConcurrencyLimit || sequentialLoopBody)
-        ? (node.body && node.body._analysis && node.body._analysis.waitedOutputName)
+        ? (node.body && node.body._analysis && node.body._analysis.waitedChannelName)
         : null;
       if (limitedWaitedChannelName) {
         this.compiler.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${limitedWaitedChannelName}", "var", context, null);`);

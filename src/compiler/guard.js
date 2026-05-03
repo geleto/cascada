@@ -87,7 +87,7 @@ class CompileGuard {
         if (resolvedSequenceTargets.length > 0) {
           this.emit.insertLine(
             guardRepairLinePos,
-            `runtime.guard.repairSequenceOutputs(${compiler.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)});`
+            `runtime.guard.repairSequenceChannels(${compiler.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)});`
           );
         }
 

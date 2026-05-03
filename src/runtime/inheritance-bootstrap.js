@@ -59,24 +59,24 @@ function declareInheritanceSharedSchemaChannels(sharedRootBuffer, sharedSchema, 
   }
 }
 
-async function waitForParentRootRender(parentOutputBuffer, currentBuffer, inheritanceStateValue, componentMode) {
+async function waitForParentRootRender(parentCommandBuffer, currentBuffer, inheritanceStateValue, componentMode) {
   if (componentMode) {
-    return parentOutputBuffer;
+    return parentCommandBuffer;
   }
 
-  if (parentOutputBuffer === currentBuffer) {
+  if (parentCommandBuffer === currentBuffer) {
     const startupPromise = inheritanceState.awaitInheritanceStartup(inheritanceStateValue);
     if (startupPromise) {
       await startupPromise;
     }
-    return parentOutputBuffer;
+    return parentCommandBuffer;
   }
 
-  if (parentOutputBuffer && typeof parentOutputBuffer.getFinishedPromise === 'function') {
-    await parentOutputBuffer.getFinishedPromise();
+  if (parentCommandBuffer && typeof parentCommandBuffer.getFinishedPromise === 'function') {
+    await parentCommandBuffer.getFinishedPromise();
   }
 
-  return parentOutputBuffer;
+  return parentCommandBuffer;
 }
 
 async function renderInheritanceParentRoot(spec) {
@@ -112,7 +112,7 @@ async function renderInheritanceParentRoot(spec) {
       )
       : context.forkForPath(parentTemplate.path);
     const parentComponentMode = inheritanceState.isComponentCompositionMode(inheritanceStateValue);
-    const parentOutputBuffer = parentTemplate.rootRenderFunc(
+    const parentCommandBuffer = parentTemplate.rootRenderFunc(
       env,
       parentContext,
       runtimeApi,
@@ -133,12 +133,12 @@ async function renderInheritanceParentRoot(spec) {
       }
     }
     await waitForParentRootRender(
-      parentOutputBuffer,
+      parentCommandBuffer,
       currentBuffer,
       inheritanceStateValue,
       parentComponentMode
     );
-    return parentOutputBuffer;
+    return parentCommandBuffer;
   } finally {
     if (leaveChainPathOnReturn) {
       inheritanceState.leaveInheritanceChainPath(inheritanceStateValue, chainToken);

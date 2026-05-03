@@ -12,19 +12,19 @@ class SnapshotCommand extends Command {
     this.isUniversalObservationCommand = true;
   }
 
-  apply(output) {
-    const path = output && output._context ? output._context.path : null;
+  apply(channel) {
+    const path = channel && channel._context ? channel._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output) {
+    if (!channel) {
       this.rejectResult(contextualize(new Error('SnapshotCommand requires a channel')));
       return;
     }
 
     try {
-      const result = output._resolveSnapshotCommandResult();
+      const result = channel._resolveSnapshotCommandResult();
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).then(
           (value) => {
@@ -51,19 +51,19 @@ class RawSnapshotCommand extends Command {
     this.isObservable = true;
   }
 
-  apply(output) {
-    const path = output && output._context ? output._context.path : null;
+  apply(channel) {
+    const path = channel && channel._context ? channel._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output) {
+    if (!channel) {
       this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a channel')));
       return;
     }
 
     try {
-      this.resolveResult(output._getTarget());
+      this.resolveResult(channel._getTarget());
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
@@ -81,19 +81,19 @@ class ReturnIsUnsetCommand extends Command {
     this.isObservable = true;
   }
 
-  apply(output) {
-    const path = output && output._context ? output._context.path : null;
+  apply(channel) {
+    const path = channel && channel._context ? channel._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output) {
+    if (!channel) {
       this.rejectResult(contextualize(new Error('ReturnIsUnsetCommand requires a channel')));
       return;
     }
 
     try {
-      this.resolveResult(output._getTarget() === RETURN_UNSET);
+      this.resolveResult(channel._getTarget() === RETURN_UNSET);
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
@@ -110,19 +110,19 @@ class IsErrorCommand extends Command {
     this.isUniversalObservationCommand = true;
   }
 
-  apply(output) {
-    const path = output && output._context ? output._context.path : null;
+  apply(channel) {
+    const path = channel && channel._context ? channel._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output) {
+    if (!channel) {
       this.rejectResult(contextualize(new Error('IsErrorCommand requires a channel')));
       return;
     }
 
     try {
-      const result = output._isErrorNow();
+      const result = channel._isErrorNow();
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).then(
           (value) => this.resolveResult(!!value),
@@ -146,19 +146,19 @@ class GetErrorCommand extends Command {
     this.isUniversalObservationCommand = true;
   }
 
-  apply(output) {
-    const path = output && output._context ? output._context.path : null;
+  apply(channel) {
+    const path = channel && channel._context ? channel._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output) {
+    if (!channel) {
       this.rejectResult(contextualize(new Error('GetErrorCommand requires a channel')));
       return;
     }
 
     try {
-      const result = output._getErrorNow();
+      const result = channel._getErrorNow();
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).then(
           (value) => this.resolveResult(value || null),
@@ -181,19 +181,19 @@ class CaptureGuardStateCommand extends Command {
     this.isObservable = true;
   }
 
-  apply(output) {
-    const path = output && output._context ? output._context.path : null;
+  apply(channel) {
+    const path = channel && channel._context ? channel._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output) {
+    if (!channel) {
       this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a channel')));
       return;
     }
 
     try {
-      const result = output._captureGuardState();
+      const result = channel._captureGuardState();
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).then(
           (value) => this.resolveResult(value),
@@ -216,19 +216,19 @@ class RestoreGuardStateCommand extends Command {
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(output) {
-    const path = output && output._context ? output._context.path : null;
+  apply(channel) {
+    const path = channel && channel._context ? channel._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!output) {
+    if (!channel) {
       this.resolveResult(undefined);
       return;
     }
 
     try {
-      const result = output._restoreGuardState(this.target);
+      const result = channel._restoreGuardState(this.target);
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).then(
           (value) => this.resolveResult(value),

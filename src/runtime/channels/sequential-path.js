@@ -1,6 +1,6 @@
 
 import {isPoison, isPoisonError, PoisonError, createPoison} from '../errors.js';
-import {Command, contextualizeErrorsForOutput} from './command-base.js';
+import {Command, contextualizeErrorsForChannel} from './command-base.js';
 import {Channel, mergePoisonErrors} from './base.js';
 
 class SequentialPathReadCommand extends Command {
@@ -14,9 +14,9 @@ class SequentialPathReadCommand extends Command {
     this.isObservable = true;
   }
 
-  apply(output) {
+  apply(channel) {
 
-    const existingPoison = output._getSequentialPathPoisonErrors();
+    const existingPoison = channel._getSequentialPathPoisonErrors();
     if (!this.repair && Array.isArray(existingPoison) && existingPoison.length > 0) {
       this.rejectResult(new PoisonError(existingPoison.slice()));
       return;
@@ -28,7 +28,7 @@ class SequentialPathReadCommand extends Command {
         result = this.operation();
       } catch (err) {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+        const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
         this.rejectResult(new PoisonError(contextualized));
         return;
       }
@@ -36,19 +36,19 @@ class SequentialPathReadCommand extends Command {
       const resolveResultValue = (value) => {
         if (isPoison(value)) {
           const errs = Array.isArray(value.errors) ? value.errors : [value];
-          const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+          const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
           this.rejectResult(new PoisonError(contextualized));
           return;
         }
         if (this.repair) {
-          output._clearSequentialPathPoison();
+          channel._clearSequentialPathPoison();
         }
         this.resolveResult(value);
       };
 
       const rejectResultError = (err) => {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+        const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
         this.rejectResult(new PoisonError(contextualized));
       };
 
@@ -85,9 +85,9 @@ class SequentialPathWriteCommand extends Command {
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(output) {
+  apply(channel) {
 
-    const existingPoison = output._getSequentialPathPoisonErrors();
+    const existingPoison = channel._getSequentialPathPoisonErrors();
     if (!this.repair && Array.isArray(existingPoison) && existingPoison.length > 0) {
       this.rejectResult(new PoisonError(existingPoison.slice()));
       return;
@@ -99,8 +99,8 @@ class SequentialPathWriteCommand extends Command {
         result = this.operation();
       } catch (err) {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
-        output._applySequentialPathPoisonErrors(contextualized);
+        const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
+        channel._applySequentialPathPoisonErrors(contextualized);
         this.rejectResult(new PoisonError(contextualized));
         return;
       }
@@ -108,22 +108,22 @@ class SequentialPathWriteCommand extends Command {
       const resolveResultValue = (value) => {
         if (isPoison(value)) {
           const errs = Array.isArray(value.errors) ? value.errors : [value];
-          const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
-          output._applySequentialPathPoisonErrors(contextualized);
+          const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
+          channel._applySequentialPathPoisonErrors(contextualized);
           this.rejectResult(new PoisonError(contextualized));
           return;
         }
         if (this.repair) {
-          output._clearSequentialPathPoison();
+          channel._clearSequentialPathPoison();
         }
-        output._setSequentialPathLastResult(value);
+        channel._setSequentialPathLastResult(value);
         this.resolveResult(value);
       };
 
       const rejectResultError = (err) => {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
-        output._applySequentialPathPoisonErrors(contextualized);
+        const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
+        channel._applySequentialPathPoisonErrors(contextualized);
         this.rejectResult(new PoisonError(contextualized));
       };
 

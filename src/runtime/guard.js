@@ -179,7 +179,7 @@ function resolveGuardChannelNames(buffer, allowedChannels) {
   return Object.keys(buffer.arrays || Object.create(null));
 }
 
-function repairSequenceOutputs(buffer, guardState, lockNames) {
+function repairSequenceChannels(buffer, guardState, lockNames) {
   if (!lockNames || lockNames.length === 0) {
     return;
   }
@@ -268,7 +268,7 @@ async function settleSequenceTransactions(channelGuardState, mode) {
   return errors;
 }
 
-export { init, initChannelSnapshots, finalizeGuard, repairSequenceOutputs, restoreChannels };
+export { init, initChannelSnapshots, finalizeGuard, repairSequenceChannels, restoreChannels };
 
 function reportAndThrow(cb, err) {
   const normalized = err instanceof Error ? err : new Error(String(err));

@@ -49,8 +49,8 @@ class WaitCurrentCommand extends Command {
     this.isObservable = true;
   }
 
-  apply(output) {
-    void output;
+  apply(channel) {
+    void channel;
     this.resolveResult(undefined);
     return undefined;
   }

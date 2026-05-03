@@ -839,7 +839,7 @@ class CompileInheritance {
         ? 'null'
         : JSON.stringify(String(this.compiler.templateName)));
     const declaredBlockArgNames = this.getBlockArgNames(block);
-    // This only wires the entry-local output buffer to its immediate parent
+    // This only wires the entry-local command buffer to its immediate parent
     // invocation buffer. Caller-side inherited dispatch linking is resolved
     // separately from helper-resolved method metadata at runtime.
     const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined', 'inheritanceState = null', 'methodData'];
@@ -905,7 +905,7 @@ class CompileInheritance {
     if (isScriptMethod) {
       const resultVar = this.compiler._tmpid();
       this.compiler.return.emitFinalSnapshot(this.compiler.buffer.currentBuffer, resultVar);
-      // Script methods still own their entry-local output buffer lifetime.
+      // Script methods still own their entry-local command-buffer lifetime.
       // The invocation command waits on the per-call invocation buffer after
       // this local buffer closes, so caller-visible completion still covers the
       // full inherited call.
@@ -1364,7 +1364,7 @@ class CompileInheritance {
       // Included template renders into its own default text lane.
       // The caller lane may be scope-specific (e.g. capture text output) and
       // is only used when enqueueing the final TextCommand in the parent buffer.
-      const includeOutputChannelName = CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
+      const includeTextChannelName = CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
 
       // Get the template name expression
       this.emit(`let ${templateNameVar} = `);
@@ -1387,9 +1387,9 @@ class CompileInheritance {
       // Includes own a composed child text boundary. Use the child text channel's
       // finalSnapshot() as the structural completion signal rather than adding an
       // extra point-in-time snapshot command for that boundary.
-      this.emit.line(`let ${includeTextPromise} = composed.getChannel("${includeOutputChannelName}").finalSnapshot();`);
+      this.emit.line(`let ${includeTextPromise} = composed.getChannel("${includeTextChannelName}").finalSnapshot();`);
       this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
-      // Include boundary completion in limited-loop waited output.
+      // Include boundary completion in the limited-loop waited channel.
       // Wait on the composed include snapshot promise (timing unit), not on the
       // command object created for parent enqueue.
       this.compiler.buffer.emitOwnWaitedConcurrencyResolve(includeTextPromise, node);

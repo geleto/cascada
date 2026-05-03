@@ -1,6 +1,6 @@
 
 import {PoisonError, createPoison} from '../errors.js';
-import {Command, contextualizeErrorsForOutput} from './command-base.js';
+import {Command, contextualizeErrorsForChannel} from './command-base.js';
 
 class ErrorCommand extends Command {
   constructor(errors) {
@@ -31,21 +31,21 @@ class TargetPoisonCommand extends Command {
     return new PoisonError(this.errors);
   }
 
-  apply(output) {
-    if (!output) {
+  apply(channel) {
+    if (!channel) {
       return;
     }
-    const contextualizedErrors = contextualizeErrorsForOutput(output, this.pos, this.errors);
-    const channelType = output._channelType;
+    const contextualizedErrors = contextualizeErrorsForChannel(channel, this.pos, this.errors);
+    const channelType = channel._channelType;
     if (channelType === 'text') {
-      if (!Array.isArray(output._target)) {
-        output._setTarget([]);
+      if (!Array.isArray(channel._target)) {
+        channel._setTarget([]);
       }
-      output._target.push(createPoison(contextualizedErrors));
-      output._markStateChanged();
+      channel._target.push(createPoison(contextualizedErrors));
+      channel._markStateChanged();
       return;
     }
-    output._applyPoisonErrors(contextualizedErrors);
+    channel._applyPoisonErrors(contextualizedErrors);
   }
 }
 

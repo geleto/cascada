@@ -129,13 +129,13 @@ class ComponentOperationCommand extends Command {
     this.errorContext = errorContext;
     // Component operations still return a direct deferred result to the caller,
     // but they stay non-observable on the binding lane so the parent buffer
-    // treats them as ordered structural work rather than as an extra output
+    // treats them as ordered structural work rather than as an extra channel
     // stream that would need its own observable slot.
     this.isObservable = false;
   }
 
-  apply(outputChannel) {
-    return this._run(outputChannel._getTarget());
+  apply(channel) {
+    return this._run(channel._getTarget());
   }
 
   async _run(bindingValue) {
@@ -184,8 +184,8 @@ class StartComponentInstanceCommand extends Command {
     this.isObservable = false;
   }
 
-  apply(outputChannel) {
-    void outputChannel;
+  apply(channel) {
+    void channel;
     return this._run();
   }
 
@@ -226,8 +226,8 @@ class ObserveSharedChannelCommand extends Command {
     this.isObservable = false;
   }
 
-  apply(outputChannel) {
-    return this._run(outputChannel._getTarget());
+  apply(channel) {
+    return this._run(channel._getTarget());
   }
 
   async _run(bindingValue) {

@@ -1,6 +1,6 @@
 
 import {createPoison, isPoison, isPoisonError} from '../errors.js';
-import {ChannelCommand, runWithResolvedArguments, contextualizeOutputError} from './command-base.js';
+import {ChannelCommand, runWithResolvedArguments, contextualizeChannelError} from './command-base.js';
 import {DataChannelTarget} from '../../script/data-channel.js';
 import {Channel, cloneSnapshotValue, mergePoisonErrors} from './base.js';
 
@@ -43,7 +43,7 @@ class DataCommand extends ChannelCommand {
           channel,
           args,
           this.toPoisonValue([
-            contextualizeOutputError(channel, this.pos, new Error(`has no method '${this.command}'`))
+            contextualizeChannelError(channel, this.pos, new Error(`has no method '${this.command}'`))
           ])
         );
         return;
@@ -65,7 +65,7 @@ class DataCommand extends ChannelCommand {
           channel,
           args,
           this.toPoisonValue([
-            contextualizeOutputError(channel, this.pos, err)
+            contextualizeChannelError(channel, this.pos, err)
           ])
         );
       }
@@ -281,20 +281,20 @@ class DataChannel extends Channel {
 
 }
 
-function setDataPoisonAtPath(output, args, poisonValue) {
-  if (!output || !output._base) {
+function setDataPoisonAtPath(channel, args, poisonValue) {
+  if (!channel || !channel._base) {
     return;
   }
   const rawPath = Array.isArray(args) && args.length > 0 ? args[0] : null;
   const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
-  const existingValue = readDataValueAtPath(output._base.data, path);
+  const existingValue = readDataValueAtPath(channel._base.data, path);
   const existingErrors = extractPoisonErrors(existingValue);
   const newErrors = extractPoisonErrors(poisonValue);
   const mergedPoison = (existingErrors.length > 0 || newErrors.length > 0)
     ? createPoison([...existingErrors, ...newErrors])
     : poisonValue;
-  output._base.set(path, mergedPoison);
-  output._setTarget(output._base.data);
+  channel._base.set(path, mergedPoison);
+  channel._setTarget(channel._base.data);
 }
 
 function readDataValueAtPath(root, path) {

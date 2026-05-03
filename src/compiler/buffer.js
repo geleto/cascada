@@ -1,7 +1,7 @@
 /**
  * CompileBuffer - channel buffer management module
  *
- * Handles all channel buffering operations for Cascada's deferred output system.
+ * Handles all command-buffer operations for Cascada's deferred channel system.
  * Manages buffer stacks, async buffer operations, and channel command compilation.
  */
 
@@ -317,7 +317,7 @@ class CompileBuffer {
     if (!this.compiler.asyncMode || !waitedChannelName) {
       return;
     }
-    // Register as usage, not mutation: __waited__ tracks completion, not output state.
+    // Register as usage, not mutation: __waited__ tracks completion, not channel state.
     this.compiler.emit.line(
       `${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedChannelName}");`
     );

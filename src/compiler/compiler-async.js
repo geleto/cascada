@@ -173,8 +173,8 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     if (node.concurrentLimit) {
       node.body._analysis = Object.assign({}, node.body._analysis, {
-        waitedOutputName: node.body._analysis && node.body._analysis.waitedOutputName
-          ? node.body._analysis.waitedOutputName
+        waitedChannelName: node.body._analysis && node.body._analysis.waitedChannelName
+          ? node.body._analysis.waitedChannelName
           : `__waited__${this._tmpid()}`
       });
     }
@@ -198,8 +198,8 @@ class CompilerAsync extends CompilerBaseAsync {
     const result = this._analyzeLoopNodeDeclarations(node, analysisPass);
     if (node.body) {
       node.body._analysis = Object.assign({}, node.body._analysis, {
-        waitedOutputName: (node.body._analysis && node.body._analysis.waitedOutputName)
-          ? node.body._analysis.waitedOutputName
+        waitedChannelName: (node.body._analysis && node.body._analysis.waitedChannelName)
+          ? node.body._analysis.waitedChannelName
           : `__waited__${this._tmpid()}`
       });
     }
@@ -222,8 +222,8 @@ class CompilerAsync extends CompilerBaseAsync {
     const result = this._analyzeLoopNodeDeclarations(node, analysisPass, true);
     if (node.body) {
       node.body._analysis = Object.assign({}, node.body._analysis, {
-        waitedOutputName: (node.body._analysis && node.body._analysis.waitedOutputName)
-          ? node.body._analysis.waitedOutputName
+        waitedChannelName: (node.body._analysis && node.body._analysis.waitedChannelName)
+          ? node.body._analysis.waitedChannelName
           : `__waited__${this._tmpid()}`
       });
     }

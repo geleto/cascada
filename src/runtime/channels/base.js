@@ -220,8 +220,8 @@ class Channel {
   }
 }
 
-function createCallableChannelFacade(output) {
-  const target = (...args) => output.invoke(...args);
+function createCallableChannelFacade(channel) {
+  const target = (...args) => channel.invoke(...args);
   return new Proxy(target, {
     get: (proxyTarget, prop) => {
       if (prop === 'then') {
@@ -230,27 +230,27 @@ function createCallableChannelFacade(output) {
       if (typeof prop === 'symbol') {
         return proxyTarget[prop];
       }
-      if (prop in output) {
-        const value = output[prop];
+      if (prop in channel) {
+        const value = channel[prop];
         if (typeof value === 'function') {
           const cacheName = `_bound_${String(prop)}`;
-          if (!Object.prototype.hasOwnProperty.call(output, cacheName)) {
-            Object.defineProperty(output, cacheName, {
+          if (!Object.prototype.hasOwnProperty.call(channel, cacheName)) {
+            Object.defineProperty(channel, cacheName, {
               configurable: true,
               enumerable: false,
               writable: true,
-              value: value.bind(output)
+              value: value.bind(channel)
             });
           }
-          return output[cacheName];
+          return channel[cacheName];
         }
         return value;
       }
       return proxyTarget[prop];
     },
     set: (proxyTarget, prop, value) => {
-      if (prop in output) {
-        output[prop] = value;
+      if (prop in channel) {
+        channel[prop] = value;
         return true;
       }
       proxyTarget[prop] = value;
@@ -396,12 +396,12 @@ async function inspectTargetForErrors(target) {
   };
 }
 
-function contextualizeCommandErrors(output, cmd, errors) {
+function contextualizeCommandErrors(channel, cmd, errors) {
   if (!Array.isArray(errors) || errors.length === 0) {
     return [];
   }
   const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
   const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
-  const path = output && output._context && output._context.path ? output._context.path : null;
+  const path = channel && channel._context && channel._context.path ? channel._context.path : null;
   return errors.map((err) => handleError(err, lineno, colno, null, path));
 }
