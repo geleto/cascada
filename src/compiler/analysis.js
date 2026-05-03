@@ -81,6 +81,13 @@ class CompileAnalysis {
           : parentAnalysis.inheritedSequenceFunCallLockKey || null
       )
       : null;
+    // Keep this base shape limited to cross-cutting analysis facts that this
+    // pass owns or derives for many node types: scope/declaration ownership,
+    // channel use/mutation/link metadata, and shared boundary state. Node-
+    // specific facts such as declaration targets, sequential lookup details,
+    // guard/import/caller/component metadata, etc. should be attached only by
+    // the analyzer that owns that feature.
+    //
     // Analysis facts are populated in phases: node analyzers seed local
     // declarations/uses/boundary flags during the walk, declaration ownership
     // is finalized after traversal, and aggregate used/mutated/linked facts are
@@ -90,10 +97,8 @@ class CompileAnalysis {
       createScope: false,
       scopeBoundary: false,
       parentReadOnly: false,
-      declarationTarget: false,
       textOutput: null,
       sequenceLocks: null,
-      sequenceLockLookup: null,
       declares: [],
       declaresInParent: [],
       uses: [],
@@ -189,16 +194,8 @@ class CompileAnalysis {
     return owner.declaredChannels.get(name) || null;
   }
 
-  findDeclarationInCurrentScope(analysis, name) {
-    const owner = this.getScopeOwner(analysis);
-    if (!owner || !owner.declaredChannels) {
-      return null;
-    }
-    return owner.declaredChannels.get(name) || null;
-  }
-
   findDeclarationOwner(analysis, name) {
-    const skipDeclarationOwner = analysis && analysis.skipDeclarationOwner ? analysis.skipDeclarationOwner : null;
+    const skipDeclarationOwner = analysis.skipDeclarationOwner || null;
     let current = analysis;
     while (current) {
       if (current.declaredChannels && current.declaredChannels.has(name) && current !== skipDeclarationOwner) {
@@ -232,20 +229,13 @@ class CompileAnalysis {
     return this.getScopeOwner(analysis) === this.getRootScopeOwner(analysis);
   }
 
-  isDeclarationRootOwned(analysis, name) {
-    return this.findDeclarationOwner(analysis, name) === this.getRootScopeOwner(analysis);
-  }
-
   isParentOwnedDeclarationRootOwned(analysis, name) {
-    const parentDeclares = Array.isArray(analysis && analysis.declaresInParent)
-      ? analysis.declaresInParent
-      : [];
-    const hasParentOwnedDecl = parentDeclares.some((decl) => decl && decl.parentOwned && decl.name === name);
+    const hasParentOwnedDecl = analysis.declaresInParent.some((decl) => decl && decl.parentOwned && decl.name === name);
     if (!hasParentOwnedDecl) {
       return false;
     }
-    const parentOwner = analysis && analysis.parent ? this.getScopeOwner(analysis.parent) : null;
-    return !!parentOwner && parentOwner === this.getRootScopeOwner(analysis);
+    const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
+    return parentOwner && parentOwner === this.getRootScopeOwner(analysis);
   }
 
   _passesReadOnlyBoundary(currentScopeOwner, declarationOwner) {
@@ -272,23 +262,17 @@ class CompileAnalysis {
     this._collectNodes(rootNode, nodesList);
     for (let i = 0; i < nodesList.length; i++) {
       const analysis = nodesList[i]._analysis;
-      if (!analysis) {
-        continue;
-      }
       analysis.declaredChannels = null;
     }
 
     for (let i = 0; i < nodesList.length; i++) {
       const analysis = nodesList[i]._analysis;
-      if (!analysis) {
-        continue;
-      }
       const owner = this.getScopeOwner(analysis);
 
       // Most declarations are owned by the current scope owner. For example,
       // set/var statements and macro parameters become visible in the scope
       // introduced by the current node.
-      const localDeclares = Array.isArray(analysis.declares) ? analysis.declares : [];
+      const localDeclares = analysis.declares;
       for (let j = 0; j < localDeclares.length; j++) {
         const decl = localDeclares[j];
         if (!decl || !decl.name) {
@@ -306,7 +290,7 @@ class CompileAnalysis {
       // instead of the current one. Macros are the main case: the macro name
       // is visible where the macro is declared, even though the macro body
       // itself gets its own scope owner.
-      const parentDeclares = Array.isArray(analysis.declaresInParent) ? analysis.declaresInParent : [];
+      const parentDeclares = analysis.declaresInParent;
       if (parentDeclares.length > 0) {
         const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
         if (parentOwner) {
@@ -330,18 +314,15 @@ class CompileAnalysis {
       const rootAnalysis = rootNode._analysis;
       const sequenceLocks = new Set();
       for (let i = 0; i < nodesList.length; i++) {
-        const analysis = nodesList[i] && nodesList[i]._analysis ? nodesList[i]._analysis : null;
-        if (!analysis) {
-          continue;
-        }
-        const localUses = Array.isArray(analysis.uses) ? analysis.uses : [];
+        const analysis = nodesList[i]._analysis;
+        const localUses = analysis.uses;
         for (let j = 0; j < localUses.length; j++) {
           const name = localUses[j];
           if (name && name.charAt(0) === '!') {
             sequenceLocks.add(name);
           }
         }
-        const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
+        const localMutates = analysis.mutates;
         for (let j = 0; j < localMutates.length; j++) {
           const name = localMutates[j];
           if (name && name.charAt(0) === '!') {
@@ -354,11 +335,8 @@ class CompileAnalysis {
   }
 
   _registerDeclarations(analysis) {
-    if (!analysis) {
-      return;
-    }
     const registerDeclares = (declares, owner, declarationOrigin) => {
-      if (!Array.isArray(declares) || declares.length === 0 || !owner) {
+      if (declares.length === 0 || !owner) {
         return;
       }
       owner.declaredChannels = owner.declaredChannels || new Map();
@@ -413,7 +391,7 @@ class CompileAnalysis {
 
     registerDeclares(analysis.declares, this.getScopeOwner(analysis), analysis);
 
-    if (Array.isArray(analysis.declaresInParent) && analysis.declaresInParent.length > 0) {
+    if (analysis.declaresInParent.length > 0) {
       const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
       registerDeclares(analysis.declaresInParent, parentOwner, analysis);
     }
@@ -494,18 +472,15 @@ class CompileAnalysis {
   }
 
   _validateMutations(analysis) {
-    if (!analysis) {
-      return;
-    }
     const scopeOwner = this.getScopeOwner(analysis);
     const currentTextChannel = this.getCurrentTextChannel(analysis);
-    const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
+    const localMutates = analysis.mutates;
     for (let i = 0; i < localMutates.length; i++) {
       const name = localMutates[i];
       if (!name) {
         continue;
       }
-      if (name && name.charAt(0) === '!') {
+      if (name.charAt(0) === '!') {
         continue;
       }
       if (name === currentTextChannel) {
@@ -517,7 +492,7 @@ class CompileAnalysis {
         this._validateMissingDeclaration(analysis, name, 'mutation');
         continue;
       }
-      if (declaration.type === 'sequential_path' || (name && name.charAt(0) === '!')) {
+      if (declaration.type === 'sequential_path' || name.charAt(0) === '!') {
         continue;
       }
       if (declaration.shared) {
@@ -531,17 +506,14 @@ class CompileAnalysis {
   }
 
   _validateUses(analysis) {
-    if (!analysis) {
-      return;
-    }
     const currentTextChannel = this.getCurrentTextChannel(analysis);
-    const localUses = Array.isArray(analysis.uses) ? analysis.uses : [];
+    const localUses = analysis.uses;
     for (let i = 0; i < localUses.length; i++) {
       const name = localUses[i];
       if (!name) {
         continue;
       }
-      if (name && name.charAt(0) === '!') {
+      if (name.charAt(0) === '!') {
         continue;
       }
       if (name === currentTextChannel) {
@@ -633,9 +605,9 @@ class CompileAnalysis {
       };
     }
 
-    const analysis = node._analysis || {};
-    const localUses = Array.isArray(analysis.uses) ? analysis.uses : [];
-    const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
+    const analysis = node._analysis;
+    const localUses = analysis.uses;
+    const localMutates = analysis.mutates;
     const usedChannels = new Set();
     const mutatedChannels = new Set();
 
@@ -661,14 +633,12 @@ class CompileAnalysis {
 
     analysis.usedChannels = usedChannels.size > 0 ? usedChannels : null;
     analysis.mutatedChannels = mutatedChannels.size > 0 ? mutatedChannels : null;
-    const declaredHere = analysis.declaredChannels instanceof Map ? analysis.declaredChannels : null;
+    const declaredHere = analysis.declaredChannels;
     analysis.linkedChannels = this._deriveBoundaryLinkedChannels(analysis, usedChannels, declaredHere);
     analysis.linkedMutatedChannels = this._deriveBoundaryLinkedChannels(analysis, mutatedChannels, declaredHere);
     if (analysis.expressionControlFlowBoundary) {
-      analysis.createsLinkedChildBuffer = !!(
-        analysis.linkedMutatedChannels &&
-        analysis.linkedMutatedChannels.size > 0
-      );
+      analysis.createsLinkedChildBuffer = analysis.linkedMutatedChannels !== null &&
+        analysis.linkedMutatedChannels.size > 0;
       if (!analysis.createsLinkedChildBuffer) {
         analysis.linkedChannels = null;
         analysis.linkedMutatedChannels = null;
@@ -707,7 +677,7 @@ class CompileAnalysis {
   }
 
   _deriveBoundaryLinkedChannels(analysis, usedChannels, declaredChannels) {
-    if (!this._shouldDeriveBoundaryLinkedChannels(analysis)) {
+    if (!analysis.parent || !analysis.createsLinkedChildBuffer) {
       return null;
     }
     const linkedChannels = new Set();
@@ -722,14 +692,6 @@ class CompileAnalysis {
       });
     }
     return linkedChannels.size > 0 ? linkedChannels : null;
-  }
-
-  _shouldDeriveBoundaryLinkedChannels(analysis) {
-    return !!(
-      analysis &&
-      analysis.parent &&
-      analysis.createsLinkedChildBuffer
-    );
   }
 
   getCurrentTextChannel(analysis) {
