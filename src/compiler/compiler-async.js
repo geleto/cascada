@@ -320,7 +320,7 @@ class CompilerAsync extends CompilerBaseAsync {
       });
     }
     const declares = [];
-    const declaredNames = analysisPass._extractSymbols(node.name);
+    const declaredNames = analysisPass.extractSymbols(node.name);
     declaredNames.forEach((name) => {
       declares.push({ name, type: 'var', initializer: null });
     });

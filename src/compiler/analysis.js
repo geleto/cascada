@@ -169,7 +169,7 @@ class CompileAnalysis {
     }
   }
 
-  _extractSymbols(targetNode) {
+  extractSymbols(targetNode) {
     if (!targetNode) {
       return [];
     }
@@ -179,7 +179,7 @@ class CompileAnalysis {
     if (targetNode instanceof nodes.NodeList || targetNode instanceof nodes.Array) {
       const names = [];
       (targetNode.children || []).forEach((child) => {
-        this._extractSymbols(child).forEach((name) => names.push(name));
+        this.extractSymbols(child).forEach((name) => names.push(name));
       });
       return names;
     }
@@ -209,7 +209,7 @@ class CompileAnalysis {
     return null;
   }
 
-  getScopeOwner(analysis) {
+  _getScopeOwner(analysis) {
     let current = analysis;
     while (current && !current.createScope) {
       current = current.parent;
@@ -217,16 +217,16 @@ class CompileAnalysis {
     return current || analysis;
   }
 
-  getRootScopeOwner(analysis) {
+  _getRootScopeOwner(analysis) {
     let current = analysis;
     while (current && current.parent) {
       current = current.parent;
     }
-    return this.getScopeOwner(current || analysis);
+    return this._getScopeOwner(current || analysis);
   }
 
   isRootScopeOwner(analysis) {
-    return this.getScopeOwner(analysis) === this.getRootScopeOwner(analysis);
+    return this._getScopeOwner(analysis) === this._getRootScopeOwner(analysis);
   }
 
   isParentOwnedDeclarationRootOwned(analysis, name) {
@@ -234,8 +234,8 @@ class CompileAnalysis {
     if (!hasParentOwnedDecl) {
       return false;
     }
-    const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
-    return parentOwner && parentOwner === this.getRootScopeOwner(analysis);
+    const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
+    return parentOwner && parentOwner === this._getRootScopeOwner(analysis);
   }
 
   _passesReadOnlyBoundary(currentScopeOwner, declarationOwner) {
@@ -244,7 +244,7 @@ class CompileAnalysis {
       if (current.parentReadOnly) {
         return true;
       }
-      current = current.parent ? this.getScopeOwner(current.parent) : null;
+      current = current.parent ? this._getScopeOwner(current.parent) : null;
     }
     return false;
   }
@@ -267,7 +267,7 @@ class CompileAnalysis {
 
     for (let i = 0; i < nodesList.length; i++) {
       const analysis = nodesList[i]._analysis;
-      const owner = this.getScopeOwner(analysis);
+      const owner = this._getScopeOwner(analysis);
 
       // Most declarations are owned by the current scope owner. For example,
       // set/var statements and macro parameters become visible in the scope
@@ -292,7 +292,7 @@ class CompileAnalysis {
       // itself gets its own scope owner.
       const parentDeclares = analysis.declaresInParent;
       if (parentDeclares.length > 0) {
-        const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
+        const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
         if (parentOwner) {
           for (let j = 0; j < parentDeclares.length; j++) {
             const decl = parentDeclares[j];
@@ -389,10 +389,10 @@ class CompileAnalysis {
       }
     };
 
-    registerDeclares(analysis.declares, this.getScopeOwner(analysis), analysis);
+    registerDeclares(analysis.declares, this._getScopeOwner(analysis), analysis);
 
     if (analysis.declaresInParent.length > 0) {
-      const parentOwner = analysis.parent ? this.getScopeOwner(analysis.parent) : null;
+      const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
       registerDeclares(analysis.declaresInParent, parentOwner, analysis);
     }
   }
@@ -472,7 +472,7 @@ class CompileAnalysis {
   }
 
   _validateMutations(analysis) {
-    const scopeOwner = this.getScopeOwner(analysis);
+    const scopeOwner = this._getScopeOwner(analysis);
     const currentTextChannel = this.getCurrentTextChannel(analysis);
     const localMutates = analysis.mutates;
     for (let i = 0; i < localMutates.length; i++) {
