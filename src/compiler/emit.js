@@ -184,20 +184,9 @@ class CompileEmit {
         : (this.compiler.buffer.currentBuffer || null);
       if (parentBufferId && analysisNode && analysisNode._analysis) {
         declaredChannels = this.getDeclaredChannels(analysisNode);
-        linkedChannels = this.getLinkedChannels(analysisNode);
-        if (!analysisNode._analysis.createsLinkedChildBuffer) {
-          // ANALYSIS-CHANNELS-REFACTOR: managed callable/body buffers are not
-          // boundary nodes, so they do not own boundary linkedChannels yet.
-          // Keep the old body-scope link derivation here until callable body
-          // metadata supplies final link sets directly in Stage 7.
-          const used = Array.from(analysisNode._analysis.usedChannels || []);
-          const declared = new Set(declaredChannels);
-          linkedChannels = used.filter((name) => (
-            name &&
-            name !== this.compiler.buffer.currentTextChannelName &&
-            !declared.has(name)
-          ));
-        }
+        linkedChannels = analysisNode._analysis.createsLinkedChildBuffer
+          ? this.getLinkedChannels(analysisNode)
+          : null;
       }
       bufferId = this.compiler._tmpid();
       this.compiler.buffer.withBufferState({

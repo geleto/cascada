@@ -449,12 +449,20 @@ Goal:
 
 Work:
 
-- replace the fallback in `src/compiler/emit.js#managedBlock(...)` with
-  explicit analysis metadata for macro/import/render/body scope-root buffers,
-  or split the true scope-root semantics into separate named helpers
-- evaluate whether `validateLaneNames(...)` / `combineLaneNames(...)` should
-  remain as runtime validation for the two-array API or be replaced by one
-  compiler-owned lane payload plus runtime assertions
+- `src/compiler/emit.js#managedBlock(...)` no longer derives links from broad
+  `usedChannels`. Ordinary boundary nodes still use analysis-owned
+  `linkedChannels`; non-boundary managed buffers do not link parent channels
+  implicitly.
+- macro managed buffers declare their own parameter/return/caller/text lanes
+  and do not require parent-buffer links.
+- callback-style sync `asyncAll` loop bodies also use `managedBlock(...)`, but
+  sync compilation does not run the async channel-analysis pass. That path keeps
+  its existing sync/callback behavior and is not modeled as async analysis
+  metadata.
+- render boundaries remain isolated render-buffer semantics.
+- `validateLaneNames(...)` / `combineLaneNames(...)` remain runtime API
+  validation for the existing two-array `createCommandBuffer(...)` contract.
+  They are no longer compensating for compiler-side link derivation.
 
 Validation:
 
@@ -562,16 +570,7 @@ ANALYSIS-CHANNELS-REFACTOR
 
 Current examples to audit:
 
-- `src/compiler/emit.js#managedBlock(...)`: non-inheritance scope-root buffers
-  still fall back to deriving links from `usedChannels` when they are not
-  represented by boundary `linkedChannels`; Stage 7 should replace this with
-  explicit analysis metadata for those managed-buffer families or split true
-  scope-root semantics into separate helpers.
-- `src/runtime/command-buffer.js#validateLaneNames(...)` and
-  `src/runtime/command-buffer.js#combineLaneNames(...)`: runtime now validates
-  linked/declared lane metadata instead of silently deduping it. The remaining
-  question is whether linked/declared should arrive as one compiler-owned lane
-  payload rather than two arrays; evaluate in Stage 7.
+- none in source as of Stage 7.
 
 When implementing this refactor, grep for the marker first, then continue with
 the broader audit checklist above. New code should not add more marker comments
