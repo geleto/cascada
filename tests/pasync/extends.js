@@ -630,7 +630,6 @@ describe('Extends Runtime', function () {
           },
           signature: { argNames: [], withContext: false },
           ownerKey: 'Main.script',
-          ownUsedChannels: [],
           ownMutatedChannels: ['trace'],
           ownLinkedChannels: ['trace'],
           super: null
@@ -677,7 +676,6 @@ describe('Extends Runtime', function () {
         },
         signature: { argNames: [], withContext: false },
         ownerKey: 'Main.script',
-        ownUsedChannels: ['theme'],
         ownMutatedChannels: ['trace'],
         ownLinkedChannels: ['theme', 'trace'],
         super: null
@@ -708,7 +706,6 @@ describe('Extends Runtime', function () {
       expect(methodMeta).to.be.ok();
       expect(methodMeta.fn).to.be(inheritanceState.methods.build.fn);
       expect(methodMeta.signature).to.eql({ argNames: [], withContext: false });
-      expect(methodMeta.mergedUsedChannels).to.contain('theme');
       expect(methodMeta.mergedMutatedChannels).to.contain('trace');
       expect(methodMeta.mergedLinkedChannels).to.contain('theme');
       expect(methodMeta.mergedLinkedChannels).to.contain('trace');
@@ -741,9 +738,6 @@ describe('Extends Runtime', function () {
           },
           signature: { argNames: [], withContext: false },
           ownerKey: 'Parent.script',
-          ownUsedChannels: [],
-          ownMutatedChannels: [],
-          mergedUsedChannels: [],
           mergedMutatedChannels: [],
           mergedLinkedChannels: [],
           super: null

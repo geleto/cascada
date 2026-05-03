@@ -194,23 +194,33 @@ function _buildResolvedMethodDataBase(entry, methodName = null, errorContext = n
     );
   }
 
-  const ownUsedChannels = _mergeChannelNames(entry.ownUsedChannels);
-  const ownMutatedChannels = _mergeChannelNames(entry.ownMutatedChannels);
   if (!Array.isArray(entry.ownLinkedChannels)) {
     throw new RuntimeFatalError(
-      `Inherited method '${_getMethodIdentity(entry, methodName)}' metadata is missing ownLinkedChannels; recompile the template`,
+      `Inherited method '${_getMethodIdentity(entry, methodName)}' metadata is missing ownLinkedChannels`,
       errorContext?.lineno ?? 0,
       errorContext?.colno ?? 0,
       errorContext?.errorContextString ?? null,
       errorContext?.path ?? null
     );
   }
+  if (!Array.isArray(entry.ownMutatedChannels)) {
+    throw new RuntimeFatalError(
+      `Inherited method '${_getMethodIdentity(entry, methodName)}' metadata is missing ownMutatedChannels`,
+      errorContext?.lineno ?? 0,
+      errorContext?.colno ?? 0,
+      errorContext?.errorContextString ?? null,
+      errorContext?.path ?? null
+    );
+  }
+  // Mutated channels are not used for admission today. They are kept as a
+  // transitive footprint for a finer read/write scheduler where read-only calls
+  // on a channel do not block later reads of that channel.
+  const ownMutatedChannels = _mergeChannelNames(entry.ownMutatedChannels);
   const ownLinkedChannels = _mergeChannelNames(entry.ownLinkedChannels);
   const resolvedData = {
     fn: entry.fn,
     ownerKey: entry.ownerKey ?? null,
     signature: _normalizeMethodSignature(entry.signature, null),
-    mergedUsedChannels: ownUsedChannels,
     mergedMutatedChannels: ownMutatedChannels,
     mergedLinkedChannels: ownLinkedChannels,
     super: null,
@@ -223,10 +233,6 @@ function _finalizeResolvedMethodData(resolvedData, entry, superData = null, invo
   resolvedData.signature = _normalizeMethodSignature(entry.signature, superData?.signature ?? null);
   resolvedData.super = superData ?? null;
   resolvedData.invokedMethods = invokedMethods ?? Object.create(null);
-  resolvedData.mergedUsedChannels = _mergeChannelNames(
-    resolvedData.mergedUsedChannels,
-    superData?.mergedUsedChannels
-  );
   resolvedData.mergedMutatedChannels = _mergeChannelNames(
     resolvedData.mergedMutatedChannels,
     superData?.mergedMutatedChannels
@@ -243,7 +249,6 @@ function _isResolvedMethodData(value) {
     value &&
     typeof value === 'object' &&
     typeof value.fn === 'function' &&
-    Array.isArray(value.mergedUsedChannels) &&
     Array.isArray(value.mergedMutatedChannels) &&
     Array.isArray(value.mergedLinkedChannels)
   );
@@ -459,7 +464,6 @@ function _pruneExecutionMethodData(methodData, seen) {
   }
   seen.add(methodData);
   _pruneExecutionMethodData(methodData.super, seen);
-  delete methodData.ownUsedChannels;
   delete methodData.ownMutatedChannels;
   delete methodData.ownLinkedChannels;
   delete methodData.invokedMethods;
@@ -562,11 +566,9 @@ function _finalizeChannelFootprints(state, errorContext = null) {
       // Invalid resolved metadata shapes remain fail-fast invariants. Super-chain
       // channel growth stays folded into this same fixed-point walk so we do not
       // reintroduce a second parent-to-child merge phase.
-      const nextUsedChannels = _mergeChannelNames(
-        methodData.mergedUsedChannels,
-        methodData.super?.mergedUsedChannels,
-        ...invokedMethods.map((entry) => entry.mergedUsedChannels)
-      );
+      // `mergedMutatedChannels` intentionally follows the same hierarchy and
+      // invoked-method closure as links, but remains separate for future
+      // read/write scheduling.
       const nextMutatedChannels = _mergeChannelNames(
         methodData.mergedMutatedChannels,
         methodData.super?.mergedMutatedChannels,
@@ -577,10 +579,6 @@ function _finalizeChannelFootprints(state, errorContext = null) {
         methodData.super?.mergedLinkedChannels,
         ...invokedMethods.map((entry) => entry.mergedLinkedChannels)
       );
-      if (!_channelArraysEqual(methodData.mergedUsedChannels, nextUsedChannels)) {
-        methodData.mergedUsedChannels = nextUsedChannels;
-        changed = true;
-      }
       if (!_channelArraysEqual(methodData.mergedMutatedChannels, nextMutatedChannels)) {
         methodData.mergedMutatedChannels = nextMutatedChannels;
         changed = true;
@@ -630,11 +628,27 @@ function finalizeResolvedMethodMetadata(state, errorContext = null, errors = nul
 }
 
 function _assertResolvedMethodData(methodData) {
+  // Give partially migrated metadata specific errors; the generic check below
+  // still covers null, missing fn, and entries with both channel arrays absent.
   if (
     methodData &&
     typeof methodData === 'object' &&
     typeof methodData.fn === 'function' &&
-    Array.isArray(methodData.mergedUsedChannels) &&
+    !Array.isArray(methodData.mergedMutatedChannels) &&
+    Array.isArray(methodData.mergedLinkedChannels)
+  ) {
+    throw new RuntimeFatalError(
+      `Inherited method '${_getMethodIdentity(methodData)}' resolved metadata is missing mergedMutatedChannels`,
+      0,
+      0,
+      null,
+      null
+    );
+  }
+  if (
+    methodData &&
+    typeof methodData === 'object' &&
+    typeof methodData.fn === 'function' &&
     Array.isArray(methodData.mergedMutatedChannels) &&
     !Array.isArray(methodData.mergedLinkedChannels)
   ) {

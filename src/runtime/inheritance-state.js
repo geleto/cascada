@@ -320,17 +320,17 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
     return clones.get(entry);
   }
 
-  const clonedEntry = Object.assign({}, entry);
+  const clonedEntry = {
+    fn: entry.fn,
+    ownerKey: entry.ownerKey ?? null
+  };
   clones.set(entry, clonedEntry);
-  clonedEntry.ownUsedChannels = Array.isArray(entry.ownUsedChannels)
-    ? entry.ownUsedChannels.slice()
-    : [];
-  clonedEntry.ownMutatedChannels = Array.isArray(entry.ownMutatedChannels)
-    ? entry.ownMutatedChannels.slice()
-    : [];
-  clonedEntry.ownLinkedChannels = Array.isArray(entry.ownLinkedChannels)
-    ? entry.ownLinkedChannels.slice()
-    : [];
+  if (Array.isArray(entry.ownMutatedChannels)) {
+    clonedEntry.ownMutatedChannels = entry.ownMutatedChannels.slice();
+  }
+  if (Array.isArray(entry.ownLinkedChannels)) {
+    clonedEntry.ownLinkedChannels = entry.ownLinkedChannels.slice();
+  }
   clonedEntry.invokedMethods = cloneInvokedMethodsMap(entry.invokedMethods);
   clonedEntry.superOrigin = entry.superOrigin ? Object.assign({}, entry.superOrigin) : null;
   clonedEntry.signature = entry.signature
@@ -342,7 +342,6 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
     }
     : { argNames: [], withContext: false };
   clonedEntry.super = cloneInheritanceMethodEntry(entry.super, clones);
-  delete clonedEntry._resolvedMethodData;
   return clonedEntry;
 }
 
@@ -385,7 +384,6 @@ function createEmptyConstructorEntry(context = null) {
     fn() {
       return null;
     },
-    ownUsedChannels: [],
     ownMutatedChannels: [],
     ownLinkedChannels: [],
     invokedMethods: Object.create(null),

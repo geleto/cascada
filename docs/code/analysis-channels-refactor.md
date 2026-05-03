@@ -422,11 +422,18 @@ Work:
   explicit shared/inheritance channels. It skips only when the current buffer
   already addresses the same channel object and fails if a different local
   channel is present.
-- inherited method footprint filtering moved from compile-time
-  `collectMethodChannelNames(...)` into analysis-owned
-  `methodChannelFootprint` facts on inherited method/block nodes.
-- resolved method metadata now requires `mergedLinkedChannels`; the fallback
-  from used/mutated footprints was removed.
+- inherited method link/mutation filtering moved from compile-time
+  `collectMethodChannelNames(...)` into analysis-owned `methodLinkedChannels`
+  and `methodMutatedChannels` facts on inherited method/block nodes.
+- compiler-emitted and runtime-resolved method metadata no longer carries
+  `used` payloads: `ownLinkedChannels` / `mergedLinkedChannels` drive
+  invocation admission, while `ownMutatedChannels` / `mergedMutatedChannels`
+  remain as the transitive mutation footprint for inherited/component callable
+  composition. The mutation footprint is reserved for finer read/write
+  scheduling where a call that only reads a channel does not block subsequent
+  reads of that channel. Both linked and mutated callable metadata are required
+  on raw and resolved inherited method entries so stale compiled metadata cannot
+  silently lose the mutation footprint.
 - script inheritance startup was classified as a true runtime semantic:
   parent shared schemas can arrive dynamically, so the startup boundary links
   the runtime chain-level schema rather than a local analysis set.
@@ -469,6 +476,24 @@ Validation:
 - macro caller, import/from-import, loop, and render-boundary compile-source
   tests continue to prove that unrelated locals are not linked
 - full quick suite
+
+Implementation notes:
+
+- Stage 7 spans the managed-buffer cleanup and the callable metadata cleanup.
+  `managedBlock(...)` no longer has a compatibility path that reconstructs
+  links from broad `usedChannels`; ordinary async child buffers must use
+  analysis-owned link metadata, and non-boundary managed buffers do not link
+  parent channels implicitly.
+- inherited/component callable metadata no longer emits or resolves
+  `ownUsedChannels` / `mergedUsedChannels`. Invocation admission uses
+  `ownLinkedChannels` / `mergedLinkedChannels` only.
+- `ownMutatedChannels` / `mergedMutatedChannels` remain required metadata,
+  but are not used for admission yet. They preserve the hierarchy-wide mutation
+  footprint for a future read/write scheduler where read-only calls do not block
+  later reads of the same channel.
+- raw and resolved method metadata now fail fast when required linked or mutated
+  channel arrays are missing instead of silently defaulting malformed entries to
+  empty footprints.
 
 ## Validation
 

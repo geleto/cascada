@@ -1120,7 +1120,6 @@ describe('Extends Foundation', function () {
         },
         signature: { argNames: [], withContext: false },
         ownerKey: 'Main.script',
-        ownUsedChannels: ['log'],
         ownMutatedChannels: ['log'],
         ownLinkedChannels: ['log'],
         super: null,
@@ -1222,7 +1221,6 @@ describe('Extends Foundation', function () {
       expect(script.inheritanceSpec.methods).to.be.ok();
       expect(script.inheritanceSpec.methods.build).to.be.ok();
       expect(typeof script.inheritanceSpec.methods.build.fn).to.be('function');
-      expect(script.inheritanceSpec.methods.build.ownUsedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.build.ownMutatedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.build.ownLinkedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.build.super).to.be(false);
@@ -1239,8 +1237,6 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(script.inheritanceSpec.methods.build.ownUsedChannels).to.contain('theme');
-      expect(script.inheritanceSpec.methods.build.ownUsedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.build.ownMutatedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.build.ownMutatedChannels).not.to.contain('theme');
       expect(script.inheritanceSpec.methods.build.ownLinkedChannels).to.contain('theme');
@@ -1254,10 +1250,8 @@ describe('Extends Foundation', function () {
       expect(script.inheritanceSpec.methods).to.be.ok();
       expect(script.inheritanceSpec.methods.__constructor__).to.be.ok();
       expect(typeof script.inheritanceSpec.methods.__constructor__.fn).to.be('function');
-      expect(script.inheritanceSpec.methods.__constructor__.ownUsedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.__constructor__.ownMutatedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methods.__constructor__.ownLinkedChannels).to.be.an(Array);
-      expect(script.inheritanceSpec.methods.__constructor__.ownUsedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.__constructor__.ownMutatedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.__constructor__.ownLinkedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methods.__constructor__.super).to.be(false);
@@ -1457,15 +1451,12 @@ describe('Extends Foundation', function () {
       expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
 
       const buildData = inheritanceCallModule.getMethodData(inheritanceState, 'build');
-      expect(buildData.mergedUsedChannels).to.be.an(Array);
       expect(buildData.mergedMutatedChannels).to.be.an(Array);
       expect(buildData.mergedLinkedChannels).to.be.an(Array);
       expect(buildData.invokedMethods).to.be(undefined);
-      expect(buildData.ownUsedChannels).to.be(undefined);
       expect(buildData.ownMutatedChannels).to.be(undefined);
       expect(buildData.ownLinkedChannels).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').invokedMethods).to.be(undefined);
-      expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownUsedChannels).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownMutatedChannels).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownLinkedChannels).to.be(undefined);
     });
@@ -1519,10 +1510,8 @@ describe('Extends Foundation', function () {
       expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
       expect(alphaData.invokedMethods).to.be(undefined);
       expect(betaData.invokedMethods).to.be(undefined);
-      expect(alphaData.ownUsedChannels).to.be(undefined);
       expect(alphaData.ownMutatedChannels).to.be(undefined);
       expect(alphaData.ownLinkedChannels).to.be(undefined);
-      expect(betaData.ownUsedChannels).to.be(undefined);
       expect(betaData.ownMutatedChannels).to.be(undefined);
       expect(betaData.ownLinkedChannels).to.be(undefined);
       expect(alphaData.mergedMutatedChannels).to.contain('alphaTrace');
@@ -1555,9 +1544,10 @@ describe('Extends Foundation', function () {
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'invoked-footprint.script' });
 
       const outerData = inheritanceCallModule.getMethodData(inheritanceState, 'outer');
-      expect(outerData.mergedUsedChannels).to.contain('theme');
       expect(outerData.mergedMutatedChannels).to.contain('theme');
       expect(outerData.mergedMutatedChannels).to.contain('trace');
+      expect(outerData.mergedLinkedChannels).to.contain('theme');
+      expect(outerData.mergedLinkedChannels).to.contain('trace');
     });
 
     it('should include invoked method footprints from inherited super methods', function () {
@@ -1597,7 +1587,9 @@ describe('Extends Foundation', function () {
       expect(buildData.ownerKey).to.be('C.script');
       expect(buildData.super.ownerKey).to.be('A.script');
       expect(buildData.mergedMutatedChannels).to.contain('trace');
+      expect(buildData.mergedLinkedChannels).to.contain('trace');
       expect(buildData.super.mergedMutatedChannels).to.contain('trace');
+      expect(buildData.super.mergedLinkedChannels).to.contain('trace');
     });
 
     it('should aggregate structural metadata errors discovered during finalization', function () {
@@ -1679,7 +1671,6 @@ describe('Extends Foundation', function () {
         },
         ownerKey: 'invalid-invoked-footprint.script',
         signature: { argNames: [], withContext: false },
-        mergedUsedChannels: [],
         mergedMutatedChannels: [],
         mergedLinkedChannels: [],
         super: null,
@@ -1704,18 +1695,36 @@ describe('Extends Foundation', function () {
         fn() {
           return null;
         },
-        ownerKey: 'legacy-metadata.script',
-        signature: { argNames: [], withContext: false },
-        ownUsedChannels: ['theme'],
-        ownMutatedChannels: []
+        ownerKey: 'malformed-metadata.script',
+        signature: { argNames: [], withContext: false }
       };
 
       expect(() => {
-        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'legacy-metadata.script' });
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'malformed-metadata.script' });
       }).to.throwException((error) => {
         expect(error.name).to.be('RuntimeFatalError');
-        expect(String(error)).to.contain('build in legacy-metadata.script');
+        expect(String(error)).to.contain('build in malformed-metadata.script');
         expect(String(error)).to.contain('missing ownLinkedChannels');
+      });
+    });
+
+    it('should reject inherited method entries missing own mutated-channel metadata', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      inheritanceState.methods.build = {
+        fn() {
+          return null;
+        },
+        ownerKey: 'malformed-mutated-metadata.script',
+        signature: { argNames: [], withContext: false },
+        ownLinkedChannels: []
+      };
+
+      expect(() => {
+        runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'malformed-mutated-metadata.script' });
+      }).to.throwException((error) => {
+        expect(error.name).to.be('RuntimeFatalError');
+        expect(String(error)).to.contain('build in malformed-mutated-metadata.script');
+        expect(String(error)).to.contain('missing ownMutatedChannels');
       });
     });
 
@@ -1954,8 +1963,8 @@ describe('Extends Foundation', function () {
           },
           signature: { argNames: [], withContext: false },
           ownerKey: 'Main.script',
-          ownUsedChannels: [],
           ownMutatedChannels: [],
+          ownLinkedChannels: [],
           super: false,
           invokedMethods: {}
         }
@@ -2001,8 +2010,8 @@ describe('Extends Foundation', function () {
           },
           signature: { argNames: [], withContext: false },
           ownerKey: 'Main.script',
-          ownUsedChannels: [],
           ownMutatedChannels: [],
+          ownLinkedChannels: [],
           super: false,
           invokedMethods: {}
         }
@@ -2042,8 +2051,8 @@ describe('Extends Foundation', function () {
           },
           signature: { argNames: [], withContext: false },
           ownerKey: 'Main.script',
-          ownUsedChannels: [],
           ownMutatedChannels: [],
+          ownLinkedChannels: [],
           super: false,
           invokedMethods: { helper: 'helper' }
         },
@@ -2053,8 +2062,8 @@ describe('Extends Foundation', function () {
           },
           signature: { argNames: [], withContext: false },
           ownerKey: 'Main.script',
-          ownUsedChannels: [],
           ownMutatedChannels: [],
+          ownLinkedChannels: [],
           super: false,
           invokedMethods: {}
         }
@@ -2341,7 +2350,7 @@ describe('Extends Foundation', function () {
       expect(resolvedAgain).to.be(resolvedBuild);
       expect(state.methods.build).to.be(resolvedBuild);
       expect(state.methods.build._resolvedMethodData).to.be(undefined);
-      expect(resolvedBuild.mergedMutatedChannels).to.contain('trace');
+      expect(resolvedBuild.mergedLinkedChannels).to.contain('trace');
       expect(Object.keys(resolvedBuild)).not.to.contain('sharedLookupChannels');
     });
 
@@ -2410,9 +2419,6 @@ describe('Extends Foundation', function () {
             return 'ok';
           },
           signature: { argNames: [], withContext: false },
-          ownUsedChannels: [],
-          ownMutatedChannels: [],
-          mergedUsedChannels: [],
           mergedMutatedChannels: [],
           mergedLinkedChannels: [],
           super: null,
@@ -2467,9 +2473,6 @@ describe('Extends Foundation', function () {
         },
         ownerKey: 'Helper.script',
         signature: { argNames: [], withContext: false },
-        ownUsedChannels: [],
-        ownMutatedChannels: [],
-        mergedUsedChannels: ['helperRead'],
         mergedMutatedChannels: ['helperWrite'],
         mergedLinkedChannels: ['helperRead', 'helperWrite'],
         super: null,
@@ -2481,9 +2484,6 @@ describe('Extends Foundation', function () {
         },
         ownerKey: 'Main.script',
         signature: { argNames: [], withContext: false },
-        ownUsedChannels: ['localRead'],
-        ownMutatedChannels: ['localWrite'],
-        mergedUsedChannels: ['localRead', 'superRead', 'helperRead'],
         mergedMutatedChannels: ['localWrite', 'superWrite', 'helperWrite'],
         mergedLinkedChannels: [
           'localRead',
@@ -2499,9 +2499,6 @@ describe('Extends Foundation', function () {
           },
           ownerKey: 'Parent.script',
           signature: { argNames: [], withContext: false },
-          ownUsedChannels: [],
-          ownMutatedChannels: [],
-          mergedUsedChannels: ['superRead'],
           mergedMutatedChannels: ['superWrite'],
           mergedLinkedChannels: ['superRead', 'superWrite'],
           super: null,
@@ -2538,7 +2535,6 @@ describe('Extends Foundation', function () {
         },
         ownerKey: 'Main.script',
         signature: { argNames: [], withContext: false },
-        mergedUsedChannels: ['localRead'],
         mergedMutatedChannels: ['localWrite'],
         mergedLinkedChannels: ['localRead', 'localWrite'],
         super: null
@@ -2560,13 +2556,33 @@ describe('Extends Foundation', function () {
         },
         ownerKey: 'legacy-resolved.script',
         signature: { argNames: [], withContext: false },
-        mergedUsedChannels: ['localRead'],
         mergedMutatedChannels: ['localWrite'],
         super: null
       })).to.throwException((error) => {
         expect(error.name).to.be('RuntimeFatalError');
         expect(String(error)).to.contain('legacy-resolved.script');
         expect(String(error)).to.contain('missing mergedLinkedChannels');
+      });
+    });
+
+    it('should reject resolved callable-body metadata without merged mutated channels', function () {
+      if (!inheritanceCallModule) {
+        this.skip();
+        return;
+      }
+
+      expect(() => inheritanceCallModule.getCallableBodyLinkedChannels({
+        fn() {
+          return null;
+        },
+        ownerKey: 'malformed-mutated-resolved.script',
+        signature: { argNames: [], withContext: false },
+        mergedLinkedChannels: ['localRead'],
+        super: null
+      })).to.throwException((error) => {
+        expect(error.name).to.be('RuntimeFatalError');
+        expect(String(error)).to.contain('malformed-mutated-resolved.script');
+        expect(String(error)).to.contain('missing mergedMutatedChannels');
       });
     });
 
@@ -2583,9 +2599,6 @@ describe('Extends Foundation', function () {
           },
           ownerKey: 'Main.script',
           signature: { argNames: [], withContext: false },
-          ownUsedChannels: ['localRead'],
-          ownMutatedChannels: [],
-          mergedUsedChannels: [],
           mergedMutatedChannels: [],
           mergedLinkedChannels: [],
           super: {

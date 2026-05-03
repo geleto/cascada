@@ -1262,8 +1262,8 @@ describe('Phase 8 - Component Lifecycle', function () {
         },
         signature: { argNames: [], withContext: false },
         ownerKey: 'Component.script',
-        ownUsedChannels: [],
         ownMutatedChannels: [],
+        ownLinkedChannels: [],
         super: false,
         invokedMethods: {}
       }

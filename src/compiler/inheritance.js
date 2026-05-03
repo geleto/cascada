@@ -883,7 +883,6 @@ class CompileInheritance {
       return this.compileMethodMetadataEntry({
         methodName,
         fnExpr: `b_${methodName}`,
-        analysis: block.body && block.body._analysis,
         ownerNode: block,
         superExpr: this.blockUsesSuper(block) ? 'true' : 'false',
         superOriginExpr: this.compileCallableSuperOriginLiteral(block),
@@ -900,7 +899,6 @@ class CompileInheritance {
       methodEntries.push(this.compileMethodMetadataEntry({
         methodName: '__constructor__',
         fnExpr: 'b___constructor__',
-        analysis: constructorDefinition.body && constructorDefinition.body._analysis,
         ownerNode: constructorDefinition,
         superExpr: this.blockUsesSuper(constructorDefinition) ? 'true' : 'false',
         superOriginExpr: this.compileCallableSuperOriginLiteral(constructorDefinition),
@@ -914,22 +912,17 @@ class CompileInheritance {
   }
 
   compileMethodMetadataEntry({ methodName, fnExpr, ownerNode, superExpr, superOriginExpr, invokedMethodsExpr, signatureExpr, ownerKey }) {
-    const methodChannelFootprint = ownerNode && ownerNode._analysis
-      ? ownerNode._analysis.methodChannelFootprint
-      : null;
-    const ownUsedChannelNames = this.getMethodFootprintChannels(methodChannelFootprint, 'used');
-    const ownMutatedChannelNames = this.getMethodFootprintChannels(methodChannelFootprint, 'mutated');
-    const ownLinkedChannelNames = this.getMethodFootprintChannels(methodChannelFootprint, 'linked');
-    const ownUsedChannels = JSON.stringify(ownUsedChannelNames);
-    const ownMutatedChannels = JSON.stringify(ownMutatedChannelNames);
+    const getMethodChannelFootprint = (fieldName) => {
+      const channels = ownerNode?._analysis?.[fieldName];
+      return Array.isArray(channels) ? channels : [];
+    };
+    const ownLinkedChannelNames = getMethodChannelFootprint('methodLinkedChannels');
+    // Keep mutations separate from links so inherited/component calls can
+    // later distinguish read-only participation from write barriers.
+    const ownMutatedChannelNames = getMethodChannelFootprint('methodMutatedChannels');
     const ownLinkedChannels = JSON.stringify(ownLinkedChannelNames);
-    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownUsedChannels: ${ownUsedChannels}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
-  }
-
-  // fieldName is one of: used, mutated, linked.
-  getMethodFootprintChannels(methodChannelFootprint, fieldName) {
-    const value = methodChannelFootprint && methodChannelFootprint[fieldName];
-    return Array.isArray(value) ? value : [];
+    const ownMutatedChannels = JSON.stringify(ownMutatedChannelNames);
+    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
   }
 
   collectDirectInvokedMethodRefsForCallable(callableNode) {
@@ -1048,23 +1041,20 @@ class CompileInheritance {
 
   createMethodChannelFootprint(ownerNode) {
     const bodyAnalysis = ownerNode && ownerNode.body && ownerNode.body._analysis;
-    const methodUsedChannels = this.collectMethodFootprintChannelNames(bodyAnalysis, ownerNode);
-    const methodMutatedChannels = this.collectMethodFootprintChannelNames(
-      bodyAnalysis,
-      ownerNode,
-      'mutatedChannels'
-    );
+    // Callable links come from the callable's parent-visible used footprint.
+    // Mutation metadata stays separate for future read/write scheduling.
+    const methodLinkedChannels = this.collectMethodChannelNames(bodyAnalysis, ownerNode, 'usedChannels');
+    const methodMutatedChannels = this.collectMethodChannelNames(bodyAnalysis, ownerNode, 'mutatedChannels');
     return {
-      methodChannelFootprint: {
-        used: methodUsedChannels,
-        mutated: methodMutatedChannels,
-        linked: methodUsedChannels
-      }
+      methodLinkedChannels,
+      methodMutatedChannels
     };
   }
 
-  // fieldName is one of: usedChannels, mutatedChannels.
-  collectMethodFootprintChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
+  collectMethodChannelNames(analysis, ownerNode, fieldName = 'usedChannels') {
+    if (fieldName !== 'usedChannels' && fieldName !== 'mutatedChannels') {
+      throw new Error(`Unsupported method channel footprint field '${fieldName}'`);
+    }
     if (!analysis) {
       return [];
     }
