@@ -5,8 +5,8 @@
  *
  * CORE CONCEPT:
  * Instead of recursively scanning every object for Promises, we use a specific "Marker System".
- * This module exports the `createObject`/`createArray` factories which `setPath` uses to mark
- * objects during updates. While `setPath` handles the structural modification, this module
+ * This module exports the `createObject`/`createArray` factories which `deepAssign` uses to mark
+ * objects during updates. While `deepAssign` handles the structural modification, this module
  * handles the **Resolution**: ensuring that when an object is finally accessed, all its
  * properties and children are resolved and the object is finalized in-place.
  *
@@ -19,7 +19,7 @@
  * 2. **Deferral**:
  *    - The object remains a normal synchronous object.
  *    - The promises inside are NOT awaited immediately.
- *    - This allows building complex trees (e.g. via `setPath`) without blocking.
+ *    - This allows building complex trees (e.g. via `deepAssign`) without blocking.
  *
  * 3. **Resolution (`resolveAll` / `resolveSingle`)**:
  *    - When the object is finally used (e.g. function arg, output), the runtime calls these resolve helpers.

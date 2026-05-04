@@ -153,7 +153,7 @@ class CompileAssignment {
       compiler.compileExpression(node.value, null, node.value);
       this.emit.line(';');
       this.emit(ids[0] + ' = ');
-      this.emit('runtime.setPath(');
+      this.emit('runtime.deepAssign(');
       compiler.buffer.emitAddRawSnapshot(targetName, node);
       this.emit(', ');
       compiler._compileAggregate(node.path, null, '[', ']', false, false);

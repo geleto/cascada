@@ -1,14 +1,14 @@
 /**
- * Deep Path Assignment with Lazy Resolution Support
+ * Deep Property Path Assignment with Lazy Resolution Support
  *
- * This module provides the `setPath` function, which is the core mechanism for
+ * This module provides the `deepAssign` function, which is the core mechanism for
  * updating values within nested data structures in Cascada (a.position[getIndex()] = 10)
  *
  * KEY FEATURES:
  * 1. **Copy-On-Write (Immutability)**:
  *    - Updates never mutate the original object.
  *    - It returns a deep copy but only for the path, doing shallow copy at each path segment.
- *    - Example: `setPath(obj, ['a', 'b'], 1)` returns a new `obj` reference/copy.
+ *    - Example: `deepAssign(obj, ['a', 'b'], 1)` returns a new `obj` reference/copy.
  *
  * 2. **Transparent Async Support**:
  *    - Handles Promises at any level: root object, path segments (keys), or the value itself.
@@ -25,8 +25,8 @@
  *      - This guarantees consistency by preventing reads of the container until the write is fully resolved.
  *
  * 4. **Lazy Resolution Integration**:
- *    - When an async value is assigned to a synchronous object/array, `setPath` does NOT wait for it.
- *    - **setPath's Role**: It updates the structure and then delegates to `createObject`/`createArray`.
+ *    - When an async value is assigned to a synchronous object/array, `deepAssign` does NOT wait for it.
+ *    - **deepAssign's Role**: It updates the structure and then delegates to `createObject`/`createArray`.
  *    - **createObject/Array's Role**: These helpers inspect the container and attach a hidden `RESOLVE_MARKER`.
  *      - The marker holds a Promise that coordinates the resolution.
  *      - It waits for all async children to settle.
@@ -45,7 +45,7 @@ function needsResolution(val) {
 }
 
 /**
- * Returns a shallow copy of the object with a single path segment updated.
+ * Returns a shallow copy of the object with a single key updated.
  * Handles async values for previous object, key, and value.
  *
  * @param {Object|Promise} obj - The parent object (resolved or promise)
@@ -53,7 +53,7 @@ function needsResolution(val) {
  * @param {any} value - The value to set (resolved or promise)
  * @returns {Object|Promise} A shallow copy of obj with obj[key] = value, or a Promise resolving to it.
  */
-function setSinglePath(obj, key, value) {
+function assignAtKey(obj, key, value) {
   // If obj or key are async, we must go async to resolve the target container.
   // Note: We do NOT force async just because 'value' is async. We handle that lazily.
   // Important: PoisonedValue is a thenable, but we want to handle it synchronously.
@@ -61,14 +61,14 @@ function setSinglePath(obj, key, value) {
   const isKeyAsync = (key && typeof key.then === 'function' && !isPoison(key)) || (key && key[RESOLVE_MARKER]);
 
   if (isObjAsync || isKeyAsync || isPoison(obj) || isPoison(key)) {
-    return _setSinglePathAsync(obj, key, value);
+    return _assignAtKeyAsync(obj, key, value);
   }
 
   // Synchronous path
-  return _setSinglePathSync(obj, key, value);
+  return _assignAtKeySync(obj, key, value);
 }
 
-function _setSinglePathSync(obj, key, value) {
+function _assignAtKeySync(obj, key, value) {
   if (obj === undefined || obj === null) {
     throw new Error(`Cannot set property '${key}' of undefined or null`);
   }
@@ -99,7 +99,7 @@ function _setSinglePathSync(obj, key, value) {
   return newObj;
 }
 
-async function _setSinglePathAsync(objSyncOrPromise, keySyncOrPromise, value) {
+async function _assignAtKeyAsync(objSyncOrPromise, keySyncOrPromise, value) {
   // Resolve obj and key. We pass 'value' through as-is (Lazy assignment).
   const resolved = await resolveAll([objSyncOrPromise, keySyncOrPromise]);
   if (isPoison(resolved)) {
@@ -109,12 +109,12 @@ async function _setSinglePathAsync(objSyncOrPromise, keySyncOrPromise, value) {
   const [obj, key] = resolved;
 
   // Delegate to sync logic which handles marking
-  return _setSinglePathSync(obj, key, value);
+  return _assignAtKeySync(obj, key, value);
 }
 
 
 /**
- * Sets a value at a deep path, ensuring shallow copies at each level.
+ * Sets a value at a deep property path, ensuring shallow copies at each level.
  * Handles paths as arrays of segments where each segment can be a promise.
  *
  * @param {Object|Promise} root - The root object.
@@ -122,7 +122,7 @@ async function _setSinglePathAsync(objSyncOrPromise, keySyncOrPromise, value) {
  * @param {any} value - The final value to set.
  * @returns {Object|Promise} The new root object (or Promise resolving to it).
  */
-function setPath(root, segments, value) {
+function deepAssign(root, segments, value) {
   // If no segments, just return the value (but marking it if needed? No, bare value replacement)
   if (!segments || segments.length === 0) {
     return value;
@@ -146,7 +146,7 @@ function setPath(root, segments, value) {
 
   // If async involved (or errors + async), go async
   if (errors.length > 0 || isRootAsync || isHeadAsync) {
-    return _setPathAsync(root, head, tail, value);
+    return _deepAssignAsync(root, head, tail, value);
   }
 
   // Sync get
@@ -165,16 +165,16 @@ function setPath(root, segments, value) {
 
   const child = root[key];
 
-  const newChild = setPath(child, tail, value);
+  const newChild = deepAssign(child, tail, value);
 
   // Recursion & Lazy Propagation:
-  // If the newChild is "Lazy" (Async or Marked), `setSinglePath` detects this
+  // If the newChild is "Lazy" (Async or Marked), `assignAtKey` detects this
   // and marks the current container as well. This ensures the "Lazy" status propagates
   // cleanly up the tree without explicit handling here.
-  return setSinglePath(root, key, newChild);
+  return assignAtKey(root, key, newChild);
 }
 
-async function _setPathAsync(rootPromise, headPromise, tail, value) {
+async function _deepAssignAsync(rootPromise, headPromise, tail, value) {
   // Resolve root and head. Pass 'value' through.
   const resolved = await resolveAll([rootPromise, headPromise]);
   if (isPoison(resolved)) return resolved;
@@ -197,10 +197,10 @@ async function _setPathAsync(rootPromise, headPromise, tail, value) {
   let child = root[key];
 
   // Recurse
-  const newChild = setPath(child, tail, value);
+  const newChild = deepAssign(child, tail, value);
 
   // Set
-  return setSinglePath(root, key, newChild);
+  return assignAtKey(root, key, newChild);
 }
 
-export { setPath };
+export { deepAssign };

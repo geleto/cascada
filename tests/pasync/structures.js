@@ -765,7 +765,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       expect(result.res).to.eql({ '1': 1, '2': 2, '3': 3 });
     });
 
-    describe('Lazy Deep Resolve: setPath Consistency', () => {
+    describe('Lazy Deep Resolve: deepAssign Consistency', () => {
 
       it('should verify Async Value assignment allows immediate property access (Lazy Object)', async () => {
         const context = {
@@ -815,7 +815,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           var t0 = now()
           // Assign using Async Key - list becomes a Promise
           // The function asyncInd takes 50ms.
-          // setPath returns a Promise immediately (non-blocking).
+          // deepAssign returns a Promise immediately (non-blocking).
           list[asyncInd()] = 30
           var t1 = now()
 
@@ -851,7 +851,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
             obj[asyncKey()] = 2
 
             // Sequential Sync assignment
-            // obj is a Promise so setPath(Promise, ...) returns a Promise chained to it.
+            // obj is a Promise so deepAssign(Promise, ...) returns a Promise chained to it.
             // This does NOT block execution flow.
             obj.c = 3
             var t1 = now()

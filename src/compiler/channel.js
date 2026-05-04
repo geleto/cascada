@@ -89,7 +89,7 @@ class CompileChannel {
       let resultId = valueId;
       if (thisSharedPath.path.length > 0) {
         resultId = compiler._tmpid();
-        compiler.emit(`let ${resultId} = runtime.setPath(`);
+        compiler.emit(`let ${resultId} = runtime.deepAssign(`);
         compiler.buffer.emitAddRawSnapshot(thisSharedPath.name, node);
         compiler.emit(`, ${JSON.stringify(thisSharedPath.path)}, ${valueId})`);
         compiler.emit.line(';');

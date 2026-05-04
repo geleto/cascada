@@ -246,7 +246,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
   });
 
-  describe('runtime.setPath (Lazy Semantics)', () => {
+  describe('runtime.deepAssign (Lazy Semantics)', () => {
 
 
     async function evalScript(script, context = {}) {
@@ -259,7 +259,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
     it('should set a simple property on an object (sync)', () => {
       const obj = { x: 1 };
-      const result = runtime.setPath(obj, ['y'], 2);
+      const result = runtime.deepAssign(obj, ['y'], 2);
       expect(result).to.not.be(obj); // Immutable
       expect(result).to.eql({ x: 1, y: 2 });
       expect(obj).to.eql({ x: 1 });
@@ -267,7 +267,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
     it('should handle async root object', async () => {
       const objPromise = Promise.resolve({ x: 1 });
-      const resultPromise = runtime.setPath(objPromise, ['y'], 2);
+      const resultPromise = runtime.deepAssign(objPromise, ['y'], 2);
       expect(resultPromise).to.be.a(Promise);
       const result = await resultPromise;
       expect(result).to.eql({ x: 1, y: 2 });
@@ -277,9 +277,9 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const obj = { items: [100] };
       const indexPromise = Promise.resolve(0);
       // segments array containing a promise
-      // setPath should return a Lazy Object (Promise wrapper) containing the promise.
+      // deepAssign should return a Lazy Object (Promise wrapper) containing the promise.
       // The object itself is returned synchronously.
-      const result = runtime.setPath(obj, ['items', indexPromise], 200);
+      const result = runtime.deepAssign(obj, ['items', indexPromise], 200);
 
       expect(result).to.not.be.a(Promise);
       // Verify items property is a Promise (lazy)
@@ -292,7 +292,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     it('should handle async value only when needed', async () => {
       const obj = { x: 1 };
       const valPromise = Promise.resolve(10);
-      const result = runtime.setPath(obj, ['x'], valPromise);
+      const result = runtime.deepAssign(obj, ['x'], valPromise);
 
       // Should be synchronous (Lazy Object) having x as promise
       expect(result).to.not.be.a(Promise);
@@ -304,7 +304,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
     it('should propagate poison from root', () => {
       const poison = createPoison(new Error('Toxic'));
-      const result = runtime.setPath(poison, ['x'], 1);
+      const result = runtime.deepAssign(poison, ['x'], 1);
 
       // Should result in sync poison
       expect(isPoison(result)).to.be(true);
@@ -316,14 +316,14 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const poisonKey = createPoison(new Error('Toxic Key'));
 
       // Poison key is identified synchronously
-      const result = runtime.setPath(obj, [poisonKey], 2);
+      const result = runtime.deepAssign(obj, [poisonKey], 2);
       expect(isPoison(result)).to.be(true);
       expect(result.errors[0].message).to.be('Toxic Key');
     });
 
     it('should propagate poison from async resolution', async () => {
       const objPromise = Promise.resolve({ x: 1 });
-      const resultPromise = runtime.setPath(objPromise, ['y'], Promise.resolve(createPoison(new Error('Async Toxic'))));
+      const resultPromise = runtime.deepAssign(objPromise, ['y'], Promise.resolve(createPoison(new Error('Async Toxic'))));
 
       // Root is async. Result is Promise.
       const result = await resultPromise;
@@ -340,12 +340,12 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
     it('should throw error when path does not exist (sync)', () => {
       const obj = {};
-      expect(() => runtime.setPath(obj, ['a', 'b'], 1)).to.throwError(/Cannot access property/);
+      expect(() => runtime.deepAssign(obj, ['a', 'b'], 1)).to.throwError(/Cannot access property/);
     });
 
     it('should return poison when path does not exist (async)', async () => {
       const objPromise = Promise.resolve({});
-      const resultPromise = runtime.setPath(objPromise, ['a', 'b'], 1);
+      const resultPromise = runtime.deepAssign(objPromise, ['a', 'b'], 1);
 
       try {
         await resultPromise;
@@ -359,8 +359,8 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     it('should collect multiple errors from sync inputs', () => {
       const poison1 = createPoison(new Error('Error 1'));
       const poison2 = createPoison(new Error('Error 2'));
-      // setPath(poison1, [poison2], 1)
-      const result = runtime.setPath(poison1, [poison2], 1);
+      // deepAssign(poison1, [poison2], 1)
+      const result = runtime.deepAssign(poison1, [poison2], 1);
 
       expect(isPoison(result)).to.be(true);
       expect(result.errors).to.have.length(2);
@@ -378,7 +378,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       // Logic: !isRootAsync && !isHeadAsync => false.
       // Goes to async path.
       // Collects errors from both.
-      const resultPromise = runtime.setPath(poison, [p], 1);
+      const resultPromise = runtime.deepAssign(poison, [p], 1);
 
       try {
         await resultPromise;
@@ -398,7 +398,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const root = createPoison(error1);
       const value = createPoison(error2);
 
-      const result = runtime.setPath(root, ['prop'], value);
+      const result = runtime.deepAssign(root, ['prop'], value);
 
       expect(isPoison(result)).to.be(true);
       // Lazy: Stop at Root. 1 Error.
@@ -412,7 +412,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const rootPromise = Promise.resolve(createPoison(error1));
       const value = createPoison(error2);
 
-      const result = runtime.setPath(rootPromise, ['prop'], value);
+      const result = runtime.deepAssign(rootPromise, ['prop'], value);
 
       try {
         await result;
@@ -431,7 +431,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const valuePromise = Promise.resolve(createPoison(error2));
 
       // Returns Sync Poison (Root Error)
-      const result = runtime.setPath(root, ['prop'], valuePromise);
+      const result = runtime.deepAssign(root, ['prop'], valuePromise);
 
       expect(isPoison(result)).to.be(true);
       expect(result.errors).to.have.length(1);
@@ -441,19 +441,19 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     it('should return value reference if segments is empty', () => {
       const obj = { x: 1 };
       const val = { y: 2 };
-      const result = runtime.setPath(obj, [], val);
+      const result = runtime.deepAssign(obj, [], val);
       expect(result).to.be(val);
       expect(obj).to.eql({ x: 1 });
     });
 
     it('should throw error when accessing [] on empty array (sync)', () => {
       const list = [];
-      expect(() => runtime.setPath(list, ['[]', 'prop'], 1)).to.throwError(/Cannot access last element/);
+      expect(() => runtime.deepAssign(list, ['[]', 'prop'], 1)).to.throwError(/Cannot access last element/);
     });
 
     it('should return poison when accessing [] on empty array (async)', async () => {
       const listPromise = Promise.resolve([]);
-      const resultPromise = runtime.setPath(listPromise, ['[]', 'prop'], 1);
+      const resultPromise = runtime.deepAssign(listPromise, ['[]', 'prop'], 1);
       try {
         await resultPromise;
         expect().fail('Should have rejected');
@@ -478,7 +478,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         })()
       });
 
-      const resultPromise = runtime.setPath(lazyRoot, ['y'], 2);
+      const resultPromise = runtime.deepAssign(lazyRoot, ['y'], 2);
 
       expect(resultPromise).to.be.a(Promise);
       const result = await resultPromise;
@@ -494,11 +494,11 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const obj = { a: Promise.resolve({ b: undefined }) };
 
       // We set ['a','b','c']
-      const result = runtime.setPath(obj, ['a', 'b', 'c'], 1);
+      const result = runtime.deepAssign(obj, ['a', 'b', 'c'], 1);
 
       // result is { a: Promise }.
       // result.a is Promise.
-      // when awaited, result.a should fail because recursive setPath(a, ['b','c'], 1) failed.
+      // when awaited, result.a should fail because recursive deepAssign(a, ['b','c'], 1) failed.
 
       expect(result).to.not.be.a(Promise);
       expect(result.a).to.be.a(Promise);
@@ -656,7 +656,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         delayVal: async (v, ms) => new Promise(r => setTimeout(() => r(v), ms)),
       };
 
-      // Lazy setPath preserves order by sequencing async resolution of the container.
+      // Lazy deepAssign preserves order by sequencing async resolution of the container.
       const res = await evalScript(`
          var obj = { x: 0 }
          obj.x = delayVal(1, 20)
@@ -744,7 +744,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         }
       });
 
-      it('should fail entire object if setPath has multiple sync errors', async () => {
+      it('should fail entire object if deepAssign has multiple sync errors', async () => {
         const context = {
           fail1: () => createPoison(new Error('Root')),
           fail2: () => createPoison(new Error('Key'))

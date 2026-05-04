@@ -26,7 +26,7 @@ export * from './loop.js';
 export * from './sequential.js';
 export * from './inheritance-shared-channels.js';
 export * from './component.js';
-export * from './set-path.js';
+export * from './deep-assign.js';
 export * as guard from './guard.js';
 export {RETURN_UNSET} from './markers.js';
 export {isArray, keys, inOperator} from '../lib.js';

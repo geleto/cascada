@@ -115,7 +115,7 @@ class CompilerSync extends CompilerBaseSync {
         this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
       }
       this.emit(ids[0] + ' = ');
-      this.emit('runtime.setPath(');
+      this.emit('runtime.deepAssign(');
       this.emit(`frame.lookup("${node.targets[0].value}"), `);
       this.compile(node.path, frame);
       this.emit(', ');
