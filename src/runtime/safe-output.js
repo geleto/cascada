@@ -8,11 +8,11 @@ import {
   PoisonError
 } from './errors.js';
 import {RESOLVE_MARKER, resolveAll, resolveSingle} from './resolve.js';
-import {isCommandBuffer} from './buffer-marker.js';
+import {CommandBuffer} from './command-buffer.js';
 
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
-    if (isCommandBuffer(val)) {
+    if (val instanceof CommandBuffer) {
       return val;
     }
     if (Array.isArray(val.text)) {
@@ -254,7 +254,7 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
 }
 
 function suppressValueScriptRaw(val, autoescape) {
-  if (val && typeof val === 'object' && !Array.isArray(val) && !isCommandBuffer(val)) {
+  if (val && typeof val === 'object' && !Array.isArray(val) && !val instanceof CommandBuffer) {
     const hasCustomToString = val.toString && val.toString !== Object.prototype.toString;
     const isPromise = typeof val.then === 'function';
     if (!hasCustomToString && !isPromise) {

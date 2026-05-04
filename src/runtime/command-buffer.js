@@ -1,14 +1,12 @@
 
 import {assertChannelLaneAvailable, checkFinishedBuffer} from './checks.js';
 import {handleError, RuntimeFatalError} from './errors.js';
-import {markCommandBuffer} from './buffer-marker.js';
 
 class CommandBuffer {
   constructor(context, parent = null, linkedChannels = null, linkedParent = null, linkedMutatedChannels = null) {
     const linkedLaneNames = validateLaneNames(linkedChannels, 'linkedChannels', context);
     const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChannels, 'linkedMutatedChannels', context);
 
-    markCommandBuffer(this);
     this._context = context;
     this.parent = parent;
     this.finished = false;
