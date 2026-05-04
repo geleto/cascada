@@ -275,9 +275,6 @@ describe('channel.finalSnapshot', function () {
       }
     });
 
-    it('rejects linked mutated lane metadata outside linked lanes', function () {
-      expect(() => new CommandBuffer(context, null, ['text'], null, ['data'])).to.throwError(/appears in linkedMutatedChannels but not linkedChannels/);
-    });
 
     it('stores linked mutated metadata for construction-time and late links', function () {
       const parent = new CommandBuffer(context);

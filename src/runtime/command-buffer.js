@@ -6,11 +6,7 @@ import {markCommandBuffer} from './buffer-marker.js';
 class CommandBuffer {
   constructor(context, parent = null, linkedChannels = null, linkedParent = null, linkedMutatedChannels = null) {
     const linkedLaneNames = validateLaneNames(linkedChannels, 'linkedChannels', context);
-    const linkedMutatedLaneNames = validateLinkedMutatedLaneNames(
-      linkedMutatedChannels,
-      linkedLaneNames,
-      context
-    );
+    const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChannels, 'linkedMutatedChannels', context);
 
     markCommandBuffer(this);
     this._context = context;
@@ -464,24 +460,6 @@ function validateLaneNames(laneNames, label, context = null) {
     seen.add(name);
   }
   return laneNames;
-}
-
-function validateLinkedMutatedLaneNames(laneNames, linkedLaneNames, context = null) {
-  const linkedMutatedLaneNames = validateLaneNames(laneNames, 'linkedMutatedChannels', context);
-  if (!linkedMutatedLaneNames) {
-    return null;
-  }
-  const linkedLaneNameSet = new Set(linkedLaneNames || []);
-  for (let i = 0; i < linkedMutatedLaneNames.length; i++) {
-    const name = linkedMutatedLaneNames[i];
-    if (!linkedLaneNameSet.has(name)) {
-      throw createLaneMetadataError(
-        `Channel '${name}' appears in linkedMutatedChannels but not linkedChannels`,
-        context
-      );
-    }
-  }
-  return linkedMutatedLaneNames;
 }
 
 export { CommandBuffer };
