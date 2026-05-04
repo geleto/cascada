@@ -901,7 +901,7 @@ function _createAdmittedInvocationBuffer(runtime, context, inheritanceStateValue
   const linkedChannels = _getMethodLinkedChannels(methodData);
   const mutatedChannelSet = new Set(_getMethodMutatedChannels(methodData));
   const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue);
-  const invocationBuffer = runtime.createCommandBuffer(
+  const invocationBuffer = new runtime.CommandBuffer(
     context,
     sharedRootBuffer,
     null,

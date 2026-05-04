@@ -92,7 +92,7 @@ const noopTmplSrcAsync = {
           cb(null, '');
           return;
         }
-        const output = runtime.createCommandBuffer(context, null);
+        const output = new runtime.CommandBuffer(context, null);
         runtime.declareBufferChannel(output, '__text__', 'text', context, null);
         output.finish();
         return output;

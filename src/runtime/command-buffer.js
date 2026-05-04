@@ -4,7 +4,14 @@ import {handleError, RuntimeFatalError} from './errors.js';
 import {markCommandBuffer} from './buffer-marker.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, linkedMutatedLaneNames = null) {
+  constructor(context, parent = null, linkedChannels = null, linkedParent = null, linkedMutatedChannels = null) {
+    const linkedLaneNames = validateLaneNames(linkedChannels, 'linkedChannels', context);
+    const linkedMutatedLaneNames = validateLinkedMutatedLaneNames(
+      linkedMutatedChannels,
+      linkedLaneNames,
+      context
+    );
+
     markCommandBuffer(this);
     this._context = context;
     this.parent = parent;
@@ -31,6 +38,13 @@ class CommandBuffer {
       // nested child buffers can continue routing formal names to the same
       // caller-owned runtime channels.
       this._inheritChannelAliases(parent._channelAliases);
+    }
+
+    const linkTarget = linkedParent || parent;
+    if (linkTarget && linkedLaneNames) {
+      for (let i = 0; i < linkedLaneNames.length; i++) {
+        linkTarget.addBuffer(this, linkedLaneNames[i]);
+      }
     }
   }
 
@@ -416,23 +430,6 @@ class CommandBuffer {
 
 }
 
-function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null, linkedMutatedChannels = null) {
-  const linkedLaneNames = validateLaneNames(linkedChannels, 'linkedChannels', context);
-  const linkedMutatedLaneNames = validateLinkedMutatedLaneNames(
-    linkedMutatedChannels,
-    linkedLaneNames,
-    context
-  );
-  const buffer = new CommandBuffer(context, parent, linkedMutatedLaneNames);
-  const linkTarget = linkedParent || parent;
-  if (linkTarget && linkedLaneNames) {
-    for (let i = 0; i < linkedLaneNames.length; i++) {
-      linkTarget.addBuffer(buffer, linkedLaneNames[i]);
-    }
-  }
-  return buffer;
-}
-
 function createLaneMetadataError(message, renderContext = null) {
   // Buffer creation receives a runtime render Context, not a source-position
   // error context, so metadata errors are positionless but still carry path.
@@ -487,4 +484,4 @@ function validateLinkedMutatedLaneNames(laneNames, linkedLaneNames, context = nu
   return linkedMutatedLaneNames;
 }
 
-export { CommandBuffer, createCommandBuffer };
+export { CommandBuffer };

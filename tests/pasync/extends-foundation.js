@@ -371,7 +371,7 @@ describe('Extends Foundation', function () {
     });
 
     it('should not let declaration-only shared participation claim the shared default', async function () {
-      const sharedBuffer = runtime.createCommandBuffer(null);
+      const sharedBuffer = new runtime.CommandBuffer(null);
       runtime.declareInheritanceSharedChannel(sharedBuffer, 'theme', 'var', null);
 
       expect(runtime.claimInheritanceSharedDefault(sharedBuffer, 'theme')).to.be(true);
@@ -390,7 +390,7 @@ describe('Extends Foundation', function () {
     });
 
     it('should treat legacy undefined declaration arguments as declaration-only shared participation', function () {
-      const sharedBuffer = runtime.createCommandBuffer(null);
+      const sharedBuffer = new runtime.CommandBuffer(null);
 
       runtime.declareInheritanceSharedChannel(sharedBuffer, 'theme', 'var', null, undefined);
 
@@ -435,7 +435,7 @@ describe('Extends Foundation', function () {
     });
 
     it('should initialize a declaration-only shared sequence through a later claimed default', async function () {
-      const sharedBuffer = runtime.createCommandBuffer(null);
+      const sharedBuffer = new runtime.CommandBuffer(null);
       runtime.declareInheritanceSharedChannel(sharedBuffer, 'db', 'sequence', null, undefined);
 
       if (runtime.claimInheritanceSharedDefault(sharedBuffer, 'db')) {
@@ -1034,9 +1034,9 @@ describe('Extends Foundation', function () {
     });
 
     it('should let an earlier child-buffer shared default win over a later parent-buffer default', async function () {
-      const rootBuffer = runtime.createCommandBuffer(null);
+      const rootBuffer = new runtime.CommandBuffer(null);
       runtime.declareInheritanceSharedChannel(rootBuffer, 'theme', 'var', null, undefined);
-      const childBuffer = runtime.createCommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
+      const childBuffer = new runtime.CommandBuffer(null, rootBuffer, ['theme'], rootBuffer);
 
       childBuffer.addCommand(new runtime.VarCommand({
         channelName: 'theme',
@@ -1059,7 +1059,7 @@ describe('Extends Foundation', function () {
     });
 
     it('should keep shared channel ownership on the child/shared buffer rather than the parent buffer', function () {
-      const childBuffer = runtime.createCommandBuffer(null);
+      const childBuffer = new runtime.CommandBuffer(null);
       const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
       expect(sharedChannel._buffer).to.be(childBuffer);
@@ -1067,8 +1067,8 @@ describe('Extends Foundation', function () {
     });
 
     it('should link newly registered shared lanes from the shared root to the active composition buffer', function () {
-      const sharedRootBuffer = runtime.createCommandBuffer(null);
-      const compositionBuffer = runtime.createCommandBuffer(null, sharedRootBuffer);
+      const sharedRootBuffer = new runtime.CommandBuffer(null);
+      const compositionBuffer = new runtime.CommandBuffer(null, sharedRootBuffer);
       const state = runtime.createInheritanceState();
       state.sharedRootBuffer = sharedRootBuffer;
 
@@ -1086,8 +1086,8 @@ describe('Extends Foundation', function () {
     });
 
     it('should keep shared declarations owned by the shared buffer instead of reusing an unrelated parent channel', function () {
-      const rootBuffer = runtime.createCommandBuffer(null);
-      const childBuffer = runtime.createCommandBuffer(null, rootBuffer);
+      const rootBuffer = new runtime.CommandBuffer(null);
+      const childBuffer = new runtime.CommandBuffer(null, rootBuffer);
       const parentChannel = runtime.declareBufferChannel(rootBuffer, 'theme', 'var', null, null);
       const sharedChannel = runtime.declareInheritanceSharedChannel(childBuffer, 'theme', 'var', null, undefined);
 
@@ -1098,12 +1098,12 @@ describe('Extends Foundation', function () {
 
     it('should not install inherited invocation links twice for shared channels already visible from the caller', async function () {
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
-      const sharedRootBuffer = runtime.createCommandBuffer(context);
+      const sharedRootBuffer = new runtime.CommandBuffer(context);
       const inheritanceState = runtime.createInheritanceState();
       inheritanceState.sharedRootBuffer = sharedRootBuffer;
       inheritanceState.sharedSchema.log = 'text';
       runtime.declareInheritanceSharedChannel(sharedRootBuffer, 'log', 'text', context, null);
-      const currentBuffer = runtime.createCommandBuffer(context, sharedRootBuffer, ['log'], sharedRootBuffer);
+      const currentBuffer = new runtime.CommandBuffer(context, sharedRootBuffer, ['log'], sharedRootBuffer);
 
       inheritanceState.methods.build = {
         fn(envArg, contextArg, runtimeArg, cbArg, output) {
@@ -1945,7 +1945,7 @@ describe('Extends Foundation', function () {
     it('should start the root constructor after metadata is ready without waiting for setup startup to finish', async function () {
       env = new AsyncEnvironment();
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
-      const output = runtime.createCommandBuffer(context);
+      const output = new runtime.CommandBuffer(context);
       const inheritanceState = runtime.createInheritanceState();
       const events = [];
       let finishSetup;
@@ -1999,7 +1999,7 @@ describe('Extends Foundation', function () {
     it('should not invoke inherited methods before metadata finalization resolves', async function () {
       env = new AsyncEnvironment();
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
-      const output = runtime.createCommandBuffer(context);
+      const output = new runtime.CommandBuffer(context);
       const inheritanceState = runtime.createInheritanceState();
       const events = [];
       const compiledMethods = {
@@ -2042,7 +2042,7 @@ describe('Extends Foundation', function () {
     it('should not rebuild finalized invoked-method metadata on repeated finalization', function () {
       env = new AsyncEnvironment();
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
-      const output = runtime.createCommandBuffer(context);
+      const output = new runtime.CommandBuffer(context);
       const inheritanceState = runtime.createInheritanceState();
       const compiledMethods = {
         build: {

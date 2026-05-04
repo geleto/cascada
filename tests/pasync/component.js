@@ -724,10 +724,10 @@ describe('Phase 8 - Component Observations', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
-    const sharedRootBuffer = runtimeModule.createCommandBuffer(makeContext('Component.script'), null, null, null);
+    const sharedRootBuffer = new runtimeModule.CommandBuffer(makeContext('Component.script'), null, null, null);
     runtimeModule.declareBufferChannel(sharedRootBuffer, 'status', 'var', ownerContext, null);
     sharedRootBuffer.addCommand(new runtimeModule.VarCommand({
       channelName: 'status',
@@ -796,10 +796,10 @@ describe('Phase 8 - Component Observations', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
-    const sharedRootBuffer = runtimeModule.createCommandBuffer(makeContext('Component.script'), null, null, null);
+    const sharedRootBuffer = new runtimeModule.CommandBuffer(makeContext('Component.script'), null, null, null);
     runtimeModule.declareBufferChannel(sharedRootBuffer, 'status', 'var', ownerContext, null);
 
     const inheritanceState = runtimeModule.createInheritanceState();
@@ -1194,7 +1194,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const gate = new Promise((resolve) => {
@@ -1251,7 +1251,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const compiledMethods = {
@@ -1338,7 +1338,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     if (!componentRuntimeModule) {
@@ -1432,7 +1432,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         };
       }
     };
-    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
 
     if (!componentRuntimeModule) {
       this.skip();
@@ -1472,7 +1472,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         return { path: nextPath, rootContext, renderCtx };
       }
     };
-    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
 
     if (!componentRuntimeModule) {
       this.skip();
@@ -1513,7 +1513,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         return { path: nextPath, rootContext, renderCtx };
       }
     };
-    const ownerBuffer = runtimeModule.createCommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
 
     if (!componentRuntimeModule) {
       this.skip();

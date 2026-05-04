@@ -125,7 +125,7 @@ Important current implementation points:
 - `src/compiler/macro.js` owns caller scheduling emission
 - `CALLER_SCHED_CHANNEL_NAME` is `__caller__`
 - `CommandBuffer.getFinishedPromise()` is the structural completion primitive
-- caller invocation buffers are created with `runtime.createCommandBuffer(...)`
+- caller invocation buffers are created with `new runtime.CommandBuffer(...)`
 - `WaitResolveCommand` is used only as timing bookkeeping
 - caller-capable macros expose `__callerUsedChannels` metadata for parent
   linking

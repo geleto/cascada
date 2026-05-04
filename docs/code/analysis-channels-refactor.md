@@ -468,7 +468,7 @@ Work:
   metadata.
 - render boundaries remain isolated render-buffer semantics.
 - `validateLaneNames(...)` / `combineLaneNames(...)` remain runtime API
-  validation for the existing two-array `createCommandBuffer(...)` contract.
+  validation for the existing two-array `new CommandBuffer(...)` contract.
   They are no longer compensating for compiler-side link derivation.
 
 Validation:

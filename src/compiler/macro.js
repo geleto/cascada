@@ -35,7 +35,7 @@ class CompileMacro {
     const invocationBufferId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    compiler.emit.line(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerLinkedChannels || null, null, ${activeContext.rawCallerVar}.__callerLinkedMutatedChannels || null);`);
+    compiler.emit.line(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerLinkedChannels || null, null, ${activeContext.rawCallerVar}.__callerLinkedMutatedChannels || null);`);
     compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit.line(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     compiler.emit.line(`let ${invocationResultId} = Promise.resolve(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.finish());`);
@@ -206,7 +206,7 @@ class CompileMacro {
     // all-callers buffer so multiple invocations can schedule independently.
     compiler.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
     compiler.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
-    compiler.emit(`let ${invocationBufferId} = runtime.createCommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerLinkedChannels || null, null, ${rawCallerVar}.__callerLinkedMutatedChannels || null);`);
+    compiler.emit(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerLinkedChannels || null, null, ${rawCallerVar}.__callerLinkedMutatedChannels || null);`);
     compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ channelName: "${CALLER_SCHED_CHANNEL_NAME}", args: [${invocationFinishedId}], pos: {lineno: ${lineno}, colno: ${colno}} }), "${CALLER_SCHED_CHANNEL_NAME}");`);
     // __caller__ timing is owned only by caller invocation code. Track both:
@@ -230,7 +230,7 @@ class CompileMacro {
     compiler.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
     // The all-callers buffer is parent-linked because caller() may emit
     // parent-visible observable commands, unlike the isolated macro buffer.
-    compiler.emit.line(`  ${allCallersBufferId} = runtime.createCommandBuffer(context, macroParentBuffer || null, ${rawCallerVar}.__callerLinkedChannels || null, null, ${rawCallerVar}.__callerLinkedMutatedChannels || null);`);
+    compiler.emit.line(`  ${allCallersBufferId} = new runtime.CommandBuffer(context, macroParentBuffer || null, ${rawCallerVar}.__callerLinkedChannels || null, null, ${rawCallerVar}.__callerLinkedMutatedChannels || null);`);
     compiler.emit.line('}');
   }
 

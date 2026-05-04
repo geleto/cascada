@@ -8,7 +8,6 @@ import {
   DataCommand,
   SequenceCallCommand,
   CommandBuffer,
-  createCommandBuffer,
   declareBufferChannel,
   createSequenceChannel,
   createPoison,
@@ -220,7 +219,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('creates declared channel lanes and finishes unused lanes', function () {
-      const buffer = createCommandBuffer(context);
+      const buffer = new CommandBuffer(context);
       const channel = declareBufferChannel(buffer, 'unused', 'var', context, null);
 
       expect(buffer.getChannel('unused')).to.be(channel);
@@ -234,30 +233,30 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('fails when a linked parent channel has no registered channel object', function () {
-      const parent = createCommandBuffer(context);
+      const parent = new CommandBuffer(context);
       declareBufferChannel(parent, 'text', 'text', context, null);
       delete parent._channels.text;
 
-      expect(() => createCommandBuffer(context, null, ['text'], parent)).to.throwError((err) => {
+      expect(() => new CommandBuffer(context, null, ['text'], parent)).to.throwError((err) => {
         expect(err.message).to.contain('Cannot link channel \'text\' without a registered channel object');
       });
       expect(parent.arrays.text).to.have.length(0);
     });
 
     it('rejects duplicate linked lane metadata', function () {
-      expect(() => createCommandBuffer(context, null, ['text', 'text'], null, null)).to.throwError(/linkedChannels contains duplicate channel 'text'/);
-      expect(() => createCommandBuffer(context, null, [42], null, null)).to.throwError(/linkedChannels contains a non-string channel name/);
+      expect(() => new CommandBuffer(context, null, ['text', 'text'], null, null)).to.throwError(/linkedChannels contains duplicate channel 'text'/);
+      expect(() => new CommandBuffer(context, null, [42], null, null)).to.throwError(/linkedChannels contains a non-string channel name/);
     });
 
     it('treats repeated lane creation as an invariant failure', function () {
-      const buffer = createCommandBuffer(context);
+      const buffer = new CommandBuffer(context);
       declareBufferChannel(buffer, 'text', 'text', context, null);
 
       expect(() => declareBufferChannel(buffer, 'text', 'text', context, null)).to.throwError(/registered more than once/);
     });
 
     it('does not overwrite channel type metadata when duplicate declaration fails', function () {
-      const buffer = createCommandBuffer(context);
+      const buffer = new CommandBuffer(context);
       declareBufferChannel(buffer, 'text', 'text', context, null);
 
       expect(() => declareBufferChannel(buffer, 'text', 'var', context, null)).to.throwError(/registered more than once/);
@@ -265,7 +264,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('does not hide invalid async-boundary lane metadata', async function () {
-      const parent = createCommandBuffer(context);
+      const parent = new CommandBuffer(context);
       declareBufferChannel(parent, 'text', 'text', context, null);
       try {
         await runControlFlowBoundary(parent, 'text', null, context, () => {}, async () => null);
@@ -277,29 +276,29 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('rejects linked mutated lane metadata outside linked lanes', function () {
-      expect(() => createCommandBuffer(context, null, ['text'], null, ['data'])).to.throwError(/appears in linkedMutatedChannels but not linkedChannels/);
+      expect(() => new CommandBuffer(context, null, ['text'], null, ['data'])).to.throwError(/appears in linkedMutatedChannels but not linkedChannels/);
     });
 
     it('stores linked mutated metadata for construction-time and late links', function () {
-      const parent = createCommandBuffer(context);
+      const parent = new CommandBuffer(context);
       declareBufferChannel(parent, 'text', 'text', context, null);
       declareBufferChannel(parent, 'data', 'data', context, null);
 
-      const constructedChild = createCommandBuffer(context, null, ['text'], parent, ['text']);
+      const constructedChild = new CommandBuffer(context, null, ['text'], parent, ['text']);
       expect(constructedChild.isLinkedMutatedChannel('text')).to.be(true);
 
-      const lateLinkedChild = createCommandBuffer(context, null);
+      const lateLinkedChild = new CommandBuffer(context, null);
       linkCurrentBufferToParentChannels(parent, lateLinkedChild, ['text', 'data'], ['data']);
       expect(lateLinkedChild.isLinkedMutatedChannel('text')).to.be(false);
       expect(lateLinkedChild.isLinkedMutatedChannel('data')).to.be(true);
     });
 
     it('links a child to an already-finished parent channel without structural insertion', function () {
-      const parent = createCommandBuffer(context);
+      const parent = new CommandBuffer(context);
       const channel = declareBufferChannel(parent, 'text', 'text', context, null);
       parent.finish();
 
-      const child = createCommandBuffer(context);
+      const child = new CommandBuffer(context);
       linkCurrentBufferToParentChannels(parent, child, ['text']);
 
       expect(child.getChannel('text')).to.be(channel);
@@ -308,7 +307,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('fails when finishing an unknown lane', function () {
-      const buffer = createCommandBuffer(context);
+      const buffer = new CommandBuffer(context);
       declareBufferChannel(buffer, 'text', 'text', context, null);
 
       expect(() => buffer.finishChannel('missing')).to.throwError((err) => {
@@ -333,7 +332,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('fails instead of lazily creating a lane when adding to an unlinked channel', function () {
-      const buffer = createCommandBuffer(context);
+      const buffer = new CommandBuffer(context);
 
       expect(() => {
         buffer.addCommand(new TextCommand({
@@ -345,7 +344,7 @@ describe('channel.finalSnapshot', function () {
     });
 
     it('fails instead of lazily creating a lane when an iterator enters an unlinked channel', function () {
-      const buffer = createCommandBuffer(context);
+      const buffer = new CommandBuffer(context);
 
       expect(() => {
         buffer.onIteratorEnterBuffer({ onBufferFinished() {} }, 'text');

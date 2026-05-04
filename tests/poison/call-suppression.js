@@ -12,7 +12,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
 
   function setupSequentialRuntimeForTests(root) {
     const context = { path: 'test', env: {} };
-    const currentBuffer = runtime.createCommandBuffer(context, null);
+    const currentBuffer = new runtime.CommandBuffer(context, null);
     runtime.declareBufferChannel(currentBuffer, '!lockKey', 'sequential_path', context, null);
     return currentBuffer;
   }

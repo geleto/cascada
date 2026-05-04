@@ -27,7 +27,7 @@ The two phases interleave: enqueue work for one boundary may still be running wh
 -   **Command Buffer Tree** (`src/runtime/command-buffer.js`): Runtime command buffers hold source-ordered commands and child buffers. Linked channels make values visible where the compiler determined they are used.
 -   **Ordered Application via Buffer Iterator** (`src/runtime/buffer-iterator.js`): A depth-first iterator walks the buffer tree and applies commands in source-code order. It waits on unfilled slots (child buffers not yet finished) before advancing.
 -   **Implicit Variable Synchronization**: Channel observations and `resolveAll`/`resolveSingle` await pending values only when consumed. Data dependencies serialize naturally without explicit locks.
--   **Linked channels**: When the compiler creates a child buffer, `analysis.js` computes which parent channels the child body reads or mutates (`usedChannels`, `mutatedChannels`). `emit.js`/`buffer.js` pass these as a `linkedChannels` argument to `createCommandBuffer`. At runtime, `CommandBuffer._linkedChannels` registers the links so the child buffer routes commands back to the correct parent channel lanes. If a channel is not linked, commands in the child buffer silently miss their target — the fix is always in analysis/emit, never in the runtime.
+-   **Linked channels**: When the compiler creates a child buffer, `analysis.js` computes which parent channels the child body reads or mutates (`usedChannels`, `mutatedChannels`). `emit.js`/`buffer.js` pass these as `linkedChannels` to `new CommandBuffer(...)`. The constructor installs links so the child buffer routes commands to the correct parent channel lanes. If a channel is not linked, fix analysis/emit rather than adding runtime fallbacks.
 
 ---
 

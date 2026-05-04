@@ -78,7 +78,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const tmpl = new AsyncTemplate('{% set x = "a" %}{{ x }}', env, 'declared-lanes.njk');
       const source = tmpl._compileSource();
 
-      expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer)');
+      expect(source).to.contain('new runtime.CommandBuffer(context, parentBuffer, null, parentBuffer)');
       expect(source).to.contain('runtime.declareBufferChannel(output, "__text__", "text", context, null)');
       expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null)');
     });
@@ -88,7 +88,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const script = new Script('var x = "a"\nreturn x', env, 'declared-lanes.casc');
       const source = script._compileSource();
 
-      expect(source).to.contain('runtime.createCommandBuffer(context, parentBuffer, null, parentBuffer)');
+      expect(source).to.contain('new runtime.CommandBuffer(context, parentBuffer, null, parentBuffer)');
       expect(source).to.contain('runtime.declareBufferChannel(output, "__return__", "var", context, runtime.RETURN_UNSET)');
       expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null)');
     });
@@ -558,7 +558,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
     it('should keep inherited text placement boundaries out of shared invocation lanes', async function () {
       const createRootBuffer = () => {
-        const rootBuffer = runtime.createCommandBuffer(null);
+        const rootBuffer = new runtime.CommandBuffer(null);
         runtime.declareBufferChannel(rootBuffer, '__text__', 'text', null, null);
         runtime.declareBufferChannel(rootBuffer, 'theme', 'var', null, null);
         rootBuffer.addCommand(new runtime.VarCommand({
@@ -573,8 +573,8 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       // This sibling buffer represents the incorrect text-placement boundary
       // shape: linking it into the shared lane creates an earlier source-order
       // slot that the invocation snapshot must wait behind.
-      const sharedLaneSibling = runtime.createCommandBuffer(null, null, ['theme'], blockedRoot);
-      const invocationBuffer = runtime.createCommandBuffer(null, null, ['theme'], blockedRoot);
+      const sharedLaneSibling = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot);
+      const invocationBuffer = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot);
       const blockedRead = invocationBuffer.addCommand(new runtime.SnapshotCommand({
         channelName: 'theme',
         pos: { lineno: 1, colno: 1 }
@@ -592,8 +592,8 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       expect(await blockedRead).to.be('dark');
 
       const textRoot = createRootBuffer();
-      const textPlacementBoundary = runtime.createCommandBuffer(null, null, ['__text__'], textRoot);
-      const admittedInvocation = runtime.createCommandBuffer(null, null, ['theme'], textRoot);
+      const textPlacementBoundary = new runtime.CommandBuffer(null, null, ['__text__'], textRoot);
+      const admittedInvocation = new runtime.CommandBuffer(null, null, ['theme'], textRoot);
       const admittedRead = admittedInvocation.addCommand(new runtime.SnapshotCommand({
         channelName: 'theme',
         pos: { lineno: 1, colno: 1 }
@@ -687,7 +687,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         resolveCount += 1;
         throw new Error('resolveExports should be skipped in component mode');
       };
-      const buffer = runtime.createCommandBuffer(context, null, null, null);
+      const buffer = new runtime.CommandBuffer(context, null, null, null);
       runtime.declareBufferChannel(buffer, DEFAULT_TEMPLATE_TEXT_OUTPUT, 'text', context, null);
       const inheritanceState = runtime.createInheritanceState();
       inheritanceState.sharedRootBuffer = buffer;

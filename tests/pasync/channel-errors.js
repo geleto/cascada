@@ -17,7 +17,7 @@ import {
   createChannel,
 } from '../../src/runtime/channels/index.js';
 
-import {createCommandBuffer} from '../../src/runtime/command-buffer.js';
+import {CommandBuffer} from '../../src/runtime/command-buffer.js';
 import {createArray} from '../../src/runtime/resolve.js';
 describe('channel errors', function () {
   describe('channel commands step2 poison encoding', function () {
@@ -205,7 +205,7 @@ describe('channel errors', function () {
 
   describe('output observation commands step3', function () {
     it('does not expose observation methods on output facades', async () => {
-      const buffer = createCommandBuffer(null);
+      const buffer = new CommandBuffer(null);
       const out = createChannel(buffer, 'out', null, 'data');
 
       expect(out.snapshot).to.be(undefined);

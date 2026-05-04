@@ -241,7 +241,7 @@ Important nuance learned during implementation:
 ```js
 // runtime.js
 function runControlFlowBoundary(parentBuffer, usedChannels, frame, context, asyncFn, enableWaitApplied = false) {
-  const childBuf = createCommandBuffer(context, null, frame, enableWaitApplied);
+  const childBuf = new CommandBuffer(context, null, frame, enableWaitApplied);
   for (const ch of usedChannels) {
     parentBuffer.addBuffer(childBuf, ch);
   }
@@ -592,7 +592,7 @@ Migrate from simplest to most complex to catch regressions early:
    - The caller path no longer depends on late `runtime.linkWithParentCompositionBuffer(...)` attachment.
    - Nested callers, imported-macro caller composition, caller sequencing, and caller parent-scope reads now pass on this model.
 14. ? **Introduce early structural attachment for non-`caller()` composition child buffers**.
-   - Locally-created scope-root/composition buffers now link their parent-visible lanes at `runtime.createCommandBuffer(...)` creation time instead of creating the buffer first and attaching those lanes in a separate runtime step.
+   - Locally-created scope-root/composition buffers now link their parent-visible lanes at `new runtime.CommandBuffer(...)` creation time instead of creating the buffer first and attaching those lanes in a separate runtime step.
    - The remaining block/root/inheritance attachment work is no longer tracked here; it belongs to the dedicated root inheritance/composition handoff step below.
 15. ? **Introduce a dedicated structural completion signal for text/composition boundaries**.
    - Keep the structural completion signal distinct from the point-in-time value a boundary returns.

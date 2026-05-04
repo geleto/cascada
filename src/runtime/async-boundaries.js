@@ -1,10 +1,10 @@
 
 import {RuntimeError, handleError, markPromiseHandled} from './errors.js';
-import {createCommandBuffer} from './command-buffer.js';
+import {CommandBuffer} from './command-buffer.js';
 
 function _createChildBoundary(parentBuffer, linkedChannelNames, linkedMutatedChannelNames = null, isolatedContext = null) {
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
-  const childBuffer = createCommandBuffer(
+  const childBuffer = new CommandBuffer(
     bufferContext,
     null,
     linkedChannelNames,

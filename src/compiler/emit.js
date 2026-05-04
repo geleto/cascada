@@ -97,7 +97,7 @@ class CompileEmit {
         `let ${this.compiler.buffer.currentBuffer} = ` +
         `(compositionMode && parentBuffer)` +
         ` ? parentBuffer` +
-        ` : runtime.createCommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
+        ` : new runtime.CommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
       );
       if (!this.compiler.scriptMode) {
         this.line(

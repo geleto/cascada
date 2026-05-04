@@ -51,7 +51,7 @@ The most important current facts are:
   it to avoid redeclaring existing channels
 - `_channelRegistry` still appears to be write-only, but it should be audited
   before deletion rather than removed together with `_channelTypes`
-- `createCommandBuffer(...)` call sites do not all share `_channels` the same
+- `new CommandBuffer(...)` call sites do not all share `_channels` the same
   way: some linked buffers pass `parent = null` and `linkedParent =
   parentBuffer`, so the registry problem is broad but irregular rather than a
   single uniform parent-chain behavior
@@ -521,9 +521,9 @@ The intended constructor-time split is:
 
 That keeps all structural information static while still allowing channel objects themselves to be attached at the normal declaration point.
 
-## `createCommandBuffer(...)`
+## `new CommandBuffer(...)`
 
-`createCommandBuffer(...)` should become the place where buffer structure is made complete.
+`new CommandBuffer(...)` should become the place where buffer structure is made complete.
 
 It should conceptually receive:
 
@@ -547,7 +547,7 @@ No later structural discovery should be required.
 
 ### Compiler/API changes needed
 
-Today `createCommandBuffer(...)` is called with linked channels only.
+Today `new CommandBuffer(...)` is called with linked channels only.
 
 To make local lane creation eager, the compiler also needs to pass declared-channel information derived from `node._analysis.declaredChannels`.
 
@@ -850,7 +850,7 @@ Important note:
 - the new declared-lane helper must be threaded through the same boundary creation call sites that currently use `getLinkedChannelsArg(...)`, especially in `boundaries.js`, `loop.js`, and root/macro buffer creation paths
 - lane-spec validation should begin as warnings or debug assertions during migration and only become hard errors after the remaining runtime-dynamic lane cases have been removed
 
-### Step 2. Change `createCommandBuffer(...)` to receive static lane specs and build eager arrays
+### Step 2. Change `new CommandBuffer(...)` to receive static lane specs and build eager arrays
 
 Goal:
 
@@ -1215,9 +1215,9 @@ Preflight notes for the current codebase:
 - do not make eager/static lane assertions unconditional while runtime-dynamic
   declaration paths such as `declareBufferChannel(..., name, ...)` still exist
 - account for both buffer creation shapes:
-  - `createCommandBuffer(context, parent, ...)`, where `_channels` is inherited
+  - `new CommandBuffer(context, parent, ...)`, where `_channels` is inherited
     from `parent`
-  - `createCommandBuffer(context, null, linkedChannels, linkedParent)`, where
+  - `new CommandBuffer(context, null, linkedChannels, linkedParent)`, where
     structural linking exists without `_channels` inheritance
 
 Recommended implementation stages:
@@ -1341,7 +1341,7 @@ create a new analysis pass.
 
 Work:
 
-- thread constructor-time lane names into `createCommandBuffer(...)`
+- thread constructor-time lane names into `new CommandBuffer(...)`
 - use eager `arrays[name] = []` as the materialized lane structure
 - do not add persistent `_laneNames`, `_laneNameSet`, `_totalLaneCount`, or
   `_finishedLaneCount` properties
@@ -1349,7 +1349,7 @@ Work:
   names match the eager `arrays` keys where useful
 - add a helper parallel to `getLinkedChannelsArg(...)` for declared lanes
 - thread declared-lane information from compiler analysis into
-  `createCommandBuffer(...)`
+  `new CommandBuffer(...)`
 - inventory and either eliminate or mark as temporary every runtime-dynamic
   declaration site before using the new metadata for hard assertions
 

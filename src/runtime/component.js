@@ -3,7 +3,7 @@ import {Command} from './channels/command-base.js';
 import {resolveSingle} from './resolve.js';
 import * as inheritanceState from './inheritance-state.js';
 import {inheritanceCallApi as inheritanceCall} from './inheritance-call.js';
-import {createCommandBuffer} from './command-buffer.js';
+import {CommandBuffer} from './command-buffer.js';
 import {RuntimeFatalError} from './errors.js';
 import {createCompositionPayload} from './composition-payload.js';
 
@@ -278,7 +278,7 @@ async function createComponentInstance(spec) {
     renderCtx,
     compositionPayload.payloadContext
   );
-  const componentRootBuffer = createCommandBuffer(componentContext, null, null, null);
+  const componentRootBuffer = new CommandBuffer(componentContext, null, null, null);
   const componentInheritanceState = inheritanceState.createInheritanceState();
   componentInheritanceState.sharedRootBuffer = componentRootBuffer;
   componentInheritanceState.compositionPayload = compositionPayload;

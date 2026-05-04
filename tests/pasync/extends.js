@@ -600,7 +600,7 @@ describe('Extends Runtime', function () {
       env = new AsyncEnvironment();
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
       const inheritanceState = runtime.createInheritanceState();
-      const rootBuffer = runtime.createCommandBuffer(context);
+      const rootBuffer = new runtime.CommandBuffer(context);
       runtime.declareBufferChannel(rootBuffer, 'trace', 'var', context, null);
 
       let seenCommand = null;
@@ -666,7 +666,7 @@ describe('Extends Runtime', function () {
       env = new AsyncEnvironment();
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
       const inheritanceState = runtime.createInheritanceState();
-      const rootBuffer = runtime.createCommandBuffer(context);
+      const rootBuffer = new runtime.CommandBuffer(context);
       runtime.declareBufferChannel(rootBuffer, 'theme', 'var', context, null);
       runtime.declareBufferChannel(rootBuffer, 'trace', 'var', context, null);
 
