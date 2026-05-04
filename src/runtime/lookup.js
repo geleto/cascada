@@ -211,21 +211,6 @@ function _getObservationPosition(errorContext) {
 }
 
 function _addObservationCommand(targetBuffer, channelName, pos, mode) {
-  if (targetBuffer.isChannelFinished(channelName)) {
-    const channel = targetBuffer.getChannelIfExists(channelName);
-    if (channel) {
-      if (mode === 'snapshot') {
-        return channel._getResultOrThrow();
-      }
-      if (mode === 'isError') {
-        return channel._isErrorNow();
-      }
-      if (mode === 'getError') {
-        return channel._getErrorNow();
-      }
-    }
-  }
-
   if (mode === 'snapshot') {
     return targetBuffer.addCommand(new SnapshotCommand({ channelName, pos }), channelName);
   }

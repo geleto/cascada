@@ -365,7 +365,7 @@ class CommandBuffer {
     return mapped || name;
   }
 
-
+  // @todo - get rid of this when done cleaning-up inheritance and have a clear channel linking strategy for child buffers.
   _installLinkedChannel(channelName, channel = null) {
     if (!channelName) {
       return;
