@@ -332,7 +332,7 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
     clonedEntry.ownLinkedChannels = entry.ownLinkedChannels.slice();
   }
   clonedEntry.invokedMethods = cloneInvokedMethodsMap(entry.invokedMethods);
-  clonedEntry.superOrigin = entry.superOrigin ? Object.assign({}, entry.superOrigin) : null;
+  clonedEntry.superOrigin = entry.superOrigin ? { ...entry.superOrigin } : null;
   clonedEntry.signature = entry.signature
     ? {
       argNames: Array.isArray(entry.signature.argNames)
@@ -353,9 +353,7 @@ function cloneInvokedMethodsMap(invokedMethods) {
   for (let i = 0; i < names.length; i++) {
     const value = invokedMethods[names[i]];
     cloned[names[i]] = value && typeof value === 'object'
-      ? Object.assign({}, value, {
-        origin: value.origin ? Object.assign({}, value.origin) : null
-      })
+      ? { ...value, origin: value.origin ? { ...value.origin } : null }
       : value;
   }
   return cloned;
@@ -533,9 +531,7 @@ function registerInheritanceInvokedMethods(state, localInvokedMethods, context =
     }
     const localEntry = localInvokedMethods[name];
     if (localEntry && typeof localEntry === 'object') {
-      invokedMethods[name] = Object.assign({}, localEntry, {
-        origin: localEntry.origin ? Object.assign({}, localEntry.origin) : null
-      });
+      invokedMethods[name] = { ...localEntry, origin: localEntry.origin ? { ...localEntry.origin } : null };
       continue;
     }
     invokedMethods[name] = {

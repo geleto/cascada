@@ -234,7 +234,7 @@ function createCallableChannelFacade(channel) {
         const value = channel[prop];
         if (typeof value === 'function') {
           const cacheName = `_bound_${String(prop)}`;
-          if (!Object.prototype.hasOwnProperty.call(channel, cacheName)) {
+          if (!channel[cacheName]) {
             Object.defineProperty(channel, cacheName, {
               configurable: true,
               enumerable: false,

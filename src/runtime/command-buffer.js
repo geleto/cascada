@@ -154,10 +154,10 @@ class CommandBuffer {
     // the rest of the runtime should not need to care whether it came from a
     // formal alias such as a by-reference macro parameter.
     if (!(value instanceof CommandBuffer) && value && typeof value === 'object') {
-      if (Object.hasOwn(value, 'channelName')) {
+      if ('channelName' in value) {
         value.channelName = resolvedChannelName;
       }
-      if (Object.hasOwn(value, 'pathKey')) {
+      if ('pathKey' in value) {
         value.pathKey = resolvedChannelName;
       }
     }

@@ -18,7 +18,7 @@ const COMPILED_INVOKED_METHODS_VAR = '__compiledInvokedMethods';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(templateName, options) {
-    super.init(Object.assign({}, options, { asyncMode: true, templateName }));
+    super.init({ ...options, asyncMode: true, templateName });
     this.guard = new CompileGuard(this);
     this.assignment = new CompileAssignment(this);
   }
@@ -157,10 +157,10 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _analyzeLoopNodeDeclarations(node, analysisPass, declarationsInBody = false) {
     if (node.name instanceof nodes.Symbol) {
-      node.name._analysis = Object.assign({}, node.name._analysis, { declarationTarget: true });
+      node.name._analysis = { ...node.name._analysis, declarationTarget: true };
     } else if (node.name instanceof nodes.Array || node.name instanceof nodes.NodeList) {
       node.name.children.forEach((child) => {
-        child._analysis = Object.assign({}, child._analysis, { declarationTarget: true });
+        child._analysis = { ...child._analysis, declarationTarget: true };
       });
     }
     const declares = [];
@@ -172,22 +172,15 @@ class CompilerAsync extends CompilerBaseAsync {
       declares.push({ name: 'loop', type: 'var', initializer: null, internal: true, isLoopMeta: true });
     }
     if (node.concurrentLimit) {
-      node.body._analysis = Object.assign({}, node.body._analysis, {
-        waitedChannelName: node.body._analysis && node.body._analysis.waitedChannelName
-          ? node.body._analysis.waitedChannelName
-          : `__waited__${this._tmpid()}`
-      });
+      node.body._analysis = {
+        ...node.body._analysis,
+        waitedChannelName: node.body._analysis?.waitedChannelName ?? `__waited__${this._tmpid()}`
+      };
     }
     if (declarationsInBody) {
-      node.body._analysis = Object.assign({}, node.body._analysis, {
-        createScope: true,
-        loopOwner: node,
-        declares
-      });
+      node.body._analysis = { ...node.body._analysis, createScope: true, loopOwner: node, declares };
       if (node.else_) {
-        node.else_._analysis = Object.assign({}, node.else_._analysis, {
-          createScope: true
-        });
+        node.else_._analysis = { ...node.else_._analysis, createScope: true };
       }
       return { createsLinkedChildBuffer: true };
     }
@@ -197,11 +190,10 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeWhile(node, analysisPass) {
     const result = this._analyzeLoopNodeDeclarations(node, analysisPass);
     if (node.body) {
-      node.body._analysis = Object.assign({}, node.body._analysis, {
-        waitedChannelName: (node.body._analysis && node.body._analysis.waitedChannelName)
-          ? node.body._analysis.waitedChannelName
-          : `__waited__${this._tmpid()}`
-      });
+      node.body._analysis = {
+        ...node.body._analysis,
+        waitedChannelName: node.body._analysis?.waitedChannelName ?? `__waited__${this._tmpid()}`
+      };
     }
     return result;
   }
@@ -221,11 +213,10 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeAsyncEach(node, analysisPass) {
     const result = this._analyzeLoopNodeDeclarations(node, analysisPass, true);
     if (node.body) {
-      node.body._analysis = Object.assign({}, node.body._analysis, {
-        waitedChannelName: (node.body._analysis && node.body._analysis.waitedChannelName)
-          ? node.body._analysis.waitedChannelName
-          : `__waited__${this._tmpid()}`
-      });
+      node.body._analysis = {
+        ...node.body._analysis,
+        waitedChannelName: node.body._analysis?.waitedChannelName ?? `__waited__${this._tmpid()}`
+      };
     }
     return result;
   }
@@ -488,7 +479,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeImport(node) {
-    node.target._analysis = Object.assign({}, node.target._analysis, { declarationTarget: true });
+    node.target._analysis = { ...node.target._analysis, declarationTarget: true };
     this.importedBindings.add(node.target.value);
     return {
       declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }]
@@ -511,11 +502,11 @@ class CompilerAsync extends CompilerBaseAsync {
     const declares = [];
     node.names.children.forEach((nameNode) => {
       if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
-        nameNode.value._analysis = Object.assign({}, nameNode.value._analysis, { declarationTarget: true });
+        nameNode.value._analysis = { ...nameNode.value._analysis, declarationTarget: true };
         this.importedBindings.add(nameNode.value.value);
         declares.push({ name: nameNode.value.value, type: 'var', initializer: null, imported: true });
       } else if (nameNode instanceof nodes.Symbol) {
-        nameNode._analysis = Object.assign({}, nameNode._analysis, { declarationTarget: true });
+        nameNode._analysis = { ...nameNode._analysis, declarationTarget: true };
         this.importedBindings.add(nameNode.value);
         declares.push({ name: nameNode.value, type: 'var', initializer: null, imported: true });
       }
@@ -532,9 +523,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const declares = [];
     const seenBlockArgNames = new Set();
     signature.argNodes.forEach((nameNode, index) => {
-      nameNode._analysis = Object.assign({}, nameNode._analysis, {
-        skipDeclarationOwner: node._analysis
-      });
+      nameNode._analysis = { ...nameNode._analysis, skipDeclarationOwner: node._analysis };
       const canonicalName = signature.argNames[index];
       if (seenBlockArgNames.has(canonicalName)) {
         this.fail(
@@ -555,9 +544,10 @@ class CompilerAsync extends CompilerBaseAsync {
       });
     });
     if (declares.length > 0 && node.body) {
-      node.body._analysis = Object.assign({}, node.body._analysis, {
-        declares: ((node.body._analysis && node.body._analysis.declares) || []).concat(declares)
-      });
+      node.body._analysis = {
+        ...node.body._analysis,
+        declares: (node.body._analysis?.declares ?? []).concat(declares)
+      };
     }
     return {
       createScope: true,

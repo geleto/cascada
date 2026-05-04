@@ -45,7 +45,7 @@ class Script extends Template {
       this.env.asyncFilters,
       this.env.extensionsList,
       this.path,
-      Object.assign({ scriptMode: true, asyncMode: true }, this.env.opts)
+      { scriptMode: true, asyncMode: true, ...this.env.opts }
     );
   }
 }

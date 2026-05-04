@@ -17,8 +17,7 @@ function match(filename, patterns) {
 
 /** @deprecated Use precompileTemplateString instead */
 function precompileString(str, opts) {
-  opts = Object.assign({ isAsync: false, isScript: false }, opts, { isString: true });
-  opts.isString = true;
+  opts = { isAsync: false, isScript: false, ...opts, isString: true };
   const env = opts.isAsync
     ? opts.asyncEnv || opts.env || new AsyncEnvironment([])
     : opts.env || new Environment([]);
@@ -31,17 +30,17 @@ function precompileString(str, opts) {
 }
 
 function precompileTemplateString(str, opts) {
-  opts = Object.assign({}, opts, { isAsync: false, isScript: false });
+  opts = { ...opts, isAsync: false, isScript: false };
   return precompileString(str, opts);
 }
 
 function precompileTemplateStringAsync(str, opts) {
-  opts = Object.assign({}, opts, { isAsync: true, isScript: false });
+  opts = { ...opts, isAsync: true, isScript: false };
   return precompileString(str, opts);
 }
 
 function precompileScriptString(str, opts) {
-  opts = Object.assign({}, opts, { isAsync: true, isScript: true });
+  opts = { ...opts, isAsync: true, isScript: true };
   return precompileString(str, opts);
 }
 
@@ -144,7 +143,7 @@ function _precompile(str, name, env, opts) {
       asyncFilters,
       extensions,
       name,
-      Object.assign({asyncMode: opts.isAsync, scriptMode: opts.isScript}, env.opts)
+      { asyncMode: opts.isAsync, scriptMode: opts.isScript, ...env.opts }
     );
   } catch (err) {
     throw _prettifyError(name, false, err);
@@ -167,15 +166,15 @@ function getPrecompileWrapper(opts) {
 }
 
 function precompileTemplate(str, opts) {
-  return precompile(str, Object.assign({}, opts, { isAsync: false, isScript: false }));
+  return precompile(str, { ...opts, isAsync: false, isScript: false });
 }
 
 function precompileTemplateAsync(str, opts) {
-  return precompile(str, Object.assign({}, opts, { isAsync: true, isScript: false }));
+  return precompile(str, { ...opts, isAsync: true, isScript: false });
 }
 
 function precompileScript(str, opts) {
-  return precompile(str, Object.assign({}, opts, { isAsync: true, isScript: true }));
+  return precompile(str, { ...opts, isAsync: true, isScript: true });
 }
 
 export {

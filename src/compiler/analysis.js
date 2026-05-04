@@ -37,9 +37,7 @@ class CompileAnalysis {
     }
 
     const sequenceLocks = Array.from(new Set(this.compiler.sequential.collectSequenceLocks(rootNode)));
-    rootNode._analysis = Object.assign(rootNode._analysis || {}, {
-      sequenceLocks
-    });
+    rootNode._analysis = { ...rootNode._analysis, sequenceLocks };
   }
 
   _walk(node, parentNode, parentField) {
@@ -291,9 +289,7 @@ class CompileAnalysis {
         }
         owner.declaredChannels = owner.declaredChannels || new Map();
         if (!owner.declaredChannels.has(decl.name)) {
-          owner.declaredChannels.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
-            declarationOrigin: analysis
-          })));
+          owner.declaredChannels.set(decl.name, this._cloneDeclaration({ ...decl, declarationOrigin: analysis }));
         }
       }
 
@@ -393,9 +389,7 @@ class CompileAnalysis {
           }
         }
         if (!owner.declaredChannels.has(decl.name)) {
-          owner.declaredChannels.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
-            declarationOrigin
-          })));
+          owner.declaredChannels.set(decl.name, this._cloneDeclaration({ ...decl, declarationOrigin }));
         }
       }
     };
@@ -479,7 +473,7 @@ class CompileAnalysis {
   }
 
   _cloneDeclaration(decl) {
-    return Object.assign({}, decl);
+    return { ...decl };
   }
 
   _validateMutations(analysis) {

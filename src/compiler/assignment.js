@@ -43,7 +43,7 @@ class CompileAssignment {
     }
     targets.forEach((target) => {
       if (target instanceof nodes.Symbol) {
-        target._analysis = Object.assign({}, target._analysis, { declarationTarget: true });
+        target._analysis = { ...target._analysis, declarationTarget: true };
         const name = target.value;
         const declaration = analysisPass.findDeclaration(node._analysis, name);
         if (compiler.scriptMode && !isDeclaration && declaration && declaration.shared) {
