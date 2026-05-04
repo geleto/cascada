@@ -21,9 +21,7 @@ class CommandBuffer {
     this.arrays = Object.create(null);
     // Linked parent lanes this buffer may mutate. This is metadata for future
     // scheduling that can let read-only child buffers stop blocking siblings.
-    this._linkedMutatedChannels = linkedMutatedLaneNames
-      ? new Set(linkedMutatedLaneNames)
-      : null;
+    this._linkedMutatedChannels = new Set(linkedMutatedLaneNames || []);
     this._finishedPromise = null;
     this._finishedResolver = null;
 
@@ -98,9 +96,8 @@ class CommandBuffer {
     if (this.finished) {
       return;
     }
-    const channelNames = Object.keys(this.arrays);
-    for (let i = 0; i < channelNames.length; i++) {
-      this._markChannelFinished(channelNames[i]);
+    for (const channelName of Object.keys(this.arrays)) {
+      this.finishChannel(channelName);
     }
     this._completeBufferIfAllChannelsFinished();
   }
@@ -112,10 +109,12 @@ class CommandBuffer {
       return;
     }
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    if (!resolvedChannelName) {
+    if (!resolvedChannelName || this._finishedChannels[resolvedChannelName]) {
       return;
     }
-    this._markChannelFinished(resolvedChannelName);
+    assertChannelLaneAvailable(this, resolvedChannelName);
+    this._finishedChannels[resolvedChannelName] = true;
+    this._notifyChannelFinished(resolvedChannelName);
   }
 
   isFinished() {
@@ -185,14 +184,7 @@ class CommandBuffer {
   }
 
   addCommand(cmd, channelName = null) {
-    return this._addCommand(cmd, channelName || (cmd && cmd.channelName));
-  }
-
-  addBuffer(buffer, channelName) {
-    return this._add(buffer, channelName);
-  }
-
-  _addCommand(cmd, channelName) {
+    channelName = channelName || (cmd && cmd.channelName);
     if (!this.isChannelFinished(channelName)) {
       this._add(cmd, channelName);
       return cmd.promise;
@@ -220,7 +212,7 @@ class CommandBuffer {
           path
         );
       }
-      return this._runFinishedObservationCommand(cmd, resolvedChannelName);
+      return this._runObservationCommandOnFinishedBuffer(cmd, resolvedChannelName);
     }
 
     const path = this._context?.path || null;
@@ -233,7 +225,11 @@ class CommandBuffer {
     );
   }
 
-  _runFinishedObservationCommand(cmd, channelName) {
+  addBuffer(buffer, channelName) {
+    return this._add(buffer, channelName);
+  }
+
+  _runObservationCommandOnFinishedBuffer(cmd, channelName) {
     const channel = this.getChannelIfExists(channelName);
     const path = this._context?.path || null;
     if (!channel) {
@@ -272,14 +268,8 @@ class CommandBuffer {
   }
 
   _completeBufferIfAllChannelsFinished() {
-    if (this.finished) {
+    if (!Object.keys(this.arrays).every(name => this._finishedChannels[name])) {
       return;
-    }
-    const channelNames = Object.keys(this.arrays);
-    for (let i = 0; i < channelNames.length; i++) {
-      if (!this._finishedChannels[channelNames[i]]) {
-        return;
-      }
     }
     this.finished = true;
     if (this._finishedResolver) {
@@ -324,30 +314,19 @@ class CommandBuffer {
   }
 
   isLinkedMutatedChannel(channelName) {
-    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    return !!(this._linkedMutatedChannels && this._linkedMutatedChannels.has(resolvedChannelName));
+    return this._linkedMutatedChannels.has(this._resolveAliasedChannelName(channelName));
   }
 
+  // @todo - get rid of this after sorting out inheritance
   _markLinkedMutatedChannel(channelName) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    if (!resolvedChannelName) {
-      return;
+    if (resolvedChannelName) {
+      this._linkedMutatedChannels.add(resolvedChannelName);
     }
-    if (!this.hasChannel(resolvedChannelName)) {
-      throw new RuntimeFatalError(
-        `Cannot mark channel '${resolvedChannelName}' as linked-mutated because it is not linked on this buffer`,
-        0,
-        0,
-        null,
-        this._context?.path ?? null
-      );
-    }
-    if (!this._linkedMutatedChannels) {
-      this._linkedMutatedChannels = new Set();
-    }
-    this._linkedMutatedChannels.add(resolvedChannelName);
   }
 
+  // Currently only used in tests, see how it shall work when implementing
+  // macro by-reference parameters that need to alias parent channels.
   _setChannelAliases(map) {
     if (!map) {
       return;
@@ -386,15 +365,6 @@ class CommandBuffer {
     return mapped || name;
   }
 
-  _markChannelFinished(channelName) {
-    const resolvedChannelName = this._resolveAliasedChannelName(channelName);
-    if (!resolvedChannelName || this._finishedChannels[resolvedChannelName]) {
-      return;
-    }
-    assertChannelLaneAvailable(this, resolvedChannelName);
-    this._finishedChannels[resolvedChannelName] = true;
-    this._notifyChannelFinished(resolvedChannelName);
-  }
 
   _installLinkedChannel(channelName, channel = null) {
     if (!channelName) {

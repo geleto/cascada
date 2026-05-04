@@ -723,6 +723,10 @@ function _createMethodPayload(methodData, args, errorContext, label, context = n
   };
 }
 
+//@todo - maybe refactor to add linked/mitated channels in bulk from the
+// command buffer constructor as this is collected/merged data and we need not
+// add linked and mutated channels lazily
+// then try to get rid of _markLinkedMutatedChannel
 function _installInvocationChannelLink(parentBuffer, invocationBuffer, channelName, isLinkedMutation = false) {
   const channel = parentBuffer.getChannelIfExists(channelName);
   if (!channel) {
