@@ -348,7 +348,7 @@ describe('channel.finalSnapshot', function () {
       const buffer = createCommandBuffer(context);
 
       expect(() => {
-        buffer.onEnterBuffer({ onBufferFinished() {} }, 'text');
+        buffer.onIteratorEnterBuffer({ onBufferFinished() {} }, 'text');
       }).to.throwError(/has no linked lane/);
     });
   });

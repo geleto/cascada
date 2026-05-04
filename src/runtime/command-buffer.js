@@ -1,13 +1,6 @@
 
-import {
-  SnapshotCommand,
-  RawSnapshotCommand,
-  ReturnIsUnsetCommand,
-} from './channels/observation.js';
-
 import {assertChannelLaneAvailable, checkFinishedBuffer} from './checks.js';
 import {handleError, RuntimeFatalError} from './errors.js';
-import {BufferIterator} from './buffer-iterator.js';
 import {markCommandBuffer} from './buffer-marker.js';
 
 class CommandBuffer {
@@ -76,10 +69,7 @@ class CommandBuffer {
     const resolvedChannelName = this._createLane(channelName);
     this._channels[resolvedChannelName] = channel;
 
-    const iterator = ensureChannelIterator(channel);
-    if (iterator) {
-      iterator.bindToCurrentBuffer();
-    }
+    channel._iterator.bindToCurrentBuffer();
   }
 
   getFinishedPromise() {
@@ -127,7 +117,7 @@ class CommandBuffer {
     return this._finishedChannels[resolvedChannelName] === true;
   }
 
-  onEnterBuffer(iterator, channelName) {
+  onIteratorEnterBuffer(iterator, channelName) {
     if (!iterator || !channelName) {
       return;
     }
@@ -136,7 +126,7 @@ class CommandBuffer {
     this._visitingIterators.set(resolvedChannelName, iterator);
   }
 
-  onLeaveBuffer(iterator, channelName) {
+  onIteratorLeaveBuffer(iterator, channelName) {
     if (!iterator || !channelName) {
       return;
     }
@@ -198,7 +188,7 @@ class CommandBuffer {
       return cmd.promise;
     }
 
-    if (isFinishedBufferObservationCommand(cmd)) {
+    if (cmd && cmd.isObservable) {
       const resolvedChannelName = this._resolveAliasedChannelName(channelName);
       const channel = this.getChannelIfExists(resolvedChannelName);
       const path = this._context?.path || null;
@@ -220,7 +210,7 @@ class CommandBuffer {
           path
         );
       }
-      return this._runFinishedSnapshotCommand(cmd, resolvedChannelName);
+      return this._runFinishedObservationCommand(cmd, resolvedChannelName);
     }
 
     const path = this._context?.path || null;
@@ -233,7 +223,7 @@ class CommandBuffer {
     );
   }
 
-  _runFinishedSnapshotCommand(cmd, channelName) {
+  _runFinishedObservationCommand(cmd, channelName) {
     const channel = this.getChannelIfExists(channelName);
     const path = this._context?.path || null;
     if (!channel) {
@@ -246,7 +236,7 @@ class CommandBuffer {
       );
     }
 
-    const applySnapshot = () => {
+    const applyObservation = () => {
       try {
         cmd.apply(channel);
       } catch (err) {
@@ -256,12 +246,12 @@ class CommandBuffer {
       return cmd.promise;
     };
 
-    // Snapshot-on-finished-buffer is allowed only after the target channel stream is complete.
+    // Finished-buffer observations are allowed only after the target channel stream is complete.
     if (!channel._completionResolved && channel._completionPromise) {
-      return Promise.resolve(channel._completionPromise).then(applySnapshot);
+      return Promise.resolve(channel._completionPromise).then(applyObservation);
     }
 
-    return applySnapshot();
+    return applyObservation();
   }
 
   _notifyCommandOrBufferAdded(channelName) {
@@ -424,22 +414,6 @@ class CommandBuffer {
     return resolvedChannelName;
   }
 
-}
-
-function isFinishedBufferObservationCommand(cmd) {
-  return (
-    cmd instanceof SnapshotCommand ||
-    cmd instanceof RawSnapshotCommand ||
-    cmd instanceof ReturnIsUnsetCommand
-  );
-}
-
-function ensureChannelIterator(channel) {
-  if (!channel._iterator) {
-    channel._iterator = new BufferIterator(channel);
-  }
-
-  return channel._iterator;
 }
 
 function createCommandBuffer(context, parent = null, linkedChannels = null, linkedParent = null, linkedMutatedChannels = null) {

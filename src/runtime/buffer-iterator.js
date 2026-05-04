@@ -8,7 +8,7 @@ function isCommandBufferLike(value) {
     value.arrays &&
     typeof value.isFinished === 'function' &&
     typeof value.isChannelFinished === 'function' &&
-    typeof value.onEnterBuffer === 'function'
+    typeof value.onIteratorEnterBuffer === 'function'
   );
 }
 
@@ -40,7 +40,7 @@ class BufferIterator {
 
   _reset(rootBuffer) {
     if (this._enteredBuffer && this.channelName) {
-      this._enteredBuffer.onLeaveBuffer(this, this.channelName);
+      this._enteredBuffer.onIteratorLeaveBuffer(this, this.channelName);
     }
 
     this.stack = [];
@@ -189,7 +189,7 @@ class BufferIterator {
     }
 
     if (leaving && leaving.buffer) {
-      leaving.buffer.onLeaveBuffer(this, this.channelName);
+      leaving.buffer.onIteratorLeaveBuffer(this, this.channelName);
       this._releaseFinishedLane(leaving.buffer);
     }
     if (parentCursor.index >= 0) {
@@ -222,11 +222,11 @@ class BufferIterator {
 
   _setCurrentBuffer(buffer, skipLeave = false) {
     if (!skipLeave && this._enteredBuffer && this.channelName) {
-      this._enteredBuffer.onLeaveBuffer(this, this.channelName);
+      this._enteredBuffer.onIteratorLeaveBuffer(this, this.channelName);
     }
     this._enteredBuffer = buffer || null;
     if (buffer && this.channelName) {
-      buffer.onEnterBuffer(this, this.channelName);
+      buffer.onIteratorEnterBuffer(this, this.channelName);
     }
   }
 
