@@ -249,12 +249,15 @@ class CompileCall {
 
   _collectSpecialChannelCallUsage(node, analysisPass, uses, mutates) {
     const compiler = this.compiler;
-    if (!compiler.scriptMode || !node.name || node._analysis.sequenceLockLookup) {
+    if (!node.name || node._analysis.sequenceLockLookup) {
       return null;
     }
 
     const callFacts = this._getSpecialChannelCallFacts(node, analysisPass);
     if (!callFacts) {
+      return null;
+    }
+    if (!compiler.scriptMode && callFacts.channelType === 'var') {
       return null;
     }
     uses.push(callFacts.channelName);
@@ -281,6 +284,10 @@ class CompileCall {
           thisSharedFacts.channelPath.length === 2 &&
           (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
       };
+    }
+
+    if (!compiler.scriptMode) {
+      return null;
     }
 
     const sequencePath = compiler.sequential._extractStaticPath(node.name);

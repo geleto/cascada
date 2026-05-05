@@ -307,5 +307,17 @@ describe('Template Extends', function () {
 
       expect(result).to.be('ctx-theme');
     });
+
+    it('should observe inherited template text through this.__text__.snapshot()', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', 'A{% block body %}base{% endblock %}D');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block body %}X{{ this.__text__.snapshot() }}Y{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AXXYD');
+    });
   });
 });

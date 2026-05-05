@@ -625,9 +625,12 @@ class CompilerAsync extends CompilerBaseAsync {
       const inferredTemplateSharedDeclarations = this._collectInferredTemplateSharedDeclarations(node);
       node._analysis.inferredTemplateSharedDeclarations = inferredTemplateSharedDeclarations;
       inferredTemplateSharedDeclarations.forEach((declaration) => {
+        if (declares.some((existing) => existing.name === declaration.name.value)) {
+          return;
+        }
         declares.push({
           name: declaration.name.value,
-          type: 'var',
+          type: declaration.channelType,
           initializer: null,
           shared: true
         });
@@ -751,7 +754,8 @@ class CompilerAsync extends CompilerBaseAsync {
         return;
       }
       const nameNode = new nodes.Symbol(lookupNode.lineno, lookupNode.colno, name);
-      const declaration = new nodes.ChannelDeclaration(lookupNode.lineno, lookupNode.colno, 'var', nameNode, null, true);
+      const channelType = name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL ? 'text' : 'var';
+      const declaration = new nodes.ChannelDeclaration(lookupNode.lineno, lookupNode.colno, channelType, nameNode, null, true);
       inferred.set(name, declaration);
     });
     return Array.from(inferred.values());

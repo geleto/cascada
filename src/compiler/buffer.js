@@ -408,16 +408,6 @@ class CompileBuffer {
   }
 
   /**
-   * Emit a producer-slot async block invocation and enqueue its result on the
-   * current text channel.
-   *
-   * This is currently used by async block/super/inheritance invocation sites.
-   * Those sites already own their internal composition boundary and return a
-   * final text promise, but they still rely on this wrapper's producer-slot
-   * behavior and local emitted scope. Keep this helper dedicated to block-style
-   * invocation rather than routing them through generic async value helpers.
-   */
-  /**
    * Add a value to the buffer without producer slot-fill wrapping.
    * Use when value construction does not require addAsyncArgsCommand producer semantics.
    * The value is added directly to the current buffer (no extra async block).
@@ -433,15 +423,6 @@ class CompileBuffer {
     this.emitAddCommand(channelName, valueExpr, positionNode, emitTextCommand);
   }
 
-  /**
-   * Emit deferred text output that still needs a structural child buffer.
-   *
-   * Use this only when the expression may add or link command structure later,
-   * so the parent cannot safely enqueue the final TextCommand synchronously.
-   * The expression itself still compiles against the parent buffer; the helper
-   * owns a child text buffer that receives the eventual TextCommand and closes
-   * when that deferred structural work is done.
-   */
   /**
    * Compile a node inside an async buffer boundary.
    * Uses local save/restore of current buffer aliases instead of begin/end caller pairing.

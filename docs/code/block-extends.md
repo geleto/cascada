@@ -293,6 +293,12 @@ Verify this phase with behavior tests:
 Goal: hoist template blocks into inherited method metadata only if Phase 1
 cannot delete enough by editing the existing compiler path.
 
+Phase 2 decision after Phase 1: no hoisting/lowering is needed. Phase 1 already
+deleted `CompileBoundaries.compileBlockTextBoundary()` and routes block
+placement through inherited method dispatch from the existing compiler path.
+Keep reusing `node.findAll(nodes.Block)` for template block metadata discovery
+until a later phase has a concrete deletion that requires changing it.
+
 Prefer reusing the current metadata discovery (`node.findAll(nodes.Block)`) as
 long as possible. Add a transformer lowering only when it lets us delete
 `compileAsyncBlock()` or `compileBlockTextBoundary()` entirely.
@@ -329,21 +335,21 @@ removes more compiler code than it adds.
 
 ### Phase 3: Confirm No Block Text Boundary Remains
 
-Goal: confirm `CompileBoundaries.compileBlockTextBoundary()` stays deleted.
+Goal: keep `CompileBoundaries.compileBlockTextBoundary()` deleted.
 
-The only known blocker is top-level dynamic `extends`, where the runtime parent
-selection decides whether the local root block should render. Solve that as a
-small explicit compatibility mechanism:
+Phase 3 decision after Phases 1 and 2: complete. Source no longer references
+`compileBlockTextBoundary()`, and dynamic root `extends none` placement uses the
+same inherited method invocation path as ordinary block placement. The only
+special handling that remains is the parent-selection guard in
+`compileAsyncBlock()`, which prevents fallback block text from being placed when
+a dynamic parent template exists.
 
-- lower dynamic root block placement to a conditional inherited method call, or
-- move the parent-selection check into a tiny generic conditional-output helper
-  that is not block-specific
+Keep:
 
-Once dynamic root placement uses inherited method calls too, keep deleted:
-
-- `CompileInheritance.compileAsyncBlock()` placement emission
-- `CompileBoundaries.compileBlockTextBoundary()`
-- block-only parent-buffer/text-placement comments and tests
+- no `CompileBoundaries.compileBlockTextBoundary()` helper
+- no block-only text placement boundary
+- command-buffer tests asserting inherited method invocation and absence of the
+  old block boundary
 
 Do not delete `compileAsyncBlockEntry()`: it is the method-entry compiler for
 template blocks.
@@ -352,6 +358,17 @@ template blocks.
 
 Goal: align template text with the inherited method shared-channel model only
 after the placement path has been simplified.
+
+Phase 4 implementation: keep inference in the existing template shared
+declaration collector. `this.__text__` now infers a shared `text` declaration
+for inheritance metadata, while the root scope keeps its ordinary `__text__`
+text channel declaration instead of adding a duplicate shared `var`
+declaration. Template shared-channel observations can reuse the existing
+`observeInheritanceSharedChannel(...)` path for `this.__text__.snapshot()`.
+
+Phase 4 review follow-up: current-phase quality gaps were fixed in place
+(unused call-compiler local removed; runtime coverage added for
+`this.__text__.snapshot()`). No Phase 4 issues are intentionally postponed.
 
 Update inferred shared declaration handling so `this.__text__` is recognized as
 the root template text channel:
@@ -366,15 +383,23 @@ way to model template text.
 
 ### Phase 5: Optional Public Statement Syntax
 
-Goal: add `{% this.row(...) %}` only after block placement no longer has a
-special compiler path.
+Goal: defer `{% this.row(...) %}` unless there is a concrete user-facing need.
 
-Public explicit invocation can initially use the already-supported output
-expression form:
+Phase 5 decision: do not implement now. The public explicit invocation surface
+already works through the output expression form:
 
 ```njk
 {{ this.row(item, loop.index) }}
 ```
+
+Verified behavior:
+
+```njk
+{% block row(item) %}<{{ item }}>{% endblock %}
+{% block body %}{{ this.row("a") }}{{ this.row("b") }}{% endblock %}
+```
+
+renders the expected inherited method output.
 
 If statement syntax is added later, implement it as a parser special case that
 lowers directly to the same `Output(FunCall(...))` shape. It should not get a

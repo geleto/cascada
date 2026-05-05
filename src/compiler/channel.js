@@ -134,10 +134,19 @@ class CompileChannel {
     }
     const channelName = staticPath[1];
     const channelDecl = analysisPass.findDeclaration(analysisNode || node._analysis, channelName);
-    if (!channelDecl || !channelDecl.shared) {
+    const isTemplateTextChannel = !compiler.scriptMode &&
+      compiler.templateUsesInheritanceSurface &&
+      channelName === compiler.buffer.currentTextChannelName &&
+      channelDecl &&
+      channelDecl.type === 'text';
+    if (!channelDecl || (!channelDecl.shared && !isTemplateTextChannel)) {
       return null;
     }
-    if (!compiler.scriptMode && channelDecl.type !== 'var') {
+    if (
+      !compiler.scriptMode &&
+      channelDecl.type !== 'var' &&
+      channelName !== compiler.buffer.currentTextChannelName
+    ) {
       return null;
     }
     const channelPath = [channelName].concat(staticPath.slice(2));
@@ -256,10 +265,6 @@ class CompileChannel {
   }
 
   compileSpecialChannelFunCall(node) {
-    const compiler = this.compiler;
-    if (!compiler.scriptMode) {
-      return false;
-    }
     const specialChannelCall = node._analysis.specialChannelCall;
     if (!specialChannelCall) {
       return false;

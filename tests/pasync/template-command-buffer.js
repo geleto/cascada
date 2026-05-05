@@ -83,6 +83,31 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null)');
     });
 
+    it('should infer this.__text__ as the template text channel', function () {
+      const ast = analyzeTemplateSource('{% block body %}{{ this.__text__.snapshot() }}{{ this.theme }}{% endblock %}');
+      const inferred = ast._analysis.inferredTemplateSharedDeclarations;
+      const rootTextDeclares = ast._analysis.declares.filter((declaration) => declaration.name === '__text__');
+
+      expect(inferred.map((declaration) => [declaration.name.value, declaration.channelType])).to.eql([
+        ['__text__', 'text'],
+        ['theme', 'var']
+      ]);
+      expect(rootTextDeclares).to.have.length(1);
+      expect(rootTextDeclares[0].type).to.be('text');
+      expect(rootTextDeclares[0].shared).to.not.be(true);
+    });
+
+    it('should compile template this.__text__ observations through shared text', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% block body %}{{ this.__text__.snapshot() }}{% endblock %}', env, 'shared-text.njk');
+      const source = tmpl.compileSource();
+
+      expect(source).to.contain('"__text__": "text"');
+      expect(source).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "__text__", "text", context)');
+      expect(source).to.contain('runtime.observeInheritanceSharedChannel("__text__", output');
+      expect(source).to.not.contain('runtime.declareBufferChannel(output, "__text__", "var"');
+    });
+
     it('should declare script root channels after creating the command buffer', function () {
       const env = new AsyncEnvironment();
       const script = new Script('var x = "a"\nreturn x', env, 'declared-lanes.casc');
