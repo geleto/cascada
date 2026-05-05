@@ -158,6 +158,13 @@ class CompilerBaseAsync extends CompilerCommon {
     this._emitAsyncUnaryOp(node, operator);
   }
 
+  analyzeInlineIf() {
+    return {
+      createsLinkedChildBuffer: true,
+      expressionControlFlowBoundary: true
+    };
+  }
+
   compileInlineIf(node) {
     const hasLinkedMutations = node._analysis.linkedMutatedChannels &&
       node._analysis.linkedMutatedChannels.size > 0;
@@ -202,10 +209,11 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('})');
   }
 
-  analyzeInlineIf() {
+  postAnalyzeIs(node) {
+    const isTest = this._getIsTestFacts(node);
     return {
-      createsLinkedChildBuffer: true,
-      expressionControlFlowBoundary: true
+      isTest,
+      errorObservation: isTest.errorObservation || null
     };
   }
 
@@ -246,11 +254,18 @@ class CompilerBaseAsync extends CompilerCommon {
     }, true);
   }
 
+  analyzeOr() {
+    return {
+      createsLinkedChildBuffer: true,
+      expressionControlFlowBoundary: true
+    };
+  }
+
   compileOr(node) {
     this._compileAsyncBinOpShortCircuit(node, true);
   }
 
-  analyzeOr() {
+  analyzeAnd() {
     return {
       createsLinkedChildBuffer: true,
       expressionControlFlowBoundary: true
@@ -261,10 +276,9 @@ class CompilerBaseAsync extends CompilerCommon {
     this._compileAsyncBinOpShortCircuit(node, false);
   }
 
-  analyzeAnd() {
+  postAnalyzePeekError(node) {
     return {
-      createsLinkedChildBuffer: true,
-      expressionControlFlowBoundary: true
+      errorObservation: this._getErrorObservationFacts(node.target)
     };
   }
 
@@ -299,20 +313,6 @@ class CompilerBaseAsync extends CompilerCommon {
 
   analyzeLookupVal(node, analysisPass) {
     return this.lookup.analyzeLookupVal(node, analysisPass);
-  }
-
-  postAnalyzeIs(node) {
-    const isTest = this._getIsTestFacts(node);
-    return {
-      isTest,
-      errorObservation: isTest.errorObservation || null
-    };
-  }
-
-  postAnalyzePeekError(node) {
-    return {
-      errorObservation: this._getErrorObservationFacts(node.target)
-    };
   }
 
   compileLookupVal(node) {

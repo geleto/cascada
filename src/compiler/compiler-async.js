@@ -139,6 +139,10 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.assignment.postAnalyzeSet(node);
   }
 
+  compileCallAssign(node) {
+    this.assignment.compileSet(node);
+  }
+
   analyzeSet(node, analysisPass) {
     return this.assignment.analyzeSet(node, analysisPass);
   }
@@ -148,10 +152,6 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileSet(node) {
-    this.assignment.compileSet(node);
-  }
-
-  compileCallAssign(node) {
     this.assignment.compileSet(node);
   }
 
@@ -253,10 +253,6 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  analyzeCase(node) {
-    return { createScope: true };
-  }
-
   compileSwitch(node) {
     this.buffer._compileAsyncControlFlowBoundary(node, () => {
       let catchPoisonPos;
@@ -300,6 +296,10 @@ class CompilerAsync extends CompilerBaseAsync {
         );
       }
     });
+  }
+
+  analyzeCase(node) {
+    return { createScope: true };
   }
 
   analyzeGuard(node) {
@@ -557,12 +557,12 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  compileBlock(node) {
-    this.inheritance.compileAsyncBlock(node);
-  }
-
   postAnalyzeBlock(node) {
     return this.inheritance.createMethodChannelFootprint(node);
+  }
+
+  compileBlock(node) {
+    this.inheritance.compileAsyncBlock(node);
   }
 
   compileSuper(node) {
@@ -617,26 +617,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance.compileAsyncInclude(node);
   }
 
-  postAnalyzeRoot(node) {
-    const rootCompileFacts = this._getRootCompileFacts(node);
-    validateScriptExtendsSourceOrder(this, node);
-    validateLocalSharedMethodNameCollisions(this, node);
-    return {
-      rootCompileFacts
-    };
-  }
-
-  _emitRootCompositionPayloadInitialization(node) {
-    const skippedNames = Object.create(null);
-    this._getRootDeclarations(node).forEach((declaration) => {
-      skippedNames[declaration.name] = true;
-    });
-    this._getSharedDeclarations(node).forEach((declaration) => {
-      skippedNames[declaration.name.value] = true;
-    });
-    this.emit.line(`runtime.declareCompositionPayloadChannels(${this.buffer.currentBuffer}, context, ${JSON.stringify(skippedNames)});`);
-  }
-
   analyzeRoot(node) {
     const declares = this._getRootDeclarations(node);
     const templateUsesInheritanceSurface = !this.scriptMode && this._templateUsesInheritanceSurface(node);
@@ -663,6 +643,71 @@ class CompilerAsync extends CompilerBaseAsync {
       declares,
       textOutput: this._getRootTextOutput()
     };
+  }
+
+  postAnalyzeRoot(node) {
+    const rootCompileFacts = this._getRootCompileFacts(node);
+    validateScriptExtendsSourceOrder(this, node);
+    validateLocalSharedMethodNameCollisions(this, node);
+    return {
+      rootCompileFacts
+    };
+  }
+
+  compileRoot(node) {
+    if (node.findAll(nodes.CallExtensionAsync).length > 0) {
+      this.emit.lines(
+        'function b___promisify(fn) {',
+        '  return function(...args) {',
+        '    return new Promise((resolvePromise, reject) => {',
+        '      const callback = (error, ...results) => {',
+        '        if (error) {',
+        '          reject(error);',
+        '        } else {',
+        '          resolvePromise(results.length === 1 ? results[0] : results);',
+        '        }',
+        '      };',
+        '      fn(...args, callback);',
+        '    });',
+        '  };',
+        '}'
+      );
+    }
+
+    const rootCompileFacts = node._analysis.rootCompileFacts;
+    this.topLevelDynamicExtends = rootCompileFacts.topLevelDynamicExtends;
+    this.hasStaticExtends = rootCompileFacts.hasStaticExtends;
+    this.hasDynamicExtends = rootCompileFacts.hasDynamicExtends;
+    this.hasDeferredDynamicExtends = rootCompileFacts.hasDeferredDynamicExtends;
+    this.hasExtends = rootCompileFacts.hasExtends;
+    this.needsInheritanceState = rootCompileFacts.needsInheritanceState;
+    const rootCompileResult = this._compileAsyncRoot(node);
+    const invokedMethods = this.inheritance.compileInvokedMethodsLiteral(rootCompileFacts.invokedMethodRefs);
+    const methods = this.inheritance.collectCompiledMethods(node, rootCompileResult.blocks);
+
+    this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);
+    this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
+    this.emit.line(`const ${COMPILED_INVOKED_METHODS_VAR} = ${invokedMethods};`);
+    this.emit.line('return {');
+    this.emit.line('inheritanceSpec: {');
+    this.emit.line('  setup: b___setup__,');
+    this.emit.line(`  methods: ${COMPILED_METHODS_VAR},`);
+    this.emit.line(`  sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
+    this.emit.line(`  invokedMethods: ${COMPILED_INVOKED_METHODS_VAR},`);
+    this.emit.line(`  hasExtends: ${this.hasExtends ? 'true' : 'false'}`);
+    this.emit.line('},');
+    this.emit.line('root: root\n};');
+  }
+
+  _emitRootCompositionPayloadInitialization(node) {
+    const skippedNames = Object.create(null);
+    this._getRootDeclarations(node).forEach((declaration) => {
+      skippedNames[declaration.name] = true;
+    });
+    this._getSharedDeclarations(node).forEach((declaration) => {
+      skippedNames[declaration.name.value] = true;
+    });
+    this.emit.line(`runtime.declareCompositionPayloadChannels(${this.buffer.currentBuffer}, context, ${JSON.stringify(skippedNames)});`);
   }
 
   _templateUsesInheritanceSurface(rootNode) {
@@ -872,51 +917,6 @@ class CompilerAsync extends CompilerBaseAsync {
     return { blocks, hasGenericScriptBody };
   }
 
-  compileRoot(node) {
-    if (node.findAll(nodes.CallExtensionAsync).length > 0) {
-      this.emit.lines(
-        'function b___promisify(fn) {',
-        '  return function(...args) {',
-        '    return new Promise((resolvePromise, reject) => {',
-        '      const callback = (error, ...results) => {',
-        '        if (error) {',
-        '          reject(error);',
-        '        } else {',
-        '          resolvePromise(results.length === 1 ? results[0] : results);',
-        '        }',
-        '      };',
-        '      fn(...args, callback);',
-        '    });',
-        '  };',
-        '}'
-      );
-    }
-
-    const rootCompileFacts = node._analysis.rootCompileFacts;
-    this.topLevelDynamicExtends = rootCompileFacts.topLevelDynamicExtends;
-    this.hasStaticExtends = rootCompileFacts.hasStaticExtends;
-    this.hasDynamicExtends = rootCompileFacts.hasDynamicExtends;
-    this.hasDeferredDynamicExtends = rootCompileFacts.hasDeferredDynamicExtends;
-    this.hasExtends = rootCompileFacts.hasExtends;
-    this.needsInheritanceState = rootCompileFacts.needsInheritanceState;
-    const rootCompileResult = this._compileAsyncRoot(node);
-    const invokedMethods = this.inheritance.compileInvokedMethodsLiteral(rootCompileFacts.invokedMethodRefs);
-    const methods = this.inheritance.collectCompiledMethods(node, rootCompileResult.blocks);
-
-    this.emit.line(`const ${COMPILED_METHODS_VAR} = ${methods};`);
-    this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
-    this.emit.line(`const ${COMPILED_INVOKED_METHODS_VAR} = ${invokedMethods};`);
-    this.emit.line('return {');
-    this.emit.line('inheritanceSpec: {');
-    this.emit.line('  setup: b___setup__,');
-    this.emit.line(`  methods: ${COMPILED_METHODS_VAR},`);
-    this.emit.line(`  sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
-    this.emit.line(`  invokedMethods: ${COMPILED_INVOKED_METHODS_VAR},`);
-    this.emit.line(`  hasExtends: ${this.hasExtends ? 'true' : 'false'}`);
-    this.emit.line('},');
-    this.emit.line('root: root\n};');
-  }
-
   _compileExpressionToString(node) {
     return this.emit.capture(() => {
       this.compileExpression(node, null, node, true);
@@ -934,13 +934,13 @@ class CompilerAsync extends CompilerBaseAsync {
     return analysis;
   }
 
+  postAnalyzeMethodDefinition(node) {
+    return this.inheritance.createMethodChannelFootprint(node);
+  }
+
   compileMethodDefinition() {
     // Method definitions are compiled through upfront metadata and dedicated
     // async entry functions, not by inline root-body emission.
-  }
-
-  postAnalyzeMethodDefinition(node) {
-    return this.inheritance.createMethodChannelFootprint(node);
   }
 }
 

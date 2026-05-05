@@ -145,6 +145,25 @@ class CompileMacro {
     };
   }
 
+  compileAsyncMacro(node) {
+    const compiler = this.compiler;
+    const funcId = this._compileAsyncMacro(node);
+    const name = node.name.value;
+    compiler.emit.line(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+    compiler.buffer.asyncAddValueToBuffer((resultVar) => {
+      compiler.emit(
+        `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+      );
+    }, node, name);
+    if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {
+      if (compiler.scriptMode) {
+        compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
+      } else {
+        compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
+      }
+    }
+  }
+
   _macroUsesCaller(node) {
     if (!node) {
       return false;
@@ -564,25 +583,6 @@ class CompileMacro {
 
     compiler.sequential.isCompilingMacroBody = oldIsCompilingMacroBody;
     return funcId;
-  }
-
-  compileAsyncMacro(node) {
-    const compiler = this.compiler;
-    const funcId = this._compileAsyncMacro(node);
-    const name = node.name.value;
-    compiler.emit.line(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-    compiler.buffer.asyncAddValueToBuffer((resultVar) => {
-      compiler.emit(
-        `${resultVar} = new runtime.VarCommand({ channelName: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
-      );
-    }, node, name);
-    if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {
-      if (compiler.scriptMode) {
-        compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
-      } else {
-        compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
-      }
-    }
   }
 
   compileSyncMacroDeclaration(node, frame) {
