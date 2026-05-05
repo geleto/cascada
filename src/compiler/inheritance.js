@@ -110,10 +110,20 @@ class CompileInheritance {
       return false;
     }
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-    this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${methodName}", `);
-    this.compiler._compileAggregate(node.args, null, '[', ']', false, false);
-    this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
+    this.emitInheritedMethodInvocation(methodName, node.args, errorContextJson);
     return true;
+  }
+
+  emitInheritedMethodInvocation(methodName, argsNode, errorContextJson) {
+    if (!this.compiler.scriptMode) {
+      this.emit('runtime.markSafe(');
+    }
+    this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${methodName}", `);
+    this.compiler._compileAggregate(argsNode, null, '[', ']', false, false);
+    this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
+    if (!this.compiler.scriptMode) {
+      this.emit(')');
+    }
   }
 
   _emitValueImportBinding(name, sourceVar, node) {
@@ -498,38 +508,30 @@ class CompileInheritance {
       return;
     }
 
-    // Inherited block text boundaries carry text placement only. Shared reads
-    // and writes inside the block are enqueued by the admitted method
-    // invocation at call time; linking those lanes here would place shared
-    // observations at the earlier parent-render scheduling point.
-    this.compiler.boundaries.compileBlockTextBoundary(
-      this.compiler.buffer,
-      node,
-      (id) => {
-        this.emit.line(`let ${id};`);
-        const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-        const explicitBlockArgNodes = this.getBlockArgNodes(node);
-        const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
-        const needsParentCheck = isTopLevelTemplateBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
-        if (needsParentCheck) {
-          this.emit.line('const parentPromise = runtime.resolveSingle(extendsState && extendsState.parentSelection);');
-          this.emit.line(`${id} = parentPromise.then((parent) => {`);
-          // A truthy parent means this top-level child block will be rendered
-          // through the selected parent path instead of dispatching locally.
-          this.emit.line('  if (parent) return "";');
-          this.emit.line('  if (inheritanceState) { inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context); }');
-          this.emit(`  return runtime.invokeInheritedMethod(inheritanceState, "${node.name.value}", `);
-          this.compiler._compileAggregate(explicitBlockArgsNode, null, '[', ']', false, false);
-          this.emit.line(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson});`);
-          this.emit.line('});');
-        } else {
-          this.emit(`  ${id} = runtime.invokeInheritedMethod(inheritanceState, "${node.name.value}", `);
-          this.compiler._compileAggregate(explicitBlockArgsNode, null, '[', ']', false, false);
-          this.emit.line(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson});`);
-        }
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
-      }
-    );
+    const id = this.compiler._tmpid();
+    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const explicitBlockArgNodes = this.getBlockArgNodes(node);
+    const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
+    const needsParentCheck = isTopLevelTemplateBlock && this.compiler.hasDynamicExtends;
+    this.emit.line(`let ${id};`);
+    if (needsParentCheck) {
+      const parentPromiseVar = this.compiler._tmpid();
+      this.emit.line(`const ${parentPromiseVar} = runtime.resolveSingle(extendsState && extendsState.parentSelection);`);
+      this.emit.line(`${id} = ${parentPromiseVar}.then((parent) => {`);
+      this.emit.line('  if (parent) return "";');
+      this.emit.line('  if (inheritanceState) { inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context); }');
+      this.emit('  return ');
+      this.emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
+      this.emit.line(';');
+      this.emit.line('});');
+    } else {
+      this.emit(`${id} = `);
+      this.emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
+      this.emit.line(';');
+    }
+    const textCmdExpr = this.compiler.buffer._emitTemplateTextCommandExpression(id, node, true);
+    this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.compiler.buffer.currentTextChannelName}");`);
+    this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
   }
 
   emitRootSharedDeclarations(node) {

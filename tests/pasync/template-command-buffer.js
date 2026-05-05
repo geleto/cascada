@@ -249,7 +249,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       });
     });
 
-    it('should emit inherited block text placement boundaries without shared callable links', function () {
+    it('should emit inherited block placement as method invocation without shared text boundary', function () {
       const env = new AsyncEnvironment();
       const templateSource = '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]';
       const ast = analyzeTemplateSource(templateSource, 'block-text-placement-links.njk');
@@ -259,7 +259,8 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
       expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__', 'theme']);
       expect(Array.from(blockNode._analysis.linkedMutatedChannels || [])).to.eql(['__text__']);
-      expect(source).to.contain('runtime.runControlFlowBoundary(output, ["__text__"], ["__text__"], context, cb, async (blockBuffer)');
+      expect(source).to.contain('runtime.markSafe(runtime.invokeInheritedMethod(inheritanceState, "body"');
+      expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__"], ["__text__"], context, cb, async (blockBuffer)');
       expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","theme"]');
     });
 

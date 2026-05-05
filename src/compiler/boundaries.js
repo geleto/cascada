@@ -307,33 +307,6 @@ class CompileBoundaries {
     });
   }
 
-  compileBlockTextBoundary(bufferCompiler, node, emitValue) {
-    const positionNode = node;
-    const valueId = this.compiler._tmpid();
-    const emitBody = () => {
-      this._withBoundaryBufferState(bufferCompiler, {
-        bufferExpr: bufferCompiler.currentBuffer,
-        textChannelVar: null
-      }, () => {
-        emitValue(valueId);
-      });
-    };
-    emitBody.resultId = valueId;
-
-    this._compileAsyncTextBoundary(bufferCompiler, {
-      parentBufferExpr: bufferCompiler.currentBuffer,
-      linkedChannelsArg: JSON.stringify([bufferCompiler.currentTextChannelName]),
-      linkedMutatedChannelsArg: JSON.stringify([bufferCompiler.currentTextChannelName]),
-      callbackParams: '(blockBuffer)',
-      targetChannelName: bufferCompiler.currentTextChannelName,
-      targetBufferExpr: 'blockBuffer',
-      positionNode,
-      normalizeTextArgs: false,
-      waitedPositionNode: null,
-      emitBody
-    });
-  }
-
   compileCaptureBoundary(bufferCompiler, node, innerBodyFunction, positionNode = node) {
     const captureTextOutputName = node._analysis.textOutput;
     const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);

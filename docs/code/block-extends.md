@@ -174,9 +174,11 @@ signature and invocation arguments, not inferred from free variables.
 
 ## Implementation Direction
 
-Reuse the existing inherited method implementation wherever possible. The new
-block path should be an AST lowering into method declarations and method
-invocations, not a parallel block-specific compiler/runtime path.
+Reuse the existing inherited method implementation wherever possible. The first
+implementation should be a compiler-path simplification: make block placement
+emit the same inherited method invocation as explicit `this.name(...)` calls,
+then delete block-only placement machinery. AST lowering is a fallback only if
+it enables more deletion than it adds.
 
 Current implementation status:
 
@@ -187,28 +189,29 @@ Current implementation status:
   `runtime.invokeInheritedMethod(...)`
 - `super(...)`, signatures, `with context`, extends payloads, shared metadata,
   and parent-chain readiness already live on the inherited method path
-- the remaining special path is block placement:
-  `CompileInheritance.compileAsyncBlock()` emits a block-only text boundary and
-  carries block argument payloads directly
+- the Phase 1 implementation makes block placement emit inherited method
+  invocation directly; `CompileBoundaries.compileBlockTextBoundary()` has been
+  deleted
 
 Therefore the smallest useful migration is to keep the existing block-entry
 compiler and method metadata intact, and replace only inline block placement
-with the same AST shape as `{{ this.blockName(...) }}`. Once placement is just
-an inherited method call, the old block-specific placement boundary can be
-removed.
+with the same inherited method invocation used by `{{ this.blockName(...) }}`.
+Placement is now an inherited method call; future phases should focus on any
+remaining text/shared-channel unification rather than reintroducing a
+block-specific placement path.
 
-AST transform differences for root/no-extends templates:
+Compiler-path behavior for root/no-extends templates:
 
-- replace inline block placement sites with ordinary inherited method
-  invocations, leaving the invocation at the original source position
+- emit inline block placement sites as ordinary inherited method invocations at
+  the original source position
 - block placement sites may appear in non-root scopes such as loops or
-  conditionals; the declaration is still hoisted, but the generated invocation
-  remains in that original local scope
+  conditionals; the method metadata is already available, and the invocation
+  must remain in that original local scope
 
-AST transform differences for extending templates:
+Compiler-path behavior for extending templates:
 
 - none for block placement. Root-scope block declarations are just method
-  overrides, and no implicit invocation is added at the override site.
+  overrides, and no invocation is emitted at the override site.
 
 Shared compiler/analysis changes:
 
@@ -238,41 +241,72 @@ method invocation and normal shared-channel metadata.
 
 ## Implementation Phases
 
-The ten mechanical steps above collapse into four phases. Keep each phase
-small enough to verify independently, but do not split the AST lowering pieces
-apart: lowering, declaration preservation, placement rules, and argument
-mapping are one coherent change.
+Bias the implementation toward deletion. New code is acceptable only when it
+lets us remove a block-specific compiler/runtime path or directly route block
+behavior through inherited methods. If an implementation mostly adds traversal
+or compatibility plumbing while leaving the old placement path intact, stop and
+redesign the step.
 
-### Phase 1: Lower Blocks To Existing Method Calls
+### Phase 1: Replace Placement In The Existing Compiler Path
 
-Goal: make inline block placement compile as inherited method invocation
-without changing runtime behavior.
+Goal: make `CompileInheritance.compileAsyncBlock()` a small compatibility
+adapter around inherited method dispatch, then delete the generic block-only
+placement machinery.
 
-Implement this in `src/transformer.js`, after async inheritance metadata is
-extracted and before async analysis/renaming. Keep it template-only:
+Start inside the existing block compiler instead of adding a broad AST rewrite:
 
-- skip the pass in sync mode
-- skip the pass in script mode
-- leave the existing synchronous Nunjucks block path unchanged
+- keep `compileAsyncBlockEntry()` as the only block body compiler
+- change non-dynamic block placement emission to call the same helper used by
+  explicit `this.name(...)` dispatch
+- factor a tiny shared emitter if needed, for example
+  `emitInheritedMethodInvocation(methodName, argsNode, errorContext, options)`
+- keep `runtime.markSafe(...)` for template method calls in that shared emitter
+- preserve the dynamic root `extends none` check as the only temporary
+  block-specific branch
 
-This phase includes the original steps 1-5:
+Then remove or shrink immediately:
 
-- collect every template `nodes.Block` as a method declaration
-- move hoisted template blocks into `InheritanceMetadata.methods` so
-  `compileAsyncBlockEntry()` still compiles their bodies
-- update `compileAsyncBlockEntries()` and `collectCompiledMethods()` to read
-  template blocks from metadata when present, falling back to `node.findAll`
-  only during transition
-- replace render-position block nodes with the same AST shape as
-  `{{ this.blockName(...) }}`
-- apply the placement rules:
-  root/no-extends blocks leave an invocation; root-scope extending-template
-  blocks are declaration-only; non-root blocks leave an invocation in their
-  original local scope
-- map block signatures to implicit invocation arguments by passing same-named
-  symbols, without scanning the block body for free variables
+- the generic branch of `compileAsyncBlock()` that constructs block-only text
+  boundaries for all placements
+- `CompileBoundaries.compileBlockTextBoundary()`
+- any block-only argument payload construction that can be represented as
+  ordinary method call arguments
+- command-buffer tests that assert block-only boundary shapes
 
-The generated invocation shape should be:
+This phase should produce a net reduction in block placement code. If it does
+not, the implementation is too indirect.
+
+Verify this phase with behavior tests:
+
+- no-extends block renders once: `A{% block body %}B{% endblock %}C`
+- extending template override renders only at the parent placement
+- block inside a loop preserves output order
+- block signatures pass same-named placement locals as method arguments
+- child override receives those arguments and `super()` receives the original
+  arguments
+- `with context` still exposes render-context names
+- block body does not see loop locals unless they are explicit arguments
+- dynamic `extends none` still renders local root block placements
+
+### Phase 2: Hoist Only What Deletion Requires
+
+Goal: hoist template blocks into inherited method metadata only if Phase 1
+cannot delete enough by editing the existing compiler path.
+
+Prefer reusing the current metadata discovery (`node.findAll(nodes.Block)`) as
+long as possible. Add a transformer lowering only when it lets us delete
+`compileAsyncBlock()` or `compileBlockTextBoundary()` entirely.
+
+If lowering is needed, keep it narrow:
+
+- do not introduce a general-purpose AST traversal framework
+- rewrite only direct render-position `nodes.Block` nodes
+- preserve declaration metadata with the smallest possible change
+- avoid fallback readers that scan both metadata and the original tree forever;
+  choose one canonical source after the migration
+
+The generated invocation shape should still be exactly the existing expression
+call shape:
 
 ```javascript
 Output([
@@ -283,32 +317,41 @@ Output([
 ])
 ```
 
-That call should naturally flow through:
+That call must flow through:
 
 - `CompileCall.analyzeFunCall()`
 - `CompileInheritance.analyzeExplicitThisDispatchCall()`
 - `CompileInheritance.postAnalyzeExplicitThisDispatchCall()`
 - `CompileInheritance.compileExplicitThisDispatchCall()`
 
-The generated argument symbols must use the source block's line/column and
-remain normal symbols, not compiler-internal symbols, so the existing rename
-pass can bind them to the placement scope.
+Treat any new transformer code as temporary scaffolding unless it replaces and
+removes more compiler code than it adds.
 
-Verify this phase with behavior tests:
+### Phase 3: Confirm No Block Text Boundary Remains
 
-- no-extends block renders once: `A{% block body %}B{% endblock %}C`
-- extending template override renders only at the parent placement
-- explicit `{{ this.row(item) }}` works in a loop and preserves output order
-- implicit block signature placement passes loop locals by argument
-- child override receives those arguments and `super()` receives the original
-  arguments
-- `with context` still exposes render-context names
-- block body does not see loop locals unless they are explicit arguments
-- dynamic `extends none` still renders local root block placements
+Goal: confirm `CompileBoundaries.compileBlockTextBoundary()` stays deleted.
 
-### Phase 2: Treat Template Text As Normal Shared Text
+The only known blocker is top-level dynamic `extends`, where the runtime parent
+selection decides whether the local root block should render. Solve that as a
+small explicit compatibility mechanism:
 
-Goal: align template text with the inherited method shared-channel model.
+- lower dynamic root block placement to a conditional inherited method call, or
+- move the parent-selection check into a tiny generic conditional-output helper
+  that is not block-specific
+
+Once dynamic root placement uses inherited method calls too, keep deleted:
+
+- `CompileInheritance.compileAsyncBlock()` placement emission
+- `CompileBoundaries.compileBlockTextBoundary()`
+- block-only parent-buffer/text-placement comments and tests
+
+Do not delete `compileAsyncBlockEntry()`: it is the method-entry compiler for
+template blocks.
+
+### Phase 4: Treat Template Text As Normal Shared Text
+
+Goal: align template text with the inherited method shared-channel model only
+after the placement path has been simplified.
 
 Update inferred shared declaration handling so `this.__text__` is recognized as
 the root template text channel:
@@ -318,61 +361,38 @@ the root template text channel:
 - avoid declaring a duplicate `var __text__` when the root already has the
   ordinary template text channel declaration
 
-This phase can be done after Phase 1 if existing text output still passes
-through the old template text channel. It becomes required before removing any
-remaining block-specific text-output assumptions.
+This should remove special text-output assumptions rather than adding a second
+way to model template text.
 
-Verify with shared-channel and ordering tests, including async values and
-poisoned block arguments following the inherited method-call error path.
+### Phase 5: Optional Public Statement Syntax
 
-### Phase 3: Remove Block-Only Placement Machinery
+Goal: add `{% this.row(...) %}` only after block placement no longer has a
+special compiler path.
 
-Goal: delete the old path once block placement is proven to use inherited
-method dispatch.
-
-Remove or shrink:
-
-- `CompileInheritance.compileAsyncBlock()` placement emission
-- `CompileBoundaries.compileBlockTextBoundary()` if no other caller remains
-- block-specific top-level parent checks inside placement emission
-- block-placement-only tests that assert specific boundary names or command
-  shapes
-
-Do not remove `compileAsyncBlockEntry()`: block bodies still need dedicated
-method entry functions.
-
-Update command-buffer tests that currently inspect block-specific boundaries so
-they assert inherited method invocation metadata and normal text channel
-ordering instead.
-
-### Phase 4: Optional Public Statement Syntax
-
-Goal: add `{% this.row(...) %}` only after the internal lowering is stable.
-
-Public explicit invocation can initially be documented and tested with the
-already-supported output expression form:
+Public explicit invocation can initially use the already-supported output
+expression form:
 
 ```njk
 {{ this.row(item, loop.index) }}
 ```
 
-If statement syntax is added later, implement it as a parser node or
-`parseStatement` special case that lowers directly to the same
-`Output(FunCall(...))` shape. It should not get a separate compiler/runtime
-path.
+If statement syntax is added later, implement it as a parser special case that
+lowers directly to the same `Output(FunCall(...))` shape. It should not get a
+separate compiler/runtime path.
 
 ### Suggested Work Order
 
-1. Add the Phase 1 behavior tests and isolate them with `describe.only()` while
-   developing.
-2. Implement the Phase 1 transformer and metadata changes without touching
-   runtime code.
-3. Run the targeted async block and composition tests.
-4. Implement Phase 2 only if `this.__text__` inference is needed to remove
-   remaining special placement assumptions.
-5. Remove the old block placement path in Phase 3.
-6. Run `npm run mocha -- tests/pasync/loader.js tests/pasync/composition.js
-   tests/pasync/template-command-buffer.js` before a broader quick suite.
+1. Revert any broad lowering that increases code before deleting old placement
+   code.
+2. Refactor `compileAsyncBlock()` to call the inherited method dispatch emitter
+   for every non-dynamic-root placement.
+3. Delete the now-unused generic block placement branch and update structural
+   tests to assert inherited method dispatch.
+4. Run `npm run mocha -- tests/pasync/loader.js tests/pasync/composition.js
+   tests/pasync/template-command-buffer.js`.
+5. Confirm dynamic-root fallback still uses inherited method dispatch and that
+   `compileBlockTextBoundary()` remains deleted.
+6. Run `npm run test:quick`.
 
 ## Compatibility
 
