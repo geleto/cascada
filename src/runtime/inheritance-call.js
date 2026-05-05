@@ -996,7 +996,7 @@ function _admitResolvedMethodInvocation({
     currentBuffer,
     methodData
   );
-  const command = inheritanceCallApi.createInheritanceInvocationCommand({
+  const command = createInheritanceInvocationCommand({
     name,
     label,
     methodData,
@@ -1081,43 +1081,8 @@ function invokeComponentMethod(inheritanceStateValue, methodName, args, context,
   });
 }
 
-let createInheritanceInvocationCommandHook = createInheritanceInvocationCommandImpl;
-let getCallableBodyLinkedChannelsHook = getCallableBodyLinkedChannelsImpl;
-let getCallableBodyMutatedChannelsHook = getCallableBodyMutatedChannelsImpl;
+const createInheritanceInvocationCommand = createInheritanceInvocationCommandImpl;
+const getCallableBodyLinkedChannels = getCallableBodyLinkedChannelsImpl;
+const getCallableBodyMutatedChannels = getCallableBodyMutatedChannelsImpl;
 
-const inheritanceCallApi = {};
-Object.defineProperties(inheritanceCallApi, {
-  createInheritanceInvocationCommand: {
-    get: () => createInheritanceInvocationCommandHook,
-    set: (value) => { createInheritanceInvocationCommandHook = value; }
-  },
-  getCallableBodyLinkedChannels: {
-    get: () => getCallableBodyLinkedChannelsHook,
-    set: (value) => { getCallableBodyLinkedChannelsHook = value; }
-  },
-  getCallableBodyMutatedChannels: {
-    get: () => getCallableBodyMutatedChannelsHook,
-    set: (value) => { getCallableBodyMutatedChannelsHook = value; }
-  },
-  getMethodData: { value: getMethodData },
-  finalizeResolvedMethodMetadata: { value: finalizeResolvedMethodMetadata },
-  resolveInheritanceSharedChannel: { value: resolveInheritanceSharedChannel },
-  invokeInheritedMethod: { value: invokeInheritedMethod },
-  invokeSuperMethod: { value: invokeSuperMethod },
-  invokeComponentMethod: { value: invokeComponentMethod }
-});
-Object.freeze(inheritanceCallApi);
-
-function createInheritanceInvocationCommand(spec) {
-  return createInheritanceInvocationCommandHook.apply(this, arguments);
-}
-
-function getCallableBodyLinkedChannels(methodData, errorContext = null) {
-  return getCallableBodyLinkedChannelsHook.apply(this, arguments);
-}
-
-function getCallableBodyMutatedChannels(methodData, errorContext = null) {
-  return getCallableBodyMutatedChannelsHook.apply(this, arguments);
-}
-
-export { inheritanceCallApi, createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, getCallableBodyLinkedChannels, getCallableBodyMutatedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };
+export { createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, getCallableBodyLinkedChannels, getCallableBodyMutatedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };

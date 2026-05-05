@@ -2,7 +2,7 @@
 import {Command} from './channels/command-base.js';
 import {resolveSingle} from './resolve.js';
 import * as inheritanceState from './inheritance-state.js';
-import {inheritanceCallApi as inheritanceCall} from './inheritance-call.js';
+import * as inheritanceCall from './inheritance-call.js';
 import {CommandBuffer} from './command-buffer.js';
 import {RuntimeFatalError} from './errors.js';
 import {createCompositionPayload} from './composition-payload.js';

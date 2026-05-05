@@ -1,6 +1,6 @@
 
-import {inheritanceStateApi as inheritanceState} from './inheritance-state.js';
-import {inheritanceCallApi as inheritanceCall} from './inheritance-call.js';
+import * as inheritanceState from './inheritance-state.js';
+import * as inheritanceCall from './inheritance-call.js';
 import {declareInheritanceSharedChannel} from './inheritance-shared-channels.js';
 import {RuntimeFatalError} from './errors.js';
 
@@ -404,33 +404,7 @@ function finalizeInheritanceMetadata(state, context = null) {
   }
 }
 
-let bootstrapInheritanceMetadataHook = bootstrapInheritanceMetadataImpl;
-let runCompiledRootStartupHook = runCompiledRootStartupImpl;
+const bootstrapInheritanceMetadata = bootstrapInheritanceMetadataImpl;
+const runCompiledRootStartup = runCompiledRootStartupImpl;
 
-const inheritanceBootstrapApi = {};
-Object.defineProperties(inheritanceBootstrapApi, {
-  bootstrapInheritanceMetadata: {
-    get: () => bootstrapInheritanceMetadataHook,
-    set: (value) => { bootstrapInheritanceMetadataHook = value; }
-  },
-  runCompiledRootStartup: {
-    get: () => runCompiledRootStartupHook,
-    set: (value) => { runCompiledRootStartupHook = value; }
-  },
-  bootstrapInheritanceParentScript: { value: bootstrapInheritanceParentScript },
-  renderInheritanceParentRoot: { value: renderInheritanceParentRoot },
-  linkCurrentBufferToParentChannels: { value: linkCurrentBufferToParentChannels },
-  getInheritanceSharedBuffer: { value: getInheritanceSharedBuffer },
-  finalizeInheritanceMetadata: { value: finalizeInheritanceMetadata }
-});
-Object.freeze(inheritanceBootstrapApi);
-
-function bootstrapInheritanceMetadata(...args) {
-  return bootstrapInheritanceMetadataHook.apply(this, args);
-}
-
-function runCompiledRootStartup(...args) {
-  return runCompiledRootStartupHook.apply(this, args);
-}
-
-export { inheritanceBootstrapApi, bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };
+export { bootstrapInheritanceMetadata, bootstrapInheritanceParentScript, runCompiledRootStartup, renderInheritanceParentRoot, linkCurrentBufferToParentChannels, getInheritanceSharedBuffer, finalizeInheritanceMetadata };

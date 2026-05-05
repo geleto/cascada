@@ -21,6 +21,7 @@ export * from './inheritance-state.js';
 export * from './inheritance-bootstrap.js';
 export * from './inheritance-call.js';
 export * from './lookup.js';
+export * from './jinja-compat.js';
 export * from './call.js';
 export * from './loop.js';
 export * from './sequential.js';

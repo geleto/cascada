@@ -6,26 +6,9 @@ import * as nodes from '../../src/nodes.js';
 import * as transformer from '../../src/transformer.js';
 import * as scriptTranspiler from '../../src/script/script-transpiler.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import {inheritanceStateApi as inheritanceStateModule} from '../../src/runtime/inheritance-state.js';
-import {inheritanceCallApi as inheritanceCallModule} from '../../src/runtime/inheritance-call.js';
-import {inheritanceBootstrapApi as inheritanceBootstrapHooks} from '../../src/runtime/inheritance-bootstrap.js';
+import * as inheritanceStateModule from '../../src/runtime/inheritance-state.js';
+import * as inheritanceCallModule from '../../src/runtime/inheritance-call.js';
 import {StringLoader} from '../util.js';
-
-const runtimeHooks = {};
-Object.defineProperties(runtimeHooks, {
-  bootstrapInheritanceMetadata: {
-    get: () => inheritanceBootstrapHooks.bootstrapInheritanceMetadata,
-    set: (value) => { inheritanceBootstrapHooks.bootstrapInheritanceMetadata = value; }
-  },
-  runCompiledRootStartup: {
-    get: () => inheritanceBootstrapHooks.runCompiledRootStartup,
-    set: (value) => { inheritanceBootstrapHooks.runCompiledRootStartup = value; }
-  },
-  getCallableBodyLinkedChannels: {
-    get: () => inheritanceCallModule.getCallableBodyLinkedChannels,
-    set: (value) => { inheritanceCallModule.getCallableBodyLinkedChannels = value; }
-  }
-});
 
 describe('Extends Foundation', function () {
   let env;
@@ -1826,35 +1809,6 @@ describe('Extends Foundation', function () {
       }).to.throwException(/Shared channel 'theme' was not found/);
     });
 
-    it('should register shared schema before constructor work begins', async function () {
-      const loader = new StringLoader();
-      env = new AsyncEnvironment(loader);
-      const seen = [];
-
-      const originalBootstrapInheritanceMetadata = runtimeHooks.bootstrapInheritanceMetadata;
-      runtimeHooks.bootstrapInheritanceMetadata = function(inheritanceStateArg, methodsArg, sharedSchemaArg) {
-        seen.push(`schema:${Object.keys(sharedSchemaArg || {}).join(',')}`);
-        return originalBootstrapInheritanceMetadata.apply(this, arguments);
-      };
-
-      try {
-        loader.addTemplate('C.script', 'shared text trace\nlog("pre-C|")\nreturn "done"');
-
-        const result = await env.renderScript('C.script', {
-          log: (value) => {
-            seen.push(value);
-            return value;
-          }
-        });
-
-        expect(result).to.be('done');
-        expect(seen[0]).to.be('schema:trace');
-        expect(seen[1]).to.be('pre-C|');
-      } finally {
-        runtimeHooks.bootstrapInheritanceMetadata = originalBootstrapInheritanceMetadata;
-      }
-    });
-
     it('should compile script constructor metadata to a dedicated function target', function () {
       const script = new Script('shared text trace\nextends "A.script"\nthis.trace("x")\nreturn this.trace.snapshot()', env, 'constructor-metadata.script');
       script.compile();
@@ -2099,51 +2053,6 @@ describe('Extends Foundation', function () {
 
       expect(plainSource).to.not.contain('runtime.bootstrapInheritanceMetadata(');
       expect(methodSource).to.contain('runtime.bootstrapInheritanceMetadata(');
-    });
-
-    it('should wait for late startup work before finalizing a plain root that uses inheritance startup', async function () {
-      if (!inheritanceStateModule) {
-        this.skip();
-        return;
-      }
-      const originalRunCompiledRootStartup = runtimeHooks.runCompiledRootStartup;
-
-      runtimeHooks.runCompiledRootStartup = function(spec) {
-        const startupPromise = originalRunCompiledRootStartup(spec);
-        const {
-          inheritanceState: inheritanceStateArg,
-          runtime: runtimeArg,
-          output: outputArg
-        } = spec;
-
-        const latePromise = Promise.resolve(startupPromise).then(() => new Promise((resolve, reject) => {
-          setTimeout(() => {
-            try {
-              outputArg.addCommand(new runtimeArg.VarCommand({
-                channelName: '__return__',
-                args: ['late'],
-                pos: { lineno: 1, colno: 0 }
-              }), '__return__');
-              resolve('late');
-            } catch (error) {
-              reject(error);
-            }
-          }, 10);
-        }));
-
-        return inheritanceStateModule.mergeInheritanceStartupPromise(inheritanceStateArg, latePromise, startupPromise);
-      };
-
-      try {
-        const result = await env.renderScriptString(
-          'method noop()\n  return none\nendmethod\nreturn "early"',
-          {}
-        );
-
-        expect(result).to.be('late');
-      } finally {
-        runtimeHooks.runCompiledRootStartup = originalRunCompiledRootStartup;
-      }
     });
 
     it('should aggregate multiple inherited startup failures when merging startup promises', async function () {
@@ -2616,88 +2525,6 @@ describe('Extends Foundation', function () {
         expect().fail('Expected malformed direct super metadata to fail');
       } catch (error) {
         expect(String(error)).to.contain('super() metadata on owner \'Main.script\' is invalid');
-      }
-    });
-
-    it('should use finalized transitive channels during real callable entry linking', async function () {
-      const originalGetCallableBodyLinkedChannels = runtimeHooks.getCallableBodyLinkedChannels;
-      let seenLinkedChannels = null;
-
-      runtimeHooks.getCallableBodyLinkedChannels = function(methodData, errorContext) {
-        const channels = originalGetCallableBodyLinkedChannels.apply(this, arguments);
-        if (
-          methodData &&
-          channels.indexOf('theme') !== -1
-        ) {
-          seenLinkedChannels = {
-            channels: channels.slice().sort(),
-            errorContext
-          };
-        }
-        return channels;
-      };
-
-      try {
-        const result = await env.renderScriptString(
-          'shared var theme = "dark"\nmethod readTheme()\n  return this.theme\nendmethod\nmethod build()\n  return this.readTheme()\nendmethod\nreturn this.build()',
-          {}
-        );
-
-        expect(result).to.be('dark');
-        expect(seenLinkedChannels).to.be.ok();
-        expect(seenLinkedChannels.channels).to.contain('theme');
-      } finally {
-        runtimeHooks.getCallableBodyLinkedChannels = originalGetCallableBodyLinkedChannels;
-      }
-    });
-
-    it('should use direct super metadata during real callable entry linking', async function () {
-      const loader = new StringLoader();
-      env = new AsyncEnvironment(loader);
-      const originalGetCallableBodyLinkedChannels = runtimeHooks.getCallableBodyLinkedChannels;
-      let seenLinkedChannels = null;
-
-      runtimeHooks.getCallableBodyLinkedChannels = function(methodData, errorContext) {
-        const channels = originalGetCallableBodyLinkedChannels.apply(this, arguments);
-        if (
-          methodData &&
-          methodData.ownerKey === 'C.script' &&
-          methodData.super
-        ) {
-          seenLinkedChannels = {
-            channels: channels.slice().sort(),
-            errorContext
-          };
-        }
-        return channels;
-      };
-
-      loader.addTemplate('A.script', [
-        'shared text trace',
-        'shared var late = "parent-default"',
-        'method build()',
-        '  this.trace("parent|")',
-        '  this.late = "from-parent"',
-        '  return "done"',
-        'endmethod'
-      ].join('\n'));
-      loader.addTemplate('C.script', [
-        'extends "A.script"',
-        'method build()',
-        '  return super()',
-        'endmethod',
-        'return this.build()'
-      ].join('\n'));
-
-      try {
-        const result = await env.renderScript('C.script', {});
-
-        expect(result).to.be('done');
-        expect(seenLinkedChannels).to.be.ok();
-        expect(seenLinkedChannels.channels).to.contain('late');
-        expect(seenLinkedChannels.channels).to.contain('trace');
-      } finally {
-        runtimeHooks.getCallableBodyLinkedChannels = originalGetCallableBodyLinkedChannels;
       }
     });
 

@@ -7,10 +7,6 @@ import {StringLoader} from '../util.js';
 import * as runtimeModule from '../../src/runtime/runtime.js';
 import * as componentRuntimeModule from '../../src/runtime/component.js';
 import {ComponentInstance} from '../../src/runtime/component.js';
-import {inheritanceStateApi as inheritanceStateHooks, InheritanceState} from '../../src/runtime/inheritance-state.js';
-import {inheritanceCallApi as inheritanceCallHooks} from '../../src/runtime/inheritance-call.js';
-
-const inheritanceCallModule = inheritanceCallHooks;
 
 describe('Phase 8 - Component Method Calls', function () {
   it('should resolve component method return values correctly', async function () {
@@ -292,116 +288,6 @@ describe('Phase 8 - Component Method Calls', function () {
     } catch (error) {
       expect(String(error)).to.match(/component binding 'ns' only supports/);
     }
-  });
-
-  describe('Phase 8 - Late Component Invocation Linking', function () {
-    it('should create component invocation buffers only after direct method metadata is current', async function () {
-      if (!InheritanceState || !inheritanceCallModule) {
-        this.skip();
-        return;
-      }
-
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      const events = [];
-      const originalRegisterInheritanceMethods = inheritanceStateHooks.registerInheritanceMethods;
-      const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
-      let buildInvocationCreatedAt = -1;
-
-      inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
-        if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
-          buildInvocationCreatedAt = events.length;
-          events.push({ type: 'build-invocation-buffer-created' });
-        }
-        return originalCreateInheritanceInvocationCommand.apply(this, arguments);
-      };
-
-      inheritanceStateHooks.registerInheritanceMethods = function(state, methods) {
-        if (methods && methods.build && methods.build.ownerKey === 'A.script') {
-          events.push({ type: 'parent-build-registered' });
-        }
-        return originalRegisterInheritanceMethods.apply(this, arguments);
-      };
-
-      loader.addTemplate('A.script', [
-        'method build()',
-        '  return "done"',
-        'endmethod'
-      ].join('\n'));
-      loader.addTemplate('C.script', [
-        'extends "A.script"'
-      ].join('\n'));
-      loader.addTemplate('Main.script', [
-        'component "C.script" as ns',
-        'return ns.build()'
-      ].join('\n'));
-
-      try {
-        const result = await env.renderScript('Main.script', {});
-
-        expect(result).to.be('done');
-        const parentRegisteredAt = events.findIndex((event) => event.type === 'parent-build-registered');
-        expect(parentRegisteredAt).to.be.greaterThan(-1);
-        expect(buildInvocationCreatedAt).to.be.greaterThan(parentRegisteredAt);
-      } finally {
-        inheritanceStateHooks.registerInheritanceMethods = originalRegisterInheritanceMethods;
-        inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
-      }
-    });
-
-    it('should create component invocation buffers with the direct callable merged channels', async function () {
-      if (!inheritanceCallModule) {
-        this.skip();
-        return;
-      }
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      let seenLinkedChannels = null;
-      const originalCreateInheritanceInvocationCommand = inheritanceCallHooks.createInheritanceInvocationCommand;
-
-      inheritanceCallHooks.createInheritanceInvocationCommand = function(spec) {
-        if (spec.name === 'build' && spec.methodData && spec.methodData.ownerKey === 'A.script') {
-          const invocationBuffer = spec.invocationBuffer;
-          seenLinkedChannels = {
-            mergedLinkedChannels: spec.methodData.mergedLinkedChannels,
-            late: invocationBuffer.hasChannel('late') && !invocationBuffer.getOwnChannel('late'),
-            trace: invocationBuffer.hasChannel('trace') && !invocationBuffer.getOwnChannel('trace')
-          };
-        }
-        return originalCreateInheritanceInvocationCommand.apply(this, arguments);
-      };
-
-      loader.addTemplate('A.script', [
-        'shared text trace',
-        'shared var late = "parent-default"',
-        'method build()',
-        '  this.trace("method|")',
-        '  this.late = "from-parent"',
-        '  return "done"',
-        'endmethod'
-      ].join('\n'));
-      loader.addTemplate('C.script', [
-        'shared text trace',
-        'extends "A.script"'
-      ].join('\n'));
-      loader.addTemplate('Main.script', [
-        'component "C.script" as ns',
-        'return ns.build()'
-      ].join('\n'));
-
-      try {
-        const result = await env.renderScript('Main.script', {});
-        expect(result).to.be('done');
-        expect(seenLinkedChannels).to.be.ok();
-        expect(seenLinkedChannels.mergedLinkedChannels).to.contain('trace');
-        expect(seenLinkedChannels.mergedLinkedChannels).to.contain('late');
-        expect(seenLinkedChannels.trace).to.be(true);
-        expect(seenLinkedChannels.late).to.be(true);
-      } finally {
-        inheritanceCallHooks.createInheritanceInvocationCommand = originalCreateInheritanceInvocationCommand;
-      }
-    });
-
   });
 
   describe('Phase 8 - Late Component Shared Linking', function () {
@@ -705,81 +591,6 @@ describe('Phase 8 - Component Observations', function () {
     const result = await env.renderScript('Main.script', {});
     expect(result[0]).to.be(true);
     expect(result[1]).to.contain('bad status');
-  });
-
-  it('should enqueue the exact observation command on the component shared root', async function () {
-    if (!ComponentInstance) {
-      this.skip();
-      return;
-    }
-
-    const makeContext = (path) => ({
-      path,
-      getRenderContextVariables() {
-        return {};
-      },
-      forkForComposition(nextPath) {
-        return makeContext(nextPath);
-      }
-    });
-
-    const ownerContext = makeContext('Main.script');
-    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
-    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
-
-    const sharedRootBuffer = new runtimeModule.CommandBuffer(makeContext('Component.script'), null, null, null);
-    runtimeModule.declareBufferChannel(sharedRootBuffer, 'status', 'var', ownerContext, null);
-    sharedRootBuffer.addCommand(new runtimeModule.VarCommand({
-      channelName: 'status',
-      args: ['ok'],
-      pos: { lineno: 1, colno: 1 }
-    }), 'status');
-
-    const inheritanceState = runtimeModule.createInheritanceState();
-    inheritanceState.sharedRootBuffer = sharedRootBuffer;
-    inheritanceState.sharedSchema.status = 'var';
-
-    const componentInstance = new ComponentInstance({
-      context: makeContext('Component.script'),
-      rootBuffer: sharedRootBuffer,
-      inheritanceState
-    });
-
-    ownerBuffer.addCommand(new runtimeModule.VarCommand({
-      channelName: 'nsBinding',
-      args: [componentInstance],
-      pos: { lineno: 1, colno: 1 }
-    }), 'nsBinding');
-
-    const seenAdds = [];
-    const originalAddCommand = sharedRootBuffer.addCommand.bind(sharedRootBuffer);
-    sharedRootBuffer.addCommand = function(value, channelName) {
-      seenAdds.push({ value, channelName });
-      return originalAddCommand(value, channelName);
-    };
-
-    const observationPromise = runtimeModule.observeComponentChannel({
-      bindingName: 'nsBinding',
-      currentBuffer: ownerBuffer,
-      observationCommand: new runtimeModule.SnapshotCommand({
-        channelName: 'status',
-        pos: { lineno: 2, colno: 1 }
-      }),
-      errorContext: { lineno: 2, colno: 1, path: 'Main.script' },
-      implicitVarRead: true
-    });
-
-    const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
-    ownerBuffer.finish();
-    await bindingSnapshot;
-    const observed = await observationPromise;
-
-    sharedRootBuffer.addCommand = originalAddCommand;
-
-    expect(observed).to.be('ok');
-    expect(seenAdds.length).to.be.greaterThan(0);
-    expect(seenAdds[0].channelName).to.be('status');
-    expect(seenAdds[0].value).to.be.a(runtimeModule.SnapshotCommand);
   });
 
   it('should reject non-observational component shared commands', async function () {

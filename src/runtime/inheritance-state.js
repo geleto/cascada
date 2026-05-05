@@ -613,44 +613,4 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
   }
   return sharedMethods;
 }
-let registerInheritanceMethodsHook = registerInheritanceMethods;
-
-const inheritanceStateApi = {};
-Object.defineProperties(inheritanceStateApi, {
-  InheritanceState: { value: InheritanceState },
-  createInheritanceState: { value: createInheritanceState },
-  setInheritanceStartupPromise: { value: setInheritanceStartupPromise },
-  awaitInheritanceStartup: { value: awaitInheritanceStartup },
-  mergeInheritanceStartupPromise: { value: mergeInheritanceStartupPromise },
-  beginInheritanceMetadataReadiness: { value: beginInheritanceMetadataReadiness },
-  resolveInheritanceMetadataReadiness: { value: resolveInheritanceMetadataReadiness },
-  rejectInheritanceMetadataReadiness: { value: rejectInheritanceMetadataReadiness },
-  awaitInheritanceMetadataReadiness: { value: awaitInheritanceMetadataReadiness },
-  isInheritanceMetadataReadinessResolved: { value: isInheritanceMetadataReadinessResolved },
-  consumeInheritanceMetadataReadyYield: { value: consumeInheritanceMetadataReadyYield },
-  setComponentCompositionMode: { value: setComponentCompositionMode },
-  isComponentCompositionMode: { value: isComponentCompositionMode },
-  enterInheritanceChainPath: { value: enterInheritanceChainPath },
-  leaveInheritanceChainPath: { value: leaveInheritanceChainPath },
-  cloneInheritanceMethodEntry: { value: cloneInheritanceMethodEntry },
-  cloneInheritanceMethods: { value: cloneInheritanceMethods },
-  ensureInheritanceMethodsTable: { value: ensureInheritanceMethodsTable },
-  ensureInheritanceSharedSchemaTable: { value: ensureInheritanceSharedSchemaTable },
-  ensureInheritanceInvokedMethodsTable: { value: ensureInheritanceInvokedMethodsTable },
-  registerInheritanceMethods: {
-    get: () => registerInheritanceMethodsHook,
-    set: (value) => { registerInheritanceMethodsHook = value; }
-  },
-  wireResolvedSuperEntry: { value: wireResolvedSuperEntry },
-  registerInheritanceSharedSchema: { value: registerInheritanceSharedSchema },
-  registerInheritanceInvokedMethods: { value: registerInheritanceInvokedMethods },
-  validateInheritanceSharedMethodNameCollisions: { value: validateInheritanceSharedMethodNameCollisions },
-  finalizeInheritanceMethods: { value: finalizeInheritanceMethods },
-  releaseInheritanceBootstrapMetadata: { value: releaseInheritanceBootstrapMetadata },
-  createEmptyConstructorEntry: { value: createEmptyConstructorEntry },
-  createInheritanceMetadataAggregateError: { value: createInheritanceMetadataAggregateError },
-  collectOrThrowInheritanceMetadataError: { value: collectOrThrowInheritanceMetadataError }
-});
-Object.freeze(inheritanceStateApi);
-
-export { inheritanceStateApi, InheritanceState, createInheritanceState, setInheritanceStartupPromise, awaitInheritanceStartup, mergeInheritanceStartupPromise, beginInheritanceMetadataReadiness, resolveInheritanceMetadataReadiness, rejectInheritanceMetadataReadiness, awaitInheritanceMetadataReadiness, isInheritanceMetadataReadinessResolved, consumeInheritanceMetadataReadyYield, setComponentCompositionMode, isComponentCompositionMode, enterInheritanceChainPath, leaveInheritanceChainPath, cloneInheritanceMethodEntry, cloneInheritanceMethods, ensureInheritanceMethodsTable, ensureInheritanceSharedSchemaTable, ensureInheritanceInvokedMethodsTable, registerInheritanceMethods, wireResolvedSuperEntry, registerInheritanceSharedSchema, registerInheritanceInvokedMethods, validateInheritanceSharedMethodNameCollisions, finalizeInheritanceMethods, releaseInheritanceBootstrapMetadata, createEmptyConstructorEntry, createInheritanceMetadataAggregateError, collectOrThrowInheritanceMetadataError };
+export { InheritanceState, createInheritanceState, setInheritanceStartupPromise, awaitInheritanceStartup, mergeInheritanceStartupPromise, beginInheritanceMetadataReadiness, resolveInheritanceMetadataReadiness, rejectInheritanceMetadataReadiness, awaitInheritanceMetadataReadiness, isInheritanceMetadataReadinessResolved, consumeInheritanceMetadataReadyYield, setComponentCompositionMode, isComponentCompositionMode, enterInheritanceChainPath, leaveInheritanceChainPath, cloneInheritanceMethodEntry, cloneInheritanceMethods, ensureInheritanceMethodsTable, ensureInheritanceSharedSchemaTable, ensureInheritanceInvokedMethodsTable, registerInheritanceMethods, wireResolvedSuperEntry, registerInheritanceSharedSchema, registerInheritanceInvokedMethods, validateInheritanceSharedMethodNameCollisions, finalizeInheritanceMethods, releaseInheritanceBootstrapMetadata, createEmptyConstructorEntry, createInheritanceMetadataAggregateError, collectOrThrowInheritanceMetadataError };

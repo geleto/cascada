@@ -4,7 +4,6 @@ import * as lib from './lib.js';
 import * as nodes from './nodes.js';
 import * as parser from './parser.js';
 import * as runtime from './runtime/runtime.js';
-import {lookupApi} from './runtime/lookup.js';
 
 function installCompat() {
 
@@ -20,12 +19,13 @@ function installCompat() {
   var Parser = parser.Parser;
 
   var orig_Frame_lookupOrContext = runtime.Frame.prototype.lookupOrContext;
-  var orig_memberLookup = lookupApi.memberLookup;
   var orig_Compiler_assertTypes = new Map();
+  var orig_Compiler_compileLookupVal = new Map();
   var orig_Parser_parseAggregate;
   if (compilerClasses.length) {
     compilerClasses.forEach((CompilerClass) => {
       orig_Compiler_assertTypes.set(CompilerClass, CompilerClass.prototype.assertType);
+      orig_Compiler_compileLookupVal.set(CompilerClass, CompilerClass.prototype.compileLookupVal);
     });
   }
   if (Parser) {
@@ -34,10 +34,12 @@ function installCompat() {
 
   function uninstall() {
     runtime.Frame.prototype.lookupOrContext = orig_Frame_lookupOrContext;
-    lookupApi.memberLookup = orig_memberLookup;
     orig_Compiler_assertTypes.forEach((assertType, CompilerClass) => {
       CompilerClass.prototype.assertType = assertType;
       delete CompilerClass.prototype.compileSlice;
+    });
+    orig_Compiler_compileLookupVal.forEach((compileLookupVal, CompilerClass) => {
+      CompilerClass.prototype.compileLookupVal = compileLookupVal;
     });
     if (Parser) {
       Parser.prototype.parseAggregate = orig_Parser_parseAggregate;
@@ -99,6 +101,13 @@ function installCompat() {
         this._compileExpression(node.step, frame);
         this.emit(')');
       };
+      CompilerClass.prototype.compileLookupVal = function compileLookupVal(node, frame) {
+        this.emit('runtime.memberLookupJinjaCompat((');
+        this.compile(node.target, frame);
+        this.emit('),');
+        this.compile(node.val, frame);
+        this.emit(')');
+      };
     });
 
     Parser.prototype.parseAggregate = function parseAggregate() {
@@ -158,160 +167,6 @@ function installCompat() {
       }
     };
   }
-
-  function sliceLookup(obj, start, stop, step) {
-    obj = obj || [];
-    if (start === null) {
-      start = (step < 0) ? (obj.length - 1) : 0;
-    }
-    if (stop === null) {
-      stop = (step < 0) ? -1 : obj.length;
-    } else if (stop < 0) {
-      stop += obj.length;
-    }
-
-    if (start < 0) {
-      start += obj.length;
-    }
-
-    const results = [];
-
-    for (let i = start; ; i += step) {
-      if (i < 0 || i > obj.length) {
-        break;
-      }
-      if (step > 0 && i >= stop) {
-        break;
-      }
-      if (step < 0 && i <= stop) {
-        break;
-      }
-      results.push(runtime.memberLookup(obj, i));
-    }
-    return results;
-  }
-
-  function hasOwnProp(obj, key) {
-    return Object.prototype.hasOwnProperty.call(obj, key);
-  }
-
-  const ARRAY_MEMBERS = {
-    pop(index) {
-      if (index === undefined) {
-        return this.pop();
-      }
-      if (index >= this.length || index < 0) {
-        throw new Error('KeyError');
-      }
-      return this.splice(index, 1);
-    },
-    append(element) {
-      return this.push(element);
-    },
-    remove(element) {
-      for (let i = 0; i < this.length; i++) {
-        if (this[i] === element) {
-          return this.splice(i, 1);
-        }
-      }
-      throw new Error('ValueError');
-    },
-    count(element) {
-      var count = 0;
-      for (let i = 0; i < this.length; i++) {
-        if (this[i] === element) {
-          count++;
-        }
-      }
-      return count;
-    },
-    index(element) {
-      var i;
-      if ((i = this.indexOf(element)) === -1) {
-        throw new Error('ValueError');
-      }
-      return i;
-    },
-    find(element) {
-      return this.indexOf(element);
-    },
-    insert(index, elem) {
-      return this.splice(index, 0, elem);
-    }
-  };
-  const OBJECT_MEMBERS = {
-    items() {
-      return lib._entries(this);
-    },
-    values() {
-      return lib._values(this);
-    },
-    keys() {
-      return lib.keys(this);
-    },
-    get(key, def) {
-      var value = this[key];
-      if (value === undefined) {
-        value = def;
-      }
-      return value;
-    },
-    has_key(key) {
-      return hasOwnProp(this, key);
-    },
-    pop(key, def) {
-      var value = this[key];
-      if (value === undefined && def !== undefined) {
-        value = def;
-      } else if (value === undefined) {
-        throw new Error('KeyError');
-      } else {
-        delete this[key];
-      }
-      return value;
-    },
-    popitem() {
-      const keys = lib.keys(this);
-      if (!keys.length) {
-        throw new Error('KeyError');
-      }
-      const k = keys[0];
-      const val = this[k];
-      delete this[k];
-      return [k, val];
-    },
-    setdefault(key, def = null) {
-      if (!(key in this)) {
-        this[key] = def;
-      }
-      return this[key];
-    },
-    update(kwargs) {
-      lib._assign(this, kwargs);
-      return null; // Always returns None
-    }
-  };
-  OBJECT_MEMBERS.iteritems = OBJECT_MEMBERS.items;
-  OBJECT_MEMBERS.itervalues = OBJECT_MEMBERS.values;
-  OBJECT_MEMBERS.iterkeys = OBJECT_MEMBERS.keys;
-
-  lookupApi.memberLookup = function memberLookup(obj, val, autoescape) {
-    if (arguments.length === 4) {
-      return sliceLookup.apply(this, arguments);
-    }
-    obj = obj || {};
-
-    // If the object is an object, return any of the methods that Python would
-    // otherwise provide.
-    if (lib.isArray(obj) && hasOwnProp(ARRAY_MEMBERS, val)) {
-      return ARRAY_MEMBERS[val].bind(obj);
-    }
-    if (lib.isObject(obj) && hasOwnProp(OBJECT_MEMBERS, val)) {
-      return OBJECT_MEMBERS[val].bind(obj);
-    }
-
-    return orig_memberLookup.apply(this, arguments);
-  };
 
   return uninstall;
 }
