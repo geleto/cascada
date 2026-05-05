@@ -519,7 +519,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeBlock(node) {
-    const signature = this.inheritance.getBlockSignature(node);
+    const signature = this.inheritance.getCallableSignature(node);
     const declares = [];
     const seenBlockArgNames = new Set();
     signature.argNodes.forEach((nameNode, index) => {
@@ -917,7 +917,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const hasGenericScriptBody = this._compileAsyncScriptBodyEntry(node);
     this._compileAsyncRootSetupEntry(node, hasGenericScriptBody);
     this.inheritance.compileAsyncConstructorEntry(node);
-    const blocks = this.inheritance.compileAsyncBlockEntries(node);
+    const blocks = this.inheritance.compileAsyncCallableEntries(node);
     return { blocks, hasGenericScriptBody };
   }
 

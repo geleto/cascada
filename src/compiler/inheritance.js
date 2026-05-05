@@ -510,7 +510,7 @@ class CompileInheritance {
 
     const id = this.compiler._tmpid();
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-    const explicitBlockArgNodes = this.getBlockArgNodes(node);
+    const explicitBlockArgNodes = this.getCallableArgNodes(node);
     const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
     const needsParentCheck = isTopLevelTemplateBlock && this.compiler.hasDynamicExtends;
     this.emit.line(`let ${id};`);
@@ -787,21 +787,22 @@ class CompileInheritance {
     this.emit.line('});');
   }
 
-  getBlockArgNames(block) {
-    return this.getBlockSignature(block).argNames;
+  getCallableArgNames(callableNode) {
+    return this.getCallableSignature(callableNode).argNames;
   }
 
-  getBlockArgNodes(block) {
-    return this.getBlockSignature(block).argNodes;
+  getCallableArgNodes(callableNode) {
+    return this.getCallableSignature(callableNode).argNodes;
   }
 
-  getBlockSignature(block) {
-    const signatureArgs = block && block.args && block.args.children ? block.args : new nodes.NodeList();
+  getCallableSignature(callableNode) {
+    const signatureArgs = callableNode && callableNode.args && callableNode.args.children ? callableNode.args : new nodes.NodeList();
+    const label = callableNode instanceof nodes.MethodDefinition ? 'method signature' : 'block signature';
     const parsed = this.compiler._parseCallableSignature(signatureArgs, {
       allowKeywordArgs: false,
       symbolsOnly: true,
-      label: 'block signature',
-      ownerNode: block
+      label,
+      ownerNode: callableNode
     });
     return {
       argNames: parsed.args.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value)),
@@ -809,101 +810,84 @@ class CompileInheritance {
     };
   }
 
-  emitAsyncBlockArgInitialization(block, options = {}) {
-    const blockSignature = this.getBlockSignature(block);
-    const declaredBlockArgNames = Array.isArray(options.declaredBlockArgNames)
-      ? options.declaredBlockArgNames
-      : blockSignature.argNames;
-    const staticLocalNames = Array.from(new Set(declaredBlockArgNames));
+  emitAsyncCallableArgInitialization(callableNode, options = {}) {
+    const callableSignature = this.getCallableSignature(callableNode);
+    const declaredCallableArgNames = Array.isArray(options.declaredCallableArgNames)
+      ? options.declaredCallableArgNames
+      : callableSignature.argNames;
+    const staticLocalNames = Array.from(new Set(declaredCallableArgNames));
     const allLocalNamesVar = this.compiler._tmpid();
-    const blockPayloadOriginalArgsVar = options.payloadOriginalArgsVar || this.compiler._tmpid();
+    const payloadOriginalArgsVar = options.payloadOriginalArgsVar || this.compiler._tmpid();
 
     this.emit.line(`const ${allLocalNamesVar} = ${JSON.stringify(staticLocalNames)};`);
     if (!options.payloadOriginalArgsVar) {
-      this.emit.line(`const ${blockPayloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
+      this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
     }
     this.emit.line(`if (${allLocalNamesVar}.length > 0) {`);
     this.emit.line(`for (const name of ${allLocalNamesVar}) {`);
-    const blockValueId = this.compiler._tmpid();
+    const argValueId = this.compiler._tmpid();
     this.emit.line(`  runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, name, "var", context, null);`);
-    this.emit.line(`  const ${blockValueId} = ${blockPayloadOriginalArgsVar}[name];`);
-    this.emit.line(`  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: name, args: [${blockValueId}], pos: {lineno: ${block.lineno}, colno: ${block.colno}} }), name);`);
+    this.emit.line(`  const ${argValueId} = ${payloadOriginalArgsVar}[name];`);
+    this.emit.line(`  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: name, args: [${argValueId}], pos: {lineno: ${callableNode.lineno}, colno: ${callableNode.colno}} }), name);`);
     this.emit.line('}');
     this.emit.line('}');
   }
 
-  compileAsyncBlockEntry(block) {
-    const name = block.name.value;
-    const isScriptMethod = this._isScriptMethodEntry(block);
-    const invocationPath = isScriptMethod
-      ? JSON.stringify(this._getMethodInvocationPath(block))
-      : (this.compiler.templateName == null
-        ? 'null'
-        : JSON.stringify(String(this.compiler.templateName)));
-    const declaredBlockArgNames = this.getBlockArgNames(block);
-    // This only wires the entry-local command buffer to its immediate parent
-    // invocation buffer. Caller-side inherited dispatch linking is resolved
-    // separately from helper-resolved method metadata at runtime.
-    const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined', 'inheritanceState = null', 'methodData'];
-    this.emit.beginEntryFunction(
-      block,
-      `b_${name}`,
-      null,
-      extraParams
-    );
-    if (isScriptMethod) {
-      this.compiler.return.emitDeclareChannel(this.compiler.buffer.currentBuffer);
-    }
-    const payloadOriginalArgsVar = this.compiler._tmpid();
-    this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
+  emitCallableEntryContextFork(callableNode, isScriptMethod, invocationPath, declaredCallableArgNames, payloadOriginalArgsVar) {
     if (isScriptMethod) {
       const methodBaseContextVar = this.compiler._tmpid();
       this.emit.line(`const ${methodBaseContextVar} = context.getCompositionContextVariables();`);
-      this.emit.line(`context = context.forkForComposition(${invocationPath}, ${methodBaseContextVar}, ${block.withContext ? '(blockRenderCtx || undefined)' : 'undefined'});`);
-    } else {
-      const signatureBaseContextVar = this.compiler._tmpid();
-      const compositionPayloadContextVar = this.compiler._tmpid();
-      const payloadContextVar = this.compiler._tmpid();
-      this.emit.line(`const ${compositionPayloadContextVar} = context.getCompositionPayloadVariables() || {};`);
-      this.emit.line(
-        `const ${signatureBaseContextVar} = ${declaredBlockArgNames.length > 0
-          ? (block.withContext
-            ? `Object.assign({}, (blockRenderCtx || {}), ${compositionPayloadContextVar})`
-            : compositionPayloadContextVar)
-          : `(Object.keys(${compositionPayloadContextVar}).length > 0 ? ${compositionPayloadContextVar} : context.getCompositionContextVariables())`};`
-      );
-      this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${signatureBaseContextVar}, ${payloadOriginalArgsVar});`);
-      this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);
-      this.emit.line(`  context = context.forkForComposition(${invocationPath}, ${payloadContextVar}, ${block.withContext ? 'blockRenderCtx' : 'undefined'});`);
-      this.emit.line('} else {');
-      this.emit.line(`  context = context.forkForPath(${invocationPath});`);
-      this.emit.line('}');
+      this.emit.line(`context = context.forkForComposition(${invocationPath}, ${methodBaseContextVar}, ${callableNode.withContext ? '(blockRenderCtx || undefined)' : 'undefined'});`);
+      return;
     }
+
+    const signatureBaseContextVar = this.compiler._tmpid();
+    const compositionPayloadContextVar = this.compiler._tmpid();
+    const payloadContextVar = this.compiler._tmpid();
+    this.emit.line(`const ${compositionPayloadContextVar} = context.getCompositionPayloadVariables() || {};`);
+    this.emit.line(
+      `const ${signatureBaseContextVar} = ${declaredCallableArgNames.length > 0
+        ? (callableNode.withContext
+          ? `Object.assign({}, (blockRenderCtx || {}), ${compositionPayloadContextVar})`
+          : compositionPayloadContextVar)
+        : `(Object.keys(${compositionPayloadContextVar}).length > 0 ? ${compositionPayloadContextVar} : context.getCompositionContextVariables())`};`
+    );
+    this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${signatureBaseContextVar}, ${payloadOriginalArgsVar});`);
+    this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);
+    this.emit.line(`  context = context.forkForComposition(${invocationPath}, ${payloadContextVar}, ${callableNode.withContext ? 'blockRenderCtx' : 'undefined'});`);
+    this.emit.line('} else {');
+    this.emit.line(`  context = context.forkForPath(${invocationPath});`);
+    this.emit.line('}');
+  }
+
+  emitCallableEntryParentLinks(callableNode, isScriptMethod) {
     this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
     this.emit.line(
       `runtime.linkCurrentBufferToParentChannels(` +
       `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
-      `runtime.getCallableBodyLinkedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(block))}), ` +
-      `runtime.getCallableBodyMutatedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(block))})` +
+      `runtime.getCallableBodyLinkedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(callableNode))}), ` +
+      `runtime.getCallableBodyMutatedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(callableNode))})` +
       `);`
     );
     if (!isScriptMethod) {
       this.emit.line(`${this.compiler.buffer.currentTextChannelVar}._context = context;`);
     }
-    this.emitAsyncBlockArgInitialization(block, {
-      declaredBlockArgNames,
-      payloadOriginalArgsVar
-    });
+  }
+
+  withCallableEntryState(callableNode, emitBody) {
     const previousCallableDefinition = this.compiler.currentCallableDefinition;
     const previousCompilingCallableEntry = this.compiler.isCompilingCallableEntry;
-    this.compiler.currentCallableDefinition = block;
+    this.compiler.currentCallableDefinition = callableNode;
     this.compiler.isCompilingCallableEntry = true;
     try {
-      this.compiler.compile(block.body, null);
+      emitBody();
     } finally {
       this.compiler.currentCallableDefinition = previousCallableDefinition;
       this.compiler.isCompilingCallableEntry = previousCompilingCallableEntry;
     }
+  }
+
+  emitCallableEntryReturn(isScriptMethod) {
     if (isScriptMethod) {
       const resultVar = this.compiler._tmpid();
       this.compiler.return.emitFinalSnapshot(this.compiler.buffer.currentBuffer, resultVar);
@@ -913,30 +897,67 @@ class CompileInheritance {
       // full inherited call.
       this.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
       this.emit.line(`return runtime.normalizeFinalPromise(${resultVar});`);
-    } else {
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
-      this.emit.line(`return ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot();`);
+      return;
     }
-    this.emit.endEntryFunction(block, true);
+
+    this.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
+    this.emit.line(`return ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot();`);
   }
 
-  compileAsyncBlockEntries(node) {
-    const blockNames = new Set();
-    const blocks = this.compiler.scriptMode
+  compileAsyncCallableEntry(callableNode) {
+    const name = callableNode.name.value;
+    const isScriptMethod = this._isScriptMethodEntry(callableNode);
+    const invocationPath = isScriptMethod
+      ? JSON.stringify(this._getMethodInvocationPath(callableNode))
+      : (this.compiler.templateName == null
+        ? 'null'
+        : JSON.stringify(String(this.compiler.templateName)));
+    const declaredCallableArgNames = this.getCallableArgNames(callableNode);
+    // This only wires the entry-local command buffer to its immediate parent
+    // invocation buffer. Caller-side inherited dispatch linking is resolved
+    // separately from helper-resolved method metadata at runtime.
+    const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined', 'inheritanceState = null', 'methodData'];
+    this.emit.beginEntryFunction(
+      callableNode,
+      `b_${name}`,
+      null,
+      extraParams
+    );
+    if (isScriptMethod) {
+      this.compiler.return.emitDeclareChannel(this.compiler.buffer.currentBuffer);
+    }
+    const payloadOriginalArgsVar = this.compiler._tmpid();
+    this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
+    this.emitCallableEntryContextFork(callableNode, isScriptMethod, invocationPath, declaredCallableArgNames, payloadOriginalArgsVar);
+    this.emitCallableEntryParentLinks(callableNode, isScriptMethod);
+    this.emitAsyncCallableArgInitialization(callableNode, {
+      declaredCallableArgNames,
+      payloadOriginalArgsVar
+    });
+    this.withCallableEntryState(callableNode, () => {
+      this.compiler.compile(callableNode.body, null);
+    });
+    this.emitCallableEntryReturn(isScriptMethod);
+    this.emit.endEntryFunction(callableNode, true);
+  }
+
+  compileAsyncCallableEntries(node) {
+    const callableNames = new Set();
+    const callables = this.compiler.scriptMode
       ? this.compiler._getMethodDefinitions(node)
       : node.findAll(nodes.Block);
 
-    blocks.forEach((block) => {
-      const name = block.name.value;
+    callables.forEach((callableNode) => {
+      const name = callableNode.name.value;
 
-      if (blockNames.has(name)) {
-        this.compiler.fail(`Block "${name}" defined more than once.`, block.lineno, block.colno, block);
+      if (callableNames.has(name)) {
+        this.compiler.fail(`Block "${name}" defined more than once.`, callableNode.lineno, callableNode.colno, callableNode);
       }
-      blockNames.add(name);
-      this.compileAsyncBlockEntry(block);
+      callableNames.add(name);
+      this.compileAsyncCallableEntry(callableNode);
     });
 
-    return blocks;
+    return callables;
   }
 
   collectCompiledMethods(node, blocks) {
@@ -952,7 +973,7 @@ class CompileInheritance {
         superOriginExpr: this.compileCallableSuperOriginLiteral(block),
         invokedMethodsExpr: this.compileInvokedMethodsLiteral(this.collectDirectInvokedMethodRefsForCallable(block)),
         signatureExpr: JSON.stringify({
-          argNames: this.getBlockSignature(block).argNames,
+          argNames: this.getCallableSignature(block).argNames,
           withContext: !!block.withContext
         }),
         ownerKey
@@ -1298,7 +1319,7 @@ class CompileInheritance {
     const positionalArgsNode = this._getPositionalSuperArgsNode(node);
     const args = positionalArgsNode.children;
     const compilingBlock = this.compiler.currentCallableDefinition;
-    const knownArgNames = compilingBlock ? this.getBlockArgNames(compilingBlock) : [];
+    const knownArgNames = compilingBlock ? this.getCallableArgNames(compilingBlock) : [];
     const isScriptMethod = this.compiler.scriptMode && this._isScriptMethodEntry(compilingBlock);
 
     if (args.length > knownArgNames.length) {

@@ -183,7 +183,7 @@ it enables more deletion than it adds.
 Current implementation status:
 
 - template blocks are already compiled as method metadata by
-  `CompileInheritance.compileAsyncBlockEntry()` /
+  `CompileInheritance.compileAsyncCallableEntry()` /
   `collectCompiledMethods()`
 - explicit `this.name(...)` calls already compile through
   `runtime.invokeInheritedMethod(...)`
@@ -255,7 +255,7 @@ placement machinery.
 
 Start inside the existing block compiler instead of adding a broad AST rewrite:
 
-- keep `compileAsyncBlockEntry()` as the only block body compiler
+- keep `compileAsyncCallableEntry()` as the only callable body compiler
 - change non-dynamic block placement emission to call the same helper used by
   explicit `this.name(...)` dispatch
 - factor a tiny shared emitter if needed, for example
@@ -351,8 +351,8 @@ Keep:
 - command-buffer tests asserting inherited method invocation and absence of the
   old block boundary
 
-Do not delete `compileAsyncBlockEntry()`: it is the method-entry compiler for
-template blocks.
+Do not delete `compileAsyncCallableEntry()`: it is the shared entry compiler
+for template blocks and script methods.
 
 ### Phase 4: Treat Template Text As Normal Shared Text
 
@@ -404,6 +404,65 @@ renders the expected inherited method output.
 If statement syntax is added later, implement it as a parser special case that
 lowers directly to the same `Output(FunCall(...))` shape. It should not get a
 separate compiler/runtime path.
+
+### Phase 6: Generalize Callable Entry Helpers
+
+Goal: make the already-shared callable entry path easier to understand and
+evolve without changing runtime behavior.
+
+`compileAsyncCallableEntry()` is the shared entry compiler for template
+blocks and script method definitions. Phase 6 is readability scaffolding for
+future cleanup, not an immediate line-count reduction phase.
+
+Phase 6 implementation: callable signature handling now uses callable-oriented
+helper names, and `compileAsyncCallableEntry()` delegates entry setup to small
+helpers for context forking, parent-channel linking, callable state, and return
+emission. The script-method and template-block semantic differences remain
+explicit at those helper boundaries.
+
+The implementation shares `compileAsyncCallableEntry()` for both template blocks
+and script method definitions. The callable-entry helpers now cover:
+
+- callable signature and argument discovery
+- local argument channel initialization
+- context forking
+- parent-channel linking
+- callable-definition state save/restore
+- script-method versus template-block return emission
+
+Do not change semantics:
+
+- script methods still return through `__return__`
+- template blocks still return the local `__text__` final snapshot
+- template block context still accounts for composition payloads, explicit
+  block arguments, and `with context`
+
+The previous block-oriented helper name was removed in this phase.
+
+### Phase 7: Shrink Block Placement Adapter If It Deletes Code
+
+Goal: keep `compileAsyncBlock()` as small as possible while preserving block
+syntax semantics.
+
+The remaining block placement differences are intentional:
+
+- static-extends top-level blocks are definition-only
+- dynamic root `extends none` must render local fallback block placement only
+  when no parent template is selected
+- inline block placement passes same-named signature values as inherited method
+  arguments
+- placement output is enqueued on the current template text channel
+
+Only refactor this phase if it makes `compileAsyncBlock()` smaller or clearer.
+Good candidates:
+
+- extract inherited-call-to-current-text emission into a tiny helper reused by
+  normal and dynamic-root placement
+- keep the dynamic parent-selection guard local unless a generic conditional
+  text-placement helper deletes more code than it adds
+
+Do not introduce AST lowering or parser changes for this phase unless they let
+us remove more compiler code than they add.
 
 ### Suggested Work Order
 
