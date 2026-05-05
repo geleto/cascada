@@ -25,7 +25,7 @@ class CompileGuard {
     return { guardTargets, createsLinkedChildBuffer: true };
   }
 
-  finalizeOutputAnalyzeGuard(node) {
+  postAnalyzeGuard(node) {
     const guardTargets = node._analysis.guardTargets;
     const bodyUsedChannels = Array.from(node.body._analysis.usedChannels ?? []);
     const modifiedLocks = new Set();

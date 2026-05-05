@@ -26,8 +26,7 @@ class CompileAnalysis {
     this._annotateSequenceMetadata(rootNode);
     this._walk(rootNode, null, null);
     this._finalizeDeclarations(rootNode);
-    this._finalizeOutputUsage(rootNode);
-    this._finalizeOutputDerivedFacts(rootNode);
+    this._finalizeChannelUsage(rootNode);
     return null;
   }
 
@@ -63,8 +62,6 @@ class CompileAnalysis {
     node.fields.forEach((field) => {
       this._walk(node[field], node, field);
     });
-
-    this._finalizeNode(node);
   }
 
   _ensureAnalysis(node, parentNode, parentField) {
@@ -86,10 +83,10 @@ class CompileAnalysis {
     // guard/import/caller/component metadata, etc. should be attached only by
     // the analyzer that owns that feature.
     //
-    // Analysis facts are populated in phases: node analyzers seed local
-    // declarations/uses/boundary flags during the walk, declaration ownership
-    // is finalized after traversal, and aggregate used/mutated/linked facts are
-    // derived once child analysis is complete.
+    // Analysis facts are populated in two passes: node analyzers seed local
+    // declarations/uses/boundary flags during the walk, then post-analyzers
+    // run after declaration ownership and aggregate used/mutated/linked facts
+    // have been derived.
     node._analysis = {
       node,
       createScope: false,
@@ -130,34 +127,8 @@ class CompileAnalysis {
     }
   }
 
-  _finalizeNode(node) {
-    const analyzerName = `finalizeAnalyze${node.typename}`;
-    const analyzer = this.compiler && this.compiler[analyzerName];
-    if (typeof analyzer === 'function') {
-      const returned = analyzer.call(this.compiler, node, this);
-      if (returned && typeof returned === 'object' && returned !== node._analysis) {
-        node._analysis = Object.assign(node._analysis || {}, returned);
-      }
-    }
-  }
-
-  _finalizeOutputDerivedFacts(node) {
-    if (!node) {
-      return;
-    }
-    if (Array.isArray(node)) {
-      node.forEach((child) => this._finalizeOutputDerivedFacts(child));
-      return;
-    }
-    if (!(node instanceof nodes.Node)) {
-      return;
-    }
-
-    node.fields.forEach((field) => {
-      this._finalizeOutputDerivedFacts(node[field]);
-    });
-
-    const analyzerName = `finalizeOutputAnalyze${node.typename}`;
+  _postAnalyzeNode(node) {
+    const analyzerName = `postAnalyze${node.typename}`;
     const analyzer = this.compiler && this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
       const returned = analyzer.call(this.compiler, node, this);
@@ -584,7 +555,7 @@ class CompileAnalysis {
     );
   }
 
-  _finalizeOutputUsage(node) {
+  _finalizeChannelUsage(node) {
     if (!node) {
       return {
         usedChannels: new Set(),
@@ -597,7 +568,7 @@ class CompileAnalysis {
         mutatedChannels: new Set()
       };
       node.forEach((child) => {
-        const childAggregate = this._finalizeOutputUsage(child);
+        const childAggregate = this._finalizeChannelUsage(child);
         childAggregate.usedChannels.forEach((name) => aggregate.usedChannels.add(name));
         childAggregate.mutatedChannels.forEach((name) => aggregate.mutatedChannels.add(name));
       });
@@ -631,7 +602,7 @@ class CompileAnalysis {
     });
 
     node.fields.forEach((field) => {
-      const childAggregate = this._finalizeOutputUsage(node[field]);
+      const childAggregate = this._finalizeChannelUsage(node[field]);
       childAggregate.usedChannels.forEach((name) => usedChannels.add(name));
       childAggregate.mutatedChannels.forEach((name) => mutatedChannels.add(name));
     });
@@ -649,6 +620,8 @@ class CompileAnalysis {
         analysis.linkedMutatedChannels = null;
       }
     }
+
+    this._postAnalyzeNode(node);
 
     if (analysis.scopeBoundary) {
       return {

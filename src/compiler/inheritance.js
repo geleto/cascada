@@ -77,7 +77,7 @@ class CompileInheritance {
     return thisSharedDispatch ? null : methodName;
   }
 
-  finalizeAnalyzeExplicitThisDispatchCall(node, thisSharedFacts = null) {
+  postAnalyzeExplicitThisDispatchCall(node, thisSharedFacts = null) {
     if (thisSharedFacts) {
       return null;
     }

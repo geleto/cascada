@@ -72,7 +72,7 @@ class CompileAssignment {
     };
   }
 
-  finalizeAnalyzeSet(node) {
+  postAnalyzeSet(node) {
     const compiler = this.compiler;
     if (node._analysis.thisSharedSetPath) {
       return {};

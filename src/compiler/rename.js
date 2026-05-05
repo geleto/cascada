@@ -16,7 +16,7 @@ class CompileRename {
 
     if (this.compiler.analysis) {
       this.compiler.analysis._finalizeDeclarations(rootNode);
-      this.compiler.analysis._finalizeOutputUsage(rootNode);
+      this.compiler.analysis._finalizeChannelUsage(rootNode);
     }
   }
 

@@ -301,7 +301,7 @@ class CompilerBaseAsync extends CompilerCommon {
     return this.lookup.analyzeLookupVal(node, analysisPass);
   }
 
-  finalizeAnalyzeIs(node) {
+  postAnalyzeIs(node) {
     const isTest = this._getIsTestFacts(node);
     return {
       isTest,
@@ -309,7 +309,7 @@ class CompilerBaseAsync extends CompilerCommon {
     };
   }
 
-  finalizeAnalyzePeekError(node) {
+  postAnalyzePeekError(node) {
     return {
       errorObservation: this._getErrorObservationFacts(node.target)
     };
@@ -323,8 +323,8 @@ class CompilerBaseAsync extends CompilerCommon {
     return this.call.analyzeFunCall(node, analysisPass);
   }
 
-  finalizeAnalyzeFunCall(node) {
-    return this.call.finalizeAnalyzeFunCall(node);
+  postAnalyzeFunCall(node) {
+    return this.call.postAnalyzeFunCall(node);
   }
 
   compileFunCall(node) {

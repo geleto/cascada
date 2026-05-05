@@ -135,16 +135,16 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.assignment.analyzeSet(node, analysisPass);
   }
 
-  finalizeAnalyzeCallAssign(node) {
-    return this.assignment.finalizeAnalyzeSet(node);
+  postAnalyzeCallAssign(node) {
+    return this.assignment.postAnalyzeSet(node);
   }
 
   analyzeSet(node, analysisPass) {
     return this.assignment.analyzeSet(node, analysisPass);
   }
 
-  finalizeAnalyzeSet(node) {
-    return this.assignment.finalizeAnalyzeSet(node);
+  postAnalyzeSet(node) {
+    return this.assignment.postAnalyzeSet(node);
   }
 
   compileSet(node) {
@@ -240,7 +240,7 @@ class CompilerAsync extends CompilerBaseAsync {
     return { createsLinkedChildBuffer: true };
   }
 
-  finalizeOutputAnalyzeSwitch(node) {
+  postAnalyzeSwitch(node) {
     const allChannels = new Set();
     node.cases.forEach((c) => {
       this.analysis.getChannelsUsedFromParent(c.body).forEach(ch => allChannels.add(ch));
@@ -306,8 +306,8 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.guard.analyzeGuard(node);
   }
 
-  finalizeOutputAnalyzeGuard(node) {
-    return this.guard.finalizeOutputAnalyzeGuard(node);
+  postAnalyzeGuard(node) {
+    return this.guard.postAnalyzeGuard(node);
   }
 
   compileGuard(node) {
@@ -326,7 +326,7 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.analyzeIf(node);
   }
 
-  finalizeOutputAnalyzeIf(node) {
+  postAnalyzeIf(node) {
     const trueBranchChannels = this.analysis.getChannelsUsedFromParent(node.body);
     const falseBranchChannels = node.else_
       ? this.analysis.getChannelsUsedFromParent(node.else_)
@@ -561,7 +561,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance.compileAsyncBlock(node);
   }
 
-  finalizeOutputAnalyzeBlock(node) {
+  postAnalyzeBlock(node) {
     return this.inheritance.createMethodChannelFootprint(node);
   }
 
@@ -617,7 +617,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance.compileAsyncInclude(node);
   }
 
-  finalizeAnalyzeRoot(node) {
+  postAnalyzeRoot(node) {
     const rootCompileFacts = this._getRootCompileFacts(node);
     validateScriptExtendsSourceOrder(this, node);
     validateLocalSharedMethodNameCollisions(this, node);
@@ -939,7 +939,7 @@ class CompilerAsync extends CompilerBaseAsync {
     // async entry functions, not by inline root-body emission.
   }
 
-  finalizeOutputAnalyzeMethodDefinition(node) {
+  postAnalyzeMethodDefinition(node) {
     return this.inheritance.createMethodChannelFootprint(node);
   }
 }

@@ -50,13 +50,13 @@ class CompileCall {
     };
   }
 
-  finalizeAnalyzeFunCall(node) {
+  postAnalyzeFunCall(node) {
     const compiler = this.compiler;
     const thisSharedFacts = node.name
       ? compiler.channel.getThisSharedAccessFacts(node.name, compiler.analysis, node._analysis)
       : null;
     const explicitThisDispatchMethodName =
-      compiler.inheritance.finalizeAnalyzeExplicitThisDispatchCall(node, thisSharedFacts);
+      compiler.inheritance.postAnalyzeExplicitThisDispatchCall(node, thisSharedFacts);
 
     return {
       funCallThisSharedAccessFacts: thisSharedFacts,
