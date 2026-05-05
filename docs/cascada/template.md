@@ -21,7 +21,8 @@ Cascada Templates are built on top of Nunjucks and support most CascadaScript co
 
 * **Text output is the default** - Content outside tags renders as text; in scripts, use a `text` channel to build text output explicitly
 * **Expressions in `{{ }}`** - Use double braces for value interpolation
-* **No channels** - The `data`, `text`, and `sequence` channel types are script-only; templates only output text
+* **No channels** - `data` and `text` channel declarations are script-only; templates output text implicitly
+* **No `sequence` declarations** - `sequence name = value` is script-only and is not supported in templates. Use `!` on static context paths for ordered external interactions.
 * **Tags use `{% %}`** - All logic goes inside tag delimiters (use standard Nunjucks whitespace control where needed)
 * **`set` for variables and assignment** - Use Nunjucks `{% set %}` syntax instead of Script's `var` and `=`
 * **`do` for execution-only expressions** - Standalone calls and sequential path repair (`!!`) use `{% do %}`
@@ -304,7 +305,8 @@ All Cascada composition operations support `with` for passing data across isolat
 
 ### Script features not available in templates
 
-* **Channels**: `data`, `text`, and `sequence` channel declarations are script-only
+* **Channels**: `data` and `text` channel declarations are script-only
+* **Sequence declarations**: `sequence name = value` is a separate script-only feature and is not supported in templates. In templates, use `!` on static context paths for ordered external interactions.
 * **Property assignment**: `obj.prop = value` is not supported; use `{% set obj = ... %}` to reassign entire variables
 
 ### Template features not available in scripts

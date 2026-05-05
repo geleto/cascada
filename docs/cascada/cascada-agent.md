@@ -798,7 +798,8 @@ Hello {{ user.name }}
 
 {# [TPL-03] RULE: Comments use {# ... #}. JS-style // and /* */ are NOT template comments. #}
 
-{# [TPL-04] RULE: Channels (`data`/`text`/`sequence`) are SCRIPT-ONLY. Templates only output text. #}
+{# [TPL-04] RULE: `data`/`text` channels are SCRIPT-ONLY. Templates only output text.
+   `sequence` declarations are a separate script-only feature; use `!` static paths for template ordering. #}
 
 {# [TPL-05] RULE: Property assignment (obj.prop = v) is SCRIPT-ONLY.
    To change a property in templates, reassign the whole var with {% set %}. #}
