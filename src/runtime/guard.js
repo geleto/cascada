@@ -1,4 +1,6 @@
 // @todo - this is temporary implementation
+// use the dropped AST-lowering guard implementation as a reference
+// for a more robust compiler-only implementation
 
 import {
   CaptureGuardStateCommand,
