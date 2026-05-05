@@ -54,7 +54,7 @@ This concurrency-first philosophy is the foundation for both of its powerful mod
 * A familiar [template syntax](docs/cascada/template.md) - Cascada is based on the popular [Nunjucks](https://mozilla.github.io/nunjucks/) template engine, for generating text-based output, ideal for dynamic websites, writing emails or crafting detailed LLM prompts.
 
 ### [Implicitly Concurrent, Explicitly Sequential](https://geleto.github.io/cascada-script/#managing-side-effects-sequential-execution-with-)
-While this "concurrency-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making an LLM request, you can use the simple `!` marker to enforce a strict sequential order on a specific chain of operations, without affecting the concurrency of the rest of the code.
+While this "concurrency-first" approach is powerful, some imported native functions and objects still need to run in a specific order. Cascada can order its own internal work automatically, but it cannot know whether a context function is pure or has side effects. For these external cases, such as writing to a database, interacting with a stateful API or calling a mutable helper, you can use the simple `!` marker to enforce a strict sequential order on a specific context-object path, without affecting the concurrency of the rest of the code.
 
 This inversion - Implicitly Concurrent, Explicitly Sequential - is what makes Cascada so effective and intuitive.
 
@@ -244,7 +244,7 @@ return output.snapshot()
 
 ### Sequential Execution Control (`!`)
 
-For functions with side effects (e.g., database writes), the `!` marker enforces a sequential execution order for a specific object path. Once a path is marked, *all* subsequent access on that path (reads and calls without side effects do not need `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
+For imported context functions with side effects (e.g., database writes, mutable object methods or functions, stateful APIs), the `!` marker enforces a sequential execution order for a specific context-object path. Once a path is marked, *all* subsequent access on that path (reads and calls without side effects do not need `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
 
 </td>
 <td valign="top">
@@ -343,7 +343,7 @@ return report.snapshot()
 
 ### Sequential Execution for Stateful Objects
 
-Some external objects - graphics contexts, state machines, streaming APIs - require every command to be applied in a specific order. Cascada offers two tools for this: the `!` marker, which enforces ordering on individual calls, and the `sequence` channel (script-only), which wraps the object so that every access on it is automatically sequential.
+Some external context objects - graphics contexts, state machines, streaming APIs, mutable functions - require every command to be applied in a specific order. Cascada offers two tools for this: the `!` marker, which enforces ordering on individual calls, and the `sequence` channel (script-only), which wraps the object so that every access on it is automatically sequential.
 
 </td>
 <td valign="top">

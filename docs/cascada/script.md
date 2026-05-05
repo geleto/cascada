@@ -148,7 +148,9 @@ Forget await. Forget .then(). Forget manually tracking which variables are promi
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
 #### Implicitly Concurrent, Explicitly Sequential
-While this "concurrency-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which enforces strict sequential order on a specific chain of operations (such as database writes or stateful API calls); the `each` loop, which iterates a collection one item at a time when per-item side-effects must not overlap; and a `sequence` channel, which provides strictly ordered reads and calls on an external object while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
+While this "concurrency-first" approach is powerful, some operations still need to run in a specific order. Cascada can order its own internal work automatically, including data/text channel assembly and dependencies between script expressions. The hard case is imported native functions and objects from the render context: APIs, mutable object methods, database handles, file writers, LLM clients, and helpers that read or change shared state. Cascada cannot know whether those functions are pure or side-effectful, so you mark the ordering explicitly.
+
+For these cases you have three tools: the `!` marker, which enforces strict sequential order on a specific context-object path (such as database writes or stateful API calls); the `each` loop, which iterates a collection one item at a time when per-item side-effects must not overlap; and a `sequence` channel, which provides strictly ordered reads and calls on an external context object while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
 
 #### Execution is chaotic, but the result is orderly
 While independent operations run concurrently and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
@@ -1146,7 +1148,7 @@ return out.snapshot()
 
 ### The `sequence` Channel
 
-A `sequence` wraps an external object with strictly sequential access. All reads and calls happen in source-code order, serialized with the rest of the sequence.
+A `sequence` wraps an external object from the render context with strictly sequential access. Use it for imported native objects whose methods or property reads depend on order, such as mutable API clients, database transactions, graphics contexts, file writers, state machines, or helpers that touch shared state. Cascada cannot infer whether these external calls are pure or side-effectful, so a `sequence` tells the engine to serialize every read and call through that channel in source-code order.
 
 ```javascript
 sequence db = services.db
@@ -1184,11 +1186,11 @@ If a `sequence` becomes poisoned, the built-in way to recover it is with a `guar
 | | `sequence` | `!` marker |
 |---|---|---|
 | **What it is** | A declared channel | A marker on a static context path |
-| **What it is for** | Ordered reads and calls on one object | Ordering side effects on one path |
+| **What it is for** | Ordered reads and calls on one external context object | Ordering side effects on one external context path |
 | **Return values** | Read immediately in normal expressions | Mainly used for side-effectful operations |
 | **Example** | `var user = db.getUser(1)` | `db!.insert(user)` |
 
-Use `sequence` when the object itself is your ordered interface. Use `!` when you want to serialize side effects on a context path.
+Use `sequence` when the external object itself is your ordered interface. Use `!` when you want to serialize side effects on a specific context path without wrapping the whole object.
 
 For details on the `!` operator, see [Sequential Execution Control](#managing-side-effects-sequential-execution).
 
@@ -1226,7 +1228,9 @@ For details, see [Protecting State with `guard`](#protecting-state-with-guard).
 
 ## Managing Side Effects: Sequential Execution with `!`
 
-For functions with side effects (e.g., database writes), the `!` marker enforces a sequential execution order for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
+There are cases where operations have to run in a specific order, especially imported native functions from the render context: APIs, mutable object methods, database writes, file-system calls, LLM requests, or helpers that access and change shared state. Cascada can order its own internal work automatically, including dependencies and channel writes, but it has no way to know whether a context function is pure or has side effects. The `!` marker is how you tell Cascada that a context path must be serialized.
+
+The `!` marker enforces sequential execution for a specific context-object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
 
 Sequential paths also participate in Cascada's error-propagation model; for the full rules on poisoning, repair, and recovery, see [Error Handling](#error-handling).
 
