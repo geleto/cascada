@@ -6,24 +6,24 @@
 
 [Cascada Github](https://github.com/geleto/cascada)
 
-**CascadaScript** inverts the traditional programming model: it is concurrent by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
+CascadaScript inverts the traditional programming model: it is concurrent by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
 
 ## CascadaScript  -  Implicitly Concurrent, Explicitly Sequential
 
-**CascadaScript** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
+CascadaScript is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a data-orchestration layer for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
 It uses familiar syntax and language constructs, while offering language-level support for boilerplate-free concurrent workflows, explicit control over side effects, deterministic output construction, and dataflow-based error handling with recovery rollbacks.
 
-**⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welco-me.
+**⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welcome.
 
 
 The core execution model:
 
-* ⚡ **Concurrent by default**  -  Independent operations - variable assignments, function calls, loop iterations - execute concurrently without `async`, `await`, or promise management.
-* 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
-* ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs - the rest of the script stays concurrent.
-* 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
-* ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated concurrent work to continue safely.
+* **Concurrent by default**  -  Independent operations - variable assignments, function calls, loop iterations - execute concurrently without `async`, `await`, or promise management.
+* **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
+* **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs - the rest of the script stays concurrent.
+* **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
+* **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated concurrent work to continue safely.
 
 CascadaScript is particularly well suited for:
 
@@ -32,7 +32,7 @@ CascadaScript is particularly well suited for:
 * Agent systems and planning patterns
 * High-throughput I/O coordination
 
-In short, Cascada lets developers **write clear, linear logic** while the engine handles **concurrent execution, ordering guarantees, and error propagation** automatically.
+In short, Cascada lets developers write clear, linear logic while the engine handles concurrent execution, ordering guarantees, and error propagation automatically.
 
 Despite executing concurrently by default, it reads exactly like the synchronous code you already write:
 
@@ -137,26 +137,26 @@ To understand how Cascada achieves effortless concurrency, read the next section
 
 Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective CascadaScripts - it explains why the language behaves the way it does and how to leverage its concurrency.
 
-#### ⚡ Concurrent by default
-Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **concurrent by default**. Independent variable assignments, function calls, loop iterations, and function invocations all run concurrently - no special syntax required.
+#### Concurrent by default
+Cascada fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is concurrent by default. Independent variable assignments, function calls, loop iterations, and function invocations all run concurrently - no special syntax required.
 
-#### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
-In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This applies to all constructs: expressions evaluate as soon as their operands resolve, conditionals wait for their condition, loops wait for their iterable, and function calls wait for their arguments. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
+#### Data-Driven Flow: Code runs when its inputs are ready.
+In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that operations will wait for their required inputs before executing. This applies to all constructs: expressions evaluate as soon as their operands resolve, conditionals wait for their condition, loops wait for their iterable, and function calls wait for their arguments. This orchestration eliminates the possibility of race conditions by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
 
-#### ✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.
+#### Implicit Concurrency: Write Business Logic, Not Async Plumbing.
 Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
-#### ➡️ Implicitly Concurrent, Explicitly Sequential
-While this "concurrency-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which **enforces strict sequential order on a specific chain of operations** (such as database writes or stateful API calls); the `each` loop, which **iterates a collection one item at a time** when per-item side-effects must not overlap; and a `sequence` channel, which provides **strictly ordered reads and calls on an external object** while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
+#### Implicitly Concurrent, Explicitly Sequential
+While this "concurrency-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases you have three tools: the `!` marker, which enforces strict sequential order on a specific chain of operations (such as database writes or stateful API calls); the `each` loop, which iterates a collection one item at a time when per-item side-effects must not overlap; and a `sequence` channel, which provides strictly ordered reads and calls on an external object while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
 
-#### 📋 Execution is chaotic, but the result is orderly
+#### Execution is chaotic, but the result is orderly
 While independent operations run concurrently and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
 
-#### ☣️ Dataflow Poisoning - Errors that flow like data
-Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. Poisoning is conservative with control flow: if an `if` condition is an Error Value, neither branch runs and every variable that either branch would have modified becomes poisoned. You can detect and repair these errors using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
+#### Dataflow Poisoning - Errors that flow like data
+Cascada replaces traditional try/catch exceptions with a data-centric error model called dataflow poisoning. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. Poisoning is conservative with control flow: if an `if` condition is an Error Value, neither branch runs and every variable that either branch would have modified becomes poisoned. You can detect and repair these errors using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
 
-#### 💡 Clean, Expressive Syntax
+#### Clean, Expressive Syntax
 CascadaScript offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `function`, which supports default values and keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
 
 
@@ -309,18 +309,18 @@ return {
 }
 ```
 
-**\* *Note:** Property Assignment is a **script-only feature** and is not available in the Cascada template language.
+**Note:** Property Assignment is a script-only feature and is not available in the Cascada template language.
 
 #### Mutation Methods and Side Effects
 
-Direct assignment (`=` and property `=`) is the safe, idiomatic way to update values in Cascada. **Mutation methods** - methods that modify an existing value in-place rather than producing a new one - need more care. The main unsafe cases are the familiar JavaScript array mutators: `.push()`, `.pop()`, `.shift()`, `.unshift()`, `.splice()`, `.sort()`, `.reverse()`, `.fill()`, and `.copyWithin()`. Treat similar in-place methods on custom objects the same way: they are **side effects** in exactly the same sense as writing to a database or calling a stateful external service.
+Direct assignment (`=` and property `=`) is the safe, idiomatic way to update values in Cascada. Mutation methods - methods that modify an existing value in-place rather than producing a new one - need more care. The main unsafe cases are the familiar JavaScript array mutators: `.push()`, `.pop()`, `.shift()`, `.unshift()`, `.splice()`, `.sort()`, `.reverse()`, `.fill()`, and `.copyWithin()`. Treat similar in-place methods on custom objects the same way: they are side effects in exactly the same sense as writing to a database or calling a stateful external service.
 
-The problem is not "methods are always forbidden". The problem is **concurrent mutation of the same value**. If only one execution path is mutating a local value, ordinary JavaScript methods like `items.push(x)` are fine. But when concurrent branches can touch the same `var`, these methods become race-prone.
+The problem is not "methods are always forbidden". The problem is concurrent mutation of the same value. If only one execution path is mutating a local value, ordinary JavaScript methods like `items.push(x)` are fine. But when concurrent branches can touch the same `var`, these methods become race-prone.
 
 Calling a mutation method on a plain `var` inside a concurrent `for` loop is unsafe - iterations run concurrently, so whichever branch finishes last wins and source-code order is not preserved:
 
 ```javascript
-// ❌ UNSAFE - concurrent iterations race on the same var
+// UNSAFE - concurrent iterations race on the same var
 var items = []
 for id in ids
   items.push(fetchItem(id))  // order not guaranteed
@@ -373,7 +373,7 @@ for i in range(2)
 endfor
 ```
 
-Variables declared inside control-flow blocks (`if`, `for`, `switch`, etc.) are **local to that block** and are not visible outside it.
+Variables declared inside control-flow blocks (`if`, `for`, `switch`, etc.) are local to that block and are not visible outside it.
 
 ```javascript
 if condition
@@ -405,7 +405,7 @@ return title               // returning it makes the script fail
 
 ### The Context Object
 
-The **context** is the plain JavaScript object you pass when running a script. It is how you inject external data, functions, and services into Cascada:
+The context is the plain JavaScript object you pass when running a script. It is how you inject external data, functions, and services into Cascada:
 
 ```javascript
 const result = await env.renderScriptString(script, {
@@ -587,13 +587,13 @@ default
 endswitch
 ```
 
-**Important:** Unlike C-style languages, Cascada's `switch` does **not** have fall-through behavior - each `case` exits automatically without needing a `break`. The `default` branch runs when no `case` matches.
+**Important:** Unlike C-style languages, Cascada's `switch` does not have fall-through behavior - each `case` exits automatically without needing a `break`. The `default` branch runs when no `case` matches.
 
 ### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
 
 ##### `for` Loops: Iterate Concurrently
-Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. By default, the body of the `for` loop executes **concurrently for each item**, maximizing I/O throughput for independent operations.
+Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. By default, the body of the `for` loop executes concurrently for each item, maximizing I/O throughput for independent operations.
 
 ```javascript
 // Each iteration runs concurrently, fetching user details
@@ -678,7 +678,7 @@ endfor
 ```
 
 ##### `while` Loops: Iterate Sequentially based on Condition
-Use a `while` loop to execute a block of code repeatedly as long as a condition is true. Unlike the concurrent `for` loop, the `while` loop's body executes **sequentially**. The condition is re-evaluated only after the body has fully completed its execution for the current iteration.
+Use a `while` loop to execute a block of code repeatedly as long as a condition is true. Unlike the concurrent `for` loop, the `while` loop's body executes sequentially. The condition is re-evaluated only after the body has fully completed its execution for the current iteration.
 
 ```
 while some_expression
@@ -687,7 +687,7 @@ endwhile
 ```
 
 ##### `each` Loops: Iterate Sequentially
-For cases where you need to iterate over a collection but **preserve strict sequential order**, use an `each` loop. It has the same syntax as a `for` loop but guarantees that each iteration completes before the next one begins.
+For cases where you need to iterate over a collection but preserve strict sequential order, use an `each` loop. It has the same syntax as a `for` loop but guarantees that each iteration completes before the next one begins.
 
 ```
 each item in collection
@@ -700,7 +700,7 @@ endeach
 Inside a `for`, `while`, or `each` loop, you have access to the special `loop` variable, which provides information about the current iteration.
 
 **Always-Available Properties**
-These properties are available in **all** loop types and modes:
+These properties are available in all loop types and modes:
 *   `loop.index`: The current iteration of the loop (1-indexed).
 *   `loop.index0`: The current iteration of the loop (0-indexed).
 *   `loop.first`: `true` if this is the first iteration.
@@ -714,14 +714,14 @@ Properties that require knowledge of the total collection size:
 
 Use the following guidelines to determine if these properties are available:
 
-1.  **Arrays and Objects:**
-    ✅ **Always Available.** Because the size of an array or object is known upfront, these properties are available regardless of whether the loop runs concurrently, sequentially, or with a concurrency limit.
+1.  Arrays and Objects:
+    **Always Available.** Because the size of an array or object is known upfront, these properties are available regardless of whether the loop runs concurrently, sequentially, or with a concurrency limit.
 
-2.  **Concurrent Async Iterators:**
-    ✅ **Available (Async).** For fully concurrent async iterators, `loop.length` and `loop.last` are resolved asynchronously after Cascada has consumed the entire iterator. In practice, these behave like promise-backed loop metadata: loop bodies can start immediately as items arrive, and expressions that depend on `loop.length` or `loop.last` simply wait until the stream has been fully consumed.
+2.  Concurrent Async Iterators:
+    **Available (Async).** For fully concurrent async iterators, `loop.length` and `loop.last` are resolved asynchronously after Cascada has consumed the entire iterator. In practice, these behave like promise-backed loop metadata: loop bodies can start immediately as items arrive, and expressions that depend on `loop.length` or `loop.last` simply wait until the stream has been fully consumed.
 
-3.  **Sequential or Constrained Async Iterators:**
-    ❌ **Not Available.** When an async iterator is restricted - by `each` or by a concurrency limit (`of N`) - Cascada treats it as a stream and does **not** provide `loop.length` or `loop.last`. In these modes, the loop only learns about the next item by continuing iteration. If an iteration were allowed to wait on `loop.length` or `loop.last`, it could block the very iteration progress needed to discover the end of the stream, causing a deadlock.
+3.  Sequential or Constrained Async Iterators:
+    **Not Available.** When an async iterator is restricted - by `each` or by a concurrency limit (`of N`) - Cascada treats it as a stream and does not provide `loop.length` or `loop.last`. In these modes, the loop only learns about the next item by continuing iteration. If an iteration were allowed to wait on `loop.length` or `loop.last`, it could block the very iteration progress needed to discover the end of the stream, causing a deadlock.
 
     In other words:
     - In an `each` loop, the current iteration must finish before Cascada can request the next item. Waiting for `loop.length` or `loop.last` would therefore wait for the end of the stream while preventing the stream from advancing.
@@ -729,8 +729,8 @@ Use the following guidelines to determine if these properties are available:
 
     Because of that, these properties are intentionally treated as unavailable rather than as deferred values in sequential or bounded async-iterator loops.
 
-4.  **`while` Loops:**
-    ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations complete.
+4.  `while` Loops:
+    **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations complete.
 
 
 ### Error handling and recovery with conditionals and loops
@@ -834,7 +834,7 @@ Done.
 
 ### How Channel Writes Are Ordered
 
-Channel writes execute as soon as their required input data is available, following the same data-driven scheduling as the rest of Cascada. The key guarantee is that the **assembled result is always in source-code order**, regardless of when individual writes actually execute.
+Channel writes execute as soon as their required input data is available, following the same data-driven scheduling as the rest of Cascada. The key guarantee is that the assembled result is always in source-code order, regardless of when individual writes actually execute.
 
 ### The `text` Channel: Generating Text
 
@@ -860,7 +860,7 @@ Two write forms:
 ### The `data` Channel: Building Structured Data
 The `data` channel is the main tool for constructing structured output. It is especially useful when concurrent code needs to build arrays or objects in a predictable order - all writes execute concurrently, but the assembled result always matches source-code order. This is the right alternative to [mutation methods on plain `var` values](#mutation-methods-and-side-effects), which race in concurrent code.
 
-The key difference from a plain `var` is that `data` operations such as `.push()`, `.merge()`, and `.append()` are **channel commands**, not ordinary JavaScript in-place mutations. They are scheduled and assembled safely by Cascada, so they remain safe even when multiple concurrent branches write to the same `data` channel. On a plain `var`, those same method names are just standard JavaScript side effects on the current value, so concurrent calls do not get ordered assembly guarantees.
+The key difference from a plain `var` is that `data` operations such as `.push()`, `.merge()`, and `.append()` are channel commands, not ordinary JavaScript in-place mutations. They are scheduled and assembled safely by Cascada, so they remain safe even when multiple concurrent branches write to the same `data` channel. On a plain `var`, those same method names are just standard JavaScript side effects on the current value, so concurrent calls do not get ordered assembly guarantees.
 
 Use a plain `var` when you are building a value locally in one place, or when you genuinely do not need channel ordering/assembly behavior. Use a `data` channel when multiple concurrent branches contribute to the same result, or when you want ordered path-based construction without shared-mutation races.
 
@@ -911,7 +911,7 @@ return out.snapshot()
 
 #### Implicit Initialization in `data`
 
-The `data` channel automatically initializes **structural values** when assembling output. This allows data to be built declaratively without manual setup.
+The `data` channel automatically initializes structural values when assembling output. This allows data to be built declaratively without manual setup.
 
 ###### What `data` Initializes Automatically
 
@@ -1097,8 +1097,8 @@ env.addDataMethods({
 
 **Return Value:**
 
-*   **If you return any value**, it **replaces** the `target` value at that path.
-*   **If you return `undefined`**, it signals the engine to **delete** the property at that path.
+*   **If you return any value**, it replaces the `target` value at that path.
+*   **If you return `undefined`**, it signals the engine to delete the property at that path.
 
 **Overriding Operators:**
 
@@ -1146,7 +1146,7 @@ return out.snapshot()
 
 ### The `sequence` Channel
 
-A `sequence` wraps an external object with **strictly sequential** access. All reads and calls happen in source-code order, serialized with the rest of the sequence.
+A `sequence` wraps an external object with strictly sequential access. All reads and calls happen in source-code order, serialized with the rest of the sequence.
 
 ```javascript
 sequence db = services.db
@@ -1162,7 +1162,7 @@ return id
 ```
 
 **Key characteristics:**
-- The initializer **must** come from the context object
+- The initializer must come from the context object
 - Supports value-returning calls: `var x = seq.method(args)`
 - Supports property reads: `var s = seq.status`
 - Supports nested sub-path calls: `var id = seq.api.client.getId()`
@@ -1172,7 +1172,7 @@ return id
 
 ```javascript
 sequence db = services.db
-db.connectionState = "offline"  // ❌ compile error - assignment not allowed
+db.connectionState = "offline"  // compile error - assignment not allowed
 ```
 
 If a `sequence` becomes poisoned, the built-in way to recover it is with a `guard`. See [Protecting State with `guard`](#protecting-state-with-guard).
@@ -1195,7 +1195,7 @@ For details on the `!` operator, see [Sequential Execution Control](#managing-si
 
 ### Error handling and recovery with channels
 
-When an Error Value is written to a channel, that channel becomes **poisoned**. This means the channel's final output will be an Error Value, which causes the current script's `snapshot()` or `return` to fail.
+When an Error Value is written to a channel, that channel becomes poisoned. This means the channel's final output will be an Error Value, which causes the current script's `snapshot()` or `return` to fail.
 
 ```javascript
 data out
@@ -1226,7 +1226,7 @@ For details, see [Protecting State with `guard`](#protecting-state-with-guard).
 
 ## Managing Side Effects: Sequential Execution with `!`
 
-For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
+For functions with side effects (e.g., database writes), the `!` marker enforces a sequential execution order for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
 
 Sequential paths also participate in Cascada's error-propagation model; for the full rules on poisoning, repair, and recovery, see [Error Handling](#error-handling).
 
@@ -1242,7 +1242,7 @@ For details on how to handle errors within a sequential path, see [Repairing Seq
 
 ### Method-Specific Sequencing
 
-You can also sequence calls to a **specific method** on an object, rather than locking the whole object. Place the `!` after the method name:
+You can also sequence calls to a specific method on an object, rather than locking the whole object. Place the `!` after the method name:
 
 ```javascript
 // Only calls to 'log' are sequential
@@ -1253,7 +1253,7 @@ logger.log!("Entry 2")
 logger.getStatus()
 ```
 
-This is useful for rate-limiting or ordering specific actions (like "append") while keeping the rest of the object non-blocking. Note that unlike object-path sequencing (`obj!.method()`), unmarked calls to the same method (`logger.log()`) will **not** wait for the sequence.
+This is useful for rate-limiting or ordering specific actions (like "append") while keeping the rest of the object non-blocking. Note that unlike object-path sequencing (`obj!.method()`), unmarked calls to the same method (`logger.log()`) will not wait for the sequence.
 
 ### Ordered External APIs
 
@@ -1281,17 +1281,17 @@ const context = { db: connectToDatabase() };
 ```
 The script:
 ```javascript
-// ✅ CORRECT: Direct reference to context property
+// CORRECT: Direct reference to context property
 db!.insert(data)
 
-// ❌ WRONG: Local variable copy
+// WRONG: Local variable copy
 var database = db
 database!.insert(data)  // Error: sequential paths must be from context
 ```
 
 Nested access from context properties works fine:
 ```javascript
-services.database!.insert(data)  // ✅ CORRECT (if 'services' is in context)
+services.database!.insert(data)  // CORRECT (if 'services' is in context)
 ```
 
 **Why this restriction?** The engine uses object identity from the context to guarantee sequential ordering. Copying context objects to local variables breaks this tracking, which is why it's not allowed.
@@ -1394,7 +1394,7 @@ A `call` block lets you pass a chunk of code to a function as a callback. The fu
 
 #### Syntax
 
-In **scripts**, `call` blocks must be used in assignment form:
+In scripts, `call` blocks must be used in assignment form:
 
 ```javascript
 var x = call functionName(args)
@@ -1505,17 +1505,17 @@ var outerVar = "call scope"
 
 var processed = call processItem(item)
   (item)
-  // ✅ Can access outerVar; ❌ Cannot access internalVar
+  // Can access outerVar; Cannot access internalVar
   return { item: item, context: outerVar }
 endcall
 
 return processed
 ```
 
-The call block's access to the parent scope is **read-only**:
+The call block's access to the parent scope is read-only:
 
 - **Reads** can see variables from the parent scope (where the call block was written).
-- **Writes** (e.g. `x = ...`, `var x = ...`) do **not** propagate to the parent scope. They create/modify variables in the call block's own scope.
+- **Writes** (e.g. `x = ...`, `var x = ...`) do not propagate to the parent scope. They create/modify variables in the call block's own scope.
 
 This ensures the call block remains decoupled from the function's implementation details.
 
@@ -1534,7 +1534,7 @@ Functions participate in the normal dataflow poisoning rules, but they are still
 
 ## Error Handling
 
-Cascada's concurrent-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
+Cascada's concurrent-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Instead, Cascada treats errors as just another type of data that flows through your script. Failed operations produce a special Error Value that is stored in variables, passed to functions, and can be inspected.
 
 This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result.
 
@@ -1545,20 +1545,20 @@ Here's a concrete example showing how error propagation works in concurrent exec
 
 ```javascript
 // These three API calls run concurrently
-var user = fetchUser(123)      // ✅ succeeds
-var posts = fetchPosts(123)    // ❌ fails with network error
-var comments = fetchComments() // ✅ succeeds
+var user = fetchUser(123)      // succeeds
+var posts = fetchPosts(123)    // fails with network error
+var comments = fetchComments() // succeeds
 
 // Only operations depending on 'posts' are affected
-var username = user.name           // ✅ works fine
-var commentCount = comments.length // ✅ works fine
-var postCount = posts.length       // ❌ becomes an error
-var summary = posts + " analysis"  // ❌ becomes an error
+var username = user.name           // works fine
+var commentCount = comments.length // works fine
+var postCount = posts.length       // becomes an error
+var summary = posts + " analysis"  // becomes an error
 
 // You can detect and repair the error
 if posts is error
-  postCount = 0  // ✅ assign a fallback
-  summary = ''   // ✅ assign a fallback
+  postCount = 0  // assign a fallback
+  summary = ''   // assign a fallback
 endif
 
 return { username: username, commentCount: commentCount, postCount: postCount, summary: summary }
@@ -1566,7 +1566,7 @@ return { username: username, commentCount: commentCount, postCount: postCount, s
 
 #### The Core Mechanism: Error Propagation
 
-Once an Error Value is created, it automatically spreads to any dependent operation or variable - this process is known as **error propagation**, **dataflow poisoning**, or just **poisoning**. This ensures that corrupted data never silently produces incorrect results.
+Once an Error Value is created, it automatically spreads to any dependent operation or variable - this process is known as error propagation, dataflow poisoning, or just poisoning. This ensures that corrupted data never silently produces incorrect results.
 
 #### Data Operations
 
@@ -1574,8 +1574,8 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   If any operand in an expression is an error, the entire expression evaluates to that error.
 
   ```javascript
-  var total = myError + 5  // ❌ total becomes myError
-  var result = 10 * myError / 2  // ❌ result becomes myError
+  var total = myError + 5  // total becomes myError
+  var result = 10 * myError / 2  // result becomes myError
   ```
 
 * **Function Calls:**
@@ -1601,7 +1601,7 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   for item in myErrorList
     itemCount = itemCount + 1
   endfor
-  // ❌ itemCount is now poisoned
+  // itemCount is now poisoned
   ```
 
 * **Conditionals:**
@@ -1613,34 +1613,34 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   else
     result = "no"
   endif
-  // ❌ The 'result' variable is now an Error Value
+  // The 'result' variable is now an Error Value
   ```
 
 #### Channels & Effects
 
 * **Channels:**
-  If an Error Value is written to a channel, that channel becomes **poisoned**, causing the script to fail when the channel is read or returned.
+  If an Error Value is written to a channel, that channel becomes poisoned, causing the script to fail when the channel is read or returned.
 
 * **Sequential Side-Effect Paths:**
-  If a call in a sequential execution path (marked with `!`) fails, that path becomes **poisoned**. Later operations using the same `!path` will instantly yield an Error Value without executing.
+  If a call in a sequential execution path (marked with `!`) fails, that path becomes poisoned. Later operations using the same `!path` will instantly yield an Error Value without executing.
 
   ```javascript
-  context.database!.connect()      // ❌ fails
-  context.database!.insert(record) // ❌ skipped, returns error immediately
-  context.database!.commit()       // ❌ skipped, returns error immediately
+  context.database!.connect()      // fails
+  context.database!.insert(record) // skipped, returns error immediately
+  context.database!.commit()       // skipped, returns error immediately
   ```
 
 This mechanism ensures that once an operation fails, all dependent results and channels reflect that failure, maintaining data integrity across both concurrent and sequential execution flows.
 #### Deciding When to Handle Errors
 
-**❌ Do not handle errors, let them propagate when:**
+**Do not handle errors, let them propagate when:**
 - The operation is critical to the final output
 - You want the entire script to fail if this operation fails
 - The error should bubble up to the calling JavaScript/TypeScript code
 - There's no reasonable fallback or default value
 - You're building a strict data pipeline where partial results are unacceptable
 
-**✅ Handle errors locally when:**
+**Handle errors locally when:**
 - You have a sensible fallback or default value
 - The operation is optional or non-critical
 - You're implementing retry logic for transient failures
@@ -1649,10 +1649,10 @@ This mechanism ensures that once an operation fails, all dependent results and c
 - The error represents a business-logic case that should produce specific output (e.g., "user not found" → guest mode)
 
 ```javascript
-// ❌ Critical operation - let it propagate and fail the script
+// Critical operation - let it propagate and fail the script
 var primaryData = fetchCriticalData()
 
-// ✅ Optional enhancement - handle locally
+// Optional enhancement - handle locally
 var recommendations = fetchRecommendations()
 if recommendations is error
   recommendations = []  // Not critical, use empty array as fallback
@@ -1668,20 +1668,20 @@ A script fails only if the value you return is an Error Value.
 You can have poisoned values inside the script and still succeed, as long as you repair them or avoid returning them:
 
 ```javascript
-var user = fetchUser(999)  // ❌ Returns an error
+var user = fetchUser(999)  // Returns an error
 
 if user is error
-  user = { name: "Guest" }  // ✅ Repaired
+  user = { name: "Guest" }  // Repaired
 endif
 
-return user.name  // ✅ Script succeeds: "Guest"
+return user.name  // Script succeeds: "Guest"
 ```
 
 If the returned value is still poisoned, the script fails:
 
 ```javascript
-var user = fetchUser(999)  // ❌ Returns an error
-return user.name  // ❌ Script fails
+var user = fetchUser(999)  // Returns an error
+return user.name  // Script fails
 ```
 
 ### Detecting and Inspecting Errors
@@ -1726,7 +1726,7 @@ return user
 
 #### Peeking Inside Errors with `#`
 
-Because of error propagation, a standard property access like `myError.message` would just return `myError` again. To inspect the properties of an Error Value itself, use the special **`#` (peek) operator**. This operator "reaches through" the error to access its internal properties without triggering propagation.
+Because of error propagation, a standard property access like `myError.message` would just return `myError` again. To inspect the properties of an Error Value itself, use the special `#` (peek) operator. This operator "reaches through" the error to access its internal properties without triggering propagation.
 
 ```javascript
 var failedUser = fetchUser(999)
@@ -1740,12 +1740,12 @@ endif
 **`x#` returns `none` when `x` is not an error.** Always check with `is error` before peeking:
 
 ```javascript
-context.db!.insert(data)  // ✅ Succeeds
+context.db!.insert(data)  // Succeeds
 
-// ❌ WRONG: Peeking at healthy value returns none, not an error
+// WRONG: Peeking at healthy value returns none, not an error
 var msg = context.db!#message  // none - not useful
 
-// ✅ CORRECT: Check first, then peek
+// CORRECT: Check first, then peek
 var msg
 if context.db! is error
   msg = context.db!#message  // Safe
@@ -1771,9 +1771,9 @@ An Error Value is a rich object designed for easy debugging. Access its properti
 When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original errors.
 
 ```javascript
-var user = fetchUser(999)        // ❌ fails
-var profile = fetchProfile(999)  // ❌ fails
-var settings = fetchSettings(999) // ❌ fails
+var user = fetchUser(999)        // fails
+var profile = fetchProfile(999)  // fails
+var settings = fetchSettings(999) // fails
 
 var summary = user.name + " - " + profile.bio + " - " + settings.theme
 
@@ -1804,11 +1804,11 @@ When a sequential path becomes poisoned, the `!!` operator provides two ways to 
 Use `!!` alone to clear the poison state.
 
 ```javascript
-context.db!.insert(data)  // ❌ Fails and poisons the path
+context.db!.insert(data)  // Fails and poisons the path
 
-context.db!!  // ✅ Repairs the path
+context.db!!  // Repairs the path
 
-context.db!.insert(otherData)  // ✅ Now executes
+context.db!.insert(otherData)  // Now executes
 ```
 
 **Repair and Execute:**
@@ -1816,10 +1816,10 @@ Use `!!` before a method call to repair the path and then execute the method.
 
 ```javascript
 context.db!.beginTransaction()
-context.db!.insert(userData)      // ❌ Fails, poisons path
-context.db!.insert(profileData)   // ❌ Skipped due to poison
+context.db!.insert(userData)      // Fails, poisons path
+context.db!.insert(profileData)   // Skipped due to poison
 
-// ✅ Repairs path and executes rollback
+// Repairs path and executes rollback
 context.db!!.rollback()
 ```
 
@@ -1828,15 +1828,15 @@ This is particularly useful for cleanup operations that must run regardless of f
 ```javascript
 var file = context.fileSystem!.open(path)
 context.fileSystem!.writeHeader(metadata)
-var writeResult = context.fileSystem!.writeData(data)  // ❌ Might fail
+var writeResult = context.fileSystem!.writeData(data)  // Might fail
 
-// ✅ Always close the file, even if writes failed
+// Always close the file, even if writes failed
 context.fileSystem!!.close()
 ```
 
 **Checking Path State:**
 ```javascript
-context.api!.sendRequest(data)  // ❌ Might fail
+context.api!.sendRequest(data)  // Might fail
 
 if context.api! is error
   var message = context.api!#message
@@ -1846,7 +1846,7 @@ endif
 
 #### Protecting State with `guard`
 
-The `guard` block provides **controlled, transaction-like recovery** for your script. It allows you to attempt complex operations with the confidence that if something goes wrong, Cascada will automatically restore selected state.
+The `guard` block provides controlled, transaction-like recovery for your script. It allows you to attempt complex operations with the confidence that if something goes wrong, Cascada will automatically restore selected state.
 
 You can think of `guard` like a save point: if the block finishes in an error, the specified state is restored before recovery logic runs.
 
@@ -1868,11 +1868,11 @@ endguard
 
 By default, a `guard` block (with no arguments) protects:
 
-1. **All channels** (`data`, `text`, `sequence`)
+1. All channels (`data`, `text`, `sequence`)
    Writes made inside the block are discarded on error.
    For `sequence` channels, this is also the built-in way to recover from poisoning. If the underlying object provides `begin()`, `commit()`, and `rollback()` hooks, `guard` uses them automatically. Missing hooks are tolerated. Hook errors become guard errors.
 
-2. **All sequential-operation lock paths** (`!`)
+2. All sequential-operation lock paths (`!`)
    If a path such as `db!` becomes poisoned, it is automatically repaired with `!!`.
    Paths are hierarchical - guarding `api!` also guards `api.db!`, `api.connection!`, etc.
 
@@ -1890,7 +1890,7 @@ guard
   out.status = "processing"
 
   db!.insert(user)
-  db!.update(account) // ❌ Assume this fails
+  db!.update(account) // Assume this fails
 
   db!.commit()
   out.status = "success"
@@ -1974,7 +1974,7 @@ guard attempts, data
   result.try = attempts
   lastLog = "Trying..."  // not protected
 
-  riskyOperation() // ❌ Fails
+  riskyOperation() // Fails
 recover err
   // 'attempts' is restored to 0
   // 'data' channel writes are reverted (all data channels)
@@ -1993,7 +1993,7 @@ guard *
 endguard
 ```
 
-**⚠️ Performance warning**
+**Performance warning**
 When variables are protected (via `guard *` or explicit variable names), any code that depends on such variables must wait for the guard to finish. This can reduce concurrency. Use `guard *` only for small, tightly scoped operations.
 
 ---
@@ -2013,7 +2013,7 @@ If present, it runs only if the guard finishes poisoned:
 
 #### Manually Reverting Channel State
 
-> ⚠️ **Work in progress:** The `revert` statement for manually resetting channel state inside a `guard` block is not yet available in script mode.
+> **Work in progress:** The `revert` statement for manually resetting channel state inside a `guard` block is not yet available in script mode.
 
 When implemented, `revert` will reset all `data`, `text`, and `sequence` values in the current channel scope to their state at the start of the nearest enclosing scope boundary (e.g., the start of the `guard` block). This provides fine-grained control complementing automatic guard recovery.
 
@@ -2088,7 +2088,7 @@ When a project grows beyond a single file, CascadaScript provides two file-compo
 - **`extends` / `method`** - inherit a base script's structure and override specific behaviors
 - **`component`** - create isolated, independently-stateful instances of a script hierarchy
 
-All composition inputs use the same **payload** model: values passed with `with` become bare-name inputs inside the composed file. Payload is copied at the composition boundary and is not shared state. There is no implicit sharing of caller-scope variables.
+All composition inputs use the same payload model: values passed with `with` become bare-name inputs inside the composed file. Payload is copied at the composition boundary and is not shared state. There is no implicit sharing of caller-scope variables.
 
 ### Importing Libraries with `import`
 
@@ -2181,7 +2181,7 @@ This returns `{ user: "Alice Durand [en-GB]" }` when `locale` comes from the ren
 
 **`with { key: expr, ... }`** - an explicit object literal; keys become named inputs inside the child, values are expressions evaluated in the caller's scope. Merged after named-var entries; overrides on key collision.
 
-**`with context`** - makes the render context (the object passed to the renderer) available to bare-name lookups inside the child. It does **not** expose parent local variables or `data`/`text`/`sequence` declarations, and it does **not** create a variable named `context` inside the child.
+**`with context`** - makes the render context (the object passed to the renderer) available to bare-name lookups inside the child. It does not expose parent local variables or `data`/`text`/`sequence` declarations, and it does not create a variable named `context` inside the child.
 
 **`without context`** - explicitly opts out of render-context access. Useful to make isolation guarantees visible in code.
 
@@ -2465,7 +2465,7 @@ An `extends` chain can be rendered directly as a script. In that mode, the inher
 
 #### The `constructor`: Script Body
 
-The top-level body of every script in the chain is its **constructor**. When the chain runs:
+The top-level body of every script in the chain is its constructor. When the chain runs:
 
 1. The most-derived child's constructor runs first.
 2. Each ancestor's constructor runs in turn as `super()` is reached.
@@ -2550,7 +2550,7 @@ var ok   = header.log is error       // true if 'log' is poisoned
 var msg  = header.log#               // peek the error message
 ```
 
-Component shared channels are **read-only from the caller** - writes must go through the component's own constructors and methods. The allowed observation forms are: bare shared-var read (implicit snapshot), nested property read from a shared `var`, `.snapshot()`, `is error`, and `#`. Shared channel names that start with `_` are private to the component and are not observable through the component binding. Anything else is a compile error.
+Component shared channels are read-only from the caller - writes must go through the component's own constructors and methods. The allowed observation forms are: bare shared-var read (implicit snapshot), nested property read from a shared `var`, `.snapshot()`, `is error`, and `#`. Shared channel names that start with `_` are private to the component and are not observable through the component binding. Anything else is a compile error.
 
 A nested read such as `header.theme.name` is treated as `header.theme.snapshot().name` - Cascada observes the shared var first, then applies ordinary property lookup to the result. This implicit snapshot only applies to shared `var` channels. For `shared text`, `shared data`, or other channel types, call `.snapshot()` explicitly, because `snapshot()` waits for ordered channel work to finish:
 
@@ -2560,7 +2560,7 @@ return header.log.snapshot().length
 
 **Composition payload: `with`**
 
-The values passed in `with` become a **composition payload** - a context-like key/value object accessible by bare name inside every constructor and method in the component's hierarchy. Payload is separate from shared state.
+The values passed in `with` become a composition payload - a context-like key/value object accessible by bare name inside every constructor and method in the component's hierarchy. Payload is separate from shared state.
 
 > **Payload does not override shared defaults.** `with { x: value }` does not write into a `shared var x`. Payload keys and shared channel names are independent namespaces that happen to resolve through the same ambient lookup. To initialize a shared var from a payload value, read the payload key in the shared default expression (as shown above with `initialTheme`) or assign it explicitly in the constructor body.
 
@@ -2626,7 +2626,7 @@ import "utils.script" as utils
 extends "base.script"
 ```
 
-the environment resolves those file names through its configured **loader** or loaders.
+the environment resolves those file names through its configured loader or loaders.
 
 Loaders define:
 
@@ -2782,7 +2782,7 @@ Loaders are objects that tell the environment how to find and load your scripts 
     ```
 
     **Running Loaders Concurrently:**
-    The **`raceLoaders(loaders)`** function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds.
+    The `raceLoaders(loaders)` function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds.
 
     ```javascript
     import { raceLoaders, FileSystemLoader, WebLoader } from 'cascada-engine';

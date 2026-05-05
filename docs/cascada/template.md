@@ -2,10 +2,10 @@
 
 **Reference Documentation:**
 
-* [CascadaScript Documentation](https://geleto.github.io/cascada-script/) — Complete reference for CascadaScript features
-* [Nunjucks Templating Documentation](https://mozilla.github.io/nunjucks/templating.html) — Nunjucks syntax and features
+* [CascadaScript Documentation](https://geleto.github.io/cascada-script/) - Complete reference for CascadaScript features
+* [Nunjucks Templating Documentation](https://mozilla.github.io/nunjucks/templating.html) - Nunjucks syntax and features
 
-This document focuses on the **differences** between CascadaScript and Cascada Template syntax. For complete coverage of features, consult the reference documentation above.
+This document focuses on the differences between CascadaScript and Cascada Template syntax. For complete coverage of features, consult the reference documentation above.
 
 ---
 
@@ -17,23 +17,23 @@ Cascada maintains full compatibility with Nunjucks when running in non-async mod
 
 ## Template vs Script: Key Differences
 
-Cascada Templates are built on top of Nunjucks and support most CascadaScript **control-flow and expression** features, but with these key differences:
+Cascada Templates are built on top of Nunjucks and support most CascadaScript control-flow and expression features, but with these key differences:
 
-* **Text output is the default** — Content outside tags renders as text; in scripts, use a `text` channel to build text output explicitly
-* **Expressions in `{{ }}`** — Use double braces for value interpolation
-* **No channels** — The `data`, `text`, and `sequence` channel types are script-only; templates only output text
-* **Tags use `{% %}`** — All logic goes inside tag delimiters (use standard Nunjucks whitespace control where needed)
-* **`set` for variables and assignment** — Use Nunjucks `{% set %}` syntax instead of Script's `var` and `=`
-* **`do` for execution-only expressions** — Standalone calls and sequential path repair (`!!`) use `{% do %}`
+* **Text output is the default** - Content outside tags renders as text; in scripts, use a `text` channel to build text output explicitly
+* **Expressions in `{{ }}`** - Use double braces for value interpolation
+* **No channels** - The `data`, `text`, and `sequence` channel types are script-only; templates only output text
+* **Tags use `{% %}`** - All logic goes inside tag delimiters (use standard Nunjucks whitespace control where needed)
+* **`set` for variables and assignment** - Use Nunjucks `{% set %}` syntax instead of Script's `var` and `=`
+* **`do` for execution-only expressions** - Standalone calls and sequential path repair (`!!`) use `{% do %}`
 
 ## Render vs Return: The Core Difference
 
-Scripts **return** values; templates **render** text. This applies uniformly to every callable construct:
+Scripts return values; templates render text. This applies uniformly to every callable construct:
 
 | | CascadaScript | Cascada Template |
 |---|---|---|
 | **Overall result** | Explicit `return value` or `return ch.snapshot()` | Text accumulated in the output stream |
-| **Function / macro** | Returns a value — `var result = fn(args)` | Renders text inline — `{{ macro(args) }}` |
+| **Function / macro** | Returns a value - `var result = fn(args)` | Renders text inline - `{{ macro(args) }}` |
 | **Call block body** | Must `return` explicitly; outer form is `var x = call fn()` | Renders text; no explicit return |
 | **`caller()`** | Returns the call block body's `return` value | Renders the call block body's text inline |
 | **Method / block** | Returns a value via `return` | Renders text inline |
@@ -90,11 +90,11 @@ The sequential path repair operator `!!` repairs poisoned `!` paths. In template
 {% endif %}
 ```
 
-## Script ↔ Template Syntax Reference
+## Script and Template Syntax Reference
 
 | Feature                  | CascadaScript                                             | Cascada Template                                                             |
 | ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **Text channel**         | `text t`                                                   | *(text output is implicit — no declaration needed)*                          |
+| **Text channel**         | `text t`                                                   | *(text output is implicit - no declaration needed)*                          |
 | **Text channel write**   | `t("Hello " + user.name)`                                  | `Hello {{ user.name }}`                                                      |
 | **Expressions**          | `t(total * 1.2)`                                           | `{{ total * 1.2 }}`                                                          |
 | **Variable Declaration** | `var user = fetchUser(1)`                                  | `{% set user = fetchUser(1) %}`                                              |
@@ -117,7 +117,7 @@ The sequential path repair operator `!!` repairs poisoned `!` paths. In template
 | **Block Assignment**     | *(not available in scripts)*                               | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
 | **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
 | **Inherited Override**   | `method name(arg1, arg2)`<br>  `...`<br>`endmethod`        | `{% block name(arg1, arg2) %}`<br>  `...`<br>`{% endblock %}`                |
-| **Shared var declaration** | `shared var theme = "dark"`                              | *(inferred automatically — no declaration needed)*                           |
+| **Shared var declaration** | `shared var theme = "dark"`                              | *(inferred automatically - no declaration needed)*                           |
 | **Shared var write**     | `this.theme = "dark"`                                      | `{% set this.theme = "dark" %}`                                              |
 | **Shared var read**      | `this.theme`                                               | `{{ this.theme }}`                                                           |
 | **Nested shared var read** | `this.user.name`                                         | `{{ this.user.name }}`                                                       |
@@ -146,7 +146,7 @@ endfunction
 
 var mapped = call map([1, 2, 3])
   (n)
-  return n * n   // explicit return — this is what caller() receives
+  return n * n   // explicit return - this is what caller() receives
 endcall
 ```
 
@@ -161,7 +161,7 @@ endcall
 
 ## `guard` and `recover`
 
-`guard` and `recover` work the same as in scripts. In templates, the relevant effect is that **text output from the guarded scope is discarded** if the guard fails (rather than restoring channel state, which is the script use case).
+`guard` and `recover` work the same as in scripts. In templates, the relevant effect is that text output from the guarded scope is discarded if the guard fails (rather than restoring channel state, which is the script use case).
 
 ### Manual `revert`
 
@@ -178,34 +178,34 @@ Manual `revert` is not available yet in async templates. Use ordinary error flow
 
 ## Async Composition (`with` Payloads and Inheritance Contracts)
 
-The full composition model — `with`, `with context`, `extends ... with ...`, resolution order, pass-through patterns — is documented in [Composition and Loading](https://geleto.github.io/cascada-script/#composition-and-loading) in the script docs. The same rules apply to templates; only the syntax differs.
+The full composition model - `with`, `with context`, `extends ... with ...`, resolution order, pass-through patterns - is documented in [Composition and Loading](https://geleto.github.io/cascada-script/#composition-and-loading) in the script docs. The same rules apply to templates; only the syntax differs.
 
 **Template-specific notes:**
 
 - `include` is supported in templates (it is not available in scripts). It follows the same isolation and `with` rules as `import`.
 - Template inheritance uses `{% block name(args) %}` / `{% endblock %}` where scripts use `method name(args)` / `endmethod`. Both support `this.blockName(args)` / `this.methodName(args)` for calling an override via inherited dispatch.
-- `with` clauses and the explicit payload model are **async-only**. In classic Nunjucks (sync) mode, templates retain implicit access to all parent-scope variables.
+- `with` clauses and the explicit payload model are async-only. In classic Nunjucks (sync) mode, templates retain implicit access to all parent-scope variables.
 
 ### Blocks in Async Templates
 
-Classic Nunjucks blocks have implicit access to the caller's scope. Cascada async blocks are isolated — they receive data only through declared arguments, with `with context` optionally exposing render-context names:
+Classic Nunjucks blocks have implicit access to the caller's scope. Cascada async blocks are isolated - they receive data only through declared arguments, with `with context` optionally exposing render-context names:
 
 ```nunjucks
-{# Nunjucks — block sees caller's local variables implicitly #}
+{# Nunjucks - block sees caller's local variables implicitly #}
 {% set user = getUser() %}
 {% block greeting %}
   Hello {{ user.name }}
 {% endblock %}
 
-{# Cascada async — block receives data through declared arguments #}
+{# Cascada async - block receives data through declared arguments #}
 {% set user = getUser() %}
 {% block greeting(user) %}
   Hello {{ user.name }}
 {% endblock %}
 ```
 
-- `{% block name(arg1, arg2) %}` — block-local arguments; local variables that shadow render-context names.
-- `{% block name(args) with context %}` — also exposes render-context bare names.
+- `{% block name(arg1, arg2) %}` - block-local arguments; local variables that shadow render-context names.
+- `{% block name(args) with context %}` - also exposes render-context bare names.
 - Overrides must match the parent's signature exactly, including `with context`.
 - `super()` renders the parent block with the original block arguments.
 
@@ -249,13 +249,13 @@ What this shows:
 
 ### Shared State in Inherited Templates
 
-In async templates that use `extends` or `block`, the `this.<name>` surface provides shared `var` state across the hierarchy — the template equivalent of `shared var` in scripts.
+In async templates that use `extends` or `block`, the `this.<name>` surface provides shared `var` state across the hierarchy - the template equivalent of `shared var` in scripts.
 
 **Key differences from scripts:**
 
 - No `shared` declarations are needed. The compiler infers shared vars from static `this.<name>` paths in the template source.
-- Templates only have `var`-type values — there are no typed channels. Because the type is always `var`, the compiler can infer it and no declaration is needed.
-- In a plain template that does not contain `extends` or `block`, `this` is an ordinary render-context variable and `this.<name>` is a normal property lookup — inference does not apply.
+- Templates only have `var`-type values - there are no typed channels. Because the type is always `var`, the compiler can infer it and no declaration is needed.
+- In a plain template that does not contain `extends` or `block`, `this` is an ordinary render-context variable and `this.<name>` is a normal property lookup - inference does not apply.
 - Dynamic `this[expression]` is not supported in inheritance templates.
 
 ```nunjucks
@@ -271,7 +271,7 @@ In async templates that use `extends` or `block`, the `this.<name>` surface prov
 {% set this.theme = "dark" %}
 ```
 
-The child's `{% set this.theme = "dark" %}` writes the shared var before the constructor runs. The base's `{{ this.theme }}` inside the block reads it. Both templates infer `theme` automatically — no declaration required in either file.
+The child's `{% set this.theme = "dark" %}` writes the shared var before the constructor runs. The base's `{{ this.theme }}` inside the block reads it. Both templates infer `theme` automatically - no declaration required in either file.
 
 ## Variable Scoping
 
@@ -281,24 +281,24 @@ In async mode, every construct that can run concurrently gets its own isolated s
 
 | Construct | Classic Nunjucks / sync | Async Cascada Template |
 |---|---|---|
-| `if` / `switch` | No scope — `{% set %}` writes to parent | Local scope — variables stay inside the branch |
+| `if` / `switch` | No scope - `{% set %}` writes to parent | Local scope - variables stay inside the branch |
 | `for` / `each` loop body | All iterations share one inner scope that is discarded after the loop | Each iteration has its own isolated scope |
-| `while` loop body | Uses the parent scope directly — `{% set %}` inside writes to the outer scope | Each iteration has its own isolated scope |
+| `while` loop body | Uses the parent scope directly - `{% set %}` inside writes to the outer scope | Each iteration has its own isolated scope |
 
 ### Composition Isolation
 
-All composition boundaries are isolated in async mode — the child sees only what is explicitly passed in, not the caller's local variables:
+All composition boundaries are isolated in async mode - the child sees only what is explicitly passed in, not the caller's local variables:
 
 | Construct | Classic Nunjucks / sync | Async Cascada Template |
 |---|---|---|
-| `include` | Sees all caller's `{% set %}` variables | Isolated — sees only explicit `with` inputs |
-| `import` | Macros see only their own arguments | Isolated — sees only explicit `with` inputs |
-| `block` | Sees caller's frame | Isolated — sees only declared block arguments and `with context` names |
+| `include` | Sees all caller's `{% set %}` variables | Isolated - sees only explicit `with` inputs |
+| `import` | Macros see only their own arguments | Isolated - sees only explicit `with` inputs |
+| `block` | Sees caller's frame | Isolated - sees only declared block arguments and `with context` names |
 | Child top-level `{% set %}` | Visible in the child's own blocks | Visible in the child's own blocks |
 
 ### Passing Data with `with`
 
-All Cascada composition operations support `with` for passing data across isolation boundaries — the same syntax as in scripts, and unlike classic Nunjucks which has no equivalent. See [`with`: Composition Payload](https://geleto.github.io/cascada-script/#with-composition-payload) in the script docs for the full rules.
+All Cascada composition operations support `with` for passing data across isolation boundaries - the same syntax as in scripts, and unlike classic Nunjucks which has no equivalent. See [`with`: Composition Payload](https://geleto.github.io/cascada-script/#with-composition-payload) in the script docs for the full rules.
 
 ## Unsupported Features
 
@@ -310,7 +310,7 @@ All Cascada composition operations support `with` for passing data across isolat
 ### Template features not available in scripts
 
 * **Implicit text output**: scripts have no implicit text rendering; use a `text` channel and return `t.snapshot()`
-* **Block assignment** (`{% set var %}...{% endset %}`): not available in scripts; use a `text` channel instead. Note: `{% set this.name = value %}` is distinct — it writes to the hierarchy's shared var `name`, not a block-captured text value.
+* **Block assignment** (`{% set var %}...{% endset %}`): not available in scripts; use a `text` channel instead. Note: `{% set this.name = value %}` is distinct - it writes to the hierarchy's shared var `name`, not a block-captured text value.
 * **`{{ }}` interpolation and `{% %}` tags**: script syntax uses no delimiters
 
 ## When to Use Templates vs Script
