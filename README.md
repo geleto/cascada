@@ -20,11 +20,11 @@ There's no `async`, no `await`, no `Promise.all` - just clean code that happens 
 
 **How it works:**
 
-* **Concurrent by default** - Independent operations execute concurrently without `async`, `await`, or promise management
-* **Data-driven execution** - Operations run automatically when their inputs are ready, eliminating race conditions by design
-* **Sequential when needed** - Use a simple `!` marker to enforce ordering for side-effectful operations
-* **Deterministic outputs** - Concurrent execution, sequential results-final outputs assemble exactly as written
-* **Errors as data** - Failures propagate through the dataflow without stopping unrelated work
+* ⚡ **Concurrent by default** - Independent operations execute concurrently without `async`, `await`, or promise management
+* 🚦 **Data-driven execution** - Operations run automatically when their inputs are ready, eliminating race conditions by design
+* ➡️ **Sequential when needed** - Use a simple `!` marker to enforce ordering for side-effectful operations
+* 📋 **Deterministic outputs** - Concurrent execution, sequential results-final outputs assemble exactly as written
+* ☣️ **Errors as data** - Failures propagate through the dataflow without stopping unrelated work
 
 **Perfect for:**
 - AI and LLM orchestration

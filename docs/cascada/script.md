@@ -19,11 +19,11 @@ It uses familiar syntax and language constructs, while offering language-level s
 
 The core execution model:
 
-* **Concurrent by default**  -  Independent operations - variable assignments, function calls, loop iterations - execute concurrently without `async`, `await`, or promise management.
-* **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
-* **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs - the rest of the script stays concurrent.
-* **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
-* **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated concurrent work to continue safely.
+* ⚡ **Concurrent by default**  -  Independent operations - variable assignments, function calls, loop iterations - execute concurrently without `async`, `await`, or promise management.
+* 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
+* ➡️ **Explicit sequencing only when needed**  -  Order specific calls, loops, or external interactions with dedicated language constructs - the rest of the script stays concurrent.
+* 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
+* ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated concurrent work to continue safely.
 
 CascadaScript is particularly well suited for:
 
