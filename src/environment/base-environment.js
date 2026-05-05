@@ -257,7 +257,7 @@ class BaseEnvironment extends EmitterObj {
     return this.tests[name];
   }
 
-  resolveFromLoader(loader, parentName, filename) {
+  _resolveFromLoader(loader, parentName, filename) {
     var isRelative = (loader.isRelative && parentName) ? loader.isRelative(filename) : false;
     return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
   }
@@ -312,7 +312,7 @@ class BaseEnvironment extends EmitterObj {
       for (let i = 0; i < this.loaders.length; i++) {
         const loader = this.loaders[i];
         const cache = this._compiledCaches && this._compiledCaches.get(loader);
-        const key = this.resolveFromLoader(loader, parentName, name);
+        const key = this._resolveFromLoader(loader, parentName, name);
         tmpl = cache ? cache.get(key) : undefined;
         if (tmpl) {
           if (!!tmpl.asyncMode !== asyncMode) {
@@ -397,7 +397,7 @@ class BaseEnvironment extends EmitterObj {
     };
 
     callLoaders(this.loaders, name, (loader, templateName) => {
-      return that.resolveFromLoader(loader, parentName, templateName);
+      return that._resolveFromLoader(loader, parentName, templateName);
     }, createTemplate);
 
     return syncResult;

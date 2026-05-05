@@ -162,7 +162,7 @@ describe('Extends Runtime', function () {
 
     it('should reject multiple top-level script extends declarations', function () {
       expect(() => {
-        new Script('extends "A.script"\nextends "B.script"\nreturn 1', env, 'multi-extends.script')._compileSource();
+        new Script('extends "A.script"\nextends "B.script"\nreturn 1', env, 'multi-extends.script').compileSource();
       }).to.throwException(/script roots support at most one top-level extends/);
     });
 
@@ -315,7 +315,7 @@ describe('Extends Runtime', function () {
 
     it('should finish the constructor-local buffer without legacy static-extends promise gating', function () {
       const script = new Script('extends "A.script"\nreturn "C"', env, 'C.script');
-      const source = script._compileSource();
+      const source = script.compileSource();
 
       expect(source).to.contain('output.finish();');
       expect(source).to.not.contain('context.asyncExtendsBlocksPromise');
@@ -401,7 +401,7 @@ describe('Extends Runtime', function () {
         'extends "A.script"\nmethod build() with context\n  return siteName\nendmethod\nreturn null',
         env,
         'composition-context-method.script'
-      )._compileSource();
+      ).compileSource();
 
       expect(source).to.contain('context.getCompositionContextVariables()');
       expect(source).to.not.contain('context.getMethodCompositionVariables');
@@ -542,7 +542,7 @@ describe('Extends Runtime', function () {
 
     it('should reject bare this.method references in scripts', function () {
       expect(() => {
-        new Script('method build()\n  return "x"\nendmethod\nreturn this.build', env, 'bare-this-method.script')._compileSource();
+        new Script('method build()\n  return "x"\nendmethod\nreturn this.build', env, 'bare-this-method.script').compileSource();
       }).to.throwException(/bare inherited-method references are not supported/);
     });
 

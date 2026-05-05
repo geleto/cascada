@@ -29,7 +29,7 @@ Detailed reference for writing and debugging tests. See `AGENTS.md` for the shor
     -   `buffer.js` / `emit.js` — command-buffer wiring
     -   `sequential.js` — `!` logic
 3.  **Trace**: Entry point is `Compiler.compile()`. Follow `compileNodeType` methods (e.g., `compileIf`, `compileFunCall`) to trace the AST → JavaScript conversion.
-4.  **Inspect generated code**: Log `script._compileSource()` in the test to see the incorrect compiler output directly.
+4.  **Inspect generated code**: Log `script.compileSource()` in the test to see the incorrect compiler output directly.
 5.  **Iterate**: Modify compiler logic, re-run with `npm run mocha -- tests/path/to/file.js`. Repeat until the isolated test passes.
 6.  **Widen**: Remove `.only()`, run `npm test` to check for regressions.
 
@@ -90,9 +90,9 @@ loader.addTemplate('main.njk', '{% include "header.njk" %}');
 const result = await env.renderTemplate('main.njk', { title: 'Hello' });
 ```
 
-### Inspecting Compiled Code with `_compileSource()`
+### Inspecting Compiled Code with `compileSource()`
 
-Use `_compileSource()` to examine the JavaScript the compiler emits. Essential for diagnosing incorrect compiler output.
+Use `compileSource()` to examine the JavaScript the compiler emits. Essential for diagnosing incorrect compiler output.
 
 For script syntax or transpiler bugs, inspect both the transpiler output and the compiled source:
 
@@ -104,12 +104,12 @@ const env = new AsyncEnvironment();
 
 // Template
 const template = new AsyncTemplate('{% set x = asyncFunc() %}{{ x }}', env);
-const templateSource = template._compileSource();
+const templateSource = template.compileSource();
 expect(templateSource).to.contain('await');
 
 // Script
 const script = new Script('data result\nresult.count = 5\nreturn result.snapshot()', env);
-const scriptSource = script._compileSource();
+const scriptSource = script.compileSource();
 expect(scriptSource).to.contain('DataCommand');
 ```
 
@@ -144,7 +144,7 @@ const env = new AsyncEnvironment();
 const tmpl = new AsyncTemplate(templateSource, env, 'path/to/template.njk');
 
 const html = await tmpl.render(context);      // Promise<string>
-const source = tmpl._compileSource();         // generated JS (debugging)
+const source = tmpl.compileSource();         // generated JS (debugging)
 ```
 
 ### `Script`
@@ -157,11 +157,11 @@ import { Script, AsyncEnvironment } from '../src/environment/environment.js';
 const env = new AsyncEnvironment();
 const script = new Script(scriptSource, env, 'path/to/script.casc');
 
-const source = script._compileSource();       // generated JS (debugging)
+const source = script.compileSource();       // generated JS (debugging)
 const result = await env.renderScriptString(scriptSource, context);  // preferred for tests
 ```
 
 **Key Methods:**
 - `render(context)` — Lower-level render path; prefer `env.renderScriptString(...)` in normal tests.
 - `compile()` — Compiles the script (called automatically on first render).
-- `_compileSource()` — Returns generated JavaScript source code for debugging.
+- `compileSource()` — Returns generated JavaScript source code for debugging.

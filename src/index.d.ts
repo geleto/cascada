@@ -76,6 +76,7 @@ export interface PrecompileOptionsAsync extends PrecompileOptionsBase {
 
 export class Template {
   constructor(src: string, env?: Environment, path?: string, eagerCompile?: boolean);
+  compileSource(): string;
   render(context?: object): string;
   render(callback: TemplateCallback<string>): void;
   render(context: object, callback?: TemplateCallback<string>): void;
@@ -83,12 +84,15 @@ export class Template {
 
 export class Script {
   constructor(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
+  compileSource(): string;
   render(context?: object): Promise<Record<string, any> | string | null>;
 }
 
 export class AsyncTemplate {
   constructor(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
+  compileSource(): string;
   render(context?: object): Promise<string>;
+  renderForComposition(context: object, callback: TemplateCallback<string>, renderContext?: object | null): any;
 }
 
 interface ConfigureOptions {
@@ -169,6 +173,7 @@ export class Environment {
   getTemplate(name: string, callback: Callback<Error, Template>): void;
 
   express(app: object): void;
+  waterfall(tasks: Function[], callback?: Function, forceAsync?: boolean): void;
 
   on(
     event: "load",
@@ -206,6 +211,7 @@ export class AsyncEnvironment {
   addFilterAsync(name: string, func: (val: any) => Promise<any>): AsyncEnvironment;
 
   express(app: object): void;
+  waterfall(tasks: Function[], callback?: Function, forceAsync?: boolean): void;
 
   on(
     event: "load",
@@ -263,7 +269,7 @@ export interface LoaderInterface {
   ): void;
   emit?(event: 'load' | 'update', ...args: any[]): void;
 
-  // Optional relative path helpers used by Environment.resolveFromLoader
+  // Optional relative path helpers used by environment loader resolution
   isRelative?(filename: string): boolean;
   resolve?(from: string, to: string): string;
 }

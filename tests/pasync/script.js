@@ -264,7 +264,7 @@ describe('Cascada Script: Variables', function () {
         endif
         return result`;
 
-      const compiled = new Script(script, env, 'dup-branch-script.casc')._compileSource();
+      const compiled = new Script(script, env, 'dup-branch-script.casc').compileSource();
       expect(/scopedValue#\d+/.test(compiled)).to.be(true);
     });
 
@@ -364,7 +364,7 @@ describe('Cascada Script: Variables', function () {
         endswitch
         return result`;
 
-      const compiled = new Script(script, env, 'dup-switch-script.casc')._compileSource();
+      const compiled = new Script(script, env, 'dup-switch-script.casc').compileSource();
       expect(/branchScoped#\d+/.test(compiled)).to.be(true);
     });
 

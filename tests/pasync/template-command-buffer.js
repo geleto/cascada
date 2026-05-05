@@ -68,7 +68,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
     it('should compile async template output to text commands on text output', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{{ value }}', env);
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
       expect(source).to.contain(`channelName: "${DEFAULT_TEMPLATE_TEXT_OUTPUT}"`);
       expect(source).to.contain('new runtime.TextCommand');
     });
@@ -76,7 +76,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
     it('should declare root template channels after creating the command buffer', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% set x = "a" %}{{ x }}', env, 'declared-lanes.njk');
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('new runtime.CommandBuffer(context, parentBuffer, null, parentBuffer)');
       expect(source).to.contain('runtime.declareBufferChannel(output, "__text__", "text", context, null)');
@@ -86,7 +86,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
     it('should declare script root channels after creating the command buffer', function () {
       const env = new AsyncEnvironment();
       const script = new Script('var x = "a"\nreturn x', env, 'declared-lanes.casc');
-      const source = script._compileSource();
+      const source = script.compileSource();
 
       expect(source).to.contain('new runtime.CommandBuffer(context, parentBuffer, null, parentBuffer)');
       expect(source).to.contain('runtime.declareBufferChannel(output, "__return__", "var", context, runtime.RETURN_UNSET)');
@@ -115,7 +115,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const env = new AsyncEnvironment();
       env.addExtension('TestExtension', new TestExtension());
       const tmpl = new AsyncTemplate('{% test %}{{ value }}{% endtest %}', env, 'render-boundary-lanes.njk');
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('runtime.runRenderBoundary(context, cb, async');
       expect(source).to.contain('runtime.declareBufferChannel(currentBuffer, "__text__", "text", context, null)');
@@ -238,7 +238,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         env,
         'caller-parent-link-analysis.njk'
       );
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       const outputBoundaryMatches = Array.from(source.matchAll(/runtime\.runControlFlowBoundary\(output, \[([^\]]+)\]/g));
       expect(outputBoundaryMatches.length).to.be.greaterThan(0);
@@ -255,7 +255,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const ast = analyzeTemplateSource(templateSource, 'block-text-placement-links.njk');
       const blockNode = collectNodesByType(ast, 'Block')[0];
       const tmpl = new AsyncTemplate(templateSource, env, 'block-text-placement-links.njk');
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__', 'theme']);
       expect(Array.from(blockNode._analysis.linkedMutatedChannels || [])).to.eql(['__text__']);
@@ -273,7 +273,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         env,
         'extends-startup-text-placement-links.njk'
       );
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__"], ["__text__"], context, cb, async (currentBuffer)');
       expect(source).to.not.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__","theme"]');
@@ -310,7 +310,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const captures = collectNodesByType(ast, 'Capture');
       const outerCapture = captures[0];
       const innerCapture = captures[1];
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
       const outerBoundaryStart =
         'runtime.runControlFlowBoundary(output, ["x"], null';
       const innerBoundaryStart =
@@ -378,7 +378,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
     it('should not emit caller scheduling machinery for macros without caller()', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}', env);
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
       expect(source).to.not.contain('__caller__');
       expect(source).to.not.contain('__callerLinkedChannels');
       expect(source).to.not.contain('__callerDeclaredChannels');
@@ -443,7 +443,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
           {% include "child.njk" with scopedValue %}
         {% endif %}
       `, env, 'branch-include-shadow.njk');
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('scopedValue#');
       expect(source).to.contain('["scopedValue"]');
@@ -460,7 +460,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         env,
         'import-with-context-and-vars.njk'
       );
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('context.getRenderContextVariables()');
       expect(source).to.not.contain('linkWithParentCompositionBuffer');
@@ -480,7 +480,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
           {{ show() }}
         {% endif %}
       `, env, 'from-import-canonical-export-name.njk');
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('cannot import \'show\'');
       expect(source).to.contain('exported["show"]');
@@ -730,7 +730,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
     it('should initialize base-block with inputs as local async var channels', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('function b_content(');
       expect(source).to.contain('blockPayload = null');
@@ -756,7 +756,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         env,
         'child-inherited-block-inputs.njk'
       );
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('function b_content(');
       expect(source).to.contain('blockPayload = null');
@@ -780,7 +780,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         env,
         'block-super-no-caller-scheduling.njk'
       );
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('blockRenderCtx = undefined');
@@ -804,7 +804,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         env,
         'macro-caller-scheduling.njk'
       );
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('__caller__');
       expect(source).to.contain('__callerLinkedChannels');
@@ -857,7 +857,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         env,
         'imported-member-boundary-links-only-import.njk'
       );
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('runtime.runValueBoundary(output, ["m","__text__"]');
       expect(source).to.not.contain('runtime.runValueBoundary(output, ["m","scopedValue","__text__"]');
@@ -873,7 +873,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
         env,
         'from-import-boundary-links-only-import.njk'
       );
-      const source = tmpl._compileSource();
+      const source = tmpl.compileSource();
 
       expect(source).to.contain('runtime.runValueBoundary(output, ["hi","__text__"]');
       expect(source).to.not.contain('runtime.runValueBoundary(output, ["hi","scopedValue","__text__"]');

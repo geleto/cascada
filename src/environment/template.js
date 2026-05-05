@@ -2,7 +2,7 @@ import {compile} from '../compiler/compiler.js';
 import {TemplateRuntime, AsyncTemplateRuntime} from './template-runtime.js';
 
 class Template extends TemplateRuntime {
-  _compileSource() {
+  compileSource() {
     return compile(this.tmplStr,
       this.env.asyncFilters,
       this.env.extensionsList,
@@ -13,7 +13,7 @@ class Template extends TemplateRuntime {
 }
 
 class AsyncTemplate extends AsyncTemplateRuntime {
-  _compileSource() {
+  compileSource() {
     return compile(this.tmplStr,
       this.env.asyncFilters,
       this.env.extensionsList,

@@ -40,7 +40,7 @@ class Script extends Template {
     return AsyncTemplate.prototype.getExported.call(this, ctx, renderCtx, cb);
   }
 
-  _compileSource() {
+  compileSource() {
     return compile(this.tmplStr,
       this.env.asyncFilters,
       this.env.extensionsList,

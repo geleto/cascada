@@ -254,7 +254,7 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
 }
 
 function suppressValueScriptRaw(val, autoescape) {
-  if (val && typeof val === 'object' && !Array.isArray(val) && !val instanceof CommandBuffer) {
+  if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof CommandBuffer)) {
     const hasCustomToString = val.toString && val.toString !== Object.prototype.toString;
     const isPromise = typeof val.then === 'function';
     if (!hasCustomToString && !isPromise) {

@@ -431,7 +431,7 @@ The full bundle was used by the slim test helper to call `precompileString(...)`
 if (this.tmplProps) {
   props = this.tmplProps;
 } else {
-  const source = this._compileSource();
+  const source = this.compileSource();
   const func = new Function('runtime', source);
   props = func(globalRuntime);
 }
@@ -446,7 +446,7 @@ So the real precompiled runtime dependency is not the compiler. It is:
 - runtime helpers,
 - filters/tests/globals needed by the template.
 
-The old slim bundle hid compiler imports by replacing them with empty modules. That worked because precompiled templates never called `_compileSource()`. In ESM this is made explicit by module boundaries rather than by bundle rewrites.
+The old slim bundle hid compiler imports by replacing them with empty modules. That worked because precompiled templates never called `compileSource()`. In ESM this is made explicit by module boundaries rather than by bundle rewrites.
 
 ## Async Coverage Gap In Former Slim Path
 
@@ -503,7 +503,7 @@ The precompiled entries should not import:
 - `src/precompile.js`
 - Node-only loaders
 
-To make this real, split compile-capable classes from runtime-capable classes. The old `src/environment/template.js` shape imported the compiler at module top level. In ESM that would pull the compiler into precompiled-only entries even if `_compileSource()` was never called.
+To make this real, split compile-capable classes from runtime-capable classes. The old `src/environment/template.js` shape imported the compiler at module top level. In ESM that would pull the compiler into precompiled-only entries even if `compileSource()` was never called.
 
 Preferred shape:
 
@@ -520,7 +520,7 @@ src/environment/template.js
 
 src/environment/precompiled-template.js
   PrecompiledTemplate and AsyncPrecompiledTemplate
-  no _compileSource()
+  no compileSource()
   throws a clear error if constructed with string source
 ```
 

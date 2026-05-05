@@ -29,6 +29,7 @@ export class AsyncTemplate {
    */
   constructor(src: PrecompiledTemplateSource, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
   render(context?: object): Promise<string>;
+  renderForComposition(context: object, callback: TemplateCallback<string>, renderContext?: object | null): any;
 }
 
 export class PrecompiledTemplate extends Template {}
@@ -50,6 +51,7 @@ export class Environment {
   addGlobal(name: string, value: any): this;
   addFilter(name: string, func: Function, async?: boolean): this;
   addTest(name: string, func: Function): this;
+  waterfall(tasks: Function[], callback?: Function, forceAsync?: boolean): void;
 }
 
 export class AsyncEnvironment {
@@ -63,6 +65,7 @@ export class AsyncEnvironment {
   addFilterAsync(name: string, func: Function): this;
   addTest(name: string, func: Function): this;
   addDataMethods(methods: Record<string, Function>): this;
+  waterfall(tasks: Function[], callback?: Function, forceAsync?: boolean): void;
 }
 
 export class PrecompiledEnvironment extends Environment {}

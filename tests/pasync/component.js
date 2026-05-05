@@ -561,7 +561,7 @@ describe('Phase 8 - Component Observations', function () {
       'var err = ns.status#',
       'return [snap, hasError, err]'
     ].join('\n'), env, 'Main.script');
-    const source = script._compileSource();
+    const source = script.compileSource();
 
     expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.SnapshotCommand({ channelName: "log"');
     expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.IsErrorCommand({ channelName: "status"');

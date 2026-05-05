@@ -221,7 +221,7 @@ class TemplateRuntime extends Obj {
     if (this.tmplProps) {
       props = this.tmplProps;
     } else {
-      const source = this._compileSource();
+      const source = this.compileSource();
 
       let func;
       try {
@@ -239,8 +239,12 @@ class TemplateRuntime extends Obj {
     this.compiled = true;
   }
 
-  _compileSource() {
+  compileSource() {
     throw new Error('Template source compilation is not available in this environment');
+  }
+
+  _compileSource() {
+    return this.compileSource();
   }
 
   _getBlocks(props, blockContracts) {
@@ -356,10 +360,14 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     return markedExported;
   }
 
-  _renderForComposition(ctx, cb, renderCtx) {
+  renderForComposition(ctx, cb, renderCtx) {
     this.compile();
     const context = this._createContext(ctx, renderCtx, ctx || null);
     return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
+  }
+
+  _renderForComposition(ctx, cb, renderCtx) {
+    return this.renderForComposition(ctx, cb, renderCtx);
   }
 
   _getCompiledBlocks() {

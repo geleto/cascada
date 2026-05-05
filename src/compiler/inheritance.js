@@ -1383,7 +1383,7 @@ class CompileInheritance {
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);
-      this.emit.line(`const composed = ${templateVar}_resolved._renderForComposition(${includeContextVar}, cb, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'});`);
+      this.emit.line(`const composed = ${templateVar}_resolved.renderForComposition(${includeContextVar}, cb, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'});`);
       // Includes own a composed child text boundary. Use the child text channel's
       // finalSnapshot() as the structural completion signal rather than adding an
       // extra point-in-time snapshot command for that boundary.

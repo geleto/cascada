@@ -53,7 +53,7 @@ describe('Extends Foundation', function () {
 
       it('should allow shared sequence declarations without an initializer', function () {
         expect(() => {
-          new Script('shared sequence db\nreturn null', env, 'shared-sequence-script.casc')._compileSource();
+          new Script('shared sequence db\nreturn null', env, 'shared-sequence-script.casc').compileSource();
         }).not.to.throwException();
       });
 
@@ -71,7 +71,7 @@ describe('Extends Foundation', function () {
 
       it('should reject shared inside a method body', function () {
         try {
-          new Script('method build()\n  shared var theme = "dark"\nendmethod', env, 'shared-inside-method.casc')._compileSource();
+          new Script('method build()\n  shared var theme = "dark"\nendmethod', env, 'shared-inside-method.casc').compileSource();
           expect().fail('Expected nested shared declaration to fail');
         } catch (error) {
           expect(String(error)).to.contain('shared declarations are only allowed at the root scope');
@@ -80,13 +80,13 @@ describe('Extends Foundation', function () {
 
       it('should allow shared text initializers', function () {
         expect(() => {
-          new Script('shared text log = "x"', env, 'shared-text-init.casc')._compileSource();
+          new Script('shared text log = "x"', env, 'shared-text-init.casc').compileSource();
         }).not.to.throwException();
       });
 
       it('should allow shared data initializers', function () {
         expect(() => {
-          new Script('shared data state = 1', env, 'shared-data-init.casc')._compileSource();
+          new Script('shared data state = 1', env, 'shared-data-init.casc').compileSource();
         }).not.to.throwException();
       });
 
@@ -139,7 +139,7 @@ describe('Extends Foundation', function () {
             'method build(name)\n  this.render(name)\nendmethod\nreturn null',
             env,
             'this-method-call.script'
-          )._compileSource();
+          ).compileSource();
         }).not.to.throwException();
       });
 
@@ -149,7 +149,7 @@ describe('Extends Foundation', function () {
             'method build(name)\n  this.render\nendmethod\nreturn null',
             env,
             'bare-this-method.script'
-          )._compileSource();
+          ).compileSource();
         }).to.throwException(/bare this\.render references are not allowed; use this\.render\(\.\.\.\)/);
       });
 
@@ -159,7 +159,7 @@ describe('Extends Foundation', function () {
             'method build(name)\n  helper(name)\nendmethod\nreturn null',
             env,
             'ordinary-call.script'
-          )._compileSource();
+          ).compileSource();
         }).not.to.throwException();
       });
 
@@ -169,7 +169,7 @@ describe('Extends Foundation', function () {
             'method build(name)\n  super(name)\nendmethod\nreturn null',
             env,
             'script-super-call.script'
-          )._compileSource();
+          ).compileSource();
         }).not.to.throwException();
       });
     });
@@ -248,7 +248,7 @@ describe('Extends Foundation', function () {
             'shared var theme = "dark"\nshared text trace\nextends "A.script"\nreturn null',
             env,
             'shared-before-extends.script'
-          )._compileSource();
+          ).compileSource();
         }).not.to.throwException();
       });
 
@@ -258,7 +258,7 @@ describe('Extends Foundation', function () {
             'var theme = "dark"\nextends "A.script"\nreturn null',
             env,
             'var-before-extends.script'
-          )._compileSource();
+          ).compileSource();
         }).to.throwException(/only shared declarations are allowed before extends/);
       });
 
@@ -268,7 +268,7 @@ describe('Extends Foundation', function () {
             'method build(name)\n  helper(name)\nendmethod\nextends "A.script"\nreturn null',
             env,
             'method-before-extends.script'
-          )._compileSource();
+          ).compileSource();
         }).to.throwException(/only shared declarations are allowed before extends/);
       });
 
@@ -283,7 +283,7 @@ describe('Extends Foundation', function () {
             'var theme = "dark"\nextends "A.script"\nreturn null',
             env,
             'var-before-extends-location.script'
-          )._compileSource();
+          ).compileSource();
           expect().fail('Expected pre-extends validation to fail');
         } catch (error) {
           expect(error.lineno).to.be(offendingNode.lineno);
@@ -296,7 +296,7 @@ describe('Extends Foundation', function () {
 
   describe('Phase 3 - Shared Channel Metadata and Lowering', function () {
     it('should lower shared declarations through the normal script compile path', function () {
-      const source = new Script('shared var theme = "dark"\nreturn this.theme', env, 'shared-lowering.casc')._compileSource();
+      const source = new Script('shared var theme = "dark"\nreturn this.theme', env, 'shared-lowering.casc').compileSource();
 
       expect(source).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "theme", "var", context);');
       expect(source).to.contain('runtime.claimInheritanceSharedDefault(runtime.getInheritanceSharedBuffer(output, inheritanceState), "theme")');
@@ -304,14 +304,14 @@ describe('Extends Foundation', function () {
     });
 
     it('should keep declared shared bare reads on the ambient lookup path', function () {
-      const source = new Script('shared var theme = "dark"\nreturn theme', env, 'shared-declared-read.casc')._compileSource();
+      const source = new Script('shared var theme = "dark"\nreturn theme', env, 'shared-declared-read.casc').compileSource();
 
       expect(source).to.contain('context.lookupScript("theme"');
       expect(source).to.not.contain('runtime.observeInheritanceSharedChannel(');
     });
 
     it('should keep undeclared script bare reads on the ambient lookup path', function () {
-      const source = new Script('return theme', env, 'ambient-read.casc')._compileSource();
+      const source = new Script('return theme', env, 'ambient-read.casc').compileSource();
 
       expect(source).to.contain('context.lookupScript("theme"');
       expect(source).to.not.contain('runtime.channelLookup("theme"');
@@ -319,8 +319,8 @@ describe('Extends Foundation', function () {
     });
 
     it('should lower shared sequence declarations through the normal script compile path', function () {
-      const declaredOnly = new Script('shared sequence db\nreturn null', env, 'shared-sequence-decl.casc')._compileSource();
-      const initialized = new Script('shared sequence db = makeDb()\nreturn null', env, 'shared-sequence-init.casc')._compileSource();
+      const declaredOnly = new Script('shared sequence db\nreturn null', env, 'shared-sequence-decl.casc').compileSource();
+      const initialized = new Script('shared sequence db = makeDb()\nreturn null', env, 'shared-sequence-init.casc').compileSource();
 
       expect(declaredOnly).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "db", "sequence", context);');
       expect(initialized).to.contain('runtime.claimInheritanceSharedDefault(runtime.getInheritanceSharedBuffer(output, inheritanceState), "db")');
@@ -1262,19 +1262,19 @@ describe('Extends Foundation', function () {
 
     it('should reject __constructor__ as a user-declared method name', function () {
       expect(() => {
-        new Script('method __constructor__()\n  return null\nendmethod\nreturn null', env, 'reserved-constructor.script')._compileSource();
+        new Script('method __constructor__()\n  return null\nendmethod\nreturn null', env, 'reserved-constructor.script').compileSource();
       }).to.throwException(/Identifier '__constructor__' is reserved/);
     });
 
     it('should reject __constructor__ as a template block name', function () {
       expect(() => {
-        new AsyncTemplate('{% block __constructor__ %}x{% endblock %}', env, 'reserved-constructor-block.njk')._compileSource();
+        new AsyncTemplate('{% block __constructor__ %}x{% endblock %}', env, 'reserved-constructor-block.njk').compileSource();
       }).to.throwException(/Identifier '__constructor__' is reserved/);
     });
 
     it('should reject this as a template block name', function () {
       expect(() => {
-        new AsyncTemplate('{% block this %}x{% endblock %}', env, 'reserved-this-block.njk')._compileSource();
+        new AsyncTemplate('{% block this %}x{% endblock %}', env, 'reserved-this-block.njk').compileSource();
       }).to.throwException(/Identifier 'this' is reserved/);
     });
   });
@@ -1310,7 +1310,7 @@ describe('Extends Foundation', function () {
         'shared var theme = "dark"\nreturn this.theme',
         env,
         'bootstrap-only.script'
-      )._compileSource();
+      ).compileSource();
 
       expect(source).to.contain('if (!inheritanceState) {');
       expect(source).to.contain('inheritanceState = runtime.createInheritanceState();');
@@ -1823,7 +1823,7 @@ describe('Extends Foundation', function () {
         'method build()\n  var x = 2\n  return x\nendmethod\nvar x = 1\nreturn x',
         env,
         'method-scope-root-name.script'
-      )._compileSource();
+      ).compileSource();
 
       expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null);');
       expect(source).to.contain('context.addDeferredExport("x", "x", output);');
@@ -1835,7 +1835,7 @@ describe('Extends Foundation', function () {
         'method build(name)\n  return name\nendmethod\nreturn null',
         env,
         'script-method-context-wiring.script'
-      )._compileSource();
+      ).compileSource();
 
       expect(source).to.contain('function b_build(');
       expect(source).to.not.contain('output_textChannelVar._context = context;');
@@ -2048,8 +2048,8 @@ describe('Extends Foundation', function () {
       const plainScript = new Script('var x = 1\nreturn x', env, 'plain.script');
       const methodScript = new Script('method build(name)\n  return name\nendmethod\nreturn this.build("Ada")', env, 'method.script');
 
-      const plainSource = plainScript._compileSource();
-      const methodSource = methodScript._compileSource();
+      const plainSource = plainScript.compileSource();
+      const methodSource = methodScript.compileSource();
 
       expect(plainSource).to.not.contain('runtime.bootstrapInheritanceMetadata(');
       expect(methodSource).to.contain('runtime.bootstrapInheritanceMetadata(');
@@ -2363,7 +2363,7 @@ describe('Extends Foundation', function () {
     });
 
     it('should pass error context through script ambient lookups', function () {
-      const source = new Script('return missingName', env, 'lookup-context.casc')._compileSource();
+      const source = new Script('return missingName', env, 'lookup-context.casc').compileSource();
 
       expect(source).to.contain('context.lookupScript("missingName"');
       expect(source).to.contain('errorContextString: "Symbol(PosNode)"');
@@ -2535,7 +2535,7 @@ describe('Extends Foundation', function () {
         'direct-body-linking.casc'
       );
 
-      const source = script._compileSource();
+      const source = script.compileSource();
 
       expect(source).to.contain('runtime.getCallableBodyLinkedChannels(methodData,');
       // The callable entry must ask for the body-local transitive footprint,
@@ -2577,7 +2577,7 @@ describe('Extends Foundation', function () {
         '{% if useParent %}{% extends parent %}{% endif %}{% block body %}x{% endblock %}',
         env,
         'dynamic-nested.njk'
-      )._compileSource();
+      ).compileSource();
 
       expect(source).to.contain('extendsState.parentSelection');
       expect(source).to.not.contain('asyncStoreIn');
@@ -2589,7 +2589,7 @@ describe('Extends Foundation', function () {
         '{% extends parent if useParent else none %}{% block body %}x{% endblock %}',
         env,
         'dynamic-top-level.njk'
-      )._compileSource();
+      ).compileSource();
 
       expect(source).to.contain('runtime.runControlFlowBoundary(');
       expect(source).to.contain('extendsState.parentSelection');
@@ -2623,7 +2623,7 @@ describe('Extends Foundation', function () {
         '{% extends parent if useParent else none %}{% block body %}x{% endblock %}',
         env,
         'dynamic-child.njk'
-      )._compileSource();
+      ).compileSource();
 
       expect(source).to.contain('extendsState.parentSelection');
       expect(source).to.not.contain('runtime.beginInheritanceResolution(');
