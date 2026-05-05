@@ -79,7 +79,7 @@ Every construct above runs exactly as you'd read it - the engine orchestrates al
 - [Language Fundamentals](#language-fundamentals)
 - [Control Flow](#control-flow)
 - [Channels](#channels)
-- [Managing Side Effects: Sequential Execution with `!`](#managing-side-effects-sequential-execution-with-)
+- [Sequencing External Interactions](#sequencing-external-interactions)
 - [Functions and Reusable Components](#functions-and-reusable-components)
 - [Error Handling](#error-handling)
 - [Return Statements](#return-statements)
@@ -150,7 +150,7 @@ This "just works" approach means that while any variable can be a promise under 
 #### Implicitly Concurrent, Explicitly Sequential
 While this "concurrency-first" approach is powerful, some operations still need to run in a specific order. Cascada can order its own internal work automatically, including data/text channel assembly and dependencies between script expressions. The hard case is imported native functions and objects from the render context: APIs, mutable object methods, database handles, file writers, LLM clients, and helpers that read or change shared state. Cascada cannot know whether those functions are pure or side-effectful, so you mark the ordering explicitly.
 
-For these cases you have three tools: the `!` marker, which enforces strict sequential order on a specific context-object path (such as database writes or stateful API calls); the `each` loop, which iterates a collection one item at a time when per-item side-effects must not overlap; and a `sequence` channel, which provides strictly ordered reads and calls on an external context object while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
+For these cases you have three tools: the `!` marker, which enforces strict sequential order on a specific context-object path (such as database writes or stateful API calls); the `each` loop, which iterates a collection one item at a time when per-item side-effects must not overlap; and the `sequence` construct, which provides a named sequence object for strictly ordered reads and calls on an external context object while still returning each call's value. All three are surgical - they sequence only what they touch, without affecting the concurrency of the rest of the script.
 
 #### Execution is chaotic, but the result is orderly
 While independent operations run concurrently and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
@@ -199,7 +199,7 @@ Everything above is the language you already know. Cascada adds a small set of s
 | Implicit concurrency | *(no syntax)* | Independent operations run concurrently automatically |
 | `text` channel | `text log`, `log("line")` | Generate text from concurrent code, assembled in source order |
 | `data` channel | `data out`, `out.items.push(item)` | Build structured objects and arrays from concurrent code - writes are concurrent, result is in source order |
-| `sequence` channel | `sequence db = services.db`, `var user = db.getUser(1)` | Sequential reads and calls on an external object |
+| `sequence` construct | `sequence db = services.db`, `var user = db.getUser(1)` | Create a named sequence object for sequential reads and calls on an external object |
 | Sequential operator | `obj!.method()`, `obj!.prop` | Enforce strict execution order on a context object path |
 | Guard | `guard [targets] / recover [err] / endguard` | Transaction-like block: auto-restores state on error |
 | Dataflow error poisoning | `value is error`, `value#message` | Failures propagate as error values through the dataflow; unrelated operations continue unaffected. If a control-flow condition is an error, all writes that would have happened in the skipped branches become poisoned too. Detect with `is error`, inspect with `#` |
@@ -355,7 +355,7 @@ each id in ids
 endeach
 ```
 
-**`!` operator (for context objects)** - serializes calls on an object from the script context; see [Managing Side Effects: Sequential Execution](#managing-side-effects-sequential-execution):
+**`!` operator (for context objects)** - serializes calls on an object from the script context; see [Sequential Execution with `!`](#sequential-execution-with-):
 ```javascript
 // 'collection' is a context object
 for id in ids
@@ -786,7 +786,7 @@ For details on detecting and recovering from errors in your scripts, see the [Er
 
 ## Channels
 
-Channels are named values you build over time. You write into them with assignments and method calls, and read the current assembled value with `snapshot()`. They are the main tool for ordered writes and external interactions in CascadaScript: their writes run as soon as their inputs are ready, and the final assembled result still follows source-code order.
+Channels are named values you build over time. You write into them with assignments and method calls, and read the current assembled value with `snapshot()`. They are the main tool for ordered writes in CascadaScript: their writes run as soon as their inputs are ready, and the final assembled result still follows source-code order.
 
 Channels also participate in Cascada's error-propagation model; for the full rules on poisoning, detection, and recovery, see [Error Handling](#error-handling).
 
@@ -794,9 +794,8 @@ Channels also participate in Cascada's error-propagation model; for the full rul
 |---|---|---|
 | `text name` | Text channel | Build a text string |
 | `data name` | Data channel | Build structured objects and arrays |
-| `sequence name = initializer` | Sequence channel | Sequential reads and calls on an external object |
 
-Use `name.snapshot()` to read the current assembled value. `snapshot()` is an observable operation - it waits for any pending writes to finish before returning. Because of that, it is more expensive than reading a plain `var`, so prefer `var` for simple cases and reach for `data`, `text`, or `sequence` when you need ordered assembly or external interaction.
+Use `name.snapshot()` to read the current assembled value. `snapshot()` is an observable operation - it waits for any pending writes to finish before returning. Because of that, it is more expensive than reading a plain `var`, so prefer `var` for simple cases and reach for `data` or `text` when you need ordered assembly.
 
 ### A Simple Example
 
@@ -1146,55 +1145,6 @@ out.users.upsert({ id: 1, name: "Alice", status: "active" })
 return out.snapshot()
 ```
 
-### The `sequence` Channel
-
-A `sequence` wraps an external object from the render context with strictly sequential access. Use it for imported native objects whose methods or property reads depend on order, such as mutable API clients, database transactions, graphics contexts, file writers, state machines, or helpers that touch shared state. Cascada cannot infer whether these external calls are pure or side-effectful, so a `sequence` tells the engine to serialize every read and call through that channel in source-code order.
-
-```javascript
-sequence db = services.db
-var user = db.getUser(1)
-var state = db.connectionState
-return { user: user, state: state }
-```
-
-```javascript
-sequence db = services.db
-var id = db.api.client.getId()
-return id
-```
-
-**Key characteristics:**
-- The initializer must come from the context object
-- Supports value-returning calls: `var x = seq.method(args)`
-- Supports property reads: `var s = seq.status`
-- Supports nested sub-path calls: `var id = seq.api.client.getId()`
-- Supports `snapshot()`: `var snap = seq.snapshot()`
-- Property assignment is currently a compile error, but this is expected to be supported in the future
-
-
-```javascript
-sequence db = services.db
-db.connectionState = "offline"  // compile error - assignment not allowed
-```
-
-If a `sequence` becomes poisoned, the built-in way to recover it is with a `guard`. See [Protecting State with `guard`](#protecting-state-with-guard).
-
-### The `sequence` Channel vs. `!`
-
-`sequence` and `!` both give you ordering, but they solve different problems:
-
-| | `sequence` | `!` marker |
-|---|---|---|
-| **What it is** | A declared channel | A marker on a static context path |
-| **What it is for** | Ordered reads and calls on one external context object | Ordering side effects on one external context path |
-| **Return values** | Read immediately in normal expressions | Mainly used for side-effectful operations |
-| **Example** | `var user = db.getUser(1)` | `db!.insert(user)` |
-
-Use `sequence` when the external object itself is your ordered interface. Use `!` when you want to serialize side effects on a specific context path without wrapping the whole object.
-
-For details on the `!` operator, see [Sequential Execution Control](#managing-side-effects-sequential-execution).
-
-
 ### Error handling and recovery with channels
 
 When an Error Value is written to a channel, that channel becomes poisoned. This means the channel's final output will be an Error Value, which causes the current script's `snapshot()` or `return` to fail.
@@ -1226,9 +1176,20 @@ return out.snapshot()
 For details, see [Protecting State with `guard`](#protecting-state-with-guard).
 
 
-## Managing Side Effects: Sequential Execution with `!`
+## Sequencing External Interactions
 
-There are cases where operations have to run in a specific order, especially imported native functions from the render context: APIs, mutable object methods, database writes, file-system calls, LLM requests, or helpers that access and change shared state. Cascada can order its own internal work automatically, including dependencies and channel writes, but it has no way to know whether a context function is pure or has side effects. The `!` marker is how you tell Cascada that a context path must be serialized.
+Cascada can order its own internal work automatically, including dependencies and data/text channel assembly. The hard case is imported native functions and objects from the render context: APIs, mutable object methods, database handles, file writers, LLM clients, and helpers that read or change shared state. Cascada cannot know whether those calls are pure or side-effectful, so you mark the ordering explicitly.
+
+There are two dedicated sequencing constructs for external interactions:
+
+| Construct | Syntax | Purpose |
+|---|---|---|
+| `!` marker | `obj!.method()`, `obj!.prop` | Sequence calls and reads on a static context path |
+| `sequence` object | `sequence db = services.db`, `var user = db.getUser(1)` | Create a named ordered interface around one external object |
+
+Both are narrow by design: they sequence only the object or path they touch, while unrelated work in the script continues concurrently.
+
+### Sequential Execution with `!`
 
 The `!` marker enforces sequential execution for a specific context-object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
 
@@ -1236,7 +1197,7 @@ Sequential paths also participate in Cascada's error-propagation model; for the 
 
 ```javascript
 // The `!` on deposit() creates a
-// sequence for the 'bank.account' path.
+// sequential lock for the 'bank.account' path.
 bank.account!.deposit(100)
 bank.account.getStatus()
 bank.account!.withdraw(50)
@@ -1244,7 +1205,7 @@ bank.account!.withdraw(50)
 
 For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
 
-### Method-Specific Sequencing
+#### Method-Specific Sequencing
 
 You can also sequence calls to a specific method on an object, rather than locking the whole object. Place the `!` after the method name:
 
@@ -1257,9 +1218,9 @@ logger.log!("Entry 2")
 logger.getStatus()
 ```
 
-This is useful for rate-limiting or ordering specific actions (like "append") while keeping the rest of the object non-blocking. Note that unlike object-path sequencing (`obj!.method()`), unmarked calls to the same method (`logger.log()`) will not wait for the sequence.
+This is useful for rate-limiting or ordering specific actions (like "append") while keeping the rest of the object non-blocking. Note that unlike object-path sequencing (`obj!.method()`), unmarked calls to the same method (`logger.log()`) will not wait for the method-specific lock.
 
-### Ordered External APIs
+#### Ordered External APIs
 
 Use sequential paths for stateful external APIs that need strict ordering. For example, a turtle graphics object can be provided in the render context, and each drawing command can be ordered with `!`:
 
@@ -1275,15 +1236,18 @@ turtle!.penUp()
 Only the `turtle` path is serialized. Other independent work in the script can still run concurrently.
 
 
-### Context Requirement for Sequential Paths
+#### Context Requirement for Sequential Paths
 
 Sequential paths must reference objects from the context, not local variables.
 The JS context object:
+
 ```javascript
 // Assuming 'db' is provided in the context object:
 const context = { db: connectToDatabase() };
 ```
+
 The script:
+
 ```javascript
 // CORRECT: Direct reference to context property
 db!.insert(data)
@@ -1294,6 +1258,7 @@ database!.insert(data)  // Error: sequential paths must be from context
 ```
 
 Nested access from context properties works fine:
+
 ```javascript
 services.database!.insert(data)  // CORRECT (if 'services' is in context)
 ```
@@ -1301,6 +1266,51 @@ services.database!.insert(data)  // CORRECT (if 'services' is in context)
 **Why this restriction?** The engine uses object identity from the context to guarantee sequential ordering. Copying context objects to local variables breaks this tracking, which is why it's not allowed.
 
 Support for using `!` through `function` parameters is planned, but it is not implemented yet.
+
+### The `sequence` Construct
+
+A `sequence` declaration creates a sequence object that wraps an external object from the render context with strictly sequential access. Use it for imported native objects whose methods or property reads depend on order, such as mutable API clients, database transactions, graphics contexts, file writers, state machines, or helpers that touch shared state. Every read and call through the sequence object is serialized in source-code order.
+
+```javascript
+sequence db = services.db
+var user = db.getUser(1)
+var state = db.connectionState
+return { user: user, state: state }
+```
+
+```javascript
+sequence db = services.db
+var id = db.api.client.getId()
+return id
+```
+
+**Key characteristics:**
+- The initializer must come from the context object
+- Supports value-returning calls: `var x = seq.method(args)`
+- Supports property reads: `var s = seq.status`
+- Supports nested sub-path calls: `var id = seq.api.client.getId()`
+- Supports `snapshot()`: `var snap = seq.snapshot()`
+- Property assignment is currently a compile error, but this is expected to be supported in the future
+
+```javascript
+sequence db = services.db
+db.connectionState = "offline"  // compile error - assignment not allowed
+```
+
+If a `sequence` becomes poisoned, the built-in way to recover it is with a `guard`. See [Protecting State with `guard`](#protecting-state-with-guard).
+
+### The `sequence` Construct vs. `!`
+
+`sequence` and `!` both give you ordering, but they solve different problems:
+
+| | `!` marker | `sequence` |
+|---|---|---|
+| **What it is** | A marker on a static context path | A declared sequence object |
+| **What it is for** | Ordering side effects on one external context path | Ordered reads and calls on one external context object |
+| **Return values** | Mainly used for side-effectful operations | Read immediately in normal expressions |
+| **Example** | `db!.insert(user)` | `var user = db.getUser(1)` |
+
+Use `!` when you want to serialize side effects on a specific context path without wrapping the whole object. Use `sequence` when the external object itself is your ordered interface.
 
 
 ## Functions and Reusable Components
@@ -1620,12 +1630,15 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   // The 'result' variable is now an Error Value
   ```
 
-#### Channels & Effects
+#### Poisoning Channels and Sequencing Constructs
 
 * **Channels:**
   If an Error Value is written to a channel, that channel becomes poisoned, causing the script to fail when the channel is read or returned.
 
-* **Sequential Side-Effect Paths:**
+* **Sequence Objects:**
+  If a read or call through a `sequence` object fails, that sequence becomes poisoned. Later operations through the same sequence immediately yield an Error Value without executing until the sequence is recovered with `guard`.
+
+* **Sequential `!` Paths:**
   If a call in a sequential execution path (marked with `!`) fails, that path becomes poisoned. Later operations using the same `!path` will instantly yield an Error Value without executing.
 
   ```javascript
@@ -1634,7 +1647,8 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   context.database!.commit()       // skipped, returns error immediately
   ```
 
-This mechanism ensures that once an operation fails, all dependent results and channels reflect that failure, maintaining data integrity across both concurrent and sequential execution flows.
+This mechanism ensures that once an operation fails, all dependent results, channels, and sequencing constructs reflect that failure, maintaining data integrity across both concurrent and sequential execution flows.
+
 #### Deciding When to Handle Errors
 
 **Do not handle errors, let them propagate when:**
@@ -1868,13 +1882,13 @@ endguard
 
 ---
 
-#### Default Protection: Channels & Sequences
+#### Default Protection: Guarded State
 
 By default, a `guard` block (with no arguments) protects:
 
-1. All channels (`data`, `text`, `sequence`)
-   Writes made inside the block are discarded on error.
-   For `sequence` channels, this is also the built-in way to recover from poisoning. If the underlying object provides `begin()`, `commit()`, and `rollback()` hooks, `guard` uses them automatically. Missing hooks are tolerated. Hook errors become guard errors.
+1. All channels (`data`, `text`) and sequence objects (`sequence`)
+   Channel writes made inside the block are discarded on error.
+   For sequence objects, this is also the built-in way to recover from poisoning. If the underlying object provides `begin()`, `commit()`, and `rollback()` hooks, `guard` uses them automatically. Missing hooks are tolerated. Hook errors become guard errors.
 
 2. All sequential-operation lock paths (`!`)
    If a path such as `db!` becomes poisoned, it is automatically repaired with `!!`.
@@ -1911,7 +1925,7 @@ endguard
 return out.snapshot()
 ```
 
-##### Example: Guarding a `sequence` Channel
+##### Example: Guarding a `sequence` Object
 
 ```javascript
 sequence tx = services.tx
@@ -1942,20 +1956,20 @@ guard out, db!, status
 
 | Selector | Meaning |
 |----------|---------|
-| `guard` (no selectors) | Global guard: protects all channels and sequential-operation locks touched inside the block |
-| `guard *` | Protect everything (all channels, all lock paths, all variables written inside the guard) |
+| `guard` (no selectors) | Global guard: protects all channels, sequence objects, and sequential-operation locks touched inside the block |
+| `guard *` | Protect everything (all channels, sequence objects, all lock paths, all variables written inside the guard) |
 | `guard var` | Protect all variables written inside the guard |
 | `guard data` | Protect all `data` channel declarations touched inside the guard |
 | `guard text` | Protect all `text` channel declarations touched inside the guard |
-| `guard sequence` | Protect all `sequence` channel declarations touched inside the guard |
-| `guard name1, name2` | Protect specific declaration names (channels or variables) |
+| `guard sequence` | Protect all `sequence` declarations touched inside the guard |
+| `guard name1, name2` | Protect specific declaration names (channels, sequence objects, or variables) |
 | `guard lock!` | Protect a specific sequential-operation lock path (e.g., `db!`) |
 | `guard !` | Protect all sequential-operation lock paths touched inside the guard |
 
 > **Rules:**
 > - `*` cannot be combined with any other selector
 > - Duplicate selectors are invalid
-> - Lock selectors (`lock!`, `!`) are for sequential-operation lock paths, not `sequence` channels
+> - Lock selectors (`lock!`, `!`) are for sequential-operation lock paths, not `sequence` objects
 
 **Hierarchical Protection of Sequential Paths:**
 ```javascript
@@ -2008,18 +2022,18 @@ The `recover` block is optional. If omitted, the guard silently restores protect
 
 If present, it runs only if the guard finishes poisoned:
 
-* Guarded `data`, `text`, and `sequence` values have already been reverted
+* Guarded `data`, `text`, and `sequence` declarations have already been reverted
 * Guarded sequential paths have already been repaired
 * Guarded variables have already been restored
 * `recover err` binds the final `PoisonError`; read `err.message` for a combined message or inspect `err.errors` in host JavaScript. The variable name is optional; bare `recover` (without a binding) is also valid
 
 > Note: If all errors are detected and repaired inside the guard (using `is error`), the guard is considered successful and no recovery occurs.
 
-#### Manually Reverting Channel State
+#### Manually Reverting Guarded State
 
-> **Work in progress:** The `revert` statement for manually resetting channel state inside a `guard` block is not yet available in script mode.
+> **Work in progress:** The `revert` statement for manually resetting guarded state inside a `guard` block is not yet available in script mode.
 
-When implemented, `revert` will reset all `data`, `text`, and `sequence` values in the current channel scope to their state at the start of the nearest enclosing scope boundary (e.g., the start of the `guard` block). This provides fine-grained control complementing automatic guard recovery.
+When implemented, `revert` will reset all `data`, `text`, and `sequence` declarations in the current scope to their state at the start of the nearest enclosing scope boundary (e.g., the start of the `guard` block). This provides fine-grained control complementing automatic guard recovery.
 
 #### Error Handling with Sequential Operations
 
@@ -2071,7 +2085,7 @@ return { name: user.name, count: items.length }
 var report = { name: user.name, count: items.length }
 return report
 
-// Use snapshot() only when you are intentionally building through data/text/sequence
+// Use snapshot() only when you are intentionally observing ordered work
 data reportData
 reportData.user.name = "Alice"
 return reportData.snapshot()
@@ -2079,7 +2093,7 @@ return reportData.snapshot()
 
 `snapshot()` captures the assembled value at that point, waiting for all pending writes to complete. It can be called anywhere after the declaration is made.
 
-For most cases, returning a `var` or a plain object literal is simpler than declaring `data`, `text`, or `sequence`. Use those constructs when you need ordered writes, structured path updates, text building, or `sequence` behavior.
+For most cases, returning a `var` or a plain object literal is simpler than declaring `data`, `text`, or `sequence`. Use `data`/`text` when you need ordered writes, structured path updates, or text building; use `sequence` when you need an ordered interface to an external object.
 
 If no `return` runs, or if you use bare `return`, the JavaScript API resolves
 with `null`, the same value used for Cascada `none`.
@@ -2291,7 +2305,7 @@ extends "base.script" with context, { initialTheme: "dark", id: 0 }
 
 **Accessing shared state**
 
-Inside an inheritance chain or component script, shared state is accessed through `this.<name>`, unifying shared-channel reads and writes with inherited method dispatch under a single prefix. From the outside - when calling a component - shared channels are observed through the component binding instead: `ns.theme`, `ns.log.snapshot()`, etc. (see [`component`](#component-component-instances) below). Bare names always follow ordinary ambient lookup (context, globals, composition payload) even when a matching `shared` declaration exists in the same file. `this.theme` reads the shared channel; bare `theme` reads from context.
+Inside an inheritance chain or component script, shared state is accessed through `this.<name>`, unifying shared reads and writes with inherited method dispatch under a single prefix. From the outside - when calling a component - shared declarations are observed through the component binding instead: `ns.theme`, `ns.log.snapshot()`, etc. (see [`component`](#component-component-instances) below). Bare names always follow ordinary ambient lookup (context, globals, composition payload) even when a matching `shared` declaration exists in the same file. `this.theme` reads the shared declaration; bare `theme` reads from context.
 
 | Form | Meaning |
 |---|---|
@@ -2303,10 +2317,10 @@ Inside an inheritance chain or component script, shared state is accessed throug
 | `this.x.command(args)` | `data`: command call (`push`, `merge`, etc.) |
 | `this.x.method(args)` | `sequence`: ordered call on the underlying object |
 | `this.x.snapshot()` | any: explicit snapshot of current value |
-| `this.x is error` | any: true if the channel is poisoned |
+| `this.x is error` | any: true if the shared declaration is poisoned |
 | `this.x#` | any: peek the error message |
 
-**Per-file declaration requirement:** Every script that uses `this.<name>` for a shared channel must declare it in that file. Because each file is compiled independently, the compiler needs to know the channel type at compile time - it cannot infer it from a parent file. A parent declaring `shared var theme` does not authorize `this.theme` in a child file that has not declared it. Any bare name - including one that matches a `shared` declaration in the same file - follows ordinary ambient lookup and does not read the shared channel.
+**Per-file declaration requirement:** Every script that uses `this.<name>` for shared state must declare it in that file. Because each file is compiled independently, the compiler needs to know the declaration kind at compile time - it cannot infer it from a parent file. A parent declaring `shared var theme` does not authorize `this.theme` in a child file that has not declared it. Any bare name - including one that matches a `shared` declaration in the same file - follows ordinary ambient lookup and does not read the shared declaration.
 
 **`shared` declaration forms:**
 
@@ -2315,13 +2329,13 @@ Inside an inheritance chain or component script, shared state is accessed throug
 | `shared var x = value` | Shared variable. Read and written via `this.x`. |
 | `shared data x` | Shared `data` channel. Operated on via `this.x.command(...)` and `this.x.path = value`. |
 | `shared text x` | Shared `text` channel. Appended via `this.x("msg")`. |
-| `shared sequence db = seqExpr` | Shared `sequence` channel with an initializer. Called via `this.db.method(args)`. |
+| `shared sequence db = seqExpr` | Shared sequence object with an initializer. Called via `this.db.method(args)`. |
 | `shared sequence db` | Declares participation without claiming a default. |
 
 **Default priority rules:**
-- A declaration *without* an initializer (`shared var x`) declares participation only - it does not claim a default value for the channel.
+- A declaration *without* an initializer (`shared var x`) declares participation only - it does not claim a default value for the shared state.
 - Only a declaration *with* an initializer (`shared var x = expr`) claims the default.
-- The first assigned default encountered in child-to-parent startup order wins. Later ancestor defaults for the same channel are not evaluated.
+- The first assigned default encountered in child-to-parent startup order wins. Later ancestor defaults for the same shared declaration are not evaluated.
 - A shared default expression can read from composition payload - payload values are available at startup time.
 
 The example below uses both surfaces of `this.`: `this.theme` reads the shared var and `this.buildBody(...)` calls the inherited method.
@@ -2355,10 +2369,10 @@ await env.renderScript("child.script", {
 ```
 
 **`shared` rules:**
-- Every file that accesses a shared channel via `this.<name>` must declare it - parent declarations do not extend to child files.
+- Every file that accesses shared state via `this.<name>` must declare it - parent declarations do not extend to child files.
 - Only `shared` declarations are allowed before `extends`. Arbitrary `var` declarations before `extends` are not permitted.
 - Bare assignment to a declared shared name (`theme = value`) is a compile-time error. Use `this.theme = value`.
-- Re-declaring an existing shared channel with a different type is a fatal error. Re-declaring with the same type is a no-op.
+- Re-declaring existing shared state with a different type is a fatal error. Re-declaring with the same type is a no-op.
 
 #### `method`: Inherited Dispatch
 
@@ -2396,7 +2410,7 @@ await env.renderScript("child.script", {
 **Method rules:**
 - `this.method(...)` participates in inheritance lookup. `this.method` without a call is a compile-time error.
 - Every overriding method declares its own argument list.
-- Methods return values via `return`. Shared channels are declared before `extends` at the top of the file; methods read and write them via `this.<name>`. Constructor-local variables (declared after `extends`) are not visible inside method bodies.
+- Methods return values via `return`. Shared declarations are declared before `extends` at the top of the file; methods read and write them via `this.<name>`. Constructor-local variables (declared after `extends`) are not visible inside method bodies.
 - Composition payload values are accessible by bare name, and render-context values when `with context` applies (see below).
 
 #### `super()` and `super(...)`
@@ -2461,7 +2475,7 @@ await env.renderScript("child.script", {
 // "[Child/Acme] Ada: Q1 Report"
 ```
 
-The default for a method is "without context" unless the base method explicitly declares `with context`. Child overrides and `super()` calls inherit that render-context visibility automatically - the child does not need to re-declare `with context`. Unlike shared channels, which require `this.<name>`, render-context values in a `with context` method are accessible as plain bare names.
+The default for a method is "without context" unless the base method explicitly declares `with context`. Child overrides and `super()` calls inherit that render-context visibility automatically - the child does not need to re-declare `with context`. Unlike shared state, which requires `this.<name>`, render-context values in a `with context` method are accessible as plain bare names.
 
 #### Direct Render
 
@@ -2543,20 +2557,20 @@ The two instances are fully independent - separate shared values, separate metho
 
 **Observing shared state from the caller**
 
-In addition to method calls, you can observe a component's shared channels directly:
+In addition to method calls, you can observe a component's shared state directly:
 
 ```cascada
 var snap = header.theme              // snapshot of shared var 'theme'
 var name = header.theme.name         // nested read from shared var 'theme'
-var snap2 = header.log.snapshot()    // explicit snapshot of shared channel 'log'
+var snap2 = header.log.snapshot()    // explicit snapshot of shared text 'log'
 var size = header.log.snapshot().length
 var ok   = header.log is error       // true if 'log' is poisoned
 var msg  = header.log#               // peek the error message
 ```
 
-Component shared channels are read-only from the caller - writes must go through the component's own constructors and methods. The allowed observation forms are: bare shared-var read (implicit snapshot), nested property read from a shared `var`, `.snapshot()`, `is error`, and `#`. Shared channel names that start with `_` are private to the component and are not observable through the component binding. Anything else is a compile error.
+Component shared state is read-only from the caller - writes must go through the component's own constructors and methods. The allowed observation forms are: bare shared-var read (implicit snapshot), nested property read from a shared `var`, `.snapshot()`, `is error`, and `#`. Shared names that start with `_` are private to the component and are not observable through the component binding. Anything else is a compile error.
 
-A nested read such as `header.theme.name` is treated as `header.theme.snapshot().name` - Cascada observes the shared var first, then applies ordinary property lookup to the result. This implicit snapshot only applies to shared `var` channels. For `shared text`, `shared data`, or other channel types, call `.snapshot()` explicitly, because `snapshot()` waits for ordered channel work to finish:
+A nested read such as `header.theme.name` is treated as `header.theme.snapshot().name` - Cascada observes the shared var first, then applies ordinary property lookup to the result. This implicit snapshot only applies to shared `var` declarations. For `shared text`, `shared data`, or `shared sequence`, call `.snapshot()` explicitly, because `snapshot()` waits for ordered work to finish:
 
 ```cascada
 return header.log.snapshot().length
@@ -2566,7 +2580,7 @@ return header.log.snapshot().length
 
 The values passed in `with` become a composition payload - a context-like key/value object accessible by bare name inside every constructor and method in the component's hierarchy. Payload is separate from shared state.
 
-> **Payload does not override shared defaults.** `with { x: value }` does not write into a `shared var x`. Payload keys and shared channel names are independent namespaces that happen to resolve through the same ambient lookup. To initialize a shared var from a payload value, read the payload key in the shared default expression (as shown above with `initialTheme`) or assign it explicitly in the constructor body.
+> **Payload does not override shared defaults.** `with { x: value }` does not write into a `shared var x`. Payload keys and shared names are independent namespaces that happen to resolve through the same ambient lookup. To initialize a shared var from a payload value, read the payload key in the shared default expression (as shown above with `initialTheme`) or assign it explicitly in the constructor body.
 
 For multi-level inheritance, the payload flows upward through the chain unchanged.
 
@@ -2582,7 +2596,7 @@ component "X" as ns with context, { initialTheme: "dark", id: 0 }
 
 `with theme, id` captures the current caller-scope values of `theme` and `id` by their existing names. This shorthand is limited to `var` values.
 
-**Component method calls return values directly.** Calling `ns.method(...)` returns the method's return value without exposing any internal channel state.
+**Component method calls return values directly.** Calling `ns.method(...)` returns the method's return value without exposing any internal shared state.
 
 Multiple instantiations of the same script are always fully independent:
 
@@ -2600,10 +2614,10 @@ Both are callable, but they serve different roles:
 | **Call syntax** | `name(...)` | `this.name(...)` |
 | **Inheritance** | No | Yes - child overrides parent |
 | **`super()`** | Not available | Available inside method body |
-| **Shared channel access** | No - functions are isolated | Yes - declared shared channels |
+| **Shared state access** | No - functions are isolated | Yes - declared shared state |
 | **Use case** | Reusable utility logic | Override point for child scripts |
 
-A method body can call functions and read or write shared channels declared in the same file. A function body is isolated: it cannot dispatch inherited methods via `this.method(...)` and does not access shared state.
+A method body can call functions and read or write shared state declared in the same file. A function body is isolated: it cannot dispatch inherited methods via `this.method(...)` and does not access shared state.
 
 #### Comparison to Class Inheritance
 
@@ -2656,7 +2670,7 @@ For details on features inherited from Nunjucks, such as the full range of built
 
 ### Key Distinction: Script vs. Template
 
-*   **Script**: A file or string designed for **logic and data orchestration**. Scripts use features like `var`, `for`, `if`, channel declarations (`data`, `text`, `sequence`), and explicit `return` to execute asynchronous operations and produce a structured result. Their primary goal is to *build data*.
+*   **Script**: A file or string designed for **logic and data orchestration**. Scripts use features like `var`, `for`, `if`, channel declarations (`data`, `text`), sequence declarations (`sequence`), and explicit `return` to execute asynchronous operations and produce a structured result. Their primary goal is to *build data*.
 *   **Template**: A file or string designed for **presentation and text generation**. Templates use `{{ variable }}` and `{% tag %}` syntax to render a final string output. Their primary goal is to *render text*.
 
 Use ESM imports for new code. The main entry can compile from source:
