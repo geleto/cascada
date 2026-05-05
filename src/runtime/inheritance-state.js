@@ -1,3 +1,4 @@
+// @todo - this is temporary implementation
 
 import {RuntimeFatalError, isPoison, markPromiseHandled} from './errors.js';
 import {resolveDuo} from './resolve.js';

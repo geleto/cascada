@@ -1,3 +1,4 @@
+// @todo - this is temporary implementation
 
 import {Command} from './channels/command-base.js';
 import {declareBufferChannel} from './channels/index.js';

@@ -1,3 +1,4 @@
+// @todo - this is a temporary implementation
 
 import * as inheritanceState from './inheritance-state.js';
 import * as inheritanceCall from './inheritance-call.js';

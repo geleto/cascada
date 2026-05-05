@@ -1,3 +1,4 @@
+// @todo - this is temporary implementation
 
 import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
 import {RuntimeFatalError} from './errors.js';
