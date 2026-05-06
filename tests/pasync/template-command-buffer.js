@@ -574,7 +574,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]');
       loader.addTemplate(
         'child.njk',
-        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
+        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', {});

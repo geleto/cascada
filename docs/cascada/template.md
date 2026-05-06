@@ -274,7 +274,7 @@ In async templates that use `extends` or `block`, the `this.<name>` surface prov
 {% set this.theme = "dark" %}
 ```
 
-The child's `{% set this.theme = "dark" %}` writes the shared var before the constructor runs. The base's `{{ this.theme }}` inside the block reads it. Both templates infer `theme` automatically - no declaration required in either file.
+The child's `{% set this.theme = "dark" %}` writes the shared var explicitly through the inheritance state. The base's `{{ this.theme }}` inside the block reads it. Both templates infer `theme` automatically - no declaration required in either file.
 
 ## Variable Scoping
 

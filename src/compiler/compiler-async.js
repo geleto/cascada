@@ -949,10 +949,6 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeMethodDefinition(node) {
     const analysis = this.analyzeBlock(node);
-    if (node && node.isSyntheticConstructor) {
-      analysis.parentReadOnly = false;
-      analysis.scopeBoundary = false;
-    }
     analysis.declares = (analysis.declares ?? []).concat([
       this.return.createChannelDeclaration()
     ]);

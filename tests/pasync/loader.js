@@ -1485,7 +1485,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
 
       it('should keep extends-with capture stable without exposing later constructor-local reassignment to inherited blocks', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
-        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% set theme = "changed" %}{% block content(user) %}{{ super() }} / {{ theme }}{% endblock %}';
+        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% set localTheme = "changed" %}{% block content(user) %}{{ super() }} / {{ theme }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Base Ada / dark / dark');
