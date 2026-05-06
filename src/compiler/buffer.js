@@ -118,7 +118,6 @@ class CompileBuffer {
   }
 
   emitFinishedTextBoundaryPromise(bufferExpr, textChannelName, positionNode, transformExpr = null, addToCurrentWaited = false) {
-    const posExpr = this._emitPositionLiteral(positionNode);
     const textPromiseId = this.compiler._tmpid();
     const finalExpr = `${bufferExpr}.getChannel("${textChannelName}").finalSnapshot()`;
     const chainedExpr = transformExpr
@@ -128,9 +127,7 @@ class CompileBuffer {
     this.compiler.emit.line(`${bufferExpr}.finish();`);
     this.compiler.emit.line(`const ${textPromiseId} = ${chainedExpr};`);
     if (addToCurrentWaited && this.compiler.asyncMode && this.currentWaitedChannelName) {
-      this.compiler.emit.line(
-        `${this.currentWaitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ channelName: "${this.currentWaitedChannelName}", args: [${textPromiseId}], pos: ${posExpr} }), "${this.currentWaitedChannelName}");`
-      );
+      this.emitOwnWaitedConcurrencyResolve(textPromiseId, positionNode);
     }
     return textPromiseId;
   }
@@ -309,9 +306,17 @@ class CompileBuffer {
     );
   }
 
+  // Register produced work with the current waited-loop timing channel.
+  // This records completion of the value created at the current source
+  // position, not completion of any command that later consumes that value.
+  //
+  // Keep that distinction: output command promises are tied to channel
+  // consumption, and coupling loop-slot release to text/data draining would
+  // make limited-concurrency loops stall behind later snapshot/finalSnapshot
+  // traversal.
   emitOwnWaitedConcurrencyResolve(valueExpr, positionNode = null) {
-    // Waited-loop bookkeeping: in __waited__ scope, root work contributes one
-    // timing-only WaitResolveCommand to the owning iteration buffer's channel.
+    // In __waited__ scope, root work contributes one timing-only
+    // WaitResolveCommand to the owning iteration buffer's channel.
     const waitedChannelName = this.currentWaitedChannelName;
     const waitedOwnerBuffer = this.currentWaitedOwnerBuffer || this.currentBuffer;
     if (!this.compiler.asyncMode || !waitedChannelName) {

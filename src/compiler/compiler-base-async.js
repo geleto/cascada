@@ -378,15 +378,12 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     const resultId = this._tmpid();
-    const waitedChannelName = this.buffer.currentWaitedChannelName;
-    const waitedOwnerBuffer = this.buffer.currentWaitedOwnerBuffer || this.buffer.currentBuffer;
-    const posLiteral = this.buffer._emitPositionLiteral(positionNode ?? node);
 
     this.emit('(() => { ');
     this.emit(`let ${resultId} = `);
     this._compileExpression(node, null, positionNode);
     this.emit('; ');
-    this.emit(`${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${resultId}], pos: ${posLiteral} }), "${waitedChannelName}"); `);
+    this.buffer.emitOwnWaitedConcurrencyResolve(resultId, positionNode ?? node);
     this.emit(`return ${resultId}; `);
     this.emit('})()');
   }

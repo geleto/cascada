@@ -4,6 +4,7 @@ import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/env
 import {StringLoader, delay} from '../util.js';
 import {createPoison, isPoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChannel} from '../../src/runtime/runtime.js';
 import * as parser from '../../src/parser.js';
+import * as nodes from '../../src/nodes.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
 (function () {
@@ -76,19 +77,53 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
         expect(context.state.maxConcurrent).to.be(1);
       });
 
-      it('keeps asyncEach loops sequential after concurrentLimit changes', async () => {
-        const context = {
-          items: [1, 2, 3],
-          concurrentCount: 0,
-          maxConcurrent: 0,
-          async processItem(item) {
-            context.concurrentCount++;
-            context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
-            await delay(10);
-            context.concurrentCount--;
-            return `Item ${item}`;
-          }
-        };
+    it('keeps async extension tag output within the loop concurrent limit', async () => {
+      let active = 0;
+      let maxActive = 0;
+
+      class AsyncTagExtension {
+        constructor() {
+          this.tags = ['atag'];
+        }
+
+        parse(parserInstance) {
+          const token = parserInstance.nextToken();
+          parserInstance.advanceAfterBlockEnd(token.value);
+          return new nodes.CallExtension(this, 'run');
+        }
+
+        async run() {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          await delay(20);
+          active--;
+          return 'x';
+        }
+      }
+
+      env.addExtension('AsyncTagExtension', new AsyncTagExtension());
+
+      const result = await env.renderTemplateString(
+        '{% for item in [1, 2, 3, 4] of 2 %}{% atag %}{% endfor %}'
+      );
+
+      expect(result).to.be('xxxx');
+      expect(maxActive).to.be(2);
+    });
+
+    it('keeps asyncEach loops sequential after concurrentLimit changes', async () => {
+      const context = {
+        items: [1, 2, 3],
+        concurrentCount: 0,
+        maxConcurrent: 0,
+        async processItem(item) {
+          context.concurrentCount++;
+          context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+          await delay(10);
+          context.concurrentCount--;
+          return `Item ${item}`;
+        }
+      };
 
         const template = `
         {%- asyncEach item in items -%}
@@ -2517,6 +2552,30 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
     it('emits WaitResolveCommand for block invocation completion in limited loops', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% block b %}B{{ x }}{% endblock %}{% endfor %}', env);
+      const source = tmpl.compileSource();
+      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
+    });
+
+    it('emits WaitResolveCommand for async extension tag output in limited loops', function () {
+      class AsyncTagExtension {
+        constructor() {
+          this.tags = ['atag'];
+        }
+
+        parse(parserInstance) {
+          const token = parserInstance.nextToken();
+          parserInstance.advanceAfterBlockEnd(token.value);
+          return new nodes.CallExtensionAsync(this, 'run');
+        }
+
+        run(context, cb) {
+          cb(null, 'tag');
+        }
+      }
+
+      const env = new AsyncEnvironment();
+      env.addExtension('AsyncTagExtension', new AsyncTagExtension());
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% atag %}{% endfor %}', env);
       const source = tmpl.compileSource();
       expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
     });
