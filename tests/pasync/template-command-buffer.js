@@ -276,7 +276,7 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
 
     it('should emit inherited block placement as method invocation without shared text boundary', function () {
       const env = new AsyncEnvironment();
-      const templateSource = '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]';
+      const templateSource = '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]';
       const ast = analyzeTemplateSource(templateSource, 'block-text-placement-links.njk');
       const blockNode = collectNodesByType(ast, 'Block')[0];
       const tmpl = new AsyncTemplate(templateSource, env, 'block-text-placement-links.njk');
@@ -571,10 +571,10 @@ import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]');
+      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]');
       loader.addTemplate(
         'child.njk',
-        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set theme = "dark" %}{% block body %}{{ theme }}{% endblock %}'
+        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', {});

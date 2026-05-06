@@ -174,6 +174,14 @@ class CompileAnalysis {
     return owner.declaredChannels.get(name) || null;
   }
 
+  findRootDeclaration(analysis, name) {
+    const owner = this._getRootScopeOwner(analysis);
+    if (!owner || !owner.declaredChannels) {
+      return null;
+    }
+    return owner.declaredChannels.get(name) || null;
+  }
+
   findDeclarationOwner(analysis, name) {
     const skipDeclarationOwner = analysis.skipDeclarationOwner || null;
     let current = analysis;
@@ -465,6 +473,10 @@ class CompileAnalysis {
       const declarationOwner = this.findDeclarationOwner(analysis, name);
       const declaration = this.findDeclaration(analysis, name);
       if (!declarationOwner || !declaration) {
+        const rootDeclaration = this.findRootDeclaration(analysis, name);
+        if (rootDeclaration && rootDeclaration.shared) {
+          continue;
+        }
         this._validateMissingDeclaration(analysis, name, 'mutation');
         continue;
       }
@@ -496,6 +508,10 @@ class CompileAnalysis {
         continue;
       }
       if (!this.findDeclaration(analysis, name)) {
+        const rootDeclaration = this.findRootDeclaration(analysis, name);
+        if (rootDeclaration && rootDeclaration.shared) {
+          continue;
+        }
         this._validateMissingDeclaration(analysis, name, 'use');
       }
     }
@@ -623,35 +639,57 @@ class CompileAnalysis {
 
     this._postAnalyzeNode(node);
 
+    return this._getParentVisibleChannelUsage(
+      analysis,
+      localUses,
+      localMutates,
+      usedChannels,
+      mutatedChannels,
+      declaredHere
+    );
+  }
+
+  _getParentVisibleChannelUsage(analysis, localUses, localMutates, usedChannels, mutatedChannels, declaredHere) {
+    let parentUsage;
     if (analysis.scopeBoundary) {
-      return {
+      const nodeType = analysis.node && analysis.node.typename;
+      const isMethodOrBlockBoundary = nodeType === 'Block' || nodeType === 'MethodDefinition';
+      if (!isMethodOrBlockBoundary) {
+        return {
+          usedChannels: new Set(),
+          mutatedChannels: new Set()
+        };
+      }
+      parentUsage = {
         usedChannels: new Set(),
         mutatedChannels: new Set()
       };
-    }
-
-    if (!declaredHere || declaredHere.size === 0) {
-      return {
-        usedChannels,
-        mutatedChannels
+      localUses.forEach((name) => {
+        if (name) {
+          parentUsage.usedChannels.add(name);
+        }
+      });
+      localMutates.forEach((name) => {
+        if (name) {
+          parentUsage.usedChannels.add(name);
+          parentUsage.mutatedChannels.add(name);
+        }
+      });
+    } else {
+      parentUsage = {
+        usedChannels: new Set(usedChannels),
+        mutatedChannels: new Set(mutatedChannels)
       };
     }
-
-    const parentUsedChannels = new Set(usedChannels);
-    const parentMutatedChannels = new Set(mutatedChannels);
-
-    declaredHere.forEach((_decl, name) => {
-      if (!name) {
-        return;
-      }
-      parentUsedChannels.delete(name);
-      parentMutatedChannels.delete(name);
-    });
-
-    return {
-      usedChannels: parentUsedChannels,
-      mutatedChannels: parentMutatedChannels
-    };
+    if (declaredHere) {
+      declaredHere.forEach((_decl, name) => {
+        if (name) {
+          parentUsage.usedChannels.delete(name);
+          parentUsage.mutatedChannels.delete(name);
+        }
+      });
+    }
+    return parentUsage;
   }
 
   _deriveBoundaryLinkedChannels(analysis, usedChannels, declaredChannels) {

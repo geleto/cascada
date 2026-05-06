@@ -1488,7 +1488,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% set theme = "changed" %}{% block content(user) %}{{ super() }} / {{ theme }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
-        expect(result.trim()).to.equal('Base Ada / dark /');
+        expect(result.trim()).to.equal('Base Ada / dark / dark');
       });
 
       it('should let extends payload expose render-context values while explicit names still win', async () => {

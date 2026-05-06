@@ -34,7 +34,7 @@ class CompileChannel {
       return null;
     }
     const name = segments[0];
-    const declaration = analysisPass.findDeclaration(node._analysis, name);
+    const declaration = analysisPass.findRootDeclaration(node._analysis, name);
     if (!declaration || !declaration.shared) {
       return null;
     }
@@ -133,7 +133,7 @@ class CompileChannel {
       return null;
     }
     const channelName = staticPath[1];
-    const channelDecl = analysisPass.findDeclaration(analysisNode || node._analysis, channelName);
+    const channelDecl = analysisPass.findRootDeclaration(analysisNode || node._analysis, channelName);
     const isTemplateTextChannel = !compiler.scriptMode &&
       compiler.templateUsesInheritanceSurface &&
       channelName === compiler.buffer.currentTextChannelName &&

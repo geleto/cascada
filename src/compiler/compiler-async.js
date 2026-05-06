@@ -554,10 +554,15 @@ class CompilerAsync extends CompilerBaseAsync {
         declares: (node.body._analysis?.declares ?? []).concat(declares)
       };
     }
+    const textChannel = !this.scriptMode
+      ? this.analysis.getCurrentTextChannel(node._analysis)
+      : null;
     return {
       createScope: true,
-      scopeBoundary: false,
+      scopeBoundary: true,
       parentReadOnly: true,
+      uses: textChannel ? [textChannel] : [],
+      mutates: textChannel ? [textChannel] : [],
       createsLinkedChildBuffer: true
     };
   }
@@ -726,6 +731,16 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _collectInferredTemplateSharedDeclarations(rootNode) {
+    const explicitSharedNames = new Set();
+    const metadata = this._getInheritanceMetadata(rootNode);
+    if (metadata && metadata.sharedDeclarations && Array.isArray(metadata.sharedDeclarations.children)) {
+      metadata.sharedDeclarations.children.forEach((declaration) => {
+        if (declaration && declaration.name && declaration.name.value) {
+          explicitSharedNames.add(declaration.name.value);
+        }
+      });
+    }
+
     const calleeNodes = new Set();
     rootNode.findAll(nodes.FunCall).forEach((callNode) => {
       if (callNode && callNode.name) {
@@ -755,7 +770,7 @@ class CompilerAsync extends CompilerBaseAsync {
         return;
       }
       const name = staticPath[1];
-      if (inferred.has(name)) {
+      if (inferred.has(name) || explicitSharedNames.has(name)) {
         return;
       }
       const nameNode = new nodes.Symbol(lookupNode.lineno, lookupNode.colno, name);
@@ -936,6 +951,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const analysis = this.analyzeBlock(node);
     if (node && node.isSyntheticConstructor) {
       analysis.parentReadOnly = false;
+      analysis.scopeBoundary = false;
     }
     analysis.declares = (analysis.declares ?? []).concat([
       this.return.createChannelDeclaration()

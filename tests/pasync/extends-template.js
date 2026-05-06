@@ -71,7 +71,7 @@ describe('Template Extends', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]');
+      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]');
       loader.addTemplate('child.njk', '{% shared var theme = "light" %}{% set theme = "dark" %}{% extends "base.njk" %}');
 
       const result = await env.renderTemplate('child.njk', {});
@@ -85,7 +85,7 @@ describe('Template Extends', function () {
       loader.addTemplate('base.njk', 'Base[{% block body(user) %}{{ user }}{% endblock %}]');
       loader.addTemplate(
         'child.njk',
-        '{% extends "base.njk" %}{% block body %}{{ user }}{% endblock %}'
+        '{% extends "base.njk" %}{% block body(user) %}{{ user }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', { user: 'Ada' });
@@ -107,10 +107,10 @@ describe('Template Extends', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ theme }}{% endblock %}]');
+      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]');
       loader.addTemplate(
         'child.njk',
-        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set theme = "dark" %}{% block body %}{{ theme }}{% endblock %}'
+        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', {});

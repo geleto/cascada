@@ -16,31 +16,6 @@ class CompileInheritance {
     this.emit = this.compiler.emit;
   }
 
-  getCurrentCallableBindingOwners(node, name) {
-    return {
-      declarationOwner: this.compiler.analysis.findDeclarationOwner(node._analysis, name),
-      callableOwner: this.compiler.currentCallableDefinition
-        ? this.compiler.currentCallableDefinition._analysis
-        : null,
-      callableBodyOwner: this.compiler.currentCallableDefinition && this.compiler.currentCallableDefinition.body
-        ? this.compiler.currentCallableDefinition.body._analysis
-        : null
-    };
-  }
-
-  isHiddenFromCurrentCallable(node, name, declaredChannel, opts = {}) {
-    const { includeImported = false } = opts;
-    const { declarationOwner, callableOwner, callableBodyOwner } =
-      this.getCurrentCallableBindingOwners(node, name);
-    const isVisibleFromCurrentCallable = !!(
-      declaredChannel.shared ||
-      (includeImported && declaredChannel.imported) ||
-      declarationOwner === callableOwner ||
-      declarationOwner === callableBodyOwner
-    );
-    return !isVisibleFromCurrentCallable;
-  }
-
   supportsExplicitThisDispatch() {
     return !!(this.compiler.scriptMode || this.compiler.templateUsesInheritanceSurface);
   }

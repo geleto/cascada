@@ -106,7 +106,7 @@ describe('Extends Runtime', function () {
       env = new AsyncEnvironment(loader);
 
       loader.addTemplate('A.njk', '{% shared var theme = "light" %}{% block body %}parent{% endblock %}');
-      loader.addTemplate('C.njk', '{% shared var theme = "dark" %}{% extends "A.njk" %}{% block body %}{{ theme }}{% endblock %}');
+      loader.addTemplate('C.njk', '{% shared var theme = "dark" %}{% extends "A.njk" %}{% block body %}{{ this.theme }}{% endblock %}');
 
       const result = await env.renderTemplate('C.njk', {});
 
@@ -309,8 +309,12 @@ describe('Extends Runtime', function () {
       loader.addTemplate('A.script', 'var secret = "A"\nmethod readSecret()\n  return secret\nendmethod');
       loader.addTemplate('C.script', 'extends "A.script"\nreturn this.readSecret()');
 
-      const result = await env.renderScript('C.script', {});
-      expect(result).to.be(undefined);
+      try {
+        await env.renderScript('C.script', {});
+        expect().fail('Expected hidden constructor-local lookup to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Can not look up unknown variable/function: secret');
+      }
     });
 
     it('should finish the constructor-local buffer without legacy static-extends promise gating', function () {
@@ -329,8 +333,12 @@ describe('Extends Runtime', function () {
 
       loader.addTemplate('Plain.script', 'var secret = "A"\nmethod readSecret()\n  return secret\nendmethod\nreturn this.readSecret()');
 
-      const result = await env.renderScript('Plain.script', {});
-      expect(result).to.be(undefined);
+      try {
+        await env.renderScript('Plain.script', {});
+        expect().fail('Expected hidden top-level local lookup to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Can not look up unknown variable/function: secret');
+      }
     });
 
     it('should keep constructor-local non-shared vars out of later method invocation scope', async function () {
@@ -340,8 +348,12 @@ describe('Extends Runtime', function () {
       loader.addTemplate('A.script', 'var secret = "A"\nmethod readSecret()\n  return secret\nendmethod');
       loader.addTemplate('C.script', 'extends "A.script"\nreturn this.readSecret()');
 
-      const result = await env.renderScript('C.script', {});
-      expect(result).to.be(undefined);
+      try {
+        await env.renderScript('C.script', {});
+        expect().fail('Expected hidden constructor-local lookup to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Can not look up unknown variable/function: secret');
+      }
     });
   });
 

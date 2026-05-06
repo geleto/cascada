@@ -81,18 +81,6 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileDeclaredSymbolLookup(node, name, declaredChannel) {
-    if (this.scriptMode && this.currentCallableDefinition) {
-      if (this.inheritance.isHiddenFromCurrentCallable(node, name, declaredChannel, { includeImported: true })) {
-        this.emit('undefined');
-        return;
-      }
-    }
-    if (!this.scriptMode && this.currentCallableDefinition && this.inBlock && declaredChannel.type === 'var') {
-      if (this.inheritance.isHiddenFromCurrentCallable(node, name, declaredChannel)) {
-        this.emit('undefined');
-        return;
-      }
-    }
     if (node.sequential || node.sequentialRepair) {
       this._failNonContextSequenceRoot(node, declaredChannel);
     }
