@@ -29,7 +29,7 @@ class CompileComponent {
     }
 
     const targetName = node.target.value;
-    const componentTemplateVar = this.compiler.inheritance.compileAsyncGetTemplateOrScript(node, true, false);
+    const componentTargetVar = this.compileAsyncResolveComponentTargetFile(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
     const instanceVar = this.compiler._tmpid();
@@ -37,12 +37,12 @@ class CompileComponent {
 
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
     this.emit.line(`const ${componentVarsVar} = {};`);
-    this.compiler.inheritance.emitCompiledPayloadInputs(node, componentVarsVar);
-    this.compiler.inheritance.emitCompositionContext(rootContextVar, componentVarsVar, node.withContext);
+    this.emitCompiledPayloadInputs(node, componentVarsVar);
+    this.emitCompositionContext(rootContextVar, componentVarsVar, node.withContext);
     this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
     this.emit.line(`  currentBuffer: ${this.compiler.buffer.currentBuffer},`);
     this.emit.line(`  bindingName: "${targetName}",`);
-    this.emit.line(`  templateOrPromise: ${componentTemplateVar},`);
+    this.emit.line(`  templateOrPromise: ${componentTargetVar},`);
     this.emit.line(`  payload: ${rootContextVar},`);
     this.emit.line('  ownerContext: context,');
     this.emit.line('  env,');
@@ -55,6 +55,48 @@ class CompileComponent {
     if (targetName.charAt(0) !== '_' && this.compiler.analysis.isRootScopeOwner(node._analysis)) {
       this.emit.line(`context.addDeferredExport("${targetName}", "${targetName}", ${this.compiler.buffer.currentBuffer});`);
     }
+  }
+
+  compileAsyncResolveComponentTargetFile(node, eagerCompile, ignoreMissing) {
+    const targetVar = this.compiler._tmpid();
+    const parentName = JSON.stringify(this.compiler.templateName);
+    const getTemplateFunc = this.compiler._tmpid();
+    const resolvedTargetValue = this.compiler._tmpid();
+    const eagerCompileArg = eagerCompile ? 'true' : 'false';
+    const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
+
+    this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
+    this.emit(`const ${resolvedTargetValue} = `);
+    this.compiler.compileExpression(node.template, null, node.template || node, true);
+    this.emit.line(';');
+    this.emit.line(`let ${targetVar} = runtime.resolveSingle(${resolvedTargetValue}).then((resolvedTemplateName) => {`);
+    this.emit.line(`  return ${getTemplateFunc}(resolvedTemplateName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
+    this.emit.line('});');
+
+    return targetVar;
+  }
+
+  emitCompiledPayloadInputs(node, targetVarsVar) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    withVars.forEach((nameNode) => {
+      const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
+      this.emit(`${targetVarsVar}[${JSON.stringify(inputName)}] = `);
+      this.compiler.compileExpression(nameNode, null, nameNode, true);
+      this.emit.line(';');
+    });
+    if (node.withValue) {
+      this.emit(`Object.assign(${targetVarsVar}, `);
+      this.compiler.compileExpression(node.withValue, null, node.withValue, true);
+      this.emit.line(');');
+    }
+  }
+
+  emitCompositionContext(targetCtxVar, payloadVarsVar, includeRenderContext) {
+    this.emit.line(`const ${targetCtxVar} = {};`);
+    if (includeRenderContext) {
+      this.emit.line(`Object.assign(${targetCtxVar}, context.getRenderContextVariables());`);
+    }
+    this.emit.line(`Object.assign(${targetCtxVar}, ${payloadVarsVar});`);
   }
 
   getBindingFacts(node, { forCall = false } = {}) {

@@ -492,7 +492,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileImport(node) {
-    this.inheritance.compileAsyncImport(node);
+    this.composition.compileAsyncImport(node);
   }
 
   analyzeComponent(node) {
@@ -520,7 +520,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileFromImport(node) {
-    this.inheritance.compileAsyncFromImport(node);
+    this.composition.compileAsyncFromImport(node);
   }
 
   analyzeBlock(node) {
@@ -624,7 +624,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileInclude(node) {
-    this.inheritance.compileAsyncInclude(node);
+    this.composition.compileAsyncInclude(node);
   }
 
   analyzeRoot(node) {

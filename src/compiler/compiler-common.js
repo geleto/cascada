@@ -15,6 +15,7 @@ import {CompileBoundaries} from './boundaries.js';
 import {CompileChannel} from './channel.js';
 import {CompileComponent} from './component.js';
 import {CompileReturn} from './return.js';
+import {CompileComposition} from './composition.js';
 
 /**
  * CompilerCommon - Common base class for compiler functionality
@@ -49,6 +50,7 @@ class CompilerCommon extends Obj {
     this.emit = new CompileEmit(this);
     this.async = null;
     this.inheritance = new CompileInheritance(this);
+    this.composition = new CompileComposition(this);
     this.loop = new CompileLoop(this);
     this.buffer = new CompileBuffer(this);
     this.macro = new CompileMacro(this);
