@@ -888,7 +888,7 @@ class CompileInheritance {
         this.compiler.compositionPayload.emitCompiledInputs(node, extendsVarsVar);
       });
 
-      const parentTemplateId = this.compiler.composition.compileAsyncResolveCompositionTargetFile(node, true, false, true);
+      const parentTemplateId = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false, true);
       // Script inheritance startup links the chain-level shared schema known
       // at runtime after parent metadata has been bootstrapped. This is not a
       // local analysis fact for the extending script: parent schemas can arrive
@@ -912,7 +912,7 @@ class CompileInheritance {
     } = this._prepareAsyncExtendsCompositionPayload(node, (extendsVarsVar) => {
       this.compiler.compositionPayload.emitCurrentPositionInputs(node, extendsVarsVar);
     });
-    const parentTemplateId = this.compiler.composition.compileAsyncResolveCompositionTargetFile(node, true, false, true);
+    const parentTemplateId = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false, true);
 
     const deferredSelectionVar = this.compiler._tmpid();
     this.emit.line(`const ${deferredSelectionVar} = runtime.resolveSingle(${parentTemplateId}).then((resolvedParentTemplate) => {`);
@@ -950,7 +950,7 @@ class CompileInheritance {
         node
       );
     }
-    const parentTemplateId = this.compiler.composition.compileSyncResolveCompositionTargetFile(node, frame, true, false, true);
+    const parentTemplateId = this.compiler.composition.compileSyncResolveTargetFile(node, frame, true, false, true);
     this.emit.line(`parentTemplate = ${parentTemplateId};`);
     this.emit.line('if (parentTemplate) {');
     this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);

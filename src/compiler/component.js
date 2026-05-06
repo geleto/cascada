@@ -29,7 +29,7 @@ class CompileComponent {
     }
 
     const targetName = node.target.value;
-    const componentTargetVar = this.compileAsyncResolveComponentTargetFile(node, true, false);
+    const componentTargetVar = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
     const instanceVar = this.compiler._tmpid();
@@ -55,25 +55,6 @@ class CompileComponent {
     if (targetName.charAt(0) !== '_' && this.compiler.analysis.isRootScopeOwner(node._analysis)) {
       this.emit.line(`context.addDeferredExport("${targetName}", "${targetName}", ${this.compiler.buffer.currentBuffer});`);
     }
-  }
-
-  compileAsyncResolveComponentTargetFile(node, eagerCompile, ignoreMissing) {
-    const targetVar = this.compiler._tmpid();
-    const parentName = JSON.stringify(this.compiler.templateName);
-    const getTemplateFunc = this.compiler._tmpid();
-    const resolvedTargetValue = this.compiler._tmpid();
-    const eagerCompileArg = eagerCompile ? 'true' : 'false';
-    const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
-
-    this.emit.line(`const ${getTemplateFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
-    this.emit(`const ${resolvedTargetValue} = `);
-    this.compiler.compileExpression(node.template, null, node.template || node, true);
-    this.emit.line(';');
-    this.emit.line(`let ${targetVar} = runtime.resolveSingle(${resolvedTargetValue}).then((resolvedTemplateName) => {`);
-    this.emit.line(`  return ${getTemplateFunc}(resolvedTemplateName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
-    this.emit.line('});');
-
-    return targetVar;
   }
 
   getBindingFacts(node, { forCall = false } = {}) {
