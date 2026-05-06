@@ -873,7 +873,8 @@ Hello {{ user.name }}
 
 {# [TPL-17] RULE: `{% block name(a, b) %}` declares args; `{% block name(a) with context %}` adds render-context.
    CONSTRAINT: Overrides MUST match parent's signature exactly, including `with context`.
-   `super()` renders the parent with the ORIGINAL block arguments (not reassigned locals). #}
+   `super()` renders the parent with the ORIGINAL block arguments (not reassigned locals).
+   Parent/loop/top-level locals are NOT captured; pass them as block args or payload. #}
 
 {# [TPL-18] RULE: Shared `var` state across the hierarchy uses `this.<name>`.
    DIFFERENTIAL FROM SCRIPTS: NO `shared` declaration is required in templates — compiler INFERS shared vars
@@ -900,7 +901,7 @@ Theme: {{ this.theme }}
 | `include` | Sees caller's `{% set %}` vars | Isolated; only `with` inputs |
 | `import` | Macros see only own args | Isolated; only `with` inputs |
 | `block` | Sees caller frame | Isolated; declared args + `with context` |
-| Child top-level `{% set %}` | Visible in child's blocks | Visible in child's blocks |
+| Child top-level `{% set %}` | Visible in child's blocks | Not captured; pass as block arg, payload, or `this.<name>` |
 
 ---
 

@@ -209,6 +209,7 @@ Classic Nunjucks blocks have implicit access to the caller's scope. Cascada asyn
 - `{% block name(args) with context %}` - also exposes render-context bare names.
 - Overrides must match the parent's signature exactly, including `with context`.
 - `super()` renders the parent block with the original block arguments.
+- Bare variables from the surrounding template scope are not captured by a block. Pass loop/top-level values as block arguments, pass composition inputs with `extends ... with ...`, or read hierarchy state explicitly through `this.<name>`.
 
 ### Inheritance Example
 
@@ -247,6 +248,7 @@ What this shows:
 - `super()` still sees the original block argument `user = "Ada"`, even though the child reassigned the local `user` to `"Grace"`.
 - `siteName` is visible inside both blocks because of `with context`, not because it is an explicit argument.
 - `theme` comes from the `extends ... with ...` payload, not from block arguments or render context.
+- A child top-level `{% set theme = ... %}` would not be visible in `content` by itself. The value crosses the inheritance boundary because the child passes it with `{% extends "base.njk" with theme %}`.
 
 ### Shared State in Inherited Templates
 
@@ -295,7 +297,7 @@ All composition boundaries are isolated in async mode - the child sees only what
 | `include` | Sees all caller's `{% set %}` variables | Isolated - sees only explicit `with` inputs |
 | `import` | Macros see only their own arguments | Isolated - sees only explicit `with` inputs |
 | `block` | Sees caller's frame | Isolated - sees only declared block arguments and `with context` names |
-| Child top-level `{% set %}` | Visible in the child's own blocks | Visible in the child's own blocks |
+| Child top-level `{% set %}` | Visible in the child's own blocks | Not captured by blocks; pass it as a block arg, `extends ... with` payload, or `this.<name>` shared state |
 
 ### Passing Data with `with`
 
