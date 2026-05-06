@@ -1,10 +1,10 @@
 # CascadaScript Documentation
 
+[Cascada GitHub Project](https://github.com/geleto/cascada)
+
 [Download as Markdown](https://raw.githubusercontent.com/geleto/cascada/master/docs/cascada/script.md)
 
 [Markdown for AI Coding Agents - Script and Template syntax](https://raw.githubusercontent.com/geleto/cascada/refs/heads/master/docs/cascada/cascada-agent.md)
-
-[Cascada Github](https://github.com/geleto/cascada)
 
 CascadaScript inverts the traditional programming model: it is concurrent by default, sequential only when explicitly asked. Everything runs at once - all statements, each part of every expression, every operation in each call, each iteration of every loop - an operation only waits when it depends on another's result. What makes it extraordinary is how ordinary the syntax looks - instantly familiar to any JavaScript or Python developer. And the result is identical to sequential execution.
 
