@@ -42,51 +42,6 @@ class CompileComposition {
     return targetVar;
   }
 
-  emitCompiledPayloadInputs(node, targetVarsVar) {
-    this.emitPayloadInputVariables(node, targetVarsVar, (nameNode) => {
-      this.compiler.compileExpression(nameNode, null, nameNode, true);
-    });
-    this.emitPayloadObjectInput(node, targetVarsVar);
-  }
-
-  emitCurrentPositionPayloadInputs(node, targetVarsVar) {
-    this.emitPayloadInputVariables(node, targetVarsVar, (nameNode, inputName) => {
-      const declaration = this.compiler.analysis.findDeclaration(nameNode._analysis, inputName);
-      if (declaration && declaration.type === 'var' && !declaration.shared) {
-        this.emit(`runtime.channelLookup(${JSON.stringify(inputName)}, ${this.compiler.buffer.currentBuffer})`);
-      } else {
-        this.emit(`context.lookup(${JSON.stringify(inputName)})`);
-      }
-    });
-    this.emitPayloadObjectInput(node, targetVarsVar);
-  }
-
-  emitPayloadInputVariables(node, targetVarsVar, emitValue) {
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    withVars.forEach((nameNode) => {
-      const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
-      this.emit(`${targetVarsVar}[${JSON.stringify(inputName)}] = `);
-      emitValue(nameNode, inputName);
-      this.emit.line(';');
-    });
-  }
-
-  emitPayloadObjectInput(node, targetVarsVar) {
-    if (node.withValue) {
-      this.emit(`Object.assign(${targetVarsVar}, `);
-      this.compiler.compileExpression(node.withValue, null, node.withValue, true);
-      this.emit.line(');');
-    }
-  }
-
-  emitCompositionContext(targetCtxVar, payloadVarsVar, includeRenderContext) {
-    this.emit.line(`const ${targetCtxVar} = {};`);
-    if (includeRenderContext) {
-      this.emit.line(`Object.assign(${targetCtxVar}, context.getRenderContextVariables());`);
-    }
-    this.emit.line(`Object.assign(${targetCtxVar}, ${payloadVarsVar});`);
-  }
-
   compileSyncResolveCompositionTargetFile(node, frame, eagerCompile, ignoreMissing, allowNoParent = false) {
     const targetVar = this.compiler._tmpid();
     const errId = this.compiler._tmpid();
@@ -135,8 +90,8 @@ class CompileComposition {
     const importVarsVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
     this.emit.line(`let ${importVarsVar} = {};`);
-    this.emitCompiledPayloadInputs(node, importVarsVar);
-    this.emitCompositionContext(importContextVar, importVarsVar, node.withContext);
+    this.compiler.compositionPayload.emitCompiledInputs(node, importVarsVar);
+    this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb));`);
@@ -197,8 +152,8 @@ class CompileComposition {
     const importVarsVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
     this.emit.line(`let ${importVarsVar} = {};`);
-    this.emitCompiledPayloadInputs(node, importVarsVar);
-    this.emitCompositionContext(importContextVar, importVarsVar, node.withContext);
+    this.compiler.compositionPayload.emitCompiledInputs(node, importVarsVar);
+    this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb));`);
@@ -305,8 +260,8 @@ class CompileComposition {
 
       this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${JSON.stringify(this.compiler.templateName)}, ${node.ignoreMissing ? 'true' : 'false'});`);
       this.emit.line(`let ${includeVarsVar} = {};`);
-      this.emitCompiledPayloadInputs(node, includeVarsVar);
-      this.emitCompositionContext(includeContextVar, includeVarsVar, node.withContext);
+      this.compiler.compositionPayload.emitCompiledInputs(node, includeVarsVar);
+      this.compiler.compositionPayload.emitContext(includeContextVar, includeVarsVar, node.withContext);
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);

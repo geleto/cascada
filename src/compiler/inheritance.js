@@ -397,7 +397,7 @@ class CompileInheritance {
 
     this.emit.line(`const ${extendsVarsVar} = {};`);
     emitInputCapture(extendsVarsVar);
-    this.compiler.composition.emitCompositionContext(extendsRootContextVar, extendsVarsVar, node.withContext !== false);
+    this.compiler.compositionPayload.emitContext(extendsRootContextVar, extendsVarsVar, node.withContext !== false);
     this._emitExtendsCompositionPayload(
       node,
       extendsVarsVar,
@@ -885,7 +885,7 @@ class CompileInheritance {
       const {
         compositionPayloadVar
       } = this._prepareAsyncExtendsCompositionPayload(node, (extendsVarsVar) => {
-        this.compiler.composition.emitCompiledPayloadInputs(node, extendsVarsVar);
+        this.compiler.compositionPayload.emitCompiledInputs(node, extendsVarsVar);
       });
 
       const parentTemplateId = this.compiler.composition.compileAsyncResolveCompositionTargetFile(node, true, false, true);
@@ -910,7 +910,7 @@ class CompileInheritance {
     const {
       compositionPayloadVar
     } = this._prepareAsyncExtendsCompositionPayload(node, (extendsVarsVar) => {
-      this.compiler.composition.emitCurrentPositionPayloadInputs(node, extendsVarsVar);
+      this.compiler.compositionPayload.emitCurrentPositionInputs(node, extendsVarsVar);
     });
     const parentTemplateId = this.compiler.composition.compileAsyncResolveCompositionTargetFile(node, true, false, true);
 

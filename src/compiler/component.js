@@ -37,8 +37,8 @@ class CompileComponent {
 
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
     this.emit.line(`const ${componentVarsVar} = {};`);
-    this.emitCompiledPayloadInputs(node, componentVarsVar);
-    this.emitCompositionContext(rootContextVar, componentVarsVar, node.withContext);
+    this.compiler.compositionPayload.emitCompiledInputs(node, componentVarsVar);
+    this.compiler.compositionPayload.emitContext(rootContextVar, componentVarsVar, node.withContext);
     this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
     this.emit.line(`  currentBuffer: ${this.compiler.buffer.currentBuffer},`);
     this.emit.line(`  bindingName: "${targetName}",`);
@@ -74,29 +74,6 @@ class CompileComponent {
     this.emit.line('});');
 
     return targetVar;
-  }
-
-  emitCompiledPayloadInputs(node, targetVarsVar) {
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    withVars.forEach((nameNode) => {
-      const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
-      this.emit(`${targetVarsVar}[${JSON.stringify(inputName)}] = `);
-      this.compiler.compileExpression(nameNode, null, nameNode, true);
-      this.emit.line(';');
-    });
-    if (node.withValue) {
-      this.emit(`Object.assign(${targetVarsVar}, `);
-      this.compiler.compileExpression(node.withValue, null, node.withValue, true);
-      this.emit.line(');');
-    }
-  }
-
-  emitCompositionContext(targetCtxVar, payloadVarsVar, includeRenderContext) {
-    this.emit.line(`const ${targetCtxVar} = {};`);
-    if (includeRenderContext) {
-      this.emit.line(`Object.assign(${targetCtxVar}, context.getRenderContextVariables());`);
-    }
-    this.emit.line(`Object.assign(${targetCtxVar}, ${payloadVarsVar});`);
   }
 
   getBindingFacts(node, { forCall = false } = {}) {
