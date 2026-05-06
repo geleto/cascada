@@ -730,6 +730,7 @@ class CompilerAsync extends CompilerBaseAsync {
     return rootNode.findAll(nodes.Extends).length > 0 || rootNode.findAll(nodes.Block).length > 0;
   }
 
+  // we need to collect them beforehand because furher analysis will need to know the implicit shared declarations
   _collectInferredTemplateSharedDeclarations(rootNode) {
     const explicitSharedNames = new Set();
     const metadata = this._getInheritanceMetadata(rootNode);

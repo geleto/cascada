@@ -956,6 +956,20 @@ describe('Extends Foundation', function () {
       expect(result).to.be('light');
     });
 
+    it('should infer template shared vars from expression lookups', async function () {
+      const result = await env.renderTemplateString(
+        [
+          '{% set this.theme = "dark" %}',
+          '{% block body %}',
+          '{{ ("theme-" ~ this.theme) | upper }}',
+          '{% endblock %}'
+        ].join(''),
+        {}
+      );
+
+      expect(result).to.be('THEME-DARK');
+    });
+
     it('should reject dynamic this[...] shared access in templates', async function () {
       try {
         await env.renderTemplateString('{% block body %}{{ this[name] }}{% endblock %}', { name: 'theme' });
