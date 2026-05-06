@@ -127,7 +127,7 @@ class CompileBuffer {
     this.compiler.emit.line(`${bufferExpr}.finish();`);
     this.compiler.emit.line(`const ${textPromiseId} = ${chainedExpr};`);
     if (addToCurrentWaited && this.compiler.asyncMode && this.currentWaitedChannelName) {
-      this.emitOwnWaitedConcurrencyResolve(textPromiseId, positionNode);
+      this.emitLimitedLoopCompletion(textPromiseId, positionNode);
     }
     return textPromiseId;
   }
@@ -314,7 +314,7 @@ class CompileBuffer {
   // consumption, and coupling loop-slot release to text/data draining would
   // make limited-concurrency loops stall behind later snapshot/finalSnapshot
   // traversal.
-  emitOwnWaitedConcurrencyResolve(valueExpr, positionNode = null) {
+  emitLimitedLoopCompletion(valueExpr, positionNode = null) {
     // In __waited__ scope, root work contributes one timing-only
     // WaitResolveCommand to the owning iteration buffer's channel.
     const waitedChannelName = this.currentWaitedChannelName;

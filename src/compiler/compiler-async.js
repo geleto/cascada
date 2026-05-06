@@ -133,7 +133,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(';');
     const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
     this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
-    this.buffer.emitOwnWaitedConcurrencyResolve(returnId, positionNode);
+    this.buffer.emitLimitedLoopCompletion(returnId, positionNode);
   }
 
   analyzeCallAssign(node, analysisPass) {

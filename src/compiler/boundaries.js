@@ -97,7 +97,7 @@ class CompileBoundaries {
     });
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit.line('});');
-    bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
+    bufferCompiler.emitLimitedLoopCompletion(controlFlowPromiseId, node);
     return {};
   }
 
@@ -128,7 +128,7 @@ class CompileBoundaries {
     });
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit.line(`}, "${controlFlowWaitedChannelName}");`);
-    bufferCompiler.emitOwnWaitedConcurrencyResolve(controlFlowPromiseId, node);
+    bufferCompiler.emitLimitedLoopCompletion(controlFlowPromiseId, node);
     return {};
   }
 
@@ -262,7 +262,7 @@ class CompileBoundaries {
     this.compiler.emit.line('});');
 
     if (boundaryPromiseId) {
-      bufferCompiler.emitOwnWaitedConcurrencyResolve(boundaryPromiseId, waitedPositionNode);
+      bufferCompiler.emitLimitedLoopCompletion(boundaryPromiseId, waitedPositionNode);
     }
 
     return null;

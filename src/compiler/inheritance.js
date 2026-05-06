@@ -281,7 +281,7 @@ class CompileInheritance {
       this.emit.line('  resolvedTemplate.compile();');
       this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, cb));');
       this.emit.line('});');
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
+      this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
       this._emitValueImportBinding(target, exportedId, node);
       return;
     }
@@ -298,7 +298,7 @@ class CompileInheritance {
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb));`);
     this.emit.line('});');
-    this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
+    this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
   }
 
@@ -369,9 +369,9 @@ class CompileInheritance {
       if (bindingIds.length > 0) {
         const boundaryCompletion = this.compiler._tmpid();
         this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(boundaryCompletion, node);
+        this.compiler.buffer.emitLimitedLoopCompletion(boundaryCompletion, node);
       } else {
-        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
+        this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
       }
       return;
     }
@@ -421,9 +421,9 @@ class CompileInheritance {
     if (bindingIds.length > 0) {
       const boundaryCompletion = this.compiler._tmpid();
       this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(boundaryCompletion, node);
+      this.compiler.buffer.emitLimitedLoopCompletion(boundaryCompletion, node);
     } else {
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(exportedId, node);
+      this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
     }
   }
 
@@ -497,7 +497,7 @@ class CompileInheritance {
     this.emit.line(';');
     const textCmdExpr = this.compiler.buffer._emitTemplateTextCommandExpression(id, node, true);
     this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.compiler.buffer.currentTextChannelName}");`);
-    this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
+    this.compiler.buffer.emitLimitedLoopCompletion(id, node);
   }
 
   compileAsyncBlock(node) {
@@ -1423,7 +1423,7 @@ class CompileInheritance {
       // Include boundary completion in the limited-loop waited channel.
       // Wait on the composed include snapshot promise (timing unit), not on the
       // command object created for parent enqueue.
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(includeTextPromise, node);
+      this.compiler.buffer.emitLimitedLoopCompletion(includeTextPromise, node);
     });
   }
 

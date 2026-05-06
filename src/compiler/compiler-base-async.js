@@ -383,7 +383,7 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(`let ${resultId} = `);
     this._compileExpression(node, null, positionNode);
     this.emit('; ');
-    this.buffer.emitOwnWaitedConcurrencyResolve(resultId, positionNode ?? node);
+    this.buffer.emitLimitedLoopCompletion(resultId, positionNode ?? node);
     this.emit(`return ${resultId}; `);
     this.emit('})()');
   }
