@@ -464,6 +464,12 @@ Good candidates:
 Do not introduce AST lowering or parser changes for this phase unless they let
 us remove more compiler code than they add.
 
+Phase 7 implementation: `compileAsyncBlock()` now keeps the static/dynamic
+block-placement decisions local, while a small `emitAsyncBlockTextPlacement()`
+helper owns the shared inherited-call result assignment, current text-channel
+enqueue, and waited-completion registration for both normal placement and the
+dynamic root fallback path.
+
 ### Suggested Work Order
 
 1. Revert any broad lowering that increases code before deleting old placement

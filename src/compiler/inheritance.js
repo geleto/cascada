@@ -491,6 +491,15 @@ class CompileInheritance {
     this._compileSyncFromImport(node, frame);
   }
 
+  emitAsyncBlockTextPlacement(node, id, emitValue) {
+    this.emit(`${id} = `);
+    emitValue();
+    this.emit.line(';');
+    const textCmdExpr = this.compiler.buffer._emitTemplateTextCommandExpression(id, node, true);
+    this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.compiler.buffer.currentTextChannelName}");`);
+    this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
+  }
+
   compileAsyncBlock(node) {
     // We cannot use `!this.compiler.inBlock` here: async root compilation now
     // emits callable entries before the template body runs, so top-level block
@@ -517,21 +526,20 @@ class CompileInheritance {
     if (needsParentCheck) {
       const parentPromiseVar = this.compiler._tmpid();
       this.emit.line(`const ${parentPromiseVar} = runtime.resolveSingle(extendsState && extendsState.parentSelection);`);
-      this.emit.line(`${id} = ${parentPromiseVar}.then((parent) => {`);
-      this.emit.line('  if (parent) return "";');
-      this.emit.line('  if (inheritanceState) { inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context); }');
-      this.emit('  return ');
-      this.emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
-      this.emit.line(';');
-      this.emit.line('});');
+      this.emitAsyncBlockTextPlacement(node, id, () => {
+        this.emit.line(`${parentPromiseVar}.then((parent) => {`);
+        this.emit.line('  if (parent) return "";');
+        this.emit.line('  if (inheritanceState) { inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context); }');
+        this.emit('  return ');
+        this.emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
+        this.emit.line(';');
+        this.emit('})');
+      });
     } else {
-      this.emit(`${id} = `);
-      this.emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
-      this.emit.line(';');
+      this.emitAsyncBlockTextPlacement(node, id, () => {
+        this.emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
+      });
     }
-    const textCmdExpr = this.compiler.buffer._emitTemplateTextCommandExpression(id, node, true);
-    this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.compiler.buffer.currentTextChannelName}");`);
-    this.compiler.buffer.emitOwnWaitedConcurrencyResolve(id, node);
   }
 
   emitRootSharedDeclarations(node) {
