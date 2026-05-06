@@ -17,8 +17,8 @@ class CompileComposition {
     }
   }
 
-  compileAsyncGetTemplateOrScript(node, eagerCompile, ignoreMissing, allowNoParent = false) {
-    const parentTemplateId = this.compiler._tmpid();
+  compileAsyncResolveCompositionTargetFile(node, eagerCompile, ignoreMissing, allowNoParent = false) {
+    const targetVar = this.compiler._tmpid();
     const parentName = JSON.stringify(this.compiler.templateName);
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
@@ -30,7 +30,7 @@ class CompileComposition {
     this.emit(`const ${resolvedTargetValue} = `);
     this.compiler.compileExpression(node.template, null, positionNode, true);
     this.emit.line(';');
-    this.emit.line(`let ${parentTemplateId} = runtime.resolveSingle(${resolvedTargetValue}).then((resolvedTemplateName) => {`);
+    this.emit.line(`let ${targetVar} = runtime.resolveSingle(${resolvedTargetValue}).then((resolvedTemplateName) => {`);
     if (allowNoParent) {
       this.emit.line('  if (resolvedTemplateName === null || resolvedTemplateName === undefined) {');
       this.emit.line('    return null;');
@@ -39,7 +39,7 @@ class CompileComposition {
     this.emit.line(`  return ${getTemplateFunc}(resolvedTemplateName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     this.emit.line('});');
 
-    return parentTemplateId;
+    return targetVar;
   }
 
   emitCompiledPayloadInputs(node, targetVarsVar) {
@@ -87,8 +87,8 @@ class CompileComposition {
     this.emit.line(`Object.assign(${targetCtxVar}, ${payloadVarsVar});`);
   }
 
-  _compileSyncGetTemplate(node, frame, eagerCompile, ignoreMissing, allowNoParent = false) {
-    const templateId = this.compiler._tmpid();
+  compileSyncResolveCompositionTargetFile(node, frame, eagerCompile, ignoreMissing, allowNoParent = false) {
+    const targetVar = this.compiler._tmpid();
     const errId = this.compiler._tmpid();
     const parentName = JSON.stringify(this.compiler.templateName);
     const eagerCompileArg = eagerCompile ? 'true' : 'false';
@@ -108,17 +108,17 @@ class CompileComposition {
     } else {
       this.emit.line(`  env.getTemplate(${resolvedTargetValue}, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, cb);`);
     }
-    this.emit.line(`})(function(${errId}, ${templateId}) {`);
+    this.emit.line(`})(function(${errId}, ${targetVar}) {`);
     this.emit.line(`if(${errId}) { cb(${errId}); return; }`);
 
-    return templateId;
+    return targetVar;
   }
 
   compileAsyncImport(node) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     if (!node.withContext && withVars.length === 0 && !node.withValue) {
       const target = node.target.value;
-      const id = this.compileAsyncGetTemplateOrScript(node, false, false);
+      const id = this.compileAsyncResolveCompositionTargetFile(node, false, false);
       const exportedId = this.compiler._tmpid();
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
@@ -130,7 +130,7 @@ class CompileComposition {
     }
 
     const target = node.target.value;
-    const id = this.compileAsyncGetTemplateOrScript(node, false, false);
+    const id = this.compileAsyncResolveCompositionTargetFile(node, false, false);
     const exportedId = this.compiler._tmpid();
     const importVarsVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
@@ -155,7 +155,7 @@ class CompileComposition {
       );
     }
     const target = node.target.value;
-    const id = this._compileSyncGetTemplate(node, frame, false, false);
+    const id = this.compileSyncResolveCompositionTargetFile(node, frame, false, false);
     this.emit.addScopeLevel();
     this.emit.line(id + '.getExported(' +
       (node.withContext ? 'context.getVariables(), frame, ' : '') +
@@ -179,7 +179,7 @@ class CompileComposition {
   }
 
   _compileAsyncFromImportWithoutPayload(node) {
-    const importedId = this.compileAsyncGetTemplateOrScript(node, false, false);
+    const importedId = this.compileAsyncResolveCompositionTargetFile(node, false, false);
     const exportedId = this.compiler._tmpid();
     const bindingIds = [];
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
@@ -191,7 +191,7 @@ class CompileComposition {
   }
 
   _compileAsyncFromImportWithPayload(node) {
-    const importedId = this.compileAsyncGetTemplateOrScript(node, false, false);
+    const importedId = this.compileAsyncResolveCompositionTargetFile(node, false, false);
     const exportedId = this.compiler._tmpid();
     const bindingIds = [];
     const importVarsVar = this.compiler._tmpid();
@@ -251,7 +251,7 @@ class CompileComposition {
         node
       );
     }
-    const importedId = this._compileSyncGetTemplate(node, frame, false, false);
+    const importedId = this.compileSyncResolveCompositionTargetFile(node, frame, false, false);
     this.emit.addScopeLevel();
     this.emit.line(importedId + '.getExported(' +
       (node.withContext ? 'context.getVariables(), frame, ' : '') +
@@ -330,7 +330,7 @@ class CompileComposition {
     this.emit.line('tasks.push(');
     this.emit.line('function(callback) {');
 
-    const id = this._compileSyncGetTemplate(node, frame, false, node.ignoreMissing);
+    const id = this.compileSyncResolveCompositionTargetFile(node, frame, false, node.ignoreMissing);
     this.emit.line(`callback(null,${id});});`);
 
     this.emit.line('});');
