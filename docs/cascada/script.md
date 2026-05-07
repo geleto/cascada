@@ -1191,23 +1191,34 @@ Both are narrow by design: they sequence only the object or path they touch, whi
 
 ### Sequential Execution with `!`
 
-The `!` marker enforces sequential execution for a specific context-object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run concurrently.
+The `!` marker signals that an operation has side effects on an external path. Once any access on a path is marked with `!`, that path becomes sequential — all subsequent accesses wait for the preceding operation to complete, whether they carry `!` or not, including property reads, while unrelated operations continue concurrently. Behind the scenes, each sequenced access awaits the promise returned by the previous operation on that path before starting, so the full async operation completes before the next begins.
+
+Sequencing is hierarchical: a side effect declared on a parent path sequences all sub-paths beneath it. Marking `bank!` means everything that follows under `bank` — `bank.account`, `bank.user`, and so on — must wait for that operation to complete.
 
 Sequential paths also participate in Cascada's error-propagation model; for the full rules on poisoning, repair, and recovery, see [Error Handling](#error-handling).
 
 ```javascript
-// The `!` on deposit() creates a
-// sequential lock for the 'bank.account' path.
+// `!` on deposit() signals side effects — bank.account becomes a sequential path.
 bank.account!.deposit(100)
-bank.account.getStatus()
-bank.account!.withdraw(50)
+bank.account.getStatus()       // waits — plain call on a sequential path
+bank.account!.withdraw(50)     // waits — ! calls also wait and extend the sequence
+var bal = bank.account.balance // waits — property reads are sequenced as well
+```
+
+Sequencing a parent path affects all sub-paths:
+
+```javascript
+// `!` on bank signals side effects on the bank object as a whole.
+bank!.resetUser(userInfo)
+bank.account.deposit(100)  // waits — bank.account is under bank
+bank.user.getName()        // waits — bank.user is under bank too
 ```
 
 For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
 
 #### Method-Specific Sequencing
 
-You can also sequence calls to a specific method on an object, rather than locking the whole object. Place the `!` after the method name:
+You can also sequence calls to a specific method on an object, rather than making the whole path sequential. Place the `!` after the method name:
 
 ```javascript
 // Only calls to 'log' are sequential
@@ -1218,7 +1229,7 @@ logger.log!("Entry 2")
 logger.getStatus()
 ```
 
-This is useful for rate-limiting or ordering specific actions (like "append") while keeping the rest of the object non-blocking. Note that unlike object-path sequencing (`obj!.method()`), unmarked calls to the same method (`logger.log()`) will not wait for the method-specific lock.
+This is useful for rate-limiting or ordering specific actions (like "append") while keeping the rest of the object non-blocking. Note that unlike path sequencing (`obj!.method()`), unmarked calls to the same method (`logger.log()`) will not wait on the method-specific sequence.
 
 #### Ordered External APIs
 
@@ -1890,7 +1901,7 @@ By default, a `guard` block (with no arguments) protects:
    Channel writes made inside the block are discarded on error.
    For sequence objects, this is also the built-in way to recover from poisoning. If the underlying object provides `begin()`, `commit()`, and `rollback()` hooks, `guard` uses them automatically. Missing hooks are tolerated. Hook errors become guard errors.
 
-2. All sequential-operation lock paths (`!`)
+2. All sequential paths (`!`)
    If a path such as `db!` becomes poisoned, it is automatically repaired with `!!`.
    Paths are hierarchical - guarding `api!` also guards `api.db!`, `api.connection!`, etc.
 
@@ -1956,20 +1967,20 @@ guard out, db!, status
 
 | Selector | Meaning |
 |----------|---------|
-| `guard` (no selectors) | Global guard: protects all channels, sequence objects, and sequential-operation locks touched inside the block |
-| `guard *` | Protect everything (all channels, sequence objects, all lock paths, all variables written inside the guard) |
+| `guard` (no selectors) | Global guard: protects all channels, sequence objects, and sequential paths touched inside the block |
+| `guard *` | Protect everything (all channels, sequence objects, all sequential paths, all variables written inside the guard) |
 | `guard var` | Protect all variables written inside the guard |
 | `guard data` | Protect all `data` channel declarations touched inside the guard |
 | `guard text` | Protect all `text` channel declarations touched inside the guard |
 | `guard sequence` | Protect all `sequence` declarations touched inside the guard |
 | `guard name1, name2` | Protect specific declaration names (channels, sequence objects, or variables) |
-| `guard lock!` | Protect a specific sequential-operation lock path (e.g., `db!`) |
-| `guard !` | Protect all sequential-operation lock paths touched inside the guard |
+| `guard lock!` | Protect a specific sequential path (e.g., `db!`) |
+| `guard !` | Protect all sequential paths touched inside the guard |
 
 > **Rules:**
 > - `*` cannot be combined with any other selector
 > - Duplicate selectors are invalid
-> - Lock selectors (`lock!`, `!`) are for sequential-operation lock paths, not `sequence` objects
+> - The `lock!` and `!` selectors are for sequential paths, not `sequence` objects
 
 **Hierarchical Protection of Sequential Paths:**
 ```javascript

@@ -21,7 +21,7 @@ AI-optimized reference for **Cascada Script** and **Cascada Template** code gene
 
 | Symbol | Mode | Meaning | UID |
 |:---|:---|:---|:---|
-| `!` | both | Sequence lock on static context path; serializes calls on that path | SEQOP-01 |
+| `!` | both | Marks a sequence path — signals side effects; all subsequent accesses on that path wait | SEQOP-01 |
 | `!!` | both | Repair poisoned sequence path (clear poison) | ERR-10 |
 | `!!.method()` | both | Repair then execute | ERR-11 |
 | `#` | both | Peek operator: read property of an Error Value without propagating | ERR-06 |
@@ -381,14 +381,17 @@ db.connectionState = "offline"   // ERROR
 // `!` = marker on a static context path; orders side-effects on that path.
 ```
 
-## SEQOP — `!` Sequential Operator (Path Lock)
+## SEQOP — `!` Sequential Operator (Sequence Path)
 
 ```javascript
-// [SEQOP-01] RULE: `path!.method()` enforces strict execution order on that path.
-// Once any call on the path uses `!`, ALL subsequent calls on the same path (with or without `!`) wait.
+// [SEQOP-01] RULE: `path!.method()` signals side effects on the path, making it a sequence path.
+// ALL subsequent accesses on that path wait — method calls (with or without `!`) AND property reads.
+// MECHANISM: Each access awaits the promise returned by the previous call on that path before
+// starting, so the full async operation completes before the next begins.
 bank.account!.deposit(100)
-bank.account.getStatus()        // also waits
-bank.account!.withdraw(50)
+bank.account.getStatus()        // waits — plain call, no ! needed
+bank.account!.withdraw(50)      // waits — ! calls on a sequence path also wait
+var bal = bank.account.balance  // waits — property reads are sequenced as well
 
 // [SEQOP-02] RULE: Method-specific sequencing — `obj.method!(args)`.
 // CONSTRAINT: Unmarked calls to the SAME method (`obj.method(...)`) do NOT wait. Differs from path-level !.
@@ -396,7 +399,13 @@ logger.log!("a")
 logger.log!("b")
 logger.getStatus()      // unaffected
 
-// [SEQOP-03] RULE: `!` paths must reference CONTEXT objects, not local vars.
+// [SEQOP-03] RULE: Sequencing is HIERARCHICAL — a side effect on a parent path sequences all sub-paths.
+// `bank!` makes bank.account, bank.user, etc. all wait for that operation to complete.
+bank!.resetUser(userInfo)
+bank.account.deposit(100)  // waits — bank.account is under bank
+bank.user.getName()        // waits — bank.user is under bank too
+
+// [SEQOP-04] RULE: `!` paths must reference CONTEXT objects, not local vars.
 // CONSTRAINT: Engine uses object identity from context. Function-parameter pass-through is NOT yet supported.
 // ✅ Valid: db!.insert(d)         // db from context
 // ✅ Valid: services.database!.insert(d)
@@ -581,7 +590,7 @@ endguard
 //   guard name1, name2  → specific channels or vars by name
 //   guard lock!    → specific ! path
 //   guard !        → all ! paths touched
-// CONSTRAINT: duplicates are invalid; lock selectors (lock!, !) are for ! paths, not sequence channels.
+// CONSTRAINT: duplicates are invalid; the lock! and ! selectors are for sequential paths, not sequence channels.
 
 // [GUARD-04] RULE: ! path protection is HIERARCHICAL — guarding `api!` also covers `api.db!`, `api.connection!`, etc.
 guard api!
