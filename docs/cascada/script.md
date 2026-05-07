@@ -1191,7 +1191,9 @@ Both are narrow by design: they sequence only the object or path they touch, whi
 
 ### Sequential Execution with `!`
 
-The `!` marker signals that an operation has side effects on an external path. Once any access on a path is marked with `!`, that path becomes sequential — all subsequent accesses wait for the preceding operation to complete, whether they carry `!` or not, including property reads, while unrelated operations continue concurrently. Behind the scenes, each sequenced access awaits the promise returned by the previous operation on that path before starting, so the full async operation completes before the next begins.
+External objects in the context — databases, APIs, stateful services — often have operations with side effects. Because Cascada runs independent operations concurrently, calling them without coordination can produce unpredictable results.
+
+Use `!` to mark an access as having side effects on a path. Once any access on a path is marked with `!`, that path becomes sequential — all subsequent accesses wait for the preceding operation to complete, whether they carry `!` or not, including property reads, while unrelated operations continue concurrently. Behind the scenes, each sequenced access awaits the promise returned by the previous operation on that path before starting, so the full async operation completes before the next begins.
 
 Sequencing is hierarchical: a side effect declared on a parent path sequences all sub-paths beneath it. Marking `bank!` means everything that follows under `bank` — `bank.account`, `bank.user`, and so on — must wait for that operation to complete.
 
