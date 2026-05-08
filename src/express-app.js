@@ -1,11 +1,15 @@
-import path from 'path';
+function extname(name) {
+  const base = String(name).split(/[\\/]/).pop();
+  const index = base.lastIndexOf('.');
+  return index > 0 ? base.slice(index) : '';
+}
 
 function express(env, app) {
   function NunjucksView(name, opts) {
     this.name = name;
     this.path = name;
     this.defaultEngine = opts.defaultEngine;
-    this.ext = path.extname(name);
+    this.ext = extname(name);
     if (!this.ext && !this.defaultEngine) {
       throw new Error('No default engine was specified and no extension was provided.');
     }
