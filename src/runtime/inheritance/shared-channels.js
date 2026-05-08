@@ -1,8 +1,8 @@
 // @todo - this is temporary implementation
 
-import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
-import {RuntimeFatalError} from './errors.js';
-import {declareBufferChannel} from './channels/index.js';
+import {CHANNEL_TYPE_FACTS} from '../../channel-types.js';
+import {RuntimeFatalError} from '../errors.js';
+import {declareBufferChannel} from '../channels/index.js';
 
 const claimedSharedDefaults = new WeakSet();
 

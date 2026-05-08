@@ -1357,8 +1357,8 @@ Primary files:
 
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
 - [src/runtime/async-boundaries.js](C:\Projects\cascada\src\runtime\async-boundaries.js)
-- [src/runtime/component.js](C:\Projects\cascada\src\runtime\component.js)
-- [src/runtime/inheritance-call.js](C:\Projects\cascada\src\runtime\inheritance-call.js)
+- [src/runtime/inheritance/component.js](C:\Projects\cascada\src\runtime\inheritance\component.js)
+- [src/runtime/inheritance/call.js](C:\Projects\cascada\src\runtime\inheritance\call.js)
 - [src/compiler/emit.js](C:\Projects\cascada\src\compiler\emit.js)
 - [src/compiler/buffer.js](C:\Projects\cascada\src\compiler\buffer.js)
 - [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
@@ -1648,3 +1648,4 @@ Deferred scope:
   this cleanup-first execution plan
 - it remains part of the larger architectural refactor above, but it is not a
   prerequisite for the narrower cleanup stages listed here
+

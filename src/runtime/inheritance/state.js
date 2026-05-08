@@ -1,7 +1,7 @@
 // @todo - this is temporary implementation
 
-import {RuntimeFatalError, isPoison, markPromiseHandled} from './errors.js';
-import {resolveDuo} from './resolve.js';
+import {RuntimeFatalError, isPoison, markPromiseHandled} from '../errors.js';
+import {resolveDuo} from '../resolve.js';
 
 const INTERNAL_INHERITANCE_STATE = Symbol('cascadaInheritanceInternalState');
 const INHERITANCE_METADATA_ERROR_KIND = '__cascadaInheritanceMetadataErrorKind';

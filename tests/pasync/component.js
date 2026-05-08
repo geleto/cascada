@@ -5,8 +5,8 @@ import expect from 'expect.js';
 import {AsyncEnvironment, Script} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import * as runtimeModule from '../../src/runtime/runtime.js';
-import * as componentRuntimeModule from '../../src/runtime/component.js';
-import {ComponentInstance} from '../../src/runtime/component.js';
+import * as componentRuntimeModule from '../../src/runtime/inheritance/component.js';
+import {ComponentInstance} from '../../src/runtime/inheritance/component.js';
 
 describe('Phase 8 - Component Method Calls', function () {
   it('should resolve component method return values correctly', async function () {

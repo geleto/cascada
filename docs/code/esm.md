@@ -919,7 +919,7 @@ rather than anonymous `export default { ... }`, unless the default object is del
 - Remove redundant `'use strict';` prologues from ESM source, tests, and scripts. Done for the active source/test/script tree.
 - Keep one-off helpers near their only owner. For example, callback-to-promise helpers used only by async extension compilation should live in generated compiler output or compiler-owned helpers, not on the global runtime surface.
 - Re-check broad namespace imports after the migration. Use namespace imports when several members are genuinely consumed locally; use named imports for one or two symbols. Done for the active cleanup pass.
-- Re-check mutable test hook surfaces such as `src/runtime/inheritance-call.js`. Done. Hook registries remain as named internal test surfaces, but the hookable entries are accessor-backed instead of plain writable data properties.
+- Re-check mutable test hook surfaces such as `src/runtime/inheritance/call.js`. Done. Hook registries remain as named internal test surfaces, but the hookable entries are accessor-backed instead of plain writable data properties.
 - Re-check `src/index.js` convenience functions after named imports are canonical. Done for the current package shape. Compatibility helpers remain exported but are not part of the documented canonical API.
 - Remove transitional Rollup-generated ESM output and any `dist/esm` facade once the build copies native ESM source to the final `dist` shape.
 - Normalize import style after the source is fully ESM:

@@ -1,9 +1,9 @@
 // @todo - this is a temporary implementation
 
-import * as inheritanceState from './inheritance-state.js';
-import * as inheritanceCall from './inheritance-call.js';
-import {declareInheritanceSharedChannel} from './inheritance-shared-channels.js';
-import {RuntimeFatalError} from './errors.js';
+import * as inheritanceState from './state.js';
+import * as inheritanceCall from './call.js';
+import {declareInheritanceSharedChannel} from './shared-channels.js';
+import {RuntimeFatalError} from '../errors.js';
 
 function bootstrapInheritanceMetadataImpl(
   stateValue,

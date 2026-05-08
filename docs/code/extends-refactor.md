@@ -524,7 +524,7 @@ Work:
 Primary files:
 
 - `src/environment/template.js`
-- `src/runtime/inheritance-bootstrap.js`
+- `src/runtime/inheritance/bootstrap.js`
 - `tests/pasync/extends-foundation.js`
 
 Validation:
@@ -575,9 +575,9 @@ Implemented sequence:
 
 Primary files:
 
-- `src/runtime/inheritance-state.js`
-- `src/runtime/inheritance-call.js`
-- `src/runtime/inheritance-bootstrap.js`
+- `src/runtime/inheritance/state.js`
+- `src/runtime/inheritance/call.js`
+- `src/runtime/inheritance/bootstrap.js`
 
 Validation:
 
@@ -629,8 +629,8 @@ Completed work:
 
 Primary files:
 
-- `src/runtime/inheritance-call.js`
-- `src/runtime/component.js`
+- `src/runtime/inheritance/call.js`
+- `src/runtime/inheritance/component.js`
 
 Validation:
 
@@ -676,9 +676,9 @@ Remaining work:
 
 Primary files:
 
-- `src/runtime/inheritance-state.js`
-- `src/runtime/inheritance-bootstrap.js`
-- `src/runtime/inheritance-call.js`
+- `src/runtime/inheritance/state.js`
+- `src/runtime/inheritance/bootstrap.js`
+- `src/runtime/inheritance/call.js`
 
 Validation:
 
@@ -713,7 +713,7 @@ Completed work:
 
 Primary files:
 
-- `src/runtime/component.js`
+- `src/runtime/inheritance/component.js`
 - `src/compiler/compiler-async.js`
 
 Validation:
@@ -748,8 +748,8 @@ Completed work:
 
 Primary files:
 
-- `src/runtime/component.js`
-- `src/runtime/inheritance-call.js`
+- `src/runtime/inheritance/component.js`
+- `src/runtime/inheritance/call.js`
 - component-related compiler helpers
 
 Validation:
@@ -770,7 +770,7 @@ Status:
 
 Completed work:
 
-- remove the private component command classes from `src/runtime/component.js`
+- remove the private component command classes from `src/runtime/inheritance/component.js`
   exports
 - remove the temporary `runtime.invokeComponentMethod(...)` re-export after
   `ComponentInstance` started calling the inherited-call module directly
@@ -782,10 +782,10 @@ Completed work:
 Remaining work:
 
 - audit exports from:
-  - `src/runtime/inheritance-state.js`
-  - `src/runtime/inheritance-call.js`
-  - `src/runtime/inheritance-bootstrap.js`
-  - `src/runtime/component.js`
+  - `src/runtime/inheritance/state.js`
+  - `src/runtime/inheritance/call.js`
+  - `src/runtime/inheritance/bootstrap.js`
+  - `src/runtime/inheritance/component.js`
   - `src/runtime/runtime.js`
 - classify each as:
   - compiled-code API
@@ -902,3 +902,4 @@ In short, the next extends cleanup should make the following true:
 - invocation admission should be shared
 - components should be wrappers, not a parallel metadata system
 - tests should mostly prove behavior, not transitional object internals
+

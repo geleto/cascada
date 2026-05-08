@@ -3,7 +3,7 @@ import expect from 'expect.js';
 import {AsyncEnvironment, Script, Context} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import * as inheritanceCallModule from '../../src/runtime/inheritance-call.js';
+import * as inheritanceCallModule from '../../src/runtime/inheritance/call.js';
 
 describe('Extends Runtime', function () {
   let env;
