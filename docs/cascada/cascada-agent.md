@@ -384,7 +384,7 @@ db.connectionState = "offline"   // ERROR
 ## SEQOP — `!` Sequential Operator (Sequence Path)
 
 ```javascript
-// [SEQOP-01] RULE: `path!.method()` signals side effects on the path, making it a sequence path.
+// [SEQOP-01] RULE: `path!.method()` signals that this is an external call with side effects on the path, making it a sequence path.
 // ALL subsequent accesses on that path wait — method calls (with or without `!`) AND property reads.
 // MECHANISM: Each access awaits the promise returned by the previous call on that path before
 // starting, so the full async operation completes before the next begins.

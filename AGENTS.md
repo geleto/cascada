@@ -58,7 +58,7 @@ Language syntax: `docs/cascada/script.md` (authoritative). `docs/cascada/cascada
 
 **Sync-First Hybrid** — Non-`async` outer function handles sync fast paths; real promises delegate to an inner `async` helper. Avoids Promise overhead for ~30–40% of calls.
 
-**Sequential Path / `!`** — Signals that an operation has side effects on an external path. Once any access uses `!`, all subsequent accesses on that path wait for the preceding operation to complete before starting.
+**Sequential Path / `!`** — Signals that an operation has side effects on an external path. Once any call on that path uses `!`, all subsequent accesses wait for the preceding operation to complete before starting.
 
 ---
 
