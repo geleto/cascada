@@ -1215,6 +1215,11 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
 
     describe('Precompile functions with custom environments', function() {
       it('should work with precompileTemplateString using function loader', function() {
+        if (typeof precompileTemplateString !== 'function') {
+          this.skip();
+          return;
+        }
+
         function testLoader(name) {
           if (name === 'precompile-test.njk') {
             return 'Hello {{ name }}!';
@@ -1233,6 +1238,11 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
       });
 
       it('should work with precompileScriptString using class loader', function() {
+        if (typeof precompileScriptString !== 'function') {
+          this.skip();
+          return;
+        }
+
         function TestScriptLoader() {}
         TestScriptLoader.prototype.load = function(name) {
           if (name === 'script-test.njk') {

@@ -244,6 +244,23 @@ return result.snapshot()
     expect(source).to.not.contain('cascadaFull');
   });
 
+  it('should keep the browser entry free of Node loader and precompile modules', function() {
+    const importedFiles = [...collectStaticImports('src/browser/index.js')]
+      .map((file) => path.relative(projectRoot, file).replace(/\\/g, '/'));
+    const forbidden = [
+      'src/precompile.js',
+      'src/loader/loaders.js',
+      'src/loader/node-loaders.js',
+      'src/browser/shims/fs.js',
+      'src/browser/shims/module.js',
+      'src/browser/shims/chokidar.js'
+    ];
+
+    for (const file of importedFiles) {
+      expect(forbidden.includes(file)).to.be(false);
+    }
+  });
+
   it('should be importable from the built package subpath', async function() {
     if (!fs.existsSync(path.join(projectRoot, 'dist/precompiled/index.js'))) {
       this.skip();
