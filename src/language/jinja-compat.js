@@ -1,9 +1,9 @@
-import * as compiler from './compiler/compiler.js';
+import * as compiler from '../compiler/compiler.js';
 import * as lexer from './lexer.js';
-import * as lib from './lib.js';
+import * as lib from '../lib.js';
 import * as nodes from './nodes.js';
 import * as parser from './parser.js';
-import * as runtime from './runtime/runtime.js';
+import * as runtime from '../runtime/runtime.js';
 
 function installCompat() {
 

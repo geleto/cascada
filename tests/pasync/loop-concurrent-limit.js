@@ -3,8 +3,8 @@ import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader, delay} from '../util.js';
 import {createPoison, isPoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChannel} from '../../src/runtime/runtime.js';
-import * as parser from '../../src/parser.js';
-import * as nodes from '../../src/nodes.js';
+import * as parser from '../../src/language/parser.js';
+import * as nodes from '../../src/language/nodes.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
 (function () {

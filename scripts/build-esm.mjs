@@ -9,29 +9,21 @@ const outDir = path.join(projectRoot, 'dist');
 
 const rootFiles = [
   'channel-types.js',
-  'express-app.js',
-  'filters.js',
-  'globals.js',
   'index.js',
-  'jinja-compat.js',
-  'lexer.js',
   'lib.js',
-  'nodes.js',
   'object.js',
-  'parser.js',
   'precompile-esm.js',
   'precompile-global.js',
-  'precompile.js',
-  'tests.js',
-  'transformer.js'
+  'precompile.js'
 ];
 
 const directories = [
+  'builtins',
   'compiler',
   'environment',
+  'language',
   'loader',
-  'runtime',
-  'script'
+  'runtime'
 ];
 
 function copyFromSrc(relativePath) {

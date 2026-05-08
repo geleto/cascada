@@ -1,5 +1,5 @@
 
-import * as nodes from '../nodes.js';
+import * as nodes from '../language/nodes.js';
 import {Frame} from '../runtime/frame.js';
 import {CompilerBaseSync} from './compiler-base-sync.js';
 import {CompileBuffer} from './buffer.js';

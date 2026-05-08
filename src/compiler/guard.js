@@ -1,4 +1,4 @@
-import * as nodes from '../nodes.js';
+import * as nodes from '../language/nodes.js';
 import {validateGuardVariablesDeclared} from './validation.js';
 
 class CompileGuard {

@@ -32,8 +32,8 @@ method exists on the compiler.
 
 Relevant source:
 
-- `src/parser.js` parses `revert`
-- `src/nodes.js` defines `Revert`
+- `src/language/parser.js` parses `revert`
+- `src/language/nodes.js` defines `Revert`
 - `src/compiler/compiler-common.js` — `compile()` fallback throws the error above
 - no `compileRevert(...)` method exists in any compiler file
 

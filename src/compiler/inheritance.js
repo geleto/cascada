@@ -1,5 +1,5 @@
 
-import * as nodes from '../nodes.js';
+import * as nodes from '../language/nodes.js';
 import {CompileBuffer} from './buffer.js';
 const ROOT_STARTUP_PROMISE_VAR = '__rootStartupPromise';
 

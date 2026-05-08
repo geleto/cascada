@@ -1,8 +1,8 @@
 
 import * as nodes from './nodes.js';
-import {indexOf} from './lib.js';
-import * as scopeBoundaries from './compiler/scope-boundaries.js';
-import {getScriptExtendsSourceOrderViolation} from './compiler/validation.js';
+import {indexOf} from '../lib.js';
+import * as scopeBoundaries from '../compiler/scope-boundaries.js';
+import {getScriptExtendsSourceOrderViolation} from '../compiler/validation.js';
 
 var sym = 0;
 function gensym() {

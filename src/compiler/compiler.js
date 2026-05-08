@@ -1,6 +1,6 @@
 
-import {parse} from '../parser.js';
-import {transform} from '../transformer.js';
+import {parse} from '../language/parser.js';
+import {transform} from '../language/transformer.js';
 import {CompilerCommon} from './compiler-common.js';
 import {CompilerBaseAsync} from './compiler-base-async.js';
 import {CompilerBaseSync} from './compiler-base-sync.js';

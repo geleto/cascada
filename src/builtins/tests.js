@@ -1,5 +1,5 @@
 
-import {SafeString} from './runtime/runtime.js';
+import {SafeString} from '../runtime/runtime.js';
 
 /**
  * Returns `true` if the object is a function, otherwise `false`.

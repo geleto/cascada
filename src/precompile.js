@@ -6,7 +6,7 @@ import {compile} from './compiler/compiler.js';
 import {Environment, AsyncEnvironment} from './environment/environment.js';
 import {precompileGlobal} from './precompile-global.js';
 import {precompileEsm} from './precompile-esm.js';
-import {transpiler as scriptTranspiler} from './script/script-transpiler.js';
+import {transpiler as scriptTranspiler} from './language/script-transpiler.js';
 
 function match(filename, patterns) {
   if (!Array.isArray(patterns)) {

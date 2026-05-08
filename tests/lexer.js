@@ -1,7 +1,7 @@
 import expect from 'expect.js';
 
 const lib = typeof window !== 'undefined' ? window.nunjucks.lib : await import('../src/lib.js');
-const lexer = typeof window !== 'undefined' ? window.nunjucks.lexer : await import('../src/lexer.js');
+const lexer = typeof window !== 'undefined' ? window.nunjucks.lexer : await import('../src/language/lexer.js');
 
 (function() {
 

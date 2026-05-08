@@ -3,7 +3,7 @@ import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
 import {createPoison, isPoison, isPoisonError} from '../../src/runtime/errors.js';
-import * as transpiler from '../../src/script/script-transpiler.js';
+import * as transpiler from '../../src/language/script-transpiler.js';
 
 describe('Cascada Script: Variable Path Assignments (set_path)', function () {
   let env;

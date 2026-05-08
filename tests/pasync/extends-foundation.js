@@ -1,10 +1,10 @@
 
 import expect from 'expect.js';
 import {Environment, AsyncEnvironment, AsyncTemplate, Script, Context} from '../../src/environment/environment.js';
-import * as parser from '../../src/parser.js';
-import * as nodes from '../../src/nodes.js';
-import * as transformer from '../../src/transformer.js';
-import * as scriptTranspiler from '../../src/script/script-transpiler.js';
+import * as parser from '../../src/language/parser.js';
+import * as nodes from '../../src/language/nodes.js';
+import * as transformer from '../../src/language/transformer.js';
+import * as scriptTranspiler from '../../src/language/script-transpiler.js';
 import * as runtime from '../../src/runtime/runtime.js';
 import * as inheritanceStateModule from '../../src/runtime/inheritance-state.js';
 import * as inheritanceCallModule from '../../src/runtime/inheritance-call.js';

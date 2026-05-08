@@ -1,10 +1,10 @@
 const cascada = await import('./cascada-entry.js');
 const compiler = await import('../../src/compiler/compiler.js');
-const parser = await import('../../src/parser.js');
-const lexer = await import('../../src/lexer.js');
+const parser = await import('../../src/language/parser.js');
+const lexer = await import('../../src/language/lexer.js');
 const runtime = await import('../../src/runtime/runtime.js');
 const lib = await import('../../src/lib.js');
-const nodes = await import('../../src/nodes.js');
+const nodes = await import('../../src/language/nodes.js');
 
 window.cascada = {...cascada, compiler, parser, lexer, runtime, lib, nodes};
 window.nunjucks = window.cascada;

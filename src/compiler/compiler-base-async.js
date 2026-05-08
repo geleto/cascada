@@ -1,5 +1,5 @@
 
-import * as nodes from '../nodes.js';
+import * as nodes from '../language/nodes.js';
 import {CompileAnalysis} from './analysis.js';
 import {CompileRename} from './rename.js';
 import {CompilerCommon} from './compiler-common.js';

@@ -1,5 +1,5 @@
-import {transpiler as scriptTranspiler} from '../src/script/script-transpiler.js';
-import {TOKEN_TYPES} from '../src/script/script-lexer.js';
+import {transpiler as scriptTranspiler} from '../src/language/script-transpiler.js';
+import {TOKEN_TYPES} from '../src/language/script-lexer.js';
 import expect from 'expect.js';
 
 const aliasOptions = {

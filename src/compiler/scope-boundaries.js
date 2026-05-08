@@ -1,5 +1,5 @@
 
-import * as nodes from '../nodes.js';
+import * as nodes from '../language/nodes.js';
 
 // Canonical lexical-scope boundaries used by compiler and transformer.
 // Any non-listed fields are implicitly non-scope and are traversed in-place.

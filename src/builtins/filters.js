@@ -1,6 +1,6 @@
 
-import * as lib from './lib.js';
-import * as r from './runtime/runtime.js';
+import * as lib from '../lib.js';
+import * as r from '../runtime/runtime.js';
 
 function normalize(value, defaultValue) {
   if (value === null || value === undefined || value === false) {

@@ -221,10 +221,10 @@ return result.snapshot()
       .map((file) => path.relative(projectRoot, file).replace(/\\/g, '/'));
     const forbidden = [
       'src/compiler/',
-      'src/parser.js',
-      'src/lexer.js',
-      'src/nodes.js',
-      'src/transformer.js',
+      'src/language/parser.js',
+      'src/language/lexer.js',
+      'src/language/nodes.js',
+      'src/language/transformer.js',
       'src/precompile.js',
       'src/loader/loaders.js',
       'src/loader/node-loaders.js',

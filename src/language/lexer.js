@@ -1,5 +1,5 @@
 /* eslint-disable camelcase */
-import {indexOf} from './lib.js';
+import {indexOf} from '../lib.js';
 
 let whitespaceChars = ' \n\t\r\u00A0';
 let delimChars = '()[]{}%*-+~/#,:|.<>=!';

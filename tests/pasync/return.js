@@ -2,7 +2,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import * as scriptTranspiler from '../../src/script/script-transpiler.js';
+import * as scriptTranspiler from '../../src/language/script-transpiler.js';
 
 describe('Cascada Script return', function () {
   let env;

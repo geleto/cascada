@@ -85,8 +85,8 @@ Full file map: [`docs/code/file-map.md`](docs/code/file-map.md)
 - `src/compiler/sequential.js` — Sequential (`!`) path analysis
 
 **Script**
-- `src/script/script-transpiler.js` — Script-to-template transpiler
-- `src/script/default-data-methods.js` — Built-in `push`, `merge`, etc.
+- `src/language/script-transpiler.js` — Script-to-template transpiler
+- `src/builtins/data-methods.js` — Built-in data-channel methods: `push`, `merge`, etc.
 
 **Tests**
 - `tests/pasync/` — Async/parallelism tests by feature (`loops.js`, `conditional.js`, `macros.js`, `sequential-*.js`, …). Scan before writing new tests.
@@ -205,7 +205,7 @@ Test locations: `tests/pasync/` (async/parallel), `tests/poison/` (error system)
 
 ### Common Tasks
 
-**Add data-channel method**: implement in `src/script/default-data-methods.js` (built-in) or via `env.addDataMethods({ method: (target, ...args) => newValue })` (custom). Method receives current value at path as `target` (may be `undefined`). Test in `tests/pasync/output-data-methods.js`.
+**Add data-channel method**: implement in `src/builtins/data-methods.js` (built-in) or via `env.addDataMethods({ method: (target, ...args) => newValue })` (custom). Method receives current value at path as `target` (may be `undefined`). Test in `tests/pasync/output-data-methods.js`.
 
 **Fix compiler bug**: isolate with `it.only()` + `env.renderScriptString`. Inspect generated JS with `script._compileSource()`. Trace `compileNodeType` methods from `Compiler.compile()`. Full walkthrough in [`docs/code/testing-guide.md`](docs/code/testing-guide.md).
 

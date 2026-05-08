@@ -1,6 +1,6 @@
 
 import {isString} from '../lib.js';
-import {transpiler as scriptTranspiler} from '../script/script-transpiler.js';
+import {transpiler as scriptTranspiler} from '../language/script-transpiler.js';
 import {Template, AsyncTemplate} from './template.js';
 import {compile} from '../compiler/compiler.js';
 

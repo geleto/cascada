@@ -8,7 +8,7 @@ export {Loader} from './loader/loader.js';
 export {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
 export {SafeString, markSafe} from './runtime/safe-output.js';
 export {TemplateError} from './lib.js';
-export {installCompat as installJinjaCompat} from './jinja-compat.js';
+export {installCompat as installJinjaCompat} from './language/jinja-compat.js';
 export {
   precompile,
   precompileString,

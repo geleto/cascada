@@ -496,10 +496,10 @@ Done:
 The precompiled entries should not import:
 
 - `src/compiler/**`
-- `src/parser.js`
-- `src/lexer.js`
-- `src/nodes.js`
-- `src/transformer.js`
+- `src/language/parser.js`
+- `src/language/lexer.js`
+- `src/language/nodes.js`
+- `src/language/transformer.js`
 - `src/precompile.js`
 - Node-only loaders
 

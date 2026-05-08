@@ -6,7 +6,7 @@ import {
   TOKEN_SUBTYPES,
   isValidRegexContext,
   hasCompleteRegexPattern,
-} from '../src/script/script-lexer.js';
+} from '../src/language/script-lexer.js';
 
 function parseTemplateLine(...args) {
   const result = _parseTemplateLine(...args);

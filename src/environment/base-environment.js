@@ -1,10 +1,10 @@
 import * as lib from '../lib.js';
-import * as filters from '../filters.js';
-import * as tests from '../tests.js';
-import {createGlobals} from '../globals.js';
+import * as filters from '../builtins/filters.js';
+import * as tests from '../builtins/tests.js';
+import {createGlobals} from '../builtins/globals.js';
 import {EmitterObj} from '../object.js';
 import {handleError} from '../runtime/errors.js';
-import {express as expressApp} from '../express-app.js';
+import {express as expressApp} from './express-app.js';
 import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
 
 let DefaultFileSystemLoader = null;

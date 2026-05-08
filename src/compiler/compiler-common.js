@@ -1,5 +1,5 @@
 
-import * as nodes from '../nodes.js';
+import * as nodes from '../language/nodes.js';
 import {TemplateError} from '../lib.js';
 import {ErrorContext} from '../runtime/errors.js';
 import {Obj} from '../object.js';

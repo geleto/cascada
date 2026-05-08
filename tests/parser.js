@@ -1,8 +1,8 @@
 import expect from 'expect.js';
 
 const lib = typeof window !== 'undefined' ? window.nunjucks.lib : await import('../src/lib.js');
-const nodes = typeof window !== 'undefined' ? window.nunjucks.nodes : await import('../src/nodes.js');
-const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await import('../src/parser.js');
+const nodes = typeof window !== 'undefined' ? window.nunjucks.nodes : await import('../src/language/nodes.js');
+const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await import('../src/language/parser.js');
 
 (function() {
 

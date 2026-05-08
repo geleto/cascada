@@ -1,4 +1,4 @@
-import * as nodes from '../nodes.js';
+import * as nodes from '../language/nodes.js';
 import {CALLER_SCHED_CHANNEL_NAME} from './macro.js';
 
 class CompileCall {

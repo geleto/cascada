@@ -3,13 +3,13 @@ import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Context, Script} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import {DEFAULT_TEMPLATE_TEXT_OUTPUT} from '../../src/compiler/buffer.js';
-import {parse} from '../../src/parser.js';
-import {transform} from '../../src/transformer.js';
+import {parse} from '../../src/language/parser.js';
+import {transform} from '../../src/language/transformer.js';
 import {CompilerAsync} from '../../src/compiler/compiler.js';
-import * as nodes from '../../src/nodes.js';
+import * as nodes from '../../src/language/nodes.js';
 import * as runtime from '../../src/runtime/runtime.js';
 import * as inheritanceStateRuntime from '../../src/runtime/inheritance-state.js';
-import {transpiler as scriptTranspiler} from '../../src/script/script-transpiler.js';
+import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
 
 (function () {
   function createIdPool() {

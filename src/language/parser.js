@@ -1,10 +1,10 @@
 
 import * as lexer from './lexer.js';
 import * as nodes from './nodes.js';
-import {Obj} from './object.js';
-import {TemplateError, indexOf} from './lib.js';
-import {RESERVED_DECLARATION_NAMES} from './compiler/validation.js';
-import {CHANNEL_TYPE_FACTS} from './channel-types.js';
+import {Obj} from '../object.js';
+import {TemplateError, indexOf} from '../lib.js';
+import {RESERVED_DECLARATION_NAMES} from '../compiler/validation.js';
+import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
 
 class Parser extends Obj {
   init(tokens, opts) {

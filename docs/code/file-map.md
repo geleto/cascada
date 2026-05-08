@@ -10,7 +10,7 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/environment/`: Public API, environment configuration, wrapper classes (`AsyncEnvironment`, `AsyncTemplate`, `Script`).
 -   `src/loader/`: Template loading — FileSystem, Web, precompiled, string helpers.
 -   `src/runtime/`: Runtime helpers, command buffers, channels, async boundaries, lookups/calls, error handling (Poison system).
--   `src/script/`: Cascada Script specifics — default data-channel methods, channel helpers, script-to-template transpiler.
+-   `src/language/`: Template and Cascada Script language frontends — lexer, parser, AST nodes, transformer, script transpiler.
 
 ---
 
@@ -69,8 +69,8 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/compiler/channel.js` — Channel declaration and command emission helpers.
 
 ### Script
--   `src/script/script-transpiler.js` — Script-to-template transpiler.
--   `src/script/default-data-methods.js` — Built-in data-channel methods: `push`, `merge`, etc.
+-   `src/language/script-transpiler.js` — Script-to-template transpiler.
+-   `src/builtins/data-methods.js` — Built-in data-channel methods: `push`, `merge`, etc.
 
 ---
 

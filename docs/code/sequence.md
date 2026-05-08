@@ -139,8 +139,8 @@ Relevant files:
 
 Relevant files:
 
-- `src/parser.js`
-- `src/script/script-transpiler.js`
+- `src/language/parser.js`
+- `src/language/script-transpiler.js`
 
 ## Current Test Coverage
 

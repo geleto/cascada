@@ -1,5 +1,5 @@
 
-import {Obj} from './object.js';
+import {Obj} from '../object.js';
 
 function traverseAndCheck(obj, type, results) {
   if (Array.isArray(obj)) {

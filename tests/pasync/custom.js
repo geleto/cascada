@@ -4,7 +4,7 @@ import {delay, unescape} from '../util.js';
 const {AsyncEnvironment} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
-const lexer = typeof window !== 'undefined' ? window.nunjucks.lexer : await import('../../src/lexer.js');
+const lexer = typeof window !== 'undefined' ? window.nunjucks.lexer : await import('../../src/language/lexer.js');
 const runtime = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../../src/runtime/runtime.js');
 const {isPoisonError} = runtime;
 
