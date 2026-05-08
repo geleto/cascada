@@ -251,13 +251,11 @@ return result.snapshot()
       'src/precompile.js',
       'src/loader/loaders.js',
       'src/loader/node-loaders.js',
-      'src/browser/shims/fs.js',
-      'src/browser/shims/module.js',
-      'src/browser/shims/chokidar.js'
+      'src/browser/shims/'
     ];
 
     for (const file of importedFiles) {
-      expect(forbidden.includes(file)).to.be(false);
+      expect(forbidden.some((pattern) => file.includes(pattern))).to.be(false);
     }
   });
 
