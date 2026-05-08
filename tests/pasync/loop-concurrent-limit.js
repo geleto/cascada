@@ -77,53 +77,53 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
         expect(context.state.maxConcurrent).to.be(1);
       });
 
-    it('keeps async extension tag output within the loop concurrent limit', async () => {
-      let active = 0;
-      let maxActive = 0;
+      it('keeps async extension tag output within the loop concurrent limit', async () => {
+        let active = 0;
+        let maxActive = 0;
 
-      class AsyncTagExtension {
-        constructor() {
-          this.tags = ['atag'];
+        class AsyncTagExtension {
+          constructor() {
+            this.tags = ['atag'];
+          }
+
+          parse(parserInstance) {
+            const token = parserInstance.nextToken();
+            parserInstance.advanceAfterBlockEnd(token.value);
+            return new nodes.CallExtension(this, 'run');
+          }
+
+          async run() {
+            active++;
+            maxActive = Math.max(maxActive, active);
+            await delay(20);
+            active--;
+            return 'x';
+          }
         }
 
-        parse(parserInstance) {
-          const token = parserInstance.nextToken();
-          parserInstance.advanceAfterBlockEnd(token.value);
-          return new nodes.CallExtension(this, 'run');
-        }
+        env.addExtension('AsyncTagExtension', new AsyncTagExtension());
 
-        async run() {
-          active++;
-          maxActive = Math.max(maxActive, active);
-          await delay(20);
-          active--;
-          return 'x';
-        }
-      }
+        const result = await env.renderTemplateString(
+          '{% for item in [1, 2, 3, 4] of 2 %}{% atag %}{% endfor %}'
+        );
 
-      env.addExtension('AsyncTagExtension', new AsyncTagExtension());
+        expect(result).to.be('xxxx');
+        expect(maxActive).to.be(2);
+      });
 
-      const result = await env.renderTemplateString(
-        '{% for item in [1, 2, 3, 4] of 2 %}{% atag %}{% endfor %}'
-      );
-
-      expect(result).to.be('xxxx');
-      expect(maxActive).to.be(2);
-    });
-
-    it('keeps asyncEach loops sequential after concurrentLimit changes', async () => {
-      const context = {
-        items: [1, 2, 3],
-        concurrentCount: 0,
-        maxConcurrent: 0,
-        async processItem(item) {
-          context.concurrentCount++;
-          context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
-          await delay(10);
-          context.concurrentCount--;
-          return `Item ${item}`;
-        }
-      };
+      it('keeps asyncEach loops sequential after concurrentLimit changes', async () => {
+        const context = {
+          items: [1, 2, 3],
+          concurrentCount: 0,
+          maxConcurrent: 0,
+          async processItem(item) {
+            context.concurrentCount++;
+            context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+            await delay(10);
+            context.concurrentCount--;
+            return `Item ${item}`;
+          }
+        };
 
         const template = `
         {%- asyncEach item in items -%}
