@@ -2,6 +2,7 @@
 import expectModule from 'expect.js';
 
 const isBrowser = typeof window !== 'undefined';
+const heModule = isBrowser ? window.he : (await import('he')).default;
 let nunjucks;
 let nunjucksFull;
 let isSlim = false;
@@ -35,6 +36,7 @@ if (isBrowser) {
 const precompileString = nunjucksFull.precompileString;
 const Environment = nunjucks.Environment;
 const Template = nunjucks.Template;
+const {unescape} = heModule;
 
 let numAsyncs;
 let doneHandler;
@@ -272,6 +274,7 @@ const utilApi = {
   randomTemplateName,
   isSlim,
   Loader,
+  unescape,
   expectAsyncError,
   delay,
   StringLoader,
@@ -295,6 +298,7 @@ export {
   randomTemplateName,
   isSlim,
   Loader,
+  unescape,
   expectAsyncError,
   delay,
   StringLoader,

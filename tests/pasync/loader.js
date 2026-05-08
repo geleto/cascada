@@ -1,6 +1,5 @@
 import expect from 'expect.js';
-import he from 'he';
-import {StringLoader} from '../util.js';
+import {StringLoader, unescape} from '../util.js';
 
 const {AsyncEnvironment} = typeof window !== 'undefined'
   ? window.nunjucks
@@ -8,7 +7,6 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
 
 (function () {
 
-  const {unescape} = he;
   //var Environment;
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));

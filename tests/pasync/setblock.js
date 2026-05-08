@@ -1,14 +1,11 @@
 import expect from 'expect.js';
-import he from 'he';
-import {delay} from '../util.js';
+import {delay, unescape} from '../util.js';
 
 const {AsyncEnvironment} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 
 (function() {
-
-  const {unescape} = he;
 
   describe('Async mode', () => {
     let env;

@@ -1,6 +1,5 @@
 import expect from 'expect.js';
-import he from 'he';
-import {delay} from '../util.js';
+import {delay, unescape} from '../util.js';
 
 const {AsyncEnvironment} = typeof window !== 'undefined'
   ? window.nunjucks
@@ -11,7 +10,6 @@ const {isPoisonError} = runtime;
 
 (function () {
 
-  const {unescape} = he;
   //var Environment;
 
   class AsyncExtension {
