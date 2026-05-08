@@ -27,7 +27,6 @@ const rootFiles = [
 ];
 
 const directories = [
-  'browser',
   'compiler',
   'environment',
   'loader',

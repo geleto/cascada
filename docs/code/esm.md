@@ -738,8 +738,8 @@ Use import maps as the primary solution:
 <script type="importmap">
 {
   "imports": {
-    "asap": "/src/browser/shims/asap.js",
-    "a-sync-waterfall": "/src/browser/shims/a-sync-waterfall.js"
+    "events": "/tests/browser/shims/events.js",
+    "path": "/tests/browser/shims/path.js"
   }
 }
 </script>
@@ -904,7 +904,7 @@ export { SomeName } from './some-module.js';
 instead of importing a module only to immediately re-export the same bindings.
 
 - Avoid constructing API objects only to default-export them. Done for `src/index.js`; object registries now use named exports where they remain useful.
-- Revisit remaining default exports in internal modules after the ESM conversion. Done for the active source tree. Remaining source defaults are browser shims that intentionally mimic package default imports, plus generated ESM precompile output.
+- Revisit remaining default exports in internal modules after the ESM conversion. Done for the active source tree. Browser import-map shims now live in `tests/browser/shims`, and generated ESM precompile output may still default-export its template map.
 - For object registries that stay as objects, prefer named exports for the registry itself:
 
 ```js

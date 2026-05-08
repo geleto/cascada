@@ -1,4 +1,4 @@
-const cascada = await import('../../src/browser/index.js');
+const cascada = await import('./cascada-entry.js');
 const compiler = await import('../../src/compiler/compiler.js');
 const parser = await import('../../src/parser.js');
 const lexer = await import('../../src/lexer.js');

@@ -244,8 +244,8 @@ return result.snapshot()
     expect(source).to.not.contain('cascadaFull');
   });
 
-  it('should keep the browser entry free of Node loader and precompile modules', function() {
-    const importedFiles = [...collectStaticImports('src/browser/index.js')]
+  it('should keep the browser test entry free of Node loader and precompile modules', function() {
+    const importedFiles = [...collectStaticImports('tests/browser/cascada-entry.js')]
       .map((file) => path.relative(projectRoot, file).replace(/\\/g, '/'));
     const forbidden = [
       'src/precompile.js',

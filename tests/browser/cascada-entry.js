@@ -1,14 +1,14 @@
-import {isObject} from '../lib.js';
-import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from '../environment/browser-environment.js';
-import {WebLoader} from '../loader/web-loaders.js';
+import {isObject} from '../../src/lib.js';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from '../../src/environment/browser-environment.js';
+import {WebLoader} from '../../src/loader/web-loaders.js';
 
-export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from '../environment/browser-environment.js';
-export {Loader} from '../loader/loader.js';
-export {WebLoader, PrecompiledLoader} from '../loader/web-loaders.js';
-export {SafeString, markSafe} from '../runtime/safe-output.js';
-export {TemplateError} from '../lib.js';
-export {installCompat as installJinjaCompat} from '../jinja-compat.js';
-export {loadString, clearStringCache, raceLoaders} from '../loader/loader-utils.js';
+export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from '../../src/environment/browser-environment.js';
+export {Loader} from '../../src/loader/loader.js';
+export {WebLoader, PrecompiledLoader} from '../../src/loader/web-loaders.js';
+export {SafeString, markSafe} from '../../src/runtime/safe-output.js';
+export {TemplateError} from '../../src/lib.js';
+export {installCompat as installJinjaCompat} from '../../src/jinja-compat.js';
+export {loadString, clearStringCache, raceLoaders} from '../../src/loader/loader-utils.js';
 
 let e;
 let asyncE;
