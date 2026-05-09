@@ -219,9 +219,15 @@ placement-local values as block arguments:
 {% block greeting(user) %}
   Hello {{ user.name }}
 {% endblock %}
+
+{% set accountUser = getUser() %}
+{% block greeting(user = accountUser) %}
+  Hello {{ user.name }}
+{% endblock %}
 ```
 
-- `{% block name(arg1, arg2) %}` - block-local arguments for values from the placement scope; render-context names are visible by default.
+- `{% block name(arg1, arg2) %}` - positional placement values, passed into block-local arguments with the same names.
+- `{% block name(arg = localValue) %}` - named placement binding, passing `localValue` into the block argument named `arg`.
 - Overrides must match the parent's argument signature exactly.
 - `super()` renders the parent block with the original block arguments.
 - Bare variables from the surrounding template local scope are not captured by a block. Pass loop/top-level values as block arguments, pass composition inputs with `extends ... with ...`, or read hierarchy state explicitly through `this.<name>`.
