@@ -7,9 +7,11 @@ import {RuntimeFatalError} from '../errors.js';
 /*
 // Runtime method entry after finalization.
 type RuntimeMethodEntry = {
+  name: string,
   fn: Function,
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
+  origin: SourceOrigin | null, // callable declaration site for diagnostics
   super: RuntimeMethodEntry | null, // owner-relative parent method
   mergedLinkedChannels: string[], // transitive reads/observations
   mergedMutatedChannels: string[] // transitive mutations
@@ -25,31 +27,33 @@ type InvocationArgs = {
 function invokeInheritedCallable(inheritanceState, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
   const method = getMethod(inheritanceState, methodName, errorContext, context);
   const invocationArgs = normalizeInvocationArgs(methodName, args, errorContext, context);
-  const payload = createInvocationPayload(methodName, method, invocationArgs, errorContext, context);
-
-  // Temporary direct call until invocation commands own admission.
-  return method.fn(
-    env,
-    context,
-    runtime,
-    cb,
-    currentBuffer,
-    payload,
-    context?.getRenderContextVariables ? context.getRenderContextVariables() : undefined,
-    inheritanceState,
-    method
-  );
+  return invokeMethod(inheritanceState, method, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext);
 }
 
-function invokeSuperCallable() {
-  // Temporary until owner-relative super links are finalized.
-  throw new RuntimeFatalError(
-    'super() is not implemented yet',
-    0,
-    0,
-    null,
-    null
-  );
+function invokeSuperCallable(inheritanceState, methodData, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+  if (!inheritanceState || !inheritanceState.finalized) {
+    throw createRuntimeError(
+      'super() requires finalized inheritance metadata',
+      errorContext,
+      context
+    );
+  }
+  if (!methodData || methodData.name !== methodName) {
+    throw createRuntimeError(
+      `super() called from unexpected callable context for "${methodName}"`,
+      errorContext,
+      context
+    );
+  }
+  if (!methodData.super) {
+    throw createRuntimeError(
+      `super() has no parent implementation for "${methodName}"`,
+      errorContext,
+      context
+    );
+  }
+  const invocationArgs = normalizeInvocationArgs(methodName, args, errorContext, context);
+  return invokeMethod(inheritanceState, methodData.super, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext);
 }
 
 function getCallableLinkedChannels(methodData, errorContext = null) {
@@ -108,6 +112,23 @@ function normalizeInvocationArgs(methodName, args, errorContext, context) {
     `Inherited callable "${methodName}" received invalid argument payload`,
     errorContext,
     context
+  );
+}
+
+function invokeMethod(inheritanceState, method, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext) {
+  const payload = createInvocationPayload(method.name, method, invocationArgs, errorContext, context);
+
+  // Temporary direct call until invocation commands own admission.
+  return method.fn(
+    env,
+    context,
+    runtime,
+    cb,
+    currentBuffer,
+    payload,
+    context?.getRenderContextVariables ? context.getRenderContextVariables() : undefined,
+    inheritanceState,
+    method
   );
 }
 

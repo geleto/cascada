@@ -23,9 +23,10 @@ type CompiledMethodEntry = {
   fn: Function,
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
+  origin: SourceOrigin | null, // callable declaration site for diagnostics
   ownLinkedChannels: string[], // local body reads/observations
   ownMutatedChannels: string[], // local body mutations
-  super: boolean,
+  super: boolean, // true when the body calls super()
   superOrigin: SourceOrigin | null, // super() call site
   invokedMethodRefs: Record<string, InvokedMethodRef> // method name -> first call site, for error output when missing
 }

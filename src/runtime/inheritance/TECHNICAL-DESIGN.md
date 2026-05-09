@@ -109,9 +109,10 @@ type CompiledMethodEntry = {
   fn: Function,
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
+  origin: SourceOrigin | null, // callable declaration site for diagnostics
   ownLinkedChannels: string[], // local body reads/observations
   ownMutatedChannels: string[], // local body mutations
-  super: boolean,
+  super: boolean, // true when the body calls super()
   superOrigin: SourceOrigin | null, // super() call site
   invokedMethodRefs: Record<string, InvokedMethodRef> // method name -> first call site, for error output when missing
 }
@@ -124,9 +125,11 @@ type InvokedMethodRef = {
 
 // Runtime-created finalized method table entry.
 type RuntimeMethodEntry = {
+  name: string,
   fn: Function,
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
+  origin: SourceOrigin | null, // callable declaration site for diagnostics
   super: RuntimeMethodEntry | null, // owner-relative parent method
   mergedLinkedChannels: string[], // transitive reads/observations
   mergedMutatedChannels: string[] // transitive mutations
@@ -427,8 +430,6 @@ Temporary code is allowed only when an implementation slice needs a clear
 runtime boundary before the final code exists. Mark each temporary code
 construct with a `Temporary` comment and list the construct here.
 
-- `invoke.js`: temporary `invokeSuperCallable(...)` throw body. Replace when
-  owner-relative super links are finalized.
 - `startup.js`: temporary `bootstrapInheritanceParentScript(...)` throw body.
   Replace when script parent-chain loading starts.
 - `startup.js`: `createUnsupportedFeatureError(...)`. Remove with the temporary
@@ -437,7 +438,7 @@ construct with a `Temporary` comment and list the construct here.
   shared-root ownership is fully initialized before shared buffer reads.
 - `load.js`: `createStubSourceOrigin(...)`. Replace when loading receives
   source origins directly.
-- `invoke.js`: direct `method.fn(...)` call in `invokeInheritedCallable(...)`.
+- `invoke.js`: direct `method.fn(...)` call in `invokeMethod(...)`.
   Replace when invocation commands own admission.
 
 ## Implementation Steps

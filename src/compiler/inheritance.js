@@ -691,7 +691,8 @@ class CompileInheritance {
         signatureExpr: JSON.stringify({
           argNames: this.getCallableSignature(block).argNames
         }),
-        ownerKey
+        ownerKey,
+        originExpr: JSON.stringify(this.compiler._createErrorContext(block))
       });
     });
 
@@ -704,21 +705,22 @@ class CompileInheritance {
         superOriginExpr: this.compileCallableSuperOriginLiteral(constructorDefinition),
         invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(constructorDefinition)),
         signatureExpr: JSON.stringify({ argNames: [] }),
-        ownerKey
+        ownerKey,
+        originExpr: JSON.stringify(this.compiler._createErrorContext(constructorDefinition))
       }));
     }
 
     return `{ ${methodEntries.join(', ')} }`;
   }
 
-  compileMethodMetadataEntry({ methodName, fnExpr, ownerNode, superExpr, superOriginExpr, invokedMethodRefsExpr, signatureExpr, ownerKey }) {
+  compileMethodMetadataEntry({ methodName, fnExpr, ownerNode, superExpr, superOriginExpr, invokedMethodRefsExpr, signatureExpr, ownerKey, originExpr }) {
     const ownLinkedChannelNames = this._getMethodFootprintField(ownerNode, 'methodLinkedChannels');
     // Keep mutations separate from links so inherited/component calls can
     // later distinguish read-only participation from write barriers.
     const ownMutatedChannelNames = this._getMethodFootprintField(ownerNode, 'methodMutatedChannels');
     const ownLinkedChannels = JSON.stringify(ownLinkedChannelNames);
     const ownMutatedChannels = JSON.stringify(ownMutatedChannelNames);
-    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethodRefs: ${invokedMethodRefsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
+    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethodRefs: ${invokedMethodRefsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey}, origin: ${originExpr || 'null'} }`;
   }
 
   _getMethodFootprintField(ownerNode, fieldName) {
@@ -1047,14 +1049,20 @@ class CompileInheritance {
     }
 
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-    const ownerKeyJson = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
+    const superArgsExpr = args.length === 0
+      ? `runtime.createArray([${knownArgNames.map((argName) => `blockPayload?.originalArgs?.[${JSON.stringify(argName)}]`).join(', ')}])`
+      : null;
     if (id) {
       this.emit(`let ${id} = `);
     } else if (!isScriptMethod) {
       this.emit('runtime.markSafe(');
     }
-    this.emit(`runtime.invokeSuperCallable(inheritanceState, "${name}", ${ownerKeyJson}, `);
-    this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+    this.emit(`runtime.invokeSuperCallable(inheritanceState, methodData, "${name}", `);
+    if (superArgsExpr) {
+      this.emit(superArgsExpr);
+    } else {
+      this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+    }
     this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
     if (!id) {
       if (!isScriptMethod) {

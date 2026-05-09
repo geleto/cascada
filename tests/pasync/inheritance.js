@@ -376,6 +376,120 @@ describe('Inheritance runtime', function () {
       expect(result).to.be('ABase AdaC');
     });
 
+    it('renders super from the owner-relative parent block', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content %}Child {{ super() }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChild BaseC');
+    });
+
+    it('renders super through each owner-relative level', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('root.njk', 'A{% block content %}Root{% endblock %}C');
+      loader.addTemplate('mid.njk', '{% extends "root.njk" %}{% block content %}Mid {{ super() }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "mid.njk" %}{% block content %}Child {{ super() }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChild Mid RootC');
+    });
+
+    it('forwards original arguments through each super level', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('root.njk', '{% set person = "Ada" %}A{% block content(person) %}Root {{ person }}{% endblock %}C');
+      loader.addTemplate('mid.njk', '{% extends "root.njk" %}{% block content(midUser) %}Mid {{ midUser }} / {{ super() }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "mid.njk" %}{% block content(childUser) %}Child {{ childUser }} / {{ super() }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChild Ada / Mid Ada / Root AdaC');
+    });
+
+    it('passes original and explicit arguments to super', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% set person = "Ada" %}A{% block content(person) %}Base {{ person }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content(user) %}Child {{ user }} / {{ super() }} / {{ super("Grace") }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChild Ada / Base Ada / Base GraceC');
+    });
+
+    it('rejects super calls with too many arguments', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content(name) %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content(name) %}{{ super("Ada", "Lovelace") }}{% endblock %}');
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected invalid super call rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('super(...) for block "content" received too many arguments');
+      }
+    });
+
+    it('rejects super calls with keyword arguments', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content(name) %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content(name) %}{{ super(name = name) }}{% endblock %}');
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected keyword super call rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('super(...) does not support keyword arguments');
+      }
+    });
+
+    it('rejects super without a parent implementation', async function () {
+      const env = new AsyncEnvironment();
+
+      try {
+        await env.renderTemplateString('A{% block content %}{{ super() }}{% endblock %}C');
+        expect().fail('Expected missing super parent rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('uses super() but has no parent implementation');
+      }
+    });
+
+    it('rejects intermediate super without an ancestor implementation', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('root.njk', 'A{% block other %}Root{% endblock %}C');
+      loader.addTemplate('mid.njk', '{% extends "root.njk" %}{% block content %}Mid {{ super() }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "mid.njk" %}{% block content %}Child{% endblock %}');
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected missing intermediate super parent rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('uses super() but has no parent implementation');
+      }
+    });
+
+    it('rejects incompatible override signatures', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content(name, title) %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content(name) %}Child{% endblock %}');
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected incompatible signature rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('signature is not compatible with its parent');
+      }
+    });
+
     it('rejects parent named block placement arguments missing from the child override', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);

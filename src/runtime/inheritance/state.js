@@ -5,9 +5,11 @@
 /*
 // Runtime method entry after finalization.
 type RuntimeMethodEntry = {
+  name: string,
   fn: Function,
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
+  origin: SourceOrigin | null, // callable declaration site for diagnostics
   super: RuntimeMethodEntry | null, // owner-relative parent method
   mergedLinkedChannels: string[], // transitive reads/observations
   mergedMutatedChannels: string[] // transitive mutations

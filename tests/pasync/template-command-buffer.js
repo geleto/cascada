@@ -810,7 +810,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 
       expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('blockRenderCtx = undefined');
-      expect(source).to.contain('runtime.invokeSuperCallable(inheritanceState, "content"');
+      expect(source).to.contain('runtime.invokeSuperCallable(inheritanceState, methodData, "content"');
       expect(source).to.not.contain('blockContext = null');
       expect(source).to.not.contain('context.getBlockContract(');
       expect(source).to.not.contain('context.getCompositionSourceBuffer(');
