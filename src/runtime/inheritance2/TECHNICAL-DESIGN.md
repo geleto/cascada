@@ -13,8 +13,6 @@ We are willing to break the current inheritance runtime while building this.
 Correctness will be protected by focused unit and integration tests instead of
 compatibility with temporary implementation details.
 
-`inheritance2` keeps the current compiler ABI.
-
 The runtime should be small enough that each part has one job:
 
 - collect compiled inheritance specs while loading the chain
@@ -27,7 +25,7 @@ No compatibility scaffolding is kept inside the core.
 
 ## Compiler ABI
 
-The compiler emits:
+The root compiler output contains `inheritanceSpec`.
 
 ```js
 {
@@ -35,57 +33,86 @@ The compiler emits:
   externSpec,
   inheritanceSpec: {
     setup,
-    methods,
+    methodEntries,
     sharedSchema,
-    invokedMethods,
+    invokedMethodRefs,
     hasExtends
   }
 }
 ```
 
-Raw method entries have:
+## Blocks And Methods
 
-```js
-{
-  fn, // compiled callable function
-  signature, // { argNames, withContext }
-  ownerKey, // file/template identity
-  ownLinkedChannels, // local callable channel reads/observations
-  ownMutatedChannels, // local callable channel mutations
-  super, // true when callable contains super(), false otherwise
-  superCallOrigin, // source location for super(), or null
-  invokedMethods // method name -> first call site, for missing-method errors
-}
-```
+Template blocks and script methods share the runtime callable model.
 
-ABI rules:
+Both compile into `CompiledMethodEntry` values under
+`inheritanceSpec.methodEntries`, so
+the runtime behavior is common:
 
-- Keep `inheritanceSpec` as the single compiled inheritance descriptor.
-- Keep `methods`, `sharedSchema`, and `invokedMethods` as object maps.
-- Keep raw method entries with `fn`, `signature`, `ownerKey`,
-  `ownLinkedChannels`, `ownMutatedChannels`, `super`, `superCallOrigin`, and
-  `invokedMethods`.
-- Keep raw `super` as `true` / `false`. Loading must not mutate it.
-  Finalization resolves it into direct execution metadata.
-- Keep file-level `invokedMethods`.
-- Keep per-method `invokedMethods`.
-- Keep `signature` as `{ argNames, withContext }`.
-- Keep channel footprint arrays as emitted.
-- Do not add adapter-only ABI fields for `inheritance2`.
+- method entry finalization
+- `super()` resolution
+- `this.method(...)` calls from both blocks and methods
+- invoked-method footprint merging
+- admission and invocation-buffer creation
+- argument arity checks
+- inherited signatures
+- shared-channel linking from finalized footprints
+
+Only these differences should remain:
+
+- script method bodies return through `__return__`
+- template block bodies write template text and return the local `__text__`
+  snapshot
+- in root/no-extends templates, inline block syntax is both a declaration and
+  an implicit placement call site
+- extending-template blocks are override-only declarations
+- dynamic `extends none` controls whether local fallback block placement runs
+- block placement enqueues the returned block text on the current template text
+  channel
+- template blocks can read render-context names by default, but do not capture
+  parent/placement local scope; placement-scope values must be passed as
+  explicit block arguments
+
+Do not add block-specific runtime metadata, block-specific dispatch,
+block-specific text boundaries, or block-specific channel linking. Keep the
+differences in the compiler/body adapter that lowers block syntax into normal
+inherited method calls.
+
+## Code Outside `src/runtime/inheritance/`
+
+These changes should be made before wiring the compiler to `inheritance2`.
+
+### Remove
+
+- template block `with` / `with context` syntax
+- block `withContext` metadata emission
+- script method `with context` syntax
+- method `withContext` metadata emission
+- signature checks that compare context mode
+- block tests and docs that expect opt-in render-context access
+- method tests and docs that expect opt-in render-context access
+
+### Modify
+
+- inherited method and template block entries must read render context by
+  default
+- inherited callable signatures compare only argument names
+- placement-local values still cross into blocks only through explicit block
+  arguments
 
 ## Data Types
 
 ```js
-// Compiler-generated method table entry.
-type RawMethodEntry = {
+// Compiler-generated method entry.
+type CompiledMethodEntry = {
   fn: Function,
-  signature: { argNames: string[], withContext: boolean },
+  signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
   ownLinkedChannels: string[], // local body reads/observations
   ownMutatedChannels: string[], // local body mutations
   super: boolean,
-  superCallOrigin: SourceOrigin | null,
-  invokedMethods: Record<string, InvokedMethodRef> // method name -> first call site, for error output when missing
+  superOrigin: SourceOrigin | null, // super() call site
+  invokedMethodRefs: Record<string, InvokedMethodRef> // method name -> first call site, for error output when missing
 }
 
 // Compiler-generated reference to an inherited method call.
@@ -95,11 +122,11 @@ type InvokedMethodRef = {
 }
 
 // Runtime-created finalized method table entry.
-type ExecutionMethodEntry = {
+type RuntimeMethodEntry = {
   fn: Function,
-  signature: { argNames: string[], withContext: boolean },
+  signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
-  super: ExecutionMethodEntry | null, // owner-relative parent method
+  super: RuntimeMethodEntry | null, // owner-relative parent method
   mergedLinkedChannels: string[], // transitive reads/observations
   mergedMutatedChannels: string[] // transitive mutations
 }
@@ -107,9 +134,9 @@ type ExecutionMethodEntry = {
 // Compiler-generated inheritance descriptor.
 type CompiledInheritanceSpec = {
   setup: Function,
-  methods: Record<string, RawMethodEntry>, // method name -> raw method
+  methodEntries: Record<string, CompiledMethodEntry>, // method name -> compiled method
   sharedSchema: Record<string, string>, // channel name -> channel type
-  invokedMethods: Record<string, InvokedMethodRef>, // method name -> first call site
+  invokedMethodRefs: Record<string, InvokedMethodRef>, // method name -> first call site
   hasExtends: boolean
 }
 
@@ -160,7 +187,7 @@ Owns per-render / per-component inheritance state.
 
 ```js
 {
-  methods: Record<string, ExecutionMethodEntry>, // method name -> finalized method
+  methods: Record<string, RuntimeMethodEntry>, // method name -> finalized method
   sharedSchema: Record<string, string>, // shared channel name -> channel type
   sharedRootBuffer: CommandBuffer | null,
   compositionPayload: object | null,
@@ -238,7 +265,7 @@ Finalization steps:
 2. Build method chains per name from collected files.
 3. Resolve ordinary dispatch table to the most-derived method per name.
 4. Resolve owner-relative `super` links.
-5. Resolve ordinary inherited calls from per-method `invokedMethods`.
+5. Resolve ordinary inherited calls from per-method `invokedMethodRefs`.
 6. Compute fixed-point merged channel footprints.
 7. Publish `state.methods` and `state.sharedSchema`.
 8. Drop loading data.
@@ -253,14 +280,14 @@ Invoked-method cycles are allowed. Extends-chain cycles are not.
 
 Owns normal method execution.
 
-Public runtime ABI should initially match the compiler-facing names:
+Compiler-facing runtime ABI:
 
-- `invokeInheritedMethod(...)`
-- `invokeSuperMethod(...)`
-- `getCallableBodyLinkedChannels(...)`
-- `getCallableBodyMutatedChannels(...)`
+- `invokeInheritedCallable(...)`
+- `invokeSuperCallable(...)`
+- `getCallableLinkedChannels(...)`
+- `getCallableMutatedChannels(...)`
 
-Normal invocation assumes finalized direct method metadata. If state is not
+Normal invocation assumes finalized direct method entries. If state is not
 finalized, fail clearly at the boundary unless a specific startup path is
 documented to wait.
 
@@ -329,8 +356,31 @@ Inheritance bootstrap is blocking for metadata:
 4. finalize metadata
 5. run setup and constructor startup
 
+Lifecycle:
+
+1. Load the complete inheritance chain first. Dynamic parent expressions are
+   resolved during this phase; `none` / `null` stops the chain.
+2. Finalize metadata once after the full chain is known. This wires overrides,
+   owner-relative `super`, invoked-callable references, shared schema, and
+   merged footprints.
+3. Run setup/constructor startup after finalization.
+4. Render template block placement after the parent/no-parent decision is
+   known. If the chain has a parent, inline child block placement is suppressed;
+   if the chain has no parent, inline child block placement renders locally.
+
 Constructor startup is not a special metadata model. It invokes the finalized
 `__constructor__` method when present.
+
+For scripts, executable body code after `extends` creates a local
+`__constructor__`. That constructor must call `super()` explicitly if it wants
+ancestor constructor startup to run. If a script has no executable body after
+`extends`, it contributes no local constructor and inherited lookup runs the
+nearest ancestor constructor directly.
+
+Templates do not support startup/constructor `super()`. Code outside blocks in
+an extending template is local startup only; parent structure is rendered by the
+template inheritance chain, and block `super()` remains the block-level parent
+call.
 
 The topmost missing constructor is represented by a no-op constructor only for
 constructor `super()` resolution.
@@ -351,49 +401,99 @@ Runtime invariant failures are fatal.
 Poison semantics remain ordinary Cascada channel/value behavior and are not
 special-cased by inheritance metadata code.
 
-## Minimal Test Strategy
+## Implementation Steps
 
-Tests should be added in layers. Each layer should pass before the next layer
-is implemented.
+Each step ends with runnable tests. Prefer focused integration tests that render
+real scripts/templates. Add unit tests only for metadata shapes that are hard to
+observe through rendering.
 
-1. loading unit tests
-   - child-first collection
-   - no raw mutation during loading
-   - shared schema conflict
-   - extends-chain cycle
+0. Final surface cleanup
+   - rename current `src/runtime/inheritance/` to
+     `src/runtime/inheritance-legacy/`
+   - rename `src/runtime/inheritance2/` to `src/runtime/inheritance/`
+   - update runtime exports/imports to the new final path
+   - remove template block `with` / `with context`
+   - remove script method `with context`
+   - emit inherited callable signatures with only `argNames`
+   - keep composition `with context` for `extends`, `include`, `import`,
+     `from import`, and `component`
+   - keep legacy runtime references explicit; new compiler-facing code should
+     target `src/runtime/inheritance/`
+   - test parser/compiler rejection for removed callable syntax, compiler
+     output metadata, and final compiler-facing runtime names
 
-2. finalization unit tests
-   - override table
-   - owner-relative `super`
-   - missing `super`
-   - missing ordinary inherited method
-   - invoked-method cycle
-   - merged linked/mutated footprints
-   - loading state cleared after finalization
+1. Standalone template block
+   - render a template with one inline block and no `extends`
+   - support only zero-argument block placement
+   - create the smallest state, method table, and invocation path needed for
+     one compiled block entry
 
-3. invocation integration tests
-   - `this.method(...)`
-   - `super(...)`
-   - method calling another inherited method
-   - shared channel read/write through invocation buffer
-   - exact channel linking, no wildcard shared-schema linking
+2. Block arguments
+   - add positional block arguments
+   - placement passes values by position from the block declaration expression
+     list
+   - test locals passed explicitly into a root/no-extends block
 
-4. startup integration tests
-   - direct extends chain
-   - dynamic parent selection
-   - `extends none`
-   - constructor `super`
-   - direct render return value
+3. Named block argument bindings
+   - support `block(arg = local)` for passing a local value into the block
+     argument named `arg`
+   - test named bindings, mixed positional/named binding rejection or rules,
+     duplicate names, and unknown block argument names
 
-5. component integration tests
-   - component startup
-   - component method call
-   - independent component instances
-   - component shared observation
-   - startup failure rethrown by later operations
+4. Template render context
+   - make block entries read render context by default
+   - test render-context names inside a block and verify placement-local names
+     still require explicit block arguments
 
-Only after these focused tests pass should existing broad suites be switched
-over:
+5. Template inheritance
+   - load child and parent specs child-first
+   - finalize a simple override table
+   - test child override rendering at the parent block position
+   - add missing-block and duplicate-block errors as focused failure tests
+
+6. `super()`
+   - add owner-relative parent links
+   - test `super()` and `super(...)` in blocks
+   - add missing/invalid `super()` failure tests
+
+7. `this.callable(...)`
+   - add ordinary inherited callable dispatch from methods and blocks
+   - merge invoked-callable footprints into caller footprints
+   - test `this.blockName(...)` / `this.method(...)`, missing callable errors,
+     and invoked-callable cycles
+
+8. Shared state
+   - add shared schema finalization and shared root buffer
+   - test `this.sharedName` reads/writes from constructors, methods, and
+     blocks
+   - test shared schema conflicts and exact channel linking without wildcard
+     shared-schema linking
+
+9. Script methods and constructors
+   - wire script `method` entries through the same callable path
+   - test direct render return value, constructor `super()`, and method
+     render-context access by default
+
+10. Dynamic startup
+   - add dynamic parent selection and `extends none`
+   - compile literal `extends none` as no parent work
+   - change generated dynamic-template output so parent selection is resolved
+     once into an `extendsState` field such as `hasParent`
+   - block placement should read that resolved boolean instead of resolving the
+     parent-selection promise at every block site
+   - test literal `extends none` renders local inline block placement
+   - test dynamic parent selection renders either parent placement or local
+     fallback
+   - test extends-chain cycles fail clearly
+
+11. Components
+   - wrap component lifecycle around the same inheritance state and invocation
+     primitive
+   - test component startup, component method call, independent component
+     instances, component shared observation, and startup failure rethrow
+
+Only after these focused tests pass should the existing broad suites be
+switched over:
 
 - `tests/pasync/extends-foundation.js`
 - `tests/pasync/extends.js`
