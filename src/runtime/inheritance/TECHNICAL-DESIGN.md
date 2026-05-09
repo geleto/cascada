@@ -427,8 +427,6 @@ Temporary code is allowed only when an implementation slice needs a clear
 runtime boundary before the final code exists. Mark each temporary code
 construct with a `Temporary` comment and list the construct here.
 
-- `invoke.js`: `validateZeroArgOnlyInvocation(...)`. Remove when invocation
-  argument binding is implemented.
 - `invoke.js`: temporary `invokeSuperCallable(...)` throw body. Replace when
   owner-relative super links are finalized.
 - `startup.js`: temporary `bootstrapInheritanceParentScript(...)` throw body.
@@ -437,6 +435,8 @@ construct with a `Temporary` comment and list the construct here.
   Replace when template parent rendering starts.
 - `startup.js`: `createUnsupportedFeatureError(...)`. Remove with the temporary
   parent-chain throw bodies.
+- `startup.js`: fallback in `getInheritanceSharedBuffer(...)`. Remove when
+  shared-root ownership is fully initialized before shared buffer reads.
 - `load.js`: `createStubSourceOrigin(...)`. Replace when loading receives
   source origins directly.
 - `invoke.js`: direct `method.fn(...)` call in `invokeInheritedCallable(...)`.

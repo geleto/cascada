@@ -34,15 +34,42 @@ describe('Inheritance runtime', function () {
       expect(result).to.be('AAdaC');
     });
 
-    it('fails clearly when a standalone block uses arguments before arguments are supported', async function () {
+    it('passes a placement-local value as a positional block argument', async function () {
       const env = new AsyncEnvironment();
 
-      try {
-        await env.renderTemplateString('{% set user = "Ada" %}{% block content(user) %}{{ user }}{% endblock %}');
-        expect().fail('Expected block argument failure');
-      } catch (err) {
-        expect(String(err)).to.contain('arguments are not implemented');
-      }
+      const result = await env.renderTemplateString('{% set user = "Ada" %}A{% block content(user) %}{{ user }}{% endblock %}C');
+
+      expect(result).to.be('AAdaC');
+    });
+
+    it('evaluates a missing placement local against the render context', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString('A{% block content(user) %}{{ user }}{% endblock %}C', {
+        user: 'Ada'
+      });
+
+      expect(result).to.be('AAdaC');
+    });
+
+    it('lets placement locals shadow render context even when the local value is none', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString('{% set user = none %}A{% block content(user) %}{{ user or "none" }}{% endblock %}C', {
+        user: 'RenderUser'
+      });
+
+      expect(result).to.be('AnoneC');
+    });
+
+    it('passes multiple positional block arguments by signature order', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString(
+        '{% set first = "Ada" %}{% set second = "Lovelace" %}{% block name(first, second) %}{{ second }}, {{ first }}{% endblock %}'
+      );
+
+      expect(result).to.be('Lovelace, Ada');
     });
 
     it('fails clearly when dispatch runs before metadata is finalized', function () {
@@ -63,6 +90,60 @@ describe('Inheritance runtime', function () {
           hasExtends: false
         }, null);
       }).to.throwException(/requires an inheritance state/);
+    });
+
+    it('fails clearly when invocation receives too many arguments', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: ['name'] },
+            ownerKey: 'test.njk',
+            ownLinkedChannels: [],
+            ownMutatedChannels: [],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(() => {
+        runtime.invokeInheritedCallable(inheritanceState, 'content', ['Ada', 'extra'], null, null, runtime, null, null);
+      }).to.throwException(/received too many arguments/);
+    });
+
+    it('fails clearly when invocation receives too few arguments', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: ['name'] },
+            ownerKey: 'test.njk',
+            ownLinkedChannels: [],
+            ownMutatedChannels: [],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(() => {
+        runtime.invokeInheritedCallable(inheritanceState, 'content', [], null, null, runtime, null, null);
+      }).to.throwException(/received too few arguments/);
     });
   });
 });

@@ -762,7 +762,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('methodData) {');
       expect(source).to.contain('runtime.invokeInheritedCallable(inheritanceState, "content"');
-      expect(source).to.contain('blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {}');
+      expect(source).to.contain('blockPayload?.originalArgs ?? {}');
       expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
       expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
       expect(source).to.contain('runtime.linkCurrentBufferToParentChannels(parentBuffer, output');

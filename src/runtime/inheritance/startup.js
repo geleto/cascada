@@ -48,7 +48,7 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
 }
 
 function getInheritanceSharedBuffer(inheritanceState, currentBuffer) {
-  // Falls back to the current buffer before shared-root ownership exists.
+  // Temporary fallback before shared-root ownership exists.
   return inheritanceState?.sharedRootBuffer || currentBuffer;
 }
 

@@ -297,7 +297,12 @@ function channelLookup(name, currentBuffer) {
   }), name);
 }
 
+function resolveBlockPlacementArg(name, currentBuffer, context) {
+  const channelValue = channelLookup(name, currentBuffer);
+  return channelValue === undefined ? context.lookup(name) : channelValue;
+}
+
 const memberLookup = memberLookupImpl;
 const observeInheritanceSharedChannel = observeInheritanceSharedChannelImpl;
 
-export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };
+export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup, resolveBlockPlacementArg };

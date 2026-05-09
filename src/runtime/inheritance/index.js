@@ -2,7 +2,6 @@
 
 export {
   createInheritanceState,
-  setInheritanceSharedRootBuffer,
   setInheritanceStartupPromise
 } from './state.js';
 export {bootstrapInheritanceMetadata} from './load.js';

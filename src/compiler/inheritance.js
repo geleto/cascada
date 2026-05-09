@@ -93,11 +93,37 @@ class CompileInheritance {
       this.emit('runtime.markSafe(');
     }
     this.emit(`runtime.invokeInheritedCallable(inheritanceState, "${methodName}", `);
-    this.compiler._compileAggregate(argsNode, null, '[', ']', false, false);
+    this.emitInheritedInvocationArgs(argsNode);
     this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
     if (!this.compiler.scriptMode) {
       this.emit(')');
     }
+  }
+
+  emitInheritedInvocationArgs(argsNode) {
+    if (this.compiler.scriptMode) {
+      this.compiler._compileAggregate(argsNode, null, '[', ']', false, false);
+      return;
+    }
+
+    const children = argsNode && argsNode.children ? argsNode.children : [];
+    this.emit('runtime.createArray([');
+    children.forEach((argNode, index) => {
+      if (index > 0) {
+        this.emit(', ');
+      }
+      this.emitTemplateBlockPlacementArg(argNode);
+    });
+    this.emit('])');
+  }
+
+  emitTemplateBlockPlacementArg(argNode) {
+    if (argNode instanceof nodes.Symbol) {
+      const inputName = this.compiler.analysis.getBaseChannelName(argNode.value);
+      this.emit(`runtime.resolveBlockPlacementArg(${JSON.stringify(inputName)}, ${this.compiler.buffer.currentBuffer}, context)`);
+      return;
+    }
+    this.compiler.compileExpression(argNode, null, argNode, true);
   }
 
   emitNamedArgBindings(argNodes, targetVarsVar) {
@@ -468,7 +494,7 @@ class CompileInheritance {
 
     this.emit.line(`const ${allLocalNamesVar} = ${JSON.stringify(staticLocalNames)};`);
     if (!options.payloadOriginalArgsVar) {
-      this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
+      this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload?.originalArgs ?? {};`);
     }
     this.emit.line(`if (${allLocalNamesVar}.length > 0) {`);
     this.emit.line(`for (const name of ${allLocalNamesVar}) {`);
@@ -568,7 +594,7 @@ class CompileInheritance {
       this.compiler.return.emitDeclareChannel(this.compiler.buffer.currentBuffer);
     }
     const payloadOriginalArgsVar = this.compiler._tmpid();
-    this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
+    this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload?.originalArgs ?? {};`);
     this.emitCallableEntryContextFork(callableNode, isScriptMethod, invocationPath, payloadOriginalArgsVar);
     this.emitCallableEntryParentLinks(callableNode, isScriptMethod);
     this.emitAsyncCallableArgInitialization(callableNode, {
