@@ -14,12 +14,18 @@ type RuntimeMethodEntry = {
   mergedLinkedChannels: string[], // transitive reads/observations
   mergedMutatedChannels: string[] // transitive mutations
 }
+
+// Runtime invocation arguments before mapping into block/method locals.
+type InvocationArgs = {
+  values: unknown[],
+  names: string[] | null // named placement binding names, or null for positional calls
+}
 */
 
 function invokeInheritedCallable(inheritanceState, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
   const method = getMethod(inheritanceState, methodName, errorContext, context);
-  const values = Array.isArray(args) ? args : [];
-  const payload = createInvocationPayload(methodName, method, values, errorContext, context);
+  const invocationArgs = normalizeInvocationArgs(methodName, args, errorContext, context);
+  const payload = createInvocationPayload(methodName, method, invocationArgs, errorContext, context);
 
   // Temporary direct call until invocation commands own admission.
   return method.fn(
@@ -74,7 +80,40 @@ function getMethod(inheritanceState, methodName, errorContext, context) {
   return method;
 }
 
-function createInvocationPayload(methodName, method, values, errorContext, context) {
+function normalizeInvocationArgs(methodName, args, errorContext, context) {
+  if (Array.isArray(args)) {
+    return { values: args, names: null };
+  }
+  if (args && typeof args === 'object') {
+    if (!Array.isArray(args.values)) {
+      throw createRuntimeError(
+        `Inherited callable "${methodName}" received invalid argument metadata`,
+        errorContext,
+        context
+      );
+    }
+    if (args.names !== null && args.names !== undefined && !Array.isArray(args.names)) {
+      throw createRuntimeError(
+        `Inherited callable "${methodName}" received invalid argument names`,
+        errorContext,
+        context
+      );
+    }
+    return {
+      values: args.values,
+      names: args.names ?? null
+    };
+  }
+  throw createRuntimeError(
+    `Inherited callable "${methodName}" received invalid argument payload`,
+    errorContext,
+    context
+  );
+}
+
+function createInvocationPayload(methodName, method, invocationArgs, errorContext, context) {
+  const values = invocationArgs.values;
+  const names = invocationArgs.names;
   const argNames = method.signature.argNames;
   if (values.length > argNames.length) {
     throw createRuntimeError(
@@ -90,10 +129,39 @@ function createInvocationPayload(methodName, method, values, errorContext, conte
       context
     );
   }
+  if (names && names.length !== values.length) {
+    throw createRuntimeError(
+      `Inherited callable "${methodName}" received mismatched argument metadata`,
+      errorContext,
+      context
+    );
+  }
 
   const originalArgs = {};
-  for (let i = 0; i < values.length; i++) {
-    originalArgs[argNames[i]] = values[i];
+  if (names) {
+    const expectedNames = new Set(argNames);
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      if (Object.prototype.hasOwnProperty.call(originalArgs, name)) {
+        throw createRuntimeError(
+          `Inherited callable "${methodName}" received duplicate argument "${name}"`,
+          errorContext,
+          context
+        );
+      }
+      if (!expectedNames.has(name)) {
+        throw createRuntimeError(
+          `Inherited callable "${methodName}" received unknown argument "${name}"`,
+          errorContext,
+          context
+        );
+      }
+      originalArgs[name] = values[i];
+    }
+  } else {
+    for (let i = 0; i < values.length; i++) {
+      originalArgs[argNames[i]] = values[i];
+    }
   }
 
   return { originalArgs };

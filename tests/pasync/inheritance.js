@@ -238,5 +238,183 @@ describe('Inheritance runtime', function () {
         runtime.invokeInheritedCallable(inheritanceState, 'content', [], null, null, runtime, null, null);
       }).to.throwException(/received too few arguments/);
     });
+
+    it('fails clearly when invocation receives malformed argument metadata', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: ['name', 'title'] },
+            ownerKey: 'test.njk',
+            ownLinkedChannels: [],
+            ownMutatedChannels: [],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(() => {
+        runtime.invokeInheritedCallable(inheritanceState, 'content', { values: ['Ada'], names: 'name' }, null, null, runtime, null, null);
+      }).to.throwException(/received invalid argument names/);
+      expect(() => {
+        runtime.invokeInheritedCallable(inheritanceState, 'content', { values: ['Ada', 'Dr.'], names: ['name', 'name'] }, null, null, runtime, null, null);
+      }).to.throwException(/received duplicate argument "name"/);
+    });
+  });
+
+  describe('template inheritance', function () {
+    it('renders a child override at the parent block position', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content %}Child{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChildC');
+    });
+
+    it('renders the most-derived override through a multi-level parent chain', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('root.njk', 'A{% block content %}Root{% endblock %}C');
+      loader.addTemplate('mid.njk', '{% extends "root.njk" %}{% block content %}Mid{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "mid.njk" %}{% block content %}Child{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChildC');
+    });
+
+    it('uses parent definitions for non-overridden blocks', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block main %}Base main{% endblock %}B{% block aside %}Base aside{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block main %}Child main{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChild mainBBase asideC');
+    });
+
+    it('resolves overrides per block across a multi-level parent chain', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('root.njk', 'A{% block main %}Root main{% endblock %}B{% block aside %}Root aside{% endblock %}C');
+      loader.addTemplate('mid.njk', '{% extends "root.njk" %}{% block main %}Mid main{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "mid.njk" %}{% block aside %}Child aside{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AMid mainBChild asideC');
+    });
+
+    it('rejects static parent-chain cycles', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('a.njk', '{% extends "b.njk" %}{% block content %}A{% endblock %}');
+      loader.addTemplate('b.njk', '{% extends "a.njk" %}{% block content %}B{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "a.njk" %}{% block content %}Child{% endblock %}');
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected inheritance cycle rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('Inheritance cycle detected');
+      }
+    });
+
+    it('renders the parent block when no child override exists', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('ABaseC');
+    });
+
+    it('passes parent block placement arguments into the child override', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% set person = "Ada" %}A{% block content(user = person) %}Base {{ user }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content(user) %}Child {{ user }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChild AdaC');
+    });
+
+    it('passes positional parent block placement arguments into the child override', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% set person = "Ada" %}A{% block content(person) %}Base {{ person }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content(user) %}Child {{ user }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AChild AdaC');
+    });
+
+    it('passes parent block placement arguments into parent fallback blocks', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% set person = "Ada" %}A{% block content(person) %}Base {{ person }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('ABase AdaC');
+    });
+
+    it('rejects parent named block placement arguments missing from the child override', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% set person = "Ada" %}A{% block content(user = person) %}Base {{ user }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block content(name) %}Child {{ name }}{% endblock %}');
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected parent argument name validation failure');
+      } catch (err) {
+        expect(String(err)).to.contain('Inherited callable "content" received unknown argument "user"');
+      }
+    });
+
+    it('rejects missing inherited block dispatch after finalization', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {},
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(() => {
+        runtime.invokeInheritedCallable(inheritanceState, 'content', [], null, null, runtime, null, null);
+      }).to.throwException(/Missing inherited callable "content"/);
+    });
+
+    it('rejects duplicate blocks in one template', async function () {
+      const env = new AsyncEnvironment();
+
+      try {
+        await env.renderTemplateString('{% block content %}One{% endblock %}{% block content %}Two{% endblock %}');
+        expect().fail('Expected duplicate block rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('Block "content" defined more than once');
+      }
+    });
   });
 });

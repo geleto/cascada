@@ -244,8 +244,8 @@ entries, or create execution metadata.
 
 Expected order is most-derived first, then parents in extends-chain order.
 
-`load.js` owns parent-chain resolution, including dynamic parent selection and
-extends-chain cycle detection. It does not run setup/constructors.
+`load.js` owns append-only spec registration. Parent rendering updates
+`chainPaths` while resolving the chain and uses it for cycle detection.
 
 ### `finalize.js`
 
@@ -431,10 +431,8 @@ construct with a `Temporary` comment and list the construct here.
   owner-relative super links are finalized.
 - `startup.js`: temporary `bootstrapInheritanceParentScript(...)` throw body.
   Replace when script parent-chain loading starts.
-- `startup.js`: temporary `renderInheritanceParentRoot(...)` throw body.
-  Replace when template parent rendering starts.
 - `startup.js`: `createUnsupportedFeatureError(...)`. Remove with the temporary
-  parent-chain throw bodies.
+  script parent-chain throw body.
 - `startup.js`: fallback in `getInheritanceSharedBuffer(...)`. Remove when
   shared-root ownership is fully initialized before shared buffer reads.
 - `load.js`: `createStubSourceOrigin(...)`. Replace when loading receives
@@ -478,6 +476,7 @@ observe through rendering.
    - test named bindings, duplicate names, and non-identifier binding names
 
 4. Template render context
+   - completed with the standalone block test coverage
    - make block entries read render context by default
    - test render-context names inside a block and verify placement-local names
      still require explicit block arguments
@@ -488,10 +487,12 @@ observe through rendering.
    - test child override rendering at the parent block position
    - validate parent placement argument names against the selected override's
      declared argument names
-   - add missing-block and duplicate-block errors as focused failure tests
+   - add missing-block, duplicate-block, and static extends-cycle errors as
+     focused failure tests
 
 6. `super()`
    - add owner-relative parent links
+   - validate signature compatibility between overridden entries
    - test `super()` and `super(...)` in blocks
    - add missing/invalid `super()` failure tests
 
@@ -526,7 +527,7 @@ observe through rendering.
    - test literal `extends none` renders local inline block placement
    - test dynamic parent selection renders either parent placement or local
      fallback
-   - test extends-chain cycles fail clearly
+   - test dynamic extends-chain cycles fail clearly
 
 11. Components
    - wrap component lifecycle around the same inheritance state and invocation

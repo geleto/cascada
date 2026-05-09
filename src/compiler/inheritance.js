@@ -100,13 +100,27 @@ class CompileInheritance {
     }
   }
 
-  emitInheritedInvocationArgs(argsNode) {
+  emitInheritedBlockPlacementInvocation(methodName, callableSignature, errorContextJson) {
+    this.emit('runtime.markSafe(');
+    this.emit(`runtime.invokeInheritedCallable(inheritanceState, "${methodName}", `);
+    this.emitInheritedInvocationArgs(
+      new nodes.NodeList(0, 0, callableSignature.placementArgNodes),
+      callableSignature.placementArgNames
+    );
+    this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
+    this.emit(')');
+  }
+
+  emitInheritedInvocationArgs(argsNode, argNames = null) {
     if (this.compiler.scriptMode) {
       this.compiler._compileAggregate(argsNode, null, '[', ']', false, false);
       return;
     }
 
     const children = argsNode && argsNode.children ? argsNode.children : [];
+    if (Array.isArray(argNames)) {
+      this.emit('({ values: ');
+    }
     this.emit('runtime.createArray([');
     children.forEach((argNode, index) => {
       if (index > 0) {
@@ -115,6 +129,9 @@ class CompileInheritance {
       this.emitTemplateBlockPlacementArg(argNode);
     });
     this.emit('])');
+    if (Array.isArray(argNames)) {
+      this.emit(`, names: ${JSON.stringify(argNames)} })`);
+    }
   }
 
   emitTemplateBlockPlacementArg(argNode) {
@@ -184,8 +201,7 @@ class CompileInheritance {
 
     const id = this.compiler._tmpid();
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-    const explicitBlockArgNodes = this.getCallablePlacementArgNodes(node);
-    const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
+    const callableSignature = this.getCallableSignature(node);
     const needsParentCheck = isTopLevelTemplateBlock && this.compiler.hasDynamicExtends;
     this.emit.line(`let ${id};`);
     if (needsParentCheck) {
@@ -196,13 +212,13 @@ class CompileInheritance {
         this.emit.line('  if (parent) return "";');
         this.emit.line('  if (inheritanceState) { inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context); }');
         this.emit('  return ');
-        this.emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
+        this.emitInheritedBlockPlacementInvocation(node.name.value, callableSignature, errorContextJson);
         this.emit.line(';');
         this.emit('})');
       });
     } else {
       this.emitAsyncBlockTextPlacement(node, id, () => {
-        this.emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
+        this.emitInheritedBlockPlacementInvocation(node.name.value, callableSignature, errorContextJson);
       });
     }
   }
@@ -464,10 +480,6 @@ class CompileInheritance {
     return this.getCallableSignature(callableNode).argNames;
   }
 
-  getCallablePlacementArgNodes(callableNode) {
-    return this.getCallableSignature(callableNode).placementArgNodes;
-  }
-
   getCallableSignature(callableNode) {
     const signatureArgs = callableNode && callableNode.args && callableNode.args.children ? callableNode.args : new nodes.NodeList();
     const label = callableNode instanceof nodes.MethodDefinition ? 'method signature' : 'block signature';
@@ -508,11 +520,15 @@ class CompileInheritance {
     const placementArgNodes = namedBindings.length > 0
       ? namedBindings.map((pair) => pair.value)
       : parsed.args;
+    const placementArgNames = namedBindings.length > 0
+      ? argNodes.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value))
+      : null;
     return {
       argNames: argNodes.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value)),
       // For `block(arg = local)`, argNodes declare block locals and
       // placementArgNodes are evaluated where the block is placed.
       argNodes,
+      placementArgNames,
       placementArgNodes
     };
   }
