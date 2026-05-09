@@ -184,7 +184,7 @@ class CompileInheritance {
 
     const id = this.compiler._tmpid();
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-    const explicitBlockArgNodes = this.getCallableArgNodes(node);
+    const explicitBlockArgNodes = this.getCallablePlacementArgNodes(node);
     const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
     const needsParentCheck = isTopLevelTemplateBlock && this.compiler.hasDynamicExtends;
     this.emit.line(`let ${id};`);
@@ -464,30 +464,63 @@ class CompileInheritance {
     return this.getCallableSignature(callableNode).argNames;
   }
 
-  getCallableArgNodes(callableNode) {
-    return this.getCallableSignature(callableNode).argNodes;
+  getCallablePlacementArgNodes(callableNode) {
+    return this.getCallableSignature(callableNode).placementArgNodes;
   }
 
   getCallableSignature(callableNode) {
     const signatureArgs = callableNode && callableNode.args && callableNode.args.children ? callableNode.args : new nodes.NodeList();
     const label = callableNode instanceof nodes.MethodDefinition ? 'method signature' : 'block signature';
+    const allowNamedBlockBindings = callableNode instanceof nodes.Block;
     const parsed = this.compiler._parseCallableSignature(signatureArgs, {
-      allowKeywordArgs: false,
+      allowKeywordArgs: allowNamedBlockBindings,
       symbolsOnly: true,
       label,
       ownerNode: callableNode
     });
+    const namedBindings = parsed.kwargs?.children ?? [];
+    if (
+      namedBindings.length > 0 &&
+      callableNode instanceof nodes.Block &&
+      this.compiler.hasStaticExtends &&
+      !this.compiler.hasDynamicExtends
+    ) {
+      this.compiler.fail(
+        'named block argument bindings require local block placement',
+        parsed.kwargs.lineno,
+        parsed.kwargs.colno,
+        callableNode,
+        parsed.kwargs
+      );
+    }
+    if (namedBindings.length > 0 && parsed.args.length > 0) {
+      this.compiler.fail(
+        'block signature cannot mix positional arguments and named bindings',
+        parsed.kwargs.lineno,
+        parsed.kwargs.colno,
+        callableNode,
+        parsed.kwargs
+      );
+    }
+    const argNodes = namedBindings.length > 0
+      ? namedBindings.map((pair) => pair.key)
+      : parsed.args;
+    const placementArgNodes = namedBindings.length > 0
+      ? namedBindings.map((pair) => pair.value)
+      : parsed.args;
     return {
-      argNames: parsed.args.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value)),
-      argNodes: parsed.args
+      argNames: argNodes.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value)),
+      // For `block(arg = local)`, argNodes declare block locals and
+      // placementArgNodes are evaluated where the block is placed.
+      argNodes,
+      placementArgNodes
     };
   }
 
   emitAsyncCallableArgInitialization(callableNode, options = {}) {
-    const callableSignature = this.getCallableSignature(callableNode);
     const declaredCallableArgNames = Array.isArray(options.declaredCallableArgNames)
       ? options.declaredCallableArgNames
-      : callableSignature.argNames;
+      : this.getCallableSignature(callableNode).argNames;
     const staticLocalNames = Array.from(new Set(declaredCallableArgNames));
     const allLocalNamesVar = this.compiler._tmpid();
     const payloadOriginalArgsVar = options.payloadOriginalArgsVar || this.compiler._tmpid();

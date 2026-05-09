@@ -472,8 +472,10 @@ observe through rendering.
 3. Named block argument bindings
    - support `block(arg = local)` for passing a local value into the block
      argument named `arg`
-   - test named bindings, mixed positional/named binding rejection or rules,
-     duplicate names, and unknown block argument names
+   - reject mixed positional/named block bindings
+   - reject named bindings in static-extending templates, where blocks are
+     declarations only and have no local placement
+   - test named bindings, duplicate names, and non-identifier binding names
 
 4. Template render context
    - make block entries read render context by default
@@ -484,6 +486,8 @@ observe through rendering.
    - load child and parent specs child-first
    - finalize a simple override table
    - test child override rendering at the parent block position
+   - validate parent placement argument names against the selected override's
+     declared argument names
    - add missing-block and duplicate-block errors as focused failure tests
 
 6. `super()`
@@ -516,6 +520,9 @@ observe through rendering.
      once into an `extendsState` field such as `hasParent`
    - block placement should read that resolved boolean instead of resolving the
      parent-selection promise at every block site
+   - decide named-binding behavior for dynamic maybe-parent blocks after the
+     local-placement decision exists; if a parent is selected, local placement
+     arguments must not be silently treated as active
    - test literal `extends none` renders local inline block placement
    - test dynamic parent selection renders either parent placement or local
      fallback

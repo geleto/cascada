@@ -177,6 +177,19 @@ class CompilerCommon extends Obj {
             arg
           );
         }
+        if (symbolsOnly) {
+          arg.children.forEach((pair) => {
+            if (!(pair.key instanceof nodes.Symbol)) {
+              this.fail(
+                `${label} only supports identifier named arguments`,
+                pair.key.lineno,
+                pair.key.colno,
+                ownerNode,
+                pair.key
+              );
+            }
+          });
+        }
         kwargs = arg;
         return;
       }

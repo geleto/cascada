@@ -5,6 +5,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
+import {StringLoader} from '../util.js';
 
 describe('Inheritance runtime', function () {
   describe('standalone template blocks', function () {
@@ -70,6 +71,80 @@ describe('Inheritance runtime', function () {
       );
 
       expect(result).to.be('Lovelace, Ada');
+    });
+
+    it('passes a local value through a named block argument binding', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString('{% set person = "Ada" %}A{% block content(user = person) %}{{ user }}{% endblock %}C');
+
+      expect(result).to.be('AAdaC');
+    });
+
+    it('passes a render-context value through a named block argument binding', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString('A{% block content(user = person) %}{{ user }}{% endblock %}C', {
+        person: 'Ada'
+      });
+
+      expect(result).to.be('AAdaC');
+    });
+
+    it('passes multiple named block argument bindings by declared name', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString(
+        '{% set given = "Ada" %}{% set family = "Lovelace" %}{% block name(first = given, last = family) %}{{ last }}, {{ first }}{% endblock %}'
+      );
+
+      expect(result).to.be('Lovelace, Ada');
+    });
+
+    it('rejects mixed positional and named block argument bindings', async function () {
+      const env = new AsyncEnvironment();
+
+      try {
+        await env.renderTemplateString('{% set person = "Ada" %}{% block content(user, title = person) %}{{ user }}{% endblock %}');
+        expect().fail('Expected mixed block argument binding rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('block signature cannot mix positional arguments and named bindings');
+      }
+    });
+
+    it('rejects duplicate named block argument bindings', async function () {
+      const env = new AsyncEnvironment();
+
+      try {
+        await env.renderTemplateString('{% block content(user = first, user = second) %}{{ user }}{% endblock %}');
+        expect().fail('Expected duplicate named block argument rejection');
+      } catch (err) {
+        expect(String(err)).to.contain(`block argument 'user' is declared more than once`);
+      }
+    });
+
+    it('rejects non-identifier named block argument bindings', async function () {
+      const env = new AsyncEnvironment();
+
+      try {
+        await env.renderTemplateString('{% block content(user.name = person) %}{{ user }}{% endblock %}');
+        expect().fail('Expected invalid named block argument rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('block signature only supports identifier named arguments');
+      }
+    });
+
+    it('rejects named block argument bindings in static-extending templates', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% block content(user) %}{{ user }}{% endblock %}');
+
+      try {
+        await env.renderTemplateString('{% extends "base.njk" %}{% block content(user = person) %}{{ user }}{% endblock %}');
+        expect().fail('Expected static-extending named block binding rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('named block argument bindings require local block placement');
+      }
     });
 
     it('fails clearly when dispatch runs before metadata is finalized', function () {
