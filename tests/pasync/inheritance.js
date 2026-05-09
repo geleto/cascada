@@ -35,6 +35,24 @@ describe('Inheritance runtime', function () {
       expect(result).to.be('AAdaC');
     });
 
+    it('does not let placement locals enter a block without explicit arguments', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString('{% set user = "Ada" %}A{% block content %}{{ user or "missing" }}{% endblock %}C');
+
+      expect(result).to.be('AmissingC');
+    });
+
+    it('lets render context win over placement locals when no block argument is declared', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString('{% set user = "LocalUser" %}A{% block content %}{{ user }}{% endblock %}C', {
+        user: 'RenderUser'
+      });
+
+      expect(result).to.be('ARenderUserC');
+    });
+
     it('passes a placement-local value as a positional block argument', async function () {
       const env = new AsyncEnvironment();
 
