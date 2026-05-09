@@ -23,7 +23,6 @@ export * from './jinja-compat.js';
 export * from './call.js';
 export * from './loop.js';
 export * from './sequential.js';
-export * from './inheritance-legacy/component.js';
 export * from './deep-assign.js';
 export * as guard from './guard.js';
 export {RETURN_UNSET} from './markers.js';

@@ -5,8 +5,8 @@ import expect from 'expect.js';
 import {AsyncEnvironment, Script} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import * as runtimeModule from '../../src/runtime/runtime.js';
-import * as componentRuntimeModule from '../../src/runtime/inheritance-legacy/component.js';
-import {ComponentInstance} from '../../src/runtime/inheritance-legacy/component.js';
+import * as componentRuntimeModule from '../../src/runtime/inheritance/component.js';
+import {ComponentInstance} from '../../src/runtime/inheritance/component.js';
 
 describe('Phase 8 - Component Method Calls', function () {
   it('should resolve component method return values correctly', async function () {
@@ -500,7 +500,7 @@ describe('Phase 8 - Component Observations', function () {
       await env.renderScript('Main.script', {});
       expect().fail('Expected private shared var lookup to fail');
     } catch (err) {
-      expect(err.message).to.contain('Shared channel \'_theme\' was not found');
+      expect(err.message).to.contain('Shared channel "_theme" is private and cannot be observed');
     }
   });
 
@@ -764,7 +764,7 @@ describe('Phase 8 - Component Observations', function () {
 
     expect(outcome.type).to.be('error');
     expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
-    expect(outcome.error.message).to.contain('Shared channel \'missing\' was not found');
+    expect(outcome.error.message).to.contain('Shared channel "missing" was not found');
   });
 
   it('should read nested properties from component shared vars', async function () {
@@ -801,7 +801,7 @@ describe('Phase 8 - Component Observations', function () {
       expect().fail('Expected non-var shared channel nested read to fail');
     } catch (error) {
       expect(error).to.be.a(runtimeModule.RuntimeError);
-      expect(error.message).to.contain('Shared channel \'log\' cannot be used as a bare symbol');
+      expect(error.message).to.contain('Shared channel "log" cannot be used as a bare symbol');
     }
   });
 
@@ -1049,7 +1049,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(events).to.eql(['gate-resolved', 'ctor-start']);
   });
 
-  it('should start component constructor only after metadata finalization resolves', async function () {
+  it('should start component constructor after compiled startup is registered', async function () {
     const events = [];
     const makeContext = (path) => ({
       path,
@@ -1092,10 +1092,13 @@ describe('Phase 8 - Component Lifecycle', function () {
           events.push('root-render');
           runtime.bootstrapInheritanceMetadata(
             inheritanceStateValue,
-            compiledMethodEntries,
-            {},
-            {},
-            componentRootBuffer,
+            {
+              path: 'Component.script',
+              methodEntries: compiledMethodEntries,
+              sharedSchema: {},
+              invokedMethodRefs: {},
+              hasExtends: false
+            },
             componentContext
           );
           runtime.runCompiledRootStartup({
@@ -1111,10 +1114,6 @@ describe('Phase 8 - Component Lifecycle', function () {
             options: null
           });
           events.push('startup-called');
-          Promise.resolve().then(() => {
-            events.push('finalize');
-            runtime.finalizeInheritanceMetadata(inheritanceStateValue, componentContext);
-          });
           return componentRootBuffer;
         },
         methods: compiledMethodEntries,
@@ -1134,7 +1133,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     await bindingSnapshot;
     await startupPromise;
 
-    expect(events).to.eql(['root-render', 'startup-called', 'finalize', 'constructor']);
+    expect(events).to.eql(['root-render', 'startup-called', 'constructor']);
   });
 
   it('should auto-close a component instance when the owner buffer finishes', async function () {

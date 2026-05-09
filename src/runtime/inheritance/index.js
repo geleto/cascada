@@ -27,3 +27,10 @@ export {
   linkCurrentBufferToSharedChannels,
   resolveInheritanceSharedChannel
 } from './shared.js';
+export {
+  ComponentInstance,
+  callComponentMethod,
+  createComponentInstance,
+  observeComponentChannel,
+  startComponentInstance
+} from './component.js';

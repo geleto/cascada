@@ -1,7 +1,7 @@
 // Runs root setup, parent-chain rendering, and startup buffer wiring.
 
 import {RuntimeFatalError} from '../errors.js';
-import {setInheritanceSharedRootBuffer} from './state.js';
+import {setInheritanceSharedRootBuffer, setInheritanceStartupPromise} from './state.js';
 
 function runCompiledRootStartup({
   setup,
@@ -19,7 +19,11 @@ function runCompiledRootStartup({
   if (typeof setup !== 'function') {
     return null;
   }
-  return setup(env, context, runtime, cb, output, inheritanceState, extendsState);
+  const startupPromise = setup(env, context, runtime, cb, output, inheritanceState, extendsState);
+  if (inheritanceState) {
+    setInheritanceStartupPromise(inheritanceState, startupPromise);
+  }
+  return startupPromise;
 }
 
 async function bootstrapInheritanceParentScript({

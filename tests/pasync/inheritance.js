@@ -3,7 +3,8 @@
 // end-to-end test surface.
 
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {AsyncEnvironment, AsyncTemplate} from '../../src/environment/environment.js';
+import {Context} from '../../src/environment/context.js';
 import * as runtime from '../../src/runtime/runtime.js';
 import {StringLoader} from '../util.js';
 
@@ -1197,6 +1198,297 @@ describe('Inheritance runtime', function () {
       const result = await env.renderScript('child.script', {});
 
       expect(result).to.be('method|done');
+    });
+  });
+
+  describe('components', function () {
+    it('runs component startup before method calls', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('Component.script', 'shared var item = incoming\nmethod label()\n  return this.item\nendmethod');
+      loader.addTemplate('Main.script', 'component "Component.script" as card with { incoming: "ready" }\nreturn card.label()');
+
+      const result = await env.renderScript('Main.script', {});
+
+      expect(result).to.be('ready');
+    });
+
+    it('dispatches component methods through the finalized callable table', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('Component.script', 'method label(name)\n  return "Hello " + name\nendmethod');
+      loader.addTemplate('Main.script', 'component "Component.script" as card\nreturn card.label("Ada")');
+
+      const result = await env.renderScript('Main.script', {});
+
+      expect(result).to.be('Hello Ada');
+    });
+
+    it('keeps component instances independent', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('Component.script', 'shared var item = incoming\nmethod get()\n  return this.item\nendmethod');
+      loader.addTemplate('Main.script', [
+        'component "Component.script" as left with { incoming: "L" }',
+        'component "Component.script" as right with { incoming: "R" }',
+        'return [left.get(), right.get()]'
+      ].join('\n'));
+
+      const result = await env.renderScript('Main.script', {});
+
+      expect(result).to.eql(['L', 'R']);
+    });
+
+    it('observes component shared channels from the caller', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('Component.script', 'shared var theme = incomingTheme');
+      loader.addTemplate('Main.script', 'component "Component.script" as card with { incomingTheme: "dark" }\nreturn card.theme');
+
+      const result = await env.renderScript('Main.script', {});
+
+      expect(result).to.be('dark');
+    });
+
+    it('observes component shared text channels only through explicit snapshots', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('Component.script', 'shared text log\nthis.log("ready")');
+      loader.addTemplate('Main.script', 'component "Component.script" as card\nreturn card.log.snapshot()');
+
+      const result = await env.renderScript('Main.script', {});
+
+      expect(result).to.be('ready');
+    });
+
+    it('rejects implicit component reads of non-var shared channels', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('Component.script', 'shared text log\nthis.log("ready")');
+      loader.addTemplate('Main.script', 'component "Component.script" as card\nreturn card.log');
+
+      try {
+        await env.renderScript('Main.script', {});
+        expect().fail('Expected component shared read to fail');
+      } catch (error) {
+        expect(error).to.be.a(runtime.RuntimeFatalError);
+        expect(error.message).to.contain('cannot be used as a bare symbol');
+      }
+    });
+
+    it('rejects unknown component shared channel observations', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('Component.script', 'shared var theme = "dark"');
+      loader.addTemplate('Main.script', 'component "Component.script" as card\nreturn card.missing');
+
+      try {
+        await env.renderScript('Main.script', {});
+        expect().fail('Expected component shared read to fail');
+      } catch (error) {
+        expect(error).to.be.a(runtime.RuntimeFatalError);
+        expect(error.message).to.contain('Shared channel "missing" was not found');
+      }
+    });
+
+    it('runs template component instances through the finalized callable table', async function () {
+      const env = new AsyncEnvironment();
+      const ownerContext = new Context({}, {}, env, 'Main.script', true);
+      const ownerBuffer = new runtime.CommandBuffer(ownerContext, null, null, null);
+      const template = new AsyncTemplate(
+        '{% block label(name) %}Hello {{ name }}{% endblock %}',
+        env,
+        'Component.njk',
+        false
+      );
+
+      const instance = await runtime.createComponentInstance({
+        templateOrPromise: template,
+        payload: {},
+        ownerContext,
+        env,
+        runtime,
+        cb: () => {},
+        ownerBuffer,
+        errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+      });
+
+      const result = await runtime.resolveSingle(instance.callMethod(
+        'label',
+        runtime.createArray(['Ada']),
+        runtime,
+        () => {},
+        { lineno: 1, colno: 1, path: 'Main.script' }
+      ));
+
+      expect(result).to.be('Hello Ada');
+    });
+
+    it('rejects operations after an explicit component close', function () {
+      const context = { path: 'Component.script' };
+      const rootBuffer = new runtime.CommandBuffer(context, null, null, null);
+      const instance = new runtime.ComponentInstance({
+        context,
+        rootBuffer,
+        inheritanceState: runtime.createInheritanceState(),
+        env: {}
+      });
+
+      instance.close();
+
+      expect(() => {
+        instance.callMethod(
+          'label',
+          [],
+          runtime,
+          () => {},
+          { lineno: 1, colno: 1, path: 'Main.script' }
+        );
+      }).to.throwException((error) => {
+        expect(error).to.be.a(runtime.RuntimeFatalError);
+        expect(error.message).to.contain('cannot accept new operations');
+      });
+    });
+
+    it('records constructor startup failures and closes the component buffer', async function () {
+      const seenErrors = [];
+      const ownerContext = {
+        path: 'Main.script',
+        getRenderContextVariables() {
+          return {};
+        },
+        forkForComposition(nextPath, rootContext, renderCtx, payloadContext) {
+          return { path: nextPath, rootContext, renderCtx, payloadContext };
+        }
+      };
+      const ownerBuffer = new runtime.CommandBuffer(ownerContext, null, null, null);
+      let componentRootBuffer = null;
+      const constructorError = new runtime.RuntimeFatalError(
+        'constructor failed',
+        1,
+        1,
+        null,
+        'Component.script'
+      );
+
+      try {
+        await runtime.createComponentInstance({
+          templateOrPromise: {
+            compile() {},
+            rootRenderFunc(envArg, contextArg, runtimeArg, cbArg, compositionMode, output, inheritanceState) {
+              void envArg;
+              void runtimeArg;
+              void cbArg;
+              void compositionMode;
+              componentRootBuffer = output;
+              runtime.bootstrapInheritanceMetadata(
+                inheritanceState,
+                {
+                  path: 'Component.script',
+                  methodEntries: {
+                    __constructor__: {
+                      fn() {
+                        return Promise.reject(constructorError);
+                      },
+                      signature: { argNames: [] },
+                      ownerKey: 'Component.script',
+                      origin: { lineno: 1, colno: 1, errorContextString: null, path: 'Component.script' },
+                      ownLinkedChannels: [],
+                      ownMutatedChannels: [],
+                      super: false,
+                      superOrigin: null,
+                      invokedMethodRefs: {}
+                    }
+                  },
+                  sharedSchema: {},
+                  invokedMethodRefs: {},
+                  hasExtends: false
+                },
+                contextArg
+              );
+            },
+            path: 'Component.script'
+          },
+          payload: {},
+          ownerContext,
+          env: {},
+          runtime,
+          cb: (error) => {
+            seenErrors.push(error);
+          },
+          ownerBuffer,
+          errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+        });
+        expect().fail('Expected component creation to fail');
+      } catch (error) {
+        expect(error.message).to.contain('constructor failed');
+      }
+
+      expect(seenErrors).to.have.length(1);
+      expect(seenErrors[0].message).to.contain('constructor failed');
+      expect(componentRootBuffer.isFinished()).to.be(true);
+    });
+
+    it('rethrows component startup failures on later operations', async function () {
+      const seenErrors = [];
+      const ownerContext = {
+        path: 'Main.script',
+        getRenderContextVariables() {
+          return {};
+        },
+        forkForComposition(nextPath, rootContext, renderCtx, payloadContext) {
+          return { path: nextPath, rootContext, renderCtx, payloadContext };
+        }
+      };
+      const ownerBuffer = new runtime.CommandBuffer(ownerContext, null, null, null);
+
+      const instance = await runtime.createComponentInstance({
+        templateOrPromise: {
+          compile() {},
+          rootRenderFunc(envArg, contextArg, runtimeArg, cbArg) {
+            void envArg;
+            void contextArg;
+            void runtimeArg;
+            setTimeout(() => {
+              cbArg(new runtime.RuntimeFatalError(
+                'async startup failed',
+                1,
+                1,
+                null,
+                'Component.script'
+              ));
+            }, 10);
+          },
+          path: 'Component.script'
+        },
+        payload: {},
+        ownerContext,
+        env: {},
+        runtime,
+        cb: (error) => {
+          if (error) {
+            seenErrors.push(error);
+          }
+        },
+        ownerBuffer,
+        errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      expect(seenErrors).to.have.length(1);
+      expect(() => {
+        instance.callMethod(
+          'build',
+          [],
+          runtime,
+          () => {},
+          { lineno: 1, colno: 1, path: 'Main.script' }
+        );
+      }).to.throwException((error) => {
+        expect(error).to.be.a(runtime.RuntimeFatalError);
+        expect(error.message).to.contain('async startup failed');
+      });
     });
   });
 });
