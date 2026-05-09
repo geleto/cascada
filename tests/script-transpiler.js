@@ -1226,17 +1226,25 @@ return { text: outText.snapshot() }`;
     });
 
     it('should transpile methods to template blocks', () => {
-      const script = `method buildBody(title, user) with context
+      const script = `method buildBody(title, user)
   text outText
   outText("Hello " + user.name + " from " + siteName + ": " + title)
 endmethod`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
 
-      expect(template).to.contain('{%- block buildBody(title, user) with context -%}');
+      expect(template).to.contain('{%- block buildBody(title, user) -%}');
       expect(template).to.contain('{%- text outText -%}');
       expect(template).to.contain('{%- command outText("Hello " + user.name + " from " + siteName + ": " + title) -%}');
       expect(template).to.contain('{%- endblock -%}');
+    });
+
+    it('should reject method with context syntax', () => {
+      const script = `method buildBody(title, user) with context
+  return title
+endmethod`;
+
+      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/method \.\.\. with context/);
     });
   });
   describe('Syntax Validation', () => {

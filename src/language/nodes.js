@@ -249,19 +249,19 @@ class KeywordArgs extends Dict {
 
 class Block extends Node {
   get typename() { return 'Block'; }
-  get fields() { return ['name', 'args', 'body', 'withContext']; }
+  get fields() { return ['name', 'args', 'body']; }
 
-  init(lineno, colno, name, args, body, withContext) {
-    super.init(lineno, colno, name, args || new NodeList(), body, withContext);
+  init(lineno, colno, name, args, body) {
+    super.init(lineno, colno, name, args || new NodeList(), body);
   }
 }
 
 class MethodDefinition extends Node {
   get typename() { return 'MethodDefinition'; }
-  get fields() { return ['name', 'args', 'body', 'withContext']; }
+  get fields() { return ['name', 'args', 'body']; }
 
-  init(lineno, colno, name, args, body, withContext) {
-    super.init(lineno, colno, name, args || new NodeList(), body, withContext);
+  init(lineno, colno, name, args, body) {
+    super.init(lineno, colno, name, args || new NodeList(), body);
   }
 }
 

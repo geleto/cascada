@@ -1,13 +1,13 @@
-# Inheritance2 Technical Design
+# Inheritance Technical Design
 
 ## Goal
 
-`inheritance2` is a clean runtime implementation of async inheritance,
-components, and shared state.
+`src/runtime/inheritance/` is the final runtime implementation of async
+inheritance, components, and shared state.
 
-The current `src/runtime/inheritance/` implementation was experimental. It
-proved the model by trying several concepts incrementally, but it is not the
-shape to preserve. `inheritance2` is the final implementation path.
+The current `src/runtime/inheritance-legacy/` implementation was experimental.
+It proved the model by trying several concepts incrementally, but it is not the
+shape to preserve.
 
 We are willing to break the current inheritance runtime while building this.
 Correctness will be protected by focused unit and integration tests instead of
@@ -78,9 +78,9 @@ block-specific text boundaries, or block-specific channel linking. Keep the
 differences in the compiler/body adapter that lowers block syntax into normal
 inherited method calls.
 
-## Code Outside `src/runtime/inheritance/`
+## Step 0 Surface Cleanup
 
-These changes should be made before wiring the compiler to `inheritance2`.
+This is already part of the branch surface before the new runtime work starts.
 
 ### Remove
 
@@ -170,7 +170,7 @@ not for every small function.
 ## Runtime Modules
 
 ```text
-src/runtime/inheritance2/
+src/runtime/inheritance/
   TECHNICAL-DESIGN.md
   state.js
   loading.js
@@ -408,19 +408,13 @@ real scripts/templates. Add unit tests only for metadata shapes that are hard to
 observe through rendering.
 
 0. Final surface cleanup
-   - rename current `src/runtime/inheritance/` to
-     `src/runtime/inheritance-legacy/`
-   - rename `src/runtime/inheritance2/` to `src/runtime/inheritance/`
-   - update runtime exports/imports to the new final path
-   - remove template block `with` / `with context`
-   - remove script method `with context`
-   - emit inherited callable signatures with only `argNames`
-   - keep composition `with context` for `extends`, `include`, `import`,
+   - completed before the new runtime implementation starts
+   - legacy runtime lives at `src/runtime/inheritance-legacy/`
+   - final runtime work owns `src/runtime/inheritance/`
+   - inherited callable signatures contain only `argNames`
+   - inherited callables read render context by default
+   - composition `with context` remains for `extends`, `include`, `import`,
      `from import`, and `component`
-   - keep legacy runtime references explicit; new compiler-facing code should
-     target `src/runtime/inheritance/`
-   - test parser/compiler rejection for removed callable syntax, compiler
-     output metadata, and final compiler-facing runtime names
 
 1. Standalone template block
    - render a template with one inline block and no `extends`

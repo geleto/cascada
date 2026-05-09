@@ -105,7 +105,7 @@ describe('Template documentation examples', function () {
   it('runs the template inheritance example through StringLoader', async function () {
     const loader = new StringLoader();
     loader.addTemplate('inheritance-base.njk', `
-      {% block content(user) with context %}
+      {% block content(user) %}
         Base {{ user }} / {{ siteName }} / {{ theme or "light" }}
       {% endblock %}
     `);
@@ -113,7 +113,7 @@ describe('Template documentation examples', function () {
       {% set theme = "dark" %}
       {% extends "inheritance-base.njk" with theme %}
 
-      {% block content(user) with context %}
+      {% block content(user) %}
         {% set user = "Grace" %}
         Child {{ user }} / {{ siteName }} / {{ super() }}
       {% endblock %}

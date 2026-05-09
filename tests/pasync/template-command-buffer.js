@@ -8,7 +8,7 @@ import {transform} from '../../src/language/transformer.js';
 import {CompilerAsync} from '../../src/compiler/compiler.js';
 import * as nodes from '../../src/language/nodes.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import * as inheritanceStateRuntime from '../../src/runtime/inheritance/state.js';
+import * as inheritanceStateRuntime from '../../src/runtime/inheritance-legacy/state.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
 
 (function () {

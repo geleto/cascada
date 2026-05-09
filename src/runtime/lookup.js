@@ -9,8 +9,8 @@ import {
   collectErrors,
 } from './errors.js';
 
-import * as inheritanceCall from './inheritance/call.js';
-import * as inheritanceState from './inheritance/state.js';
+import * as inheritanceCall from './inheritance-legacy/call.js';
+import * as inheritanceState from './inheritance-legacy/state.js';
 import {resolveDuo} from './resolve.js';
 import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './channels/observation.js';
 /**

@@ -480,11 +480,11 @@ class CompileInheritance {
     this.emit.line('}');
   }
 
-  emitCallableEntryContextFork(callableNode, isScriptMethod, invocationPath, declaredCallableArgNames, payloadOriginalArgsVar) {
+  emitCallableEntryContextFork(callableNode, isScriptMethod, invocationPath, payloadOriginalArgsVar) {
     if (isScriptMethod) {
       const methodBaseContextVar = this.compiler._tmpid();
       this.emit.line(`const ${methodBaseContextVar} = context.getCompositionContextVariables();`);
-      this.emit.line(`context = context.forkForComposition(${invocationPath}, ${methodBaseContextVar}, ${callableNode.withContext ? '(blockRenderCtx || undefined)' : 'undefined'});`);
+      this.emit.line(`context = context.forkForComposition(${invocationPath}, ${methodBaseContextVar}, (blockRenderCtx || undefined));`);
       return;
     }
 
@@ -492,16 +492,10 @@ class CompileInheritance {
     const compositionPayloadContextVar = this.compiler._tmpid();
     const payloadContextVar = this.compiler._tmpid();
     this.emit.line(`const ${compositionPayloadContextVar} = context.getCompositionPayloadVariables() || {};`);
-    this.emit.line(
-      `const ${signatureBaseContextVar} = ${declaredCallableArgNames.length > 0
-        ? (callableNode.withContext
-          ? `Object.assign({}, (blockRenderCtx || {}), ${compositionPayloadContextVar})`
-          : compositionPayloadContextVar)
-        : `(Object.keys(${compositionPayloadContextVar}).length > 0 ? ${compositionPayloadContextVar} : context.getCompositionContextVariables())`};`
-    );
+    this.emit.line(`const ${signatureBaseContextVar} = Object.assign({}, (blockRenderCtx || {}), ${compositionPayloadContextVar});`);
     this.emit.line(`const ${payloadContextVar} = Object.assign({}, ${signatureBaseContextVar}, ${payloadOriginalArgsVar});`);
     this.emit.line(`if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(${payloadContextVar}).length > 0) {`);
-    this.emit.line(`  context = context.forkForComposition(${invocationPath}, ${payloadContextVar}, ${callableNode.withContext ? 'blockRenderCtx' : 'undefined'});`);
+    this.emit.line(`  context = context.forkForComposition(${invocationPath}, ${payloadContextVar}, blockRenderCtx);`);
     this.emit.line('} else {');
     this.emit.line(`  context = context.forkForPath(${invocationPath});`);
     this.emit.line('}');
@@ -575,7 +569,7 @@ class CompileInheritance {
     }
     const payloadOriginalArgsVar = this.compiler._tmpid();
     this.emit.line(`const ${payloadOriginalArgsVar} = blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};`);
-    this.emitCallableEntryContextFork(callableNode, isScriptMethod, invocationPath, declaredCallableArgNames, payloadOriginalArgsVar);
+    this.emitCallableEntryContextFork(callableNode, isScriptMethod, invocationPath, payloadOriginalArgsVar);
     this.emitCallableEntryParentLinks(callableNode, isScriptMethod);
     this.emitAsyncCallableArgInitialization(callableNode, {
       declaredCallableArgNames,
@@ -620,8 +614,7 @@ class CompileInheritance {
         superOriginExpr: this.compileCallableSuperOriginLiteral(block),
         invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(block)),
         signatureExpr: JSON.stringify({
-          argNames: this.getCallableSignature(block).argNames,
-          withContext: !!block.withContext
+          argNames: this.getCallableSignature(block).argNames
         }),
         ownerKey
       });
@@ -635,7 +628,7 @@ class CompileInheritance {
         superExpr: this.blockUsesSuper(constructorDefinition) ? 'true' : 'false',
         superOriginExpr: this.compileCallableSuperOriginLiteral(constructorDefinition),
         invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(constructorDefinition)),
-        signatureExpr: JSON.stringify({ argNames: [], withContext: false }),
+        signatureExpr: JSON.stringify({ argNames: [] }),
         ownerKey
       }));
     }
@@ -834,9 +827,9 @@ class CompileInheritance {
 
   compileSyncBlock(node, frame) {
     const args = node.args && node.args.children ? node.args.children : [];
-    if (args.length > 0 || node.withContext !== null) {
+    if (args.length > 0) {
       this.compiler.fail(
-        'block signatures and block with-clauses are only supported in async mode',
+        'block signatures are only supported in async mode',
         node.lineno,
         node.colno,
         node

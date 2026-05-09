@@ -151,10 +151,9 @@ function _getInvokedMethodReferenceOrigin(reference, fallbackContext = null) {
 function _normalizeMethodSignature(signature, inheritedSignature = null) {
   let normalizedSignature = signature
     ? {
-      argNames: Array.isArray(signature.argNames) ? signature.argNames.slice() : [],
-      withContext: !!signature.withContext
+      argNames: Array.isArray(signature.argNames) ? signature.argNames.slice() : []
     }
-    : { argNames: [], withContext: false };
+    : { argNames: [] };
 
   if (!inheritedSignature) {
     return normalizedSignature;
@@ -167,13 +166,7 @@ function _normalizeMethodSignature(signature, inheritedSignature = null) {
 
   if (localArgNames.length === 0 && inheritedArgNames.length > 0) {
     normalizedSignature = {
-      argNames: inheritedArgNames.slice(),
-      withContext: !!(normalizedSignature.withContext || inheritedSignature.withContext)
-    };
-  } else if (!normalizedSignature.withContext && inheritedSignature.withContext) {
-    normalizedSignature = {
-      argNames: localArgNames.slice(),
-      withContext: true
+      argNames: inheritedArgNames.slice()
     };
   }
 
@@ -690,7 +683,7 @@ function _assertResolvedMethodData(methodData) {
 }
 
 function _createMethodPayload(methodData, args, errorContext, label, context = null, fallbackToContextOriginalArgs = false) {
-  const signature = methodData.signature ?? { argNames: [], withContext: false };
+  const signature = methodData.signature ?? { argNames: [] };
   const argNames = signature.argNames ?? [];
   let values = args ?? [];
 
@@ -778,8 +771,7 @@ function _invokeResolvedMethodData(command, methodData, invocationBuffer) {
     command.context,
     command.fallbackToContextOriginalArgs
   );
-  const renderCtx = methodData.signature && methodData.signature.withContext &&
-    command.context && typeof command.context.getRenderContextVariables === 'function'
+  const renderCtx = command.context && typeof command.context.getRenderContextVariables === 'function'
     ? command.context.getRenderContextVariables()
     : undefined;
 

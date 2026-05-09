@@ -338,10 +338,9 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
     ? {
       argNames: Array.isArray(entry.signature.argNames)
         ? entry.signature.argNames.slice()
-        : [],
-      withContext: !!entry.signature.withContext
+        : []
     }
-    : { argNames: [], withContext: false };
+    : { argNames: [] };
   clonedEntry.super = cloneInheritanceMethodEntry(entry.super, clones);
   return clonedEntry;
 }
@@ -373,8 +372,7 @@ function cloneInheritanceMethods(localMethods) {
 
 function _formatInheritanceSignature(name, signature) {
   const args = Array.isArray(signature?.argNames) ? signature.argNames.join(', ') : '';
-  const contextSuffix = signature?.withContext ? ' with context' : '';
-  return `${name}(${args})${contextSuffix}`;
+  return `${name}(${args})`;
 }
 
 function createEmptyConstructorEntry(context = null) {
@@ -387,7 +385,7 @@ function createEmptyConstructorEntry(context = null) {
     ownLinkedChannels: [],
     invokedMethodRefs: Object.create(null),
     super: null,
-    signature: { argNames: [], withContext: false },
+    signature: { argNames: [] },
     ownerKey
   };
 }
@@ -405,14 +403,13 @@ function validateInheritanceContractCompatibility(name, overridingEntry, parentE
 
   const overridingNames = Array.isArray(overridingSignature.argNames) ? overridingSignature.argNames : [];
   const parentNames = Array.isArray(parentSignature.argNames) ? parentSignature.argNames : [];
-  const overridingOmittedSignature = overridingNames.length === 0 && !overridingSignature.withContext;
+  const overridingOmittedSignature = overridingNames.length === 0;
   if (overridingOmittedSignature) {
     return;
   }
   const sameLength = overridingNames.length === parentNames.length;
   const sameNames = sameLength && overridingNames.every((value, index) => value === parentNames[index]);
-  const sameContextMode = !!overridingSignature.withContext === !!parentSignature.withContext;
-  if (sameNames && sameContextMode) {
+  if (sameNames) {
     return;
   }
 

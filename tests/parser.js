@@ -106,15 +106,14 @@ const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await im
   }
 
   describe('parser', function() {
-    it('should parse block signatures with inherited context visibility', function() {
-      const ast = parser.parse('{% block content(user) with context %}{{ user }}{% endblock %}');
+    it('should parse block signatures', function() {
+      const ast = parser.parse('{% block content(user) %}{{ user }}{% endblock %}');
       const block = ast.findAll(nodes.Block)[0];
 
       expect(block).to.be.ok();
       expect(block.name.value).to.be('content');
       expect(block.args.children).to.have.length(1);
       expect(block.args.children[0].value).to.be('user');
-      expect(block.withContext).to.be(true);
     });
 
     it('should parse extends composition inputs', function() {
@@ -791,15 +790,15 @@ const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await im
     it('should reject legacy named block with-input lists', function() {
       expect(function() {
         parser.parse('{% block content with user, theme %}{{ user }}{% endblock %}');
-      }).to.throwException(/named block with-inputs are no longer supported/);
+      }).to.throwException(/block with-clauses are not supported/);
 
       expect(function() {
         parser.parse('{% block content with context, user %}{{ user }}{% endblock %}');
-      }).to.throwException(/named block with-inputs are no longer supported/);
+      }).to.throwException(/block with-clauses are not supported/);
     });
 
     it('should parse blocks with explicit signatures', function() {
-      isAST(parser.parse('{% block content(user, theme) with context %}{{ user }}{% endblock %}'),
+      isAST(parser.parse('{% block content(user, theme) %}{{ user }}{% endblock %}'),
         [nodes.Root,
           [nodes.Block,
             [nodes.Symbol, 'content'],
@@ -808,8 +807,7 @@ const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await im
               [nodes.Symbol, 'theme']],
             [nodes.NodeList,
               [nodes.Output,
-                [nodes.Symbol, 'user']]],
-            true]]);
+                [nodes.Symbol, 'user']]]]]);
     });
 
     it('should parse whitespace control', function() {

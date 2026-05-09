@@ -92,11 +92,11 @@ describe('Template Extends', function () {
       expect(result).to.be('Base[Ada]');
     });
 
-    it('should expose render-context bare names through inherited block calls with context', async function () {
+    it('should expose render-context bare names through inherited block calls by default', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', 'Base[{% block body with context %}{{ site }}{% endblock %}]');
+      loader.addTemplate('base.njk', 'Base[{% block body %}{{ site }}{% endblock %}]');
       loader.addTemplate('child.njk', '{% extends "base.njk" %}');
 
       const result = await env.renderTemplate('child.njk', { site: 'Example' });

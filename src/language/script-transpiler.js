@@ -1403,6 +1403,9 @@ class ScriptTranspiler {
       }
 
       if (firstWord === 'method') {
+        if (/\bwith\s+context\b/.test(parseResult.codeContent || '')) {
+          throw new Error(`'method ... with context' is not supported at line ${lineIndex + 1}; inherited methods read render context by default.`);
+        }
         const methodName = this._getLeadingIdentifier(parseResult.codeContent);
         if (methodName && this.RESERVED_DECLARATION_NAMES.has(methodName)) {
           throw new Error(`Identifier '${methodName}' is reserved and cannot be used as a variable or channel name at line ${lineIndex + 1}`);

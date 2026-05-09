@@ -1170,9 +1170,9 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         expect(result.trim()).to.equal('Child Ada');
       });
 
-      it('should expose render-context bare names through block with context in an async override', async () => {
-        loader.addTemplate('base.njk', '{% block content with context %}Base {{ username }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content with context %}Child {{ username }}{% endblock %}';
+      it('should expose render-context bare names through async block overrides by default', async () => {
+        loader.addTemplate('base.njk', '{% block content %}Base {{ username }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ username }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { username: 'Ada' });
         expect(result.trim()).to.equal('Child Ada');
@@ -1242,20 +1242,20 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         }
       });
 
-      it('should allow overriding signature blocks to redeclare with context', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) with context %}Base {{ user }} {{ username }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content(user) with context %}Child {{ user }} {{ username }}{% endblock %}';
+      it('should expose render context in signature block overrides by default', async () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} {{ username }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}Child {{ user }} {{ username }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
         expect(result.trim()).to.equal('Child Ada Grace');
       });
 
-      it('should keep render-context visibility disabled by default for signature blocks without with context', async () => {
+      it('should expose render-context visibility by default for signature blocks', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ username }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content(user) %}Child {{ user }} / {{ username }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
-        expect(result.trim()).to.equal('Child Ada /');
+        expect(result.trim()).to.equal('Child Ada / Grace');
       });
 
       it('should treat base-block with inputs as local vars for rebinding', async () => {
@@ -1295,7 +1295,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           await env.renderTemplateString(childTemplate, { user: 'Ada' });
           expect().fail('Expected legacy named block with-input rejection');
         } catch (err) {
-          expect(String(err)).to.contain('named block with-inputs are no longer supported');
+          expect(String(err)).to.contain('block with-clauses are not supported');
         }
       });
 
@@ -1313,17 +1313,15 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         }
       });
 
-      it('should reject overriding block signatures when with-context mode differs from the parent', async () => {
+      it('should reject block with context syntax', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content(user) with context %}Child {{ user }} {{ username }}{% endblock %}';
 
         try {
           await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
-          expect().fail('Expected overriding block context-mode mismatch');
+          expect().fail('Expected block with-context rejection');
         } catch (err) {
-          expect(String(err)).to.contain('block "content" signature mismatch');
-          expect(String(err)).to.contain('content(user) with context');
-          expect(String(err)).to.contain('content(user)');
+          expect(String(err)).to.contain('block with-clauses are not supported');
         }
       });
 
@@ -1342,9 +1340,9 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         }
       });
 
-      it('should not treat render-context visibility from with context as inherited explicit block arguments', async () => {
-        loader.addTemplate('base.njk', '{% block content with context %}Base {{ username }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content with context %}{% var username = "Grace" %}{{ username }} / {{ super() }}{% endblock %}';
+      it('should not treat render-context visibility as inherited explicit block arguments', async () => {
+        loader.addTemplate('base.njk', '{% block content %}Base {{ username }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}{% var username = "Grace" %}{{ username }} / {{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { username: 'Ada' });
         expect(result.trim()).to.equal('Grace / Base Ada');
@@ -1401,7 +1399,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       });
 
       it('should let explicit block arguments shadow render-context properties of the same name', async () => {
-        const template = '{% set user = "ExplicitUser" %}{% block content(user) with context %}{{ user }}{% endblock %}';
+        const template = '{% set user = "ExplicitUser" %}{% block content(user) %}{{ user }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, { user: 'RenderUser' });
         expect(result.trim()).to.equal('ExplicitUser');
@@ -1490,16 +1488,16 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       });
 
       it('should let extends payload expose render-context values while explicit names still win', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) with context %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
-        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with context, theme %}{% block content(user) with context %}{{ super() }}{% endblock %}';
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
+        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with context, theme %}{% block content(user) %}{{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', locale: 'de', siteName: 'Docs', theme: 'render-theme' });
         expect(result.trim()).to.equal('Base Ada / de / dark / Docs');
       });
 
       it('should preserve explicit payload names when inherited blocks read render context', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) with context %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
-        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block content(user) with context %}{{ super() }}{% endblock %}';
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
+        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block content(user) %}{{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', locale: 'de', siteName: 'Docs' });
         expect(result.trim()).to.equal('Base Ada / de / dark / Docs');
@@ -1523,7 +1521,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" %}{% block content(user) %}{{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', siteName: 'Docs' });
-        expect(result.trim()).to.equal('Base Ada /  /');
+        expect(result.trim()).to.equal('Base Ada /  / Docs');
       });
 
       it('should isolate extends-with root configuration across concurrent renders of the same templates', async () => {

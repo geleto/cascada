@@ -700,15 +700,14 @@ import "f.script" as fmt with context, locale
 
 // [METH-02] RULE: Every overriding method declares its own argument list. Methods read/write shared via this.
 // CONSTRAINT: Constructor-local vars (declared after `extends`) are NOT visible inside method bodies.
-// Composition payload accessible by bare name.
+// Composition payload and render-context values are accessible by bare name.
 
 // [METH-03] RULE: `super()` calls the parent's method with the ORIGINAL invocation arguments.
 // `super(args...)` lets the child pass DIFFERENT arguments.
 // In direct-render mode, super() returns the parent constructor's return value to the calling body.
 
-// [METH-04] RULE: `method name(args) with context` exposes render-context bare names inside the body.
-// CONSTRAINT: Contract is INHERITED by overrides automatically — child does not re-declare with context.
-// Default is "without context".
+// [METH-04] RULE: Inherited methods read render-context bare names by default.
+// `method ... with context` is not supported.
 
 // [EXT-08] RULE: Constructor = the script body (after `extends`). Most-derived child runs first; ancestor
 // constructors run only when `super()` is reached. If no executable body after `extends`, no local
@@ -840,7 +839,7 @@ Hello {{ user.name }}
 {{ caller() }}
 
 {# [TPL-11] RULE: `super()` inside an overriding block RENDERS the parent block's text. #}
-{% block content(user) with context %}
+{% block content(user) %}
   Child {{ user }} — {{ super() }}
 {% endblock %}
 
@@ -873,15 +872,16 @@ Hello {{ user.name }}
 ## TPL-INHERIT — Block Arguments and Shared State
 
 ```nunjucks
-{# [TPL-16] RULE: Async Cascada blocks are ISOLATED — receive data only via declared args and `with context`.
-   DIFFERENTIAL: Classic Nunjucks blocks see caller frame implicitly. Async Cascada does not. #}
+{# [TPL-16] RULE: Async Cascada blocks read render context by default but do NOT capture placement locals.
+   DIFFERENTIAL: Classic Nunjucks blocks see caller frame implicitly. Async Cascada requires explicit args. #}
 {% set user = getUser() %}
 {% block greeting(user) %}
   Hello {{ user.name }}
 {% endblock %}
 
-{# [TPL-17] RULE: `{% block name(a, b) %}` declares args; `{% block name(a) with context %}` adds render-context.
-   CONSTRAINT: Overrides MUST match parent's signature exactly, including `with context`.
+{# [TPL-17] RULE: `{% block name(a, b) %}` passes positional placement values.
+   `{% block name(arg = localValue) %}` passes a named placement binding.
+   CONSTRAINT: Overrides MUST match parent's argument signature exactly.
    `super()` renders the parent with the ORIGINAL block arguments (not reassigned locals).
    Parent/loop/top-level locals are NOT captured; pass them as block args or payload. #}
 
@@ -909,7 +909,7 @@ Theme: {{ this.theme }}
 | `while` body | Uses parent scope | Each iteration isolated |
 | `include` | Sees caller's `{% set %}` vars | Isolated; only `with` inputs |
 | `import` | Macros see only own args | Isolated; only `with` inputs |
-| `block` | Sees caller frame | Isolated; declared args + `with context` |
+| `block` | Sees caller frame | Render context + declared args; no placement locals |
 | Child top-level `{% set %}` | Visible in child's blocks | Not captured; pass as block arg, payload, or `this.<name>` |
 
 ---
@@ -978,7 +978,7 @@ Theme: {{ this.theme }}
 | C23 | Bare assignment to shared name is compile error; use `this.x = v` | EXT-06 |
 | C24 | `this.method` without `(...)` is a compile error | METH-01 |
 | C25 | Constructor-local vars (after `extends`) NOT visible in method bodies | METH-02 |
-| C26 | `method ... with context` contract is INHERITED automatically | METH-04 |
+| C26 | Inherited methods read render context by default | METH-04 |
 | C27 | At chain root, `this.method(...)` for unregistered method is fatal | EXT-10 |
 | C28 | Component shared channels are READ-ONLY from caller | COMPONENT-04 |
 | C29 | Component names starting with `_` are private (not observable) | COMPONENT-04 |
@@ -987,7 +987,7 @@ Theme: {{ this.theme }}
 | C32 | `guard *` cannot be combined with other selectors; duplicates invalid | GUARD-03 |
 | C33 | `guard` variable protection blocks dependents until guard finishes | GUARD-06 |
 | C34 | Templates use `{% set %}`, `{% do %}`, `{% block %}` (not `var`/`=`/`method`) | TPL-02, TPL-06, TPL-09 |
-| C35 | Async block overrides must match parent signature (incl. `with context`) | TPL-17 |
+| C35 | Async block overrides must match parent argument signature | TPL-17 |
 | C36 | Templates infer shared vars from `this.<name>` paths — no `shared` decl | TPL-18 |
 | C37 | `with` payloads are ASYNC-ONLY (sync Nunjucks retains implicit caller scope) | TPL-21 |
 | C38 | Template `include` not available in scripts | TPL-13 |

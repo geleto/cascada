@@ -6,8 +6,8 @@ import * as nodes from '../../src/language/nodes.js';
 import * as transformer from '../../src/language/transformer.js';
 import * as scriptTranspiler from '../../src/language/script-transpiler.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import * as inheritanceStateModule from '../../src/runtime/inheritance/state.js';
-import * as inheritanceCallModule from '../../src/runtime/inheritance/call.js';
+import * as inheritanceStateModule from '../../src/runtime/inheritance-legacy/state.js';
+import * as inheritanceCallModule from '../../src/runtime/inheritance-legacy/call.js';
 import {StringLoader} from '../util.js';
 
 describe('Extends Foundation', function () {
@@ -1115,7 +1115,7 @@ describe('Extends Foundation', function () {
           output.finish();
           return 'done';
         },
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         ownerKey: 'Main.script',
         ownMutatedChannels: ['log'],
         ownLinkedChannels: ['log'],
@@ -1222,7 +1222,7 @@ describe('Extends Foundation', function () {
       expect(script.inheritanceSpec.methodEntries.build.ownLinkedChannels).to.be.an(Array);
       expect(script.inheritanceSpec.methodEntries.build.super).to.be(false);
       expect(script.inheritanceSpec.methodEntries.build.superOrigin).to.be(null);
-      expect(script.inheritanceSpec.methodEntries.build.signature).to.eql({ argNames: ['user'], withContext: false });
+      expect(script.inheritanceSpec.methodEntries.build.signature).to.eql({ argNames: ['user'] });
       expect(script.inheritanceSpec.methodEntries.build.ownerKey).to.be('method-metadata.script');
     });
 
@@ -1253,7 +1253,7 @@ describe('Extends Foundation', function () {
       expect(script.inheritanceSpec.methodEntries.__constructor__.ownLinkedChannels).to.contain('trace');
       expect(script.inheritanceSpec.methodEntries.__constructor__.super).to.be(false);
       expect(script.inheritanceSpec.methodEntries.__constructor__.superOrigin).to.be(null);
-      expect(script.inheritanceSpec.methodEntries.__constructor__.signature).to.eql({ argNames: [], withContext: false });
+      expect(script.inheritanceSpec.methodEntries.__constructor__.signature).to.eql({ argNames: [] });
       expect(script.inheritanceSpec.methodEntries.__constructor__.ownerKey).to.be('constructor-metadata.script');
     });
 
@@ -1667,7 +1667,7 @@ describe('Extends Foundation', function () {
           return null;
         },
         ownerKey: 'invalid-invoked-footprint.script',
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         mergedMutatedChannels: [],
         mergedLinkedChannels: [],
         super: null,
@@ -1693,7 +1693,7 @@ describe('Extends Foundation', function () {
           return null;
         },
         ownerKey: 'malformed-metadata.script',
-        signature: { argNames: [], withContext: false }
+        signature: { argNames: [] }
       };
 
       expect(() => {
@@ -1712,7 +1712,7 @@ describe('Extends Foundation', function () {
           return null;
         },
         ownerKey: 'malformed-mutated-metadata.script',
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         ownLinkedChannels: []
       };
 
@@ -1770,7 +1770,7 @@ describe('Extends Foundation', function () {
 
       const resolvedSuper = inheritanceCallModule.getMethodData(inheritanceState, '__constructor__').super;
       expect(resolvedSuper).to.be.ok();
-      expect(resolvedSuper.signature).to.eql({ argNames: [], withContext: false });
+      expect(resolvedSuper.signature).to.eql({ argNames: [] });
       expect(resolvedSuper.ownerKey).to.be('missing-constructor-super.script');
     });
 
@@ -1929,7 +1929,7 @@ describe('Extends Foundation', function () {
             events.push('constructor');
             return null;
           },
-          signature: { argNames: [], withContext: false },
+          signature: { argNames: [] },
           ownerKey: 'Main.script',
           ownMutatedChannels: [],
           ownLinkedChannels: [],
@@ -1976,7 +1976,7 @@ describe('Extends Foundation', function () {
             events.push('build');
             return 'done';
           },
-          signature: { argNames: [], withContext: false },
+          signature: { argNames: [] },
           ownerKey: 'Main.script',
           ownMutatedChannels: [],
           ownLinkedChannels: [],
@@ -2017,7 +2017,7 @@ describe('Extends Foundation', function () {
           fn() {
             return 'build';
           },
-          signature: { argNames: [], withContext: false },
+          signature: { argNames: [] },
           ownerKey: 'Main.script',
           ownMutatedChannels: [],
           ownLinkedChannels: [],
@@ -2028,7 +2028,7 @@ describe('Extends Foundation', function () {
           fn() {
             return 'helper';
           },
-          signature: { argNames: [], withContext: false },
+          signature: { argNames: [] },
           ownerKey: 'Main.script',
           ownMutatedChannels: [],
           ownLinkedChannels: [],
@@ -2114,7 +2114,7 @@ describe('Extends Foundation', function () {
       expect(reusedState).to.be(state);
       expect(resolvedBuild).to.be.ok();
       expect(resolvedBuild.ownerKey).to.be('A.script');
-      expect(resolvedBuild.signature).to.eql({ argNames: ['name'], withContext: false });
+      expect(resolvedBuild.signature).to.eql({ argNames: ['name'] });
     });
 
     it('should keep repeated bootstrap of the same owner idempotent', function () {
@@ -2343,7 +2343,7 @@ describe('Extends Foundation', function () {
           fn() {
             return 'ok';
           },
-          signature: { argNames: [], withContext: false },
+          signature: { argNames: [] },
           mergedMutatedChannels: [],
           mergedLinkedChannels: [],
           super: null,
@@ -2397,7 +2397,7 @@ describe('Extends Foundation', function () {
           return null;
         },
         ownerKey: 'Helper.script',
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         mergedMutatedChannels: ['helperWrite'],
         mergedLinkedChannels: ['helperRead', 'helperWrite'],
         super: null,
@@ -2408,7 +2408,7 @@ describe('Extends Foundation', function () {
           return null;
         },
         ownerKey: 'Main.script',
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         mergedMutatedChannels: ['localWrite', 'superWrite', 'helperWrite'],
         mergedLinkedChannels: [
           'localRead',
@@ -2423,7 +2423,7 @@ describe('Extends Foundation', function () {
             return null;
           },
           ownerKey: 'Parent.script',
-          signature: { argNames: [], withContext: false },
+          signature: { argNames: [] },
           mergedMutatedChannels: ['superWrite'],
           mergedLinkedChannels: ['superRead', 'superWrite'],
           super: null,
@@ -2459,7 +2459,7 @@ describe('Extends Foundation', function () {
           return null;
         },
         ownerKey: 'Main.script',
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         mergedMutatedChannels: ['localWrite'],
         mergedLinkedChannels: ['localRead', 'localWrite'],
         super: null
@@ -2480,7 +2480,7 @@ describe('Extends Foundation', function () {
           return null;
         },
         ownerKey: 'malformed-linked-resolved.script',
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         mergedMutatedChannels: ['localWrite'],
         super: null
       })).to.throwException((error) => {
@@ -2501,7 +2501,7 @@ describe('Extends Foundation', function () {
           return null;
         },
         ownerKey: 'malformed-mutated-resolved.script',
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         mergedLinkedChannels: ['localRead'],
         super: null
       })).to.throwException((error) => {
@@ -2523,7 +2523,7 @@ describe('Extends Foundation', function () {
             return null;
           },
           ownerKey: 'Main.script',
-          signature: { argNames: [], withContext: false },
+          signature: { argNames: [] },
           mergedMutatedChannels: [],
           mergedLinkedChannels: [],
           super: {

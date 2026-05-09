@@ -17,7 +17,7 @@ import {delay} from '../util.js';
 
     describe('compiled template metadata', () => {
       it('should not expose legacy blockContracts on compiled async templates', () => {
-        const tmpl = new AsyncTemplate('{% block content(user) with context %}{{ user }}{% endblock %}', env);
+        const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env);
         tmpl.compile();
         expect(tmpl).not.to.have.property('blockContracts');
       });

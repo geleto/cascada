@@ -3,7 +3,7 @@ import expect from 'expect.js';
 import {AsyncEnvironment, Script, Context} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import * as inheritanceCallModule from '../../src/runtime/inheritance/call.js';
+import * as inheritanceCallModule from '../../src/runtime/inheritance-legacy/call.js';
 
 describe('Extends Runtime', function () {
   let env;
@@ -395,11 +395,11 @@ describe('Extends Runtime', function () {
       expect(result).to.be('C>B>A(x)');
     });
 
-    it('should pass render context into inherited methods declared with context', async function () {
+    it('should pass render context into inherited methods by default', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.script', 'method build(name) with context\n  return name + "|" + siteName\nendmethod');
+      loader.addTemplate('A.script', 'method build(name)\n  return name + "|" + siteName\nendmethod');
       loader.addTemplate('C.script', 'extends "A.script"\nreturn this.build("Ada")');
 
       const result = await env.renderScript('C.script', {
@@ -410,7 +410,7 @@ describe('Extends Runtime', function () {
 
     it('should compile inherited methods against the composition-context baseline instead of render-context-only fallback', function () {
       const source = new Script(
-        'extends "A.script"\nmethod build() with context\n  return siteName\nendmethod\nreturn null',
+        'extends "A.script"\nmethod build()\n  return siteName\nendmethod\nreturn null',
         env,
         'composition-context-method.script'
       ).compileSource();
@@ -570,7 +570,7 @@ describe('Extends Runtime', function () {
         fn() {
           return 'done';
         },
-        signature: { argNames: [], withContext: false },
+        signature: { argNames: [] },
         ownerKey: 'Main.script',
         ownMutatedChannels: ['trace'],
         ownLinkedChannels: ['theme', 'trace'],
@@ -601,7 +601,7 @@ describe('Extends Runtime', function () {
       expect(value).to.be('done');
       expect(methodMeta).to.be.ok();
       expect(methodMeta.fn).to.be(inheritanceState.methods.build.fn);
-      expect(methodMeta.signature).to.eql({ argNames: [], withContext: false });
+      expect(methodMeta.signature).to.eql({ argNames: [] });
       expect(methodMeta.mergedMutatedChannels).to.contain('trace');
       expect(methodMeta.mergedLinkedChannels).to.contain('theme');
       expect(methodMeta.mergedLinkedChannels).to.contain('trace');
@@ -632,7 +632,7 @@ describe('Extends Runtime', function () {
           fn() {
             return 'done';
           },
-          signature: { argNames: [], withContext: false },
+          signature: { argNames: [] },
           ownerKey: 'Parent.script',
           mergedMutatedChannels: [],
           mergedLinkedChannels: [],

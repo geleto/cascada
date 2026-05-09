@@ -468,8 +468,7 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
         child.colno,
         child.name,
         child.args,
-        child.body,
-        child.withContext
+        child.body
       ));
       return;
     }

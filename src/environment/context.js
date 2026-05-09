@@ -129,15 +129,13 @@ class Context extends Obj {
     const parentNames = parentContract.argNames || [];
     const sameLength = overridingNames.length === parentNames.length;
     const sameNames = sameLength && overridingNames.every((value, index) => value === parentNames[index]);
-    const sameContextMode = !!overridingContract.withContext === !!parentContract.withContext;
-    if (sameNames && sameContextMode) {
+    if (sameNames) {
       return;
     }
 
     const formatContract = (contract) => {
       const args = (contract.argNames || []).join(', ');
-      const contextSuffix = contract.withContext ? ' with context' : '';
-      return `${name}(${args})${contextSuffix}`;
+      return `${name}(${args})`;
     };
 
     throw new TemplateError(

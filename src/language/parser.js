@@ -675,15 +675,15 @@ class Parser extends Obj {
       node.args = this.parseSignature(false);
     }
 
-    const compositionInputs = this.parseCompositionWithClause('parseBlock');
-    if (compositionInputs.withVars && compositionInputs.withVars.children && compositionInputs.withVars.children.length > 0) {
+    const nextTok = this.peekToken();
+    if (nextTok && nextTok.type === lexer.TOKEN_SYMBOL &&
+      (nextTok.value === 'with' || nextTok.value === 'without')) {
       this.fail(
-        'parseBlock: named block with-inputs are no longer supported; use block name(args)',
-        tag.lineno,
-        tag.colno
+        'parseBlock: block with-clauses are not supported; use block arguments for placement-local values',
+        nextTok.lineno,
+        nextTok.colno
       );
     }
-    node.withContext = compositionInputs.withContext;
 
     this.advanceAfterBlockEnd(tag.value);
 
