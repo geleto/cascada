@@ -2424,7 +2424,7 @@ await env.renderScript("child.script", {
 - `this.method(...)` participates in inheritance lookup. `this.method` without a call is a compile-time error.
 - Every overriding method declares its own argument list.
 - Methods return values via `return`. Shared declarations are declared before `extends` at the top of the file; methods read and write them via `this.<name>`. Constructor-local variables (declared after `extends`) are not visible inside method bodies.
-- Composition payload values are accessible by bare name, and render-context values when `with context` applies (see below).
+- Composition payload values and render-context values are accessible by bare name inside inherited methods.
 
 #### `super()` and `super(...)`
 
@@ -2456,13 +2456,11 @@ endmethod
 
 This renders to `"Anonymous: Q1 Report"`.
 
-#### `method ... with context`
-
-A method can declare `with context` to access render-context values by bare name inside the body. The contract is inherited automatically by child overrides - the child does not need to re-declare it:
+#### Method Context
 
 ```cascada
 // base.script
-method buildBody(title, user) with context
+method buildBody(title, user)
   return "[" + siteName + "] " + user.name + ": " + title
 endmethod
 
@@ -2488,7 +2486,9 @@ await env.renderScript("child.script", {
 // "[Child/Acme] Ada: Q1 Report"
 ```
 
-The default for a method is "without context" unless the base method explicitly declares `with context`. Child overrides and `super()` calls inherit that render-context visibility automatically - the child does not need to re-declare `with context`. Unlike shared state, which requires `this.<name>`, render-context values in a `with context` method are accessible as plain bare names.
+Inherited methods can read render-context values by bare name by default.
+Unlike shared state, which requires `this.<name>`, render-context values are
+ordinary bare-name reads.
 
 #### Direct Render
 

@@ -187,9 +187,25 @@ The full composition model - `with`, `with context`, `extends ... with ...`, res
 - Template inheritance uses `{% block name(args) %}` / `{% endblock %}` where scripts use `method name(args)` / `endmethod`. Both support `this.blockName(args)` / `this.methodName(args)` for calling an override via inherited dispatch.
 - `with` clauses and the explicit payload model are async-only. In classic Nunjucks (sync) mode, templates retain implicit access to all parent-scope variables.
 
-### Blocks in Async Templates
+### Async Template Inheritance
 
-Classic Nunjucks blocks have implicit access to the caller's scope. Cascada async blocks are isolated - they receive data only through declared arguments, with `with context` optionally exposing render-context names:
+In template inheritance, the root or base template describes the structure of
+the document. Its text and block positions decide where output appears. A child
+template customizes that structure by overriding named blocks; the override
+fills the parent block position rather than rendering where the child wrote the
+override.
+
+Code outside blocks in an extending async template is startup code. It can
+prepare values, pass inputs with `extends ... with ...`, and write shared state
+through `this.<name>`, but it does not add visible layout at that source
+position. Put visible inherited content in blocks, or in the root/base template
+structure that places those blocks.
+
+Classic Nunjucks blocks have implicit access to the caller's local scope.
+Cascada async blocks are more explicit: they can read render-context names by
+default, but they do not capture surrounding template locals such as loop
+variables, branch locals, or values created with `{% set %}`. Pass those
+placement-local values as block arguments:
 
 ```nunjucks
 {# Nunjucks - block sees caller's local variables implicitly #}
@@ -198,24 +214,23 @@ Classic Nunjucks blocks have implicit access to the caller's scope. Cascada asyn
   Hello {{ user.name }}
 {% endblock %}
 
-{# Cascada async - block receives data through declared arguments #}
+{# Cascada async - placement-local values are passed explicitly #}
 {% set user = getUser() %}
 {% block greeting(user) %}
   Hello {{ user.name }}
 {% endblock %}
 ```
 
-- `{% block name(arg1, arg2) %}` - block-local arguments; local variables that shadow render-context names.
-- `{% block name(args) with context %}` - also exposes render-context bare names.
-- Overrides must match the parent's signature exactly, including `with context`.
+- `{% block name(arg1, arg2) %}` - block-local arguments for values from the placement scope; render-context names are visible by default.
+- Overrides must match the parent's argument signature exactly.
 - `super()` renders the parent block with the original block arguments.
-- Bare variables from the surrounding template scope are not captured by a block. Pass loop/top-level values as block arguments, pass composition inputs with `extends ... with ...`, or read hierarchy state explicitly through `this.<name>`.
+- Bare variables from the surrounding template local scope are not captured by a block. Pass loop/top-level values as block arguments, pass composition inputs with `extends ... with ...`, or read hierarchy state explicitly through `this.<name>`.
 
 ### Inheritance Example
 
 ```nunjucks
 {# base.njk #}
-{% block content(user) with context %}
+{% block content(user) %}
   Base {{ user }} / {{ siteName }} / {{ theme or "light" }}
 {% endblock %}
 ```
@@ -225,7 +240,7 @@ Classic Nunjucks blocks have implicit access to the caller's scope. Cascada asyn
 {% set theme = "dark" %}
 {% extends "base.njk" with theme %}
 
-{% block content(user) with context %}
+{% block content(user) %}
   {% set user = "Grace" %}
   Child {{ user }} / {{ siteName }} / {{ super() }}
 {% endblock %}
@@ -246,7 +261,7 @@ Child Grace / Docs / Base Ada / Docs / dark
 What this shows:
 
 - `super()` still sees the original block argument `user = "Ada"`, even though the child reassigned the local `user` to `"Grace"`.
-- `siteName` is visible inside both blocks because of `with context`, not because it is an explicit argument.
+- `siteName` is visible inside both blocks because render-context names are available by default.
 - `theme` comes from the `extends ... with ...` payload, not from block arguments or render context.
 - A child top-level `{% set theme = ... %}` would not be visible in `content` by itself. The value crosses the inheritance boundary because the child passes it with `{% extends "base.njk" with theme %}`.
 
@@ -296,7 +311,7 @@ All composition boundaries are isolated in async mode - the child sees only what
 |---|---|---|
 | `include` | Sees all caller's `{% set %}` variables | Isolated - sees only explicit `with` inputs |
 | `import` | Macros see only their own arguments | Isolated - sees only explicit `with` inputs |
-| `block` | Sees caller's frame | Isolated - sees only declared block arguments and `with context` names |
+| `block` | Sees caller's frame | Sees render-context names and declared block arguments; does not see caller/placement locals |
 | Child top-level `{% set %}` | Visible in the child's own blocks | Not captured by blocks; pass it as a block arg, `extends ... with` payload, or `this.<name>` shared state |
 
 ### Passing Data with `with`
