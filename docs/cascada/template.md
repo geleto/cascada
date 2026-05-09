@@ -199,7 +199,10 @@ Code outside blocks in an extending async template is startup code. It can
 prepare values, pass inputs with `extends ... with ...`, and write shared state
 through `this.<name>`, but it does not add visible layout at that source
 position. Put visible inherited content in blocks, or in the root/base template
-structure that places those blocks.
+structure that places those blocks. Template startup code does not support
+`super()`; after startup completes, parent rendering happens automatically, as
+if an implicit parent render were placed at the end. Only block bodies use
+`super()` to render the parent block.
 
 Classic Nunjucks blocks have implicit access to the caller's local scope.
 Cascada async blocks are more explicit: they can read render-context names by
