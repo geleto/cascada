@@ -78,11 +78,11 @@ function ensureInheritanceSharedSchemaTable(state) {
   return state.sharedSchema;
 }
 
-function ensureInheritanceInvokedMethodsTable(state) {
-  if (!state.invokedMethods) {
-    state.invokedMethods = Object.create(null);
+function ensureInheritanceInvokedMethodRefsTable(state) {
+  if (!state.invokedMethodRefs) {
+    state.invokedMethodRefs = Object.create(null);
   }
-  return state.invokedMethods;
+  return state.invokedMethodRefs;
 }
 
 function createInheritanceMethodsTable() {
@@ -121,7 +121,7 @@ class InheritanceState {
   constructor() {
     this.methods = createInheritanceMethodsTable();
     this.sharedSchema = Object.create(null);
-    this.invokedMethods = Object.create(null);
+    this.invokedMethodRefs = Object.create(null);
     this.sharedRootBuffer = null;
     this.compositionPayload = null;
     ensureInheritanceInternalState(this);
@@ -305,7 +305,7 @@ function leaveInheritanceChainPath(state, token) {
 }
 
 function releaseInheritanceBootstrapMetadata(state) {
-  state.invokedMethods = Object.create(null);
+  state.invokedMethodRefs = Object.create(null);
   const internalState = ensureInheritanceInternalState(state);
   if (internalState) {
     internalState.chainPathStack = [];
@@ -332,7 +332,7 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
   if (Array.isArray(entry.ownLinkedChannels)) {
     clonedEntry.ownLinkedChannels = entry.ownLinkedChannels.slice();
   }
-  clonedEntry.invokedMethods = cloneInvokedMethodsMap(entry.invokedMethods);
+  clonedEntry.invokedMethodRefs = cloneInvokedMethodRefsMap(entry.invokedMethodRefs);
   clonedEntry.superOrigin = entry.superOrigin ? { ...entry.superOrigin } : null;
   clonedEntry.signature = entry.signature
     ? {
@@ -346,13 +346,13 @@ function cloneInheritanceMethodEntry(entry, clones = new Map()) {
   return clonedEntry;
 }
 
-function cloneInvokedMethodsMap(invokedMethods) {
+function cloneInvokedMethodRefsMap(invokedMethodRefs) {
   const cloned = Object.create(null);
   // Values are method-name strings before bootstrap and metadata references
   // after bootstrap; shallow cloning preserves the intended identity in both cases.
-  const names = Object.keys(invokedMethods ?? {});
+  const names = Object.keys(invokedMethodRefs ?? {});
   for (let i = 0; i < names.length; i++) {
-    const value = invokedMethods[names[i]];
+    const value = invokedMethodRefs[names[i]];
     cloned[names[i]] = value && typeof value === 'object'
       ? { ...value, origin: value.origin ? { ...value.origin } : null }
       : value;
@@ -385,7 +385,7 @@ function createEmptyConstructorEntry(context = null) {
     },
     ownMutatedChannels: [],
     ownLinkedChannels: [],
-    invokedMethods: Object.create(null),
+    invokedMethodRefs: Object.create(null),
     super: null,
     signature: { argNames: [], withContext: false },
     ownerKey
@@ -522,27 +522,27 @@ function registerInheritanceSharedSchema(state, localSharedSchema, context = nul
   return sharedSchema;
 }
 
-function registerInheritanceInvokedMethods(state, localInvokedMethods, context = null) {
-  const invokedMethods = ensureInheritanceInvokedMethodsTable(state);
-  const names = Object.keys(localInvokedMethods);
+function registerInheritanceInvokedMethodRefs(state, localInvokedMethodRefs, context = null) {
+  const invokedMethodRefs = ensureInheritanceInvokedMethodRefsTable(state);
+  const names = Object.keys(localInvokedMethodRefs);
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
     if (!name) {
       continue;
     }
-    const localEntry = localInvokedMethods[name];
+    const localEntry = localInvokedMethodRefs[name];
     if (localEntry && typeof localEntry === 'object') {
-      invokedMethods[name] = { ...localEntry, origin: localEntry.origin ? { ...localEntry.origin } : null };
+      invokedMethodRefs[name] = { ...localEntry, origin: localEntry.origin ? { ...localEntry.origin } : null };
       continue;
     }
-    invokedMethods[name] = {
+    invokedMethodRefs[name] = {
       name: typeof localEntry === 'string' ? localEntry : name,
       origin: {
         path: context?.path ?? null
       }
     };
   }
-  return invokedMethods;
+  return invokedMethodRefs;
 }
 
 function validateInheritanceSharedMethodNameCollisions(state, context = null, errors = null) {
@@ -614,4 +614,4 @@ function finalizeInheritanceMethods(state, context = null, errors = null) {
   }
   return sharedMethods;
 }
-export { InheritanceState, createInheritanceState, setInheritanceStartupPromise, awaitInheritanceStartup, mergeInheritanceStartupPromise, beginInheritanceMetadataReadiness, resolveInheritanceMetadataReadiness, rejectInheritanceMetadataReadiness, awaitInheritanceMetadataReadiness, isInheritanceMetadataReadinessResolved, consumeInheritanceMetadataReadyYield, setComponentCompositionMode, isComponentCompositionMode, enterInheritanceChainPath, leaveInheritanceChainPath, cloneInheritanceMethodEntry, cloneInheritanceMethods, ensureInheritanceMethodsTable, ensureInheritanceSharedSchemaTable, ensureInheritanceInvokedMethodsTable, registerInheritanceMethods, wireResolvedSuperEntry, registerInheritanceSharedSchema, registerInheritanceInvokedMethods, validateInheritanceSharedMethodNameCollisions, finalizeInheritanceMethods, releaseInheritanceBootstrapMetadata, createEmptyConstructorEntry, createInheritanceMetadataAggregateError, collectOrThrowInheritanceMetadataError };
+export { InheritanceState, createInheritanceState, setInheritanceStartupPromise, awaitInheritanceStartup, mergeInheritanceStartupPromise, beginInheritanceMetadataReadiness, resolveInheritanceMetadataReadiness, rejectInheritanceMetadataReadiness, awaitInheritanceMetadataReadiness, isInheritanceMetadataReadinessResolved, consumeInheritanceMetadataReadyYield, setComponentCompositionMode, isComponentCompositionMode, enterInheritanceChainPath, leaveInheritanceChainPath, cloneInheritanceMethodEntry, cloneInheritanceMethods, ensureInheritanceMethodsTable, ensureInheritanceSharedSchemaTable, ensureInheritanceInvokedMethodRefsTable, registerInheritanceMethods, wireResolvedSuperEntry, registerInheritanceSharedSchema, registerInheritanceInvokedMethodRefs, validateInheritanceSharedMethodNameCollisions, finalizeInheritanceMethods, releaseInheritanceBootstrapMetadata, createEmptyConstructorEntry, createInheritanceMetadataAggregateError, collectOrThrowInheritanceMetadataError };

@@ -197,7 +197,7 @@ class CompileInheritance {
     return !!(this.compiler.scriptMode && node instanceof nodes.MethodDefinition);
   }
 
-  emitAsyncRootStateInitialization(compiledMethodsVar, compiledSharedSchemaVar, compiledInvokedMethodsVar) {
+  emitAsyncRootStateInitialization(compiledMethodEntriesVar, compiledSharedSchemaVar, compiledInvokedMethodRefsVar) {
     if (!this.compiler.needsInheritanceState) {
       this.emit.line('if (inheritanceState) {');
       this.emit.line('  inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
@@ -207,7 +207,7 @@ class CompileInheritance {
     this.emit.line('if (!inheritanceState) {');
     this.emit.line('  inheritanceState = runtime.createInheritanceState();');
     this.emit.line('}');
-    this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledMethodsVar}, ${compiledSharedSchemaVar}, ${compiledInvokedMethodsVar}, ${this.compiler.buffer.currentBuffer}, context);`);
+    this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledMethodEntriesVar}, ${compiledSharedSchemaVar}, ${compiledInvokedMethodRefsVar}, ${this.compiler.buffer.currentBuffer}, context);`);
     if (!this.compiler.hasExtends) {
       this.emit.line('inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
     }
@@ -607,7 +607,7 @@ class CompileInheritance {
     return callables;
   }
 
-  collectCompiledMethods(node, blocks) {
+  collectCompiledMethodEntries(node, blocks) {
     const constructorDefinition = this.compiler._getConstructorDefinition(node);
     const ownerKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
     const methodEntries = blocks.map((block) => {
@@ -618,7 +618,7 @@ class CompileInheritance {
         ownerNode: block,
         superExpr: this.blockUsesSuper(block) ? 'true' : 'false',
         superOriginExpr: this.compileCallableSuperOriginLiteral(block),
-        invokedMethodsExpr: this.compileInvokedMethodsLiteral(this.collectDirectInvokedMethodRefsForCallable(block)),
+        invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(block)),
         signatureExpr: JSON.stringify({
           argNames: this.getCallableSignature(block).argNames,
           withContext: !!block.withContext
@@ -634,7 +634,7 @@ class CompileInheritance {
         ownerNode: constructorDefinition,
         superExpr: this.blockUsesSuper(constructorDefinition) ? 'true' : 'false',
         superOriginExpr: this.compileCallableSuperOriginLiteral(constructorDefinition),
-        invokedMethodsExpr: this.compileInvokedMethodsLiteral(this.collectDirectInvokedMethodRefsForCallable(constructorDefinition)),
+        invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(constructorDefinition)),
         signatureExpr: JSON.stringify({ argNames: [], withContext: false }),
         ownerKey
       }));
@@ -643,14 +643,14 @@ class CompileInheritance {
     return `{ ${methodEntries.join(', ')} }`;
   }
 
-  compileMethodMetadataEntry({ methodName, fnExpr, ownerNode, superExpr, superOriginExpr, invokedMethodsExpr, signatureExpr, ownerKey }) {
+  compileMethodMetadataEntry({ methodName, fnExpr, ownerNode, superExpr, superOriginExpr, invokedMethodRefsExpr, signatureExpr, ownerKey }) {
     const ownLinkedChannelNames = this._getMethodFootprintField(ownerNode, 'methodLinkedChannels');
     // Keep mutations separate from links so inherited/component calls can
     // later distinguish read-only participation from write barriers.
     const ownMutatedChannelNames = this._getMethodFootprintField(ownerNode, 'methodMutatedChannels');
     const ownLinkedChannels = JSON.stringify(ownLinkedChannelNames);
     const ownMutatedChannels = JSON.stringify(ownMutatedChannelNames);
-    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethods: ${invokedMethodsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
+    return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethodRefs: ${invokedMethodRefsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
   }
 
   _getMethodFootprintField(ownerNode, fieldName) {
@@ -730,11 +730,11 @@ class CompileInheritance {
     return calls;
   }
 
-  collectCompiledInvokedMethods(node) {
-    return this.compileInvokedMethodsLiteral(this.collectAllInvokedMethodRefsFromNode(node));
+  collectCompiledInvokedMethodRefs(node) {
+    return this.compileInvokedMethodRefsLiteral(this.collectAllInvokedMethodRefsFromNode(node));
   }
 
-  compileInvokedMethodsLiteral(methodRefs) {
+  compileInvokedMethodRefsLiteral(methodRefs) {
     if (!methodRefs || typeof methodRefs !== 'object') {
       return '{}';
     }

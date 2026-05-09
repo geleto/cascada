@@ -1065,7 +1065,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
-    const compiledMethods = {
+    const compiledMethodEntries = {
       __constructor__: {
         fn() {
           events.push('constructor');
@@ -1076,7 +1076,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         ownMutatedChannels: [],
         ownLinkedChannels: [],
         super: false,
-        invokedMethods: {}
+        invokedMethodRefs: {}
       }
     };
 
@@ -1092,7 +1092,7 @@ describe('Phase 8 - Component Lifecycle', function () {
           events.push('root-render');
           runtime.bootstrapInheritanceMetadata(
             inheritanceStateValue,
-            compiledMethods,
+            compiledMethodEntries,
             {},
             {},
             componentRootBuffer,
@@ -1100,7 +1100,7 @@ describe('Phase 8 - Component Lifecycle', function () {
           );
           runtime.runCompiledRootStartup({
             setup: null,
-            compiledMethods,
+            compiledMethodEntries,
             runtime,
             env: {},
             context: componentContext,
@@ -1117,7 +1117,7 @@ describe('Phase 8 - Component Lifecycle', function () {
           });
           return componentRootBuffer;
         },
-        methods: compiledMethods,
+        methods: compiledMethodEntries,
         sharedSchema: {},
         path: 'Component.script'
       },

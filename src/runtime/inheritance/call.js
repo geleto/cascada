@@ -226,15 +226,15 @@ function _buildResolvedMethodDataBase(entry, methodName = null, errorContext = n
     mergedMutatedChannels: ownMutatedChannels,
     mergedLinkedChannels: ownLinkedChannels,
     super: null,
-    invokedMethods: Object.create(null)
+    invokedMethodRefs: Object.create(null)
   };
   return resolvedData;
 }
 
-function _finalizeResolvedMethodData(resolvedData, entry, superData = null, invokedMethods = null) {
+function _finalizeResolvedMethodData(resolvedData, entry, superData = null, invokedMethodRefs = null) {
   resolvedData.signature = _normalizeMethodSignature(entry.signature, superData?.signature ?? null);
   resolvedData.super = superData ?? null;
-  resolvedData.invokedMethods = invokedMethods ?? Object.create(null);
+  resolvedData.invokedMethodRefs = invokedMethodRefs ?? Object.create(null);
   resolvedData.mergedMutatedChannels = _mergeChannelNames(
     resolvedData.mergedMutatedChannels,
     superData?.mergedMutatedChannels
@@ -345,14 +345,14 @@ function _collectResolvedMethodData(state, errorContext = null) {
     addMethodData(_isResolvedMethodData(entry) ? entry : entry._resolvedMethodData);
   });
 
-  const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state);
-  Object.keys(invokedMethods).forEach((name) => addMethodData(invokedMethods[name]));
+  const invokedMethodRefs = inheritanceState.ensureInheritanceInvokedMethodRefsTable(state);
+  Object.keys(invokedMethodRefs).forEach((name) => addMethodData(invokedMethodRefs[name]));
 
   return collected;
 }
 
 function _collectInvokedMethodData(methodData, errorContext = null) {
-  const invoked = methodData.invokedMethods ?? {};
+  const invoked = methodData.invokedMethodRefs ?? {};
   const resolved = [];
   const names = Object.keys(invoked);
   for (let i = 0; i < names.length; i++) {
@@ -367,12 +367,12 @@ function _collectInvokedMethodData(methodData, errorContext = null) {
   return resolved;
 }
 
-function _createResolvedInvokedMethodsData(invokedMethods, errorContext, state = null) {
+function _createResolvedInvokedMethodRefsData(invokedMethodRefs, errorContext, state = null) {
   const resolved = Object.create(null);
-  const names = Object.keys(invokedMethods ?? {});
+  const names = Object.keys(invokedMethodRefs ?? {});
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    resolved[name] = _resolveInvokedMethodReference(invokedMethods[name], name, errorContext, state);
+    resolved[name] = _resolveInvokedMethodReference(invokedMethodRefs[name], name, errorContext, state);
   }
   return resolved;
 }
@@ -439,12 +439,12 @@ function _getMethodDataFromResolvedEntry(
     : null;
 
   try {
-    const invokedMethods = _createResolvedInvokedMethodsData(
-      resolvedEntry.invokedMethods,
+    const invokedMethodRefs = _createResolvedInvokedMethodRefsData(
+      resolvedEntry.invokedMethodRefs,
       errorContext,
       state
     );
-    return _finalizeResolvedMethodData(resolvedMethodData, resolvedEntry, superData, invokedMethods);
+    return _finalizeResolvedMethodData(resolvedMethodData, resolvedEntry, superData, invokedMethodRefs);
   } catch (error) {
     delete resolvedEntry._resolvedMethodData;
     throw error;
@@ -468,7 +468,7 @@ function _pruneExecutionMethodData(methodData, seen) {
   _pruneExecutionMethodData(methodData.super, seen);
   delete methodData.ownMutatedChannels;
   delete methodData.ownLinkedChannels;
-  delete methodData.invokedMethods;
+  delete methodData.invokedMethodRefs;
 }
 
 function _publishExecutionMethodTable(state, errorContext = null) {
@@ -538,13 +538,13 @@ function getCallableBodyMutatedChannelsImpl(methodData, errorContext = null) {
 }
 
 function _finalizeInvokedMethodCatalog(state, errorContext = null, errors) {
-  const invokedMethods = inheritanceState.ensureInheritanceInvokedMethodsTable(state);
-  const names = Object.keys(invokedMethods);
+  const invokedMethodRefs = inheritanceState.ensureInheritanceInvokedMethodRefsTable(state);
+  const names = Object.keys(invokedMethodRefs);
   const resolvedCatalog = Object.create(null);
 
   for (let i = 0; i < names.length; i++) {
     const name = names[i];
-    const reference = invokedMethods[name];
+    const reference = invokedMethodRefs[name];
     const originContext = _getInvokedMethodReferenceOrigin(reference, errorContext);
     try {
       resolvedCatalog[name] = _resolveInvokedMethodReference(
@@ -564,10 +564,10 @@ function _finalizeInvokedMethodCatalog(state, errorContext = null, errors) {
 
   for (let i = 0; i < names.length; i++) {
     if (resolvedCatalog[names[i]]) {
-      invokedMethods[names[i]] = resolvedCatalog[names[i]];
+      invokedMethodRefs[names[i]] = resolvedCatalog[names[i]];
     }
   }
-  return invokedMethods;
+  return invokedMethodRefs;
 }
 
 function _finalizeChannelFootprints(state, errorContext = null) {
@@ -577,7 +577,7 @@ function _finalizeChannelFootprints(state, errorContext = null) {
     changed = false;
     for (let i = 0; i < methodDataList.length; i++) {
       const methodData = methodDataList[i];
-      const invokedMethods = _collectInvokedMethodData(methodData, errorContext);
+      const invokedMethodRefs = _collectInvokedMethodData(methodData, errorContext);
       // Invalid resolved metadata shapes remain fail-fast invariants. Super-chain
       // channel growth stays folded into this same fixed-point walk so we do not
       // reintroduce a second parent-to-child merge phase.
@@ -587,12 +587,12 @@ function _finalizeChannelFootprints(state, errorContext = null) {
       const nextMutatedChannels = _mergeChannelNames(
         methodData.mergedMutatedChannels,
         methodData.super?.mergedMutatedChannels,
-        ...invokedMethods.map((entry) => entry.mergedMutatedChannels)
+        ...invokedMethodRefs.map((entry) => entry.mergedMutatedChannels)
       );
       const nextLinkedChannels = _mergeChannelNames(
         methodData.mergedLinkedChannels,
         methodData.super?.mergedLinkedChannels,
-        ...invokedMethods.map((entry) => entry.mergedLinkedChannels)
+        ...invokedMethodRefs.map((entry) => entry.mergedLinkedChannels)
       );
       if (!_channelArraysEqual(methodData.mergedMutatedChannels, nextMutatedChannels)) {
         methodData.mergedMutatedChannels = nextMutatedChannels;

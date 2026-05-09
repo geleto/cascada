@@ -9,7 +9,7 @@ function bootstrapInheritanceMetadataImpl(
   stateValue,
   methods,
   sharedSchema,
-  invokedMethods = Object.create(null),
+  invokedMethodRefs = Object.create(null),
   currentBuffer = null,
   context = null
 ) {
@@ -45,7 +45,7 @@ function bootstrapInheritanceMetadataImpl(
     );
   }
   inheritanceState.registerInheritanceMethods(state, methods, context);
-  inheritanceState.registerInheritanceInvokedMethods(state, invokedMethods, context);
+  inheritanceState.registerInheritanceInvokedMethodRefs(state, invokedMethodRefs, context);
   return state;
 }
 
@@ -186,9 +186,9 @@ async function bootstrapInheritanceParentScript(spec) {
 
     runtimeApi.bootstrapInheritanceMetadata(
       inheritanceStateValue,
-      parentInheritanceSpec.methods,
+      parentInheritanceSpec.methodEntries,
       parentInheritanceSpec.sharedSchema,
-      parentInheritanceSpec.invokedMethods,
+      parentInheritanceSpec.invokedMethodRefs,
       currentBuffer,
       parentContext
     );
@@ -198,7 +198,7 @@ async function bootstrapInheritanceParentScript(spec) {
 
     const startupPromise = runtimeApi.runCompiledRootStartup({
       setup: parentInheritanceSpec.setup,
-      compiledMethods: parentInheritanceSpec.methods,
+      compiledMethodEntries: parentInheritanceSpec.methodEntries,
       inheritanceState: inheritanceStateValue,
       env,
       context: parentContext,
@@ -219,12 +219,12 @@ async function bootstrapInheritanceParentScript(spec) {
   }
 }
 
-function getLocalRootConstructorEntry(compiledMethods) {
-  return compiledMethods.__constructor__ ?? null;
+function getLocalRootConstructorEntry(compiledMethodEntries) {
+  return compiledMethodEntries.__constructor__ ?? null;
 }
 
 function startInheritanceRootConstructor(
-  compiledMethods,
+  compiledMethodEntries,
   inheritanceStateValue,
   env,
   context,
@@ -234,7 +234,7 @@ function startInheritanceRootConstructor(
   extendsState = null,
   currentStartupPromise = null
 ) {
-  const localEntry = getLocalRootConstructorEntry(compiledMethods);
+  const localEntry = getLocalRootConstructorEntry(compiledMethodEntries);
   const hasLocalConstructor = !!(localEntry && typeof localEntry.fn === 'function');
   if (!hasLocalConstructor) {
     inheritanceState.setInheritanceStartupPromise(inheritanceStateValue, currentStartupPromise);
@@ -261,7 +261,7 @@ function startInheritanceRootConstructor(
 function runCompiledRootStartupImpl(spec) {
   const {
     setup,
-    compiledMethods,
+    compiledMethodEntries,
     inheritanceState: inheritanceStateValue,
     env,
     context,
@@ -275,7 +275,7 @@ function runCompiledRootStartupImpl(spec) {
   if (metadataReadyYield) {
     return metadataReadyYield.then(() => runCompiledRootStartup({
       setup,
-      compiledMethods,
+      compiledMethodEntries,
       inheritanceState: inheritanceStateValue,
       env,
       context,
@@ -306,7 +306,7 @@ function runCompiledRootStartupImpl(spec) {
   }
 
   startupPromise = startInheritanceRootConstructor(
-    compiledMethods,
+    compiledMethodEntries,
     inheritanceStateValue,
     env,
     context,

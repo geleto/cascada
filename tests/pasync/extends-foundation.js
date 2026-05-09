@@ -1120,7 +1120,7 @@ describe('Extends Foundation', function () {
         ownMutatedChannels: ['log'],
         ownLinkedChannels: ['log'],
         super: null,
-        invokedMethods: {}
+        invokedMethodRefs: {}
       };
 
       const logSnapshot = sharedRootBuffer.getChannel('log').finalSnapshot();
@@ -1215,15 +1215,15 @@ describe('Extends Foundation', function () {
       const script = new Script('method build(user)\n  user\nendmethod\nreturn null', env, 'method-metadata.script');
       script.compile();
 
-      expect(script.inheritanceSpec.methods).to.be.ok();
-      expect(script.inheritanceSpec.methods.build).to.be.ok();
-      expect(typeof script.inheritanceSpec.methods.build.fn).to.be('function');
-      expect(script.inheritanceSpec.methods.build.ownMutatedChannels).to.be.an(Array);
-      expect(script.inheritanceSpec.methods.build.ownLinkedChannels).to.be.an(Array);
-      expect(script.inheritanceSpec.methods.build.super).to.be(false);
-      expect(script.inheritanceSpec.methods.build.superOrigin).to.be(null);
-      expect(script.inheritanceSpec.methods.build.signature).to.eql({ argNames: ['user'], withContext: false });
-      expect(script.inheritanceSpec.methods.build.ownerKey).to.be('method-metadata.script');
+      expect(script.inheritanceSpec.methodEntries).to.be.ok();
+      expect(script.inheritanceSpec.methodEntries.build).to.be.ok();
+      expect(typeof script.inheritanceSpec.methodEntries.build.fn).to.be('function');
+      expect(script.inheritanceSpec.methodEntries.build.ownMutatedChannels).to.be.an(Array);
+      expect(script.inheritanceSpec.methodEntries.build.ownLinkedChannels).to.be.an(Array);
+      expect(script.inheritanceSpec.methodEntries.build.super).to.be(false);
+      expect(script.inheritanceSpec.methodEntries.build.superOrigin).to.be(null);
+      expect(script.inheritanceSpec.methodEntries.build.signature).to.eql({ argNames: ['user'], withContext: false });
+      expect(script.inheritanceSpec.methodEntries.build.ownerKey).to.be('method-metadata.script');
     });
 
     it('should record shared-root channel usage in compiled method metadata', function () {
@@ -1234,35 +1234,35 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(script.inheritanceSpec.methods.build.ownMutatedChannels).to.contain('trace');
-      expect(script.inheritanceSpec.methods.build.ownMutatedChannels).not.to.contain('theme');
-      expect(script.inheritanceSpec.methods.build.ownLinkedChannels).to.contain('theme');
-      expect(script.inheritanceSpec.methods.build.ownLinkedChannels).to.contain('trace');
+      expect(script.inheritanceSpec.methodEntries.build.ownMutatedChannels).to.contain('trace');
+      expect(script.inheritanceSpec.methodEntries.build.ownMutatedChannels).not.to.contain('theme');
+      expect(script.inheritanceSpec.methodEntries.build.ownLinkedChannels).to.contain('theme');
+      expect(script.inheritanceSpec.methodEntries.build.ownLinkedChannels).to.contain('trace');
     });
 
     it('should expose __constructor__ in the compiled methods map with internal metadata', function () {
       const script = new Script('shared text trace\nextends "A.script"\nthis.trace("x")\nreturn null', env, 'constructor-metadata.script');
       script.compile();
 
-      expect(script.inheritanceSpec.methods).to.be.ok();
-      expect(script.inheritanceSpec.methods.__constructor__).to.be.ok();
-      expect(typeof script.inheritanceSpec.methods.__constructor__.fn).to.be('function');
-      expect(script.inheritanceSpec.methods.__constructor__.ownMutatedChannels).to.be.an(Array);
-      expect(script.inheritanceSpec.methods.__constructor__.ownLinkedChannels).to.be.an(Array);
-      expect(script.inheritanceSpec.methods.__constructor__.ownMutatedChannels).to.contain('trace');
-      expect(script.inheritanceSpec.methods.__constructor__.ownLinkedChannels).to.contain('trace');
-      expect(script.inheritanceSpec.methods.__constructor__.super).to.be(false);
-      expect(script.inheritanceSpec.methods.__constructor__.superOrigin).to.be(null);
-      expect(script.inheritanceSpec.methods.__constructor__.signature).to.eql({ argNames: [], withContext: false });
-      expect(script.inheritanceSpec.methods.__constructor__.ownerKey).to.be('constructor-metadata.script');
+      expect(script.inheritanceSpec.methodEntries).to.be.ok();
+      expect(script.inheritanceSpec.methodEntries.__constructor__).to.be.ok();
+      expect(typeof script.inheritanceSpec.methodEntries.__constructor__.fn).to.be('function');
+      expect(script.inheritanceSpec.methodEntries.__constructor__.ownMutatedChannels).to.be.an(Array);
+      expect(script.inheritanceSpec.methodEntries.__constructor__.ownLinkedChannels).to.be.an(Array);
+      expect(script.inheritanceSpec.methodEntries.__constructor__.ownMutatedChannels).to.contain('trace');
+      expect(script.inheritanceSpec.methodEntries.__constructor__.ownLinkedChannels).to.contain('trace');
+      expect(script.inheritanceSpec.methodEntries.__constructor__.super).to.be(false);
+      expect(script.inheritanceSpec.methodEntries.__constructor__.superOrigin).to.be(null);
+      expect(script.inheritanceSpec.methodEntries.__constructor__.signature).to.eql({ argNames: [], withContext: false });
+      expect(script.inheritanceSpec.methodEntries.__constructor__.ownerKey).to.be('constructor-metadata.script');
     });
 
     it('should omit __constructor__ from the compiled methods map when there is no constructor body', function () {
       const script = new Script('extends "A.script"', env, 'no-constructor-metadata.script');
       script.compile();
 
-      expect(script.inheritanceSpec.methods).to.be.ok();
-      expect(Object.prototype.hasOwnProperty.call(script.inheritanceSpec.methods, '__constructor__')).to.be(false);
+      expect(script.inheritanceSpec.methodEntries).to.be.ok();
+      expect(Object.prototype.hasOwnProperty.call(script.inheritanceSpec.methodEntries, '__constructor__')).to.be(false);
     });
 
     it('should keep the shared script body helper out of the public compiled surface', function () {
@@ -1302,9 +1302,9 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(script.inheritanceSpec.methods.lookup).to.be(undefined);
-      expect(script.inheritanceSpec.invokedMethods.lookup.name).to.be('lookup');
-      expect(script.inheritanceSpec.methods.build.invokedMethods.lookup.name).to.be('lookup');
+      expect(script.inheritanceSpec.methodEntries.lookup).to.be(undefined);
+      expect(script.inheritanceSpec.invokedMethodRefs.lookup.name).to.be('lookup');
+      expect(script.inheritanceSpec.methodEntries.build.invokedMethodRefs.lookup.name).to.be('lookup');
     });
 
     it('should expose invoked-method metadata without local placeholder methods', function () {
@@ -1315,8 +1315,8 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(script.inheritanceSpec.methods.lookup).to.be(undefined);
-      expect(script.inheritanceSpec.invokedMethods.lookup.name).to.be('lookup');
+      expect(script.inheritanceSpec.methodEntries.lookup).to.be(undefined);
+      expect(script.inheritanceSpec.invokedMethodRefs.lookup.name).to.be('lookup');
     });
 
     it('should create inheritance state in the root body before bootstrapping metadata', function () {
@@ -1328,8 +1328,8 @@ describe('Extends Foundation', function () {
 
       expect(source).to.contain('if (!inheritanceState) {');
       expect(source).to.contain('inheritanceState = runtime.createInheritanceState();');
-      expect(source).to.contain('inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, __compiledMethods, __compiledSharedSchema, ');
-      expect(source).to.contain('__compiledMethods, __compiledSharedSchema, ');
+      expect(source).to.contain('inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, __compiledMethodEntries, __compiledSharedSchema, ');
+      expect(source).to.contain('__compiledMethodEntries, __compiledSharedSchema, ');
       expect(source).to.contain(', context);');
     });
 
@@ -1345,17 +1345,17 @@ describe('Extends Foundation', function () {
       childScript.compile();
       parentScript.compile();
 
-      expect(childScript.inheritanceSpec.methods.build.super).to.be(true);
+      expect(childScript.inheritanceSpec.methodEntries.build.super).to.be(true);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.inheritanceSpec.methods, childScript.inheritanceSpec.sharedSchema, childScript.inheritanceSpec.invokedMethods);
-      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.inheritanceSpec.methods, parentScript.inheritanceSpec.sharedSchema, parentScript.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.inheritanceSpec.methodEntries, childScript.inheritanceSpec.sharedSchema, childScript.inheritanceSpec.invokedMethodRefs);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.inheritanceSpec.methodEntries, parentScript.inheritanceSpec.sharedSchema, parentScript.inheritanceSpec.invokedMethodRefs);
 
-      expect(inheritanceState.methods.build).not.to.be(childScript.inheritanceSpec.methods.build);
-      expect(inheritanceState.methods.build.fn).to.be(childScript.inheritanceSpec.methods.build.fn);
+      expect(inheritanceState.methods.build).not.to.be(childScript.inheritanceSpec.methodEntries.build);
+      expect(inheritanceState.methods.build.fn).to.be(childScript.inheritanceSpec.methodEntries.build.fn);
       expect(inheritanceState.methods.build.ownerKey).to.be('C.script');
-      expect(inheritanceState.methods.build.super).not.to.be(childScript.inheritanceSpec.methods.build.super);
-      expect(inheritanceState.methods.build.super.fn).to.be(parentScript.inheritanceSpec.methods.build.fn);
+      expect(inheritanceState.methods.build.super).not.to.be(childScript.inheritanceSpec.methodEntries.build.super);
+      expect(inheritanceState.methods.build.super.fn).to.be(parentScript.inheritanceSpec.methodEntries.build.fn);
       expect(inheritanceState.methods.build.super.ownerKey).to.be('A.script');
     });
 
@@ -1367,18 +1367,18 @@ describe('Extends Foundation', function () {
       parentScript.compile();
       grandparentScript.compile();
 
-      expect(childScript.inheritanceSpec.methods.build.super).to.be(true);
-      expect(parentScript.inheritanceSpec.methods.build.super).to.be(true);
+      expect(childScript.inheritanceSpec.methodEntries.build.super).to.be(true);
+      expect(parentScript.inheritanceSpec.methodEntries.build.super).to.be(true);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.inheritanceSpec.methods, childScript.inheritanceSpec.sharedSchema, childScript.inheritanceSpec.invokedMethods);
-      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.inheritanceSpec.methods, parentScript.inheritanceSpec.sharedSchema, parentScript.inheritanceSpec.invokedMethods);
-      runtime.bootstrapInheritanceMetadata(inheritanceState, grandparentScript.inheritanceSpec.methods, grandparentScript.inheritanceSpec.sharedSchema, grandparentScript.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.inheritanceSpec.methodEntries, childScript.inheritanceSpec.sharedSchema, childScript.inheritanceSpec.invokedMethodRefs);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.inheritanceSpec.methodEntries, parentScript.inheritanceSpec.sharedSchema, parentScript.inheritanceSpec.invokedMethodRefs);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, grandparentScript.inheritanceSpec.methodEntries, grandparentScript.inheritanceSpec.sharedSchema, grandparentScript.inheritanceSpec.invokedMethodRefs);
 
-      expect(inheritanceState.methods.build).not.to.be(childScript.inheritanceSpec.methods.build);
-      expect(inheritanceState.methods.build.fn).to.be(childScript.inheritanceSpec.methods.build.fn);
-      expect(inheritanceState.methods.build.super.fn).to.be(parentScript.inheritanceSpec.methods.build.fn);
-      expect(inheritanceState.methods.build.super.super.fn).to.be(grandparentScript.inheritanceSpec.methods.build.fn);
+      expect(inheritanceState.methods.build).not.to.be(childScript.inheritanceSpec.methodEntries.build);
+      expect(inheritanceState.methods.build.fn).to.be(childScript.inheritanceSpec.methodEntries.build.fn);
+      expect(inheritanceState.methods.build.super.fn).to.be(parentScript.inheritanceSpec.methodEntries.build.fn);
+      expect(inheritanceState.methods.build.super.super.fn).to.be(grandparentScript.inheritanceSpec.methodEntries.build.fn);
       expect(getMethodChain(inheritanceState.methods, 'build').map((entry) => entry.ownerKey)).to.eql([
         'C.script',
         'B.script',
@@ -1390,15 +1390,15 @@ describe('Extends Foundation', function () {
       const script = new Script('return this.build("Ada")', env, 'missing-method.script');
       script.compile();
 
-      expect(script.inheritanceSpec.methods.build).to.be(undefined);
-      expect(script.inheritanceSpec.invokedMethods.build.name).to.be('build');
+      expect(script.inheritanceSpec.methodEntries.build).to.be(undefined);
+      expect(script.inheritanceSpec.invokedMethodRefs.build.name).to.be('build');
 
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        script.inheritanceSpec.methods,
+        script.inheritanceSpec.methodEntries,
         script.inheritanceSpec.sharedSchema,
-        script.inheritanceSpec.invokedMethods,
+        script.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'missing-method.script' }
       );
@@ -1418,42 +1418,42 @@ describe('Extends Foundation', function () {
       childScript.compile();
       parentScript.compile();
 
-      expect(childScript.inheritanceSpec.invokedMethods.render.name).to.be('render');
-      expect(childScript.inheritanceSpec.invokedMethods.decorate.name).to.be('decorate');
-      expect(childScript.inheritanceSpec.invokedMethods.build.name).to.be('build');
-      expect(childScript.inheritanceSpec.methods.build.invokedMethods.render.name).to.be('render');
-      expect(childScript.inheritanceSpec.methods.build.invokedMethods.decorate.name).to.be('decorate');
-      expect(childScript.inheritanceSpec.methods.build.invokedMethods.render.origin.path).to.be('C.script');
-      expect(Object.keys(childScript.inheritanceSpec.methods.decorate.invokedMethods)).to.eql([]);
+      expect(childScript.inheritanceSpec.invokedMethodRefs.render.name).to.be('render');
+      expect(childScript.inheritanceSpec.invokedMethodRefs.decorate.name).to.be('decorate');
+      expect(childScript.inheritanceSpec.invokedMethodRefs.build.name).to.be('build');
+      expect(childScript.inheritanceSpec.methodEntries.build.invokedMethodRefs.render.name).to.be('render');
+      expect(childScript.inheritanceSpec.methodEntries.build.invokedMethodRefs.decorate.name).to.be('decorate');
+      expect(childScript.inheritanceSpec.methodEntries.build.invokedMethodRefs.render.origin.path).to.be('C.script');
+      expect(Object.keys(childScript.inheritanceSpec.methodEntries.decorate.invokedMethodRefs)).to.eql([]);
 
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        childScript.inheritanceSpec.methods,
+        childScript.inheritanceSpec.methodEntries,
         childScript.inheritanceSpec.sharedSchema,
-        childScript.inheritanceSpec.invokedMethods,
+        childScript.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'C.script' }
       );
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        parentScript.inheritanceSpec.methods,
+        parentScript.inheritanceSpec.methodEntries,
         parentScript.inheritanceSpec.sharedSchema,
-        parentScript.inheritanceSpec.invokedMethods,
+        parentScript.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'A.script' }
       );
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'C.script' });
 
-      expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
+      expect(Object.keys(inheritanceState.invokedMethodRefs)).to.eql([]);
 
       const buildData = inheritanceCallModule.getMethodData(inheritanceState, 'build');
       expect(buildData.mergedMutatedChannels).to.be.an(Array);
       expect(buildData.mergedLinkedChannels).to.be.an(Array);
-      expect(buildData.invokedMethods).to.be(undefined);
+      expect(buildData.invokedMethodRefs).to.be(undefined);
       expect(buildData.ownMutatedChannels).to.be(undefined);
       expect(buildData.ownLinkedChannels).to.be(undefined);
-      expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').invokedMethods).to.be(undefined);
+      expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').invokedMethodRefs).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownMutatedChannels).to.be(undefined);
       expect(inheritanceCallModule.getMethodData(inheritanceState, 'decorate').ownLinkedChannels).to.be(undefined);
     });
@@ -1465,9 +1465,9 @@ describe('Extends Foundation', function () {
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        script.inheritanceSpec.methods,
+        script.inheritanceSpec.methodEntries,
         script.inheritanceSpec.sharedSchema,
-        script.inheritanceSpec.invokedMethods,
+        script.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'missing-invoked.script' }
       );
@@ -1494,9 +1494,9 @@ describe('Extends Foundation', function () {
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        script.inheritanceSpec.methods,
+        script.inheritanceSpec.methodEntries,
         script.inheritanceSpec.sharedSchema,
-        script.inheritanceSpec.invokedMethods,
+        script.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'cyclic-invoked.script' }
       );
@@ -1504,9 +1504,9 @@ describe('Extends Foundation', function () {
 
       const alphaData = inheritanceCallModule.getMethodData(inheritanceState, 'alpha');
       const betaData = inheritanceCallModule.getMethodData(inheritanceState, 'beta');
-      expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
-      expect(alphaData.invokedMethods).to.be(undefined);
-      expect(betaData.invokedMethods).to.be(undefined);
+      expect(Object.keys(inheritanceState.invokedMethodRefs)).to.eql([]);
+      expect(alphaData.invokedMethodRefs).to.be(undefined);
+      expect(betaData.invokedMethodRefs).to.be(undefined);
       expect(alphaData.ownMutatedChannels).to.be(undefined);
       expect(alphaData.ownLinkedChannels).to.be(undefined);
       expect(betaData.ownMutatedChannels).to.be(undefined);
@@ -1532,9 +1532,9 @@ describe('Extends Foundation', function () {
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        script.inheritanceSpec.methods,
+        script.inheritanceSpec.methodEntries,
         script.inheritanceSpec.sharedSchema,
-        script.inheritanceSpec.invokedMethods,
+        script.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'invoked-footprint.script' }
       );
@@ -1564,17 +1564,17 @@ describe('Extends Foundation', function () {
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        childScript.inheritanceSpec.methods,
+        childScript.inheritanceSpec.methodEntries,
         childScript.inheritanceSpec.sharedSchema,
-        childScript.inheritanceSpec.invokedMethods,
+        childScript.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'C.script' }
       );
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        parentScript.inheritanceSpec.methods,
+        parentScript.inheritanceSpec.methodEntries,
         parentScript.inheritanceSpec.sharedSchema,
-        parentScript.inheritanceSpec.invokedMethods,
+        parentScript.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'A.script' }
       );
@@ -1600,9 +1600,9 @@ describe('Extends Foundation', function () {
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        script.inheritanceSpec.methods,
+        script.inheritanceSpec.methodEntries,
         script.inheritanceSpec.sharedSchema,
-        script.inheritanceSpec.invokedMethods,
+        script.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'metadata-errors.script' }
       );
@@ -1634,17 +1634,17 @@ describe('Extends Foundation', function () {
       const inheritanceState = runtime.createInheritanceState();
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        childScript.inheritanceSpec.methods,
+        childScript.inheritanceSpec.methodEntries,
         childScript.inheritanceSpec.sharedSchema,
-        childScript.inheritanceSpec.invokedMethods,
+        childScript.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'C.script' }
       );
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        parentScript.inheritanceSpec.methods,
+        parentScript.inheritanceSpec.methodEntries,
         parentScript.inheritanceSpec.sharedSchema,
-        parentScript.inheritanceSpec.invokedMethods,
+        parentScript.inheritanceSpec.invokedMethodRefs,
         null,
         { path: 'A.script' }
       );
@@ -1671,7 +1671,7 @@ describe('Extends Foundation', function () {
         mergedMutatedChannels: [],
         mergedLinkedChannels: [],
         super: null,
-        invokedMethods: { beta: 'beta' }
+        invokedMethodRefs: { beta: 'beta' }
       };
 
       expect(() => {
@@ -1733,20 +1733,20 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(script.inheritanceSpec.invokedMethods.hidden.name).to.be('hidden');
-      expect(script.inheritanceSpec.invokedMethods.visible.name).to.be('visible');
-      expect(script.inheritanceSpec.methods.build.invokedMethods.visible.name).to.be('visible');
-      expect(script.inheritanceSpec.methods.build.invokedMethods.hidden).to.be(undefined);
+      expect(script.inheritanceSpec.invokedMethodRefs.hidden.name).to.be('hidden');
+      expect(script.inheritanceSpec.invokedMethodRefs.visible.name).to.be('visible');
+      expect(script.inheritanceSpec.methodEntries.build.invokedMethodRefs.visible.name).to.be('visible');
+      expect(script.inheritanceSpec.methodEntries.build.invokedMethodRefs.hidden).to.be(undefined);
     });
 
     it('should reject unresolved super metadata at the topmost root', function () {
       const script = new Script('method build(user)\n  super(user)\nendmethod\nreturn null', env, 'missing-super.script');
       script.compile();
 
-      expect(script.inheritanceSpec.methods.build.super).to.be(true);
+      expect(script.inheritanceSpec.methodEntries.build.super).to.be(true);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, script.inheritanceSpec.methods, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, script.inheritanceSpec.methodEntries, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethodRefs);
 
       expect(() => {
         runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-super.script' });
@@ -1761,11 +1761,11 @@ describe('Extends Foundation', function () {
       );
       script.compile();
 
-      expect(script.inheritanceSpec.methods.__constructor__).to.be.ok();
-      expect(script.inheritanceSpec.methods.__constructor__.super).to.be(true);
+      expect(script.inheritanceSpec.methodEntries.__constructor__).to.be.ok();
+      expect(script.inheritanceSpec.methodEntries.__constructor__.super).to.be(true);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, script.inheritanceSpec.methods, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, script.inheritanceSpec.methodEntries, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethodRefs);
       runtime.finalizeInheritanceMetadata(inheritanceState, { path: 'missing-constructor-super.script' });
 
       const resolvedSuper = inheritanceCallModule.getMethodData(inheritanceState, '__constructor__').super;
@@ -1783,10 +1783,10 @@ describe('Extends Foundation', function () {
       expect(childScript.inheritanceSpec.sharedSchema.theme).to.be(undefined);
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.inheritanceSpec.methods, childScript.inheritanceSpec.sharedSchema, childScript.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.inheritanceSpec.methodEntries, childScript.inheritanceSpec.sharedSchema, childScript.inheritanceSpec.invokedMethodRefs);
       expect(inheritanceState.sharedSchema.theme).to.be(undefined);
 
-      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.inheritanceSpec.methods, parentScript.inheritanceSpec.sharedSchema, parentScript.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.inheritanceSpec.methodEntries, parentScript.inheritanceSpec.sharedSchema, parentScript.inheritanceSpec.invokedMethodRefs);
       expect(inheritanceState.sharedSchema.theme).to.be.ok();
       expect(inheritanceState.sharedSchema.theme).to.be('var');
     });
@@ -1798,10 +1798,10 @@ describe('Extends Foundation', function () {
       parentScript.compile();
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.inheritanceSpec.methods, childScript.inheritanceSpec.sharedSchema, childScript.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, childScript.inheritanceSpec.methodEntries, childScript.inheritanceSpec.sharedSchema, childScript.inheritanceSpec.invokedMethodRefs);
 
       try {
-        runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.inheritanceSpec.methods, parentScript.inheritanceSpec.sharedSchema, parentScript.inheritanceSpec.invokedMethods, null, { path: 'A.script' });
+        runtime.bootstrapInheritanceMetadata(inheritanceState, parentScript.inheritanceSpec.methodEntries, parentScript.inheritanceSpec.sharedSchema, parentScript.inheritanceSpec.invokedMethodRefs, null, { path: 'A.script' });
         expect().fail('Expected conflicting shared channel type to throw');
       } catch (error) {
         expect(error.path).to.be('A.script');
@@ -1814,7 +1814,7 @@ describe('Extends Foundation', function () {
       script.compile();
 
       const inheritanceState = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(inheritanceState, script.inheritanceSpec.methods, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, script.inheritanceSpec.methodEntries, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethodRefs);
 
       expect(() => {
         inheritanceCallModule.resolveInheritanceSharedChannel(inheritanceState, 'theme', {
@@ -1827,9 +1827,9 @@ describe('Extends Foundation', function () {
       const script = new Script('shared text trace\nextends "A.script"\nthis.trace("x")\nreturn this.trace.snapshot()', env, 'constructor-metadata.script');
       script.compile();
 
-      expect(script.inheritanceSpec.methods.__constructor__).to.be.ok();
-      expect(script.inheritanceSpec.methods.__constructor__.fn).to.be.a('function');
-      expect(script.inheritanceSpec.methods.__constructor__.fn).not.to.be(script.rootRenderFunc);
+      expect(script.inheritanceSpec.methodEntries.__constructor__).to.be.ok();
+      expect(script.inheritanceSpec.methodEntries.__constructor__.fn).to.be.a('function');
+      expect(script.inheritanceSpec.methodEntries.__constructor__.fn).not.to.be(script.rootRenderFunc);
     });
 
     it('should keep method-local declarations from renaming root declarations', function () {
@@ -1923,7 +1923,7 @@ describe('Extends Foundation', function () {
           resolve('setup');
         };
       });
-      const compiledMethods = {
+      const compiledMethodEntries = {
         __constructor__: {
           fn() {
             events.push('constructor');
@@ -1934,14 +1934,14 @@ describe('Extends Foundation', function () {
           ownMutatedChannels: [],
           ownLinkedChannels: [],
           super: false,
-          invokedMethods: {}
+          invokedMethodRefs: {}
         }
       };
 
-      runtime.bootstrapInheritanceMetadata(inheritanceState, compiledMethods, {}, {}, output, context);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, compiledMethodEntries, {}, {}, output, context);
       const startupPromise = runtime.runCompiledRootStartup({
         setup: () => setupPromise,
-        compiledMethods,
+        compiledMethodEntries,
         env,
         context,
         runtime,
@@ -1970,7 +1970,7 @@ describe('Extends Foundation', function () {
       const output = new runtime.CommandBuffer(context);
       const inheritanceState = runtime.createInheritanceState();
       const events = [];
-      const compiledMethods = {
+      const compiledMethodEntries = {
         build: {
           fn() {
             events.push('build');
@@ -1981,11 +1981,11 @@ describe('Extends Foundation', function () {
           ownMutatedChannels: [],
           ownLinkedChannels: [],
           super: false,
-          invokedMethods: {}
+          invokedMethodRefs: {}
         }
       };
 
-      runtime.bootstrapInheritanceMetadata(inheritanceState, compiledMethods, {}, {}, output, context);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, compiledMethodEntries, {}, {}, output, context);
       const invocationPromise = runtime.invokeInheritedMethod(
         inheritanceState,
         'build',
@@ -2012,7 +2012,7 @@ describe('Extends Foundation', function () {
       const context = new Context({}, {}, env, 'Main.script', true, {}, {});
       const output = new runtime.CommandBuffer(context);
       const inheritanceState = runtime.createInheritanceState();
-      const compiledMethods = {
+      const compiledMethodEntries = {
         build: {
           fn() {
             return 'build';
@@ -2022,7 +2022,7 @@ describe('Extends Foundation', function () {
           ownMutatedChannels: [],
           ownLinkedChannels: [],
           super: false,
-          invokedMethods: { helper: 'helper' }
+          invokedMethodRefs: { helper: 'helper' }
         },
         helper: {
           fn() {
@@ -2033,13 +2033,13 @@ describe('Extends Foundation', function () {
           ownMutatedChannels: [],
           ownLinkedChannels: [],
           super: false,
-          invokedMethods: {}
+          invokedMethodRefs: {}
         }
       };
 
       runtime.bootstrapInheritanceMetadata(
         inheritanceState,
-        compiledMethods,
+        compiledMethodEntries,
         {},
         { helper: 'helper' },
         output,
@@ -2051,7 +2051,7 @@ describe('Extends Foundation', function () {
 
       runtime.finalizeInheritanceMetadata(inheritanceState, context);
 
-      expect(Object.keys(inheritanceState.invokedMethods)).to.eql([]);
+      expect(Object.keys(inheritanceState.invokedMethodRefs)).to.eql([]);
       expect(inheritanceState.methods.build).to.be(resolvedBuildEntry);
       expect(inheritanceState.methods.build._resolvedMethodData).to.be(undefined);
     });
@@ -2097,15 +2097,15 @@ describe('Extends Foundation', function () {
 
       const state = runtime.bootstrapInheritanceMetadata(
         runtime.createInheritanceState(),
-        childScript.inheritanceSpec.methods,
+        childScript.inheritanceSpec.methodEntries,
         childScript.inheritanceSpec.sharedSchema,
-        childScript.inheritanceSpec.invokedMethods
+        childScript.inheritanceSpec.invokedMethodRefs
       );
       const reusedState = runtime.bootstrapInheritanceMetadata(
         state,
-        parentScript.inheritanceSpec.methods,
+        parentScript.inheritanceSpec.methodEntries,
         parentScript.inheritanceSpec.sharedSchema,
-        parentScript.inheritanceSpec.invokedMethods
+        parentScript.inheritanceSpec.invokedMethodRefs
       );
       runtime.finalizeInheritanceMetadata(state, { path: 'C.script' });
 
@@ -2122,8 +2122,8 @@ describe('Extends Foundation', function () {
       script.compile();
 
       const state = runtime.createInheritanceState();
-      runtime.bootstrapInheritanceMetadata(state, script.inheritanceSpec.methods, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethods);
-      runtime.bootstrapInheritanceMetadata(state, script.inheritanceSpec.methods, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethods);
+      runtime.bootstrapInheritanceMetadata(state, script.inheritanceSpec.methodEntries, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethodRefs);
+      runtime.bootstrapInheritanceMetadata(state, script.inheritanceSpec.methodEntries, script.inheritanceSpec.sharedSchema, script.inheritanceSpec.invokedMethodRefs);
 
       expect(getMethodChain(state.methods, 'build').map((entry) => entry.ownerKey)).to.eql(['A.script']);
     });
@@ -2137,15 +2137,15 @@ describe('Extends Foundation', function () {
 
       const state = runtime.bootstrapInheritanceMetadata(
         runtime.createInheritanceState(),
-        childScript.inheritanceSpec.methods,
+        childScript.inheritanceSpec.methodEntries,
         childScript.inheritanceSpec.sharedSchema,
-        childScript.inheritanceSpec.invokedMethods
+        childScript.inheritanceSpec.invokedMethodRefs
       );
       runtime.bootstrapInheritanceMetadata(
         state,
-        parentScript.inheritanceSpec.methods,
+        parentScript.inheritanceSpec.methodEntries,
         parentScript.inheritanceSpec.sharedSchema,
-        parentScript.inheritanceSpec.invokedMethods
+        parentScript.inheritanceSpec.invokedMethodRefs
       );
 
       const resolvedTheme = inheritanceCallModule.resolveInheritanceSharedChannel(state, 'theme');
@@ -2160,9 +2160,9 @@ describe('Extends Foundation', function () {
 
       const state = runtime.bootstrapInheritanceMetadata(
         runtime.createInheritanceState(),
-        script.inheritanceSpec.methods,
+        script.inheritanceSpec.methodEntries,
         script.inheritanceSpec.sharedSchema,
-        script.inheritanceSpec.invokedMethods
+        script.inheritanceSpec.invokedMethodRefs
       );
 
       try {
@@ -2182,9 +2182,9 @@ describe('Extends Foundation', function () {
 
       const state = runtime.bootstrapInheritanceMetadata(
         runtime.createInheritanceState(),
-        script.inheritanceSpec.methods,
+        script.inheritanceSpec.methodEntries,
         script.inheritanceSpec.sharedSchema,
-        script.inheritanceSpec.invokedMethods
+        script.inheritanceSpec.invokedMethodRefs
       );
       try {
         inheritanceCallModule.resolveInheritanceSharedChannel(state, 'theme', {
@@ -2220,15 +2220,15 @@ describe('Extends Foundation', function () {
 
       const state = runtime.bootstrapInheritanceMetadata(
         runtime.createInheritanceState(),
-        childScript.inheritanceSpec.methods,
+        childScript.inheritanceSpec.methodEntries,
         childScript.inheritanceSpec.sharedSchema,
-        childScript.inheritanceSpec.invokedMethods
+        childScript.inheritanceSpec.invokedMethodRefs
       );
       runtime.bootstrapInheritanceMetadata(
         state,
-        parentScript.inheritanceSpec.methods,
+        parentScript.inheritanceSpec.methodEntries,
         parentScript.inheritanceSpec.sharedSchema,
-        parentScript.inheritanceSpec.invokedMethods
+        parentScript.inheritanceSpec.invokedMethodRefs
       );
 
       const resolvedBuildA = inheritanceCallModule.getMethodData(state, 'build');
@@ -2255,15 +2255,15 @@ describe('Extends Foundation', function () {
 
       const state = runtime.bootstrapInheritanceMetadata(
         runtime.createInheritanceState(),
-        childScript.inheritanceSpec.methods,
+        childScript.inheritanceSpec.methodEntries,
         childScript.inheritanceSpec.sharedSchema,
-        childScript.inheritanceSpec.invokedMethods
+        childScript.inheritanceSpec.invokedMethodRefs
       );
       runtime.bootstrapInheritanceMetadata(
         state,
-        parentScript.inheritanceSpec.methods,
+        parentScript.inheritanceSpec.methodEntries,
         parentScript.inheritanceSpec.sharedSchema,
-        parentScript.inheritanceSpec.invokedMethods
+        parentScript.inheritanceSpec.invokedMethodRefs
       );
 
       runtime.finalizeInheritanceMetadata(state, { path: 'C.script' });
@@ -2401,7 +2401,7 @@ describe('Extends Foundation', function () {
         mergedMutatedChannels: ['helperWrite'],
         mergedLinkedChannels: ['helperRead', 'helperWrite'],
         super: null,
-        invokedMethods: Object.create(null)
+        invokedMethodRefs: Object.create(null)
       };
       const methodData = {
         fn() {
@@ -2427,9 +2427,9 @@ describe('Extends Foundation', function () {
           mergedMutatedChannels: ['superWrite'],
           mergedLinkedChannels: ['superRead', 'superWrite'],
           super: null,
-          invokedMethods: Object.create(null)
+          invokedMethodRefs: Object.create(null)
         },
-        invokedMethods: {
+        invokedMethodRefs: {
           helper: helperData
         }
       };
@@ -2529,7 +2529,7 @@ describe('Extends Foundation', function () {
           super: {
             ownerKey: 'Parent.script'
           },
-          invokedMethods: Object.create(null)
+          invokedMethodRefs: Object.create(null)
         }, {
           lineno: 5,
           colno: 1,
