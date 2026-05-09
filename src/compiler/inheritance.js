@@ -92,7 +92,7 @@ class CompileInheritance {
     if (!this.compiler.scriptMode) {
       this.emit('runtime.markSafe(');
     }
-    this.emit(`runtime.invokeInheritedMethod(inheritanceState, "${methodName}", `);
+    this.emit(`runtime.invokeInheritedCallable(inheritanceState, "${methodName}", `);
     this.compiler._compileAggregate(argsNode, null, '[', ']', false, false);
     this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
     if (!this.compiler.scriptMode) {
@@ -512,8 +512,8 @@ class CompileInheritance {
     this.emit.line(
       `runtime.linkCurrentBufferToParentChannels(` +
       `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
-      `runtime.getCallableBodyLinkedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(callableNode))}), ` +
-      `runtime.getCallableBodyMutatedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(callableNode))})` +
+      `runtime.getCallableLinkedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(callableNode))}), ` +
+      `runtime.getCallableMutatedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(callableNode))})` +
       `);`
     );
     if (!isScriptMethod) {
@@ -985,7 +985,7 @@ class CompileInheritance {
     } else if (!isScriptMethod) {
       this.emit('runtime.markSafe(');
     }
-    this.emit(`runtime.invokeSuperMethod(inheritanceState, "${name}", ${ownerKeyJson}, `);
+    this.emit(`runtime.invokeSuperCallable(inheritanceState, "${name}", ${ownerKeyJson}, `);
     this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
     this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
     if (!id) {

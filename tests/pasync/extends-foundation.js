@@ -1124,7 +1124,7 @@ describe('Extends Foundation', function () {
       };
 
       const logSnapshot = sharedRootBuffer.getChannel('log').finalSnapshot();
-      const result = await runtime.invokeInheritedMethod(
+      const result = await runtime.invokeInheritedCallable(
         inheritanceState,
         'build',
         [],
@@ -1986,7 +1986,7 @@ describe('Extends Foundation', function () {
       };
 
       runtime.bootstrapInheritanceMetadata(inheritanceState, compiledMethodEntries, {}, {}, output, context);
-      const invocationPromise = runtime.invokeInheritedMethod(
+      const invocationPromise = runtime.invokeInheritedCallable(
         inheritanceState,
         'build',
         [],
@@ -2434,7 +2434,7 @@ describe('Extends Foundation', function () {
         }
       };
 
-      const linkedChannels = inheritanceCallModule.getCallableBodyLinkedChannels(methodData, {
+      const linkedChannels = inheritanceCallModule.getCallableLinkedChannels(methodData, {
         path: 'Main.script'
       }).sort();
 
@@ -2454,7 +2454,7 @@ describe('Extends Foundation', function () {
         return;
       }
 
-      const linkedChannels = inheritanceCallModule.getCallableBodyLinkedChannels({
+      const linkedChannels = inheritanceCallModule.getCallableLinkedChannels({
         fn() {
           return null;
         },
@@ -2475,7 +2475,7 @@ describe('Extends Foundation', function () {
         return;
       }
 
-      expect(() => inheritanceCallModule.getCallableBodyLinkedChannels({
+      expect(() => inheritanceCallModule.getCallableLinkedChannels({
         fn() {
           return null;
         },
@@ -2496,7 +2496,7 @@ describe('Extends Foundation', function () {
         return;
       }
 
-      expect(() => inheritanceCallModule.getCallableBodyLinkedChannels({
+      expect(() => inheritanceCallModule.getCallableLinkedChannels({
         fn() {
           return null;
         },
@@ -2518,7 +2518,7 @@ describe('Extends Foundation', function () {
       }
 
       try {
-        inheritanceCallModule.getCallableBodyLinkedChannels({
+        inheritanceCallModule.getCallableLinkedChannels({
           fn() {
             return null;
           },
@@ -2551,7 +2551,7 @@ describe('Extends Foundation', function () {
 
       const source = script.compileSource();
 
-      expect(source).to.contain('runtime.getCallableBodyLinkedChannels(methodData,');
+      expect(source).to.contain('runtime.getCallableLinkedChannels(methodData,');
       // The callable entry must ask for the body-local transitive footprint,
       // not the invocation-only channel list used for parent dispatch.
       expect(source).to.not.contain('runtime.getMethodLinkedChannels(methodData)');

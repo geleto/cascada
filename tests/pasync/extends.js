@@ -577,7 +577,7 @@ describe('Extends Runtime', function () {
         super: null
       };
 
-      const admission = runtime.invokeInheritedMethod(
+      const admission = runtime.invokeInheritedCallable(
         inheritanceState,
         'build',
         [],

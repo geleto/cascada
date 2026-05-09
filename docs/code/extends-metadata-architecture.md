@@ -852,7 +852,7 @@ Work:
   channels on resolved method metadata instead of recomputing them per call
 - decide whether callable-body linking should cache pre-merged direct body-link
   channels on resolved method metadata instead of recomputing them per entry
-- consolidate `invokeInheritedMethod(...)` and `invokeSuperMethod(...)` around
+- consolidate `invokeInheritedCallable(...)` and `invokeSuperCallable(...)` around
   one shared direct-admission helper if the remaining differences stay narrow
 - keep invocation command enqueue/start inline at the call sites; Step 9 removed
   the thin `_enqueueInvocationCommand(...)` wrapper

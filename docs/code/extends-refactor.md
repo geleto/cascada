@@ -199,7 +199,7 @@ The call layer owns:
 - invocation buffer creation and finalization
 - late metadata-ready gating at admission boundaries
 
-`invokeInheritedMethod(...)` and `invokeSuperMethod(...)` are now very similar:
+`invokeInheritedCallable(...)` and `invokeSuperCallable(...)` are now very similar:
 both wait for metadata readiness if needed, assert direct method data, create an
 admitted invocation buffer, enqueue one invocation command, and return the
 deferred result.
@@ -250,7 +250,7 @@ The target should be:
 
 ### 3. Metadata-ready barrier is still visible in hot admission helpers
 
-`invokeInheritedMethod(...)`, `invokeSuperMethod(...)`, and constructor startup
+`invokeInheritedCallable(...)`, `invokeSuperCallable(...)`, and constructor startup
 still call `awaitInheritanceMetadataReadiness(...)`.
 
 This is correct for dynamic/static startup ordering today, but it leaves a

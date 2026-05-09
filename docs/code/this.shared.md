@@ -592,7 +592,7 @@ Existing compiler/runtime paths:
 - Inherited method dispatch
   - `_getExplicitThisDispatchFacts(...)` recognizes static `this.method`.
   - `compileFunCall(...)` marks the lookup as an allowed call and lowers it to
-    `runtime.invokeInheritedMethod(...)`.
+    `runtime.invokeInheritedCallable(...)`.
   - `compileLookupVal(...)` currently rejects bare `this.method` references.
 - Component observation
   - `_getComponentBindingFacts(...)` and component observation lowering are a

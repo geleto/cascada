@@ -186,7 +186,7 @@ Current implementation status:
   `CompileInheritance.compileAsyncCallableEntry()` /
   `collectCompiledMethods()`
 - explicit `this.name(...)` calls already compile through
-  `runtime.invokeInheritedMethod(...)`
+  `runtime.invokeInheritedCallable(...)`
 - `super(...)`, signatures, `with context`, extends payloads, shared metadata,
   and parent-chain readiness already live on the inherited method path
 - the Phase 1 implementation makes block placement emit inherited method

@@ -519,7 +519,7 @@ function _getMethodMutatedChannels(methodData) {
   return _assertResolvedMethodData(methodData).mergedMutatedChannels;
 }
 
-function getCallableBodyLinkedChannelsImpl(methodData, errorContext = null) {
+function getCallableLinkedChannelsImpl(methodData, errorContext = null) {
   const resolvedMethodData = _assertResolvedMethodData(methodData);
   if (resolvedMethodData.super && !_isResolvedMethodData(resolvedMethodData.super)) {
     throw _createInvalidSuperMetadataError(resolvedMethodData, errorContext);
@@ -528,7 +528,7 @@ function getCallableBodyLinkedChannelsImpl(methodData, errorContext = null) {
   return _getMethodLinkedChannels(resolvedMethodData);
 }
 
-function getCallableBodyMutatedChannelsImpl(methodData, errorContext = null) {
+function getCallableMutatedChannelsImpl(methodData, errorContext = null) {
   const resolvedMethodData = _assertResolvedMethodData(methodData);
   if (resolvedMethodData.super && !_isResolvedMethodData(resolvedMethodData.super)) {
     throw _createInvalidSuperMetadataError(resolvedMethodData, errorContext);
@@ -1018,7 +1018,7 @@ function _admitResolvedMethodInvocation({
   return command.promise;
 }
 
-function invokeInheritedMethod(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+function invokeInheritedCallable(inheritanceStateValue, methodName, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
   const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
   return _invokeWhenMetadataReady(metadataReadyPromise, () => {
     const methodData = _assertDirectMethodData(inheritanceStateValue, methodName, errorContext);
@@ -1039,7 +1039,7 @@ function invokeInheritedMethod(inheritanceStateValue, methodName, args, context,
   });
 }
 
-function invokeSuperMethod(inheritanceStateValue, methodName, ownerKey, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
+function invokeSuperCallable(inheritanceStateValue, methodName, ownerKey, args, context, env, runtime, cb, currentBuffer, errorContext = null) {
   const metadataReadyPromise = inheritanceState.awaitInheritanceMetadataReadiness(inheritanceStateValue);
   return _invokeWhenMetadataReady(metadataReadyPromise, () => {
     const methodData = _assertDirectSuperMethodData(inheritanceStateValue, methodName, ownerKey, errorContext);
@@ -1083,7 +1083,7 @@ function invokeComponentMethod(inheritanceStateValue, methodName, args, context,
 }
 
 const createInheritanceInvocationCommand = createInheritanceInvocationCommandImpl;
-const getCallableBodyLinkedChannels = getCallableBodyLinkedChannelsImpl;
-const getCallableBodyMutatedChannels = getCallableBodyMutatedChannelsImpl;
+const getCallableLinkedChannels = getCallableLinkedChannelsImpl;
+const getCallableMutatedChannels = getCallableMutatedChannelsImpl;
 
-export { createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, getCallableBodyLinkedChannels, getCallableBodyMutatedChannels, resolveInheritanceSharedChannel, invokeInheritedMethod, invokeSuperMethod, invokeComponentMethod };
+export { createInheritanceInvocationCommand, getMethodData, finalizeResolvedMethodMetadata, getCallableLinkedChannels, getCallableMutatedChannels, resolveInheritanceSharedChannel, invokeInheritedCallable, invokeSuperCallable, invokeComponentMethod };

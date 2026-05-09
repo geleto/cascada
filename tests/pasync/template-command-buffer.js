@@ -284,7 +284,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 
       expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__', 'theme']);
       expect(Array.from(blockNode._analysis.linkedMutatedChannels || [])).to.eql(['__text__']);
-      expect(source).to.contain('runtime.markSafe(runtime.invokeInheritedMethod(inheritanceState, "body"');
+      expect(source).to.contain('runtime.markSafe(runtime.invokeInheritedCallable(inheritanceState, "body"');
       expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__"], ["__text__"], context, cb, async (blockBuffer)');
       expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","theme"]');
     });
@@ -761,7 +761,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(source).to.contain('function b_content(');
       expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('methodData) {');
-      expect(source).to.contain('runtime.invokeInheritedMethod(inheritanceState, "content"');
+      expect(source).to.contain('runtime.invokeInheritedCallable(inheritanceState, "content"');
       expect(source).to.contain('blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {}');
       expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
       expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
@@ -810,7 +810,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 
       expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('blockRenderCtx = undefined');
-      expect(source).to.contain('runtime.invokeSuperMethod(inheritanceState, "content"');
+      expect(source).to.contain('runtime.invokeSuperCallable(inheritanceState, "content"');
       expect(source).to.not.contain('blockContext = null');
       expect(source).to.not.contain('context.getBlockContract(');
       expect(source).to.not.contain('context.getCompositionSourceBuffer(');
