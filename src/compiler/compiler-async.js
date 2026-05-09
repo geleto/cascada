@@ -15,6 +15,7 @@ import {ROOT_STARTUP_PROMISE_VAR} from './inheritance.js';
 const COMPILED_METHOD_ENTRIES_VAR = '__compiledMethodEntries';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
 const COMPILED_INVOKED_METHOD_REFS_VAR = '__compiledInvokedMethodRefs';
+const COMPILED_INHERITANCE_SPEC_VAR = '__compiledInheritanceSpec';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(templateName, options) {
@@ -701,14 +702,15 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line(`const ${COMPILED_METHOD_ENTRIES_VAR} = ${methodEntries};`);
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
     this.emit.line(`const ${COMPILED_INVOKED_METHOD_REFS_VAR} = ${invokedMethodRefs};`);
-    this.emit.line('return {');
-    this.emit.line('inheritanceSpec: {');
+    this.emit.line(`const ${COMPILED_INHERITANCE_SPEC_VAR} = {`);
     this.emit.line('  setup: b___setup__,');
     this.emit.line(`  methodEntries: ${COMPILED_METHOD_ENTRIES_VAR},`);
     this.emit.line(`  sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
     this.emit.line(`  invokedMethodRefs: ${COMPILED_INVOKED_METHOD_REFS_VAR},`);
     this.emit.line(`  hasExtends: ${this.hasExtends ? 'true' : 'false'}`);
-    this.emit.line('},');
+    this.emit.line('};');
+    this.emit.line('return {');
+    this.emit.line(`inheritanceSpec: ${COMPILED_INHERITANCE_SPEC_VAR},`);
     this.emit.line('root: root\n};');
   }
 
@@ -832,15 +834,12 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRootBody(node) {
     this.inheritance.emitAsyncRootStateInitialization(
-      COMPILED_METHOD_ENTRIES_VAR,
-      COMPILED_SHARED_SCHEMA_VAR,
-      COMPILED_INVOKED_METHOD_REFS_VAR
+      COMPILED_INHERITANCE_SPEC_VAR
     );
     this.emit.line(`let ${ROOT_STARTUP_PROMISE_VAR} = null;`);
     this.emit.line(`const extendsState = ${(!this.scriptMode && this.hasDynamicExtends) ? '{ parentSelection: null }' : 'null'};`);
     this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runCompiledRootStartup({`);
     this.emit.line('  setup: b___setup__,');
-    this.emit.line(`  compiledMethodEntries: ${COMPILED_METHOD_ENTRIES_VAR},`);
     this.emit.line('  inheritanceState,');
     this.emit.line('  env,');
     this.emit.line('  context,');

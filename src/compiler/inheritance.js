@@ -197,7 +197,7 @@ class CompileInheritance {
     return !!(this.compiler.scriptMode && node instanceof nodes.MethodDefinition);
   }
 
-  emitAsyncRootStateInitialization(compiledMethodEntriesVar, compiledSharedSchemaVar, compiledInvokedMethodRefsVar) {
+  emitAsyncRootStateInitialization(compiledInheritanceSpecVar) {
     if (!this.compiler.needsInheritanceState) {
       this.emit.line('if (inheritanceState) {');
       this.emit.line('  inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
@@ -207,7 +207,7 @@ class CompileInheritance {
     this.emit.line('if (!inheritanceState) {');
     this.emit.line('  inheritanceState = runtime.createInheritanceState();');
     this.emit.line('}');
-    this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledMethodEntriesVar}, ${compiledSharedSchemaVar}, ${compiledInvokedMethodRefsVar}, ${this.compiler.buffer.currentBuffer}, context);`);
+    this.emit.line(`inheritanceState = runtime.bootstrapInheritanceMetadata(inheritanceState, ${compiledInheritanceSpecVar}, context);`);
     if (!this.compiler.hasExtends) {
       this.emit.line('inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
     }

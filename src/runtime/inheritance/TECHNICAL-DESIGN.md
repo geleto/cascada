@@ -26,6 +26,7 @@ No compatibility scaffolding is kept inside the core.
 ## Compiler ABI
 
 The root compiler output contains `inheritanceSpec`.
+Loading stores this object unchanged.
 
 ```js
 {
@@ -173,9 +174,10 @@ not for every small function.
 src/runtime/inheritance/
   TECHNICAL-DESIGN.md
   state.js
-  loading.js
+  load.js
   finalize.js
   invoke.js
+  startup.js
   shared.js
   component.js
   index.js
@@ -219,9 +221,9 @@ Fields:
 Avoid hidden symbol state unless a field must be non-enumerable for API
 compatibility.
 
-### `loading.js`
+### `load.js`
 
-Collects raw compiled specs before finalization.
+Records compiler-emitted specs in child-first chain order.
 
 Internal loading state:
 
@@ -241,6 +243,9 @@ Loading collection is append-only. It must not wire `super`, mutate raw
 entries, or create execution metadata.
 
 Expected order is most-derived first, then parents in extends-chain order.
+
+`load.js` owns parent-chain resolution, including dynamic parent selection and
+extends-chain cycle detection. It does not run setup/constructors.
 
 ### `finalize.js`
 
@@ -309,6 +314,21 @@ Admission does:
 
 Method invocation must not inspect raw method fields.
 
+### `startup.js`
+
+Runs startup work after metadata is finalized.
+
+Owned here:
+
+- execute compiled setup/root startup functions
+- render parent template roots after the chain decision is known
+- attach child invocation buffers to parent buffers for linked channels
+- store startup promises on the inheritance state
+
+`startup.js` uses loaded/finalized inheritance state. It must not create runtime
+method entries, merge shared schema, wire `super`, or mutate compiler-emitted
+method metadata.
+
 ### `shared.js`
 
 Owns shared channel schema and shared channel runtime operations.
@@ -346,9 +366,9 @@ Component method calls use the same invocation admission primitive as
 Component shared observation remains a separate explicit operation because it
 observes another instance's shared root.
 
-## Startup Model
+## Runtime Lifecycle
 
-Inheritance bootstrap is blocking for metadata:
+Inheritance loading/finalization is blocking for metadata:
 
 1. create state
 2. register child spec
@@ -400,6 +420,27 @@ Runtime invariant failures are fatal.
 
 Poison semantics remain ordinary Cascada channel/value behavior and are not
 special-cased by inheritance metadata code.
+
+## Temporary Constructs
+
+Temporary code is allowed only when an implementation slice needs a clear
+runtime boundary before the final code exists. Mark each temporary code
+construct with a `Temporary` comment and list the construct here.
+
+- `invoke.js`: `validateZeroArgOnlyInvocation(...)`. Remove when invocation
+  argument binding is implemented.
+- `invoke.js`: temporary `invokeSuperCallable(...)` throw body. Replace when
+  owner-relative super links are finalized.
+- `startup.js`: temporary `bootstrapInheritanceParentScript(...)` throw body.
+  Replace when script parent-chain loading starts.
+- `startup.js`: temporary `renderInheritanceParentRoot(...)` throw body.
+  Replace when template parent rendering starts.
+- `startup.js`: `createUnsupportedFeatureError(...)`. Remove with the temporary
+  parent-chain throw bodies.
+- `load.js`: `createStubSourceOrigin(...)`. Replace when loading receives
+  source origins directly.
+- `invoke.js`: direct `method.fn(...)` call in `invokeInheritedCallable(...)`.
+  Replace when invocation commands own admission.
 
 ## Implementation Steps
 
