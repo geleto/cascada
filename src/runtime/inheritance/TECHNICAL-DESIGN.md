@@ -130,6 +130,7 @@ type RuntimeMethodEntry = {
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
   origin: SourceOrigin | null, // callable declaration site for diagnostics
+  isConstructor: boolean, // true for the synthetic script constructor method
   super: RuntimeMethodEntry | null, // owner-relative parent method
   callsSuper: boolean, // true when the body calls super()
   invokedMethodRefs: Record<string, InvokedMethodRef>, // method name -> first call site
@@ -265,6 +266,7 @@ Final execution method entry:
   signature, // finalized call signature
   ownerKey, // file/template identity
   origin, // callable declaration site for diagnostics
+  isConstructor, // true for the synthetic script constructor method
   super, // parent execution method entry, or null
   callsSuper, // true when this body calls super()
   invokedMethodRefs, // ordinary inherited calls from this body
@@ -400,11 +402,18 @@ Lifecycle:
 Script constructor startup is not a special metadata model. It invokes the
 finalized `__constructor__` method when present.
 
+Script startup links the finalized shared schema into setup buffers because
+setup can contain shared declarations, constructor loading, and parent-chain
+startup before a per-constructor footprint exists. Normal callable invocation
+still links from finalized callable footprints.
+
 For scripts, executable body code after `extends` creates a local
 `__constructor__`. That constructor must call `super()` explicitly if it wants
 ancestor constructor startup to run. If a script has no executable body after
 `extends`, it contributes no local constructor and inherited lookup runs the
 nearest ancestor constructor directly.
+Repeated bare `super()` statements in one constructor share the existing
+lifted-super call result, so parent startup runs once.
 
 Templates do not support startup/constructor `super()`. Code outside blocks is
 local startup only. It runs after shared declarations and before parent
@@ -415,7 +424,9 @@ The topmost missing constructor is represented by a no-op constructor only for
 constructor `super()` resolution.
 
 Ancestor constructor return values are ignored. Direct render return semantics
-remain owned by the most-derived entry.
+remain owned by the most-derived entry, so ancestor constructors run with
+isolated `__return__` state unless the entry file itself defines the invoked
+constructor.
 
 ## Error Model
 
@@ -436,10 +447,6 @@ Temporary code is allowed only when an implementation slice needs a clear
 runtime boundary before the final code exists. Mark each temporary code
 construct with a `Temporary` comment and list the construct here.
 
-- `startup.js`: temporary `bootstrapInheritanceParentScript(...)` throw body.
-  Replace when script parent-chain loading starts.
-- `startup.js`: `createUnsupportedFeatureError(...)`. Remove with the temporary
-  script parent-chain throw body.
 - `load.js`: `createStubSourceOrigin(...)`. Replace when loading receives
   source origins directly.
 - `invoke.js`: direct `method.fn(...)` call in `invokeMethod(...)`.

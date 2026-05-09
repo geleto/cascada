@@ -876,11 +876,21 @@ class CompilerAsync extends CompilerBaseAsync {
       return false;
     }
 
+    const constructorDefinition = this._getConstructorDefinition(node);
     this.inheritance._withAsyncConstructorEntryState(false, () => {
-      this.emit.line('function b___scriptBody__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
+      this.emit.line('function b___scriptBody__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null, blockPayload = null, blockRenderCtx = undefined, methodData = undefined) {');
       this.emit.line('try {');
       this.emit.line(`let ${ROOT_STARTUP_PROMISE_VAR} = null;`);
-      this._compileChildren(bodySource, null);
+      const previousCallableDefinition = this.currentCallableDefinition;
+      const previousCompilingCallableEntry = this.isCompilingCallableEntry;
+      this.currentCallableDefinition = constructorDefinition;
+      this.isCompilingCallableEntry = !!constructorDefinition;
+      try {
+        this._compileChildren(bodySource, null);
+      } finally {
+        this.currentCallableDefinition = previousCallableDefinition;
+        this.isCompilingCallableEntry = previousCompilingCallableEntry;
+      }
       this.emit.line(`return ${ROOT_STARTUP_PROMISE_VAR};`);
       this.emit.closeScopeLevels();
       this.emit.line('} catch (e) {');
@@ -918,6 +928,13 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       this._emitRootCompositionPayloadInitialization(node);
       this.inheritance.emitRootSharedDeclarations(node);
+      if (this.scriptMode) {
+        // Setup can run before constructor footprints exist, so startup links
+        // the finalized shared schema as a setup-level visibility rule.
+        const sharedKeysVar = this._tmpid();
+        this.emit.line(`const ${sharedKeysVar} = Object.keys((inheritanceState && inheritanceState.sharedSchema) || {});`);
+        this.emit.line(`runtime.linkCurrentBufferToSharedChannels(${this.buffer.currentBuffer}, inheritanceState, ${sharedKeysVar}, ${sharedKeysVar});`);
+      }
       if (templateConstructorDefinition) {
         const constructorStartupPromise = this._tmpid();
         this.emit.line(`const ${constructorStartupPromise} = b___constructor__(env, context, runtime, cb, output, inheritanceState, extendsState);`);

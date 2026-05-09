@@ -4,6 +4,8 @@
 
 import {RuntimeFatalError} from '../errors.js';
 
+const CONSTRUCTOR_METHOD_NAME = '__constructor__';
+
 /*
 // Source location for diagnostics.
 type SourceOrigin = {
@@ -39,6 +41,7 @@ type RuntimeMethodEntry = {
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
   origin: SourceOrigin | null, // callable declaration site for diagnostics
+  isConstructor: boolean, // true for the synthetic script constructor method
   super: RuntimeMethodEntry | null, // owner-relative parent method
   callsSuper: boolean, // true when the body calls super()
   invokedMethodRefs: Record<string, InvokedMethodRef>, // method name -> first call site
@@ -87,7 +90,11 @@ function finalizeInheritanceMetadata(state, context = null) {
       if (parentMethod) {
         validateSignatureCompatibility(name, method, parentMethod, context);
       }
-      if (entry.super && !parentMethod) {
+      const isConstructor = name === CONSTRUCTOR_METHOD_NAME;
+      const superMethod = parentMethod || (entry.super && isConstructor
+        ? createNoopConstructorMethodEntry(method)
+        : null);
+      if (entry.super && !superMethod) {
         throw new RuntimeFatalError(
           `Inherited callable "${name}" uses super() but has no parent implementation`,
           entry.superOrigin?.lineno ?? 0,
@@ -96,7 +103,7 @@ function finalizeInheritanceMetadata(state, context = null) {
           entry.superOrigin?.path ?? context?.path ?? null
         );
       }
-      method.super = parentMethod;
+      method.super = superMethod;
       allMethods.push(method);
       methods[name] = method;
     }
@@ -157,11 +164,30 @@ function createRuntimeMethodEntry(entry, name, context) {
     signature: normalizeSignature(entry.signature),
     ownerKey: entry.ownerKey,
     origin: entry.origin ?? null,
+    isConstructor: name === CONSTRUCTOR_METHOD_NAME,
     super: null,
     callsSuper: entry.super === true,
     invokedMethodRefs: normalizeInvokedMethodRefs(entry.invokedMethodRefs),
     mergedLinkedChannels: normalizeStringArray(entry.ownLinkedChannels),
     mergedMutatedChannels: normalizeStringArray(entry.ownMutatedChannels)
+  };
+}
+
+function createNoopConstructorMethodEntry(method) {
+  return {
+    name: CONSTRUCTOR_METHOD_NAME,
+    fn() {
+      return null;
+    },
+    signature: { argNames: [] },
+    ownerKey: '__noop_constructor__',
+    origin: null,
+    isConstructor: true,
+    super: null,
+    callsSuper: false,
+    invokedMethodRefs: Object.create(null),
+    mergedLinkedChannels: [],
+    mergedMutatedChannels: []
   };
 }
 

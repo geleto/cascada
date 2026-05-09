@@ -946,4 +946,145 @@ describe('Inheritance runtime', function () {
       }
     });
   });
+
+  describe('script inheritance', function () {
+    it('uses the entry script return value after loading parent metadata', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'return "base"');
+      loader.addTemplate('child.script', 'extends "base.script"\nreturn "child"');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('child');
+    });
+
+    it('dispatches inherited script methods through the finalized callable table', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'method label(name)\n  return "Hello " + name\nendmethod');
+      loader.addTemplate('child.script', 'extends "base.script"\nreturn this.label("Ada")');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('Hello Ada');
+    });
+
+    it('lets script methods read the render context by default', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'method label(name)\n  return name + "@" + site\nendmethod');
+      loader.addTemplate('child.script', 'extends "base.script"\nreturn this.label("Ada")');
+
+      const result = await env.renderScript('child.script', { site: 'cascada' });
+
+      expect(result).to.be('Ada@cascada');
+    });
+
+    it('resolves script method super through the owner-relative method chain', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'method label(name)\n  return "base:" + name\nendmethod');
+      loader.addTemplate('child.script', 'extends "base.script"\nmethod label(name)\n  return "child:" + super(name)\nendmethod\nreturn this.label("Ada")');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('child:base:Ada');
+    });
+
+    it('dispatches this.method from a script method to an ancestor implementation', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'method helper(name)\n  return "base:" + name\nendmethod');
+      loader.addTemplate('mid.script', 'extends "base.script"');
+      loader.addTemplate('child.script', 'extends "mid.script"\nmethod label(name)\n  return this.helper(name)\nendmethod\nreturn this.label("Ada")');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('base:Ada');
+    });
+
+    it('runs script constructor super through the owner-relative constructor chain', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('root.script', 'method noop()\n  return null\nendmethod');
+      loader.addTemplate('mid.script', 'shared text trace\nextends "root.script"\nthis.trace("mid|")');
+      loader.addTemplate('child.script', 'shared text trace\nextends "mid.script"\nsuper()\nthis.trace("child|")\nreturn this.trace.snapshot()');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('mid|child|');
+    });
+
+    it('runs every level in a three-level constructor super chain', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('root.script', 'shared text trace\nthis.trace("root|")');
+      loader.addTemplate('mid.script', 'shared text trace\nextends "root.script"\nsuper()\nthis.trace("mid|")');
+      loader.addTemplate('child.script', 'shared text trace\nextends "mid.script"\nsuper()\nthis.trace("child|")\nreturn this.trace.snapshot()');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('root|mid|child|');
+    });
+
+    it('coalesces repeated bare constructor super calls into one parent startup', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'shared text trace\nthis.trace("base|")');
+      loader.addTemplate('child.script', 'shared text trace\nextends "base.script"\nsuper()\nsuper()\nreturn this.trace.snapshot()');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('base|');
+    });
+
+    it('rejects constructor super arguments', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'method noop()\n  return null\nendmethod');
+      loader.addTemplate('child.script', 'extends "base.script"\nsuper("x")\nreturn null');
+
+      try {
+        await env.renderScript('child.script', {});
+        expect().fail('Expected constructor super argument rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('super(...) for method "__constructor__" received too many arguments');
+      }
+    });
+
+    it('lets topmost constructor super resolve to a no-op', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'method noop()\n  return null\nendmethod');
+      loader.addTemplate('child.script', 'extends "base.script"\nsuper()\nreturn "child"');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('child');
+    });
+
+    it('ignores ancestor constructor return values when the entry has no return', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'return "base"');
+      loader.addTemplate('mid.script', 'extends "base.script"\nreturn "mid"');
+      loader.addTemplate('child.script', 'extends "mid.script"');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be(null);
+    });
+
+    it('routes shared reads and writes through inherited script methods', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', 'shared text trace\nmethod add(item)\n  this.trace(item)\n  return "done"\nendmethod');
+      loader.addTemplate('child.script', 'shared text trace\nextends "base.script"\nvar result = this.add("method|")\nthis.trace(result)\nreturn this.trace.snapshot()');
+
+      const result = await env.renderScript('child.script', {});
+
+      expect(result).to.be('method|done');
+    });
+  });
 });

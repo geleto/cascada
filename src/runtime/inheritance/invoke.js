@@ -19,6 +19,7 @@ type RuntimeMethodEntry = {
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
   origin: SourceOrigin | null, // callable declaration site for diagnostics
+  isConstructor: boolean, // true for the synthetic script constructor method
   super: RuntimeMethodEntry | null, // owner-relative parent method
   callsSuper: boolean, // true when the body calls super()
   invokedMethodRefs: Record<string, InvokedMethodRef>, // method name -> first call site
@@ -62,6 +63,19 @@ function invokeSuperCallable(inheritanceState, methodData, methodName, args, con
     );
   }
   const invocationArgs = normalizeInvocationArgs(methodName, args, errorContext, context);
+  if (methodData.isConstructor) {
+    return invokeConstructorSuperMethod(
+      inheritanceState,
+      methodData.super,
+      invocationArgs,
+      context,
+      env,
+      runtime,
+      cb,
+      currentBuffer,
+      errorContext
+    );
+  }
   return invokeMethod(inheritanceState, methodData.super, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext);
 }
 
@@ -145,6 +159,46 @@ function invokeMethod(inheritanceState, method, invocationArgs, context, env, ru
     inheritanceState,
     method
   );
+}
+
+function invokeConstructorSuperMethod(inheritanceState, method, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext) {
+  const invocationBuffer = new runtime.CommandBuffer(context, currentBuffer);
+  runtime.declareBufferChannel(invocationBuffer, '__return__', 'var', context, runtime.RETURN_UNSET);
+  try {
+    const result = invokeMethod(
+      inheritanceState,
+      method,
+      invocationArgs,
+      context,
+      env,
+      runtime,
+      cb,
+      invocationBuffer,
+      errorContext
+    );
+    return finishConstructorSuperBuffer(result, invocationBuffer);
+  } catch (err) {
+    invocationBuffer.finish();
+    throw err;
+  }
+}
+
+function finishConstructorSuperBuffer(result, invocationBuffer) {
+  if (result && typeof result.then === 'function') {
+    return result.then((value) => {
+      invocationBuffer.finish();
+      return invocationBuffer.getFinishedPromise().then(() => value);
+    }, (err) => {
+      invocationBuffer.finish();
+      return invocationBuffer.getFinishedPromise().then(() => {
+        throw err;
+      }, () => {
+        throw err;
+      });
+    });
+  }
+  invocationBuffer.finish();
+  return result;
 }
 
 function createInvocationPayload(methodName, method, invocationArgs, errorContext, context) {

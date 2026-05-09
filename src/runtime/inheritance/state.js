@@ -16,6 +16,7 @@ type RuntimeMethodEntry = {
   signature: { argNames: string[] },
   ownerKey: string, // file/template that defined this method
   origin: SourceOrigin | null, // callable declaration site for diagnostics
+  isConstructor: boolean, // true for the synthetic script constructor method
   super: RuntimeMethodEntry | null, // owner-relative parent method
   callsSuper: boolean, // true when the body calls super()
   invokedMethodRefs: Record<string, InvokedMethodRef>, // method name -> first call site

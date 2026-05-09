@@ -278,7 +278,11 @@ class CompileInheritance {
     const constructorDefinition = this.compiler._getConstructorDefinition(node);
 
     this._withAsyncConstructorEntryState(isTemplateConstructor, () => {
-      this.emit.line('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
+      if (isTemplateConstructor) {
+        this.emit.line('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
+      } else {
+        this.emit.line('function b___constructor__(env, context, runtime, cb, output, blockPayload = null, blockRenderCtx = undefined, inheritanceState = null, methodData = undefined) {');
+      }
       this.emit.line('try {');
       this.emit.line(`let ${ROOT_STARTUP_PROMISE_VAR} = null;`);
       if (isTemplateConstructor) {
@@ -292,7 +296,7 @@ class CompileInheritance {
       this.compiler.isCompilingCallableEntry = !!constructorDefinition;
       try {
         if (constructorDefinition && constructorDefinition.body && this.compiler.scriptMode) {
-          this.emit.line(`__rootStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
+          this.emit.line(`__rootStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, null, blockPayload, blockRenderCtx, methodData);`);
         } else if (constructorDefinition && constructorDefinition.body) {
           this.compiler._compileChildren(constructorDefinition.body, null);
         }
@@ -316,6 +320,29 @@ class CompileInheritance {
     this.emit.line(`    if (${ROOT_STARTUP_PROMISE_VAR}) {`);
     this.emit.line(`      await ${ROOT_STARTUP_PROMISE_VAR};`);
     this.emit.line('    }');
+    if (this.compiler.hasExtends) {
+      const constructorResultVar = this.compiler._tmpid();
+      const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+      const hasLocalConstructor = !!this.compiler._getConstructorDefinition(node);
+      const constructorBufferVar = hasLocalConstructor ? null : this.compiler._tmpid();
+      this.emit.line('    if (inheritanceState && !inheritanceState.finalized) {');
+      this.emit.line('      inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
+      this.emit.line('    }');
+      this.emit.line('    if (inheritanceState && inheritanceState.methods && inheritanceState.methods.__constructor__) {');
+      if (hasLocalConstructor) {
+        this.emit.line(`      const ${constructorResultVar} = runtime.invokeInheritedCallable(inheritanceState, "__constructor__", runtime.createArray([]), context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson});`);
+      } else {
+        this.emit.line(`      const ${constructorBufferVar} = new runtime.CommandBuffer(context, ${this.compiler.buffer.currentBuffer});`);
+        this.emit.line(`      runtime.declareBufferChannel(${constructorBufferVar}, "__return__", "var", context, runtime.RETURN_UNSET);`);
+        this.emit.line(`      const ${constructorResultVar} = runtime.invokeInheritedCallable(inheritanceState, "__constructor__", runtime.createArray([]), context, env, runtime, cb, ${constructorBufferVar}, ${errorContextJson});`);
+      }
+      this.emit.line(`      await runtime.resolveSingle(${constructorResultVar});`);
+      if (!hasLocalConstructor) {
+        this.emit.line(`      ${constructorBufferVar}.finish();`);
+        this.emit.line(`      await ${constructorBufferVar}.getFinishedPromise();`);
+      }
+      this.emit.line('    }');
+    }
     this.compiler.return.emitFinalSnapshot(this.compiler.buffer.currentBuffer, returnVar);
     this.emit.line(`    await ${this.compiler.buffer.currentBuffer}.getFinishedPromise();`);
     this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) {`);
@@ -1043,7 +1070,7 @@ class CompileInheritance {
     const args = positionalArgsNode.children;
     const compilingBlock = this.compiler.currentCallableDefinition;
     const knownArgNames = compilingBlock ? this.getCallableArgNames(compilingBlock) : [];
-    const isScriptMethod = this.compiler.scriptMode && this._isScriptMethodEntry(compilingBlock);
+    const isScriptMethod = this.compiler.scriptMode && compilingBlock instanceof nodes.MethodDefinition;
 
     if (args.length > knownArgNames.length) {
       this.compiler.fail(

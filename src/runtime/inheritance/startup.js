@@ -1,5 +1,4 @@
-// Runs inheritance startup and parent-root rendering.
-// Uses loaded/finalized state.
+// Runs root setup, parent-chain rendering, and startup buffer wiring.
 
 import {RuntimeFatalError} from '../errors.js';
 import {setInheritanceSharedRootBuffer} from './state.js';
@@ -23,9 +22,26 @@ function runCompiledRootStartup({
   return setup(env, context, runtime, cb, output, inheritanceState, extendsState);
 }
 
-function bootstrapInheritanceParentScript() {
-  // Temporary until parent-chain loading/rendering is implemented.
-  throw createUnsupportedFeatureError('script extends');
+async function bootstrapInheritanceParentScript({
+  scriptOrPromise,
+  compositionPayload,
+  context,
+  env,
+  runtime,
+  cb,
+  currentBuffer,
+  inheritanceState
+}) {
+  return renderParentRoot({
+    rootOrPromise: scriptOrPromise,
+    compositionPayload,
+    context,
+    env,
+    runtime,
+    cb,
+    currentBuffer,
+    inheritanceState
+  });
 }
 
 async function renderInheritanceParentRoot({
@@ -38,24 +54,46 @@ async function renderInheritanceParentRoot({
   currentBuffer,
   inheritanceState
 }) {
-  const parentTemplate = await runtime.resolveSingle(templateOrPromise);
-  if (parentTemplate === null || parentTemplate === undefined) {
+  return renderParentRoot({
+    rootOrPromise: templateOrPromise,
+    compositionPayload,
+    context,
+    env,
+    runtime,
+    cb,
+    currentBuffer,
+    inheritanceState
+  });
+}
+
+async function renderParentRoot({
+  rootOrPromise,
+  compositionPayload,
+  context,
+  env,
+  runtime,
+  cb,
+  currentBuffer,
+  inheritanceState
+}) {
+  const parentRoot = await runtime.resolveSingle(rootOrPromise);
+  if (parentRoot === null || parentRoot === undefined) {
     return null;
   }
 
-  const chainToken = enterParentTemplatePath(inheritanceState, parentTemplate.path, context);
+  const chainToken = enterParentTemplatePath(inheritanceState, parentRoot.path, context);
   try {
-    parentTemplate.compile();
+    parentRoot.compile();
     const previousStartupPromise = inheritanceState?.startupPromise ?? null;
     const parentContext = compositionPayload
       ? context.forkForCompositionPayload(
-        parentTemplate.path,
+        parentRoot.path,
         compositionPayload,
         context.getRenderContextVariables()
       )
-      : context.forkForPath(parentTemplate.path);
+      : context.forkForPath(parentRoot.path);
 
-    const parentBuffer = parentTemplate.rootRenderFunc(
+    const parentBuffer = parentRoot.rootRenderFunc(
       env,
       parentContext,
       runtime,
@@ -127,17 +165,6 @@ function getInheritanceSharedBuffer(currentBuffer, inheritanceState) {
     0,
     null,
     currentBuffer?._context?.path ?? null
-  );
-}
-
-// Temporary helper for parent-chain unsupported boundaries.
-function createUnsupportedFeatureError(feature) {
-  return new RuntimeFatalError(
-    `${feature} is not implemented yet`,
-    0,
-    0,
-    null,
-    null
   );
 }
 
