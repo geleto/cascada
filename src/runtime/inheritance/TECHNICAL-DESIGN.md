@@ -397,8 +397,8 @@ Lifecycle:
    known. If the chain has a parent, inline child block placement is suppressed;
    if the chain has no parent, inline child block placement renders locally.
 
-Constructor startup is not a special metadata model. It invokes the finalized
-`__constructor__` method when present.
+Script constructor startup is not a special metadata model. It invokes the
+finalized `__constructor__` method when present.
 
 For scripts, executable body code after `extends` creates a local
 `__constructor__`. That constructor must call `super()` explicitly if it wants
@@ -406,10 +406,10 @@ ancestor constructor startup to run. If a script has no executable body after
 `extends`, it contributes no local constructor and inherited lookup runs the
 nearest ancestor constructor directly.
 
-Templates do not support startup/constructor `super()`. Code outside blocks in
-an extending template is local startup only; parent structure is rendered by the
-template inheritance chain, and block `super()` remains the block-level parent
-call.
+Templates do not support startup/constructor `super()`. Code outside blocks is
+local startup only. It runs after shared declarations and before parent
+structure renders, so it can prepare shared channels used by inherited block
+placement. Block `super()` remains the block-level parent call.
 
 The topmost missing constructor is represented by a no-op constructor only for
 constructor `super()` resolution.
@@ -440,8 +440,6 @@ construct with a `Temporary` comment and list the construct here.
   Replace when script parent-chain loading starts.
 - `startup.js`: `createUnsupportedFeatureError(...)`. Remove with the temporary
   script parent-chain throw body.
-- `startup.js`: fallback in `getInheritanceSharedBuffer(...)`. Remove when
-  shared-root ownership is fully initialized before shared buffer reads.
 - `load.js`: `createStubSourceOrigin(...)`. Replace when loading receives
   source origins directly.
 - `invoke.js`: direct `method.fn(...)` call in `invokeMethod(...)`.

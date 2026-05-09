@@ -117,9 +117,17 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
   }
 }
 
-function getInheritanceSharedBuffer(inheritanceState, currentBuffer) {
-  // Temporary fallback before shared-root ownership exists.
-  return inheritanceState?.sharedRootBuffer || currentBuffer;
+function getInheritanceSharedBuffer(currentBuffer, inheritanceState) {
+  if (inheritanceState?.sharedRootBuffer) {
+    return inheritanceState.sharedRootBuffer;
+  }
+  throw new RuntimeFatalError(
+    'Inheritance shared root buffer is not initialized',
+    0,
+    0,
+    null,
+    currentBuffer?._context?.path ?? null
+  );
 }
 
 // Temporary helper for parent-chain unsupported boundaries.

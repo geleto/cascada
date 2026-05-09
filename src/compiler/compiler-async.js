@@ -895,6 +895,9 @@ class CompilerAsync extends CompilerBaseAsync {
   _compileAsyncRootSetupEntry(node, hasGenericScriptBody = false) {
     const isTemplateRoot = !this.scriptMode;
     const skipGenericSetup = this.scriptMode && this._getConstructorDefinition(node);
+    const templateConstructorDefinition = isTemplateRoot && this.hasExtends
+      ? this._getConstructorDefinition(node)
+      : null;
 
     this.inheritance._withAsyncConstructorEntryState(isTemplateRoot, () => {
       this.emit.line('function b___setup__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
@@ -915,6 +918,11 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       this._emitRootCompositionPayloadInitialization(node);
       this.inheritance.emitRootSharedDeclarations(node);
+      if (templateConstructorDefinition) {
+        const constructorStartupPromise = this._tmpid();
+        this.emit.line(`const ${constructorStartupPromise} = b___constructor__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
+        this.emit.line(`if (${constructorStartupPromise}) { ${ROOT_STARTUP_PROMISE_VAR} = ${constructorStartupPromise}; }`);
+      }
       if (this.scriptMode && hasGenericScriptBody && !skipGenericSetup) {
         this.emit.line(`__rootStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
       } else {

@@ -462,7 +462,10 @@ class CompileInheritance {
     // In template mode this is the root text output lane.
     const linkedChannelsArg = JSON.stringify([this.compiler.buffer.currentTextChannelName]);
     const linkedMutatedChannelsArg = linkedChannelsArg;
+    const previousStartupPromiseVar = this.compiler._tmpid();
+    this.emit.line(`const ${previousStartupPromiseVar} = ${ROOT_STARTUP_PROMISE_VAR};`);
     this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`);
+    this.emit.line(`  if (${previousStartupPromiseVar}) { await ${previousStartupPromiseVar}; }`);
     const resolvedSelectionVar = this.compiler._tmpid();
     this.emit.line(`  const ${resolvedSelectionVar} = await runtime.resolveSingle(${deferredSelectionVar});`);
     this.emit.line(`  if (${resolvedSelectionVar}) {`);
@@ -966,7 +969,10 @@ class CompileInheritance {
       // ordering for the channels available at that runtime call site.
       const linkedChannelsArg = 'Object.keys((inheritanceState && inheritanceState.sharedSchema) || {})';
       const linkedMutatedChannelsArg = linkedChannelsArg;
+      const previousStartupPromiseVar = this.compiler._tmpid();
+      this.emit.line(`const ${previousStartupPromiseVar} = ${ROOT_STARTUP_PROMISE_VAR};`);
       this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`);
+      this.emit.line(`  if (${previousStartupPromiseVar}) { await ${previousStartupPromiseVar}; }`);
       this._emitParentRootRender({
         indent: '  ',
         templateExpr: parentTemplateId,

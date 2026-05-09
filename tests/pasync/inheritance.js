@@ -512,6 +512,82 @@ describe('Inheritance runtime', function () {
       expect(runtime.getCallableLinkedChannels(inheritanceState.methods.content).sort()).to.eql(['childRead', 'helperRead', 'parentRead']);
       expect(runtime.getCallableMutatedChannels(inheritanceState.methods.content).sort()).to.eql(['childWrite', 'helperWrite', 'parentWrite']);
     });
+
+    it('links only callable footprint shared channels before invocation', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      const context = null;
+      const sharedRootBuffer = new runtime.CommandBuffer(context);
+      const currentBuffer = new runtime.CommandBuffer(context, sharedRootBuffer);
+      inheritanceState.sharedRootBuffer = sharedRootBuffer;
+      runtime.declareInheritanceSharedChannel(sharedRootBuffer, 'theme', 'var', context);
+      runtime.declareInheritanceSharedChannel(sharedRootBuffer, 'unused', 'var', context);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn(env, renderContext, rt, cb, buffer) {
+              expect(buffer.getChannelIfExists('theme')).to.be.ok();
+              expect(buffer.getChannelIfExists('unused')).to.be(undefined);
+              return 'ok';
+            },
+            signature: { argNames: [] },
+            ownerKey: 'test.njk',
+            origin: null,
+            ownLinkedChannels: ['theme'],
+            ownMutatedChannels: [],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: { theme: 'var', unused: 'var' },
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      const result = runtime.invokeInheritedCallable(inheritanceState, 'content', [], context, null, runtime, null, currentBuffer);
+
+      expect(result).to.be('ok');
+    });
+
+    it('rejects shared links that would hide a local channel of the same name', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      const context = null;
+      const sharedRootBuffer = new runtime.CommandBuffer(context);
+      const currentBuffer = new runtime.CommandBuffer(context, sharedRootBuffer);
+      inheritanceState.sharedRootBuffer = sharedRootBuffer;
+      runtime.declareInheritanceSharedChannel(sharedRootBuffer, 'theme', 'var', context);
+      runtime.declareBufferChannel(currentBuffer, 'theme', 'var', context, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {
+              return 'unreachable';
+            },
+            signature: { argNames: [] },
+            ownerKey: 'test.njk',
+            origin: null,
+            ownLinkedChannels: ['theme'],
+            ownMutatedChannels: [],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: { theme: 'var' },
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(() => {
+        runtime.invokeInheritedCallable(inheritanceState, 'content', [], context, null, runtime, null, currentBuffer);
+      }).to.throwException((err) => {
+        expect(String(err)).to.contain('Cannot link shared channel');
+      });
+    });
   });
 
   describe('template inheritance', function () {
@@ -757,6 +833,79 @@ describe('Inheritance runtime', function () {
       const result = await env.renderTemplate('child.njk', {});
 
       expect(result).to.be('ABase [Ada]C');
+    });
+
+    it('reads and writes shared vars through this.sharedName in inherited template blocks', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% shared var theme = "parent" %}A{% block body %}{{ this.theme }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% shared var theme = "light" %}{% extends "base.njk" %}{% block body %}{% set this.theme = "dark" %}{{ this.theme }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AdarkC');
+    });
+
+    it('reads template startup shared writes from later blocks', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString('{% shared var theme = "light" %}{% set this.theme = "dark" %}A{% block body %}{{ this.theme }}{% endblock %}C');
+
+      expect(result).to.be('AdarkC');
+    });
+
+    it('reads post-extends startup shared writes from inherited block placement', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% shared var theme %}A{% block body %}{{ this.theme }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% shared var theme = "light" %}{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AdarkC');
+    });
+
+    it('waits for async post-extends startup before inherited block placement', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      env.addGlobal('ready', () => Promise.resolve(true));
+      loader.addTemplate('base.njk', '{% shared var theme %}A{% block body %}{{ this.theme }}{% endblock %}C');
+      loader.addTemplate(
+        'child.njk',
+        '{% shared var theme = "light" %}{% extends "base.njk" %}{% if ready() %}{% set this.theme = "dark" %}{% endif %}{% block body %}{{ this.theme }}{% endblock %}'
+      );
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AdarkC');
+    });
+
+    it('rejects shared schema conflicts across inherited templates', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% shared text theme %}{% block body %}Base{% endblock %}');
+      loader.addTemplate('child.njk', '{% shared var theme %}{% extends "base.njk" %}');
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected shared schema conflict');
+      } catch (err) {
+        expect(String(err)).to.contain('Shared channel "theme" was declared as');
+      }
+    });
+
+    it('rejects shared channel and inherited callable name collisions', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% shared var body %}Base');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block body %}Child{% endblock %}');
+
+      try {
+        await env.renderTemplate('child.njk', {});
+        expect().fail('Expected shared/method name conflict');
+      } catch (err) {
+        expect(String(err)).to.contain('conflicts with shared channel "body"');
+      }
     });
 
     it('rejects missing inherited callable references during finalization', async function () {

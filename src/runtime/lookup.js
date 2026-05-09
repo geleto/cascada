@@ -9,8 +9,10 @@ import {
   collectErrors,
 } from './errors.js';
 
-import * as inheritanceCall from './inheritance-legacy/call.js';
-import * as inheritanceState from './inheritance-legacy/state.js';
+import {
+  ensureInheritanceSharedSchemaTable,
+  resolveInheritanceSharedChannel
+} from './inheritance/shared.js';
 import {resolveDuo} from './resolve.js';
 import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './channels/observation.js';
 /**
@@ -244,13 +246,8 @@ function observeInheritanceSharedChannelImpl(name, currentBuffer, errorContext =
   }
 
   const pos = _getObservationPosition(errorContext);
-  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue || {});
+  const sharedSchema = ensureInheritanceSharedSchemaTable(inheritanceStateValue || {});
   if (Object.prototype.hasOwnProperty.call(sharedSchema, name)) {
-    // The metadata-ready barrier guarantees normal inherited dispatch observes
-    // a finalized shared schema before method/block execution starts. Keep the
-    // structural link assertion on the same turn so temporary buffer-entry
-    // cleanup cannot erase a valid linked path before we enqueue the ordered
-    // snapshot command on the current buffer.
     return _observeResolvedInheritanceSharedChannel(
       name,
       currentBuffer,
@@ -262,7 +259,7 @@ function observeInheritanceSharedChannelImpl(name, currentBuffer, errorContext =
     );
   }
 
-  const channelType = inheritanceCall.resolveInheritanceSharedChannel(
+  const channelType = resolveInheritanceSharedChannel(
     inheritanceStateValue,
     name,
     errorContext

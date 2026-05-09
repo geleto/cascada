@@ -3,6 +3,7 @@
 // Invocation commands will replace the temporary direct call path.
 
 import {RuntimeFatalError} from '../errors.js';
+import {linkCurrentBufferToSharedChannels} from './shared.js';
 
 /*
 // Compiler output for one inherited callable reference.
@@ -125,6 +126,12 @@ function normalizeInvocationArgs(methodName, args, errorContext, context) {
 
 function invokeMethod(inheritanceState, method, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext) {
   const payload = createInvocationPayload(method.name, method, invocationArgs, errorContext, context);
+  linkCurrentBufferToSharedChannels(
+    currentBuffer,
+    inheritanceState,
+    method.mergedLinkedChannels,
+    method.mergedMutatedChannels
+  );
 
   // Temporary direct call until invocation commands own admission.
   return method.fn(

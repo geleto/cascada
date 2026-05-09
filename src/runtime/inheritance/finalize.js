@@ -71,8 +71,17 @@ function finalizeInheritanceMetadata(state, context = null) {
 
   for (let i = files.length - 1; i >= 0; i--) {
     const spec = files[i].spec;
-    Object.assign(sharedSchema, spec.sharedSchema || {});
+    registerSharedSchema(sharedSchema, methods, spec.sharedSchema || {}, files[i].context || context);
     for (const [name, entry] of Object.entries(spec.methodEntries || {})) {
+      if (Object.prototype.hasOwnProperty.call(sharedSchema, name)) {
+        throw new RuntimeFatalError(
+          `Inherited callable "${name}" conflicts with shared channel "${name}"`,
+          entry.origin?.lineno ?? 0,
+          entry.origin?.colno ?? 0,
+          entry.origin?.errorContextString ?? null,
+          entry.origin?.path ?? context?.path ?? null
+        );
+      }
       const parentMethod = methods[name] || null;
       const method = createRuntimeMethodEntry(entry, name, context);
       if (parentMethod) {
@@ -100,6 +109,35 @@ function finalizeInheritanceMetadata(state, context = null) {
   state.loading = null;
   state.finalized = true;
   return state;
+}
+
+function registerSharedSchema(sharedSchema, methods, nextSchema, context) {
+  for (const [name, channelType] of Object.entries(nextSchema)) {
+    // Shared entries are processed before this file's methods, so this catches
+    // shared names colliding with methods from already-processed ancestors.
+    if (Object.prototype.hasOwnProperty.call(methods, name)) {
+      throw new RuntimeFatalError(
+        `Shared channel "${name}" conflicts with inherited callable "${name}"`,
+        0,
+        0,
+        null,
+        context?.path ?? null
+      );
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(sharedSchema, name) &&
+      sharedSchema[name] !== channelType
+    ) {
+      throw new RuntimeFatalError(
+        `Shared channel "${name}" was declared as "${sharedSchema[name]}" and "${channelType}"`,
+        0,
+        0,
+        null,
+        context?.path ?? null
+      );
+    }
+    sharedSchema[name] = channelType;
+  }
 }
 
 function createRuntimeMethodEntry(entry, name, context) {
@@ -169,8 +207,8 @@ function normalizeInvokedMethodRefs(value) {
   return refs;
 }
 
-function validateInvokedMethodRefs(methods, dispatchMethods, context) {
-  for (const method of methods) {
+function validateInvokedMethodRefs(allMethodEntries, dispatchMethods, context) {
+  for (const method of allMethodEntries) {
     for (const [name, ref] of Object.entries(method.invokedMethodRefs)) {
       if (dispatchMethods[name]) {
         continue;
@@ -187,12 +225,11 @@ function validateInvokedMethodRefs(methods, dispatchMethods, context) {
   }
 }
 
-function mergeMethodFootprints(methods, dispatchMethods) {
-  const methodValues = methods;
+function mergeMethodFootprints(allMethodEntries, dispatchMethods) {
   let changed = true;
   while (changed) {
     changed = false;
-    for (const method of methodValues) {
+    for (const method of allMethodEntries) {
       const linked = new Set(method.mergedLinkedChannels);
       const mutated = new Set(method.mergedMutatedChannels);
       if (method.callsSuper) {

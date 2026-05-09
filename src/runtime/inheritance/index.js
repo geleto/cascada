@@ -19,3 +19,11 @@ export {
   invokeInheritedCallable,
   invokeSuperCallable
 } from './invoke.js';
+export {
+  claimInheritanceSharedDefault,
+  declareInheritanceSharedChannel,
+  ensureInheritanceSharedSchemaTable,
+  initializeInheritanceSharedChannelDefault,
+  linkCurrentBufferToSharedChannels,
+  resolveInheritanceSharedChannel
+} from './shared.js';

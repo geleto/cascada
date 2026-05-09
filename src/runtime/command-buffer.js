@@ -299,6 +299,11 @@ class CommandBuffer {
     return channel && channel._buffer === this ? channel : undefined;
   }
 
+  hasLinkedChannelFromBuffer(channelName, sourceBuffer) {
+    const channel = this.getChannelIfExists(channelName);
+    return !!(channel && channel._buffer === sourceBuffer);
+  }
+
   hasChannel(channelName = 'text') {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     return !!this._channels[resolvedChannelName];
