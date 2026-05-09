@@ -528,6 +528,7 @@ observe through rendering.
 
 10. Dynamic startup
    - add dynamic parent selection and `extends none`
+   - dynamic template `extends` must be a top-level declaration
    - compile literal `extends none` as no parent work
    - change generated dynamic-template output so parent selection is resolved
      once into an `extendsState` field such as `hasParent`

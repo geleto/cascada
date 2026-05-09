@@ -945,6 +945,118 @@ describe('Inheritance runtime', function () {
         expect(String(err)).to.contain('Block "content" defined more than once');
       }
     });
+
+    it('renders local block placement for literal extends none', async function () {
+      const env = new AsyncEnvironment();
+
+      const result = await env.renderTemplateString('{% extends none %}{% block content %}Local{% endblock %}');
+
+      expect(result).to.be('Local');
+    });
+
+    it('renders local fallback when dynamic extends resolves to no parent', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', '{% extends parentName %}{% block content %}Local{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', { parentName: null });
+
+      expect(result).to.be('Local');
+    });
+
+    it('renders parent placement when dynamic extends resolves to a parent', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends parentName %}{% block content %}Child{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', { parentName: 'base.njk' });
+
+      expect(result).to.be('AChildC');
+    });
+
+    it('waits for dynamic parent selection when a block appears before extends', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% block content %}Child{% endblock %}{% extends parentName %}');
+
+      const result = await env.renderTemplate('child.njk', { parentName: 'base.njk' });
+
+      expect(result).to.be('AChildC');
+    });
+
+    it('resolves dynamic parent selection once for multiple block placements', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      let calls = 0;
+      env.addGlobal('chooseParent', () => {
+        calls += 1;
+        return Promise.resolve('base.njk');
+      });
+      loader.addTemplate('base.njk', 'A{% block one %}1{% endblock %}B{% block two %}2{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends chooseParent() %}{% block one %}X{% endblock %}{% block two %}Y{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('AXBYC');
+      expect(calls).to.be(1);
+    });
+
+    it('propagates dynamic parent selection failures to block placement', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', '{% block content %}Child{% endblock %}{% extends parentName %}');
+
+      try {
+        await env.renderTemplate('child.njk', { parentName: 'missing.njk' });
+        expect().fail('Expected missing dynamic parent rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('Template not found: missing.njk');
+      }
+    });
+
+    it('rejects dynamic extends inside template control flow', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content %}Base{% endblock %}C');
+      loader.addTemplate('child.njk', '{% if useParent %}{% extends parentName %}{% endif %}{% block content %}Child{% endblock %}');
+
+      try {
+        await env.renderTemplate('child.njk', { useParent: true, parentName: 'base.njk' });
+        expect().fail('Expected deferred dynamic extends rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('dynamic template extends must be a top-level declaration');
+      }
+    });
+
+    it('does not evaluate local named block bindings when dynamic extends selects a parent', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      env.addGlobal('explode', () => {
+        throw new Error('local placement binding should not run');
+      });
+      loader.addTemplate('base.njk', '{% set person = "Ada" %}A{% block content(user = person) %}Base {{ user }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends parentName %}{% block content(user = explode()) %}Child {{ user }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', { parentName: 'base.njk' });
+
+      expect(result).to.be('AChild AdaC');
+    });
+
+    it('rejects dynamic template extends cycles clearly', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('a.njk', '{% extends parentName %}{% block content %}A{% endblock %}');
+      loader.addTemplate('b.njk', '{% extends "a.njk" %}{% block content %}B{% endblock %}');
+
+      try {
+        await env.renderTemplate('a.njk', { parentName: 'b.njk' });
+        expect().fail('Expected dynamic inheritance cycle rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('Inheritance cycle detected');
+      }
+    });
   });
 
   describe('script inheritance', function () {

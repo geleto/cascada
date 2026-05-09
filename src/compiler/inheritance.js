@@ -205,11 +205,11 @@ class CompileInheritance {
     const needsParentCheck = isTopLevelTemplateBlock && this.compiler.hasDynamicExtends;
     this.emit.line(`let ${id};`);
     if (needsParentCheck) {
-      const parentPromiseVar = this.compiler._tmpid();
-      this.emit.line(`const ${parentPromiseVar} = runtime.resolveSingle(extendsState && extendsState.parentSelection);`);
+      const parentReadyVar = this.compiler._tmpid();
+      this.emit.line(`const ${parentReadyVar} = runtime.resolveSingle(extendsState && extendsState.parentReady);`);
       this.emitAsyncBlockTextPlacement(node, id, () => {
-        this.emit.line(`${parentPromiseVar}.then((parent) => {`);
-        this.emit.line('  if (parent) return "";');
+        this.emit.line(`${parentReadyVar}.then(() => {`);
+        this.emit.line('  if (extendsState && extendsState.hasParent) return "";');
         this.emit.line('  if (inheritanceState) { inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context); }');
         this.emit('  return ');
         this.emitInheritedBlockPlacementInvocation(node.name.value, callableSignature, errorContextJson);
@@ -356,9 +356,6 @@ class CompileInheritance {
     this.emit.line(`    if (${ROOT_STARTUP_PROMISE_VAR}) {`);
     this.emit.line(`      await ${ROOT_STARTUP_PROMISE_VAR};`);
     this.emit.line('    }');
-    if (this.compiler.hasDeferredDynamicExtends) {
-      this._emitDynamicTemplateParentRender(`    `);
-    }
     this.emit.line(`    ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) { inheritanceState.sharedRootBuffer.finish(); }`);
     this.emit.line(`    cb(null, await ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot());`);
@@ -381,21 +378,25 @@ class CompileInheritance {
     this.emit.line(`${indent}});`);
   }
 
-  _emitDynamicTemplateParentRender(indent = '') {
+  _emitResolveDynamicParentReady(indent = '') {
     if (!this.compiler.hasDynamicExtends) {
       return;
     }
-    const parentSelectionVar = this.compiler._tmpid();
-    const parentPayloadVar = this.compiler._tmpid();
-    this.emit.line(`${indent}const ${parentSelectionVar} = await runtime.resolveSingle(extendsState && extendsState.parentSelection);`);
-    this.emit.line(`${indent}if (${parentSelectionVar}) {`);
-    this.emit.line(`${indent}  const ${parentPayloadVar} = ${parentSelectionVar}.compositionPayload || (inheritanceState && inheritanceState.compositionPayload) || null;`);
-    this._emitParentRootRender({
-      indent: `${indent}  `,
-      templateExpr: `${parentSelectionVar}.template`,
-      compositionPayloadExpr: parentPayloadVar,
-      currentBufferExpr: this.compiler.buffer.currentBuffer
-    });
+    this.emit.line(`${indent}if (extendsState && extendsState.resolveParentReady) {`);
+    this.emit.line(`${indent}  extendsState.resolveParentReady();`);
+    this.emit.line(`${indent}  extendsState.resolveParentReady = null;`);
+    this.emit.line(`${indent}  extendsState.rejectParentReady = null;`);
+    this.emit.line(`${indent}}`);
+  }
+
+  _emitRejectDynamicParentReady(indent = '', errorExpr = 'e') {
+    if (!this.compiler.hasDynamicExtends) {
+      return;
+    }
+    this.emit.line(`${indent}if (extendsState && extendsState.rejectParentReady) {`);
+    this.emit.line(`${indent}  extendsState.rejectParentReady(${errorExpr});`);
+    this.emit.line(`${indent}  extendsState.resolveParentReady = null;`);
+    this.emit.line(`${indent}  extendsState.rejectParentReady = null;`);
     this.emit.line(`${indent}}`);
   }
 
@@ -405,9 +406,6 @@ class CompileInheritance {
     this.emit.line('} else {');
     this.emit.line(`  if (${ROOT_STARTUP_PROMISE_VAR}) {`);
     this.emit.line(`    ${ROOT_STARTUP_PROMISE_VAR} = ${ROOT_STARTUP_PROMISE_VAR}.then(async () => {`);
-    if (this.compiler.hasDeferredDynamicExtends) {
-      this._emitDynamicTemplateParentRender(`      `);
-    }
     this.emit.line(`      ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('    }).catch((e) => {');
@@ -416,22 +414,7 @@ class CompileInheritance {
     this.emit.line('    });');
     this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${ROOT_STARTUP_PROMISE_VAR});`);
     this.emit.line('  } else {');
-    if (this.compiler.hasDeferredDynamicExtends) {
-      const finishPromiseVar = this.compiler._tmpid();
-      this.emit.line(`    const ${finishPromiseVar} = (async () => {`);
-      this._emitDynamicTemplateParentRender(`      `);
-      this.emit.line(`      ${this.compiler.buffer.currentBuffer}.finish();`);
-      this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
-      this.emit.line('    })();');
-      this.emit.line(`    ${ROOT_STARTUP_PROMISE_VAR} = ${finishPromiseVar};`);
-      this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${finishPromiseVar});`);
-      this.emit.line(`    ${finishPromiseVar}.catch((e) => {`);
-      this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
-      this.emit.line('      cb(err);');
-      this.emit.line('    });');
-    } else {
-      this.emit.line(`    ${this.compiler.buffer.currentBuffer}.finish();`);
-    }
+    this.emit.line(`    ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line('  }');
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('}');
@@ -446,6 +429,7 @@ class CompileInheritance {
     this.emit.line('(async () => {');
     emitLeafResult();
     this.emit.line('})().catch(e => {');
+    this._emitRejectDynamicParentReady('  ');
     this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
     this.emit.line('  cb(err);');
     this.emit.line('});');
@@ -492,9 +476,11 @@ class CompileInheritance {
     const previousStartupPromiseVar = this.compiler._tmpid();
     this.emit.line(`const ${previousStartupPromiseVar} = ${ROOT_STARTUP_PROMISE_VAR};`);
     this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runControlFlowBoundary(${this.compiler.buffer.currentBuffer}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`);
+    this.emit.line('try {');
     this.emit.line(`  if (${previousStartupPromiseVar}) { await ${previousStartupPromiseVar}; }`);
     const resolvedSelectionVar = this.compiler._tmpid();
     this.emit.line(`  const ${resolvedSelectionVar} = await runtime.resolveSingle(${deferredSelectionVar});`);
+    this.emit.line(`  if (extendsState) { extendsState.hasParent = !!${resolvedSelectionVar}; }`);
     this.emit.line(`  if (${resolvedSelectionVar}) {`);
     this._emitParentRootRender({
       indent: '    ',
@@ -503,6 +489,11 @@ class CompileInheritance {
       currentBufferExpr: 'currentBuffer'
     });
     this.emit.line('  }');
+    this._emitResolveDynamicParentReady('  ');
+    this.emit.line('} catch (e) {');
+    this._emitRejectDynamicParentReady('  ');
+    this.emit.line('  throw e;');
+    this.emit.line('}');
     this.emit.line('});');
   }
 
@@ -1024,17 +1015,6 @@ class CompileInheritance {
     this.emit.line('  }');
     this.emit.line(`  return { template: resolvedParentTemplate, compositionPayload: ${compositionPayloadVar} };`);
     this.emit.line('});');
-    if (this.compiler.hasDynamicExtends) {
-      const isTopLevelDynamicExtends =
-        !!(this.compiler.topLevelDynamicExtends && this.compiler.topLevelDynamicExtends.has(node));
-      this.emit.line(`if (extendsState) { extendsState.parentSelection = ${deferredSelectionVar}; }`);
-      if (!isTopLevelDynamicExtends) {
-        return;
-      }
-      this._emitTemplateExtendsBoundaryFromSelection(deferredSelectionVar);
-      return;
-    }
-    this.emit.line(`if (extendsState) { extendsState.parentSelection = ${deferredSelectionVar}; }`);
     this._emitTemplateExtendsBoundaryFromSelection(deferredSelectionVar);
   }
 

@@ -663,6 +663,15 @@ class CompilerAsync extends CompilerBaseAsync {
     const rootCompileFacts = this._getRootCompileFacts(node);
     validateScriptExtendsSourceOrder(this, node);
     validateLocalSharedMethodNameCollisions(this, node);
+    if (!this.scriptMode && rootCompileFacts.deferredDynamicExtends.length > 0) {
+      const deferredExtendsNode = rootCompileFacts.deferredDynamicExtends[0];
+      this.fail(
+        'dynamic template extends must be a top-level declaration',
+        deferredExtendsNode.lineno,
+        deferredExtendsNode.colno,
+        deferredExtendsNode
+      );
+    }
     return {
       rootCompileFacts
     };
@@ -689,10 +698,8 @@ class CompilerAsync extends CompilerBaseAsync {
     }
 
     const rootCompileFacts = node._analysis.rootCompileFacts;
-    this.topLevelDynamicExtends = rootCompileFacts.topLevelDynamicExtends;
     this.hasStaticExtends = rootCompileFacts.hasStaticExtends;
     this.hasDynamicExtends = rootCompileFacts.hasDynamicExtends;
-    this.hasDeferredDynamicExtends = rootCompileFacts.hasDeferredDynamicExtends;
     this.hasExtends = rootCompileFacts.hasExtends;
     this.needsInheritanceState = rootCompileFacts.needsInheritanceState;
     const rootCompileResult = this._compileAsyncRoot(node);
@@ -800,13 +807,12 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _getRootCompileFacts(node) {
     const extendsNodes = node.findAll(nodes.Extends).filter((child) => !child.noParentLiteral);
-    const topLevelDynamicExtends = new Set(
-      node.children.filter((child) => this._isDynamicExtendsNode(child))
-    );
+    const topLevelDynamicExtends = node.children.filter((child) => this._isDynamicExtendsNode(child));
+    const topLevelDynamicExtendsSet = new Set(topLevelDynamicExtends);
     const hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
     const hasDynamicExtends = extendsNodes.some((child) => this._isDynamicExtendsNode(child));
-    const hasDeferredDynamicExtends = extendsNodes.some((child) =>
-      this._isDynamicExtendsNode(child) && !topLevelDynamicExtends.has(child)
+    const deferredDynamicExtends = extendsNodes.filter((child) =>
+      this._isDynamicExtendsNode(child) && !topLevelDynamicExtendsSet.has(child)
     );
     const hasExtends = hasStaticExtends || hasDynamicExtends;
     const constructorDefinition = this._getConstructorDefinition(node);
@@ -822,10 +828,9 @@ class CompilerAsync extends CompilerBaseAsync {
       Object.keys(invokedMethodRefs).length > 0;
 
     return {
-      topLevelDynamicExtends,
       hasStaticExtends,
       hasDynamicExtends,
-      hasDeferredDynamicExtends,
+      deferredDynamicExtends,
       hasExtends,
       needsInheritanceState,
       invokedMethodRefs
@@ -837,7 +842,12 @@ class CompilerAsync extends CompilerBaseAsync {
       COMPILED_INHERITANCE_SPEC_VAR
     );
     this.emit.line(`let ${ROOT_STARTUP_PROMISE_VAR} = null;`);
-    this.emit.line(`const extendsState = ${(!this.scriptMode && this.hasDynamicExtends) ? '{ parentSelection: null }' : 'null'};`);
+    if (!this.scriptMode && this.hasDynamicExtends) {
+      this.emit.line('const extendsState = { parentReady: null, hasParent: false, resolveParentReady: null, rejectParentReady: null };');
+      this.emit.line('extendsState.parentReady = new Promise((resolve, reject) => { extendsState.resolveParentReady = resolve; extendsState.rejectParentReady = reject; });');
+    } else {
+      this.emit.line('const extendsState = null;');
+    }
     this.emit.line(`${ROOT_STARTUP_PROMISE_VAR} = runtime.runCompiledRootStartup({`);
     this.emit.line('  setup: b___setup__,');
     this.emit.line('  inheritanceState,');
