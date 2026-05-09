@@ -268,6 +268,250 @@ describe('Inheritance runtime', function () {
         runtime.invokeInheritedCallable(inheritanceState, 'content', { values: ['Ada', 'Dr.'], names: ['name', 'name'] }, null, null, runtime, null, null);
       }).to.throwException(/received duplicate argument "name"/);
     });
+
+    it('merges invoked callable footprints through cycles', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          first: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'test.njk',
+            origin: null,
+            ownLinkedChannels: ['firstRead'],
+            ownMutatedChannels: ['firstWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: { second: { name: 'second', origin: null } }
+          },
+          second: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'test.njk',
+            origin: null,
+            ownLinkedChannels: ['secondRead'],
+            ownMutatedChannels: ['secondWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: { first: { name: 'first', origin: null } }
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(runtime.getCallableLinkedChannels(inheritanceState.methods.first).sort()).to.eql(['firstRead', 'secondRead']);
+      expect(runtime.getCallableMutatedChannels(inheritanceState.methods.first).sort()).to.eql(['firstWrite', 'secondWrite']);
+      expect(runtime.getCallableLinkedChannels(inheritanceState.methods.second).sort()).to.eql(['firstRead', 'secondRead']);
+      expect(runtime.getCallableMutatedChannels(inheritanceState.methods.second).sort()).to.eql(['firstWrite', 'secondWrite']);
+    });
+
+    it('merges invoked callable footprints through a linear chain', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          first: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'test.njk',
+            origin: null,
+            ownLinkedChannels: ['firstRead'],
+            ownMutatedChannels: ['firstWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: { second: { name: 'second', origin: null } }
+          },
+          second: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'test.njk',
+            origin: null,
+            ownLinkedChannels: ['secondRead'],
+            ownMutatedChannels: ['secondWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: { third: { name: 'third', origin: null } }
+          },
+          third: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'test.njk',
+            origin: null,
+            ownLinkedChannels: ['thirdRead'],
+            ownMutatedChannels: ['thirdWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(runtime.getCallableLinkedChannels(inheritanceState.methods.first).sort()).to.eql(['firstRead', 'secondRead', 'thirdRead']);
+      expect(runtime.getCallableMutatedChannels(inheritanceState.methods.first).sort()).to.eql(['firstWrite', 'secondWrite', 'thirdWrite']);
+      expect(runtime.getCallableLinkedChannels(inheritanceState.methods.second).sort()).to.eql(['secondRead', 'thirdRead']);
+      expect(runtime.getCallableMutatedChannels(inheritanceState.methods.second).sort()).to.eql(['secondWrite', 'thirdWrite']);
+    });
+
+    it('does not merge parent footprints when an override does not call super', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'child.njk',
+            origin: null,
+            ownLinkedChannels: ['childRead'],
+            ownMutatedChannels: ['childWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: true
+      }, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'parent.njk',
+            origin: null,
+            ownLinkedChannels: ['parentRead'],
+            ownMutatedChannels: ['parentWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(runtime.getCallableLinkedChannels(inheritanceState.methods.content)).to.eql(['childRead']);
+      expect(runtime.getCallableMutatedChannels(inheritanceState.methods.content)).to.eql(['childWrite']);
+    });
+
+    it('validates invoked refs from overridden parent entries', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'child.njk',
+            origin: null,
+            ownLinkedChannels: [],
+            ownMutatedChannels: [],
+            super: true,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: true
+      }, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'parent.njk',
+            origin: null,
+            ownLinkedChannels: [],
+            ownMutatedChannels: [],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: { missing: { name: 'missing', origin: null } }
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+
+      expect(() => {
+        runtime.finalizeInheritanceMetadata(inheritanceState, null);
+      }).to.throwException(/Missing inherited callable "missing"/);
+    });
+
+    it('merges parent invoked-callable footprints through super', function () {
+      const inheritanceState = runtime.createInheritanceState();
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'child.njk',
+            origin: null,
+            ownLinkedChannels: ['childRead'],
+            ownMutatedChannels: ['childWrite'],
+            super: true,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          },
+          helper: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'child.njk',
+            origin: null,
+            ownLinkedChannels: ['helperRead'],
+            ownMutatedChannels: ['helperWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: {}
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: true
+      }, null);
+      runtime.bootstrapInheritanceMetadata(inheritanceState, {
+        setup: null,
+        methodEntries: {
+          content: {
+            fn() {},
+            signature: { argNames: [] },
+            ownerKey: 'parent.njk',
+            origin: null,
+            ownLinkedChannels: ['parentRead'],
+            ownMutatedChannels: ['parentWrite'],
+            super: false,
+            superOrigin: null,
+            invokedMethodRefs: { helper: { name: 'helper', origin: null } }
+          }
+        },
+        sharedSchema: {},
+        invokedMethodRefs: {},
+        hasExtends: false
+      }, null);
+
+      runtime.finalizeInheritanceMetadata(inheritanceState, null);
+
+      expect(runtime.getCallableLinkedChannels(inheritanceState.methods.content).sort()).to.eql(['childRead', 'helperRead', 'parentRead']);
+      expect(runtime.getCallableMutatedChannels(inheritanceState.methods.content).sort()).to.eql(['childWrite', 'helperWrite', 'parentWrite']);
+    });
   });
 
   describe('template inheritance', function () {
@@ -501,6 +745,28 @@ describe('Inheritance runtime', function () {
         expect().fail('Expected parent argument name validation failure');
       } catch (err) {
         expect(String(err)).to.contain('Inherited callable "content" received unknown argument "user"');
+      }
+    });
+
+    it('dispatches this.blockName to the selected inherited block', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'A{% block content %}Base {{ this.helper("Ada") }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block helper(name) %}[{{ name }}]{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+
+      expect(result).to.be('ABase [Ada]C');
+    });
+
+    it('rejects missing inherited callable references during finalization', async function () {
+      const env = new AsyncEnvironment();
+
+      try {
+        await env.renderTemplateString('{% block content %}{{ this.missing() }}{% endblock %}');
+        expect().fail('Expected missing inherited callable reference');
+      } catch (err) {
+        expect(String(err)).to.contain('Missing inherited callable "missing"');
       }
     });
 

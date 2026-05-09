@@ -131,6 +131,8 @@ type RuntimeMethodEntry = {
   ownerKey: string, // file/template that defined this method
   origin: SourceOrigin | null, // callable declaration site for diagnostics
   super: RuntimeMethodEntry | null, // owner-relative parent method
+  callsSuper: boolean, // true when the body calls super()
+  invokedMethodRefs: Record<string, InvokedMethodRef>, // method name -> first call site
   mergedLinkedChannels: string[], // transitive reads/observations
   mergedMutatedChannels: string[] // transitive mutations
 }
@@ -258,10 +260,14 @@ Final execution method entry:
 
 ```js
 {
+  name, // method name
   fn, // compiled callable function
   signature, // finalized call signature
   ownerKey, // file/template identity
+  origin, // callable declaration site for diagnostics
   super, // parent execution method entry, or null
+  callsSuper, // true when this body calls super()
+  invokedMethodRefs, // ordinary inherited calls from this body
   mergedLinkedChannels, // full transitive channel reads/observations
   mergedMutatedChannels // full transitive channel mutations
 }
@@ -498,10 +504,10 @@ observe through rendering.
    - add missing/invalid `super()` failure tests
 
 7. `this.callable(...)`
-   - add ordinary inherited callable dispatch from methods and blocks
+   - add ordinary inherited callable dispatch from blocks
    - merge invoked-callable footprints into caller footprints
-   - test `this.blockName(...)` / `this.method(...)`, missing callable errors,
-     and invoked-callable cycles
+   - test `this.blockName(...)`, missing callable errors, and
+     invoked-callable cycles
 
 8. Shared state
    - add shared schema finalization and shared root buffer

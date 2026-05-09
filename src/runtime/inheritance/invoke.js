@@ -5,6 +5,12 @@
 import {RuntimeFatalError} from '../errors.js';
 
 /*
+// Compiler output for one inherited callable reference.
+type InvokedMethodRef = {
+  name: string,
+  origin: SourceOrigin | null
+}
+
 // Runtime method entry after finalization.
 type RuntimeMethodEntry = {
   name: string,
@@ -13,6 +19,8 @@ type RuntimeMethodEntry = {
   ownerKey: string, // file/template that defined this method
   origin: SourceOrigin | null, // callable declaration site for diagnostics
   super: RuntimeMethodEntry | null, // owner-relative parent method
+  callsSuper: boolean, // true when the body calls super()
+  invokedMethodRefs: Record<string, InvokedMethodRef>, // method name -> first call site
   mergedLinkedChannels: string[], // transitive reads/observations
   mergedMutatedChannels: string[] // transitive mutations
 }
