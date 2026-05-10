@@ -35,10 +35,10 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared text trace\nextends "B.script"\nthis.trace("post-C|")\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be('A|post-B|post-C|');
+      expect(result).to.be('post-C|');
     });
 
-    it('should run an ancestor constructor once through a constructorless child script', async function () {
+    it('should not run an ancestor constructor when the child constructor omits super()', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -46,10 +46,10 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be('A|');
+      expect(result).to.be('');
     });
 
-    it('should run an ancestor constructor once through a constructorless middle script', async function () {
+    it('should not run an ancestor constructor through a constructorless middle without child super()', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -58,10 +58,10 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared text trace\nextends "B.script"\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be('A|');
+      expect(result).to.be('');
     });
 
-    it('should expose descendant shared defaults to ancestor constructors', async function () {
+    it('should not apply ancestor constructor shared reads without child super()', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -69,7 +69,7 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared var theme = "dark"\nshared text trace\nextends "A.script"\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be('dark');
+      expect(result).to.be('');
     });
 
     it('should not treat undeclared parent shared vars as ordinary bare symbols in child scripts', async function () {
@@ -113,7 +113,7 @@ describe('Extends Runtime', function () {
       expect(result).to.be('dark');
     });
 
-    it('should preserve parent-before-post order through the child-buffer structure', async function () {
+    it('should keep child constructor writes local when it omits super()', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -123,10 +123,10 @@ describe('Extends Runtime', function () {
       const result = await env.renderScript('C.script', {
         waitAndGet: (value) => new Promise((resolve) => setTimeout(() => resolve(value), 10))
       });
-      expect(result).to.be('A|post|');
+      expect(result).to.be('post|');
     });
 
-    it('should propagate extends composition payload unchanged across a multi-level chain', async function () {
+    it('should not evaluate parent payload reads without constructor super()', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -135,10 +135,10 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared text trace\nextends "B.script" with theme\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', { theme: 'dark' });
-      expect(result).to.be('dark');
+      expect(result).to.be('');
     });
 
-    it('should make extends-with payload visible to the parent constructor before parent work runs', async function () {
+    it('should not run parent constructor payload reads without child super()', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -146,10 +146,10 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared text trace\nextends "A.script" with theme\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', { theme: 'dark' });
-      expect(result).to.be('dark');
+      expect(result).to.be('');
     });
 
-    it('should honor without context on script extends payload root', async function () {
+    it('should not evaluate parent without-context constructor reads without child super()', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -157,7 +157,7 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared text trace\nextends "A.script" without context\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', { site: 'Example' });
-      expect(result).to.be('missing');
+      expect(result).to.be('');
     });
 
     it('should reject multiple top-level script extends declarations', function () {
@@ -177,7 +177,7 @@ describe('Extends Runtime', function () {
         await env.renderScript('A.script', {});
         expect().fail('Expected cyclic extends chain to fail');
       } catch (err) {
-        expect(String(err)).to.contain('Cyclic extends chain detected');
+        expect(String(err)).to.contain('Inheritance cycle detected');
       }
     });
 
@@ -192,7 +192,7 @@ describe('Extends Runtime', function () {
         await env.renderScript('A.script', { parentName: 'B.script' });
         expect().fail('Expected cyclic dynamic extends chain to fail');
       } catch (err) {
-        expect(String(err)).to.contain('Cyclic extends chain detected');
+        expect(String(err)).to.contain('Inheritance cycle detected');
       }
     });
 
@@ -358,7 +358,7 @@ describe('Extends Runtime', function () {
   });
 
   describe('Phase 7 - Inherited Dispatch', function () {
-    it('should let an ancestor constructor call a child-defined override before parent methods load', async function () {
+    it('should not let an ancestor constructor call a child override unless the child calls super()', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
@@ -366,7 +366,7 @@ describe('Extends Runtime', function () {
       loader.addTemplate('C.script', 'shared text trace\nextends "A.script"\nmethod build(name)\n  return "child:" + name\nendmethod\nreturn this.trace.snapshot()');
 
       const result = await env.renderScript('C.script', {});
-      expect(result).to.be('child:Ada');
+      expect(result).to.be('');
     });
 
     it('should wait only at the inherited call site after extends, not stall surrounding constructor flow', async function () {
@@ -380,7 +380,7 @@ describe('Extends Runtime', function () {
         waitAndGet: (value) => new Promise((resolve) => setTimeout(() => resolve(value), 10))
       });
 
-      expect(result).to.be('A|post|parent:Ada');
+      expect(result).to.be('post|parent:Ada');
     });
 
     it('should resolve script super() through the next owner in the method chain', async function () {
@@ -496,7 +496,7 @@ describe('Extends Runtime', function () {
         expect(error.name).to.be('RuntimeFatalError');
         expect(error.lineno).to.be(2);
         expect(error.path).to.be('C.script');
-        expect(String(error)).to.contain('Inherited method \'missing\' was not found');
+        expect(String(error)).to.contain('Missing inherited callable "missing"');
         expect(String(error)).to.contain('doing \'FunCall\'');
       }
     });
@@ -518,7 +518,7 @@ describe('Extends Runtime', function () {
         expect(error.name).to.be('RuntimeFatalError');
         expect(error.lineno).to.be(3);
         expect(error.path).to.be('C.script');
-        expect(String(error)).to.contain('Inherited method \'missing\' was not found');
+        expect(String(error)).to.contain('Missing inherited callable "missing"');
         expect(String(error)).to.contain('doing \'FunCall\'');
       }
     });
@@ -533,7 +533,7 @@ describe('Extends Runtime', function () {
         await env.renderScript('C.script', {});
         expect().fail('Expected inherited method arg validation failure');
       } catch (error) {
-        expect(String(error)).to.contain('Inherited method \'build\' received too many arguments');
+        expect(String(error)).to.contain('Inherited callable "build" received too many arguments');
       }
     });
 
@@ -567,15 +567,23 @@ describe('Extends Runtime', function () {
       runtime.declareBufferChannel(rootBuffer, 'trace', 'var', context, null);
 
       inheritanceState.methods.build = {
+        name: 'build',
         fn() {
           return 'done';
         },
         signature: { argNames: [] },
         ownerKey: 'Main.script',
-        ownMutatedChannels: ['trace'],
-        ownLinkedChannels: ['theme', 'trace'],
-        super: null
+        origin: null,
+        isConstructor: false,
+        super: null,
+        callsSuper: false,
+        invokedMethodRefs: {},
+        mergedMutatedChannels: ['trace'],
+        mergedLinkedChannels: ['theme', 'trace']
       };
+      inheritanceState.sharedSchema.theme = 'var';
+      inheritanceState.sharedSchema.trace = 'var';
+      inheritanceState.finalized = true;
 
       const admission = runtime.invokeInheritedCallable(
         inheritanceState,
@@ -589,22 +597,18 @@ describe('Extends Runtime', function () {
         { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
       );
 
-      const methodMeta = inheritanceCallModule.getMethodData(
-        inheritanceState,
-        'build',
-        { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
-      );
-
       rootBuffer.finish();
       const value = await admission;
 
       expect(value).to.be('done');
-      expect(methodMeta).to.be.ok();
-      expect(methodMeta.fn).to.be(inheritanceState.methods.build.fn);
-      expect(methodMeta.signature).to.eql({ argNames: [] });
-      expect(methodMeta.mergedMutatedChannels).to.contain('trace');
-      expect(methodMeta.mergedLinkedChannels).to.contain('theme');
-      expect(methodMeta.mergedLinkedChannels).to.contain('trace');
+      expect(runtime.getCallableMutatedChannels(
+        inheritanceState.methods.build,
+        { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
+      )).to.contain('trace');
+      expect(runtime.getCallableLinkedChannels(
+        inheritanceState.methods.build,
+        { lineno: 1, colno: 1, errorContextString: null, path: 'Main.script' }
+      )).to.contain('theme');
     });
 
     it('should let finishInvocationBuffer own sync invocation-buffer cleanup', async function () {

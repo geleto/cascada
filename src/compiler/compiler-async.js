@@ -426,6 +426,34 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileOutput(node) {
+    const extendingTemplateStartupOutput = this._isExtendingTemplateStartupOutput();
+    if (extendingTemplateStartupOutput && this.hasStaticExtends && !this.hasDynamicExtends) {
+      return;
+    }
+    if (extendingTemplateStartupOutput && this.hasDynamicExtends) {
+      const outputPromise = this._tmpid();
+      this.emit.line(`const ${outputPromise} = extendsState.parentReady.then(() => {`);
+      this.emit.line('if (extendsState.hasParent) { return null; }');
+      this._emitOutputCommands(node);
+      this.emit.line('return null;');
+      this.emit.line('});');
+      return;
+    }
+    this._emitOutputCommands(node);
+  }
+
+  _isExtendingTemplateStartupOutput() {
+    if (this.scriptMode || (!this.hasStaticExtends && !this.hasDynamicExtends)) {
+      return false;
+    }
+    if (!this.inBlock) {
+      return true;
+    }
+    return this.isCompilingRootSetupEntry ||
+      this.currentCallableDefinition?.name?.value === '__constructor__';
+  }
+
+  _emitOutputCommands(node) {
     const textChannelName = this.buffer.currentTextChannelName;
     node.children.forEach((child) => {
       if (child instanceof nodes.TemplateData) {
@@ -857,7 +885,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('  cb,');
     this.emit.line(`  output: ${this.buffer.currentBuffer},`);
     this.emit.line(`  extendsState: ${this.scriptMode ? 'null' : 'extendsState'},`);
-    this.emit.line('  options: { resolveExports: true }');
+    this.emit.line('  options: { resolveExports: true, componentMode, compositionMode }');
     this.emit.line('});');
     this.inheritance.emitAsyncRootCompletion(node);
   }
@@ -920,7 +948,7 @@ class CompilerAsync extends CompilerBaseAsync {
       : null;
 
     this.inheritance._withAsyncConstructorEntryState(isTemplateRoot, () => {
-      this.emit.line('function b___setup__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
+      this.emit.line('function b___setup__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null, options = null) {');
       this.emit.line('try {');
       this.emit.line(`let ${ROOT_STARTUP_PROMISE_VAR} = null;`);
       if (isTemplateRoot) {
@@ -938,22 +966,28 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       this._emitRootCompositionPayloadInitialization(node);
       this.inheritance.emitRootSharedDeclarations(node);
-      if (this.scriptMode) {
-        // Setup can run before constructor footprints exist, so startup links
-        // the finalized shared schema as a setup-level visibility rule.
-        const sharedKeysVar = this._tmpid();
-        this.emit.line(`const ${sharedKeysVar} = Object.keys((inheritanceState && inheritanceState.sharedSchema) || {});`);
-        this.emit.line(`runtime.linkCurrentBufferToSharedChannels(${this.buffer.currentBuffer}, inheritanceState, ${sharedKeysVar}, ${sharedKeysVar});`);
-      }
+      // Setup can run before constructor footprints exist, so startup links
+      // the finalized shared schema as a setup-level visibility rule.
+      const sharedKeysVar = this._tmpid();
+      this.emit.line(`const ${sharedKeysVar} = Object.keys((inheritanceState && inheritanceState.sharedSchema) || {});`);
+      this.emit.line(`runtime.linkCurrentBufferToSharedChannels(${this.buffer.currentBuffer}, inheritanceState, ${sharedKeysVar}, ${sharedKeysVar});`);
       if (templateConstructorDefinition) {
         const constructorStartupPromise = this._tmpid();
         this.emit.line(`const ${constructorStartupPromise} = b___constructor__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
         this.emit.line(`if (${constructorStartupPromise}) { ${ROOT_STARTUP_PROMISE_VAR} = ${constructorStartupPromise}; }`);
       }
       if (this.scriptMode && hasGenericScriptBody && !skipGenericSetup) {
+        this.emit.line('if (!(options && options.compositionMode && inheritanceState)) {');
         this.emit.line(`__rootStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, extendsState);`);
+        this.emit.line('}');
       } else {
-        this._compileChildren(node, null);
+        const previousCompilingRootSetupEntry = this.isCompilingRootSetupEntry;
+        this.isCompilingRootSetupEntry = true;
+        try {
+          this._compileChildren(node, null);
+        } finally {
+          this.isCompilingRootSetupEntry = previousCompilingRootSetupEntry;
+        }
       }
       this.emit.line(`return ${ROOT_STARTUP_PROMISE_VAR};`);
       this.emit.closeScopeLevels();

@@ -276,6 +276,9 @@ class CompileInheritance {
   compileAsyncConstructorEntry(node) {
     const isTemplateConstructor = !this.compiler.scriptMode;
     const constructorDefinition = this.compiler._getConstructorDefinition(node);
+    const scriptBodySource = this.compiler.scriptMode
+      ? this.compiler._getGenericScriptBodySource(node)
+      : null;
 
     this._withAsyncConstructorEntryState(isTemplateConstructor, () => {
       if (isTemplateConstructor) {
@@ -295,7 +298,7 @@ class CompileInheritance {
       this.compiler.currentCallableDefinition = constructorDefinition;
       this.compiler.isCompilingCallableEntry = !!constructorDefinition;
       try {
-        if (constructorDefinition && constructorDefinition.body && this.compiler.scriptMode) {
+        if (this.compiler.scriptMode && scriptBodySource) {
           this.emit.line(`__rootStartupPromise = b___scriptBody__(env, context, runtime, cb, output, inheritanceState, null, blockPayload, blockRenderCtx, methodData);`);
         } else if (constructorDefinition && constructorDefinition.body) {
           this.compiler._compileChildren(constructorDefinition.body, null);
@@ -699,6 +702,10 @@ class CompileInheritance {
 
   collectCompiledMethodEntries(node, blocks) {
     const constructorDefinition = this.compiler._getConstructorDefinition(node);
+    const scriptBodySource = this.compiler.scriptMode
+      ? this.compiler._getGenericScriptBodySource(node)
+      : null;
+    const constructorOwnerNode = constructorDefinition || scriptBodySource;
     const ownerKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
     const methodEntries = blocks.map((block) => {
       const methodName = block.name.value;
@@ -717,17 +724,17 @@ class CompileInheritance {
       });
     });
 
-    if (constructorDefinition) {
+    if (constructorOwnerNode) {
       methodEntries.push(this.compileMethodMetadataEntry({
         methodName: '__constructor__',
         fnExpr: 'b___constructor__',
-        ownerNode: constructorDefinition,
-        superExpr: this.blockUsesSuper(constructorDefinition) ? 'true' : 'false',
-        superOriginExpr: this.compileCallableSuperOriginLiteral(constructorDefinition),
-        invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(constructorDefinition)),
+        ownerNode: constructorOwnerNode,
+        superExpr: constructorDefinition && this.blockUsesSuper(constructorDefinition) ? 'true' : 'false',
+        superOriginExpr: constructorDefinition ? this.compileCallableSuperOriginLiteral(constructorDefinition) : 'null',
+        invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(constructorOwnerNode)),
         signatureExpr: JSON.stringify({ argNames: [] }),
         ownerKey,
-        originExpr: JSON.stringify(this.compiler._createErrorContext(constructorDefinition))
+        originExpr: JSON.stringify(this.compiler._createErrorContext(constructorOwnerNode))
       }));
     }
 
@@ -748,8 +755,14 @@ class CompileInheritance {
     if (fieldName !== 'methodLinkedChannels' && fieldName !== 'methodMutatedChannels') {
       throw new Error(`Unsupported method footprint field '${fieldName}'`);
     }
-    const channels = ownerNode?._analysis?.[fieldName] ?? [];
-    return Array.isArray(channels) ? channels : [];
+    const fallbackFieldName = fieldName === 'methodLinkedChannels'
+      ? 'usedChannels'
+      : 'mutatedChannels';
+    const channels = ownerNode?._analysis?.[fieldName] ?? ownerNode?._analysis?.[fallbackFieldName] ?? [];
+    if (Array.isArray(channels)) {
+      return channels;
+    }
+    return channels instanceof Set ? Array.from(channels) : [];
   }
 
   collectDirectInvokedMethodRefsForCallable(callableNode) {

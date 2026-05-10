@@ -334,7 +334,7 @@ import {StringLoader} from '../util.js';
 		  `);
 
         const resultWithParent = await env.renderTemplate('child.njk', { useParent: true });
-        expect(resultWithParent.replace(/\s+/g, ' ').trim()).to.equal('P[] macro content');
+        expect(resultWithParent.replace(/\s+/g, ' ').trim()).to.equal('P[]');
 
         const resultStandalone = await env.renderTemplate('child.njk', { useParent: false });
         expect(resultStandalone.replace(/\s+/g, ' ').trim()).to.equal('macro content');

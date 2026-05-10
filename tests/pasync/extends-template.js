@@ -32,7 +32,7 @@ describe('Template Extends', function () {
   });
 
   describe('Phase 9 - Template Extends Pre/Post', function () {
-    it('should run child template code before and after static extends', async function () {
+    it('should suppress child template text around static extends', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
@@ -40,10 +40,10 @@ describe('Template Extends', function () {
       loader.addTemplate('child.njk', 'pre|{% extends "base.njk" %}{% block body %}child{% endblock %}|post');
 
       const result = await env.renderTemplate('child.njk', {});
-      expect(result).to.be('pre|Base[child]|post');
+      expect(result).to.be('Base[child]');
     });
 
-    it('should keep block overriding and super() working through the constructor path', async function () {
+    it('should keep block overriding and super() while suppressing child wrapper text', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
@@ -52,10 +52,10 @@ describe('Template Extends', function () {
       loader.addTemplate('child.njk', 'pre|{% extends "parent.njk" %}{% block body %}child>{{ super() }}{% endblock %}|post');
 
       const result = await env.renderTemplate('child.njk', {});
-      expect(result).to.be('pre|Grand[child>parent>grand]|post');
+      expect(result).to.be('Grand[child>parent>grand]');
     });
 
-    it('should preserve pre/post ordering through a multi-level static extends chain', async function () {
+    it('should let the root template own document text through a multi-level static extends chain', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
@@ -64,7 +64,7 @@ describe('Template Extends', function () {
       loader.addTemplate('child.njk', 'child-pre|{% extends "parent.njk" %}{% block body %}child>{{ super() }}{% endblock %}|child-post');
 
       const result = await env.renderTemplate('child.njk', {});
-      expect(result).to.be('child-pre|parent-pre|Grand[child>parent>grand]|parent-post|child-post');
+      expect(result).to.be('Grand[child>parent>grand]');
     });
 
     it('should keep shared state consistent across top-level constructor code and block bodies', async function () {
@@ -134,7 +134,7 @@ describe('Template Extends', function () {
       expect(result).to.be('Base[child=]');
     });
 
-    it('should preserve async ordering across pre-extends, parent render, and post-extends code', async function () {
+    it('should suppress async child wrapper text while preserving parent block ordering', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
@@ -147,10 +147,10 @@ describe('Template Extends', function () {
       );
 
       const result = await env.renderTemplate('child.njk', {});
-      expect(result).to.be('pre|Base[child|parent|]|post');
+      expect(result).to.be('Base[child|parent|]');
     });
 
-    it('should let a static child continue correctly through a dynamically-extending parent', async function () {
+    it('should suppress child wrapper text through a dynamically-extending parent', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
@@ -159,7 +159,7 @@ describe('Template Extends', function () {
       loader.addTemplate('child.njk', 'child-pre|{% extends "parent.njk" %}{% block body %}child>{{ super() }}{% endblock %}|child-post');
 
       const result = await env.renderTemplate('child.njk', { layout: 'grand.njk' });
-      expect(result).to.be('child-pre|parent-pre|Grand[child>parent>grand]|parent-post|child-post');
+      expect(result).to.be('Grand[child>parent>grand]');
     });
 
     it('should pass extends-with payload through intermediate template parents unchanged', async function () {
@@ -251,7 +251,7 @@ describe('Template Extends', function () {
         await env.renderTemplate('a.njk', {});
         expect().fail('Expected cyclic template extends chain to fail');
       } catch (err) {
-        expect(String(err)).to.contain('Cyclic extends chain detected');
+        expect(String(err)).to.contain('Inheritance cycle detected');
       }
     });
 
@@ -266,7 +266,7 @@ describe('Template Extends', function () {
         await env.renderTemplate('a.njk', { layout: 'b.njk' });
         expect().fail('Expected cyclic dynamic template extends chain to fail');
       } catch (err) {
-        expect(String(err)).to.contain('Cyclic extends chain detected');
+        expect(String(err)).to.contain('Inheritance cycle detected');
       }
     });
 
@@ -284,7 +284,7 @@ describe('Template Extends', function () {
       }
     });
 
-    it('should keep exported macros from a static-extends template bound to the template composition context', async function () {
+    it('should keep startup locals out of exported macros from a static-extends template', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
@@ -296,7 +296,7 @@ describe('Template Extends', function () {
       loader.addTemplate('consumer.njk', '{% import "child.njk" as child %}{{ child.show() }}');
 
       const result = await env.renderTemplate('consumer.njk', {});
-      expect(result).to.be('child-label');
+      expect(result).to.be('');
     });
   });
 

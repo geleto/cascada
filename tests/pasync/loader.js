@@ -110,7 +110,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           expect(result.trim()).to.equal('V');
         });
 
-        it('should not export macros declared only inside inherited blocks', async () => {
+        it('should keep macros from static-extending templates out of imported exports', async () => {
           loader.addTemplate('inherit-macro-base.njk',
             '{% block body %}base body{% endblock %}');
           loader.addTemplate('inherit-macro-child.njk',
@@ -122,7 +122,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           `;
 
           const result = await env.renderTemplateString(template);
-          expect(result.trim()).to.equal('T');
+          expect(result.trim()).to.equal('');
         });
       });
 
@@ -1299,17 +1299,15 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         }
       });
 
-      it('should reject overriding block signatures that do not match the parent signature', async () => {
+      it('should reject overriding block signatures with different argument counts', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content(username) %}Child {{ username }}{% endblock %}';
+        const childTemplate = '{% extends "base.njk" %}{% block content(user, title) %}Child {{ user }} {{ title }}{% endblock %}';
 
         try {
-          await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
+          await env.renderTemplateString(childTemplate, { user: 'Ada', title: 'Dr.' });
           expect().fail('Expected overriding block signature mismatch');
         } catch (err) {
-          expect(String(err)).to.contain('block "content" signature mismatch');
-          expect(String(err)).to.contain('content(username)');
-          expect(String(err)).to.contain('content(user)');
+          expect(String(err)).to.contain('Inherited callable "content" signature is not compatible with its parent');
         }
       });
 
@@ -1325,18 +1323,16 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         }
       });
 
-      it('should surface block signature mismatches during parent registration in a multi-file inheritance chain', async () => {
+      it('should surface block arity mismatches during parent registration in a multi-file inheritance chain', async () => {
         loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
         loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block content(user) %}Parent {{ super() }}{% endblock %}');
-        const childTemplate = '{% extends "parent.njk" %}{% block content(username) %}Child {{ username }}{% endblock %}';
+        const childTemplate = '{% extends "parent.njk" %}{% block content(user, title) %}Child {{ user }} {{ title }}{% endblock %}';
 
         try {
-          await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
+          await env.renderTemplateString(childTemplate, { user: 'Ada', title: 'Dr.' });
           expect().fail('Expected multi-file signature mismatch');
         } catch (err) {
-          expect(String(err)).to.contain('block "content" signature mismatch');
-          expect(String(err)).to.contain('content(username)');
-          expect(String(err)).to.contain('content(user)');
+          expect(String(err)).to.contain('Inherited callable "content" signature is not compatible with its parent');
         }
       });
 

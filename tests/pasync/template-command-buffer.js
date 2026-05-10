@@ -452,7 +452,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       );
 
       const result = await env.renderTemplate('child.njk', { value: 'V', user: 'U' });
-      expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i>] Hi U');
+      expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i>]');
     });
 
     it('should keep canonical include input keys for duplicated branch-local vars', function () {

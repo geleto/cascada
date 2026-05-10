@@ -64,7 +64,11 @@ function invokeSuperCallable(inheritanceState, methodData, methodName, args, con
   }
   const invocationArgs = normalizeInvocationArgs(methodName, args, errorContext, context);
   if (methodData.isConstructor) {
-    return invokeConstructorSuperMethod(
+    if (methodData.constructorSuperStarted) {
+      return methodData.constructorSuperResult ?? null;
+    }
+    methodData.constructorSuperStarted = true;
+    methodData.constructorSuperResult = invokeConstructorSuperMethod(
       inheritanceState,
       methodData.super,
       invocationArgs,
@@ -75,8 +79,47 @@ function invokeSuperCallable(inheritanceState, methodData, methodName, args, con
       currentBuffer,
       errorContext
     );
+    return methodData.constructorSuperResult;
   }
   return invokeMethod(inheritanceState, methodData.super, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext);
+}
+
+function linkConstructorSuperBuffer(currentBuffer, invocationBuffer, inheritanceState, method) {
+  if (!currentBuffer || !invocationBuffer || !inheritanceState || !inheritanceState.sharedSchema || !method) {
+    return;
+  }
+  const channelNames = new Set([
+    ...method.mergedLinkedChannels,
+    ...method.mergedMutatedChannels
+  ]);
+  channelNames.forEach((channelName) => {
+    if (Object.prototype.hasOwnProperty.call(inheritanceState.sharedSchema, channelName)) {
+      currentBuffer.addBuffer(invocationBuffer, channelName);
+    }
+  });
+}
+
+function invokeConstructorSuperMethod(inheritanceState, method, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext) {
+  const invocationBuffer = new runtime.CommandBuffer(context, currentBuffer);
+  runtime.declareBufferChannel(invocationBuffer, '__return__', 'var', context, runtime.RETURN_UNSET);
+  linkConstructorSuperBuffer(currentBuffer, invocationBuffer, inheritanceState, method);
+  try {
+    const result = invokeMethod(
+      inheritanceState,
+      method,
+      invocationArgs,
+      context,
+      env,
+      runtime,
+      cb,
+      invocationBuffer,
+      errorContext
+    );
+    return finishConstructorSuperBuffer(result, invocationBuffer);
+  } catch (err) {
+    invocationBuffer.finish();
+    throw err;
+  }
 }
 
 function getCallableLinkedChannels(methodData, errorContext = null) {
@@ -159,28 +202,6 @@ function invokeMethod(inheritanceState, method, invocationArgs, context, env, ru
     inheritanceState,
     method
   );
-}
-
-function invokeConstructorSuperMethod(inheritanceState, method, invocationArgs, context, env, runtime, cb, currentBuffer, errorContext) {
-  const invocationBuffer = new runtime.CommandBuffer(context, currentBuffer);
-  runtime.declareBufferChannel(invocationBuffer, '__return__', 'var', context, runtime.RETURN_UNSET);
-  try {
-    const result = invokeMethod(
-      inheritanceState,
-      method,
-      invocationArgs,
-      context,
-      env,
-      runtime,
-      cb,
-      invocationBuffer,
-      errorContext
-    );
-    return finishConstructorSuperBuffer(result, invocationBuffer);
-  } catch (err) {
-    invocationBuffer.finish();
-    throw err;
-  }
 }
 
 function finishConstructorSuperBuffer(result, invocationBuffer) {

@@ -11,7 +11,8 @@ function runCompiledRootStartup({
   cb,
   output,
   inheritanceState,
-  extendsState
+  extendsState,
+  options = null
 }) {
   if (inheritanceState) {
     setInheritanceSharedRootBuffer(inheritanceState, output);
@@ -19,9 +20,12 @@ function runCompiledRootStartup({
   if (typeof setup !== 'function') {
     return null;
   }
-  const startupPromise = setup(env, context, runtime, cb, output, inheritanceState, extendsState);
+  const startupPromise = setup(env, context, runtime, cb, output, inheritanceState, extendsState, options);
   if (inheritanceState) {
     setInheritanceStartupPromise(inheritanceState, startupPromise);
+  }
+  if (options?.resolveExports && !options.componentMode && typeof context?.resolveExports === 'function') {
+    context.resolveExports();
   }
   return startupPromise;
 }
@@ -150,6 +154,12 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
     return;
   }
   for (const channelName of channelNames) {
+    if (typeof parentBuffer.isChannelFinished === 'function' &&
+        parentBuffer.isChannelFinished(channelName) &&
+        typeof currentBuffer._installLinkedChannel === 'function') {
+      currentBuffer._installLinkedChannel(channelName, parentBuffer.getChannelIfExists(channelName));
+      continue;
+    }
     parentBuffer.addBuffer(currentBuffer, channelName);
   }
   if (Array.isArray(linkedMutatedChannelNames) && currentBuffer._linkedMutatedChannels) {
