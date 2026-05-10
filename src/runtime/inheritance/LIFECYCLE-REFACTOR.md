@@ -99,8 +99,8 @@ Target behavior:
 - Loading a parent should compile the parent and register
   `parent.inheritanceSpec` directly.
 - No parent `rootRenderFunc(...)` should run during metadata loading.
-- Parent loading should propagate real source origins from the `extends` node,
-  replacing the current `createStubSourceOrigin(...)` temporary.
+- Parent loading should propagate real source origins from the `extends` node;
+  the former `createStubSourceOrigin(...)` temporary should not return.
 
 ### `b___setup__` Mixes Startup And Structure
 
@@ -766,7 +766,7 @@ entry generation, and metadata loading will have clearer phase boundaries.
 Add runtime helpers in `load.js` or a new `chain.js`:
 
 - `loadInheritanceChain(...)`
-- `loadParentInheritanceSpec(...)`
+- an internal selected-root loader
 - cycle enter/leave helpers currently in `startup.js`
 
 Move cycle tracking out of parent rendering and into metadata loading.
@@ -886,8 +886,8 @@ Dynamic extends constraint for Step 1:
 - they must not depend on root-program-created channels or source-ordered
   command-buffer state
 - the loader expression compiler must enforce this by rejecting channel reads,
-  root-program locals, `set`-created locals, and other current-buffer-dependent
-  expressions inside `extends`
+  locally declared variables/channels, and other current-buffer-dependent
+  expressions inside `extends` targets or `extends ... with ...` payloads
 - unsupported channel-dependent dynamic extends should fail clearly rather than
   silently falling back to old root-render loading
 
@@ -1130,7 +1130,7 @@ The refactor is complete when:
 - standalone roots use the same lifecycle with `renderPlan.hasParent = false`
 - generated root signatures no longer use `compositionMode`, `parentBuffer`, or
   `componentMode`
-- real source origins replace `createStubSourceOrigin(...)`
+- real source origins are used during metadata loading
 - template constructors from every selected chain entry run in child-to-parent
   order, with inline block placement enabled only for the structural entry
 - constructor `super()` no-op behavior remains intact

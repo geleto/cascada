@@ -463,8 +463,6 @@ Temporary code is allowed only when an implementation slice needs a clear
 runtime boundary before the final code exists. Mark each temporary code
 construct with a `Temporary` comment and list the construct here.
 
-- `load.js`: `createStubSourceOrigin(...)`. Replace when loading receives
-  source origins directly.
 - `invoke.js`: direct `method.fn(...)` call in `invokeMethod(...)`.
   Replace when invocation commands own admission.
 

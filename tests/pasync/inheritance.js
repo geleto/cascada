@@ -9,6 +9,301 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {StringLoader} from '../util.js';
 
 describe('Inheritance runtime', function () {
+  describe('metadata-only chain loading', function () {
+    async function loadTemplatePlan(loader, templateName, ctx = {}) {
+      const env = new AsyncEnvironment(loader);
+      const template = await env.getTemplate(templateName, false, null, false);
+      const context = new Context(ctx, {}, env, templateName, false);
+      const inheritanceState = runtime.createInheritanceState();
+      const plan = await runtime.loadInheritanceChain({
+        root: template,
+        context,
+        env,
+        runtime,
+        inheritanceState,
+        origin: {
+          lineno: 1,
+          colno: 1,
+          errorContextString: 'test load',
+          path: templateName
+        }
+      });
+      return { env, template, context, inheritanceState, plan };
+    }
+
+    async function loadScriptPlan(loader, scriptName, ctx = {}) {
+      const env = new AsyncEnvironment(loader);
+      const script = await env.getScript(scriptName, false, null, false);
+      const context = new Context(ctx, {}, env, scriptName, true);
+      const inheritanceState = runtime.createInheritanceState();
+      const plan = await runtime.loadInheritanceChain({
+        root: script,
+        context,
+        env,
+        runtime,
+        inheritanceState,
+        origin: {
+          lineno: 1,
+          colno: 1,
+          errorContextString: 'test load',
+          path: scriptName
+        }
+      });
+      return { env, script, context, inheritanceState, plan };
+    }
+
+    it('loads a static three-level chain child-to-parent without running root code', async function () {
+      const loader = new StringLoader();
+      const events = [];
+
+      loader.addTemplate('root.njk', 'R{{ mark("root") }}{% block body %}root{% endblock %}');
+      loader.addTemplate('mid.njk', '{% extends "root.njk" %}M{{ mark("mid") }}{% block body %}mid{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "mid.njk" %}C{{ mark("child") }}{% block body %}child{% endblock %}');
+
+      const { env, inheritanceState, plan } = await loadTemplatePlan(loader, 'child.njk', {});
+      env.addGlobal('mark', (name) => {
+        events.push(name);
+        return '';
+      });
+
+      expect(plan.chain.map((entry) => entry.path)).to.eql(['child.njk', 'mid.njk', 'root.njk']);
+      expect(plan.structuralEntry.path).to.be('root.njk');
+      expect(plan.hasParent).to.be(true);
+      expect(inheritanceState.loading.files).to.have.length(3);
+      expect(events).to.eql([]);
+    });
+
+    it('loads a static script chain child-to-parent without running root code', async function () {
+      const loader = new StringLoader();
+      loader.addTemplate('base.script', 'shared text trace\nthis.trace("base|")\nmethod label()\n  return "base"\nendmethod');
+      loader.addTemplate('child.script', 'extends "base.script"\nthis.trace("child|")\nmethod label()\n  return "child"\nendmethod');
+
+      const { plan, inheritanceState } = await loadScriptPlan(loader, 'child.script');
+
+      expect(plan.chain.map((entry) => entry.path)).to.eql(['child.script', 'base.script']);
+      expect(plan.structuralEntry).to.be(null);
+      expect(plan.hasParent).to.be(true);
+      expect(inheritanceState.loading.files).to.have.length(2);
+    });
+
+    it('fails during metadata loading on a static inheritance cycle', async function () {
+      const loader = new StringLoader();
+      loader.addTemplate('a.njk', '{% extends "b.njk" %}{% block body %}a{% endblock %}');
+      loader.addTemplate('b.njk', '{% extends "a.njk" %}{% block body %}b{% endblock %}');
+
+      try {
+        await loadTemplatePlan(loader, 'a.njk');
+        expect().fail('Expected cycle detection to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Inheritance cycle detected');
+        expect(String(err)).to.contain('a.njk -> b.njk -> a.njk');
+      }
+    });
+
+    it('creates a local-fallback render plan for extends none', async function () {
+      const loader = new StringLoader();
+      loader.addTemplate('child.njk', '{% extends none %}{% block body %}child{% endblock %}');
+
+      const { plan } = await loadTemplatePlan(loader, 'child.njk');
+
+      expect(plan.chain.map((entry) => entry.path)).to.eql(['child.njk']);
+      expect(plan.structuralEntry).to.be(null);
+      expect(plan.hasParent).to.be(false);
+    });
+
+    it('creates a local-fallback render plan when dynamic extends resolves to none', async function () {
+      const loader = new StringLoader();
+      loader.addTemplate('child.njk', '{% extends parentName %}{% block body %}child{% endblock %}');
+
+      const { plan } = await loadTemplatePlan(loader, 'child.njk', { parentName: null });
+
+      expect(plan.chain.map((entry) => entry.path)).to.eql(['child.njk']);
+      expect(plan.structuralEntry).to.be(null);
+      expect(plan.hasParent).to.be(false);
+    });
+
+    it('evaluates dynamic parent selection once during metadata loading', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      let calls = 0;
+      env.addGlobal('chooseParent', () => {
+        calls += 1;
+        return 'base.njk';
+      });
+      loader.addTemplate('base.njk', 'B{% block body %}base{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends chooseParent() %}{% block body %}child{% endblock %}');
+
+      const template = await env.getTemplate('child.njk', false, null, false);
+      const context = new Context({}, {}, env, 'child.njk', false);
+      const inheritanceState = runtime.createInheritanceState();
+
+      const plan = await runtime.loadInheritanceChain({
+        root: template,
+        context,
+        env,
+        runtime,
+        inheritanceState,
+        origin: { lineno: 1, colno: 1, errorContextString: 'test load', path: 'child.njk' }
+      });
+
+      expect(calls).to.be(1);
+      expect(plan.chain.map((entry) => entry.path)).to.eql(['child.njk', 'base.njk']);
+    });
+
+    it('passes context-sourced extends payloads through the metadata render plan', async function () {
+      const loader = new StringLoader();
+      loader.addTemplate('base.njk', 'B{% block body %}base{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "base.njk" with theme %}{% block body %}child{% endblock %}');
+
+      const { plan } = await loadTemplatePlan(loader, 'child.njk', { theme: 'dark' });
+
+      expect(plan.chain.map((entry) => entry.path)).to.eql(['child.njk', 'base.njk']);
+      expect(plan.chain[1].compositionPayload.payloadContext.theme).to.be('dark');
+    });
+
+    it('does not evaluate extends payloads when dynamic extends resolves to none', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      let calls = 0;
+      env.addGlobal('explode', () => {
+        calls += 1;
+        throw new Error('payload should not run');
+      });
+      loader.addTemplate(
+        'child.njk',
+        '{% extends parentName with { theme: explode() } %}{% block body %}child{% endblock %}'
+      );
+
+      const template = await env.getTemplate('child.njk', false, null, false);
+      const context = new Context({ parentName: null }, {}, env, 'child.njk', false);
+      const inheritanceState = runtime.createInheritanceState();
+
+      const plan = await runtime.loadInheritanceChain({
+        root: template,
+        context,
+        env,
+        runtime,
+        inheritanceState,
+        origin: { lineno: 1, colno: 1, errorContextString: 'test load', path: 'child.njk' }
+      });
+
+      expect(calls).to.be(0);
+      expect(plan.chain.map((entry) => entry.path)).to.eql(['child.njk']);
+    });
+
+    it('rejects dynamic extends that depend on root-program locals during metadata loading', async function () {
+      const loader = new StringLoader();
+      loader.addTemplate('base.njk', 'B{% block body %}base{% endblock %}');
+      loader.addTemplate(
+        'child.njk',
+        '{% set parentName = "base.njk" %}{% extends parentName %}{% block body %}child{% endblock %}'
+      );
+
+      try {
+        await loadTemplatePlan(loader, 'child.njk');
+        expect().fail('Expected metadata loading to reject a root-program local');
+      } catch (err) {
+        expect(String(err)).to.contain('dynamic extends cannot depend on locally declared channels or variables');
+      }
+    });
+
+    it('rejects extends payloads that depend on root-program locals during metadata loading', async function () {
+      const loader = new StringLoader();
+      loader.addTemplate('base.njk', 'B{% block body %}base{% endblock %}');
+      loader.addTemplate(
+        'child.njk',
+        '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block body %}child{% endblock %}'
+      );
+
+      try {
+        await loadTemplatePlan(loader, 'child.njk');
+        expect().fail('Expected metadata loading to reject a root-program payload local');
+      } catch (err) {
+        expect(String(err)).to.contain('dynamic extends cannot depend on locally declared channels or variables');
+      }
+    });
+
+    it('rejects missing metadata loader entry roots', async function () {
+      const inheritanceState = runtime.createInheritanceState();
+      const fakeRuntime = {
+        resolveSingle(value) {
+          return Promise.resolve(value);
+        }
+      };
+
+      try {
+        await runtime.loadInheritanceChain({
+          root: null,
+          context: { path: 'missing.njk' },
+          env: {},
+          runtime: fakeRuntime,
+          inheritanceState,
+          origin: { lineno: 1, colno: 1, errorContextString: 'test load', path: 'missing.njk' }
+        });
+        expect().fail('Expected missing entry root to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('loadInheritanceChain requires a selected root');
+      }
+    });
+
+    it('rejects loading the same inheritance state twice before finalization', async function () {
+      const loader = new StringLoader();
+      loader.addTemplate('child.njk', '{% block body %}child{% endblock %}');
+      const { env, template, context, inheritanceState } = await loadTemplatePlan(loader, 'child.njk');
+
+      try {
+        await runtime.loadInheritanceChain({
+          root: template,
+          context,
+          env,
+          runtime,
+          inheritanceState,
+          origin: { lineno: 1, colno: 1, errorContextString: 'test load', path: 'child.njk' }
+        });
+        expect().fail('Expected second metadata load to fail');
+      } catch (err) {
+        expect(String(err)).to.contain('Cannot load inheritance chain more than once');
+      }
+    });
+
+    it('can load metadata without constructing command buffers', async function () {
+      const inheritanceState = runtime.createInheritanceState();
+      const fakeRoot = {
+        path: 'fake.njk',
+        scriptMode: false,
+        compile() {},
+        inheritanceSpec: {
+          methodEntries: {},
+          sharedSchema: {},
+          invokedMethodRefs: {},
+          hasExtends: false
+        },
+        resolveInheritanceParent() {
+          return { parentRoot: null, compositionPayload: null, origin: null };
+        }
+      };
+      const fakeRuntime = {
+        resolveSingle(value) {
+          return value && typeof value.then === 'function'
+            ? value
+            : Promise.resolve(value);
+        }
+      };
+
+      const plan = await runtime.loadInheritanceChain({
+        root: fakeRoot,
+        context: { path: 'fake.njk' },
+        env: {},
+        runtime: fakeRuntime,
+        inheritanceState,
+        origin: { lineno: 1, colno: 1, errorContextString: 'test load', path: 'fake.njk' }
+      });
+
+      expect(plan.chain.map((entry) => entry.path)).to.eql(['fake.njk']);
+      expect(inheritanceState.loading.files).to.have.length(1);
+    });
+  });
+
   describe('standalone template blocks', function () {
     it('renders a standalone zero-argument template block at its placement site', async function () {
       const env = new AsyncEnvironment();

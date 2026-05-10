@@ -4,7 +4,10 @@ export {
   createInheritanceState,
   setInheritanceStartupPromise
 } from './state.js';
-export {bootstrapInheritanceMetadata} from './load.js';
+export {
+  bootstrapInheritanceMetadata,
+  loadInheritanceChain
+} from './load.js';
 export {finalizeInheritanceMetadata} from './finalize.js';
 export {
   bootstrapInheritanceParentScript,

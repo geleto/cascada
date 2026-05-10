@@ -660,6 +660,9 @@ import "f.script" as fmt with context, locale
 // extends "expr" if cond else none — conditional extends; `none` means root of own chain.
 // Composition payload via `extends "f" with [forms]` — same forms as `component`/`import`.
 
+// CONSTRAINT: `extends` target and payload resolve before constructor/startup code. They may read render
+// context/payload/globals, but not vars created by local constructor/root-program code.
+
 // [EXT-02] SCRIPT RULE: Only `shared` declarations are allowed BEFORE `extends`. Plain `var` before extends is a compile error.
 
 // [EXT-03] SCRIPT RULE: `shared` declares chain-owned state, accessed via `this.<name>` from constructors/methods.

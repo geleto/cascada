@@ -746,7 +746,94 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('};');
     this.emit.line('return {');
     this.emit.line(`inheritanceSpec: ${COMPILED_INHERITANCE_SPEC_VAR},`);
+    this.emit.line('resolveInheritanceParent: resolveInheritanceParent,');
     this.emit.line('root: root\n};');
+  }
+
+  _getLocalExtendsNode(node) {
+    if (!node || !Array.isArray(node.children)) {
+      return null;
+    }
+    return node.children.find((child) => child instanceof nodes.Extends) || null;
+  }
+
+  _assertLoaderExpressionIsMetadataOnly(expressionNode, extendsNode) {
+    if (!expressionNode || typeof expressionNode.findAll !== 'function') {
+      return;
+    }
+    const checkSymbol = (symbolNode) => {
+      if (!symbolNode || symbolNode.isCompilerInternal) {
+        return;
+      }
+      const declaration = this.analysis.findDeclaration(symbolNode._analysis, symbolNode.value);
+      if (!declaration) {
+        return;
+      }
+      this.fail(
+        'dynamic extends cannot depend on locally declared channels or variables',
+        symbolNode.lineno ?? extendsNode.lineno,
+        symbolNode.colno ?? extendsNode.colno,
+        symbolNode
+      );
+    };
+    const symbols = expressionNode instanceof nodes.Symbol
+      ? [expressionNode]
+      : expressionNode.findAll(nodes.Symbol);
+    symbols.forEach(checkSymbol);
+  }
+
+  _assertExtendsSelectionIsMetadataOnly(extendsNode) {
+    if (!extendsNode || extendsNode.noParentLiteral) {
+      return;
+    }
+    this._assertLoaderExpressionIsMetadataOnly(extendsNode.template, extendsNode);
+    const withVars = extendsNode.withVars && extendsNode.withVars.children
+      ? extendsNode.withVars.children
+      : [];
+    withVars.forEach((nameNode) => this._assertLoaderExpressionIsMetadataOnly(nameNode, extendsNode));
+    this._assertLoaderExpressionIsMetadataOnly(extendsNode.withValue, extendsNode);
+  }
+
+  _compileAsyncInheritanceParentResolver(node) {
+    const extendsNode = this._getLocalExtendsNode(node);
+    if (extendsNode) {
+      this._assertExtendsSelectionIsMetadataOnly(extendsNode);
+    }
+
+    this.emit.line('async function resolveInheritanceParent(env, context, runtime, inheritanceState = null, origin = null) {');
+    if (!extendsNode || extendsNode.noParentLiteral) {
+      this.emit.line('return { parentRoot: null, compositionPayload: null, origin };');
+      this.emit.line('}');
+      return;
+    }
+    this.emit.line('try {');
+
+    const extendsVarsVar = this._tmpid();
+    const extendsRootContextVar = this._tmpid();
+    const compositionPayloadVar = this._tmpid();
+    const targetValueVar = this._tmpid();
+    const targetNameVar = this._tmpid();
+    const parentRootVar = this._tmpid();
+    const parentName = JSON.stringify(this.templateName);
+    const errorContextJson = JSON.stringify(this._createErrorContext(extendsNode));
+
+    this.emit(`const ${targetValueVar} = `);
+    this.compileExpression(extendsNode.template, null, extendsNode.template, true);
+    this.emit.line(';');
+    this.emit.line(`const ${targetNameVar} = await runtime.resolveSingle(${targetValueVar});`);
+    this.emit.line(`if (${targetNameVar} === null || ${targetNameVar} === undefined) {`);
+    this.emit.line(`  return { parentRoot: null, compositionPayload: null, origin: ${errorContextJson} };`);
+    this.emit.line('}');
+    this.emit.line(`const ${extendsVarsVar} = {};`);
+    this.compositionPayload.emitCompiledInputs(extendsNode, extendsVarsVar);
+    this.compositionPayload.emitContext(extendsRootContextVar, extendsVarsVar, extendsNode.withContext !== false);
+    this.emit.line(`const ${compositionPayloadVar} = runtime.createCompositionPayload(${extendsRootContextVar}, ${extendsVarsVar});`);
+    this.emit.line(`const ${parentRootVar} = await env.get${this.scriptMode ? 'Script' : 'Template'}(${targetNameVar}, false, ${parentName}, false);`);
+    this.emit.line(`return { parentRoot: ${parentRootVar}, compositionPayload: ${compositionPayloadVar}, origin: ${errorContextJson} };`);
+    this.emit.line('} catch (e) {');
+    this.emit.line(`  throw runtime.handleError(e, ${extendsNode.lineno}, ${extendsNode.colno}, "${this._generateErrorContext(extendsNode)}", context.path);`);
+    this.emit.line('}');
+    this.emit.line('}');
   }
 
   _emitRootCompositionPayloadInitialization(node) {
@@ -992,6 +1079,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.beginEntryFunction(node, 'root');
     this._compileAsyncRootBody(node);
     this.emit.endEntryFunction(node, true);
+    this._compileAsyncInheritanceParentResolver(node);
     this.inBlock = true;
     const hasGenericScriptBody = this._compileAsyncScriptBodyEntry(node);
     this._compileAsyncRootSetupEntry(node, hasGenericScriptBody);

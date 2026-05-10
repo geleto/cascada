@@ -168,9 +168,9 @@ describe('Template Extends', function () {
 
       loader.addTemplate('base.njk', '{% block body %}Base[{{ theme }}]{% endblock %}');
       loader.addTemplate('parent.njk', '{% extends "base.njk" %}{% block body %}{{ super() }}{% endblock %}');
-      loader.addTemplate('child.njk', '{% set theme = "dark" %}{% extends "parent.njk" with theme %}{% block body %}{{ super() }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "parent.njk" with theme %}{% block body %}{{ super() }}{% endblock %}');
 
-      const result = await env.renderTemplate('child.njk', {});
+      const result = await env.renderTemplate('child.njk', { theme: 'dark' });
       expect(result).to.be('Base[dark]');
     });
 
@@ -180,9 +180,9 @@ describe('Template Extends', function () {
 
       loader.addTemplate('base.njk', '{% block body %}Base[{{ theme }}:{{ label }}]{% endblock %}');
       loader.addTemplate('parent.njk', '{% extends "base.njk" %}{% block body %}{{ super() }}{% endblock %}');
-      loader.addTemplate('child.njk', '{% set childTheme = "dark" %}{% extends "parent.njk" with { theme: childTheme, label: "main" } %}{% block body %}{{ super() }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends "parent.njk" with { theme: childTheme, label: "main" } %}{% block body %}{{ super() }}{% endblock %}');
 
-      const result = await env.renderTemplate('child.njk', { theme: 'render' });
+      const result = await env.renderTemplate('child.njk', { theme: 'render', childTheme: 'dark' });
       expect(result).to.be('Base[dark:main]');
     });
 

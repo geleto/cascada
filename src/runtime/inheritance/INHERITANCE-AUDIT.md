@@ -203,7 +203,7 @@ shared-schema and cross-file collision errors are still uneven:
   some cases.
 - shared-schema entries are type-only, so they do not always retain declaration
   source origins.
-- `createStubSourceOrigin(...)` is lifecycle-owned, but better shared
+- metadata loading now has real file/extends origins, but better shared
   declaration origins are a broader diagnostics improvement.
 
 Action:

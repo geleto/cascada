@@ -59,6 +59,11 @@ type InheritanceState = {
   sharedSchema: Record<string, string>, // shared channel name -> channel type
   sharedRootBuffer: CommandBuffer | null,
   compositionPayload: object | null,
+  renderPlan: {
+    chain: Array<{ root: object, path: string | null, compositionPayload: object | null, origin: SourceOrigin | null }>,
+    structuralEntry: object | null,
+    hasParent: boolean
+  } | null,
   startupPromise: Promise<unknown> | null,
   finalized: boolean,
   failure: Error | null,
@@ -72,6 +77,7 @@ class InheritanceState {
     this.sharedSchema = Object.create(null);
     this.sharedRootBuffer = null;
     this.compositionPayload = null;
+    this.renderPlan = null;
     this.startupPromise = null;
     this.finalized = false;
     this.failure = null;
