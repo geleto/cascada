@@ -154,12 +154,6 @@ function linkCurrentBufferToParentChannels(parentBuffer, currentBuffer, channelN
     return;
   }
   for (const channelName of channelNames) {
-    if (typeof parentBuffer.isChannelFinished === 'function' &&
-        parentBuffer.isChannelFinished(channelName) &&
-        typeof currentBuffer._installLinkedChannel === 'function') {
-      currentBuffer._installLinkedChannel(channelName, parentBuffer.getChannelIfExists(channelName));
-      continue;
-    }
     parentBuffer.addBuffer(currentBuffer, channelName);
   }
   if (Array.isArray(linkedMutatedChannelNames) && currentBuffer._linkedMutatedChannels) {

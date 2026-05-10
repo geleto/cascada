@@ -338,9 +338,7 @@ describe('Extends Foundation', function () {
     });
   });
 
-  // These internals targeted the legacy inheritance runtime data structures.
-  // The new runtime is covered by tests/pasync/inheritance.js.
-  describe.skip('Phase 4 - Shared Channel Runtime Startup', function () {
+  describe('Phase 4 - Shared Channel Runtime Startup', function () {
     it('should apply a shared var default through normal script rendering', async function () {
       const result = await env.renderScriptString('shared var theme = "dark"\nreturn this.theme', {});
 
@@ -827,7 +825,7 @@ describe('Extends Foundation', function () {
         await env.renderScript('C.script', {});
         expect().fail('Expected inherited shared/method collision to fail');
       } catch (error) {
-        expect(String(error)).to.contain('shared channel \'build\' conflicts with inherited method \'build\'');
+        expect(String(error)).to.contain('Shared channel "build" conflicts with inherited callable "build"');
       }
     });
 
@@ -859,7 +857,7 @@ describe('Extends Foundation', function () {
         await env.renderTemplate('child.njk', {});
         expect().fail('Expected inherited template block/shared collision to fail');
       } catch (error) {
-        expect(String(error)).to.contain('shared channel \'theme\' conflicts with inherited method \'theme\'');
+        expect(String(error)).to.contain('Shared channel "theme" conflicts with inherited callable "theme"');
       }
     });
 
@@ -1065,25 +1063,6 @@ describe('Extends Foundation', function () {
       expect(childBuffer.getOwnChannel('theme')).to.be(sharedChannel);
     });
 
-    it('should link newly registered shared lanes from the shared root to the active composition buffer', function () {
-      const sharedRootBuffer = new runtime.CommandBuffer(null);
-      const compositionBuffer = new runtime.CommandBuffer(null, sharedRootBuffer);
-      const state = runtime.createInheritanceState();
-      state.sharedRootBuffer = sharedRootBuffer;
-
-      runtime.bootstrapInheritanceMetadata(
-        state,
-        Object.create(null),
-        { theme: 'var', log: 'text' },
-        {},
-        compositionBuffer,
-        null
-      );
-
-      expect(compositionBuffer.getChannelIfExists('theme')).to.be(sharedRootBuffer.getChannel('theme'));
-      expect(compositionBuffer.getChannelIfExists('log')).to.be(sharedRootBuffer.getChannel('log'));
-    });
-
     it('should keep shared declarations owned by the shared buffer instead of reusing an unrelated parent channel', function () {
       const rootBuffer = new runtime.CommandBuffer(null);
       const childBuffer = new runtime.CommandBuffer(null, rootBuffer);
@@ -1101,10 +1080,12 @@ describe('Extends Foundation', function () {
       const inheritanceState = runtime.createInheritanceState();
       inheritanceState.sharedRootBuffer = sharedRootBuffer;
       inheritanceState.sharedSchema.log = 'text';
+      inheritanceState.finalized = true;
       runtime.declareInheritanceSharedChannel(sharedRootBuffer, 'log', 'text', context, null);
       const currentBuffer = new runtime.CommandBuffer(context, sharedRootBuffer, ['log'], sharedRootBuffer);
 
       inheritanceState.methods.build = {
+        name: 'build',
         fn(envArg, contextArg, runtimeArg, cbArg, output) {
           void envArg;
           void contextArg;
@@ -1119,9 +1100,14 @@ describe('Extends Foundation', function () {
         },
         signature: { argNames: [] },
         ownerKey: 'Main.script',
+        origin: null,
+        isConstructor: false,
         ownMutatedChannels: ['log'],
         ownLinkedChannels: ['log'],
+        mergedMutatedChannels: ['log'],
+        mergedLinkedChannels: ['log'],
         super: null,
+        callsSuper: false,
         invokedMethodRefs: {}
       };
 
@@ -1295,6 +1281,8 @@ describe('Extends Foundation', function () {
     });
   });
 
+  // Legacy-internal metadata registration tests. The new runtime validates the
+  // public behavior in tests/pasync/inheritance.js and the active sections here.
   describe.skip('Phase 4 - Method and Shared Startup Registration', function () {
     it('should record inherited method references as invoked-method metadata without placeholders', function () {
       const script = new Script(
@@ -1911,6 +1899,8 @@ describe('Extends Foundation', function () {
     });
   });
 
+  // Legacy metadata-readiness barrier tests. The new runtime finalizes before
+  // dispatch and no longer exposes this readiness lifecycle.
   describe.skip('Step 4 - Metadata Readiness Barrier', function () {
     it('should start the root constructor after metadata is ready without waiting for setup startup to finish', async function () {
       env = new AsyncEnvironment();
@@ -2059,6 +2049,8 @@ describe('Extends Foundation', function () {
     });
   });
 
+  // Legacy helper-resolution lifecycle tests. The new runtime exposes a smaller
+  // finalized callable table and shared helpers instead of these internals.
   describe.skip('Phase 6 - Helper and Resolution Lifecycle', function () {
     it('should only bootstrap inheritance state for roots that need inheritance features', function () {
       const plainScript = new Script('var x = 1\nreturn x', env, 'plain.script');
@@ -2560,7 +2552,7 @@ describe('Extends Foundation', function () {
     });
   });
 
-  describe.skip('Phase 12 - Dynamic Extends Startup Plumbing', function () {
+  describe('Phase 12 - Dynamic Extends Startup Plumbing', function () {
     it('should stop rewriting nested dynamic extends into asyncStoreIn staging nodes', function () {
       if (!transformer) {
         this.skip();
@@ -2588,16 +2580,14 @@ describe('Extends Foundation', function () {
       expect(Object.prototype.hasOwnProperty.call(extendsNodes[0], 'asyncStoreIn')).to.be(false);
     });
 
-    it('should compile nested dynamic extends without the old top-level staging temp path', function () {
-      const source = new AsyncTemplate(
-        '{% if useParent %}{% extends parent %}{% endif %}{% block body %}x{% endblock %}',
-        env,
-        'dynamic-nested.njk'
-      ).compileSource();
-
-      expect(source).to.contain('extendsState.parentSelection');
-      expect(source).to.not.contain('asyncStoreIn');
-      expect(source).to.not.contain('hole_');
+    it('should reject nested dynamic extends before code generation', function () {
+      expect(() => {
+        new AsyncTemplate(
+          '{% if useParent %}{% extends parent %}{% endif %}{% block body %}x{% endblock %}',
+          env,
+          'dynamic-nested.njk'
+        ).compileSource();
+      }).to.throwException(/dynamic template extends must be a top-level declaration/);
     });
 
     it('should keep top-level dynamic extends on the immediate parent-render boundary path', function () {
@@ -2608,11 +2598,14 @@ describe('Extends Foundation', function () {
       ).compileSource();
 
       expect(source).to.contain('runtime.runControlFlowBoundary(');
-      expect(source).to.contain('extendsState.parentSelection');
+      expect(source).to.contain('extendsState.parentReady');
+      expect(source).to.contain('extendsState.hasParent');
       expect(source).to.not.contain('asyncStoreIn');
     });
   });
 
+  // Legacy dynamic-extends resolution lifecycle tests. Current behavior is
+  // covered by the active parentReady/hasParent plumbing tests above.
   describe.skip('Phase 12 - Dynamic Extends Resolution Lifecycle', function () {
     it('should keep inheritance state lean while methods use a plain helper-backed table', function () {
       const inheritanceState = runtime.createInheritanceState();

@@ -399,6 +399,22 @@ Lifecycle:
    known. If the chain has a parent, inline child block placement is suppressed;
    if the chain has no parent, inline child block placement renders locally.
 
+The finished implementation must keep these as separate compiler/runtime
+phases. Parent root execution must not be the mechanism that discovers parent
+metadata. The compiler output should expose three separate entry points:
+
+- metadata loader: resolves `extends`, compiles parent roots, registers parent
+  `inheritanceSpec` values, and records the selected structural root/context
+- startup/constructor runner: executes shared declarations and local startup
+  after finalization
+- structure renderer: renders the selected root template structure after startup
+
+The current implementation still has residual coupling here: `b___setup__`
+contains both startup code and template structure rendering, and parent roots
+are still executed in composition mode while the chain is being loaded. That
+coupling must be removed before the runtime can fully match this lifecycle.
+Do not add buffer-level late-link fallbacks to compensate for it.
+
 Script constructor startup is not a special metadata model. It invokes the
 finalized `__constructor__` method when present.
 

@@ -290,19 +290,6 @@ describe('channel.finalSnapshot', function () {
       expect(lateLinkedChild.isLinkedMutatedChannel('data')).to.be(true);
     });
 
-    it('links a child to an already-finished parent channel without structural insertion', function () {
-      const parent = new CommandBuffer(context);
-      const channel = declareBufferChannel(parent, 'text', 'text', context, null);
-      parent.finish();
-
-      const child = new CommandBuffer(context);
-      linkCurrentBufferToParentChannels(parent, child, ['text']);
-
-      expect(child.getChannel('text')).to.be(channel);
-      expect(parent.arrays.text).to.be(null);
-      expect(child.parent).to.be(null);
-    });
-
     it('fails when finishing an unknown lane', function () {
       const buffer = new CommandBuffer(context);
       declareBufferChannel(buffer, 'text', 'text', context, null);
