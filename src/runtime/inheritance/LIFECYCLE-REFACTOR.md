@@ -29,6 +29,53 @@ This refactor should make the async implementation look as if the intended
 lifecycle had been implemented from the start. Do not preserve old staging
 helpers, finished-parent linking behavior, or parent-render-as-loader concepts.
 
+## Refactor Vs Restart Decision Gate
+
+The default path is to refactor from the current inheritance branch. This keeps
+the working feature coverage, regression tests, compiler analysis, metadata
+shape, shared-state work, `super()` behavior, and component coverage that were
+already built during the staged implementation.
+
+Proceed with the refactor while all of these remain true:
+
+- each step deletes or isolates more old lifecycle code than it preserves
+- parent metadata loading no longer calls parent `rootRenderFunc(...)`
+- new helpers express the target lifecycle directly rather than wrapping the
+  old lifecycle behind new names
+- root function modes (`compositionMode`, `componentMode`, `parentBuffer`) are
+  shrinking toward deletion, not spreading to new call sites
+- `startupPromise` is shrinking toward local execution plumbing or deletion,
+  not becoming the primary lifecycle coordinator again
+- tests are rewritten to assert target behavior, not old generated-source
+  scaffolding
+- component support follows the same load/finalize/root-program path rather
+  than requiring special root-render modes
+
+Stop the refactor and restart from `master` with this document as the TDD if
+any of these become true after Step 1 or Step 2:
+
+- old `rootRenderFunc(..., compositionMode, parentBuffer, inheritanceState,
+  componentMode)` remains necessary for normal parent loading or component
+  startup
+- parent root execution is still the mechanism that discovers parent metadata
+- `extendsState`, `parentReady`, or equivalent per-block parent-decision
+  promises survive as normal block-placement control flow
+- `runCompiledRootStartup(...)` / `startupPromise` remains the cross-phase
+  coordination mechanism between load, finalize, constructor, and structure
+  rendering
+- generated setup/root code still mixes metadata loading, shared declarations,
+  root program execution, and structural template rendering in one helper
+- finished-buffer late linking or broad setup-time shared linking is still
+  required for correctness
+- compatibility adapters for the old root modes survive beyond an intermediate
+  green commit
+- the implementation becomes harder to explain than the target lifecycle shown
+  in this document
+
+If the restart gate trips, do not attempt a smaller patch. Create a new branch
+from `master`, copy this document in as the implementation TDD, and port only
+the useful tests and isolated helper code that conform to the target lifecycle.
+
 ## Current Departures From The TDD
 
 ### Parent Root Execution Loads Metadata
@@ -169,16 +216,23 @@ Each async script/template root should expose these compiled pieces:
 {
   root,                 // public render entry
   inheritanceSpec,      // raw compiler metadata
-  loadInheritanceChain, // metadata-only chain loader
+  resolveInheritanceParent, // local extends resolver
   executeRootProgram    // constructor/body/root template code
 }
 ```
 
 Names can differ, but the ownership must be this clear.
+The compiled functions must be assigned to stable properties on the compiled
+root object so runtime helpers can call them without depending on generated
+local variable names.
 
 `rootRenderFunc(...)` should no longer take `compositionMode`,
 `parentBuffer`, or `componentMode`. Parent template execution should call the
 compiled `executeRootProgram(...)` for the selected root directly.
+
+`inheritanceSpec.setup` is removed by this split. Root-program execution owns
+what `setup` used to mix together; metadata registration should read
+`inheritanceSpec` only.
 
 ### Runtime State Additions
 
@@ -187,12 +241,17 @@ Add a nested render-plan object to `InheritanceState`:
 ```js
 {
   renderPlan: {
-    entryRoot: Template | Script,
-    constructorRoots: Template[],
-    structuralRoot: Template | null,
-    selectedPayload: object | null,
+    chain: RenderPlanEntry[],
+    structuralEntry: RenderPlanEntry | null,
     hasParent: boolean
   }
+}
+
+type RenderPlanEntry = {
+  root: Template | Script,
+  path: string | null,
+  compositionPayload: object | null,
+  origin: SourceOrigin | null
 }
 ```
 
@@ -200,23 +259,37 @@ This plan is produced during chain loading. It is not execution metadata like
 `methods`; it is the answer to "which root program should execute after
 finalization?"
 
+There is no separate `entryRoot` field: the entry root is always
+`renderPlan.chain[0].root`. Keeping only one representation avoids drift.
+
 Do not merge this with the existing top-level `compositionPayload` state field.
 That field belongs to component/extends input payload handling. The render plan
 answers structural selection only.
 
-For templates, `constructorRoots` is the selected child-to-parent constructor
-chain. In `child -> mid -> root`, constructors run child, then mid, then root
-because template constructors have implicit parent continuation at the end.
+For templates, `chain` is the selected child-to-parent execution chain. In
+`child -> mid -> root`, `chain` is `[childEntry, midEntry, rootEntry]`.
+Each entry stores the composition payload and source origin selected by the
+`extends` hop that leads to that root. This per-hop payload is required because
+every level can have its own `extends ... with ...` expression. The entry stores
+payload data, not a pre-forked `Context`; execution forks the context for each
+entry when that entry's root program runs.
 
-`structuralRoot` means the topmost selected template whose inline block
-placements own document structure. In `child -> mid -> root`, `structuralRoot`
-is `root`. If the entry has no selected parent (`extends none`, dynamic null,
-or standalone), `structuralRoot` is `null` and the entry root program executes
-both constructor code and local inline block placement.
+`structuralEntry` means the topmost selected template whose inline block
+placements own document structure. In `child -> mid -> root`, `structuralEntry`
+is the `rootEntry` already present in `chain`. It must not be executed twice:
+template execution runs each chain entry exactly once. Entries before
+`structuralEntry` run with local inline block placement disabled; the
+`structuralEntry` runs with inline block placement enabled.
 
-Store payload data, not a pre-forked `Context`. The selected-root context
-should be forked at execution time so it observes finalized state through normal
-buffers/channels.
+If the entry has no selected parent (`extends none`, dynamic null, or
+standalone), `structuralEntry` is `null` and the single entry root program
+executes both constructor code and local inline block placement.
+
+Scripts also use the render plan for selected-chain metadata and payload
+recording, but script constructor continuation is explicit: `super()` follows
+finalized owner-relative constructor links. The root orchestrator must not
+blindly iterate script constructors the way template execution iterates template
+root programs.
 
 ### Metadata Loading
 
@@ -236,8 +309,8 @@ await loadInheritanceChain({
 Responsibilities:
 
 - compile each selected root
-- register `root.inheritanceSpec`
-- call each root's compiled `loadInheritanceChain(...)` function to resolve
+- register each selected root's `inheritanceSpec`
+- call each root's compiled local parent resolver function to resolve
   its own `extends` expression
 - detect cycles
 - store the selected constructor chain, structural root, and payload data
@@ -255,7 +328,7 @@ The helper is async and returns the finalized render-plan data, but it does not
 finalize metadata. It must not silently reopen a finalized state.
 
 Standalone roots still use the same loader: register the entry spec, set
-`hasParent = false`, leave `structuralRoot = null`, and use only the entry
+`hasParent = false`, leave `structuralEntry = null`, and use only the entry
 constructor/root program.
 
 ### Finalization
@@ -274,6 +347,29 @@ Allowed finalization work:
 - validate invoked references
 - compute fixed-point channel footprints
 - publish `state.methods` and `state.sharedSchema`
+
+After footprint merging, finalization should prune bootstrap-only fields from
+long-lived execution entries. `callsSuper` and `invokedMethodRefs` are needed to
+compute the fixed point, but they should not survive on the execution
+`RuntimeMethodEntry` shape. The execution shape should retain only fields used
+after finalization, such as:
+
+- `name`
+- `fn`
+- `signature`
+- `ownerKey`
+- `origin`
+- `isConstructor`
+- `super`
+- `mergedLinkedChannels`
+- `mergedMutatedChannels`
+
+Finalization should also move toward collecting independent recoverable
+structural metadata errors before throwing. This applies to catalog wiring,
+`super()` resolution, invoked-callable validation, signature compatibility, and
+footprint validation. If full aggregation is not implemented in the lifecycle
+slice, it must stay tracked as an explicit post-refactor audit item rather than
+being forgotten.
 
 ### Root Program Execution
 
@@ -300,6 +396,10 @@ For templates:
 - only the topmost structural root performs callable inline block placement
 - template constructor/program code does not support `super()`
 
+Each template root program executes at most once per render. The inline block
+placement mode is a parameter of that execution, not a reason to call the same
+root program twice.
+
 `runCompiledRootStartup(...)` should disappear or be renamed, because the phase
 is not just startup. Its current `options` object is residual coupling:
 
@@ -314,8 +414,9 @@ component or composition modes.
 
 Template execution has two related parts:
 
-- run constructor/program code for every template in the selected chain
-- then run inline block placement only from the structural root
+- run constructor/program code for every template in the selected chain exactly
+  once
+- enable inline block placement only for the structural entry
 
 If the chain has a parent, local inline block placement in child templates is
 suppressed. If `extends none`, dynamic parent resolves to null, or there is no
@@ -335,13 +436,105 @@ The root program function should receive the render plan explicitly:
 executeRootProgram(env, context, runtime, cb, output, inheritanceState, renderPlan)
 ```
 
-The entry root orchestrator chooses whether to call the selected
-template constructor chain and then the structural root placement path, or the
-entry root's local fallback path.
+The template root-program helper should receive an execution-mode flag such as:
+
+```js
+executeRootProgram(env, context, runtime, cb, output, inheritanceState, renderPlan, {
+  placeInlineBlocks: boolean
+})
+```
+
+For `child -> mid -> root`, execution is:
+
+1. execute child with `placeInlineBlocks: false`
+2. execute mid with `placeInlineBlocks: false`
+3. execute root with `placeInlineBlocks: true`
+
+For standalone / `extends none` / dynamic null, execution is:
+
+1. execute entry with `placeInlineBlocks: true`
+
+Algorithmically:
+
+```js
+for (const entry of renderPlan.chain) {
+  const placeInlineBlocks = renderPlan.structuralEntry === null
+    ? entry === renderPlan.chain[0]
+    : entry === renderPlan.structuralEntry;
+  await entry.root.executeRootProgram(..., { placeInlineBlocks });
+}
+```
+
+Each entry should execute with a context forked from the previous hop using that
+entry's `compositionPayload`:
+
+```js
+const entryContext = entry.compositionPayload
+  ? previousContext.forkForCompositionPayload(
+    entry.path,
+    entry.compositionPayload,
+    previousContext.getRenderContextVariables()
+  )
+  : previousContext.forkForPath(entry.path);
+```
+
+The exact helper can be adjusted to the existing `Context` API, but the
+important invariant is that the context is forked at execution time, not stored
+pre-forked in the render plan.
+
+Block placement inside `executeRootProgram` should compile to one simple mode
+check, not parent-selection logic:
+
+```js
+if (executionOptions.placeInlineBlocks) {
+  const value = runtime.invokeInheritedCallable(
+    inheritanceState,
+    "content",
+    runtime.createArray([...]),
+    context,
+    env,
+    runtime,
+    cb,
+    output,
+    errorContext
+  );
+  output.addCommand(new runtime.TextCommand(value), "__text__");
+}
+```
+
+The exact emitted command form should follow the existing text-output emitter,
+but the shape must remain a local `placeInlineBlocks` check. It must not call
+parent loaders, inspect `extendsState`, or wait on parent-decision promises.
 
 Named binding expressions in extending templates with a selected parent must
 not be evaluated. With a precomputed render plan, this is achieved by never
-executing child inline block placement when `hasParent` is true.
+executing child inline block placement when `placeInlineBlocks` is false.
+
+Script root target shape:
+
+```js
+async function root(env, context, runtime, cb) {
+  const output = new runtime.CommandBuffer(context, null);
+  const inheritanceState = runtime.createInheritanceState();
+  await runtime.loadInheritanceChain({ root: self, context, env, runtime, inheritanceState, origin });
+  runtime.finalizeInheritanceMetadata(inheritanceState, context);
+  const result = await runtime.executeScriptRootProgram({
+    entry: inheritanceState.renderPlan.chain[0],
+    env,
+    context,
+    runtime,
+    cb,
+    output,
+    inheritanceState
+  });
+  output.finish();
+  cb(null, runtime.normalizeFinalPromise(result));
+}
+```
+
+Script root execution must not iterate constructors child-to-parent. It invokes
+the finalized entry constructor/body and lets explicit `super()` drive ancestor
+constructor execution.
 
 ### Components
 
@@ -356,6 +549,9 @@ Rules:
   `close()` is called
 - component method calls use normal invocation admission against the finalized
   table
+- script components and template components both use the same
+  load/finalize/root-program path; they differ only in how their selected root
+  program executes after finalization
 
 Components must not require linking into a finished root buffer. If they do,
 the component lifetime is wrong.
@@ -487,6 +683,12 @@ The refactor should make this unnecessary:
 - no broad whole-schema setup link should remain unless a final root-program
   admission primitive explicitly owns it
 
+Do not confuse this with entry-local invocation-buffer wiring. Per-invocation
+parent channel linking from a callable's local buffer to its immediate
+invocation buffer remains valid unless/until invocation commands replace that
+mechanism. What goes away is lifecycle-phase bridging and broad setup-time
+shared linking.
+
 ### Dynamic Extends Tests Assert The Temporary Plumbing
 
 `tests/pasync/extends-foundation.js` still has active generated-source
@@ -569,13 +771,15 @@ Add runtime helpers in `load.js` or a new `chain.js`:
 
 Move cycle tracking out of parent rendering and into metadata loading.
 
-`loadInheritanceChain(...)` should compile parent roots and call
-`bootstrapInheritanceMetadata(state, parent.inheritanceSpec, parentContext)`.
+Runtime `loadInheritanceChain(...)` owns all spec registration. It compiles each
+selected root and calls
+`bootstrapInheritanceMetadata(state, selectedRoot.inheritanceSpec, origin)`.
+Compiled roots do not mutate `state.loading.files` directly.
 
-The compiled root's own loader should have a concrete signature:
+The compiled root's own local parent resolver should have a concrete signature:
 
 ```js
-async function loadInheritanceChain(env, context, runtime, inheritanceState, origin)
+async function resolveInheritanceParent(env, context, runtime, inheritanceState, origin)
 ```
 
 It evaluates only the local `extends` expression and returns:
@@ -583,12 +787,119 @@ It evaluates only the local `extends` expression and returns:
 ```js
 {
   parentRoot: Template | Script | null,
-  compositionPayload: object | null
+  compositionPayload: object | null,
+  origin: SourceOrigin | null
 }
 ```
 
 The runtime helper owns recursion and render-plan construction. This keeps
 multi-level structural-root selection in one place.
+
+#### Step 1 Execution Contract
+
+The first implementation slice should be metadata-only and should not preserve
+old parent-render behavior behind a new helper name.
+
+Compiled local parent-resolver signature:
+
+```js
+async function resolveInheritanceParent(env, context, runtime, inheritanceState, origin)
+```
+
+Local parent-resolver responsibilities:
+
+- evaluate the current root's `extends` expression, if present
+- return only the immediate parent selection:
+
+```js
+{
+  parentRoot: Template | Script | null,
+  compositionPayload: object | null,
+  origin: SourceOrigin | null
+}
+```
+
+Local parent-resolver non-responsibilities:
+
+- no spec registration
+- no render-plan mutation
+- no recursion
+- no finalization
+
+Runtime chain-loader signature:
+
+```js
+await runtime.loadInheritanceChain({
+  root,
+  context,
+  env,
+  runtime,
+  inheritanceState,
+  origin
+});
+```
+
+Runtime chain-loader responsibilities:
+
+- register each selected root's `inheritanceSpec`
+- call the compiled local parent resolver for each selected root
+- compile parent roots before reading their loader/spec
+- recurse until no parent is selected
+- detect cycles using source paths before recursing into an already-seen root
+- append loaded specs child-to-parent
+- build `inheritanceState.renderPlan`
+- leave `inheritanceState.finalized === false`
+- not run setup, constructors, methods, blocks, script returns, or template text
+
+`renderPlan` after Step 1 must contain enough information for later steps:
+
+```js
+{
+  chain,             // child -> parent RenderPlanEntry values
+  structuralEntry,   // topmost selected template entry, or null for local fallback
+  hasParent
+}
+```
+
+For `child -> mid -> root`, `chain` is `[childEntry, midEntry, rootEntry]` and
+`structuralEntry` is `rootEntry`. For standalone roots, `extends none`, or
+dynamic null, `chain` contains the entry root, `structuralEntry` is `null`, and
+`hasParent` is `false`.
+
+Forbidden in Step 1:
+
+- calling any parent `rootRenderFunc(...)`
+- calling `renderParentRoot(...)`
+- calling `renderInheritanceParentRoot(...)`
+- calling `bootstrapInheritanceParentScript(...)`
+- calling `runCompiledRootStartup(...)`
+- creating a `CommandBuffer`
+- finishing a buffer
+- linking parent/shared channels
+- setting or reading `startupPromise`
+- emitting or depending on `extendsState.parentReady`
+
+Dynamic extends constraint for Step 1:
+
+- dynamic parent expressions may read render context, composition payload, and
+  globals available before root-program execution
+- they must not depend on root-program-created channels or source-ordered
+  command-buffer state
+- the loader expression compiler must enforce this by rejecting channel reads,
+  root-program locals, `set`-created locals, and other current-buffer-dependent
+  expressions inside `extends`
+- unsupported channel-dependent dynamic extends should fail clearly rather than
+  silently falling back to old root-render loading
+
+Minimum Step 1 tests:
+
+- loading a static three-level chain registers specs child-to-parent without
+  running parent root code
+- static cycle detection fails during loading
+- `extends none` produces a local-fallback render plan
+- dynamic null produces a local-fallback render plan
+- dynamic parent selection is evaluated once during loading
+- metadata loading can be unit-tested without constructing a `CommandBuffer`
 
 ### 2. Split Compiler Root Entries
 
@@ -609,6 +920,12 @@ are currently most entangled there.
 Do not keep suppression conditionals inside general output compilation as the
 long-term model. Once the root program has its own function, output belongs
 there.
+
+No compatibility adapter for the old root function modes should survive this
+refactor. Temporary bridges may exist only inside an intermediate green commit;
+the final code must not retain `compositionMode`, `componentMode`,
+`parentBuffer` root dispatch, parent-render-as-loader wrappers, or aliases that
+preserve those modes under new names.
 
 ### 3. Root Entry Orchestration
 
@@ -647,13 +964,13 @@ async function root(env, context, runtime, cb) {
 ```
 
 `executeTemplateRootProgram(...)` owns the template-specific multi-level
-program order. For an inherited chain it should iterate
-`renderPlan.constructorRoots` child-to-parent and execute constructor/program
-code without local inline block placement for child/mid templates, then execute
-`renderPlan.structuralRoot` with structural inline block placement enabled. For
-`extends none`, dynamic null, or standalone templates, `constructorRoots`
-contains only the entry and `structuralRoot` is `null`, so the entry program
-executes its local inline block placement itself.
+program order. For an inherited chain it should iterate `renderPlan.chain`
+child-to-parent and execute each template root program exactly once. Entries
+before `renderPlan.structuralEntry` execute with local inline block placement
+disabled; `renderPlan.structuralEntry` executes with local inline block
+placement enabled. For `extends none`, dynamic null, or standalone templates,
+`renderPlan.chain` contains only the entry and `structuralEntry` is `null`, so
+the entry program executes with local inline block placement enabled.
 
 The real generated code can preserve sync-first patterns where useful, but the
 control flow should remain this linear.
@@ -769,6 +1086,7 @@ Once the lifecycle split lands, remove:
 - `extendsState` and all `parentReady`/`hasParent` generated code
 - `extendsState.parentSelection` dead assignments
 - `topLevelDynamicExtends`
+- `inheritanceSpec.setup`
 - `_emitTemplateExtendsBoundaryFromSelection(...)` as currently structured
 - startup-output suppression branches in `compileOutput(...)`
 - `_isExtendingTemplateStartupOutput(...)`
@@ -781,6 +1099,8 @@ Once the lifecycle split lands, remove:
   names that call the all-method-entry array `methods`
 - comments that describe parent rendering as chain loading
 - skipped tests that target legacy metadata readiness and helper lifecycle
+- long-lived `RuntimeMethodEntry.callsSuper` and
+  `RuntimeMethodEntry.invokedMethodRefs` after footprint merging
 
 Keep:
 
@@ -811,8 +1131,14 @@ The refactor is complete when:
 - generated root signatures no longer use `compositionMode`, `parentBuffer`, or
   `componentMode`
 - real source origins replace `createStubSourceOrigin(...)`
+- template constructors from every selected chain entry run in child-to-parent
+  order, with inline block placement enabled only for the structural entry
 - constructor `super()` no-op behavior remains intact
 - all-method-entry validation and footprint merging remain intact
+- independent recoverable finalization errors are collected before throwing, or
+  the deferral is explicitly tracked outside the lifecycle plan
+- execution `RuntimeMethodEntry` objects no longer retain bootstrap-only
+  `callsSuper` or `invokedMethodRefs`
 - component startup error handling remains intact
 - quick tests pass
 - generated source is easier to read: load, finalize, execute root program, finish appear as
