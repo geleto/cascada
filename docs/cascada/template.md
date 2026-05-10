@@ -281,7 +281,8 @@ In async templates that use `extends` or `block`, the `this.<name>` surface prov
 **Key differences from scripts:**
 
 - No `shared` declarations are needed. The compiler infers shared vars from static `this.<name>` paths in the template source.
-- Templates only have `var`-type values - there are no typed channels. Because the type is always `var`, the compiler can infer it and no declaration is needed.
+- Explicit `shared` declarations are script-only. In templates, `{% shared var theme %}` is rejected; use `{% set this.theme = ... %}` and `{{ this.theme }}` instead.
+- Templates infer ordinary `this.<name>` roots as shared `var` values, so no declaration is needed. The reserved `this.__text__` root is the inherited template text channel and is the only typed shared-channel exception on this template surface.
 - In a plain template that does not contain `extends` or `block`, `this` is an ordinary render-context variable and `this.<name>` is a normal property lookup - inference does not apply.
 - Dynamic `this[expression]` is not supported in inheritance templates.
 
@@ -299,6 +300,12 @@ In async templates that use `extends` or `block`, the `this.<name>` surface prov
 ```
 
 The child's `{% set this.theme = "dark" %}` writes the shared var explicitly through the inheritance state. The base's `{{ this.theme }}` inside the block reads it. Both templates infer `theme` automatically - no declaration required in either file.
+
+Template shared-var writes are ordinary runtime assignments, not shared-default
+initializers. If both child and parent template constructor code assign
+`this.theme`, the later source-ordered write wins in the current lifecycle.
+Use script `shared var` declarations for default-claim semantics; template
+inference only provides the shared `var` channel.
 
 ## Variable Scoping
 

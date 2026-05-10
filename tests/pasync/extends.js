@@ -91,7 +91,7 @@ describe('Extends Runtime', function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.njk', '{% shared var theme = "light" %}{% block body %}parent{% endblock %}');
+      loader.addTemplate('A.njk', '{% set this.theme = "light" %}{% block body %}parent{% endblock %}');
       loader.addTemplate('C.njk', '{% extends "A.njk" %}{% block body %}{{ theme }}{% endblock %}');
 
       const withoutContext = await env.renderTemplate('C.njk', {});
@@ -101,16 +101,16 @@ describe('Extends Runtime', function () {
       expect(withContext).to.be('context');
     });
 
-    it('should allow template block reads of shared vars with a local declaration', async function () {
+    it('should allow template block reads of inferred shared vars', async function () {
       const loader = new StringLoader();
       env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('A.njk', '{% shared var theme = "light" %}{% block body %}parent{% endblock %}');
-      loader.addTemplate('C.njk', '{% shared var theme = "dark" %}{% extends "A.njk" %}{% block body %}{{ this.theme }}{% endblock %}');
+      loader.addTemplate('A.njk', '{% set this.theme = "light" %}{% block body %}parent{% endblock %}');
+      loader.addTemplate('C.njk', '{% extends "A.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}');
 
       const result = await env.renderTemplate('C.njk', {});
 
-      expect(result).to.be('dark');
+      expect(result).to.be('light');
     });
 
     it('should keep child constructor writes local when it omits super()', async function () {

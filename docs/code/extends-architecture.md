@@ -274,10 +274,13 @@ Async inherited templates use the same `this.<name>` surface for shared vars,
 but with a different compilation model: the compiler infers shared `var` entries
 from static `this.<root>` paths found anywhere in the template AST, without
 requiring explicit `shared` declarations in template source.
+Explicit `shared` declarations are script-only and are rejected in template
+source.
 
-Template shared access is var-only. The compiler does not infer shared `text`,
-`data`, or `sequence` channels for templates; those typed channels are a
-script-only concept at this surface.
+Ordinary template shared access is var-only. The compiler does not infer shared
+`data` or `sequence` channels for templates; those typed channels are a
+script-only concept at this surface. Reserved `this.__text__` is the one typed
+exception and refers to the inherited template text channel.
 
 Template inference applies only when the template uses inheritance nodes
 (`extends` or `block`). A plain async template that does not participate in

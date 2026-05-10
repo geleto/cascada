@@ -65,6 +65,14 @@ function validateChannelDeclarationNode(compiler, node) {
   if (!compiler.scriptMode && !isShared) {
     compiler.fail('Channel declarations are only supported in script mode', node.lineno, node.colno, node);
   }
+  if (!compiler.scriptMode && isShared) {
+    compiler.fail(
+      'Templates infer shared vars from this.<name>; explicit shared declarations are script-only',
+      node.lineno,
+      node.colno,
+      node
+    );
+  }
   if (!(nameNode instanceof nodes.Symbol)) {
     compiler.fail('Channel declaration name must be a symbol', node.lineno, node.colno, node);
   }

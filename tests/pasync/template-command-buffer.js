@@ -276,7 +276,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 
     it('should emit inherited block placement as method invocation without shared text boundary', function () {
       const env = new AsyncEnvironment();
-      const templateSource = '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]';
+      const templateSource = 'Base[{% block body %}{{ this.theme }}{% endblock %}]';
       const ast = analyzeTemplateSource(templateSource, 'block-text-placement-links.njk');
       const blockNode = collectNodesByType(ast, 'Block')[0];
       const tmpl = new AsyncTemplate(templateSource, env, 'block-text-placement-links.njk');
@@ -292,10 +292,9 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
     it('should emit template extends startup without shared callable links', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate(
-        '{% shared var theme = "light" %}' +
         '{% extends layout %}' +
-        '{% set theme = "dark" %}' +
-        '{% block body %}{{ theme }}{% endblock %}',
+        '{% set this.theme = "dark" %}' +
+        '{% block body %}{{ this.theme }}{% endblock %}',
         env,
         'extends-startup-text-placement-links.njk'
       );
@@ -571,10 +570,10 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]');
+      loader.addTemplate('base.njk', 'Base[{% block body %}{{ this.theme }}{% endblock %}]');
       loader.addTemplate(
         'child.njk',
-        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
+        '{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', {});

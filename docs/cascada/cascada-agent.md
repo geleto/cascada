@@ -660,9 +660,9 @@ import "f.script" as fmt with context, locale
 // extends "expr" if cond else none — conditional extends; `none` means root of own chain.
 // Composition payload via `extends "f" with [forms]` — same forms as `component`/`import`.
 
-// [EXT-02] RULE: Only `shared` declarations are allowed BEFORE `extends`. Plain `var` before extends is a compile error.
+// [EXT-02] SCRIPT RULE: Only `shared` declarations are allowed BEFORE `extends`. Plain `var` before extends is a compile error.
 
-// [EXT-03] RULE: `shared` declares chain-owned state, accessed via `this.<name>` from constructors/methods.
+// [EXT-03] SCRIPT RULE: `shared` declares chain-owned state, accessed via `this.<name>` from constructors/methods.
 // Forms:
 //   shared var x = expr        // shared variable; this.x reads/writes
 //   shared var x               // declares participation only — no default claimed
@@ -671,7 +671,7 @@ import "f.script" as fmt with context, locale
 //   shared sequence db = expr  // shared sequence with initializer
 //   shared sequence db         // declares participation only
 
-// [EXT-04] RULE: PER-FILE declaration requirement — every file using `this.<name>` must declare it locally.
+// [EXT-04] SCRIPT RULE: PER-FILE declaration requirement — every script using `this.<name>` must declare it locally.
 // CONSTRAINT: Compiler infers channel type from THIS file. Parent decls do not extend to child files.
 
 // [EXT-05] RULE: Shared default priority — first encountered in CHILD-to-PARENT startup order wins.
@@ -887,7 +887,8 @@ Hello {{ user.name }}
 
 {# [TPL-18] RULE: Shared `var` state across the hierarchy uses `this.<name>`.
    DIFFERENTIAL FROM SCRIPTS: NO `shared` declaration is required in templates — compiler INFERS shared vars
-   from static `this.<name>` paths. Only `var` type exists in templates. #}
+   from static `this.<name>` paths. Reserved `this.__text__` is the inherited text-channel exception.
+   Explicit `{% shared ... %}` declarations are SCRIPT-ONLY and are rejected in templates. #}
 {% set this.theme = "dark" %}
 Theme: {{ this.theme }}
 
@@ -972,8 +973,8 @@ Theme: {{ this.theme }}
 | C17 | `x#` returns `none` if x is not an error | ERR-06 |
 | C18 | Function scope is isolated; no caller locals | FUNC-01 |
 | C19 | Functions cannot dispatch `this.method()` or access shared state | FUNC-03 |
-| C20 | Only `shared` decls allowed before `extends` | EXT-02 |
-| C21 | Every file that uses `this.<name>` must declare it locally | EXT-04 |
+| C20 | In scripts, only `shared` decls are allowed before `extends` | EXT-02 |
+| C21 | Every script that uses `this.<name>` must declare it locally | EXT-04 |
 | C22 | First-encountered initializer in child→parent order claims the shared default | EXT-05 |
 | C23 | Bare assignment to shared name is compile error; use `this.x = v` | EXT-06 |
 | C24 | `this.method` without `(...)` is a compile error | METH-01 |

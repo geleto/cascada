@@ -839,8 +839,8 @@ describe('Inheritance runtime', function () {
     it('reads and writes shared vars through this.sharedName in inherited template blocks', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% shared var theme = "parent" %}A{% block body %}{{ this.theme }}{% endblock %}C');
-      loader.addTemplate('child.njk', '{% shared var theme = "light" %}{% extends "base.njk" %}{% block body %}{% set this.theme = "dark" %}{{ this.theme }}{% endblock %}');
+      loader.addTemplate('base.njk', 'A{% block body %}{{ this.theme }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block body %}{% set this.theme = "dark" %}{{ this.theme }}{% endblock %}');
 
       const result = await env.renderTemplate('child.njk', {});
 
@@ -850,7 +850,7 @@ describe('Inheritance runtime', function () {
     it('reads template startup shared writes from later blocks', async function () {
       const env = new AsyncEnvironment();
 
-      const result = await env.renderTemplateString('{% shared var theme = "light" %}{% set this.theme = "dark" %}A{% block body %}{{ this.theme }}{% endblock %}C');
+      const result = await env.renderTemplateString('{% set this.theme = "dark" %}A{% block body %}{{ this.theme }}{% endblock %}C');
 
       expect(result).to.be('AdarkC');
     });
@@ -858,8 +858,8 @@ describe('Inheritance runtime', function () {
     it('reads post-extends startup shared writes from inherited block placement', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% shared var theme %}A{% block body %}{{ this.theme }}{% endblock %}C');
-      loader.addTemplate('child.njk', '{% shared var theme = "light" %}{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}');
+      loader.addTemplate('base.njk', 'A{% block body %}{{ this.theme }}{% endblock %}C');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}');
 
       const result = await env.renderTemplate('child.njk', {});
 
@@ -870,10 +870,10 @@ describe('Inheritance runtime', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       env.addGlobal('ready', () => Promise.resolve(true));
-      loader.addTemplate('base.njk', '{% shared var theme %}A{% block body %}{{ this.theme }}{% endblock %}C');
+      loader.addTemplate('base.njk', 'A{% block body %}{{ this.theme }}{% endblock %}C');
       loader.addTemplate(
         'child.njk',
-        '{% shared var theme = "light" %}{% extends "base.njk" %}{% if ready() %}{% set this.theme = "dark" %}{% endif %}{% block body %}{{ this.theme }}{% endblock %}'
+        '{% extends "base.njk" %}{% if ready() %}{% set this.theme = "dark" %}{% endif %}{% block body %}{{ this.theme }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', {});
@@ -881,24 +881,43 @@ describe('Inheritance runtime', function () {
       expect(result).to.be('AdarkC');
     });
 
-    it('rejects shared schema conflicts across inherited templates', async function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% shared text theme %}{% block body %}Base{% endblock %}');
-      loader.addTemplate('child.njk', '{% shared var theme %}{% extends "base.njk" %}');
+    it('rejects explicit shared declarations in templates', async function () {
+      const env = new AsyncEnvironment();
 
       try {
-        await env.renderTemplate('child.njk', {});
-        expect().fail('Expected shared schema conflict');
+        await env.renderTemplateString('{% shared var theme %}{% block body %}{{ this.theme }}{% endblock %}');
+        expect().fail('Expected template shared declaration rejection');
       } catch (err) {
-        expect(String(err)).to.contain('Shared channel "theme" was declared as');
+        expect(String(err)).to.contain('Templates infer shared vars from this.<name>');
+      }
+    });
+
+    it('rejects explicit typed shared declarations in templates', async function () {
+      const env = new AsyncEnvironment();
+
+      try {
+        await env.renderTemplateString('{% shared text log %}{% block body %}{{ this.log }}{% endblock %}');
+        expect().fail('Expected template typed shared declaration rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('Templates infer shared vars from this.<name>');
+      }
+    });
+
+    it('rejects nested explicit shared declarations in templates with the template-specific diagnostic', async function () {
+      const env = new AsyncEnvironment();
+
+      try {
+        await env.renderTemplateString('{% if true %}{% shared var theme %}{% endif %}{% block body %}{{ this.theme }}{% endblock %}');
+        expect().fail('Expected nested template shared declaration rejection');
+      } catch (err) {
+        expect(String(err)).to.contain('Templates infer shared vars from this.<name>');
       }
     });
 
     it('rejects shared channel and inherited callable name collisions', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% shared var body %}Base');
+      loader.addTemplate('base.njk', '{{ this.body }}{% block content %}Base{% endblock %}');
       loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block body %}Child{% endblock %}');
 
       try {

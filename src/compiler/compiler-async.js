@@ -769,16 +769,6 @@ class CompilerAsync extends CompilerBaseAsync {
 
   // we need to collect them beforehand because furher analysis will need to know the implicit shared declarations
   _collectInferredTemplateSharedDeclarations(rootNode) {
-    const explicitSharedNames = new Set();
-    const metadata = this._getInheritanceMetadata(rootNode);
-    if (metadata && metadata.sharedDeclarations && Array.isArray(metadata.sharedDeclarations.children)) {
-      metadata.sharedDeclarations.children.forEach((declaration) => {
-        if (declaration && declaration.name && declaration.name.value) {
-          explicitSharedNames.add(declaration.name.value);
-        }
-      });
-    }
-
     const calleeNodes = new Set();
     rootNode.findAll(nodes.FunCall).forEach((callNode) => {
       if (callNode && callNode.name) {
@@ -808,7 +798,7 @@ class CompilerAsync extends CompilerBaseAsync {
         return;
       }
       const name = staticPath[1];
-      if (inferred.has(name) || explicitSharedNames.has(name)) {
+      if (inferred.has(name)) {
         return;
       }
       const nameNode = new nodes.Symbol(lookupNode.lineno, lookupNode.colno, name);

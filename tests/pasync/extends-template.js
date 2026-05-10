@@ -71,8 +71,8 @@ describe('Template Extends', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]');
-      loader.addTemplate('child.njk', '{% shared var theme = "light" %}{% set theme = "dark" %}{% extends "base.njk" %}');
+      loader.addTemplate('base.njk', 'Base[{% block body %}{{ this.theme }}{% endblock %}]');
+      loader.addTemplate('child.njk', '{% set this.theme = "dark" %}{% extends "base.njk" %}');
 
       const result = await env.renderTemplate('child.njk', {});
       expect(result).to.be('Base[dark]');
@@ -107,10 +107,10 @@ describe('Template Extends', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]');
+      loader.addTemplate('base.njk', 'Base[{% block body %}{{ this.theme }}{% endblock %}]');
       loader.addTemplate(
         'child.njk',
-        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
+        '{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', {});
@@ -123,7 +123,7 @@ describe('Template Extends', function () {
 
       loader.addTemplate(
         'base.njk',
-        '{% shared var theme = "light" %}{% set theme = "dark" %}Base[{% block body %}{{ theme }}{% endblock %}]'
+        '{% set this.theme = "light" %}{% set theme = "dark" %}Base[{% block body %}{{ theme }}{% endblock %}]'
       );
       loader.addTemplate(
         'child.njk',
@@ -218,6 +218,43 @@ describe('Template Extends', function () {
 
       const result = await env.renderTemplate('child.njk', {});
       expect(result).to.be('grand-pre|Grand[grand]|grand-post');
+    });
+
+    // Pending lifecycle refactor: see src/runtime/inheritance/LIFECYCLE-REFACTOR.md.
+    // Constructors should run only after the whole selected chain is loaded
+    // and finalized, so every constructor can use finalized shared metadata
+    // before structural block placement starts.
+    it.skip('should run every template constructor in the selected chain before structural block placement', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('root.njk', '{% set this.trace = this.trace ~ "R" %}Root({{ this.trace }})[{% block body %}root={{ this.trace }}{% endblock %}]');
+      loader.addTemplate('mid.njk', '{% extends "root.njk" %}{% set this.trace = this.trace ~ "M" %}{% block body %}mid={{ this.trace }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% set this.trace = "C" %}{% extends "mid.njk" %}{% block body %}child={{ this.trace }}{% endblock %}');
+
+      const result = await env.renderTemplate('child.njk', {});
+      expect(result).to.be('Root(CMR)[child=CMR]');
+    });
+
+    it('should place callable inline blocks only from the structural root template', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate(
+        'root.njk',
+        'Root[{% block body %}{% set this.hits = this.hits + 100 %}root{% endblock %}] hits={{ this.hits }}'
+      );
+      loader.addTemplate(
+        'mid.njk',
+        '{% extends "root.njk" %}{% block body %}{% set this.hits = this.hits + 10 %}mid{% endblock %}'
+      );
+      loader.addTemplate(
+        'child.njk',
+        '{% set this.hits = 0 %}{% extends "mid.njk" %}{% block body %}{% set this.hits = this.hits + 1 %}child{% endblock %}'
+      );
+
+      const result = await env.renderTemplate('child.njk', {});
+      expect(result).to.be('Root[child] hits=1');
     });
 
     it('should let dynamic extends without a local constructor body fall through to the selected parent', async function () {

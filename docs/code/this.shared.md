@@ -213,20 +213,31 @@ Templates should use `this.<name>` for inherited shared vars:
 ```
 
 Templates do not need explicit shared declarations for this access.
+Explicit `shared` declarations are script-only and should be rejected in
+template source; templates infer shared `var` metadata from `this.<name>`.
 
-Reason: template shared access is var-only. Templates do not expose typed shared
-channels (`text`, `data`, or `sequence`) through this surface, so the compiler
-does not need a declaration to disambiguate the channel type.
+Reason: ordinary template shared access is var-only. The compiler does not need
+a declaration to disambiguate the channel type. Reserved `this.__text__` is the
+one typed exception: it refers to the inherited template text channel.
 
 Inferred template shared vars are declaration-only. They do not provide shared
 defaults. For example, `{% set this.theme = "light" %}` is a runtime
 constructor write to the shared var, not a default initializer and not part of
 child-first shared default priority.
 
+When multiple templates in a selected chain assign the same inferred shared var
+during constructor/root-program execution, those are ordinary source-ordered
+writes. They do not use script shared-default claim semantics. In the current
+template lifecycle, a parent constructor write can overwrite an earlier child
+constructor write. Prefer one owning constructor write, pass data with
+`extends ... with ...`, or write inside the selected block body when the value
+must be established at placement time.
+
 Template compiler behavior:
 
 - analyze static `this.<name>` paths and infer only the root name
-- infer each root name as an implicit `shared var`
+- infer each ordinary root name as an implicit `shared var`
+- infer reserved `__text__` as the inherited template text channel
 - feed those inferred names into the same shared-schema metadata path as
   explicit `shared var` declarations
 - compile `this.name` as a shared-var read/observation at the current source
@@ -747,7 +758,8 @@ Scope limits:
 
 - only async inherited templates are in scope
 - sync Nunjucks-compatible templates remain unchanged
-- typed shared channels are not inferred for templates
+- typed shared channels are not inferred for templates, except reserved
+  `this.__text__` as the inherited template text channel
 - dynamic `this[...]` is rejected clearly
 - render-context `this` does not intercept async inherited-template shared
   access
