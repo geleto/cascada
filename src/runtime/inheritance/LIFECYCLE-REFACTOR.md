@@ -1,5 +1,11 @@
 # Inheritance Lifecycle Refactor Plan
 
+> Historical planning note: this document records the lifecycle problems and
+> refactor analysis that led to `TECHNICAL-DESIGN-2.md`. For a clean
+> implementation, treat `TECHNICAL-DESIGN-2.md` as authoritative. Do not follow
+> this file as an instruction to preserve or adapt the existing inheritance
+> runtime.
+
 ## Purpose
 
 The inheritance runtime is intended to follow a clean lifecycle:
@@ -725,8 +731,8 @@ That wording does not fully capture the updated target model:
   end
 - only the structural root performs callable inline block placement
 
-When the refactor lands, update `TECHNICAL-DESIGN.md` to match this document so
-future reviews do not validate against an older lifecycle.
+When the clean implementation lands, update or supersede `TECHNICAL-DESIGN.md`
+so future reviews do not validate against an older lifecycle.
 
 ### Component Creation Still Calls `rootRenderFunc(...)`
 

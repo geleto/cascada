@@ -1,12 +1,17 @@
 # Inheritance Audit
 
+> Historical audit note: this file records issues discovered in the inheritance
+> work. For new implementation work, use `TECHNICAL-DESIGN-2.md` as the
+> authoritative design. Audit items are edge-case and regression inputs, not
+> instructions to preserve the existing inheritance runtime.
+
 This file tracks inheritance issues that are not owned by
-`LIFECYCLE-REFACTOR.md`.
+`TECHNICAL-DESIGN-2.md`.
 
 Lifecycle-related findings, including parent-root execution as metadata
 loading, `extendsState` plumbing, startup promises, overloaded root signatures,
 component root-render modes, and finished-buffer lifetime workarounds, belong in
-`LIFECYCLE-REFACTOR.md` instead.
+`TECHNICAL-DESIGN-2.md` instead.
 
 ## Documentation Drift Outside The Lifecycle Plan
 
@@ -15,8 +20,10 @@ inheritance work:
 
 - `src/runtime/inheritance/TECHNICAL-DESIGN.md` is the staged implementation
   record.
-- `src/runtime/inheritance/LIFECYCLE-REFACTOR.md` is the target lifecycle
-  correction.
+- `src/runtime/inheritance/LIFECYCLE-REFACTOR.md` is historical lifecycle
+  analysis.
+- `src/runtime/inheritance/TECHNICAL-DESIGN-2.md` is the authoritative clean
+  implementation design.
 - `docs/code/extends-architecture.md` is high-level but still contains older
   wording around shared defaults and constructor/root behavior.
 - `docs/code/extends-metadata-architecture.md` is older metadata design context
@@ -28,10 +35,10 @@ Action:
 
 - Mark older documents as historical where they no longer define current or
   target behavior.
-- Keep one authoritative current implementation document and one explicit target
-  lifecycle document.
-- After the lifecycle refactor lands, fold the target lifecycle into
-  `TECHNICAL-DESIGN.md` or clearly supersede the old lifecycle section.
+- Keep `TECHNICAL-DESIGN-2.md` as the single authoritative implementation
+  design for the blank inheritance runtime.
+- Mark older design/refactor notes as historical inputs where they remain in
+  the tree.
 
 Risk if left unresolved:
 
@@ -159,11 +166,11 @@ with old root plumbing such as `extendsState.parentSelection` and
 `renderInheritanceParentRoot(...)`. The lifecycle plan also calls this out
 because the generated shape is lifecycle-owned, but the fixture itself belongs
 to the browser/precompiled test infrastructure and can easily be missed during
-runtime refactoring.
+clean runtime implementation.
 
 Action:
 
-- Regenerate the fixture after the lifecycle refactor lands, or remove the
+- Regenerate the fixture after the clean inheritance implementation lands, or remove the
   handwritten stale inheritance snippet if it is no longer representative.
 - Add a quick check that precompiled browser fixtures do not contain removed
   lifecycle helpers.
