@@ -13,7 +13,7 @@ violate:
 
 1. load the selected inheritance chain metadata
 2. finalize metadata into execution tables
-3. execute selected constructors
+3. invoke inherited methods
 4. complete buffered output / script result
 5. keep component lifetime explicit and independent from render-root lifetime
 
@@ -49,7 +49,7 @@ Allowed:
 
 Forbidden:
 
-- execute constructors
+- invoke methods
 - call callable methods/blocks
 - render text
 - create command buffers
@@ -91,11 +91,11 @@ Forbidden:
 - fork contexts
 - discover parent roots
 
-### Phase 2.5: Prepare Instance
+### Phase 2.5: Create Instance
 
-This is an orchestration boundary, not a metadata phase. A single helper may
-combine load + finalize + buffer ownership setup into a ready-to-execute
-inheritance instance.
+This is an orchestration boundary, not a metadata phase.
+`InheritanceInstance.create(...)` combines load + finalize + buffer ownership
+setup into a ready-to-invoke inheritance instance.
 
 Input:
 
@@ -103,18 +103,41 @@ Input:
 - render context
 - environment/runtime helpers
 - output/root buffer owner
-- options describing direct render vs component instance ownership
+- owner/lifetime handle for the root and shared buffers
 
 Output:
 
 ```js
-type PreparedInheritanceInstance = {
-  runtimeState: InheritanceRuntimeState,
-  rootBuffer: CommandBuffer,
-  sharedRootBuffer: CommandBuffer,
-  context: Context
+class InheritanceInstance {
+  static async create(options)
+  invoke(methodName, args, origin)
+  finish(entryResult)
 }
 ```
+
+`InheritanceInstance.create(...)` returns a fully loaded, finalized, ready to
+invoke instance. No half-initialized instance is exposed.
+
+Instance state includes:
+
+```js
+type InheritanceInstanceState = {
+  entryRoot: Template | Script,
+  runtimeState: InheritanceRuntimeState,
+  env: Environment,
+  runtime: object,
+  cb: Function,
+  rootBuffer: CommandBuffer,
+  sharedRootBuffer: CommandBuffer,
+  context: Context,
+  failure: Error | null,
+  closed: boolean
+}
+```
+
+`context` is the entry execution context with the entry composition payload
+already applied. Payloads for parent/owner entries remain on finalized method
+owner metadata and are applied when invoking that owner's callable.
 
 Allowed:
 
@@ -122,47 +145,45 @@ Allowed:
 - create or attach the shared root buffer for the instance
 - call the load phase
 - call the finalize phase
-- return the runtime state, buffers, and entry context needed to execute the
-  constructor method
+- return a ready-to-invoke `InheritanceInstance`
 
 Forbidden:
 
-- execute constructors
+- invoke methods
 - initialize shared defaults
 - call inherited methods
 - perform component method/observation operations
 
-The prepared instance is the only object constructor execution needs. It is
-also the natural unit for component lifetime: component instances keep this
-prepared root/shared buffer pair open until explicit close or owner binding
-completion.
+The instance is the unit all later method invocations need. It is also the
+natural unit for component lifetime: component instances keep this root/shared
+buffer pair open until explicit close or owner binding completion.
 
-### Phase 3: Execute Constructor Method
+### Phase 3: Execute Method
 
 Input:
 
-- `InheritanceRuntimeState`
-- root output/shared buffers
-- entry render context
+- `InheritanceInstance`
+- method name
+- invocation arguments
+- source origin
 
 Output:
 
-- commands enqueued by the constructor method call
-- script return candidate, if the entry script owns one
+- commands enqueued by the method call
+- callable return value
 
 Allowed:
 
-- invoke the selected entry constructor through the same callable invocation
-  machinery used for ordinary inherited methods
-- link exactly the channels needed by the constructor callable
-- declare and initialize shared channels as constructor code requires
+- invoke a finalized inherited callable through the normal invocation machinery
+- link exactly the channels needed by the callable
+- declare and initialize shared channels as method code requires
 - call `super()` through finalized owner-relative links
 
-The constructor is just the `__constructor__` method. The runtime starts by
-invoking the selected entry constructor once. It does not manually iterate the
-parent chain to execute constructors. Parent constructor execution happens only
-when the constructor body calls `super()`, exactly like any other inherited
-method.
+The constructor is just the `__constructor__` method. Direct rendering and
+component creation start by invoking that method once. The runtime does not
+manually iterate the parent chain to execute constructors. Parent constructor
+execution happens only when the constructor body calls `super()`, exactly like
+any other inherited method.
 
 Template constructors have an implicit trailing `super()` when they have a
 parent. That implicit call is compiled as a normal `super()` call, not
@@ -180,6 +201,15 @@ Forbidden:
   `parentBuffer`
 
 ### Phase 4: Complete Output / Result
+
+Input:
+
+- `InheritanceInstance`
+- entry method result, for direct script rendering
+
+Output:
+
+- final template text, direct script result, or closed component buffers
 
 Templates:
 
@@ -204,9 +234,31 @@ Forbidden:
 
 ### Phase 5: Component Lifetime
 
+Input:
+
+- component-owned `InheritanceInstance`
+- owner side-channel / binding lifetime
+
+Output:
+
+- initialized component instance exposed to the owner binding
+- finished component root/shared buffers after close or side-channel completion
+
 Component instances use the same load/finalize/constructor lifecycle. Their
 root buffer remains open for the component binding lifetime and closes when the
 owner binding completes or the instance is explicitly closed.
+
+Components are not a different compiled-root mode. A direct render and a
+component instance both initialize the same inheritance instance shape and invoke
+the same `__constructor__` method through the same runtime dispatch path. The
+only difference is ownership of buffer completion:
+
+- direct render finishes the instance root/shared buffers after constructor
+  execution and result materialization
+- component creation binds the instance to the caller's component
+  side-channel, treats constructor completion as initialization, and finishes
+  the instance root/shared buffers only when that side-channel's final snapshot
+  settles or the component is explicitly closed
 
 Forbidden:
 
@@ -220,8 +272,8 @@ Forbidden:
 | --- | --- |
 | Load | execute user code, create command buffers, finalize, render |
 | Finalize | call user functions, render text, fork contexts, create buffers |
-| Prepare instance | execute constructors, initialize shared defaults, place blocks |
-| Execute constructor method | discover parents, mutate metadata, finalize |
+| Initialize instance | invoke methods, initialize shared defaults, place blocks |
+| Execute method | discover parents, mutate metadata, finalize |
 | Invoke | discover new callables, mutate shared schema, load parents |
 | Complete output/result | run user code, rerun constructors, re-finalize, reload parents |
 | Component lifetime | require finished-parent late linking |
@@ -235,8 +287,7 @@ compiled template/script root exposes stable properties:
 {
   root,                     // public render entry
   inheritanceSpec,          // raw compiler metadata; no executable side effects
-  resolveInheritanceParent, // local immediate-parent resolver
-  executeConstructor        // compiled constructor executor
+  resolveInheritanceParent  // local immediate-parent resolver
 }
 ```
 
@@ -250,11 +301,11 @@ inheritance code must use that ABI.
 ABI rules:
 
 - use one compiled root object shape for scripts and templates
-- expose executable phase functions by name; do not hide phase work inside
-  metadata fields
+- expose only lifecycle boundary functions by name; callable bodies live in
+  metadata as method entries
 - keep metadata data-only
 - avoid mode booleans that change a function from render, to parent loader, to
-  component startup, to composition execution
+  component lifecycle, to composition execution
 - pass explicit phase inputs; do not pass catch-all state objects just because
   an older helper needed them
 - prefer object-shaped runtime helper arguments at public phase boundaries when
@@ -270,14 +321,13 @@ ABI rules:
 type CompiledInheritanceSpec = {
   methodEntries: Record<string, CompiledMethodEntry>,
   sharedSchema: Record<string, SharedSchemaInput>,
-  invokedMethodRefs: Record<string, InvokedMethodRef>,
   hasExtends: boolean
 }
 ```
 
 Constructor execution owns all executable file body work; `inheritanceSpec`
-contains metadata only. The constructor function is registered as
-`__constructor__` in `methodEntries` and is invoked through the same
+contains metadata only. The constructor function is registered as the
+`__constructor__` method entry and is invoked through the same
 `RuntimeMethodEntry` path as any other callable.
 
 Compiler/runtime ABI helpers are internal. They may be exported through the
@@ -341,45 +391,31 @@ Resolver ABI notes:
   resolver's allowed phase contract and must be rejected by analysis
 - the resolver must be testable without a `CommandBuffer`
 
-### Constructor Executor
+### Constructor Method Entry
 
-`executeConstructor` is the compiled constructor executor. The name is an ABI
-name; semantically, it executes this file's constructor code. It is not a
-metadata loader.
-
-```js
-executeConstructor(env, context, runtime, cb, output, runtimeState, ownerEntry, options)
-```
-
-`options` contains at least:
-
-```js
-{
-  isStructuralTemplate: boolean
-}
-```
-
-Component distinctions belong to component lifecycle orchestration, not to
-generated constructor modes.
+The constructor is an ordinary inherited callable named `__constructor__`.
+Compiled file-body code is stored in that method entry's `fn`.
 
 For templates, all root-level template code is constructor code. That includes
 text, loops, conditions, includes, shared writes, and inline block declarations.
 Whether a block node also places callable output is decided at compile time:
 only structural templates place inline blocks.
 
-For scripts, `executeConstructor` is the constructor/body and owns the script
+For scripts, the constructor method is the script body and owns the script
 return path.
 
 Constructor ABI notes:
 
-- `executeConstructor` does not discover parents and does not finalize
-- `executeConstructor` does not receive root-render mode flags
-- `executeConstructor` receives the loaded-chain entry that owns this
-  constructor body
+- constructor execution does not discover parents and does not finalize
+- constructor execution does not use root-render mode flags
+- constructor execution starts by invoking `__constructor__` through the
+  finalized inherited callable table
+- owner context comes from the finalized `RuntimeMethodEntry`
 - template structural role is compile-time; it is not recomputed from dynamic
   parent selection
-- component behavior is outside this function; component orchestration decides
-  when and how to call the same constructor executor
+- component behavior is outside constructor code; component orchestration
+  decides when to invoke the same `__constructor__` method and when to close
+  buffers
 
 ## Callable Surface
 
@@ -452,54 +488,64 @@ type LoadedInheritanceEntry = {
 
 type InheritanceRuntimeState = {
   methods: Record<string, RuntimeMethodEntry>,
-  sharedSchema: Record<string, string>,
-  sharedRootBuffer: CommandBuffer,
-  failure: Error | null
+  sharedSchema: Record<string, string>
+}
+
+type RuntimeOwnerEntry = {
+  root: Template | Script,
+  path: string | null,
+  compositionPayload: object | null,
+  origin: SourceOrigin | null,
+  isStructuralTemplate: boolean
 }
 ```
 
 `LoadedInheritanceChain` is temporary. Finalization consumes it and produces
-`InheritanceRuntimeState`. Runtime invocation receives only the finalized
-runtime state.
+`InheritanceRuntimeState`. Runtime invocation receives the `InheritanceInstance`,
+which owns the finalized runtime state plus buffers and context.
 
-## Prepared Instance Helper
+## Inheritance Instance API
 
-The public render path, component creation path, and tests should share one
-preparation helper:
+The public render path, component creation path, and tests should share the same
+class-owned lifecycle:
+
+1. `InheritanceInstance.create(...)`
+2. `instance.invoke(methodName, args, origin)`
+3. `instance.finish()`
+
+Creation owns load + finalize + buffer setup:
 
 ```js
-prepareInheritanceInstance({
+const instance = await InheritanceInstance.create({
   entryRoot,
   env,
   context,
   runtime,
   output,
-  ownerBuffer,
-  componentOwner
+  ownerBuffer
 })
 ```
 
-The exact option names may change, but the helper's contract must not:
+The exact option names may change, but `create(...)` must:
 
 1. create or select the root output buffer
 2. create the shared root buffer for this inheritance instance
 3. load the selected chain metadata from `entryRoot`
 4. finalize metadata into `InheritanceRuntimeState`
-5. return a `PreparedInheritanceInstance`
+5. return a ready-to-invoke `InheritanceInstance`
 
-It must not execute constructors. Constructor execution is a separate helper
-that consumes the prepared instance:
+`create(...)` must not invoke methods. Constructor invocation is just a normal
+method invocation:
 
 ```js
-executeInheritanceConstructor(preparedInstance)
+const entryResult = await instance.invoke("__constructor__", [], origin)
+return instance.finish(entryResult)
 ```
 
-Direct template/script rendering calls both helpers, then completes the final
-output/result. `executeInheritanceConstructor(...)` invokes the selected entry
-`__constructor__` method once through normal inherited callable dispatch.
-Component creation calls the preparation helper, schedules that constructor
-method call in component command order, and keeps the prepared buffers open for
-the component lifetime.
+Direct template/script rendering creates an instance, invokes `__constructor__`,
+then calls `finish(entryResult)`. Component creation creates an instance,
+schedules the same `__constructor__` method call in component command order,
+and calls `finish()` only when the component lifetime ends.
 
 The loaded chain is the source of truth during loading/finalization. Do not
 store derived aliases for the entry root, parent-exists boolean, or template
@@ -515,7 +561,7 @@ compile it into the relevant runtime method entry.
 child hop that leads to that entry. Store payload data, not pre-forked contexts.
 Execution forks a context for each entry when that entry runs.
 
-## Composition Payload
+## Composition Payload, Argument Frames, And Shared Channels
 
 Composition payload is the explicit caller-input mechanism for inheritance,
 components, imports, includes, and related composition boundaries. It is not
@@ -537,6 +583,54 @@ Rules:
 This keeps payload transport separate from hierarchy-owned `this.<shared>`
 state. A payload key and a shared name may be the same string without becoming
 the same storage location.
+
+Invocation arguments are a different mechanism. A call such as
+`this.card(user, size = "lg")` or `super(user)` creates an argument frame for
+one callable invocation. Argument frames are per-call local bindings, not
+composition payload, not inherited shared channels, and not entries in the
+shared schema.
+
+```js
+type InvocationArgs = {
+  positional?: any[],
+  named?: Record<string, any>
+}
+
+type ArgumentFrame = Record<string, any>
+```
+
+Invocation maps `InvocationArgs` through the target signature's ordered
+`argNames` to produce an `ArgumentFrame`. Callable bodies read those names as
+local arguments. The invocation buffer exists because the callable body may
+enqueue commands and argument values may be async or poisoned; it does not make
+arguments hierarchy channels.
+
+Async macros are the precedent: macro parameters are local `var` channels in
+the macro invocation buffer, initialized from call arguments. Inherited
+callables should use the same model. Argument names become local `var` bindings
+inside the invocation buffer. Reassigning an argument mutates only that local
+call frame; it does not mutate the caller's variable, composition payload, or
+shared state.
+
+Keep the original argument frame separate from mutable local argument channels.
+No-argument `super()` forwards the original frame exactly as received by the
+current callable. Explicit `super(user)` or `super(name = value)` evaluates the
+current local values and builds a fresh argument frame for the parent callable.
+
+Reuse boundary:
+
+- share low-level argument-frame mapping and local-argument-channel binding
+  primitives with async macro/function compilation
+- use that shared primitive for every callable argument surface:
+  `instance.invoke(...)`, compiled `this.method(...)`, compiled
+  `this.blockName(...)`, compiled `super(...)`, and structural inline block
+  placement arguments
+- keep macro wrappers, `caller()` support, macro text-return behavior, imports,
+  and context-isolation rules out of inheritance dispatch
+- keep inherited target resolution in `invoke.js`; it decides most-derived
+  method targets, owner-relative `super` targets, owner context, linked
+  footprints, and invocation buffers, then calls the shared argument primitive
+  rather than `runtime.makeMacro` or macro-specific compiler wrappers
 
 ## Method Entry Shapes
 
@@ -568,8 +662,7 @@ type RuntimeMethodEntry = {
   ownerKey: string,
   origin: SourceOrigin | null,
   isConstructor: boolean,
-  ownerEntry: LoadedInheritanceEntry | null,
-  isStructuralTemplateConstructor: boolean,
+  ownerEntry: RuntimeOwnerEntry,
   super: RuntimeMethodEntry | null,
   mergedLinkedChannels: string[],
   mergedMutatedChannels: string[]
@@ -581,11 +674,11 @@ Finalization-only fields such as `callsSuper`, `invokedMethodRefs`,
 the long-lived execution entry. If a field survives, it must be justified as an
 execution-time requirement.
 
-`ownerEntry` is required for constructor entries and null for ordinary
-methods/blocks. It tells the constructor invocation which loaded chain entry
-owns the body, so context forking is owner-relative without scanning unrelated
-state at execution time. `isStructuralTemplateConstructor` is true only for a
-non-extending template constructor that owns document structure.
+`ownerEntry` is required for every runtime method entry. It tells invocation
+which loaded owner entry owns the body, so context forking and composition
+payload visibility are owner-relative without scanning unrelated state at
+execution time. `ownerEntry.isStructuralTemplate` is true only for a
+non-extending template owner that places document structure.
 
 ## Invocation And Linking
 
@@ -601,7 +694,7 @@ Rules:
 - invocation creates an invocation child buffer at the call site
 - the invocation child buffer links exactly the target's
   `mergedLinkedChannels` and `mergedMutatedChannels`
-- callable entry startup may validate `methodData`, but it must not resolve
+- callable entry prologue may validate `methodData`, but it must not resolve
   metadata asynchronously or widen the footprint
 - shared-channel observation enqueues on the current buffer and uses the
   finalized shared schema to route the exact observation to the shared root
@@ -616,6 +709,49 @@ The invocation path must not branch on naming conventions such as
 directly. Constructor-specific behavior should be represented by
 `RuntimeMethodEntry.isConstructor`.
 
+### Call Paths
+
+`instance.invoke(methodName, args, origin)` is the external method execution
+surface. It looks up `instance.runtimeState.methods[methodName]`, builds the
+argument frame from positional or named arguments, creates an invocation buffer
+under `instance.rootBuffer`, links the target's exact merged footprints, and
+calls the target `fn` with the instance environment, owner context,
+runtime/callback, invocation buffer, argument frame, and method data.
+
+Compiled `this.name(...)` calls use the same path as `instance.invoke(...)`
+except their call-site buffer is the currently executing invocation buffer. They
+always dispatch to the most-derived finalized method entry:
+
+```js
+runtime.invokeInheritedCallable(currentInstance, "name", args, origin)
+```
+
+Compiled `super(...)` calls do not resolve by name. They receive the executing
+method's `methodData`, read `methodData.super`, and invoke that exact parent
+entry:
+
+```js
+runtime.invokeSuperCallable(currentInstance, methodData, args, origin)
+```
+
+Argument rules:
+
+- positional calls map by the target signature's ordered `argNames`
+- named calls map by argument name and reject unknown names
+- mixed positional/named calls fail before invocation
+- `super()` forwards the original argument frame when called with no
+  arguments
+- `super(args...)` or `super(name = value)` builds a fresh argument frame
+  against the parent target's signature
+
+Owner context rules:
+
+- every runtime method entry uses its finalized `ownerEntry` to fork the owner
+  context with that entry's composition payload
+- parent constructors or methods reached through `super()` therefore run with
+  the parent owner's context and composition payload, without a runtime chain
+  scan
+
 ## File Ownership
 
 The runtime should be rebuilt around these lifecycle ownership boundaries.
@@ -625,21 +761,28 @@ existed.
 
 - `load.js`: selected-chain discovery, cycle detection, raw spec registration,
   selected-chain construction
-- `instance.js`: prepare inheritance instances by creating state/buffers, then
-  running load + finalize without executing constructors
+- `instance.js`: `InheritanceInstance` lifecycle owner: `create(...)`,
+  `invoke(...)`, `finish()`, closed-state checks, buffer ownership, and direct
+  render completion
 - `finalize.js`: metadata validation, method-table construction, super wiring,
   shared-schema finalization, footprint merging, runtime-entry pruning
-- `execute.js`: linear constructor execution through the selected chain. Prefer
-  renaming away from `startup.js` if the file owns more than startup.
-- `invoke.js`: inherited callable invocation, `super()`, argument payloads,
+- `invoke.js`: inherited callable invocation, `super()`, argument frames,
   invocation-buffer admission
+- shared argument helper module or existing macro helper extraction:
+  argument-frame mapping and local `var` channel initialization reused by macros
+  and inheritance callables
 - `shared.js`: shared schema/runtime operations and shared-root buffer access
 - `component.js`: component instance lifecycle, command-based operations,
-  explicit shared observation
+  explicit shared observation, and owner side-channel lifetime wiring around
+  `InheritanceInstance`
+- `index.js`: explicit compiler-private runtime exports
 
 Do not make one file compensate for another phase. For example, `invoke.js`
 must not discover missing methods, and `load.js` must not create buffers to
 evaluate constructor state.
+
+Do not create `startup.js` or `execute.js` unless an implementation step
+reveals a narrow helper that does not belong on `InheritanceInstance`.
 
 ## Template Lifecycle
 
@@ -662,14 +805,14 @@ overrides but do not place output at their source location. A template without
 
 ```js
 await runtime.invokeInheritedCallable(
-  prepared.runtimeState,
+  instance.runtimeState,
   "__constructor__",
   [],
-  prepared.context,
+  instance.context,
   env,
   runtime,
   cb,
-  prepared.rootBuffer,
+  instance.rootBuffer,
   constructorOrigin
 );
 ```
@@ -803,8 +946,9 @@ Component instances run through the same lifecycle:
 1. load component chain metadata
 2. finalize component inheritance state
 3. execute component constructor
-4. keep component root/shared buffer open for the binding lifetime
-5. close explicitly or when the owner binding completes
+4. publish the initialized component instance through the owner side-channel
+5. keep component root/shared buffer open for the side-channel lifetime
+6. close explicitly or when the owner side-channel final snapshot settles
 
 Command-based component operations preserve source order by enqueueing on the
 owner buffer. Direct instance calls use the component root/shared buffers.
@@ -840,6 +984,8 @@ Required metadata:
 - local immediate-parent resolver for the root `extends` declaration
 - raw callable entries for blocks, methods, and constructors
 - callable signatures as ordered argument names
+- argument-frame metadata compatible with the shared macro/inheritance argument
+  binding primitive
 - source origins for callables, `super()`, and ordinary inherited calls
 - callable-local `super` presence
 - file-level and callable-local ordinary inherited call references
@@ -988,7 +1134,9 @@ Goal:
 
 - freeze the final compiled inheritance ABI before runtime implementation
 - compiled roots expose the final `{ root, inheritanceSpec,
-  resolveInheritanceParent, executeConstructor }` shape
+  resolveInheritanceParent }` shape
+- constructor code is exposed only as the `__constructor__` method entry inside
+  `inheritanceSpec.methodEntries`
 - `inheritanceSpec` is data-only and contains no executable setup function
 - generated root functions contain no lifecycle mode flags
 - generated inheritance code does not reference forbidden helpers or
@@ -1002,8 +1150,8 @@ Tests:
 - generated source contains no `compositionMode`, `componentMode`,
   `parentBuffer`, `extendsState`, or `startupPromise`
 - `resolveInheritanceParent` for a no-extends root returns data only
-- `executeConstructor` can be called as a constructor executor without loading
-  parents
+- `inheritanceSpec.methodEntries.__constructor__` exists for templates/scripts
+  and has the ordinary callable entry shape
 
 ### Step 2: Metadata Loader
 
@@ -1029,19 +1177,21 @@ Tests:
 Goal:
 
 - public `root` becomes a thin lifecycle orchestrator
-- standalone templates/scripts use prepare instance -> execute constructor ->
-  complete result
-- direct render uses the same prepared-instance helper as components
+- standalone templates/scripts use create instance -> invoke `__constructor__` ->
+  finish
+- direct render uses the same `InheritanceInstance.create(...)` path as
+  components
 - no root-render mode flags are needed for standalone execution
 
 Tests:
 
 - standalone template output matches the public template contract
 - standalone script return rules match the public script contract
-- preparation finishes before any constructor user code
-- loading/finalization happen exactly once inside preparation
-- constructor execution can be tested from a prepared instance
-- constructor execution enters through inherited dispatch to `__constructor__`
+- instance creation finishes before any constructor user code
+- loading/finalization happen exactly once inside `InheritanceInstance.create`
+- constructor invocation can be tested as a normal method invocation on an
+  instance
+- constructor invocation enters through inherited dispatch to `__constructor__`
 
 ### Step 4: Template Constructor Super Chain
 
@@ -1095,16 +1245,16 @@ Tests:
 
 Goal:
 
-- component creation uses load -> finalize -> execute
+- component creation uses create instance -> invoke `__constructor__`
 - component root buffers close by component lifetime
 - no component root-render modes remain
 
 Tests:
 
-- component startup before method call
+- component constructor invocation before later method call
 - component with inheritance
 - explicit close rejects later operations
-- startup constructor failure records startup error and closes buffer
+- constructor initialization failure records instance failure and closes buffer
 - no finished-parent late linking is required
 
 ### Step 8: Cleanup, Pruning, And Test Migration
@@ -1131,8 +1281,8 @@ Tests:
 
 - Loading never executes user root code.
 - Finalization never calls compiled user functions.
-- Public execution is linear and explainable as load -> finalize -> constructor
-  method execution -> output/result completion.
+- Public execution is linear and explainable as create instance -> invoke
+  `__constructor__` -> finish.
 - Template constructors from every selected chain entry can run child-to-parent
   through the normal `super()` chain.
 - Inline block placement is controlled only by compile-time structural template
