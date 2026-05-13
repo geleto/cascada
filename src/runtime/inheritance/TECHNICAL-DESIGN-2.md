@@ -82,6 +82,15 @@ Allowed:
 - compute merged channel footprints
 - collect independent recoverable finalization errors
 
+`RuntimeMethodEntry.super` is wired to the nearest parent implementation for
+the same callable name. Finalization must not skip intermediate overrides, and
+execution must not dynamically search the chain to resolve `super()`.
+
+Merged linked/mutated footprints are computed transitively across the full
+`super` chain, including overridden parent entries. Invocation links exactly the
+channels that any implementation reachable through that callable chain may
+observe or mutate.
+
 Forbidden:
 
 - call compiled user functions
@@ -1160,6 +1169,10 @@ rebuilt from a blank folder. Focused tests should verify phase boundaries,
 compiled ABI shape, and observable behavior for the new path. Run broader
 integration suites only at explicit integration gates.
 
+The steps intentionally reference the contracts above instead of restating
+them. When a step is ambiguous, the lifecycle contracts, ABI shapes, and runtime
+type shapes in this document are authoritative.
+
 Prefer integration tests once a behavior is reachable through the public render
 APIs. Unit tests and synthetic compiled-object tests are allowed while a
 lifecycle slice is not yet publicly reachable, but they are provisional unless
@@ -1173,6 +1186,12 @@ and generated-code absence checks. Do not keep unit tests whose only remaining
 purpose is to duplicate end-to-end render behavior.
 
 ### Step 0a: Parser And Transpiler Surface
+
+Authoritative sections:
+
+- Callable Surface
+- Dynamic Extends
+- Returns
 
 Goal:
 
@@ -1196,6 +1215,14 @@ Tests:
   intended internal return shape without executing inheritance runtime
 
 ### Step 0b: Analysis And Validation
+
+Authoritative sections:
+
+- Callable Surface
+- Dynamic Extends
+- Shared State
+- `this.<name>` Disambiguation
+- Compiler Analysis Requirements
 
 Goal:
 
@@ -1227,14 +1254,20 @@ Tests:
 - dynamic template extends inside `if`/`for`/block fails
 - declarations before template `extends` fail
 - inferred template shared vars cannot be read by the `extends` expression
-- each participation reason sets analysis `participates`: `extends`, template
-  block declaration, script method declaration, `this.method(...)`, `super()`,
-  script `shared`, template `this.sharedName`, and component operation or
-  observation
+- each participation reason defined in Compiler Analysis Requirements sets
+  analysis `participates`
 - ordinary templates/scripts do not participate, including ordinary files with
   `{% set %}` / script locals, loops, includes, conditions, and local functions
 
 ### Step 1: Compiled Shape And ABI
+
+Authoritative sections:
+
+- Compiled Template/Script Shape
+- Compile-Time Shape Vs Runtime Values
+- Constructor Method Entry
+- Method Entry Shapes
+- Compiler Analysis Requirements
 
 Goal:
 
@@ -1274,6 +1307,14 @@ Tests:
 
 ### Step 2: Metadata Loader
 
+Authoritative sections:
+
+- Phase 1: Load
+- Local Parent Resolver
+- Load And Runtime Shapes
+- Inheritance Instance API
+- File Ownership
+
 Goal:
 
 - runtime `loadInheritanceChain(...)` loads metadata child-to-parent
@@ -1286,6 +1327,8 @@ Tests:
 
 - static three-level template chain loads specs without executing constructor code
 - static script chain loads specs without executing constructor code
+- loader tests fail if a compiled `rootFunction` is called during loading
+- loader does not require or create a `CommandBuffer`
 - static inheritance cycles fail during loading with useful source context
 - dynamic inheritance cycles fail during loading with useful source context
 - parent load failures preserve source/error context
@@ -1304,6 +1347,16 @@ Tests:
 
 ### Step 3: Finalization And Runtime Shape
 
+Authoritative sections:
+
+- Phase 2: Finalize
+- Method Entry Shapes
+- Load And Runtime Shapes
+- Shared State
+- `this.<name>` Disambiguation
+- Finalization Errors
+- File Ownership
+
 Goal:
 
 - runtime finalization consumes `LoadedInheritanceChain`
@@ -1319,6 +1372,7 @@ Goal:
 Tests:
 
 - static child/mid/root chain finalizes into one dispatch table
+- finalization does not call compiled constructor/method functions
 - ordinary callable names point at most-derived runtime entries
 - overridden parent entries remain reachable through `RuntimeMethodEntry.super`
 - `super()` links point at exact parent runtime entries without name lookup
@@ -1335,8 +1389,21 @@ Tests:
 - runtime method entries do not retain finalization-only fields
 - owner entries carry template/script, payload, origin, and structural-template
   facts needed by invocation
+- concrete and no-op constructor runtime entries have `isConstructor: true`
+- non-constructor runtime method entries have `isConstructor: false`
+- finalized shared/method collision fails across a template chain
 
 ### Step 4: InheritanceInstance And Invoke
+
+Authoritative sections:
+
+- Phase 2.5: Create Instance
+- Phase 3: Execute Method
+- Inheritance Instance API
+- Composition Payload, Argument Frames, And Shared Channels
+- Invocation And Linking
+- `this.<name>` Disambiguation
+- File Ownership
 
 Goal:
 
@@ -1362,6 +1429,7 @@ Tests:
 - existing macro/function argument behavior is unchanged after helper extraction
 - instance creation loads/finalizes exactly once and executes no constructor
   code
+- `InheritanceInstance.create(...)` does not invoke `__constructor__`
 - `instance.invoke(...)` dispatches through `runtimeState.methods[name]`
 - `this.method(...)` dispatches to the same finalized entry as
   `instance.invoke(...)`
@@ -1383,8 +1451,27 @@ Tests:
 - ignored `super()` return does not affect the caller's return value
 - invocation links only finalized merged footprints
 - missing method metadata at invocation is a fatal structural error
+- script `this.name(...)` dispatches when `name` is an inherited method
+- script bare `this.name` for an inherited method fails clearly
+- script shared name vs inherited method name ambiguity fails clearly
+- unknown script `this.name` fails clearly
+- template `this.name(...)` dispatches inherited callable
+- constructor-specific handling uses `RuntimeMethodEntry.isConstructor`, not a
+  method-name string comparison
 
 ### Step 5: Direct Render And Template Lifecycle
+
+Authoritative sections:
+
+- Phase 4: Direct Render Completion
+- Compile-Time Shape Vs Runtime Values
+- Constructor Method Entry
+- Template Lifecycle
+- Script Lifecycle
+- Returns
+- Dynamic Extends
+- Shared State
+- Finalization Errors
 
 Goal:
 
@@ -1415,6 +1502,7 @@ Tests:
 - standalone script return rules match the public script contract
 - inherited direct template render matches non-inheritance text output behavior
 - inherited direct script render returns explicit constructor return values
+- `finishRender(...)` does not reload, re-finalize, or rerun constructors
 - child constructor `return super()` forwards the parent constructor result
 - parent constructor return alone does not override the child direct-render
   result
@@ -1431,6 +1519,21 @@ Tests:
 - templates have no `extends none`/dynamic-null fallback path
 - extending template block override receives named placement arguments
 - named binding expressions are emitted only for structural inline placements
+- template `this.sharedName` reads and writes inherited shared vars from blocks
+- parent/child template shared writes follow documented source-order channel
+  semantics
+- script explicit `shared var` reads and writes through `this.sharedName`
+- `this.__text__` remains the reserved inherited template text-channel
+  exception
+- shared-channel linking is exact-footprint based, with no whole-schema setup
+  linking
+- `extends "parent" with { x }` makes `x` visible to the selected parent owner
+  constructor/block
+- multi-level payloads are visible only to their selected owner entry
+- payload key and shared var with the same name remain separate storage
+- value-consumption failures inside constructors/callables follow ordinary
+  Cascada poison/error behavior
+- lifecycle and metadata failures are fatal structural errors, not poison
 - dynamic parent selection can choose between multiple parent templates/scripts
 - dynamic parent selected at runtime runs the selected parent constructor chain
 - dynamic parent load failure propagates through public render
@@ -1439,6 +1542,14 @@ Tests:
 - dynamic selection errors propagate through render
 
 ### Step 6: Components On The New Lifecycle
+
+Authoritative sections:
+
+- Phase 5: Component Lifetime
+- Components
+- Inheritance Instance API
+- Load And Runtime Shapes
+- File Ownership
 
 Goal:
 
@@ -1453,15 +1564,27 @@ Tests:
 - component with template target
 - independent component instances do not share shared state
 - component method call after constructor observes initialized shared state
+- component method calls and observations preserve owner-buffer source order
 - observing an unknown component shared channel reports a clear error
 - non-`var` component shared channel observation requires an explicit
   snapshot/error operation
+- component shared observation remains separate from inherited method dispatch;
+  observing shared state does not invoke component methods
 - owner side-channel final snapshot closes component root/shared buffers
 - explicit close rejects later operations
 - explicit close is idempotent or errors by an explicitly documented rule
 - constructor initialization failure records instance failure and closes buffer
+- constructor initialization failure blocks later component operations
+  predictably
 
 ### Step 7: Cleanup, Fixtures, And Test Migration
+
+Authoritative sections:
+
+- Implementation Plan testing policy
+- File Ownership
+- Compiled Template/Script Shape
+- Acceptance Criteria
 
 Goal:
 
@@ -1513,7 +1636,7 @@ Tests:
 - Named template block placement bindings work only as placement arguments, not
   as a separate signature mode.
 - Components close through `InheritanceInstance.close()`.
-- Compiled inheritance roots do not accept lifecycle mode flags.
+- Compiled inheritance participants do not accept lifecycle mode flags.
 - Runtime method entries are pruned to execution-time fields.
 - Independent recoverable finalization errors are collected or explicitly
   documented as immediate fatal.
