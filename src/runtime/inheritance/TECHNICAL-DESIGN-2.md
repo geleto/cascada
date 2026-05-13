@@ -1160,6 +1160,18 @@ rebuilt from a blank folder. Focused tests should verify phase boundaries,
 compiled ABI shape, and observable behavior for the new path. Run broader
 integration suites only at explicit integration gates.
 
+Prefer integration tests once a behavior is reachable through the public render
+APIs. Unit tests and synthetic compiled-object tests are allowed while a
+lifecycle slice is not yet publicly reachable, but they are provisional unless
+they assert an invariant integration tests cannot observe cleanly. At each
+integration gate, migrate provisional unit tests to integration tests or delete
+them.
+
+Keep long-term unit/generated-source tests for ABI shape, phase-boundary
+invariants, source/diagnostic quality, method-entry pruning, helper contracts,
+and generated-code absence checks. Do not keep unit tests whose only remaining
+purpose is to duplicate end-to-end render behavior.
+
 ### Step 0a: Parser And Transpiler Surface
 
 Goal:
@@ -1168,7 +1180,7 @@ Goal:
   syntax
 - remove script method `with context` syntax
 - remove template `extends none`
-- keep script no-parent syntax, if supported, script-only
+- keep script `extends none` and dynamic-null no-parent selection script-only
 - support script `return` in inherited constructors and methods through the
   normal script return machinery
 - copy the latest `docs/cascada/script.md` and `docs/cascada/template.md`
@@ -1179,11 +1191,15 @@ Tests:
 - parser rejects block `with`, `with context`, and `without context`
 - script transpiler/parser rejects `method ... with context`
 - template `extends none` fails
+- script `extends none` is accepted only in script mode
 - inherited script method with `return` returns a value to `this.method(...)`
+- inherited script method without `return` follows ordinary unset/null return
+  behavior
 - child constructor `return super()` forwards the parent constructor result for
   direct script render
 - parent constructor `return` alone does not override the child direct-render
   result
+- ignored `super()` return does not affect the caller's return value
 
 ### Step 0b: Analysis And Validation
 
@@ -1218,8 +1234,12 @@ Tests:
 - declarations before template `extends` fail
 - inferred template shared vars cannot be read by the `extends` expression
 - `super()` receives the parent method return value
-- every participation reason sets analysis `participates`
-- ordinary templates/scripts do not participate
+- each participation reason sets analysis `participates`: `extends`, template
+  block declaration, script method declaration, `this.method(...)`, `super()`,
+  script `shared`, template `this.sharedName`, and component operation or
+  observation
+- ordinary templates/scripts do not participate, including ordinary files with
+  `{% set %}` / script locals, loops, includes, conditions, and local functions
 
 ### Step 1: Compiled Shape And ABI
 
@@ -1244,7 +1264,9 @@ Tests:
 - each participation reason has a generated-source test proving it emits the
   participant ABI
 - ordinary templates/scripts have generated-source tests proving they emit no
-  inheritance ABI or helper calls
+  inheritance ABI or helper calls: no `inheritanceSpec`, no
+  `resolveInheritanceParent`, no `__constructor__`, and no inheritance helper
+  references
 - compiled `inheritanceSpec` has metadata fields and no setup function
 - generated source contains no lifecycle mode parameters or cross-phase startup
   promise state
@@ -1271,11 +1293,18 @@ Tests:
 
 - static three-level template chain loads specs without executing constructor code
 - static script chain loads specs without executing constructor code
+- static inheritance cycles fail during loading with useful source context
+- dynamic inheritance cycles fail during loading with useful source context
+- parent load failures preserve source/error context
 - dynamic parent selection resolves once
 - script `extends none` and dynamic null produce no selected parent entry
 - script dynamic-null skips payload evaluation
+- `extends ... with ...` payload is stored on the selected parent entry
+- multi-level payloads are stored per hop and are not merged globally
 - dynamic template `extends` resolving to null/undefined fails before
   constructor execution
+- dynamic template null failure ordering is clear and does not execute
+  constructor code
 - constructor-local dynamic extends/payload expressions fail clearly
 - loading can be unit-tested without `CommandBuffer`
 - loading returns an immutable chain value rather than mutating reusable state
@@ -1298,10 +1327,18 @@ Tests:
 
 - static child/mid/root chain finalizes into one dispatch table
 - ordinary callable names point at most-derived runtime entries
+- overridden parent entries remain reachable through `RuntimeMethodEntry.super`
 - `super()` links point at exact parent runtime entries without name lookup
+- `super()` links skip no unrelated entries and point only to the exact parent
+  implementation for that callable name
 - missing `super()` targets fail during finalization
+- no-op topmost constructor entry is wired where constructor `super()` allows it
 - signature conflicts, missing invoked method refs, shared/method collisions,
   and shared schema conflicts are reported with useful origins
+- at least two independent recoverable metadata errors are collected from one
+  chain when practical
+- shared/method collisions are reported across files as well as within one file
+- merged channel footprints include all overridden entries in the super chain
 - runtime method entries do not retain finalization-only fields
 - owner entries carry template/script, payload, origin, and structural-template
   facts needed by invocation
@@ -1335,9 +1372,17 @@ Tests:
 - `instance.invoke(...)` dispatches through `runtimeState.methods[name]`
 - `this.method(...)` dispatches to the same finalized entry as
   `instance.invoke(...)`
+- positional arguments bind by signature order
+- named arguments bind by declared argument name
+- mixed positional/named arguments are rejected
+- unknown named arguments are rejected
 - `super()` invokes the finalized parent entry and does not look up by name
 - no-argument `super()` forwards the original argument frame
 - explicit `super(...)` builds a fresh argument frame for the parent signature
+- explicit `super(arg)` evaluates the current local argument value
+- argument reassignment mutates only the local argument channel for that call
+- `this.method(...)` inside another method uses the current invocation buffer
+- `super()` uses the parent owner context and composition payload
 - invocation links only finalized merged footprints
 - missing method metadata at invocation is a fatal structural error
 
@@ -1380,13 +1425,19 @@ Tests:
 - constructor writes are visible according to shared/channel rules
 - inline block placement observes constructor writes from selected concrete
   constructor bodies
+- structural template renders text before and after inline blocks
+- structural template places inline blocks inside loops and conditionals
 - non-extending template owns document text and places inline blocks
+- extending template root-level text does not place output directly
 - extending child/mid templates define block overrides without placing them
 - templates have no `extends none`/dynamic-null fallback path
+- extending template block override receives named placement arguments
 - named binding expressions are emitted only for structural inline placements
+- dynamic parent selection can choose between multiple parent templates/scripts
 - dynamic parent selected at runtime runs the selected parent constructor chain
+- dynamic parent load failure propagates through public render
 - script dynamic null runs only the entry constructor
-- template dynamic null fails during loading
+- template dynamic null fails through the public render API
 - dynamic selection errors propagate through render
 
 ### Step 6: Components On The New Lifecycle
@@ -1401,7 +1452,15 @@ Tests:
 
 - component constructor invocation before later method call
 - component with inheritance
+- component with template target
+- independent component instances do not share shared state
+- component method call after constructor observes initialized shared state
+- observing an unknown component shared channel reports a clear error
+- non-`var` component shared channel observation requires an explicit
+  snapshot/error operation
+- owner side-channel final snapshot closes component root/shared buffers
 - explicit close rejects later operations
+- explicit close is idempotent or errors by an explicitly documented rule
 - constructor initialization failure records instance failure and closes buffer
 
 ### Step 7: Cleanup, Fixtures, And Test Migration
@@ -1411,6 +1470,8 @@ Goal:
 - remove inheritance lifecycle mode flags from generated roots
 - update generated-source tests and browser precompiled fixtures
 - update docs to name this design as authoritative
+- migrate or delete provisional unit/synthetic tests that are now covered by
+  integration tests
 - triage skipped inheritance tests as deleted, rewritten, or still required
 - verify compiler-private runtime helpers do not look like public API
 
@@ -1418,7 +1479,13 @@ Tests:
 
 - generated-source tests proving inheritance participants use the target ABI
   and plain templates/scripts do not emit inheritance ABI
+- no `startup.js` or old lifecycle-mode helper remains unless the file/helper
+  is renamed and justified by this design
+- tests do not depend on private command-buffer/channel fields
+- browser/precompiled fixtures contain the `rootFunction` ABI
 - browser/precompiled fixtures regenerated from target compiler output
+- provisional loader/finalization/invocation unit tests are either promoted to
+  integration tests, retained with an invariant-specific reason, or deleted
 - no skipped inheritance test group remains without an explicit disposition
 - focused inheritance suites pass
 - full `npm run test:quick` at the final integration gate
