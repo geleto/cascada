@@ -31,7 +31,7 @@ Each phase has a single owner and a bounded contract.
 Input:
 
 - entry compiled template/script
-- render context
+- instance context
 - environment/runtime helpers
 
 Output:
@@ -42,10 +42,8 @@ Allowed:
 
 - compile selected roots
 - evaluate local `extends` selections
-- evaluate `extends ... with ...` payloads when a parent is selected
 - register raw `inheritanceSpec` objects
 - track source paths for cycle detection
-- fork contexts for selected parent payloads
 
 Forbidden:
 
@@ -62,7 +60,7 @@ Forbidden:
 Input:
 
 - `LoadedInheritanceChain`
-- render context for diagnostics
+- source-origin context for diagnostics
 
 Output:
 
@@ -145,9 +143,11 @@ type InheritanceInstanceState = {
 }
 ```
 
-`context` is the entry execution context with the entry composition payload
-already applied. Payloads for parent/owner entries remain on finalized method
-owner metadata and are applied when invoking that owner's callable.
+`context` is the instance execution context. For direct rendering it is based
+on the render context. For components it is built from the explicit component
+payload, with caller context included only when component `with context` is
+used. Every file in the selected inheritance chain uses this same instance
+context.
 
 Allowed:
 
@@ -191,9 +191,13 @@ Allowed:
 
 The constructor is just the `__constructor__` method. Direct rendering and
 component creation start by invoking that method once. The runtime does not
-manually iterate the parent chain to execute constructors. Parent constructor
-execution happens only when the constructor body calls `super()`, exactly like
-any other inherited method.
+manually iterate the parent chain to execute constructors.
+
+`runtimeState.methods.__constructor__` is the most-derived available concrete
+constructor entry. If the selected child has no constructor body, dispatch
+naturally starts at the nearest ancestor constructor. If the selected child has
+a concrete constructor body, parent constructor execution happens only when
+that body calls `super()`, exactly like any other inherited method.
 
 Template constructors have an implicit trailing `super()` when they have a
 parent. That implicit call is compiled as a normal `super()` call, not
@@ -275,6 +279,12 @@ only difference is ownership of buffer completion:
   the instance root/shared buffers via `close()` only when that side-channel's
   final snapshot settles or the component is explicitly closed
 
+Component creation is a composition boundary. By default a component receives
+only the explicit component payload and does not inherit the caller render
+context. `with context` is a component opt-in that builds the instance context
+from the caller context plus explicit payload. The selected inheritance chain
+inside that component then uses that one instance context for every owner.
+
 Forbidden:
 
 - depend on linking new child buffers into already-finished parent buffers
@@ -343,7 +353,6 @@ Compile-time decides:
 Runtime decides:
 
 - actual dynamic parent value for participant files with `extends`
-- actual `extends ... with ...` payload values
 - actual method/block argument values
 - actual shared state values
 - actual command ordering, snapshots, poison/error outcomes
@@ -405,7 +414,6 @@ and returns:
 ```js
 {
   parentTemplateOrScript: Template | Script | null,
-  compositionPayload: object | null,
   origin: SourceOrigin | null
 }
 ```
@@ -423,11 +431,11 @@ It must not:
 - finalize
 - run constructor code
 
-Dynamic `extends` targets and `extends ... with ...` payload values are
-evaluated before constructor execution. Therefore they may read:
+Dynamic `extends` targets are evaluated before constructor execution.
+Therefore they may read:
 
-- render-context values
-- composition-payload values already present in the current context
+- values already present in the current instance context, including component
+  payload values when the instance is a component
 - globals
 
 They may not read:
@@ -442,10 +450,10 @@ They may not read:
 The compiler enforces this during analysis. Unsupported expressions fail
 clearly instead of falling back to parent-render loading.
 
-Payload values are evaluated only after the parent target resolves to a real
-parent. For scripts, if dynamic `extends` resolves to `none`/`null`, payload
-expressions are not evaluated. For templates, resolving to no parent is a load
-error.
+`extends ... with ...` is not supported. Inheritance is not a composition
+boundary; it selects parent metadata inside one inheritance instance. For
+scripts, if dynamic `extends` resolves to `none`/`null`, no parent is selected.
+For templates, resolving to no parent is a load error.
 
 Resolver ABI notes:
 
@@ -478,7 +486,7 @@ Constructor ABI notes:
 - the invoked entry is `runtimeState.methods.__constructor__`, the
   most-derived available constructor entry; execution does not assume the entry
   template/script owns a concrete constructor body
-- owner context comes from the finalized `RuntimeMethodEntry`
+- owner metadata comes from the finalized `RuntimeMethodEntry`
 - template structural role is compile-time; it is not recomputed from dynamic
   parent selection
 - component behavior is outside constructor code; component orchestration
@@ -498,14 +506,14 @@ Removed callable surface:
 
 Rules:
 
-- inherited methods and template blocks read render-context names by default
+- inherited methods and template blocks read instance-context names by default
 - callable signatures are only ordered argument names
 - template block placement may pass local values positionally:
   `{% block name(user) %}`
 - template block placement may pass local values by explicit name:
   `{% block name(user = localUser) %}`
 - explicit `this.method(...)`, `this.blockName(...)`, and `super(...)` calls use
-  the normal invocation argument rules
+  the normal script/function invocation argument rules
 - implicit inline block placement is generated only for structural templates
   and evaluates placement arguments only when that inline block is actually
   placed
@@ -536,8 +544,7 @@ same name is both shared and callable in the finalized chain, finalization
 reports the ambiguity.
 
 Bare names do not probe the inheritance shared schema. Bare names follow the
-ordinary ambient lookup path: locals, arguments, composition payload, render
-context, and globals.
+ordinary ambient lookup path: locals, arguments, instance context, and globals.
 
 ## Load And Runtime Shapes
 
@@ -550,7 +557,6 @@ type LoadedInheritanceEntry = {
   templateOrScript: Template | Script,
   spec: CompiledInheritanceSpec,
   path: string | null,
-  compositionPayload: object | null,
   origin: SourceOrigin | null
 }
 
@@ -562,7 +568,6 @@ type InheritanceRuntimeState = {
 type RuntimeOwnerEntry = {
   templateOrScript: Template | Script,
   path: string | null,
-  compositionPayload: object | null,
   origin: SourceOrigin | null,
   isStructuralTemplate: boolean
 }
@@ -636,36 +641,31 @@ the loaded chain to recover them.
 - template structure owner, for template chains: the topmost selected template,
   `loadedChain.entries[loadedChain.entries.length - 1]`
 
-`compositionPayload` on `LoadedInheritanceEntry` is the payload selected by the
-child hop that leads to that entry. Store payload data, not pre-forked contexts.
-Execution forks a context for each entry when that entry runs.
-
 ## Composition Payload, Argument Frames, And Shared Channels
 
-Composition payload is the explicit caller-input mechanism for inheritance,
-components, imports, includes, and related composition boundaries. It is not
-shared state.
+Composition payload is the explicit caller-input mechanism for components,
+imports, includes, and related composition boundaries. It is not inheritance
+metadata and it is not shared state.
 
 Rules:
 
 - payload is plain context-like key/value data
 - arbitrary payload keys are allowed; there is no payload schema
-- `extends ... with ...` captures payload at the parent-selection site
+- `extends ... with ...` is not supported
+- every file in an inheritance chain sees the same instance context
+- component/include/import boundaries decide whether and how payload/context is
+  supplied
 - payload values do not write to shared channels automatically
 - shared defaults or constructor code may read payload values by bare name
-- normal bare-name lookup may consult composition payload alongside render
-  context and globals
-- for multi-level inheritance, each selected hop stores the payload chosen for
-  that parent entry
-- execution forks a fresh context for each entry using that entry's payload
+- normal bare-name lookup consults the instance context and globals
 
 This keeps payload transport separate from hierarchy-owned `this.<shared>`
 state. A payload key and a shared name may be the same string without becoming
 the same storage location.
 
 Invocation arguments are a different mechanism. A call such as
-`this.card(user, size = "lg")` or `super(user)` creates an argument frame for
-one callable invocation. Argument frames are per-call local bindings, not
+`this.card(user, "lg")` or `super(user)` creates an argument frame for one
+callable invocation. Argument frames are per-call local bindings, not
 composition payload, not inherited shared channels, and not entries in the
 shared schema.
 
@@ -684,6 +684,10 @@ local arguments. The invocation buffer exists because the callable body may
 enqueue commands and argument values may be async or poisoned; it does not make
 arguments hierarchy channels.
 
+Template named placement bindings are a separate surface from script keyword
+arguments. They map placement locals to block argument names before ordinary
+invocation begins.
+
 Async macros are the precedent: macro parameters are local `var` channels in
 the macro invocation buffer, initialized from call arguments. Inherited
 callables should use the same model. Argument names become local `var` bindings
@@ -693,8 +697,8 @@ shared state.
 
 Keep the original argument frame separate from mutable local argument channels.
 No-argument `super()` forwards the original frame exactly as received by the
-current callable. Explicit `super(user)` or `super(name = value)` evaluates the
-current local values and builds a fresh argument frame for the parent callable.
+current callable. Explicit `super(user, fallbackUser)` evaluates the current
+local values and builds a fresh argument frame for the parent callable.
 
 Reuse boundary:
 
@@ -707,7 +711,7 @@ Reuse boundary:
 - keep macro wrappers, `caller()` support, macro text-return behavior, imports,
   and context-isolation rules out of inheritance dispatch
 - keep inherited invocation in `invoke.js`; it consumes finalized dispatch
-  entries, owner-relative `super` links, owner context, linked footprints, and
+  entries, owner-relative `super` links, owner metadata, linked footprints, and
   invocation buffers, then calls the shared argument primitive rather than
   `runtime.makeMacro` or macro-specific compiler wrappers
 
@@ -754,10 +758,10 @@ the long-lived execution entry. If a field survives, it must be justified as an
 execution-time requirement.
 
 `ownerEntry` is required for every runtime method entry. It tells invocation
-which loaded owner entry owns the body, so context forking and composition
-payload visibility are owner-relative without scanning unrelated state at
-execution time. `ownerEntry.isStructuralTemplate` is true only for a
-non-extending template owner that places document structure.
+which loaded owner entry owns the body. Execution uses that owner metadata
+without scanning unrelated state at execution time.
+`ownerEntry.isStructuralTemplate` is true only for a non-extending template
+owner that places document structure.
 
 ## Invocation And Linking
 
@@ -794,10 +798,10 @@ directly. Constructor-specific behavior should be represented by
 surface. It performs a direct lookup in the already-finalized dispatch table:
 `instance.runtimeState.methods[methodName]`. That entry is already the
 most-derived implementation. Invocation then builds the argument frame from
-positional or named arguments, creates an invocation buffer under
-`instance.rootBuffer`, links the target's exact merged footprints, and calls the
-target `fn` with the instance environment, owner context, runtime/callback,
-invocation buffer, argument frame, and method data.
+positional arguments, creates an invocation buffer under `instance.rootBuffer`,
+links the target's exact merged footprints, and calls the target `fn` with the
+instance environment, instance context, runtime/callback, invocation buffer,
+argument frame, and method data.
 
 Compiled `this.name(...)` calls use the same path as `instance.invoke(...)`
 except their call-site buffer is the currently executing invocation buffer. They
@@ -818,20 +822,20 @@ runtime.invokeSuperCallable(currentInstance, methodData, args, origin)
 Argument rules:
 
 - positional calls map by the target signature's ordered `argNames`
-- named calls map by argument name and reject unknown names
-- mixed positional/named calls fail before invocation
+- script keyword arguments follow the regular function-call rules
+- template named placement bindings are placement-only; they are not a separate
+  callable signature mode
 - `super()` forwards the original argument frame when called with no
   arguments
-- `super(args...)` or `super(name = value)` builds a fresh argument frame
-  against the parent target's signature
+- `super(args...)` builds a fresh argument frame against the parent target's
+  signature
 
-Owner context rules:
+Owner metadata rules:
 
-- every runtime method entry uses its finalized `ownerEntry` to fork the owner
-  context with that entry's composition payload
-- parent constructors or methods reached through `super()` therefore run with
-  the parent owner's context and composition payload, without a runtime chain
-  scan
+- every runtime method entry carries its finalized `ownerEntry`
+- all owners in one inheritance chain run with the same instance context
+- parent constructors or methods reached through `super()` use the parent
+  `ownerEntry` metadata without a runtime chain scan
 
 ## File Ownership
 
@@ -914,7 +918,8 @@ Each constructor invocation receives its finalized `ownerEntry`. This owner
 metadata is part of finalized constructor method data, not a runtime lookup by
 source file name or loaded-chain position.
 When a constructor calls `super()`, the ordinary super invocation runs the
-parent constructor with the parent owner's entry context.
+parent constructor with the parent owner's metadata and the same instance
+context.
 
 ## Script Lifecycle
 
@@ -931,8 +936,10 @@ Script return behavior:
   `runtimeState.methods.__constructor__`
 - ancestor constructor returns do not pollute the entry result
 - constructor `super()` continues to use isolated return handling
-- ancestor script constructors run only when reached through explicit
-  `super()` calls
+- a script with no concrete constructor body dispatches to the nearest ancestor
+  constructor
+- once a concrete script constructor body is executing, ancestor script
+  constructors run only when reached through explicit `super()` calls
 
 Script/template constructor signatures may differ only when required by real
 script/template semantics.
@@ -970,18 +977,20 @@ Rules:
 
 - scripts may use `extends none` or dynamic `null` to mean no parent is
   selected.
+- in scripts, `extends` must appear before constructor statements. Root-scope
+  `shared` declarations may appear before it. Method declarations after
+  `extends` are metadata, not constructor statements.
 - templates may not use `extends none`, and dynamic template `extends` must not
   resolve to `null`/`undefined`; a template with `extends` must select a parent
   template.
-- payload expressions are skipped only for script no-parent selection.
+- `extends ... with ...` is not supported for scripts or templates.
 - every template may have a dynamic `extends`, but it must be a top-level
   declaration in the root template body, not nested inside `if`, `for`,
   blocks, macros, includes, or any other runtime control flow.
 - no template declarations may appear before `extends`; templates use `{% set %}`
   for ordinary locals and infer shared vars from `this.<name>` usage.
-- the `extends` target expression and `extends ... with ...` payload
-  expressions cannot read inferred shared vars, because shared channels are
-  initialized by constructor execution after loading.
+- the `extends` target expression cannot read inferred shared vars, because
+  shared channels are initialized by constructor execution after loading.
 - dynamic selection cycles fail during loading.
 - dynamic selection cannot depend on constructor locals/channels.
 
@@ -998,6 +1007,11 @@ Scripts:
 - every file using `this.<name>` must declare shared participation locally
 - shared declarations are root-scope only; they are not allowed inside methods
   or blocks
+- shared declarations may appear before `extends`
+- shared defaults are claims, not ordinary constructor writes. Defaults are
+  considered in child-to-parent chain order; the first selected declaration
+  with a default wins, and later parent defaults for the same shared name are
+  not evaluated.
 - bare names never mean shared access in scripts, even when the same file
   declares a shared channel with that name
 
@@ -1008,8 +1022,8 @@ Templates:
 - reject non-shared channel declarations in templates
 - reserve `this.__text__` as the inherited template text-channel exception
 - `{% set this.name = ... %}` is a runtime write, not a default claim
-- `extends` target/payload expressions cannot read template shared vars, even
-  when those vars are inferred elsewhere in the template
+- `extends` target expressions cannot read template shared vars, even when
+  those vars are inferred elsewhere in the template
 
 Shared access forms:
 
@@ -1051,6 +1065,18 @@ owner buffer. Direct instance calls use the component root/shared buffers.
 Explicit shared observation remains separate from ordinary inherited method
 dispatch because it observes another instance's shared root.
 
+Component creation accepts explicit payload. By default the component is
+isolated from the caller render context. `with context` opts into using the
+caller context as the base for the component instance context, with explicit
+payload overlaid according to the component language rules. `extends` inside
+the component target does not create another payload boundary; all inherited
+owners in the component use the same component instance context.
+
+Component `with` syntax uses the same composition-input grammar as import and
+include: shorthand names, an object payload, `with context`, and
+`with context, ...` combinations. Object-style inputs must be last in the
+clause, and duplicate named inputs are structural errors.
+
 Caller-side component observation:
 
 - `componentName.sharedVar` observes a component shared `var` snapshot
@@ -1062,6 +1088,9 @@ Caller-side component observation:
   shared channels
 - caller-side observation is read-only; component state mutation goes through
   component methods or the component's own constructor
+- shared names that start with `_` are private to the component. Component
+  implementation code can access them through `this._name`; callers cannot
+  observe them through the component binding.
 
 Component unit tests should fake the compiled template/script shape defined in
 this document when a synthetic target is needed.
@@ -1198,6 +1227,7 @@ Goal:
 - remove template block `with ...`, `with context`, and `without context`
   syntax
 - remove script method `with context` syntax
+- remove `extends ... with ...` syntax for scripts and templates
 - remove template `extends none`
 - keep script `extends none` and dynamic-null no-parent selection script-only
 - support script `return` in inherited constructors and methods through the
@@ -1209,8 +1239,12 @@ Tests:
 
 - parser rejects block `with`, `with context`, and `without context`
 - script transpiler/parser rejects `method ... with context`
+- parser rejects `extends ... with ...` in scripts and templates
+- parser keeps existing component/import/include composition forms, including
+  `with context, name` and `with context, { key: expr }`
 - template `extends none` fails
 - script `extends none` is accepted only in script mode
+- script `extends` after constructor statements fails
 - script `return` in inherited method/constructor syntax transpiles to the
   intended internal return shape without executing inheritance runtime
 
@@ -1226,7 +1260,7 @@ Authoritative sections:
 
 Goal:
 
-- make render-context names visible by default inside inherited methods and
+- make instance-context names visible by default inside inherited methods and
   template blocks
 - make callable signatures consist only of ordered argument names
 - support template block placement arguments, including named placement
@@ -1237,13 +1271,13 @@ Goal:
 - reject dynamic template `extends` nested inside runtime control flow
 - reject dynamic template `extends` resolving to no parent at runtime
 - reject any template declaration before `extends`
-- reject `extends` target/payload expressions that read inferred shared vars or
-  other constructor-created locals/channels
+- reject `extends` target expressions that read inferred shared vars or other
+  constructor-created locals/channels
 - compute exact inheritance participation facts
 
 Tests:
 
-- inherited methods and template blocks read render context by default
+- inherited methods and template blocks read instance context by default
 - block signatures compare only argument names
 - named block placement bindings pass local values by declared argument name
 - mixed positional/named block placement bindings fail
@@ -1334,14 +1368,11 @@ Tests:
 - parent load failures preserve source/error context
 - dynamic parent selection resolves once
 - script `extends none` and dynamic null produce no selected parent entry
-- script dynamic-null skips payload evaluation
-- `extends ... with ...` payload is stored on the selected parent entry
-- multi-level payloads are stored per hop and are not merged globally
 - dynamic template `extends` resolving to null/undefined fails before
   constructor execution
 - dynamic template null failure ordering is clear and does not execute
   constructor code
-- constructor-local dynamic extends/payload expressions fail clearly
+- constructor-local dynamic extends expressions fail clearly
 - loading can be unit-tested without `CommandBuffer`
 - loading returns an immutable chain value rather than mutating reusable state
 
@@ -1387,8 +1418,8 @@ Tests:
 - shared/method collisions are reported across files as well as within one file
 - merged channel footprints include all overridden entries in the super chain
 - runtime method entries do not retain finalization-only fields
-- owner entries carry template/script, payload, origin, and structural-template
-  facts needed by invocation
+- owner entries carry template/script, origin, and structural-template facts
+  needed by invocation
 - concrete and no-op constructor runtime entries have `isConstructor: true`
 - non-constructor runtime method entries have `isConstructor: false`
 - finalized shared/method collision fails across a template chain
@@ -1434,16 +1465,16 @@ Tests:
 - `this.method(...)` dispatches to the same finalized entry as
   `instance.invoke(...)`
 - positional arguments bind by signature order
-- named arguments bind by declared argument name
-- mixed positional/named arguments are rejected
-- unknown named arguments are rejected
+- script keyword arguments follow the same behavior as regular function calls
+- template named placement bindings are converted to ordinary invocation
+  arguments before dispatch
 - `super()` invokes the finalized parent entry and does not look up by name
 - no-argument `super()` forwards the original argument frame
 - explicit `super(...)` builds a fresh argument frame for the parent signature
 - explicit `super(arg)` evaluates the current local argument value
 - argument reassignment mutates only the local argument channel for that call
 - `this.method(...)` inside another method uses the current invocation buffer
-- `super()` uses the parent owner context and composition payload
+- `super()` uses the parent owner metadata and the same instance context
 - inherited script method with `return` returns a value to `this.method(...)`
 - inherited script method without `return` follows ordinary unset/null return
   behavior
@@ -1508,6 +1539,10 @@ Tests:
   result
 - thrown constructor errors follow ordinary render error behavior
 - child/mid/root concrete constructor bodies run through the `super()` chain
+- script with no concrete constructor body dispatches to the nearest ancestor
+  constructor
+- script with a concrete constructor body runs parent constructors only through
+  explicit `super()`
 - constructor writes are visible according to shared/channel rules
 - inline block placement observes constructor writes from selected concrete
   constructor bodies
@@ -1523,14 +1558,14 @@ Tests:
 - parent/child template shared writes follow documented source-order channel
   semantics
 - script explicit `shared var` reads and writes through `this.sharedName`
+- script shared defaults are claimed child-to-parent, and an unselected parent
+  default expression is not evaluated
 - `this.__text__` remains the reserved inherited template text-channel
   exception
 - shared-channel linking is exact-footprint based, with no whole-schema setup
   linking
-- `extends "parent" with { x }` makes `x` visible to the selected parent owner
-  constructor/block
-- multi-level payloads are visible only to their selected owner entry
-- payload key and shared var with the same name remain separate storage
+- every selected parent constructor/block sees the same instance context as the
+  entry
 - value-consumption failures inside constructors/callables follow ordinary
   Cascada poison/error behavior
 - lifecycle and metadata failures are fatal structural errors, not poison
@@ -1556,6 +1591,9 @@ Goal:
 - component creation uses create instance -> invoke `__constructor__`
 - component root buffers close by component lifetime
 - component code uses `InheritanceInstance` rather than a special render mode
+- component default context is isolated from the caller render context
+- component `with context` opts into caller-context visibility
+- explicit component payload is visible to the whole selected inheritance chain
 
 Tests:
 
@@ -1564,8 +1602,14 @@ Tests:
 - component with template target
 - independent component instances do not share shared state
 - component method call after constructor observes initialized shared state
+- component payload key and inherited shared var with the same name remain
+  separate storage
+- component `with context, name` and `with context, { key: expr }` use the
+  shared composition-input grammar
 - component method calls and observations preserve owner-buffer source order
 - observing an unknown component shared channel reports a clear error
+- observing a private `_` shared name through the component binding fails
+  clearly
 - non-`var` component shared channel observation requires an explicit
   snapshot/error operation
 - component shared observation remains separate from inherited method dispatch;
@@ -1617,6 +1661,9 @@ Tests:
 - Finalization never calls compiled user functions.
 - Public execution is linear and explainable as create instance -> invoke
   `__constructor__` -> finish.
+- Constructorless children dispatch to the nearest inherited concrete
+  `__constructor__`; concrete script constructors call parent constructors only
+  through explicit `super()`.
 - Ordinary templates/scripts that do not participate in inheritance emit no
   inheritance ABI or runtime helper calls.
 - Selected concrete template constructor bodies can run child-to-parent through
@@ -1627,15 +1674,25 @@ Tests:
   root/base template.
 - Template `extends` always selects a parent template; `extends none` and
   dynamic-null parent selection are script-only.
+- `extends ... with ...` is not part of the inheritance surface.
 - Dynamic extends resolves once before constructor execution.
-- Dynamic extends/payload expressions cannot read constructor locals/channels.
+- Dynamic extends target expressions cannot read constructor locals/channels.
 - Dynamic template extends is allowed only as a top-level declaration, with no
   template declarations before it.
-- Template block and script method `with context` syntax is absent.
-- Inherited methods and template blocks read render context by default.
+- Script `extends` appears before constructor statements; only root-scope
+  shared declarations may precede it.
+- Script shared defaults are claimed child-to-parent, so the first selected
+  default wins and later parent defaults are not evaluated.
+- Template block and script method `with context` syntax is absent; component
+  `with context` remains the explicit context opt-in for components.
+- Inherited methods and template blocks read instance context by default.
 - Named template block placement bindings work only as placement arguments, not
   as a separate signature mode.
 - Components close through `InheritanceInstance.close()`.
+- Component `with` uses the standard composition-input grammar, while
+  `extends` has no `with` form.
+- Component shared names starting with `_` are private to component
+  implementation code and cannot be observed through the component binding.
 - Compiled inheritance participants do not accept lifecycle mode flags.
 - Runtime method entries are pruned to execution-time fields.
 - Independent recoverable finalization errors are collected or explicitly
