@@ -195,13 +195,19 @@ template customizes that structure by overriding named blocks; the override
 fills the parent block position rather than rendering where the child wrote the
 override.
 
-Code outside blocks in an extending async template is startup code. It can
-prepare values, pass inputs with `extends ... with ...`, and write shared state
-through `this.<name>`, but it does not add visible layout at that source
-position. Put visible inherited content in blocks, or in the root/base template
-structure that places those blocks. Template startup code does not support
-`super()`; after startup completes, parent rendering happens automatically, as
-if an implicit parent render were placed at the end. Only block bodies use
+Code outside blocks is constructor code. It can write shared state through
+`this.<name>` and may contain ordinary template control flow. A template with
+`extends` uses its blocks as overrides. A template without `extends` can place
+its blocks directly in the output.
+
+The `extends` target and `extends ... with ...` payload are resolved before
+constructor code runs, so they may read render-context values and globals but
+not values created by top-level `{% set %}` in the same template. Templates do
+not support `extends none` or dynamic-null parent selection. If a template has
+`extends`, it must select a parent template.
+
+Template constructor code reaches the parent constructor through an implicit
+trailing `super()` when a parent is selected. Block bodies may also use
 `super()` to render the parent block.
 
 Classic Nunjucks blocks have implicit access to the caller's local scope.
@@ -246,7 +252,6 @@ placement-local values as block arguments:
 
 ```nunjucks
 {# child.njk #}
-{% set theme = "dark" %}
 {% extends "base.njk" with theme %}
 
 {% block content(user) %}
@@ -258,7 +263,7 @@ placement-local values as block arguments:
 Rendered with:
 
 ```javascript
-{ user: "Ada", siteName: "Docs" }
+{ user: "Ada", siteName: "Docs", theme: "dark" }
 ```
 
 Produces:
@@ -271,8 +276,8 @@ What this shows:
 
 - `super()` still sees the original block argument `user = "Ada"`, even though the child reassigned the local `user` to `"Grace"`.
 - `siteName` is visible inside both blocks because render-context names are available by default.
-- `theme` comes from the `extends ... with ...` payload, not from block arguments or render context.
-- A child top-level `{% set theme = ... %}` would not be visible in `content` by itself. The value crosses the inheritance boundary because the child passes it with `{% extends "base.njk" with theme %}`.
+- `theme` comes from the render context and crosses the inheritance boundary because the child passes it with `{% extends "base.njk" with theme %}`.
+- A child top-level `{% set theme = ... %}` would not be visible in `content` by itself, and cannot be used as an `extends ... with ...` payload value because parent selection happens before constructor code runs.
 
 ### Shared State in Inherited Templates
 
@@ -281,7 +286,8 @@ In async templates that use `extends` or `block`, the `this.<name>` surface prov
 **Key differences from scripts:**
 
 - No `shared` declarations are needed. The compiler infers shared vars from static `this.<name>` paths in the template source.
-- Templates only have `var`-type values - there are no typed channels. Because the type is always `var`, the compiler can infer it and no declaration is needed.
+- Explicit `shared` declarations are script-only. In templates, `{% shared var theme %}` is rejected; use `{% set this.theme = ... %}` and `{{ this.theme }}` instead.
+- Templates infer ordinary `this.<name>` roots as shared `var` values, so no declaration is needed. The reserved `this.__text__` root is the inherited template text channel and is the only typed shared-channel exception on this template surface.
 - In a plain template that does not contain `extends` or `block`, `this` is an ordinary render-context variable and `this.<name>` is a normal property lookup - inference does not apply.
 - Dynamic `this[expression]` is not supported in inheritance templates.
 
@@ -299,6 +305,12 @@ In async templates that use `extends` or `block`, the `this.<name>` surface prov
 ```
 
 The child's `{% set this.theme = "dark" %}` writes the shared var explicitly through the inheritance state. The base's `{{ this.theme }}` inside the block reads it. Both templates infer `theme` automatically - no declaration required in either file.
+
+Template shared-var writes are ordinary runtime assignments, not shared-default
+initializers. If both child and parent template constructor code assign
+`this.theme`, the later source-ordered write wins in the current lifecycle.
+Use script `shared var` declarations for default-claim semantics; template
+inference only provides the shared `var` channel.
 
 ## Variable Scoping
 

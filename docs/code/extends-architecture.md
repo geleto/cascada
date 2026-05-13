@@ -83,24 +83,26 @@ Templates follow the same model:
 
 - template body compiles to internal `__constructor__`
 - blocks are the method form
-- code before `extends` is pre-extends code
-- code after `extends` is post-extends code
 - parent selection happens at the `extends` site itself:
   - a dynamic parent filename/expression is allowed
   - imperative control flow that conditionally executes `extends` is not part
     of this architecture
-  - if a template/script needs a "no parent" branch, it should use
-    `extends none` / `extends null` in the parent-selection expression
-  - `extends none` / `extends null` means the current file becomes the root
-    constructor/root render entry for that render
-  - this avoids fake fallback templates while still keeping parent selection
-    inside the single `extends` site
+  - template parent selection must select a parent template; templates do not
+    support `extends none` or dynamic-null parent selection
+  - scripts may use `extends none` / `extends null` for a no-parent branch
   - do not move `extends` into `if`, `switch`, loops, or other
     constructor-time control flow
 
-Because only `shared` declarations are allowed before `extends`, there is no
-template-local-capture mechanism in this architecture for arbitrary
-pre-`extends` variables.
+Templates do not declare channels, shared or otherwise. In templates, shared
+`var` participation is inferred from static `this.<name>` usage. No template
+declaration may appear before `extends`, and `extends` expressions cannot read
+template locals or inferred shared variables because those values are created by
+constructor execution after parent selection.
+
+A template with block declarations and no `extends` is the structural root/base
+template for that inheritance chain. A template with `extends` defines
+overrides and constructor/setup behavior, but its block declarations do not
+place inline structure at their source locations.
 
 ## Shared Metadata Objects
 
@@ -274,10 +276,13 @@ Async inherited templates use the same `this.<name>` surface for shared vars,
 but with a different compilation model: the compiler infers shared `var` entries
 from static `this.<root>` paths found anywhere in the template AST, without
 requiring explicit `shared` declarations in template source.
+Explicit `shared` declarations are script-only and are rejected in template
+source.
 
-Template shared access is var-only. The compiler does not infer shared `text`,
-`data`, or `sequence` channels for templates; those typed channels are a
-script-only concept at this surface.
+Ordinary template shared access is var-only. The compiler does not infer shared
+`data` or `sequence` channels for templates; those typed channels are a
+script-only concept at this surface. Reserved `this.__text__` is the one typed
+exception and refers to the inherited template text channel.
 
 Template inference applies only when the template uses inheritance nodes
 (`extends` or `block`). A plain async template that does not participate in
