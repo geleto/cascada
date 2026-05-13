@@ -196,19 +196,15 @@ fills the parent block position rather than rendering where the child wrote the
 override.
 
 Code outside blocks is constructor code. It can write shared state through
-`this.<name>` and may contain ordinary template control flow. In a template
-without `extends`, the constructor also owns document structure, so inline block
-positions place output. In a template with `extends`, block bodies define
-overrides only; they do not place output at their source location. Put visible
-inherited content in blocks, or in a non-extending root/base template structure
-that places those blocks.
+`this.<name>` and may contain ordinary template control flow. A template with
+`extends` uses its blocks as overrides. A template without `extends` can place
+its blocks directly in the output.
 
 The `extends` target and `extends ... with ...` payload are resolved before
 constructor code runs, so they may read render-context values and globals but
-not values created by top-level `{% set %}` in the same template. If a dynamic
-`extends` resolves to `none`/`null`, no parent is selected, but the template
-still keeps its compile-time role: a syntactically extending template does not
-become a standalone structural fallback template.
+not values created by top-level `{% set %}` in the same template. Templates do
+not support `extends none` or dynamic-null parent selection. If a template has
+`extends`, it must select a parent template.
 
 Template constructor code reaches the parent constructor through an implicit
 trailing `super()` when a parent is selected. Block bodies may also use

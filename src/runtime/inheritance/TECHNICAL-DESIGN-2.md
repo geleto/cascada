@@ -30,7 +30,7 @@ Each phase has a single owner and a bounded contract.
 
 Input:
 
-- entry compiled template/script root
+- entry compiled template/script
 - render context
 - environment/runtime helpers
 
@@ -99,7 +99,7 @@ setup into a ready-to-invoke inheritance instance.
 
 Input:
 
-- entry compiled template/script root
+- entry compiled template/script
 - render context
 - environment/runtime helpers
 - output/root buffer owner
@@ -111,7 +111,8 @@ Output:
 class InheritanceInstance {
   static async create(options)
   invoke(methodName, args, origin)
-  finish(entryResult)
+  finishRender(entryResult)
+  close()
 }
 ```
 
@@ -122,7 +123,7 @@ Instance state includes:
 
 ```js
 type InheritanceInstanceState = {
-  entryRoot: Template | Script,
+  entryTemplateOrScript: Template | Script,
   runtimeState: InheritanceRuntimeState,
   env: Environment,
   runtime: object,
@@ -197,32 +198,36 @@ Forbidden:
 - mutate loaded-chain metadata
 - finalize or re-finalize metadata
 - use per-block parent-decision promises
-- use root-render mode flags such as `compositionMode`, `componentMode`, or
-  `parentBuffer`
+- use lifecycle mode flags to change this phase's behavior
 
-### Phase 4: Complete Output / Result
+### Phase 4: Direct Render Completion
 
 Input:
 
 - `InheritanceInstance`
-- entry method result, for direct script rendering
+- result returned by `instance.invoke("__constructor__", ...)`
 
 Output:
 
-- final template text, direct script result, or closed component buffers
+- final template text or direct script result
 
 Templates:
 
 - No additional template user code runs in this phase.
 - Template structure was already produced by executing constructors in Phase 3.
-- This phase finishes the output buffer and materializes the final text result.
+- This phase uses the same completion rule as ordinary async template roots:
+  finish the root output buffer and materialize the root text channel's final
+  snapshot.
 
 Scripts:
 
 - No additional script user code runs in this phase.
-- The entry script result was selected during Phase 3 according to the script
-  return rules.
-- This phase completes the relevant buffers/snapshots and returns that result.
+- This phase finishes the root output buffer.
+- Direct script render returns the `entryResult` produced by invoking
+  `runtimeState.methods.__constructor__`.
+- Do not invent an inheritance-specific return path.
+- For templates, `finishRender(entryResult)` ignores `entryResult` for output
+  purposes and returns the text-channel snapshot.
 
 Forbidden:
 
@@ -231,6 +236,7 @@ Forbidden:
 - reload parents
 - re-finalize
 - discover method entries
+- close component-owned buffers as a render result
 
 ### Phase 5: Component Lifetime
 
@@ -248,72 +254,113 @@ Component instances use the same load/finalize/constructor lifecycle. Their
 root buffer remains open for the component binding lifetime and closes when the
 owner binding completes or the instance is explicitly closed.
 
-Components are not a different compiled-root mode. A direct render and a
+Components are not a different compiled template/script mode. A direct render and a
 component instance both initialize the same inheritance instance shape and invoke
 the same `__constructor__` method through the same runtime dispatch path. The
 only difference is ownership of buffer completion:
 
 - direct render finishes the instance root/shared buffers after constructor
-  execution and result materialization
+  execution and result materialization via `finishRender(entryResult)`
 - component creation binds the instance to the caller's component
   side-channel, treats constructor completion as initialization, and finishes
-  the instance root/shared buffers only when that side-channel's final snapshot
-  settles or the component is explicitly closed
+  the instance root/shared buffers via `close()` only when that side-channel's
+  final snapshot settles or the component is explicitly closed
 
 Forbidden:
 
 - depend on linking new child buffers into already-finished parent buffers
-- keep component-specific root-render modes
+- keep component-specific lifecycle modes
 - use parent render execution as component metadata loading
 
-## Forbidden Actions Matrix
+## Compiled Template/Script Shape
 
-| Phase | May Not |
-| --- | --- |
-| Load | execute user code, create command buffers, finalize, render |
-| Finalize | call user functions, render text, fork contexts, create buffers |
-| Initialize instance | invoke methods, initialize shared defaults, place blocks |
-| Execute method | discover parents, mutate metadata, finalize |
-| Invoke | discover new callables, mutate shared schema, load parents |
-| Complete output/result | run user code, rerun constructors, re-finalize, reload parents |
-| Component lifetime | require finished-parent late linking |
+The compiled output shape is the lifecycle contract made concrete. Plain
+templates/scripts that do not participate in inheritance keep the ordinary
+compiled template/script shape. The compiler emits inheritance ABI only when
+analysis marks the file as an inheritance participant.
 
-## Compiled Root Shape
-
-The compiled output shape is the lifecycle contract made concrete. Every async
-compiled template/script root exposes stable properties:
+Inheritance participants expose stable properties:
 
 ```js
 {
-  root,                     // public render entry
+  rootFunction,             // public render entry
   inheritanceSpec,          // raw compiler metadata; no executable side effects
   resolveInheritanceParent  // local immediate-parent resolver
 }
 ```
 
-`root` is the public render entry and a thin orchestrator over the lifecycle.
-It must not accept `compositionMode`, `componentMode`, or `parentBuffer`.
+`rootFunction` is the public render entry and a thin orchestrator over the
+lifecycle. It must not accept lifecycle mode flags.
 
-There is no compatibility requirement for old precompiled inheritance
-artifacts. The clean implementation defines one compiled ABI, and all generated
-inheritance code must use that ABI.
+Precompiled artifacts must be regenerated for this ABI. The implementation
+defines one compiled inheritance ABI, and all generated inheritance code must
+use that ABI.
 
 ABI rules:
 
-- use one compiled root object shape for scripts and templates
+- use one inheritance compiled template/script object shape for participating
+  scripts and templates
+- do not emit `inheritanceSpec` or `resolveInheritanceParent` for plain
+  templates/scripts that analysis proves do not participate in inheritance
 - expose only lifecycle boundary functions by name; callable bodies live in
   metadata as method entries
 - keep metadata data-only
 - avoid mode booleans that change a function from render, to parent loader, to
   component lifecycle, to composition execution
 - pass explicit phase inputs; do not pass catch-all state objects just because
-  an older helper needed them
+  multiple phases need different data
 - prefer object-shaped runtime helper arguments at public phase boundaries when
   that makes the contract clearer
 - generated internal functions may use positional parameters only when the
   ordering is stable and the meaning is documented here
 - every generated function must have one lifecycle role
 - compiler-private helper names must describe the lifecycle role they serve
+
+## Compile-Time Shape Vs Runtime Values
+
+Compile-time decides shape. Runtime decides values.
+
+Compile-time decides:
+
+- whether the file participates in inheritance
+- whether to emit inheritance ABI
+- whether `resolveInheritanceParent` is trivial, static, or dynamic
+- whether a template is structural or non-structural
+- callable signatures and argument-frame binding shape
+- callable metadata: `super`, invoked refs, owner, origins, and footprints
+- shared schema inputs and inferred template shared names
+- which syntax is legal
+
+Runtime decides:
+
+- actual dynamic parent value for participant files with `extends`
+- actual `extends ... with ...` payload values
+- actual method/block argument values
+- actual shared state values
+- actual command ordering, snapshots, poison/error outcomes
+- actual component close timing
+
+Use analysis facts to emit small direct code:
+
+- plain template/script: no inheritance ABI
+- inheritance participant with no `extends`: trivial null-parent resolver
+- static `extends`: direct/static resolver, no dynamic-expression branch
+- dynamic `extends`: dynamic target evaluation and metadata-only validation
+- template with `extends`: no inline placement code
+- template without `extends`: inline placement code may be emitted
+- no shared names: empty shared schema metadata and no shared declaration work
+- callable with no `super()`: no generated `super()` call path in that callable
+
+Do not let this optimization fragment the participant ABI. Every inheritance
+participant still exposes the same `{ rootFunction, inheritanceSpec,
+resolveInheritanceParent }` shape.
+
+The plain-file decision must be rock-solid. A template/script that does not use
+inheritance syntax or component inheritance syntax must compile exactly like an
+ordinary non-inheritance file: no `inheritanceSpec`, no
+`resolveInheritanceParent`, no `__constructor__` method entry, and no
+inheritance runtime helper calls. This decision belongs to analysis, not to
+late code-generation heuristics.
 
 `inheritanceSpec` contains only metadata needed by loading/finalization:
 
@@ -337,21 +384,27 @@ helper exports define lifecycle phase boundaries.
 
 ### Local Parent Resolver
 
-Each compiled root has one local resolver:
+Each inheritance participant has one local resolver:
 
 ```js
 async function resolveInheritanceParent(env, context, runtime, origin)
 ```
 
-It evaluates only the current root's immediate `extends` selection and returns:
+It evaluates only the current template/script's immediate `extends` selection
+and returns:
 
 ```js
 {
-  parentRoot: Template | Script | null,
+  parentTemplateOrScript: Template | Script | null,
   compositionPayload: object | null,
   origin: SourceOrigin | null
 }
 ```
+
+`parentTemplateOrScript` is the selected parent compiled template/script
+object. The loader reads its `inheritanceSpec` and
+`resolveInheritanceParent`; it must not execute its public `rootFunction`
+during loading.
 
 It must not:
 
@@ -370,7 +423,8 @@ evaluated before constructor execution. Therefore they may read:
 
 They may not read:
 
-- variables created by top-level `{% set %}` / script `var` in the same root
+- variables created by top-level `{% set %}` / script `var` in the same
+  template/script
 - inferred shared vars from `this.<name>` usage in the current template
 - shared channels declared or created by the current script constructor
 - command-buffer state
@@ -380,8 +434,9 @@ The compiler enforces this during analysis. Unsupported expressions fail
 clearly instead of falling back to parent-render loading.
 
 Payload values are evaluated only after the parent target resolves to a real
-parent. If dynamic `extends` resolves to `none`/`null`, payload expressions are
-not evaluated.
+parent. For scripts, if dynamic `extends` resolves to `none`/`null`, payload
+expressions are not evaluated. For templates, resolving to no parent is a load
+error.
 
 Resolver ABI notes:
 
@@ -394,7 +449,8 @@ Resolver ABI notes:
 ### Constructor Method Entry
 
 The constructor is an ordinary inherited callable named `__constructor__`.
-Compiled file-body code is stored in that method entry's `fn`.
+When a file has constructor body code, that compiled file-body code is stored
+in that owner's `__constructor__` method entry's `fn`.
 
 For templates, all root-level template code is constructor code. That includes
 text, loops, conditions, includes, shared writes, and inline block declarations.
@@ -407,9 +463,12 @@ return path.
 Constructor ABI notes:
 
 - constructor execution does not discover parents and does not finalize
-- constructor execution does not use root-render mode flags
+- constructor execution does not use lifecycle mode flags
 - constructor execution starts by invoking `__constructor__` through the
   finalized inherited callable table
+- the invoked entry is `runtimeState.methods.__constructor__`, the
+  most-derived available constructor entry; execution does not assume the entry
+  template/script owns a concrete constructor body
 - owner context comes from the finalized `RuntimeMethodEntry`
 - template structural role is compile-time; it is not recomputed from dynamic
   parent selection
@@ -479,7 +538,7 @@ type LoadedInheritanceChain = {
 }
 
 type LoadedInheritanceEntry = {
-  root: Template | Script,
+  templateOrScript: Template | Script,
   spec: CompiledInheritanceSpec,
   path: string | null,
   compositionPayload: object | null,
@@ -492,13 +551,22 @@ type InheritanceRuntimeState = {
 }
 
 type RuntimeOwnerEntry = {
-  root: Template | Script,
+  templateOrScript: Template | Script,
   path: string | null,
   compositionPayload: object | null,
   origin: SourceOrigin | null,
   isStructuralTemplate: boolean
 }
 ```
+
+`InheritanceRuntimeState.methods` is the finalized dispatch table. Each key maps
+directly to the most-derived executable entry for that callable name.
+Finalization owns all override selection and parent-link wiring; execution never
+recomputes "most-derived" by scanning the loaded chain.
+
+For an inheritance participant with no `extends`, the resolver is the trivial
+null-parent resolver. Plain non-participating templates/scripts do not have
+this resolver.
 
 `LoadedInheritanceChain` is temporary. Finalization consumes it and produces
 `InheritanceRuntimeState`. Runtime invocation receives the `InheritanceInstance`,
@@ -511,13 +579,14 @@ class-owned lifecycle:
 
 1. `InheritanceInstance.create(...)`
 2. `instance.invoke(methodName, args, origin)`
-3. `instance.finish()`
+3. `instance.finishRender(entryResult)` for direct render, or
+   `instance.close()` for component lifetime cleanup
 
 Creation owns load + finalize + buffer setup:
 
 ```js
 const instance = await InheritanceInstance.create({
-  entryRoot,
+  entryTemplateOrScript,
   env,
   context,
   runtime,
@@ -530,7 +599,7 @@ The exact option names may change, but `create(...)` must:
 
 1. create or select the root output buffer
 2. create the shared root buffer for this inheritance instance
-3. load the selected chain metadata from `entryRoot`
+3. load the selected chain metadata from `entryTemplateOrScript`
 4. finalize metadata into `InheritanceRuntimeState`
 5. return a ready-to-invoke `InheritanceInstance`
 
@@ -539,20 +608,21 @@ method invocation:
 
 ```js
 const entryResult = await instance.invoke("__constructor__", [], origin)
-return instance.finish(entryResult)
+return instance.finishRender(entryResult)
 ```
 
 Direct template/script rendering creates an instance, invokes `__constructor__`,
-then calls `finish(entryResult)`. Component creation creates an instance,
+then calls `finishRender(entryResult)`. Component creation creates an instance,
 schedules the same `__constructor__` method call in component command order,
-and calls `finish()` only when the component lifetime ends.
+and calls `close()` only when the component lifetime ends.
 
 The loaded chain is the source of truth during loading/finalization. Do not
-store derived aliases for the entry root, parent-exists boolean, or template
-structure owner. If execution needs one of those facts, finalization must
-compile it into the relevant runtime method entry.
+store derived aliases for the entry template/script, parent-exists boolean, or
+template structure owner. Finalization must copy the execution facts a callable
+needs onto its `RuntimeMethodEntry` and `ownerEntry`; execution must not inspect
+the loaded chain to recover them.
 
-- entry root: `loadedChain.entries[0].root`
+- entry template/script: `loadedChain.entries[0].templateOrScript`
 - selected parent exists: `loadedChain.entries.length > 1`
 - template structure owner, for template chains: the topmost selected template,
   `loadedChain.entries[loadedChain.entries.length - 1]`
@@ -627,10 +697,10 @@ Reuse boundary:
   placement arguments
 - keep macro wrappers, `caller()` support, macro text-return behavior, imports,
   and context-isolation rules out of inheritance dispatch
-- keep inherited target resolution in `invoke.js`; it decides most-derived
-  method targets, owner-relative `super` targets, owner context, linked
-  footprints, and invocation buffers, then calls the shared argument primitive
-  rather than `runtime.makeMacro` or macro-specific compiler wrappers
+- keep inherited invocation in `invoke.js`; it consumes finalized dispatch
+  entries, owner-relative `super` links, owner context, linked footprints, and
+  invocation buffers, then calls the shared argument primitive rather than
+  `runtime.makeMacro` or macro-specific compiler wrappers
 
 ## Method Entry Shapes
 
@@ -686,7 +756,7 @@ Inherited callable invocation starts from finalized direct metadata.
 
 Rules:
 
-- ordinary `this.name(...)` dispatch reads the most-derived
+- ordinary `this.name(...)` dispatch performs one direct table read:
   `runtimeState.methods[name]`
 - `super()` reads `methodData.super` from the executing callable's runtime
   entry
@@ -712,15 +782,17 @@ directly. Constructor-specific behavior should be represented by
 ### Call Paths
 
 `instance.invoke(methodName, args, origin)` is the external method execution
-surface. It looks up `instance.runtimeState.methods[methodName]`, builds the
-argument frame from positional or named arguments, creates an invocation buffer
-under `instance.rootBuffer`, links the target's exact merged footprints, and
-calls the target `fn` with the instance environment, owner context,
-runtime/callback, invocation buffer, argument frame, and method data.
+surface. It performs a direct lookup in the already-finalized dispatch table:
+`instance.runtimeState.methods[methodName]`. That entry is already the
+most-derived implementation. Invocation then builds the argument frame from
+positional or named arguments, creates an invocation buffer under
+`instance.rootBuffer`, links the target's exact merged footprints, and calls the
+target `fn` with the instance environment, owner context, runtime/callback,
+invocation buffer, argument frame, and method data.
 
 Compiled `this.name(...)` calls use the same path as `instance.invoke(...)`
 except their call-site buffer is the currently executing invocation buffer. They
-always dispatch to the most-derived finalized method entry:
+always dispatch through the same finalized table entry:
 
 ```js
 runtime.invokeInheritedCallable(currentInstance, "name", args, origin)
@@ -762,8 +834,8 @@ existed.
 - `load.js`: selected-chain discovery, cycle detection, raw spec registration,
   selected-chain construction
 - `instance.js`: `InheritanceInstance` lifecycle owner: `create(...)`,
-  `invoke(...)`, `finish()`, closed-state checks, buffer ownership, and direct
-  render completion
+  `invoke(...)`, `finishRender(...)`, `close()`, closed-state checks, buffer
+  ownership, and direct render completion
 - `finalize.js`: metadata validation, method-table construction, super wiring,
   shared-schema finalization, footprint merging, runtime-entry pruning
 - `invoke.js`: inherited callable invocation, `super()`, argument frames,
@@ -786,22 +858,26 @@ reveals a narrow helper that does not belong on `InheritanceInstance`.
 
 ## Template Lifecycle
 
-All root-level template code is constructor code. Every template in the
-selected chain may have a constructor.
+All root-level template code is constructor code. A selected template may have a
+concrete constructor body; templates without such code still participate in the
+finalized `__constructor__` chain through ordinary method-table wiring.
 
 For `child -> mid -> root`:
 
 1. load registers specs in `[child, mid, root]`
 2. finalize wires methods/super/shared state once
-3. execution invokes `child.__constructor__` once
-4. child and mid reach their parents through compiled implicit trailing
-   `super()` calls
-5. only a non-extending template constructor places inline blocks
+3. execution invokes the finalized
+   `runtimeState.methods.__constructor__` entry once
+4. concrete template constructors reach their parents through compiled implicit
+   trailing `super()` calls
+5. only a non-extending concrete template constructor places inline blocks
 
 Inline block placement is a compile-time structural role. A template that
 syntactically has `extends` is non-structural: its block bodies define callable
 overrides but do not place output at their source location. A template without
-`extends` is structural and may place inline blocks.
+`extends` is structural and may place inline blocks. Therefore a template that
+declares blocks and has no `extends` is the structural root/base template for an
+inheritance chain.
 
 ```js
 await runtime.invokeInheritedCallable(
@@ -817,16 +893,17 @@ await runtime.invokeInheritedCallable(
 );
 ```
 
-`extends none` and dynamic-null templates still have the compile-time role of
-an extending template. They have no selected parent at runtime, but they do not
-become structural fallback templates.
+Templates do not support `extends none` or dynamic-null parent selection. A
+template with `extends` must select a parent template. The script language may
+support "no parent" selection, but templates use the absence of `extends` to
+mean structural root/base template.
 
 The constructor must not decide whether a parent exists by waiting on per-block
 promises.
 
-Each constructor implementation receives enough owner metadata to determine its
-own loaded-chain entry and forked context. This owner metadata is part of
-finalized constructor method data, not a runtime lookup by source file name.
+Each constructor invocation receives its finalized `ownerEntry`. This owner
+metadata is part of finalized constructor method data, not a runtime lookup by
+source file name or loaded-chain position.
 When a constructor calls `super()`, the ordinary super invocation runs the
 parent constructor with the parent owner's entry context.
 
@@ -841,7 +918,8 @@ uses the no-op constructor entry.
 
 Script return behavior:
 
-- direct render uses the entry script's selected return path
+- direct render returns the result of invoking
+  `runtimeState.methods.__constructor__`
 - ancestor constructor returns do not pollute the entry result
 - constructor `super()` continues to use isolated return handling
 - ancestor script constructors run only when reached through explicit
@@ -855,13 +933,25 @@ script/template semantics.
 Return semantics stay explicit:
 
 - `extends` is not a value-producing expression
-- direct-render scripts return only the entry script's selected result
-- ancestor constructor returns are ignored except as values observed by an
-  explicit `super()` call
+- `return` is supported in script constructors and inherited script methods
+- method returns use the normal `__return__` channel / unset-sentinel machinery
+- `this.method(...)` receives the called method's return value
+- `super()` receives the parent method or parent constructor return value
+- direct-render scripts return the result of the entry `__constructor__`
+  invocation
+- ancestor constructor returns are ignored as direct-render results except as
+  values observed by an explicit `super()` call and then explicitly returned by
+  the entry constructor
 - template rendering returns the final text output
+- template block output is text-channel output; script-style `return` is not
+  part of template block rendering
 - component construction returns the component instance to the owner binding,
   not the constructor's user return value
 - component method calls return the called method's result
+
+The script transpiler/compiler must support `return` in inherited methods using
+the same return machinery used by ordinary script functions. Inheritance must
+not introduce a second return implementation.
 
 ## Dynamic Extends
 
@@ -869,11 +959,12 @@ Dynamic extends is resolved during loading exactly once per render.
 
 Rules:
 
-- `extends none` and dynamic `null` mean no parent is selected.
-- A template that syntactically has `extends` remains non-structural even when
-  the runtime parent selection is `none`/`null`; it does not render a local
-  fallback structure.
-- payload expressions are skipped when no parent is selected.
+- scripts may use `extends none` or dynamic `null` to mean no parent is
+  selected.
+- templates may not use `extends none`, and dynamic template `extends` must not
+  resolve to `null`/`undefined`; a template with `extends` must select a parent
+  template.
+- payload expressions are skipped only for script no-parent selection.
 - every template may have a dynamic `extends`, but it must be a top-level
   declaration in the root template body, not nested inside `if`, `for`,
   blocks, macros, includes, or any other runtime control flow.
@@ -885,8 +976,8 @@ Rules:
 - dynamic selection cycles fail during loading.
 - dynamic selection cannot depend on constructor locals/channels.
 
-There is no `extendsState.parentSelection`, `extendsState.parentReady`, or
-per-block `hasParent` promise in the target implementation.
+Block placement does not wait on a per-block parent-decision promise. Parent
+selection is completed during loading before any constructor runs.
 
 ## Shared State
 
@@ -941,14 +1032,9 @@ private channel fields such as `_channelType`, `_buffer`, or
 
 ## Components
 
-Component instances run through the same lifecycle:
-
-1. load component chain metadata
-2. finalize component inheritance state
-3. execute component constructor
-4. publish the initialized component instance through the owner side-channel
-5. keep component root/shared buffer open for the side-channel lifetime
-6. close explicitly or when the owner side-channel final snapshot settles
+Components wrap an `InheritanceInstance` with caller-side command ordering and
+side-channel lifetime ownership. Component creation publishes the initialized
+instance through the owner binding; component close calls `instance.close()`.
 
 Command-based component operations preserve source order by enqueueing on the
 owner buffer. Direct instance calls use the component root/shared buffers.
@@ -968,30 +1054,56 @@ Caller-side component observation:
 - caller-side observation is read-only; component state mutation goes through
   component methods or the component's own constructor
 
-No component path may require late linking into a finished parent buffer.
-
-Component unit tests should fake the compiled root shape defined in this
-document when a synthetic target is needed. They must not depend on overloaded
-root-render fixtures.
+Component unit tests should fake the compiled template/script shape defined in
+this document when a synthetic target is needed.
 
 ## Compiler Analysis Requirements
 
 The compiler must emit enough static metadata for the runtime to load and
 finalize without executing user code.
 
-Required metadata:
+Required analysis contract:
 
-- local immediate-parent resolver for the root `extends` declaration
-- raw callable entries for blocks, methods, and constructors
-- callable signatures as ordered argument names
-- argument-frame metadata compatible with the shared macro/inheritance argument
-  binding primitive
-- source origins for callables, `super()`, and ordinary inherited calls
-- callable-local `super` presence
-- file-level and callable-local ordinary inherited call references
-- callable-local own linked/mutated channel footprints
-- script shared declarations and template inferred shared-var roots
-- component operation sites and component shared observation sites
+```js
+type InheritanceAnalysisFacts = {
+  participates: boolean,
+  hasExtends: boolean,
+  hasDynamicExtends: boolean,
+  localExtendsNode: ExtendsNode | null,
+  methodEntries: CompiledMethodEntryInput[],
+  sharedSchemaInputs: SharedSchemaInput[],
+  inferredTemplateSharedNames: InferredSharedName[],
+  componentOperations: ComponentOperationSite[],
+  componentSharedObservations: ComponentSharedObservationSite[]
+}
+```
+
+`participates` is the only codegen gate for emitting inheritance ABI. It must
+be computed during analysis and must be exact. It is true when the file uses an
+inheritance surface: `extends`, inherited method/block declarations, inherited
+calls, `super()`, script shared declarations, template shared `this.<name>`
+inference, or component-specific inheritance constructs. It is false for every
+ordinary template/script, including ordinary templates that contain no blocks,
+no `extends`, no `this.<name>` shared access, and no inherited calls.
+
+`hasExtends`, `hasDynamicExtends`, and `localExtendsNode` are required for
+resolver generation and validation. `methodEntries` carry callable signatures,
+source origins, callable-local `super` references, callable-local ordinary
+inherited call references, and callable-local linked/mutated channel footprints.
+`sharedSchemaInputs` and `inferredTemplateSharedNames` feed shared-schema
+finalization. Component operation collections feed component code generation.
+
+Analysis may track individual participation reasons for diagnostics or
+assertions, but those reason flags are not contracted fields unless listed
+above.
+
+Analysis is the only participation gate. Code generation must not rediscover
+inheritance participation by rescanning the AST, except for assertions that the
+analysis facts and node shapes agree.
+
+Generated-source tests must cover both sides of this gate: ordinary
+templates/scripts emit no inheritance ABI at all, while every participation
+reason above emits the single participant ABI.
 
 Static analysis must reject language surfaces that would require execution to
 discover structure: nested dynamic template `extends`, constructor locals in
@@ -1033,52 +1145,12 @@ method shapes. Malformed ABI metadata is a fatal implementation error.
 
 Do not add complex aggregation machinery if it obscures finalization. But the
 target behavior should avoid stopping at the first independent metadata error
-when the rest can be discovered by the same pass.
+when the rest can be collected by the same validation pass.
 
 Normal Cascada error and poison semantics do not change. Metadata and lifecycle
 contract failures are fatal structural errors. Value-consumption failures inside
 ordinary constructor/callable execution follow the existing poison/error
 rules for the operation that consumed the value.
-
-## Stable Semantics
-
-This design starts the inheritance runtime from a blank implementation. The
-items below are semantic requirements to reimplement, not runtime code to reuse.
-Compiler code may reuse existing analysis and emission machinery where it
-already produces the required final shapes.
-
-- finalization builds a most-derived dispatch table from compiled method
-  metadata
-- `super()` follows owner-relative links rather than re-resolving by name
-- invocation accepts the same named and positional argument forms
-- shared declarations still reject schema conflicts
-- merged channel footprints include every method entry in the super chain
-- component operations still preserve source order through explicit commands
-- `this.method(...)` and `super()` keep their user-visible invocation semantics
-
-The lifecycle defines the rail. Runtime code that does not naturally follow it
-should not be ported.
-
-## Prohibited Implementation Patterns
-
-- parent loading by calling parent `rootRenderFunc(...)`
-- `renderInheritanceParentRoot(...)` / `bootstrapInheritanceParentScript(...)`
-  as loading helpers
-- root modes: `compositionMode`, `componentMode`, `parentBuffer`
-- `extendsState.parentSelection`, `parentReady`, `hasParent`
-- dynamic block-placement wrappers that wait for a parent decision
-- `startupPromise` as cross-phase orchestration
-- `inheritanceSpec.setup`
-- `_isExtendingTemplateStartupOutput(...)`
-- broad whole-schema setup linking
-- finished-parent late linking
-- duplicate script/template constructor signatures not required by semantics
-- constructor/body parameter threading whose only purpose is context leakage
-- private channel field access from inheritance runtime code
-- synthetic tests that depend on forbidden root-render or lifecycle helper
-  shapes
-- silent normalization of malformed compiler ABI metadata
-- generated/precompiled fixtures containing forbidden lifecycle helpers
 
 ## Implementation Plan
 
@@ -1086,17 +1158,37 @@ Each step must end with focused tests for the slice it implements. Full-suite
 conformance is not required at every step while the inheritance runtime is being
 rebuilt from a blank folder. Focused tests should verify phase boundaries,
 compiled ABI shape, and observable behavior for the new path. Run broader
-integration suites only at explicit integration gates, especially before
-deleting old non-inheritance compatibility paths or declaring the clean
-implementation complete.
+integration suites only at explicit integration gates.
 
-### Step 0: Source-Language Surface
+### Step 0a: Parser And Transpiler Surface
 
 Goal:
 
 - remove template block `with ...`, `with context`, and `without context`
   syntax
 - remove script method `with context` syntax
+- remove template `extends none`
+- keep script no-parent syntax, if supported, script-only
+- support script `return` in inherited constructors and methods through the
+  normal script return machinery
+- copy the latest `docs/cascada/script.md` and `docs/cascada/template.md`
+  language-surface documentation into the clean branch
+
+Tests:
+
+- parser rejects block `with`, `with context`, and `without context`
+- script transpiler/parser rejects `method ... with context`
+- template `extends none` fails
+- inherited script method with `return` returns a value to `this.method(...)`
+- child constructor `return super()` forwards the parent constructor result for
+  direct script render
+- parent constructor `return` alone does not override the child direct-render
+  result
+
+### Step 0b: Analysis And Validation
+
+Goal:
+
 - make render-context names visible by default inside inherited methods and
   template blocks
 - make callable signatures consist only of ordered argument names
@@ -1106,16 +1198,14 @@ Goal:
 - reject all template channel declarations, including `shared var`
 - allow each template to use a top-level dynamic `extends`
 - reject dynamic template `extends` nested inside runtime control flow
+- reject dynamic template `extends` resolving to no parent at runtime
 - reject any template declaration before `extends`
 - reject `extends` target/payload expressions that read inferred shared vars or
   other constructor-created locals/channels
-- copy the latest `docs/cascada/script.md` and `docs/cascada/template.md`
-  language-surface documentation into the clean branch
+- compute exact inheritance participation facts
 
 Tests:
 
-- parser rejects block `with`, `with context`, and `without context`
-- script transpiler/parser rejects `method ... with context`
 - inherited methods and template blocks read render context by default
 - block signatures compare only argument names
 - named block placement bindings pass local values by declared argument name
@@ -1127,31 +1217,45 @@ Tests:
 - dynamic template extends inside `if`/`for`/block fails
 - declarations before template `extends` fail
 - inferred template shared vars cannot be read by the `extends` expression
+- `super()` receives the parent method return value
+- every participation reason sets analysis `participates`
+- ordinary templates/scripts do not participate
 
 ### Step 1: Compiled Shape And ABI
 
 Goal:
 
 - freeze the final compiled inheritance ABI before runtime implementation
-- compiled roots expose the final `{ root, inheritanceSpec,
+- analysis decides whether a file participates in inheritance
+- plain non-participating templates/scripts do not emit inheritance ABI
+- participating templates/scripts expose the final `{ rootFunction, inheritanceSpec,
   resolveInheritanceParent }` shape
 - constructor code is exposed only as the `__constructor__` method entry inside
   `inheritanceSpec.methodEntries`
 - `inheritanceSpec` is data-only and contains no executable setup function
-- generated root functions contain no lifecycle mode flags
-- generated inheritance code does not reference forbidden helpers or
-  compatibility adapters
+- generated `rootFunction` functions contain no lifecycle mode flags
+- generated inheritance code uses only the target lifecycle helpers
 
 Tests:
 
-- compiled template root exposes exactly the target inheritance shape
-- compiled script root exposes exactly the target inheritance shape
+- plain templates/scripts expose ordinary non-inheritance compiled shape
+- participating templates/scripts expose exactly the target inheritance
+  shape
+- each participation reason has a generated-source test proving it emits the
+  participant ABI
+- ordinary templates/scripts have generated-source tests proving they emit no
+  inheritance ABI or helper calls
 - compiled `inheritanceSpec` has metadata fields and no setup function
-- generated source contains no `compositionMode`, `componentMode`,
-  `parentBuffer`, `extendsState`, or `startupPromise`
-- `resolveInheritanceParent` for a no-extends root returns data only
+- generated source contains no lifecycle mode parameters or cross-phase startup
+  promise state
+- generated source contains no per-block parent-readiness wrapper
+- `resolveInheritanceParent` for a no-extends inheritance participant returns
+  data only
+- `resolveInheritanceParent` has the final ABI
+  `(env, context, runtime, origin)` and does not receive inheritance state
 - `inheritanceSpec.methodEntries.__constructor__` exists for templates/scripts
   and has the ordinary callable entry shape
+- emitted `inheritanceSpec` has no callable setup properties
 
 ### Step 2: Metadata Loader
 
@@ -1160,94 +1264,138 @@ Goal:
 - runtime `loadInheritanceChain(...)` loads metadata child-to-parent
 - no user constructor executes during loading
 - `LoadedInheritanceChain` is built
+- loader treats `LoadedInheritanceChain` as an immutable value and does not
+  mutate reusable state
 
 Tests:
 
-- static three-level template chain loads specs without executing root code
-- static script chain loads specs without executing root code
+- static three-level template chain loads specs without executing constructor code
+- static script chain loads specs without executing constructor code
 - dynamic parent selection resolves once
-- `extends none` and dynamic null produce no selected parent entry
-- dynamic-null skips payload evaluation
+- script `extends none` and dynamic null produce no selected parent entry
+- script dynamic-null skips payload evaluation
+- dynamic template `extends` resolving to null/undefined fails before
+  constructor execution
 - constructor-local dynamic extends/payload expressions fail clearly
 - loading can be unit-tested without `CommandBuffer`
 - loading returns an immutable chain value rather than mutating reusable state
 
-### Step 3: Linear Root Orchestration For Standalone Roots
+### Step 3: Finalization And Runtime Shape
 
 Goal:
 
-- public `root` becomes a thin lifecycle orchestrator
-- standalone templates/scripts use create instance -> invoke `__constructor__` ->
-  finish
+- runtime finalization consumes `LoadedInheritanceChain`
+- finalization produces `InheritanceRuntimeState`
+- `runtimeState.methods[name]` maps directly to the most-derived executable
+  entry
+- `RuntimeMethodEntry.super` is wired to the exact parent entry or `null`
+- every runtime method entry has finalized `ownerEntry`
+- shared schema is finalized before execution
+- runtime method entries are pruned to execution-time fields
+- recoverable metadata errors are collected where practical
+
+Tests:
+
+- static child/mid/root chain finalizes into one dispatch table
+- ordinary callable names point at most-derived runtime entries
+- `super()` links point at exact parent runtime entries without name lookup
+- missing `super()` targets fail during finalization
+- signature conflicts, missing invoked method refs, shared/method collisions,
+  and shared schema conflicts are reported with useful origins
+- runtime method entries do not retain finalization-only fields
+- owner entries carry template/script, payload, origin, and structural-template
+  facts needed by invocation
+
+### Step 4: InheritanceInstance And Invoke
+
+Goal:
+
+- extract argument-frame mapping and local `var` channel initialization from
+  async macro/function invocation into a shared helper
+- wire both macros/functions and inherited callables through that shared
+  argument-binding helper
+- implement `InheritanceInstance.create(...)`
+- `create(...)` owns load + finalize + root/shared buffer setup
+- `create(...)` returns a ready-to-invoke instance and does not invoke methods
+- implement `instance.invoke(methodName, args, origin)`
+- constructor invocation is ordinary `instance.invoke("__constructor__", [],
+  origin)`
+- compiled `this.method(...)` and `this.blockName(...)` consume the finalized
+  dispatch table
+- compiled `super(...)` consumes `methodData.super`
+- invocation uses the shared argument-frame/local-argument binding primitive
+- wire compiler-private inheritance runtime helpers onto the runtime object used
+  by generated code
+
+Tests:
+
+- existing macro/function argument behavior is unchanged after helper extraction
+- instance creation loads/finalizes exactly once and executes no constructor
+  code
+- `instance.invoke(...)` dispatches through `runtimeState.methods[name]`
+- `this.method(...)` dispatches to the same finalized entry as
+  `instance.invoke(...)`
+- `super()` invokes the finalized parent entry and does not look up by name
+- no-argument `super()` forwards the original argument frame
+- explicit `super(...)` builds a fresh argument frame for the parent signature
+- invocation links only finalized merged footprints
+- missing method metadata at invocation is a fatal structural error
+
+### Step 5: Direct Render And Template Lifecycle
+
+Goal:
+
+- public `rootFunction` becomes a thin lifecycle orchestrator
+- direct render uses create instance -> invoke `__constructor__` -> finish
 - direct render uses the same `InheritanceInstance.create(...)` path as
   components
-- no root-render mode flags are needed for standalone execution
-
-Tests:
-
-- standalone template output matches the public template contract
-- standalone script return rules match the public script contract
-- instance creation finishes before any constructor user code
-- loading/finalization happen exactly once inside `InheritanceInstance.create`
-- constructor invocation can be tested as a normal method invocation on an
-  instance
-- constructor invocation enters through inherited dispatch to `__constructor__`
-
-### Step 4: Template Constructor Super Chain
-
-Goal:
-
+- direct template render finishes the root buffer and returns the text snapshot
+- direct script render returns the result of the entry `__constructor__`
+  invocation
+- no lifecycle mode flags are needed for direct rendering
 - template constructor chain executes through implicit trailing `super()`
-- every selected template body is a constructor implementation
-- no parent root executes during loading
-
-Tests:
-
-- child/mid/root constructors all run through the `super()` chain
-- constructor writes are visible according to shared/channel rules
-- inline block placement observes constructor writes from every selected chain
-  entry
-
-### Step 5: Structural Template Block Placement
-
-Goal:
-
+- selected concrete template constructor bodies are ordinary `__constructor__`
+  implementations
+- no parent template/script executes during loading
 - inline block placement is a compile-time structural-template behavior
 - templates with `extends` define block overrides but do not place inline block
   output
 - templates without `extends` may place inline block output
 - static/dynamic runtime suppression branches are not used
+- dynamic extends integration uses the `LoadedInheritanceChain` produced by the
+  loader
+- generated code uses no per-block parent-decision promises
 
 Tests:
 
+- standalone template output matches the public template contract
+- standalone script return rules match the public script contract
+- inherited direct template render matches non-inheritance text output behavior
+- inherited direct script render returns explicit constructor return values
+- child constructor `return super()` forwards the parent constructor result
+- parent constructor return alone does not override the child direct-render
+  result
+- thrown constructor errors follow ordinary render error behavior
+- child/mid/root concrete constructor bodies run through the `super()` chain
+- constructor writes are visible according to shared/channel rules
+- inline block placement observes constructor writes from selected concrete
+  constructor bodies
 - non-extending template owns document text and places inline blocks
 - extending child/mid templates define block overrides without placing them
-- `extends none` and dynamic null do not turn an extending template into a
-  structural fallback template
+- templates have no `extends none`/dynamic-null fallback path
 - named binding expressions are emitted only for structural inline placements
-
-### Step 6: Dynamic Extends Through Loader Only
-
-Goal:
-
-- dynamic extends uses `LoadedInheritanceChain`, not `extendsState`
-- no generated code uses per-block parent-decision promises
-- dynamic cycles fail during loading
-
-Tests:
-
 - dynamic parent selected at runtime runs the selected parent constructor chain
-- dynamic null runs only the entry constructor
+- script dynamic null runs only the entry constructor
+- template dynamic null fails during loading
 - dynamic selection errors propagate through render
-- no generated code references `extendsState.parentReady`
 
-### Step 7: Components On The New Lifecycle
+### Step 6: Components On The New Lifecycle
 
 Goal:
 
 - component creation uses create instance -> invoke `__constructor__`
 - component root buffers close by component lifetime
-- no component root-render modes remain
+- component code uses `InheritanceInstance` rather than a special render mode
 
 Tests:
 
@@ -1255,14 +1403,12 @@ Tests:
 - component with inheritance
 - explicit close rejects later operations
 - constructor initialization failure records instance failure and closes buffer
-- no finished-parent late linking is required
 
-### Step 8: Cleanup, Pruning, And Test Migration
+### Step 7: Cleanup, Fixtures, And Test Migration
 
 Goal:
 
-- delete root/composition/component-mode paths
-- prune runtime method entries after finalization
+- remove inheritance lifecycle mode flags from generated roots
 - update generated-source tests and browser precompiled fixtures
 - update docs to name this design as authoritative
 - triage skipped inheritance tests as deleted, rewritten, or still required
@@ -1270,8 +1416,8 @@ Goal:
 
 Tests:
 
-- source grep tests or generated-source tests proving forbidden helpers do not
-  appear
+- generated-source tests proving inheritance participants use the target ABI
+  and plain templates/scripts do not emit inheritance ABI
 - browser/precompiled fixtures regenerated from target compiler output
 - no skipped inheritance test group remains without an explicit disposition
 - focused inheritance suites pass
@@ -1279,16 +1425,20 @@ Tests:
 
 ## Acceptance Criteria
 
-- Loading never executes user root code.
+- Loading never executes user constructor code.
 - Finalization never calls compiled user functions.
 - Public execution is linear and explainable as create instance -> invoke
   `__constructor__` -> finish.
-- Template constructors from every selected chain entry can run child-to-parent
-  through the normal `super()` chain.
+- Ordinary templates/scripts that do not participate in inheritance emit no
+  inheritance ABI or runtime helper calls.
+- Selected concrete template constructor bodies can run child-to-parent through
+  the normal `super()` chain.
 - Inline block placement is controlled only by compile-time structural template
   role.
-- Extending templates do not become structural fallback templates when dynamic
-  parent selection resolves to `none`/`null`.
+- A template with block declarations and no `extends` is the structural
+  root/base template.
+- Template `extends` always selects a parent template; `extends none` and
+  dynamic-null parent selection are script-only.
 - Dynamic extends resolves once before constructor execution.
 - Dynamic extends/payload expressions cannot read constructor locals/channels.
 - Dynamic template extends is allowed only as a top-level declaration, with no
@@ -1297,8 +1447,8 @@ Tests:
 - Inherited methods and template blocks read render context by default.
 - Named template block placement bindings work only as placement arguments, not
   as a separate signature mode.
-- Components do not need finished-parent late linking.
-- Root mode flags and `extendsState` are absent.
+- Components close through `InheritanceInstance.close()`.
+- Compiled inheritance roots do not accept lifecycle mode flags.
 - Runtime method entries are pruned to execution-time fields.
 - Independent recoverable finalization errors are collected or explicitly
   documented as immediate fatal.
