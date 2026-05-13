@@ -1192,14 +1192,8 @@ Tests:
 - script transpiler/parser rejects `method ... with context`
 - template `extends none` fails
 - script `extends none` is accepted only in script mode
-- inherited script method with `return` returns a value to `this.method(...)`
-- inherited script method without `return` follows ordinary unset/null return
-  behavior
-- child constructor `return super()` forwards the parent constructor result for
-  direct script render
-- parent constructor `return` alone does not override the child direct-render
-  result
-- ignored `super()` return does not affect the caller's return value
+- script `return` in inherited method/constructor syntax transpiles to the
+  intended internal return shape without executing inheritance runtime
 
 ### Step 0b: Analysis And Validation
 
@@ -1233,7 +1227,6 @@ Tests:
 - dynamic template extends inside `if`/`for`/block fails
 - declarations before template `extends` fail
 - inferred template shared vars cannot be read by the `extends` expression
-- `super()` receives the parent method return value
 - each participation reason sets analysis `participates`: `extends`, template
   block declaration, script method declaration, `this.method(...)`, `super()`,
   script `shared`, template `this.sharedName`, and component operation or
@@ -1383,6 +1376,11 @@ Tests:
 - argument reassignment mutates only the local argument channel for that call
 - `this.method(...)` inside another method uses the current invocation buffer
 - `super()` uses the parent owner context and composition payload
+- inherited script method with `return` returns a value to `this.method(...)`
+- inherited script method without `return` follows ordinary unset/null return
+  behavior
+- `super()` receives the parent method return value
+- ignored `super()` return does not affect the caller's return value
 - invocation links only finalized merged footprints
 - missing method metadata at invocation is a fatal structural error
 
