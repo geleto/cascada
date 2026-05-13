@@ -22,6 +22,20 @@ behavior.
 
 The sync compiler uses the Nunjucks inheritance path and is out of scope.
 
+## Clean-Spec Rule
+
+All steps implement the latest public inheritance specification as if the
+legacy async inheritance implementation never existed.
+
+Do not add or keep legacy-compatibility code paths, migration shims, stale ABI
+fallbacks, or bespoke diagnostics whose only purpose is to recognize removed
+syntax or historical runtime shapes. Unsupported old forms should fail
+naturally from the current grammar, analysis, ABI, or runtime contracts.
+
+When replacing old behavior, delete or bypass it in favor of the clean target
+shape described here. If the current codebase makes that impossible without a
+compatibility bridge, stop and resolve the design gap before implementing.
+
 ## Non-Negotiable Lifecycle
 
 Each phase has a single owner and a bounded contract.

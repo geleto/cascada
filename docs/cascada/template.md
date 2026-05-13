@@ -179,7 +179,7 @@ Manual `revert` is not available yet in async templates. Use ordinary error flow
 
 ## Async Composition (`with` Payloads and Inheritance Contracts)
 
-The full composition model - `with`, `with context`, `extends ... with ...`, resolution order, pass-through patterns - is documented in [Composition and Loading](https://geleto.github.io/cascada-script/#composition-and-loading) in the script docs. The same rules apply to templates; only the syntax differs.
+The full composition model - `with`, `with context`, resolution order, and pass-through patterns - is documented in [Composition and Loading](https://geleto.github.io/cascada-script/#composition-and-loading) in the script docs. The same rules apply to templates; only the syntax differs. `extends` is not a composition boundary and does not accept `with` clauses.
 
 **Template-specific notes:**
 
@@ -200,10 +200,10 @@ Code outside blocks is constructor code. It can write shared state through
 `extends` uses its blocks as overrides. A template without `extends` can place
 its blocks directly in the output.
 
-The `extends` target and `extends ... with ...` payload are resolved before
-constructor code runs, so they may read render-context values and globals but
-not values created by top-level `{% set %}` in the same template. Templates do
-not support `extends none` or dynamic-null parent selection. If a template has
+The `extends` target is resolved before constructor code runs, so it may read
+render-context values and globals but not values created by top-level
+`{% set %}` in the same template. Templates do not support `extends none`,
+`extends ... with ...`, or dynamic-null parent selection. If a template has
 `extends`, it must select a parent template.
 
 Template constructor code reaches the parent constructor through an implicit
@@ -239,7 +239,7 @@ placement-local values as block arguments:
 - `{% block name(arg = localValue) %}` - named placement binding, passing `localValue` into the block argument named `arg`.
 - Overrides must match the parent's argument signature exactly.
 - `super()` renders the parent block with the original block arguments.
-- Bare variables from the surrounding template local scope are not captured by a block. Pass loop/top-level values as block arguments, pass composition inputs with `extends ... with ...`, or read hierarchy state explicitly through `this.<name>`.
+- Bare variables from the surrounding template local scope are not captured by a block. Pass loop/top-level values as block arguments, use render-context names, or read hierarchy state explicitly through `this.<name>`.
 
 ### Inheritance Example
 
@@ -252,7 +252,7 @@ placement-local values as block arguments:
 
 ```nunjucks
 {# child.njk #}
-{% extends "base.njk" with theme %}
+{% extends "base.njk" %}
 
 {% block content(user) %}
   {% set user = "Grace" %}
@@ -276,8 +276,8 @@ What this shows:
 
 - `super()` still sees the original block argument `user = "Ada"`, even though the child reassigned the local `user` to `"Grace"`.
 - `siteName` is visible inside both blocks because render-context names are available by default.
-- `theme` comes from the render context and crosses the inheritance boundary because the child passes it with `{% extends "base.njk" with theme %}`.
-- A child top-level `{% set theme = ... %}` would not be visible in `content` by itself, and cannot be used as an `extends ... with ...` payload value because parent selection happens before constructor code runs.
+- `theme` comes from the render context, which is visible throughout the selected inheritance chain by default.
+- A child top-level `{% set theme = ... %}` would not be visible in `content` by itself, and cannot be used by the `extends` target because parent selection happens before constructor code runs.
 
 ### Shared State in Inherited Templates
 
@@ -333,7 +333,7 @@ All composition boundaries are isolated in async mode - the child sees only what
 | `include` | Sees all caller's `{% set %}` variables | Isolated - sees only explicit `with` inputs |
 | `import` | Macros see only their own arguments | Isolated - sees only explicit `with` inputs |
 | `block` | Sees caller's frame | Sees render-context names and declared block arguments; does not see caller/placement locals |
-| Child top-level `{% set %}` | Visible in the child's own blocks | Not captured by blocks; pass it as a block arg, `extends ... with` payload, or `this.<name>` shared state |
+| Child top-level `{% set %}` | Visible in the child's own blocks | Not captured by blocks; pass it as a block arg or use `this.<name>` shared state |
 
 ### Passing Data with `with`
 

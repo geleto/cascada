@@ -1,5 +1,6 @@
 import {transpiler as scriptTranspiler} from '../src/language/script-transpiler.js';
 import {TOKEN_TYPES} from '../src/language/script-lexer.js';
+import * as parser from '../src/language/parser.js';
 import expect from 'expect.js';
 
 const aliasOptions = {
@@ -1239,12 +1240,36 @@ endmethod`;
       expect(template).to.contain('{%- endblock -%}');
     });
 
-    it('should reject method with context syntax', () => {
+    it('should reject method with context syntax after script transpilation', () => {
       const script = `method buildBody(title, user) with context
   return title
 endmethod`;
+      const template = scriptTranspiler.scriptToTemplate(script);
 
-      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/method \.\.\. with context/);
+      expect(() => parser.parse(template, [], { scriptMode: true }))
+        .to.throwException(/expected block end in block statement/);
+    });
+
+    it('should reject extends with payload syntax after script transpilation', () => {
+      const template = scriptTranspiler.scriptToTemplate('extends "Base.script" with context, theme');
+
+      expect(() => parser.parse(template, [], { scriptMode: true }))
+        .to.throwException(/expected block end in extends statement/);
+    });
+
+    it('should keep inherited method and constructor returns on the normal return tag path', () => {
+      const script = `extends none
+method build(title)
+  return title
+endmethod
+return this.build("ok")`;
+
+      const template = scriptTranspiler.scriptToTemplate(script);
+
+      expect(template).to.contain('{%- extends none -%}');
+      expect(template).to.contain('{%- block build(title) -%}');
+      expect(template).to.contain('{%- return title -%}');
+      expect(template).to.contain('{%- return this.build("ok") -%}');
     });
   });
   describe('Syntax Validation', () => {

@@ -116,14 +116,26 @@ const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await im
       expect(block.args.children[0].value).to.be('user');
     });
 
-    it('should parse extends composition inputs', function() {
-      const ast = parser.parse('{% extends "base.njk" with context, theme %}');
+    it('should reject extends composition inputs', function() {
+      expect(function() {
+        parser.parse('{% extends "base.njk" with context, theme %}');
+      }).to.throwException(/expected block end in extends statement/);
+
+      expect(function() {
+        parser.parse('{% extends "base.njk" without context %}');
+      }).to.throwException(/expected block end in extends statement/);
+    });
+
+    it('should reject extends none in template mode but allow it in script mode', function() {
+      expect(function() {
+        parser.parse('{% extends none %}');
+      }).to.throwException(/templates do not support extends none/);
+
+      const ast = parser.parse('{% extends none %}', [], { scriptMode: true });
       const extendNode = ast.findAll(nodes.Extends)[0];
 
       expect(extendNode).to.be.ok();
-      expect(extendNode.withContext).to.be(true);
-      expect(extendNode.withVars.children).to.have.length(1);
-      expect(extendNode.withVars.children[0].value).to.be('theme');
+      expect(extendNode.noParentLiteral).to.be(true);
     });
 
     it('should parse basic types', function() {
@@ -787,14 +799,18 @@ const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await im
       }).to.throwException(/object-style with inputs must be the last item in the with clause/);
     });
 
-    it('should reject legacy named block with-input lists', function() {
+    it('should reject unsupported block with-input lists', function() {
       expect(function() {
         parser.parse('{% block content with user, theme %}{{ user }}{% endblock %}');
-      }).to.throwException(/block with-clauses are not supported/);
+      }).to.throwException(/expected block end in block statement/);
 
       expect(function() {
         parser.parse('{% block content with context, user %}{{ user }}{% endblock %}');
-      }).to.throwException(/block with-clauses are not supported/);
+      }).to.throwException(/expected block end in block statement/);
+
+      expect(function() {
+        parser.parse('{% block content without context %}{{ user }}{% endblock %}');
+      }).to.throwException(/expected block end in block statement/);
     });
 
     it('should parse blocks with explicit signatures', function() {

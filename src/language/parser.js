@@ -675,16 +675,6 @@ class Parser extends Obj {
       node.args = this.parseSignature(false);
     }
 
-    const nextTok = this.peekToken();
-    if (nextTok && nextTok.type === lexer.TOKEN_SYMBOL &&
-      (nextTok.value === 'with' || nextTok.value === 'without')) {
-      this.fail(
-        'parseBlock: block with-clauses are not supported; use block arguments for placement-local values',
-        nextTok.lineno,
-        nextTok.colno
-      );
-    }
-
     this.advanceAfterBlockEnd(tag.value);
 
     node.body = this.parseUntilBlocks('endblock');
@@ -711,13 +701,11 @@ class Parser extends Obj {
     const node = new nodes.Extends(tag.lineno, tag.colno);
     node.template = this.parseExpression();
     node.noParentLiteral = node.template instanceof nodes.Literal && node.template.value === null;
-    const compositionInputs = this.parseCompositionWithClause('parseExtends', {
-      allowWithoutContext: true,
-      allowObjectValue: true
-    });
-    node.withContext = compositionInputs.withContext;
-    node.withVars = compositionInputs.withVars;
-    node.withValue = compositionInputs.withValue;
+    if (node.noParentLiteral && !this.scriptMode) {
+      this.fail('parseExtends: templates do not support extends none',
+        node.template.lineno,
+        node.template.colno);
+    }
 
     this.advanceAfterBlockEnd(tag.value);
     return node;
