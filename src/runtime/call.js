@@ -172,4 +172,17 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   }
 }
 
-export { callWrap, callWrapAsync };
+function invokeCallbackExtension(fn, ...args) {
+  return new Promise((resolvePromise, reject) => {
+    const callback = (error, ...results) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolvePromise(results.length === 1 ? results[0] : results);
+      }
+    };
+    fn(...args, callback);
+  });
+}
+
+export { callWrap, callWrapAsync, invokeCallbackExtension };

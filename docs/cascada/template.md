@@ -281,14 +281,14 @@ What this shows:
 
 ### Shared State in Inherited Templates
 
-In async templates that use `extends` or `block`, the `this.<name>` surface provides shared `var` state across the hierarchy - the template equivalent of `shared var` in scripts.
+In async templates, the `this.<name>` surface provides shared `var` state across an inheritance hierarchy - the template equivalent of `shared var` in scripts.
 
 **Key differences from scripts:**
 
 - No `shared` declarations are needed. The compiler infers shared vars from static `this.<name>` paths in the template source.
 - Explicit `shared` declarations are script-only. In templates, `{% shared var theme %}` is rejected; use `{% set this.theme = ... %}` and `{{ this.theme }}` instead.
 - Templates infer ordinary `this.<name>` roots as shared `var` values, so no declaration is needed. The reserved `this.__text__` root is the inherited template text channel and is the only typed shared-channel exception on this template surface.
-- In a plain template that does not contain `extends` or `block`, `this` is an ordinary render-context variable and `this.<name>` is a normal property lookup - inference does not apply.
+- Static `this.<name>` paths use the inheritance surface even when the template does not contain `extends` or `block`; use ordinary context names for plain render data.
 - Dynamic `this[expression]` is not supported in inheritance templates.
 
 ```nunjucks

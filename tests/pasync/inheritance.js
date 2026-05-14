@@ -1,10 +1,11 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {parse} from '../../src/language/parser.js';
+import * as nodes from '../../src/language/nodes.js';
 import {transform} from '../../src/language/transformer.js';
 import {CompilerAsync} from '../../src/compiler/compiler.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
-import {StringLoader} from '../util.js';
+import * as runtime from '../../src/runtime/runtime.js';
 
 function createIdPool() {
   return {
@@ -30,6 +31,17 @@ function analyzeSource(src, { scriptMode = false, name = scriptMode ? 'analysis.
   return ast._analysis.inheritance;
 }
 
+function compileSource(src, { scriptMode = false, name = scriptMode ? 'compiled.casc' : 'compiled.njk' } = {}) {
+  return scriptMode
+    ? new Script(src, null, name).compileSource()
+    : new AsyncTemplate(src, null, name).compileSource();
+}
+
+function compileProps(src, options = {}) {
+  const source = compileSource(src, options);
+  return new Function('runtime', source)(runtime);
+}
+
 describe('Inheritance rebuild', function () {
   let env;
 
@@ -38,18 +50,15 @@ describe('Inheritance rebuild', function () {
   });
 
   describe('parser and transpiler surface', function () {
-    it('accepts and renders script extends none as a parentless inheritance participant', async function () {
-      const plainResult = await env.renderScriptString(
-        'extends none\nreturn "ok"',
-        {}
-      );
-      const methodResult = await env.renderScriptString(
-        'extends none\nmethod buildValue()\n  return 1\nendmethod\nreturn this.buildValue()',
-        {}
-      );
+    it('accepts script extends none as a parentless inheritance participant', async function () {
+      const props = compileProps('extends none\nreturn "ok"', {
+        scriptMode: true,
+        name: 'script-none.script'
+      });
+      const parent = await props.resolveInheritanceParent(null, null, runtime, null);
 
-      expect(plainResult).to.be('ok');
-      expect(methodResult).to.be(1);
+      expect(Object.keys(props).sort()).to.eql(['inheritanceSpec', 'resolveInheritanceParent', 'root']);
+      expect(parent).to.eql({ parentTemplateOrScript: null, origin: null });
     });
 
     it('rejects template extends none through the public template compiler', function () {
@@ -71,19 +80,127 @@ describe('Inheritance rebuild', function () {
     });
   });
 
-  describe('analysis and validation', function () {
-    it('lets inherited methods and template blocks read render context by default', async function () {
-      const scriptResult = await env.renderScriptString(
-        'method title()\n  return siteName\nendmethod\nreturn this.title()',
-        { siteName: 'Docs' }
-      );
-      const templateResult = await env.renderTemplateString(
-        '{% block body %}{{ siteName }}{% endblock %}',
-        { siteName: 'Docs' }
-      );
+  describe('compiled ABI shape', function () {
+    const removedStartupFragments = [
+      'b___setup__',
+      'runCompiledRootStartup',
+      '__rootStartupPromise',
+      'compositionMode',
+      'componentMode',
+      'extendsState'
+    ];
 
-      expect(scriptResult).to.be('Docs');
-      expect(templateResult).to.be('Docs');
+    it('keeps ordinary templates and scripts on the plain compiled shape', function () {
+      [
+        compileSource('Hello {{ name }}'),
+        compileSource('return "ok"', { scriptMode: true })
+      ].forEach((source) => {
+        const props = new Function('runtime', source)({});
+
+        expect(Object.keys(props).sort()).to.eql(['root']);
+        expect(source).not.to.contain('inheritanceSpec');
+        expect(source).not.to.contain('resolveInheritanceParent');
+        expect(source).not.to.contain('__constructor__');
+        expect(source).not.to.contain('inheritanceState');
+        removedStartupFragments.forEach((fragment) => {
+          expect(source).not.to.contain(fragment);
+        });
+      });
+    });
+
+    it('emits the exact participant ABI shape', function () {
+      const props = compileProps('method build()\n  return 1\nendmethod\nreturn this.build()', {
+        scriptMode: true,
+        name: 'shape.script'
+      });
+
+      expect(Object.keys(props).sort()).to.eql(['inheritanceSpec', 'resolveInheritanceParent', 'root']);
+      expect(Object.keys(props.inheritanceSpec).sort()).to.eql(['hasExtends', 'methodEntries', 'sharedSchema']);
+      expect(props.inheritanceSpec.setup).to.be(undefined);
+      expect(props.inheritanceSpec.invokedMethodRefs).to.be(undefined);
+      expect(props.resolveInheritanceParent.length).to.be(4);
+      expect(props.inheritanceSpec.methodEntries.build.origin.path).to.be('shape.script');
+    });
+
+    it('emits participant ABI for every participation reason', function () {
+      [
+        ['{% extends "base.njk" %}{% block body %}x{% endblock %}', {}],
+        ['{% extends parentTemplate %}{% block body %}x{% endblock %}', {}],
+        ['{% block body %}x{% endblock %}', {}],
+        ['{{ this.theme }}', {}],
+        ['shared var theme\nreturn this.theme', { scriptMode: true }],
+        ['method body()\n  return "x"\nendmethod\nreturn this.body()', { scriptMode: true }],
+        ['return this.body()', { scriptMode: true }],
+        ['method body()\n  return super()\nendmethod\nreturn this.body()', { scriptMode: true }]
+      ].forEach(([source, options]) => {
+        const props = compileProps(source, options);
+        expect(Object.keys(props).sort()).to.eql(['inheritanceSpec', 'resolveInheritanceParent', 'root']);
+      });
+    });
+
+    it('emits no removed setup/startup constructs for participants', function () {
+      const source = compileSource('{% extends parentTemplate %}{% block body %}x{% endblock %}');
+
+      removedStartupFragments.forEach((fragment) => {
+        expect(source).not.to.contain(fragment);
+      });
+      expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, origin)');
+      expect(source).to.contain('function root(env, context, runtime, cb)');
+    });
+
+    it('emits constructor entries only for concrete constructor bodies', function () {
+      const concreteScript = compileProps('extends none\nreturn "ok"', { scriptMode: true });
+      const concreteTemplate = compileProps('{% block body %}x{% endblock %}');
+      const extendingTemplateWithText = compileProps('{% extends "base.njk" %}child text{% block body %}x{% endblock %}');
+      const declarationOnlyTemplate = compileProps('{% extends "base.njk" %}{% block body %}x{% endblock %}');
+
+      expect(concreteScript.inheritanceSpec.methodEntries.__constructor__.isConstructor).to.be(true);
+      expect(concreteTemplate.inheritanceSpec.methodEntries.__constructor__.isConstructor).to.be(true);
+      expect(extendingTemplateWithText.inheritanceSpec.methodEntries.__constructor__.isConstructor).to.be(true);
+      expect(extendingTemplateWithText.inheritanceSpec.methodEntries.__constructor__.origin.path).to.be('compiled.njk');
+      expect(declarationOnlyTemplate.inheritanceSpec.methodEntries.__constructor__).to.be(undefined);
+    });
+
+    it('returns data-only parent selection from a no-extends resolver', async function () {
+      const props = compileProps('method build()\n  return 1\nendmethod\nreturn this.build()', {
+        scriptMode: true
+      });
+
+      expect(await props.resolveInheritanceParent(null, null, runtime, null)).to.eql({
+        parentTemplateOrScript: null,
+        origin: null
+      });
+    });
+
+    it('uses runtime callback promisification for async extension tags', function () {
+      class AsyncTagExtension {
+        constructor() {
+          this.tags = ['atag'];
+        }
+
+        parse(parserInstance) {
+          const token = parserInstance.nextToken();
+          parserInstance.advanceAfterBlockEnd(token.value);
+          return new nodes.CallExtensionAsync(this, 'run');
+        }
+      }
+
+      const extensionEnv = new AsyncEnvironment();
+      extensionEnv.addExtension('AsyncTagExtension', new AsyncTagExtension());
+      const source = new AsyncTemplate('{% atag %}', extensionEnv, 'async-tag.njk').compileSource();
+
+      expect(source).to.contain('runtime.invokeCallbackExtension');
+      expect(source).not.to.contain('function b___promisify');
+    });
+  });
+
+  describe('analysis and validation', function () {
+    it('lets inherited methods and template blocks read render context by default', function () {
+      const scriptFacts = analyzeSource('method title()\n  return siteName\nendmethod\nreturn this.title()', { scriptMode: true });
+      const templateFacts = analyzeSource('{% block body %}{{ siteName }}{% endblock %}');
+
+      expect(scriptFacts.methodEntries[0].name).to.be('title');
+      expect(templateFacts.methodEntries[0].name).to.be('body');
     });
 
     it('uses only ordered argument names for block signatures', function () {
@@ -92,19 +209,25 @@ describe('Inheritance rebuild', function () {
       expect(facts.methodEntries[0].signature).to.eql({ argNames: ['user'] });
     });
 
-    it('passes named block placement bindings by declared argument name', async function () {
-      const result = await env.renderTemplateString(
-        '{% set selectedUser = "Ada" %}{% block item(user = selectedUser) %}{{ user }}{% endblock %}',
-        {}
-      );
+    it('emits named block placement bindings by declared argument name', function () {
+      const props = compileProps('{% set selectedUser = "Ada" %}{% block item(user = selectedUser) %}{{ user }}{% endblock %}');
 
-      expect(result).to.be('Ada');
+      expect(props.inheritanceSpec.methodEntries.item.signature).to.eql({ argNames: ['user'] });
     });
 
-    it('rejects mixed positional and named block placement bindings', function () {
-      expect(function () {
-        new AsyncTemplate('{% block item(user, label = selectedLabel) %}x{% endblock %}', env, 'mixed-block-bindings.njk').compile();
-      }).to.throwException(/cannot mix positional and named bindings/);
+    it('supports mixed positional and named block placement bindings', function () {
+      const facts = analyzeSource('{% block item(user, label = selectedLabel) %}x{% endblock %}');
+
+      expect(facts.methodEntries[0].signature).to.eql({ argNames: ['user', 'label'] });
+    });
+
+    it('supports keyword defaults in script method signatures', function () {
+      const props = compileProps(
+        'method label(user, fallback = "guest")\n  return fallback\nendmethod\nreturn this.label(profile)',
+        { scriptMode: true }
+      );
+
+      expect(props.inheritanceSpec.methodEntries.label.signature).to.eql({ argNames: ['user', 'fallback'] });
     });
 
     it('requires script this shared access to target a shared declaration', function () {
@@ -116,6 +239,20 @@ describe('Inheritance rebuild', function () {
           new Script(source, env, 'script-missing-shared.script').compileSource();
         }).to.throwException(/this\.theme requires a root shared declaration/);
       });
+    });
+
+    it('rejects __proto__ inheritance names before they reach generated maps', function () {
+      expect(function () {
+        new Script('method __proto__()\n  return 1\nendmethod', env, 'proto-method.script').compileSource();
+      }).to.throwException(/reserved/);
+
+      expect(function () {
+        new Script('shared var __proto__\nextends none', env, 'proto-shared.script').compileSource();
+      }).to.throwException(/reserved/);
+
+      expect(function () {
+        new AsyncTemplate('{% block __proto__ %}x{% endblock %}', env, 'proto-block.njk').compileSource();
+      }).to.throwException(/reserved/);
     });
 
     it('rejects bare script method references as inherited method lookups', function () {
@@ -136,15 +273,15 @@ describe('Inheritance rebuild', function () {
       });
     });
 
-    it('treats template this as the reserved inheritance surface', async function () {
-      const result = await env.renderTemplateString('{{ this.data }}', { this: { data: 42 } });
+    it('treats template this as the reserved inheritance surface', function () {
       const facts = analyzeSource('{{ this.data }}');
+      const props = compileProps('{{ this.data }}');
 
-      expect(result).to.be('');
       expect(facts.participates).to.be(true);
       expect(facts.sharedSchemaInputs).to.eql([
         { name: 'data', type: 'var' }
       ]);
+      expect(props.inheritanceSpec.sharedSchema).to.eql({ data: 'var' });
     });
 
     it('allows top-level dynamic template extends to compile', function () {
@@ -166,9 +303,10 @@ describe('Inheritance rebuild', function () {
       });
     });
 
-    it('rejects dynamic template extends resolving to no parent at runtime', async function () {
+    it('rejects dynamic template extends resolving to no parent through the resolver', async function () {
+      const props = compileProps('{% extends parentTemplate %}{% block body %}x{% endblock %}');
       try {
-        await env.renderTemplateString('{% extends parentTemplate %}{% block body %}x{% endblock %}', { parentTemplate: null });
+        await props.resolveInheritanceParent(null, { lookup: () => null, path: 'dynamic-null.njk' }, runtime, null);
         expect().fail('Expected null dynamic template extends to fail');
       } catch (error) {
         expect(String(error)).to.contain('template extends must select a parent template');
@@ -240,10 +378,10 @@ describe('Inheritance rebuild', function () {
       ]);
     });
 
-    it('renders implicit template shared vars', async function () {
-      const result = await env.renderTemplateString('{% set this.theme = "dark" %}{{ this.theme }}');
+    it('emits implicit template shared vars in the compiled shared schema', function () {
+      const props = compileProps('{% set this.theme = "dark" %}{{ this.theme }}');
 
-      expect(result).to.be('dark');
+      expect(props.inheritanceSpec.sharedSchema).to.eql({ theme: 'var' });
     });
 
     it('rejects template shared and block name collisions', function () {
@@ -253,35 +391,46 @@ describe('Inheritance rebuild', function () {
     });
 
     it('resolves dynamic template extends from context before constructor locals', async function () {
-      const loader = new StringLoader();
-      loader.addTemplate('base.njk', 'Base:{% block body %}base{% endblock %}');
-      const templateEnv = new AsyncEnvironment(loader);
-      const result = await templateEnv.renderTemplateString(
-        '{% extends parentTemplate %}{% set parentTemplate = "ignored.njk" %}{% block body %}child{% endblock %}',
-        { parentTemplate: 'base.njk' }
-      );
+      const props = compileProps('{% extends parentTemplate %}{% set parentTemplate = "ignored.njk" %}{% block body %}child{% endblock %}');
+      const calls = [];
+      const parent = { name: 'base' };
+      const origin = { path: 'caller-origin.njk' };
+      const result = await props.resolveInheritanceParent({
+        async getTemplate(name) {
+          calls.push(name);
+          return parent;
+        }
+      }, {
+        lookup(name) {
+          return name === 'parentTemplate' ? 'base.njk' : undefined;
+        },
+        path: 'child.njk'
+      }, runtime, origin);
 
-      expect(result).to.be('Base:child');
+      expect(calls).to.eql(['base.njk']);
+      expect(result.parentTemplateOrScript).to.be(parent);
+      expect(result.origin).to.be(origin);
     });
 
     it('fails dynamic template extends naturally when context does not provide the target', async function () {
+      const props = compileProps('{% extends parentTemplate %}{% set parentTemplate = "base.njk" %}{% block body %}child{% endblock %}');
       try {
-        await env.renderTemplateString('{% extends parentTemplate %}{% set parentTemplate = "base.njk" %}{% block body %}child{% endblock %}');
+        await props.resolveInheritanceParent(null, {
+          lookup() {
+            return undefined;
+          },
+          path: 'missing-dynamic.njk'
+        }, runtime, null);
         expect().fail('Expected missing dynamic template extends target to fail');
       } catch (error) {
         expect(String(error)).to.contain('template extends must select a parent template');
       }
     });
 
-    it('ignores whitespace output before template extends', async function () {
-      const loader = new StringLoader();
-      loader.addTemplate('base.njk', 'Base:{% block body %}base{% endblock %}');
-      const templateEnv = new AsyncEnvironment(loader);
-      const result = await templateEnv.renderTemplateString(
-        '\n  {# comment #}\n{% extends "base.njk" %}{% block body %}child{% endblock %}'
-      );
+    it('ignores whitespace output before template extends', function () {
+      const props = compileProps('\n  {# comment #}\n{% extends "base.njk" %}{% block body %}child{% endblock %}');
 
-      expect(result).to.be('Base:child');
+      expect(props.inheritanceSpec.hasExtends).to.be(true);
     });
 
     it('computes exact inheritance participation facts', function () {
@@ -339,12 +488,26 @@ describe('Inheritance rebuild', function () {
 
       script.compile();
 
-      expect(script.inheritanceSpec.invokedMethodRefs.build.name).to.be('build');
-      expect(script.inheritanceSpec.invokedMethodRefs.decorate.name).to.be('decorate');
+      expect(script.inheritanceSpec.methodEntries.__constructor__.invokedMethodRefs.build.name).to.be('build');
+      expect(script.inheritanceSpec.methodEntries.__constructor__.invokedMethodRefs.decorate).to.be(undefined);
+      expect(script.inheritanceSpec.methodEntries.__constructor__.super).to.be(false);
       expect(script.inheritanceSpec.methodEntries.build.invokedMethodRefs.decorate.name).to.be('decorate');
       expect(script.inheritanceSpec.methodEntries.build.invokedMethodRefs.build).to.be(undefined);
       expect(script.inheritanceSpec.methodEntries.build.super).to.be(true);
       expect(script.inheritanceSpec.methodEntries.build.superOrigin.path).to.be('callable-metadata.script');
+    });
+
+    it('records root constructor super metadata through callable facts', function () {
+      const script = new Script(
+        'extends "base.script"\nreturn super()',
+        env,
+        'root-constructor-super.script'
+      );
+
+      script.compile();
+
+      expect(script.inheritanceSpec.methodEntries.__constructor__.super).to.be(true);
+      expect(script.inheritanceSpec.methodEntries.__constructor__.superOrigin.path).to.be('root-constructor-super.script');
     });
   });
 });

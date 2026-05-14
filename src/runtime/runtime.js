@@ -17,6 +17,7 @@ export * from './errors.js';
 export * from './resolve.js';
 export * from './command-buffer.js';
 export * from './frame.js';
+export * from './inheritance/callable.js';
 export * from './inheritance-legacy/state.js';
 export * from './inheritance-legacy/bootstrap.js';
 export * from './inheritance-legacy/call.js';

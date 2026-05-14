@@ -196,7 +196,7 @@ class CompileMacro {
   }
 
   _parseMacroSignature(node) {
-    const signature = this.compiler._parseCallableSignature(node.args, {
+    const signature = this.compiler.getCallableSignatureFacts(node.args, {
       allowKeywordArgs: true,
       symbolsOnly: true,
       label: 'macro signature',
@@ -284,12 +284,7 @@ class CompileMacro {
   }
 
   _emitMacroBindingInit(bufferId, name, emitValueExpression, positionNode = null) {
-    const compiler = this.compiler;
-    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
-    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    compiler.emit(`${bufferId}.addCommand(new runtime.VarCommand({ channelName: '${name}', args: [`);
-    emitValueExpression();
-    compiler.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), "${name}");`);
+    this.compiler.channel.emitLocalVarChannelInit(bufferId, name, emitValueExpression, positionNode);
   }
 
   _emitAsyncMacroBindings({ node, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId }) {
@@ -308,13 +303,15 @@ class CompileMacro {
       });
     }
 
-    compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "caller", "var", context, null);`);
+    // Declare all local argument channels before emitting init commands, so
+    // default expressions can read any parameter channel in the macro frame.
+    compiler.channel.emitLocalVarChannelDeclaration(bufferId, 'caller');
     args.forEach((arg) => {
-      compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "${arg.value}", "var", context, null);`);
+      compiler.channel.emitLocalVarChannelDeclaration(bufferId, arg.value);
     });
     if (kwargs) {
       kwargs.children.forEach((pair) => {
-        compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "${pair.key.value}", "var", context, null);`);
+        compiler.channel.emitLocalVarChannelDeclaration(bufferId, pair.key.value);
       });
     }
 

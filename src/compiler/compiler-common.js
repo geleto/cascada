@@ -180,12 +180,49 @@ class CompilerCommon extends Obj {
 
       args.push(arg);
     });
-
     return {
       args,
       kwargs,
       positionalNames: args.map((n) => n.value),
       keywordNames: ((kwargs && kwargs.children) || []).map((n) => n.key.value)
+    };
+  }
+
+  getCallableSignatureFacts(argsNode, opts = {}) {
+    const signature = this._parseCallableSignature(argsNode, opts);
+    const symbolsOnly = !!opts.symbolsOnly;
+    const label = opts.label || 'callable signature';
+    const ownerNode = opts.ownerNode || argsNode;
+    const keywordNameNodes = [];
+    const keywordDefaults = [];
+
+    if (signature.kwargs) {
+      signature.kwargs.children.forEach((pair) => {
+        if (symbolsOnly && !(pair.key instanceof nodes.Symbol)) {
+          this.fail(
+            `${label} only supports identifier arguments`,
+            pair.key.lineno,
+            pair.key.colno,
+            ownerNode,
+            pair.key
+          );
+        }
+        keywordNameNodes.push(pair.key);
+        keywordDefaults.push({
+          name: this.analysis.getBaseChannelName(pair.key.value),
+          valueNode: pair.value
+        });
+      });
+    }
+
+    const positionalArgNames = signature.positionalNames.map((name) => this.analysis.getBaseChannelName(name));
+
+    return {
+      ...signature,
+      argNames: positionalArgNames.concat(keywordDefaults.map((entry) => entry.name)),
+      argNameNodes: signature.args.concat(keywordNameNodes),
+      placementArgNodes: signature.args.concat(keywordDefaults.map((entry) => entry.valueNode)),
+      keywordDefaults
     };
   }
 

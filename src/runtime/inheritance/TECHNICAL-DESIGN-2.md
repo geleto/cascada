@@ -331,13 +331,13 @@ Inheritance participants expose stable properties:
 
 ```js
 {
-  rootFunction,             // public render entry
+  root,                     // public render entry
   inheritanceSpec,          // raw compiler metadata; no executable side effects
   resolveInheritanceParent  // local immediate-parent resolver
 }
 ```
 
-`rootFunction` is the public render entry and a thin orchestrator over the
+`root` is the public render entry and a thin orchestrator over the
 lifecycle. It must not accept lifecycle mode flags.
 
 Precompiled artifacts must be regenerated for this ABI. The implementation
@@ -400,7 +400,7 @@ Use analysis facts to emit small direct code:
 - callable with no `super()`: no generated `super()` call path in that callable
 
 Do not let this optimization fragment the participant ABI. Every inheritance
-participant still exposes the same `{ rootFunction, inheritanceSpec,
+participant still exposes the same `{ root, inheritanceSpec,
 resolveInheritanceParent }` shape.
 
 The plain-file decision must be rock-solid. A template/script that does not use
@@ -450,7 +450,7 @@ and returns:
 
 `parentTemplateOrScript` is the selected parent compiled template/script
 object. The loader reads its `inheritanceSpec` and
-`resolveInheritanceParent`; it must not execute its public `rootFunction`
+`resolveInheritanceParent`; it must not execute its public `root`
 during loading.
 
 It must not:
@@ -549,7 +549,9 @@ Rules:
   placed
 - named placement bindings affect placement arguments only; the callable
   signature remains the ordered list of declared block argument names
-- positional and named placement bindings cannot be mixed in one block
+- positional and named placement bindings may be mixed, following the regular
+  function/macro argument model; named placement bindings are normalized to the
+  same ordered argument frame before invocation
 
 The compiler must reject unsupported syntax early. The runtime must not carry
 `withContext`, context-mode, or implicit-placement named-binding metadata.
@@ -754,7 +756,6 @@ type CompiledMethodEntry = {
   name: string,
   fn: Function,
   signature: { argNames: string[] },
-  ownerKey: string,
   origin: SourceOrigin | null,
   isConstructor: boolean,
   super: boolean,
@@ -772,7 +773,6 @@ type RuntimeMethodEntry = {
   name: string,
   fn: Function,
   signature: { argNames: string[] },
-  ownerKey: string,
   origin: SourceOrigin | null,
   isConstructor: boolean,
   ownerEntry: RuntimeOwnerEntry,
@@ -792,6 +792,12 @@ which loaded owner entry owns the body. Execution uses that owner metadata
 without scanning unrelated state at execution time.
 `ownerEntry.isStructuralTemplate` is true only for a non-extending template
 owner that places document structure.
+
+Compiled method entries do not carry owner string keys. Finalization already
+processes loaded template/script entries as objects in the selected chain, so
+it must attach ownership by object reference to the loaded owner entry. String
+keys are diagnostic labels only and must not be used for local dispatch,
+override resolution, or `super` wiring.
 
 ## Invocation And Linking
 
@@ -883,6 +889,8 @@ existed.
   shared-schema finalization, footprint merging, runtime-entry pruning
 - `invoke.js`: inherited callable invocation, `super()`, argument frames,
   invocation-buffer admission
+- `callable.js`: compiler-private callable resolver/prologue helpers introduced
+  before final invocation ownership is complete
 - shared argument helper module or existing macro helper extraction:
   argument-frame mapping and local `var` channel initialization reused by macros
   and inheritance callables
@@ -1297,7 +1305,8 @@ Goal:
 - make callable signatures consist only of ordered argument names
 - support template block placement arguments, including named placement
   bindings such as `{% block item(user = selectedUser) %}`
-- reject mixed positional/named block placement bindings
+- support mixed positional/named block placement bindings using the same
+  argument-channel initialization path as functions/macros
 - reject all template channel declarations, including `shared var`
 - allow each template to use a top-level dynamic `extends`
 - reject dynamic template `extends` nested inside runtime control flow
@@ -1315,7 +1324,8 @@ Tests:
 - inherited methods and template blocks read instance context by default
 - block signatures compare only argument names
 - named block placement bindings pass local values by declared argument name
-- mixed positional/named block placement bindings fail
+- mixed positional/named block placement bindings compile to the ordered
+  callable argument frame
 - template `shared var`, `shared text`, `shared data`, and `shared sequence`
   declarations fail
 - non-shared template channel declarations fail
@@ -1343,12 +1353,12 @@ Goal:
 - freeze the final compiled inheritance ABI before runtime implementation
 - analysis decides whether a file participates in inheritance
 - plain non-participating templates/scripts do not emit inheritance ABI
-- participating templates/scripts expose the final `{ rootFunction, inheritanceSpec,
+- participating templates/scripts expose the final `{ root, inheritanceSpec,
   resolveInheritanceParent }` shape
 - constructor code is exposed only as the `__constructor__` method entry inside
   `inheritanceSpec.methodEntries`
 - `inheritanceSpec` is data-only and contains no executable setup function
-- generated `rootFunction` functions contain no lifecycle mode flags
+- generated `root` functions contain no lifecycle mode flags
 - generated inheritance code uses only the target lifecycle helpers
 - remove old compiler setup/startup emission paths, including `b___setup__`,
   `runtime.runCompiledRootStartup(...)`, cross-phase root startup promises, and
@@ -1386,8 +1396,9 @@ Tests:
   data only
 - `resolveInheritanceParent` has the final ABI
   `(env, context, runtime, origin)` and does not receive inheritance state
-- `inheritanceSpec.methodEntries.__constructor__` exists for templates/scripts
-  and has the ordinary callable entry shape
+- `inheritanceSpec.methodEntries.__constructor__` exists only when the
+  template/script has concrete constructor body code and has the ordinary
+  callable entry shape
 - emitted `inheritanceSpec` has no callable setup properties
 
 ### Step 2: Metadata Loader
@@ -1407,12 +1418,15 @@ Goal:
 - `LoadedInheritanceChain` is built
 - loader treats `LoadedInheritanceChain` as an immutable value and does not
   mutate reusable state
+- parent-selection helper code lives in the clean inheritance runtime module;
+  compiled `resolveInheritanceParent` only evaluates any dynamic expression and
+  delegates parent loading, null handling, and result shaping
 
 Tests:
 
 - static three-level template chain loads specs without executing constructor code
 - static script chain loads specs without executing constructor code
-- loader tests fail if a compiled `rootFunction` is called during loading
+- loader tests fail if a compiled `root` is called during loading
 - loader does not require or create a `CommandBuffer`
 - static inheritance cycles fail during loading with useful source context
 - dynamic inheritance cycles fail during loading with useful source context
@@ -1450,6 +1464,9 @@ Goal:
 - shared schema is finalized before execution
 - runtime method entries are pruned to execution-time fields
 - recoverable metadata errors are collected where practical
+- replace transitional shared-channel bootstrap helpers with clean `shared.js`
+  runtime operations; compiler output must not call legacy shared-buffer helpers
+  once finalization owns shared schema setup
 
 Tests:
 
@@ -1502,9 +1519,18 @@ Goal:
 - compiled `this.method(...)` and `this.blockName(...)` consume the finalized
   dispatch table
 - compiled `super(...)` consumes `methodData.super`
+- compiled `super(...)` must not pass owner path labels or owner string keys;
+  object ownership comes from the finalized executing `methodData`
 - invocation uses the shared argument-frame/local-argument binding primitive
 - wire compiler-private inheritance runtime helpers onto the runtime object used
   by generated code
+- move callable entry prologue policy into clean invocation helpers:
+  original-argument fallback, callable context creation, argument-frame mapping,
+  and entry-local channel initialization should be runtime-owned helpers reused
+  by scripts/templates
+- keep compiler output limited to evaluating argument/default expressions,
+  declaring entry-local channels, and calling runtime invocation/prologue
+  helpers with compiled metadata
 
 Tests:
 
@@ -1557,7 +1583,7 @@ Authoritative sections:
 
 Goal:
 
-- public `rootFunction` becomes a thin lifecycle orchestrator
+- public `root` becomes a thin lifecycle orchestrator
 - direct render uses create instance -> invoke `__constructor__` -> finish
 - direct render uses the same `InheritanceInstance.create(...)` path as
   components
@@ -1705,7 +1731,7 @@ Tests:
 - no `startup.js` or old lifecycle-mode helper remains unless the file/helper
   is renamed and justified by this design
 - tests do not depend on private command-buffer/channel fields
-- browser/precompiled fixtures contain the `rootFunction` ABI
+- browser/precompiled fixtures contain the `root` ABI
 - browser/precompiled fixtures regenerated from target compiler output
 - provisional loader/finalization/invocation unit tests are either promoted to
   integration tests, retained with an invariant-specific reason, or deleted

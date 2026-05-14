@@ -8,6 +8,18 @@ class CompileChannel {
     this.compiler = compiler;
   }
 
+  emitLocalVarChannelDeclaration(bufferId, name) {
+    this.compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "${name}", "var", context, null);`);
+  }
+
+  emitLocalVarChannelInit(bufferId, name, emitValueExpression, positionNode = null) {
+    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
+    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
+    this.compiler.emit(`${bufferId}.addCommand(new runtime.VarCommand({ channelName: ${JSON.stringify(name)}, args: [`);
+    emitValueExpression();
+    this.compiler.emit.line(`], pos: {lineno: ${lineno}, colno: ${colno}} }), ${JSON.stringify(name)});`);
+  }
+
   getStaticLiteralPathSegments(pathNode) {
     if (!pathNode || !(pathNode instanceof nodes.Array) || !Array.isArray(pathNode.children)) {
       return null;

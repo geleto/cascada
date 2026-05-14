@@ -16,7 +16,8 @@ const RESERVED_DECLARATION_NAMES = new Set([
   RETURN_CHANNEL_NAME,
   RETURN_IS_UNSET_FUNCTION_NAME,
   RESERVED_RETURN_SENTINEL_SYMBOL_NAME,
-  '__constructor__'
+  '__constructor__',
+  '__proto__'
 ]);
 const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
 

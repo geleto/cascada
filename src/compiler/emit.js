@@ -75,7 +75,7 @@ class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, runtime, cb, compositionMode = false, parentBuffer = null, inheritanceState = null, componentMode = false) {`);
+        this.line(`function ${name}(env, context, runtime, cb) {`);
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
@@ -90,21 +90,14 @@ class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
-      const linkedChannelsArg = Array.isArray(linkedChannels) && linkedChannels.length > 0
-        ? JSON.stringify(linkedChannels)
-        : 'null';
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
-        `(compositionMode && parentBuffer)` +
-        ` ? parentBuffer` +
-        ` : new runtime.CommandBuffer(context, parentBuffer, ${linkedChannelsArg}, parentBuffer);`
+        `new runtime.CommandBuffer(context, null, null, null);`
       );
       if (!this.compiler.scriptMode) {
         this.line(
           `let ${this.compiler.buffer.currentTextChannelVar} = ` +
-          `((compositionMode && parentBuffer && typeof ${this.compiler.buffer.currentBuffer}.getChannel === "function")` +
-          ` ? ${this.compiler.buffer.currentBuffer}.getChannel("${this.compiler.buffer.currentTextChannelName}")` +
-          ` : runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${this.compiler.buffer.currentTextChannelName}", "text", context, null));`
+          `runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${this.compiler.buffer.currentTextChannelName}", "text", context, null);`
         );
       }
     } else {
