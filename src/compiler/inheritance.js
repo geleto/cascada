@@ -349,9 +349,9 @@ class CompileInheritance {
     if (!this.compiler.scriptMode) {
       this.emit('runtime.markSafe(');
     }
-    this.emit(`runtime.invokeInheritedCallable(inheritanceState, "${methodName}", `);
+    this.emit(`currentInstance.invokeFromCurrentBuffer("${methodName}", `);
     this.compiler._compileAggregate(argsNode, null, '[', ']', false, false);
-    this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
+    this.emit(`, context, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
     if (!this.compiler.scriptMode) {
       this.emit(')');
     }
@@ -487,7 +487,7 @@ class CompileInheritance {
 
   emitSharedDeclaration(declaration) {
     this.emit(
-      `runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedRootBuffer(${this.compiler.buffer.currentBuffer}, inheritanceState), ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context`
+      `runtime.declareInheritanceSharedChannel(inheritanceState.sharedRootBuffer, ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context`
     );
     if (declaration.initializer) {
       this.emit(', ');
@@ -541,7 +541,7 @@ class CompileInheritance {
       return null;
     }
 
-    const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined', 'inheritanceState = null', 'methodData'];
+    const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined', 'inheritanceState = null', 'methodData', 'currentInstance = null'];
     this.emit.beginEntryFunction(constructorNodes.originNode, 'b___constructor__', null, extraParams);
     if (this.compiler.scriptMode) {
       this.compiler.return.emitDeclareChannel(this.compiler.buffer.currentBuffer);
@@ -633,8 +633,8 @@ class CompileInheritance {
     this.emit.line(
       `runtime.linkCurrentBufferToParentChannels(` +
       `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
-      `runtime.getCallableLinkedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(callableNode))}), ` +
-      `runtime.getCallableMutatedChannels(methodData, ${JSON.stringify(this.compiler._createErrorContext(callableNode))})` +
+      `methodData.mergedLinkedChannels, ` +
+      `methodData.mergedMutatedChannels` +
       `);`
     );
     if (!isScriptMethod) {
@@ -683,7 +683,7 @@ class CompileInheritance {
     // This only wires the entry-local command buffer to its immediate parent
     // invocation buffer. Caller-side inherited invocation linking is resolved
     // separately from helper-resolved method metadata at runtime.
-    const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined', 'inheritanceState = null', 'methodData'];
+    const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined', 'inheritanceState = null', 'methodData', 'currentInstance = null'];
     this.emit.beginEntryFunction(
       callableNode,
       `b_${name}`,
@@ -939,17 +939,22 @@ class CompileInheritance {
     }
 
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-    // TODO(Step 4): The clean super() path must use finalized methodData.super.
-    // This source label is only for the transitional legacy helper bridge.
-    const ownerPathJson = JSON.stringify(this.getOwnerContextPath());
     if (id) {
       this.emit(`let ${id} = `);
     } else if (!isScriptMethod) {
       this.emit('runtime.markSafe(');
     }
-    this.emit(`runtime.invokeSuperCallable(inheritanceState, "${name}", ${ownerPathJson}, `);
-    this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
-    this.emit(`, context, env, runtime, cb, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})`);
+    this.emit('currentInstance.invokeSuper(methodData, ');
+    if (args.length === 0) {
+      this.emit('null');
+    } else {
+      this.compiler._compileAggregate(positionalArgsNode, null, '[', ']', false, false);
+    }
+    this.emit(`, context, ${this.compiler.buffer.currentBuffer}, ${errorContextJson}`);
+    if (args.length === 0) {
+      this.emit(', blockPayload ? blockPayload.originalArgs : null');
+    }
+    this.emit(')');
     if (!id) {
       if (!isScriptMethod) {
         this.emit(')');

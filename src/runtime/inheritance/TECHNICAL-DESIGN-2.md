@@ -271,6 +271,41 @@ Scripts:
 - For templates, `finishRender(entryResult)` ignores `entryResult` for output
   purposes and returns the text-channel snapshot.
 
+Generated participant roots must be thin orchestration only. The root function
+is invoked as the compiled template/script object's `rootRenderFunc`, so it can
+use `this` as the entry template/script object:
+
+```js
+function root(env, context, runtime, cb) {
+  (async () => {
+    const instance = await runtime.InheritanceInstance.create({
+      entryTemplateOrScript: this,
+      env,
+      context,
+      runtime,
+      cb
+    });
+    const entryResult = await instance.invoke("__constructor__", [], rootOrigin);
+    return instance.finishRender(entryResult);
+  })().then((result) => cb(null, result), cb);
+}
+```
+
+The actual generated code may use `async`/`try`/`catch` instead of `.then(...)`,
+but it must keep this ownership shape:
+
+1. create one `InheritanceInstance`
+2. invoke `__constructor__` through that instance
+3. complete via `instance.finishRender(entryResult)`
+
+It must not duplicate load/finalize/shared-buffer setup inside `root`, and it
+must not use `props.root`, `props.rootFunction`, or any fallback between the two
+compiled-root property names.
+If a later environment call path stops binding `this` to the compiled
+template/script object, the environment must pass the owner object explicitly;
+the generated root still must receive one entry object, not rediscover itself
+through alternate property names.
+
 Forbidden:
 
 - rerun constructors
@@ -665,7 +700,7 @@ Creation owns load + finalize + buffer setup:
 
 ```js
 const instance = await InheritanceInstance.create({
-  entryTemplateOrScript,
+  entryTemplateOrScript, // direct render passes the compiled template/script object
   env,
   context,
   runtime,
@@ -694,6 +729,15 @@ Direct template/script rendering creates an instance, invokes `__constructor__`,
 then calls `finishRender(entryResult)`. Component creation creates an instance,
 schedules the same `__constructor__` method call in component command order,
 and calls `close()` only when the component lifetime ends.
+
+Direct render and component creation share the same instance primitive, but they
+do not share ownership timing:
+
+- direct render creates the instance, invokes `__constructor__` immediately, and
+  finishes it in the same public render call
+- component creation creates the instance and invokes `__constructor__` in
+  owner command order; Step 6 owns component close timing and caller-side
+  operation scheduling
 
 The loaded chain is the source of truth during loading/finalization. Do not
 store derived aliases for the entry template/script, parent-exists boolean, or
@@ -765,11 +809,11 @@ No-argument `super()` forwards the original frame exactly as received by the
 current callable. Explicit `super(user, fallbackUser)` evaluates the current
 local values and builds a fresh argument frame for the parent callable.
 
-Reuse boundary:
+Step 4 reuse boundary:
 
-- share low-level argument-frame mapping and local-argument-channel binding
-  primitives with async macro/function compilation
-- use that shared primitive for every callable argument surface:
+- inherited invocation mirrors async macro/function positional, keyword, and
+  default behavior, but keeps its own temporary mapper until Step 7
+- use the inherited-callable mapper for every inheritance callable surface:
   `instance.invoke(...)`, compiled `this.method(...)`, compiled
   `this.blockName(...)`, compiled `super(...)`, and structural inline block
   placement arguments
@@ -777,8 +821,11 @@ Reuse boundary:
   and context-isolation rules out of inherited invocation
 - keep inherited invocation in `invoke.js`; it consumes finalized dispatch
   entries, owner-relative `super` links, owner metadata, linked footprints, and
-  invocation buffers, then calls the shared argument primitive rather than
+  invocation buffers, then calls the inherited-callable mapper rather than
   `runtime.makeMacro` or macro-specific compiler wrappers
+
+Step 7 should deduplicate the inherited-callable mapper with the macro/function
+argument helper once the final invocation surfaces are stable.
 
 ## Method Entry Shapes
 
@@ -870,9 +917,8 @@ preserve ordered effects created by the current callable, while still being
 rooted in the same instance shared/root buffer.
 
 Final invocation code must choose the exact buffer at the call site. Do not
-keep a runtime helper that guesses between `currentBuffer` and
-`sharedRootBuffer`; that transitional selector exists only until Step 4 owns
-instance invocation.
+keep or reintroduce a runtime helper that guesses between `currentBuffer` and
+`sharedRootBuffer`.
 
 The invocation path must not branch on naming conventions such as
 `methodName === "__constructor__"` when metadata can carry the invariant
@@ -881,30 +927,44 @@ directly. Constructor-specific behavior should be represented by
 
 ### Call Paths
 
-`instance.invoke(methodName, args, origin)` is the external method execution
-surface. It performs a direct lookup in the already-finalized dispatch table:
-`instance.runtimeState.methods[methodName]`. That entry is already the
-most-derived implementation. Invocation then builds the argument frame from
-positional arguments, creates an invocation buffer linked to the instance
-shared/root buffer, links the target's exact merged footprints, and calls the
-target `fn` with the instance environment, instance context, runtime/callback,
-invocation buffer, argument frame, and method data.
+`InheritanceInstance` owns method lookup, invocation-buffer parent selection,
+and super dispatch. `instance.invoke(methodName, args, origin)` is the
+external method execution surface. It performs a direct lookup in the
+already-finalized dispatch table: `instance.runtimeState.methods[methodName]`.
+That entry is already the most-derived implementation. Invocation then builds
+the argument frame from positional arguments, creates an invocation buffer
+linked to the instance shared/root buffer, links the target's exact merged
+footprints, and calls the target `fn` with the instance environment, instance
+context, runtime/callback, invocation buffer, argument frame, and method data.
 
 Compiled `this.name(...)` calls always invoke through the same finalized table
 entry as `instance.invoke(...)`, but their invocation buffer is linked to the
 currently executing invocation buffer:
 
 ```js
-runtime.invokeInheritedCallable(currentInstance, "name", args, origin)
+currentInstance.invokeFromCurrentBuffer("name", args, context, currentBuffer, origin)
 ```
+
+Generated code calls the current instance directly; there is no separate
+runtime wrapper for method lookup or buffer construction.
 
 Compiled `super(...)` calls do not resolve by name. They receive the executing
 method's `methodData`, read `methodData.super`, and invoke that exact parent
 entry:
 
 ```js
-runtime.invokeSuperCallable(currentInstance, methodData, args, origin)
+currentInstance.invokeSuper(
+  methodData,
+  args,
+  context,
+  currentBuffer,
+  origin,
+  originalArgsWhenForwarding
+)
 ```
+
+Super target validation and invocation-buffer construction belong to the
+instance.
 
 Argument rules:
 
@@ -933,18 +993,21 @@ existed.
 
 - `load.js`: selected-chain discovery, cycle detection, raw spec registration,
   selected-chain construction
-- `instance.js`: `InheritanceInstance` lifecycle owner: `create(...)`,
-  `invoke(...)`, `finishRender(...)`, `close()`, closed-state checks, buffer
+- `instance.js`: `InheritanceInstance` lifecycle and invocation owner:
+  `create(...)`, `invoke(...)`, internal-current-buffer invocation, super
+  invocation, `finishRender(...)`, `close()`, closed-state checks, buffer
   ownership, and direct render completion
 - `finalize.js`: metadata validation, method-table construction, super wiring,
   shared-schema finalization, footprint merging, runtime-entry pruning
-- `invoke.js`: inherited callable invocation, `super()`, argument frames,
-  invocation-buffer admission
+- `invoke.js`: inherited-callable argument-frame mapping while it waits for
+  Step 7 macro/callable deduplication. It must not own lookup, footprint
+  access, buffer choice, or `super` dispatch; those belong to compiled
+  metadata and `InheritanceInstance`.
 - `callable.js`: compiler-private callable resolver/prologue helpers introduced
   before final invocation ownership is complete
-- shared argument helper module or existing macro helper extraction:
+- Step 7 shared argument helper module or existing macro helper extraction:
   argument-frame mapping and local `var` channel initialization reused by macros
-  and inheritance callables
+  and inheritance callables after the temporary Step 4 mapper is removed
 - `shared.js`: shared schema/runtime operations and shared-root buffer access
 - `component.js`: component instance lifecycle, command-based operations,
   explicit shared observation, and owner side-channel lifetime wiring around
@@ -982,17 +1045,7 @@ declares blocks and has no `extends` is the structural root/base template for an
 inheritance chain.
 
 ```js
-await runtime.invokeInheritedCallable(
-  instance.runtimeState,
-  "__constructor__",
-  [],
-  instance.context,
-  env,
-  runtime,
-  cb,
-  instance.rootBuffer,
-  constructorOrigin
-);
+await instance.invoke("__constructor__", [], constructorOrigin);
 ```
 
 Templates do not support `extends none` or dynamic-null parent selection. A
@@ -1584,14 +1637,16 @@ Authoritative sections:
 
 Goal:
 
-- extract argument-frame mapping and local `var` channel initialization from
-  async macro/function invocation into a shared helper
-- wire both macros/functions and inherited callables through that shared
-  argument-binding helper
+- implement inherited-callable argument-frame mapping with the same
+  positional/keyword/default behavior as regular function and macro calls
+- keep regular function/macro argument behavior unchanged; the final shared
+  argument-binding helper is Step 7 cleanup
 - implement `InheritanceInstance.create(...)`
 - `create(...)` owns load + finalize + root/shared buffer setup
 - `create(...)` returns a ready-to-invoke instance and does not invoke methods
 - implement `instance.invoke(methodName, args, origin)`
+- `InheritanceInstance` owns method lookup, invocation-buffer construction,
+  external/internal buffer parent selection, and `super` dispatch
 - constructor invocation is ordinary `instance.invoke("__constructor__", [],
   origin)`
 - compiled `this.method(...)` and `this.blockName(...)` consume the finalized
@@ -1599,23 +1654,25 @@ Goal:
 - compiled `super(...)` consumes `methodData.super`
 - compiled `super(...)` must not pass owner path labels or owner string keys;
   object ownership comes from the finalized executing `methodData`
-- invocation uses the shared argument-frame/local-argument binding primitive
+- invocation uses the inherited-callable argument-frame/local-argument binding
+  primitive
 - remove transitional buffer-selection helpers that guess between current and
   shared/root buffers; direct entrypoints and internal calls must pass the exact
   parent buffer described above
-- wire compiler-private inheritance runtime helpers onto the runtime object used
-  by generated code
+- generated callable code calls the current `InheritanceInstance` directly for
+  inherited method calls and `super(...)`
 - move callable entry prologue policy into clean invocation helpers:
-  original-argument fallback, callable context creation, argument-frame mapping,
-  and entry-local channel initialization should be runtime-owned helpers reused
-  by scripts/templates
+  original-argument forwarding, callable context creation, argument-frame
+  mapping, and entry-local channel initialization should be runtime-owned
+  helpers reused by scripts/templates
 - keep compiler output limited to evaluating argument/default expressions,
   declaring entry-local channels, and calling runtime invocation/prologue
   helpers with compiled metadata
 
 Tests:
 
-- existing macro/function argument behavior is unchanged after helper extraction
+- existing macro/function argument behavior is unchanged while inherited
+  callables use their temporary Step 4 mapper
 - instance creation loads/finalizes exactly once and executes no constructor
   code
 - `InheritanceInstance.create(...)` does not invoke `__constructor__`
@@ -1670,13 +1727,17 @@ Authoritative sections:
 Goal:
 
 - public `root` becomes a thin lifecycle orchestrator
+- generated participant `root` passes the compiled template/script object
+  itself as `entryTemplateOrScript`
 - direct render uses create instance -> invoke `__constructor__` -> finish
 - direct render uses the same `InheritanceInstance.create(...)` path as
-  components
+  components; Step 6 owns component-specific operation scheduling and close
+  timing
 - direct template render finishes the root buffer and returns the text snapshot
 - direct script render returns the result of the entry `__constructor__`
   invocation
 - no lifecycle mode flags are needed for direct rendering
+- no `props.root`/`props.rootFunction` fallback is introduced
 - template constructor chain executes through implicit trailing `super()`
 - selected concrete template constructor bodies are ordinary `__constructor__`
   implementations
@@ -1692,6 +1753,10 @@ Goal:
 
 Tests:
 
+- generated participant root source uses `InheritanceInstance.create(...)` and
+  does not duplicate load/finalize/shared-buffer setup
+- generated participant root passes the compiled template/script object as the
+  entry object; it does not fall back between `root` and `rootFunction`
 - standalone template output matches the public template contract
 - standalone script return rules match the public script contract
 - inherited direct template render matches non-inheritance text output behavior
@@ -1806,6 +1871,8 @@ Goal:
 - update docs to name this design as authoritative
 - migrate or delete provisional unit/synthetic tests that are now covered by
   integration tests
+- deduplicate macro and inherited-callable argument-frame mapping once both
+  paths have settled on the same keyword/positional behavior
 - triage skipped inheritance tests as deleted, rewritten, or still required
 - verify compiler-private runtime helpers do not look like public API
 - delete or move remaining sync inheritance compiler methods from the clean

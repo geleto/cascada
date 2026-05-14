@@ -59,12 +59,12 @@ function withPath(context, path, func) {
 }
 
 function makeKeywordArgs(obj) {
-  obj.__keywords = true;
+  obj.__hasKeywordArgs = true;
   return obj;
 }
 
 function isKeywordArgs(obj) {
-  return obj && Object.prototype.hasOwnProperty.call(obj, '__keywords');
+  return obj?.__hasKeywordArgs === true;
 }
 
 function getKeywordArgs(args) {

@@ -3,13 +3,6 @@ import {declareBufferChannel} from '../channels/index.js';
 
 const claimedSharedDefaults = new WeakSet();
 
-function getInheritanceSharedRootBuffer(currentBuffer, inheritanceState) {
-  // TODO(Step 4): Remove this transitional selector. Instance invocation must
-  // pass the exact buffer it needs: public entrypoints use the shared/root
-  // buffer, while internal this/super calls use the current invocation buffer.
-  return inheritanceState.sharedRootBuffer ?? currentBuffer;
-}
-
 function declareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer) {
   const hasInitializer = initializer !== undefined;
   const existingChannel = buffer.getOwnChannel(channelName);
@@ -44,7 +37,6 @@ function claimInheritanceSharedDefault(buffer, channelName) {
 }
 
 export {
-  getInheritanceSharedRootBuffer,
   declareInheritanceSharedChannel,
   claimInheritanceSharedDefault
 };

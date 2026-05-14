@@ -66,4 +66,9 @@ function runtimeError(error, context, errorContext) {
   );
 }
 
-export { noInheritanceParent, resolveInheritanceParent, getInheritanceCallableOriginalArgs, createInheritanceCallableContext };
+export {
+  noInheritanceParent,
+  resolveInheritanceParent,
+  getInheritanceCallableOriginalArgs,
+  createInheritanceCallableContext
+};

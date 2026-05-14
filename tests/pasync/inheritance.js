@@ -179,6 +179,18 @@ describe('Inheritance rebuild', function () {
       expect(source).to.contain('function root(env, context, runtime, cb)');
     });
 
+    it('emits clean finalized invocation calls for this and super', function () {
+      const source = compileSource(
+        'method build(user)\n  this.decorate(user)\n  return super()\nendmethod\nreturn this.build(profile)',
+        { scriptMode: true, name: 'invoke-source.script' }
+      );
+
+      expect(source).to.contain('currentInstance.invokeFromCurrentBuffer("decorate"');
+      expect(source).to.contain('currentInstance.invokeSuper(methodData, null');
+      expect(source).to.contain('blockPayload ? blockPayload.originalArgs : null');
+      expect(source).not.to.contain('runtime.invokeSuperCallable');
+    });
+
     it('emits constructor entries only for concrete constructor bodies', function () {
       const concreteScript = compileProps('extends none\nreturn "ok"', { scriptMode: true });
       const concreteTemplate = compileProps('{% block body %}x{% endblock %}');
@@ -560,6 +572,53 @@ describe('Inheritance rebuild', function () {
       return runtime.finalizeInheritanceChain({ entries }, { path: 'finalize-entry.njk' });
     }
 
+    function createRuntimeContext(values = {}, path = 'instance.script') {
+      return {
+        path,
+        lookup(name) {
+          return values[name];
+        },
+        lookupScript(name) {
+          return values[name];
+        },
+        getCompositionContextVariables() {
+          return values;
+        },
+        getCompositionPayloadVariables() {
+          return values;
+        },
+        getRenderContextVariables() {
+          return values;
+        },
+        forkForComposition(nextPath, payload = {}) {
+          return createRuntimeContext(Object.assign({}, values, payload), nextPath);
+        },
+        forkForPath(nextPath) {
+          return createRuntimeContext(values, nextPath);
+        }
+      };
+    }
+
+    function inheritanceParticipant(path, options = {}) {
+      const participant = {
+        path,
+        scriptMode: !!options.scriptMode,
+        compileCalls: 0,
+        compile() {
+          this.compileCalls += 1;
+        },
+        inheritanceSpec: {
+          methodEntries: options.methodEntries || {},
+          sharedSchema: options.sharedSchema || {},
+          hasExtends: !!options.hasExtends
+        },
+        async resolveInheritanceParent() {
+          return runtime.noInheritanceParent();
+        }
+      };
+      return participant;
+    }
+
     async function loadTemplateChainForFinalization(templates, entryName) {
       const loader = new StringLoader();
       Object.entries(templates).forEach(([name, source]) => loader.addTemplate(name, source));
@@ -577,6 +636,32 @@ describe('Inheritance rebuild', function () {
             return {};
           }
         },
+        runtime
+      });
+    }
+
+    async function createCompiledScriptInstance(scripts, entryName, ctx = {}) {
+      const loader = new StringLoader();
+      Object.entries(scripts).forEach(([name, source]) => loader.addTemplate(name, source));
+      const localEnv = new AsyncEnvironment(loader);
+      const entry = await localEnv.getScript(entryName, true, null, false);
+      return runtime.InheritanceInstance.create({
+        entryTemplateOrScript: entry,
+        env: localEnv,
+        context: entry._createContext(ctx),
+        runtime
+      });
+    }
+
+    async function createCompiledTemplateInstance(templates, entryName, ctx = {}) {
+      const loader = new StringLoader();
+      Object.entries(templates).forEach(([name, source]) => loader.addTemplate(name, source));
+      const localEnv = new AsyncEnvironment(loader);
+      const entry = await localEnv.getTemplate(entryName, true, null, false);
+      return runtime.InheritanceInstance.create({
+        entryTemplateOrScript: entry,
+        env: localEnv,
+        context: entry._createContext(ctx),
         runtime
       });
     }
@@ -653,7 +738,7 @@ describe('Inheritance rebuild', function () {
           })
         ]);
       }).to.throwException((error) => {
-        expect(String(error)).to.contain("super() in 'build' has no parent implementation");
+        expect(String(error)).to.contain('super() in \'build\' has no parent implementation');
         expect(error.errors[0].path).to.be('child.script');
       });
     });
@@ -742,8 +827,8 @@ describe('Inheritance rebuild', function () {
       }).to.throwException((error) => {
         expect(error.errors.length).to.be(3);
         expect(String(error)).to.contain('renames an inherited argument');
-        expect(String(error)).to.contain("missing inherited method 'missing'");
-        expect(String(error)).to.contain("shared channel 'theme' has conflicting types");
+        expect(String(error)).to.contain('missing inherited method \'missing\'');
+        expect(String(error)).to.contain('shared channel \'theme\' has conflicting types');
       });
     });
 
@@ -847,6 +932,7 @@ describe('Inheritance rebuild', function () {
 
       expect(source).to.contain('sharedSchema');
       expect(source).not.to.contain('runtime.getInheritanceSharedBuffer');
+      expect(source).not.to.contain('runtime.getInheritanceSharedRootBuffer');
     });
 
     it('initializes shared sequence targets through declaration', function () {
@@ -858,6 +944,250 @@ describe('Inheritance rebuild', function () {
       runtime.declareInheritanceSharedChannel(buffer, 'db', 'sequence', null, secondTarget);
 
       expect(channel._sequenceTarget).to.be(secondTarget);
+    });
+
+    it('creates an inheritance instance without invoking constructors', async function () {
+      let invoked = false;
+      const participant = inheritanceParticipant('component.script', {
+        scriptMode: true,
+        methodEntries: {
+          __constructor__: compiledMethod('__constructor__', {
+            isConstructor: true,
+            fn() {
+              invoked = true;
+            }
+          })
+        }
+      });
+      const context = createRuntimeContext();
+      const instance = await runtime.InheritanceInstance.create({
+        entryTemplateOrScript: participant,
+        env: {},
+        context,
+        runtime
+      });
+
+      expect(participant.compileCalls).to.be(1);
+      expect(instance.runtimeState.methods.__constructor__.isConstructor).to.be(true);
+      expect(invoked).to.be(false);
+    });
+
+    it('invokes finalized methods through the instance dispatch table', async function () {
+      const participant = inheritanceParticipant('component.script', {
+        scriptMode: true,
+        methodEntries: {
+          greet: compiledMethod('greet', {
+            argNames: ['user'],
+            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, inheritanceState, methodData, currentInstance) {
+              expect(currentInstance.runtimeState.methods.greet).to.be(methodData);
+              expect(invocationBuffer.parent).to.be(currentInstance.sharedRootBuffer);
+              return `hello ${payload.originalArgs.user}`;
+            }
+          })
+        }
+      });
+      const instance = await runtime.InheritanceInstance.create({
+        entryTemplateOrScript: participant,
+        env: {},
+        context: createRuntimeContext(),
+        runtime
+      });
+
+      expect(await instance.invoke('greet', ['Ada'], { path: 'call.script' })).to.be('hello Ada');
+    });
+
+    it('maps keyword arguments through the inherited callable signature', async function () {
+      const participant = inheritanceParticipant('component.script', {
+        scriptMode: true,
+        methodEntries: {
+          greet: compiledMethod('greet', {
+            argNames: ['user', 'fallback'],
+            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload) {
+              return `${payload.originalArgs.user}:${payload.originalArgs.fallback}`;
+            }
+          })
+        }
+      });
+      const instance = await runtime.InheritanceInstance.create({
+        entryTemplateOrScript: participant,
+        env: {},
+        context: createRuntimeContext(),
+        runtime
+      });
+
+      const result = await instance.invoke(
+        'greet',
+        ['Ada', runtime.makeKeywordArgs({ fallback: 'guest' })],
+        { path: 'call.script' }
+      );
+      expect(result).to.be('Ada:guest');
+    });
+
+    it('keeps existing macro keyword argument behavior unchanged', async function () {
+      const rendered = await env.renderTemplateString(
+        '{% macro greet(user, fallback="guest") %}{{ user }}:{{ fallback }}{% endmacro %}{{ greet("Ada", fallback="friend") }}'
+      );
+
+      expect(rendered).to.be('Ada:friend');
+    });
+
+    it('lets compiled inherited methods call other methods through the current instance', async function () {
+      const instance = await createCompiledScriptInstance({
+        'component.script': [
+          'method outer(user)',
+          '  return this.inner(user)',
+          'endmethod',
+          'method inner(user)',
+          '  return user',
+          'endmethod'
+        ].join('\n')
+      }, 'component.script');
+
+      expect(await instance.invoke('outer', ['Ada'], { path: 'call.script' })).to.be('Ada');
+    });
+
+    it('invokes template blocks through the instance dispatch table', async function () {
+      const instance = await createCompiledTemplateInstance({
+        'component.njk': '{% block body(user) %}Hello {{ user }}{% endblock %}'
+      }, 'component.njk');
+
+      expect(String(await instance.invoke('body', ['Ada'], { path: 'call.njk' }))).to.be('Hello Ada');
+    });
+
+    it('links internal inherited calls under the current invocation buffer', async function () {
+      let outerBuffer = null;
+      const participant = inheritanceParticipant('component.script', {
+        scriptMode: true,
+        methodEntries: {
+          outer: compiledMethod('outer', {
+            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, inheritanceState, methodData, currentInstance) {
+              outerBuffer = invocationBuffer;
+              return currentInstance.invokeFromCurrentBuffer(
+                'inner',
+                [],
+                contextArg,
+                invocationBuffer,
+                { path: 'outer.script' }
+              );
+            }
+          }),
+          inner: compiledMethod('inner', {
+            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer) {
+              expect(invocationBuffer.parent).to.be(outerBuffer);
+              return 'inner';
+            }
+          })
+        }
+      });
+      const instance = await runtime.InheritanceInstance.create({
+        entryTemplateOrScript: participant,
+        env: {},
+        context: createRuntimeContext(),
+        runtime
+      });
+
+      expect(await instance.invoke('outer', [], { path: 'outer.script' })).to.be('inner');
+    });
+
+    it('invokes super through finalized method data', async function () {
+      const child = compiledMethod('build', {
+        argNames: ['user'],
+        super: true,
+        fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, inheritanceState, methodData, currentInstance) {
+          return currentInstance.invokeSuper(
+            methodData,
+            null,
+            contextArg,
+            invocationBuffer,
+            { path: 'child.script' },
+            payload.originalArgs
+          );
+        }
+      });
+      const parent = compiledMethod('build', {
+        argNames: ['user'],
+        fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload) {
+          return payload.originalArgs.user;
+        }
+      });
+      const participant = inheritanceParticipant('component.script', {
+        scriptMode: true,
+        methodEntries: { build: child }
+      });
+      participant.inheritanceSpec.hasExtends = true;
+      const parentParticipant = inheritanceParticipant('base.script', {
+        scriptMode: true,
+        methodEntries: { build: parent }
+      });
+      participant.resolveInheritanceParent = async function () {
+        return {
+          parentTemplateOrScript: parentParticipant,
+          origin: { path: 'component.script', lineno: 1, colno: 1 }
+        };
+      };
+      const instance = await runtime.InheritanceInstance.create({
+        entryTemplateOrScript: participant,
+        env: {},
+        context: createRuntimeContext({ user: 'Ada' }),
+        runtime
+      });
+
+      expect(await instance.invoke('build', ['Grace'], { path: 'call.script' })).to.be('Grace');
+    });
+
+    it('lets compiled super forwarding preserve parent defaults', async function () {
+      const instance = await createCompiledScriptInstance({
+        'child.script': [
+          'extends "base.script"',
+          'method build(user)',
+          '  return super()',
+          'endmethod'
+        ].join('\n'),
+        'base.script': [
+          'method build(user, fallback = "guest")',
+          '  return user + ":" + fallback',
+          'endmethod'
+        ].join('\n')
+      }, 'child.script');
+
+      expect(await instance.invoke('build', ['Ada'], { path: 'call.script' })).to.be('Ada:guest');
+    });
+
+    it('does not let an ignored super return replace the caller return value', async function () {
+      const instance = await createCompiledScriptInstance({
+        'child.script': [
+          'extends "base.script"',
+          'method build(user)',
+          '  super(user)',
+          '  return "child:" + user',
+          'endmethod'
+        ].join('\n'),
+        'base.script': [
+          'method build(user)',
+          '  return "base:" + user',
+          'endmethod'
+        ].join('\n')
+      }, 'child.script');
+
+      expect(await instance.invoke('build', ['Ada'], { path: 'call.script' })).to.be('child:Ada');
+    });
+
+    it('fails missing instance methods as fatal structural errors', async function () {
+      const participant = inheritanceParticipant('component.script', { scriptMode: true });
+      const instance = await runtime.InheritanceInstance.create({
+        entryTemplateOrScript: participant,
+        env: {},
+        context: createRuntimeContext(),
+        runtime
+      });
+
+      try {
+        await instance.invoke('missing', [], { path: 'call.script', lineno: 2, colno: 3 });
+        throw new Error('expected missing method to fail');
+      } catch (error) {
+        expect(error.name).to.be('RuntimeFatalError');
+        expect(String(error)).to.contain('missing inherited method \'missing\'');
+      }
     });
   });
 
