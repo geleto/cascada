@@ -3,6 +3,7 @@ import * as nodes from '../language/nodes.js';
 
 import {
   validateScriptExtendsSourceOrder,
+  validateTemplateInheritanceSurface,
   validateLocalSharedMethodNameCollisions,
 } from './validation.js';
 
@@ -34,6 +35,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeCallExtensionAsync(node) {
+    this.analysis.getRootScopeOwner(node._analysis).hasAsyncCallExtension = true;
     return this.analyzeCallExtension(node);
   }
 
@@ -524,51 +526,11 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeBlock(node) {
-    const signature = this.inheritance.getCallableSignature(node);
-    const declares = [];
-    const seenBlockArgNames = new Set();
-    signature.argNodes.forEach((nameNode, index) => {
-      nameNode._analysis = { ...nameNode._analysis, skipDeclarationOwner: node._analysis };
-      const canonicalName = signature.argNames[index];
-      if (seenBlockArgNames.has(canonicalName)) {
-        this.fail(
-          `block argument '${canonicalName}' is declared more than once`,
-          nameNode.lineno,
-          nameNode.colno,
-          node,
-          nameNode
-        );
-      }
-      seenBlockArgNames.add(canonicalName);
-      declares.push({
-        name: canonicalName,
-        type: 'var',
-        initializer: null,
-        explicit: true,
-        blockArg: true
-      });
-    });
-    if (declares.length > 0 && node.body) {
-      node.body._analysis = {
-        ...node.body._analysis,
-        declares: (node.body._analysis?.declares ?? []).concat(declares)
-      };
-    }
-    const textChannel = !this.scriptMode
-      ? this.analysis.getCurrentTextChannel(node._analysis)
-      : null;
-    return {
-      createScope: true,
-      scopeBoundary: true,
-      parentReadOnly: true,
-      uses: textChannel ? [textChannel] : [],
-      mutates: textChannel ? [textChannel] : [],
-      createsLinkedChildBuffer: true
-    };
+    return this.inheritance.analyzeBlock(node);
   }
 
   postAnalyzeBlock(node) {
-    return this.inheritance.createMethodChannelFootprint(node);
+    return this.inheritance.postAnalyzeCallableDefinition(node);
   }
 
   compileBlock(node) {
@@ -577,6 +539,10 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileSuper(node) {
     this.inheritance.compileAsyncSuper(node);
+  }
+
+  analyzeSuper(node) {
+    this.inheritance.analyzeSuper(node);
   }
 
   analyzeChannelDeclaration(node) {
@@ -629,23 +595,9 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeRoot(node) {
     const declares = this._getRootDeclarations(node);
-    const templateUsesInheritanceSurface = !this.scriptMode && this._templateUsesInheritanceSurface(node);
+    const templateUsesInheritanceSurface = this.inheritance.templateUsesInheritanceSurface(node);
+    // Seeded before child post-analysis so blocks can infer template shared vars.
     this.templateUsesInheritanceSurface = templateUsesInheritanceSurface;
-    if (templateUsesInheritanceSurface) {
-      const inferredTemplateSharedDeclarations = this._collectInferredTemplateSharedDeclarations(node);
-      node._analysis.inferredTemplateSharedDeclarations = inferredTemplateSharedDeclarations;
-      inferredTemplateSharedDeclarations.forEach((declaration) => {
-        if (declares.some((existing) => existing.name === declaration.name.value)) {
-          return;
-        }
-        declares.push({
-          name: declaration.name.value,
-          type: declaration.channelType,
-          initializer: null,
-          shared: true
-        });
-      });
-    }
     const sequenceLocks = node._analysis.sequenceLocks ?? [];
     sequenceLocks.forEach((lockName) => {
       declares.push({ name: lockName, type: 'sequential_path', initializer: null });
@@ -659,16 +611,17 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   postAnalyzeRoot(node) {
-    const rootCompileFacts = this._getRootCompileFacts(node);
+    const inheritanceFacts = this.inheritance.computeRootInheritanceFacts(node);
     validateScriptExtendsSourceOrder(this, node);
+    validateTemplateInheritanceSurface(this, node);
     validateLocalSharedMethodNameCollisions(this, node);
     return {
-      rootCompileFacts
+      inheritance: inheritanceFacts
     };
   }
 
   compileRoot(node) {
-    if (node.findAll(nodes.CallExtensionAsync).length > 0) {
+    if (node._analysis.hasAsyncCallExtension) {
       this.emit.lines(
         'function b___promisify(fn) {',
         '  return function(...args) {',
@@ -687,16 +640,17 @@ class CompilerAsync extends CompilerBaseAsync {
       );
     }
 
-    const rootCompileFacts = node._analysis.rootCompileFacts;
-    this.topLevelDynamicExtends = rootCompileFacts.topLevelDynamicExtends;
-    this.hasStaticExtends = rootCompileFacts.hasStaticExtends;
-    this.hasDynamicExtends = rootCompileFacts.hasDynamicExtends;
-    this.hasDeferredDynamicExtends = rootCompileFacts.hasDeferredDynamicExtends;
-    this.hasExtends = rootCompileFacts.hasExtends;
-    this.needsInheritanceState = rootCompileFacts.needsInheritanceState;
+    const inheritanceFacts = node._analysis.inheritance;
+    this.inheritanceParticipates = inheritanceFacts.participates;
+    this.localExtendsNode = inheritanceFacts.localExtendsNode;
+    this.hasStaticExtends = this.localExtendsNode ? this.inheritance.isStaticExtendsNode(this.localExtendsNode) : false;
+    this.hasDynamicExtends = inheritanceFacts.hasDynamicExtends;
+    this.hasExtends = inheritanceFacts.hasExtends;
     const rootCompileResult = this._compileAsyncRoot(node);
-    const invokedMethodRefs = this.inheritance.compileInvokedMethodRefsLiteral(rootCompileFacts.invokedMethodRefs);
-    const methodEntries = this.inheritance.collectCompiledMethodEntries(node, rootCompileResult.blocks);
+    const invokedMethodRefs = this.inheritance.compileInvokedMethodRefsLiteral(
+      node._analysis.inheritanceInvokedMethodRefs
+    );
+    const methodEntries = this.inheritance.compileCallableEntriesLiteral(node, rootCompileResult.blocks);
 
     this.emit.line(`const ${COMPILED_METHOD_ENTRIES_VAR} = ${methodEntries};`);
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this.inheritance.compileSharedSchemaLiteral(node)};`);
@@ -717,69 +671,10 @@ class CompilerAsync extends CompilerBaseAsync {
     this._getRootDeclarations(node).forEach((declaration) => {
       skippedNames[declaration.name] = true;
     });
-    this._getSharedDeclarations(node).forEach((declaration) => {
-      skippedNames[declaration.name.value] = true;
+    this.inheritance.getSharedDeclarations(node).forEach((declaration) => {
+      skippedNames[declaration.name] = true;
     });
     this.emit.line(`runtime.declareCompositionPayloadChannels(${this.buffer.currentBuffer}, context, ${JSON.stringify(skippedNames)});`);
-  }
-
-  _templateUsesInheritanceSurface(rootNode) {
-    if (this.scriptMode || !rootNode || typeof rootNode.findAll !== 'function') {
-      return false;
-    }
-    return rootNode.findAll(nodes.Extends).length > 0 || rootNode.findAll(nodes.Block).length > 0;
-  }
-
-  // we need to collect them beforehand because furher analysis will need to know the implicit shared declarations
-  _collectInferredTemplateSharedDeclarations(rootNode) {
-    const explicitSharedNames = new Set();
-    const metadata = this._getInheritanceMetadata(rootNode);
-    if (metadata && metadata.sharedDeclarations && Array.isArray(metadata.sharedDeclarations.children)) {
-      metadata.sharedDeclarations.children.forEach((declaration) => {
-        if (declaration && declaration.name && declaration.name.value) {
-          explicitSharedNames.add(declaration.name.value);
-        }
-      });
-    }
-
-    const calleeNodes = new Set();
-    rootNode.findAll(nodes.FunCall).forEach((callNode) => {
-      if (callNode && callNode.name) {
-        calleeNodes.add(callNode.name);
-      }
-    });
-
-    const inferred = new Map();
-    rootNode.findAll(nodes.LookupVal).forEach((lookupNode) => {
-      if (
-        lookupNode.target instanceof nodes.Symbol &&
-        lookupNode.target.value === 'this' &&
-        !(lookupNode.val instanceof nodes.Literal && typeof lookupNode.val.value === 'string')
-      ) {
-        this.fail(
-          'Dynamic this[...] shared access is not supported in templates.',
-          lookupNode.lineno,
-          lookupNode.colno,
-          lookupNode
-        );
-      }
-      if (calleeNodes.has(lookupNode)) {
-        return;
-      }
-      const staticPath = this.sequential._extractStaticPath(lookupNode);
-      if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
-        return;
-      }
-      const name = staticPath[1];
-      if (inferred.has(name) || explicitSharedNames.has(name)) {
-        return;
-      }
-      const nameNode = new nodes.Symbol(lookupNode.lineno, lookupNode.colno, name);
-      const channelType = name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL ? 'text' : 'var';
-      const declaration = new nodes.ChannelDeclaration(lookupNode.lineno, lookupNode.colno, channelType, nameNode, null, true);
-      inferred.set(name, declaration);
-    });
-    return Array.from(inferred.values());
   }
 
   _getRootDeclarations(node) {
@@ -796,41 +691,9 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
   }
 
-  _getRootCompileFacts(node) {
-    const extendsNodes = node.findAll(nodes.Extends).filter((child) => !child.noParentLiteral);
-    const topLevelDynamicExtends = new Set(
-      node.children.filter((child) => this._isDynamicExtendsNode(child))
-    );
-    const hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
-    const hasDynamicExtends = extendsNodes.some((child) => this._isDynamicExtendsNode(child));
-    const hasDeferredDynamicExtends = extendsNodes.some((child) =>
-      this._isDynamicExtendsNode(child) && !topLevelDynamicExtends.has(child)
-    );
-    const hasExtends = hasStaticExtends || hasDynamicExtends;
-    const constructorDefinition = this._getConstructorDefinition(node);
-    const methodDefinitions = this.scriptMode ? this._getMethodDefinitions(node) : node.findAll(nodes.Block);
-    const callableDefinitions = constructorDefinition
-      ? methodDefinitions.concat([constructorDefinition])
-      : methodDefinitions;
-    const invokedMethodRefs = this.inheritance.collectAllInvokedMethodRefsFromNode(node);
-    const needsInheritanceState =
-      hasExtends ||
-      this._getSharedDeclarations(node).length > 0 ||
-      callableDefinitions.length > 0 ||
-      Object.keys(invokedMethodRefs).length > 0;
-
-    return {
-      topLevelDynamicExtends,
-      hasStaticExtends,
-      hasDynamicExtends,
-      hasDeferredDynamicExtends,
-      hasExtends,
-      needsInheritanceState,
-      invokedMethodRefs
-    };
-  }
-
   _compileAsyncRootBody(node) {
+    // TODO(Step 1): Replace this old setup/startup root body with the target
+    // {rootFunction, inheritanceSpec, resolveInheritanceParent} ABI.
     this.inheritance.emitAsyncRootStateInitialization(
       COMPILED_METHOD_ENTRIES_VAR,
       COMPILED_SHARED_SCHEMA_VAR,
@@ -857,7 +720,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (!this.scriptMode) {
       return null;
     }
-    const constructorDefinition = this._getConstructorDefinition(node);
+    const constructorDefinition = this.inheritance.getConstructorDefinition(node);
     if (constructorDefinition && constructorDefinition.body) {
       return constructorDefinition.body;
     }
@@ -894,8 +757,11 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _compileAsyncRootSetupEntry(node, hasGenericScriptBody = false) {
+    // TODO(Step 1): Delete b___setup__ emission. Constructor work belongs in
+    // inheritanceSpec.methodEntries.__constructor__, and inheritanceSpec must
+    // be metadata-only.
     const isTemplateRoot = !this.scriptMode;
-    const skipGenericSetup = this.scriptMode && this._getConstructorDefinition(node);
+    const skipGenericSetup = this.scriptMode && this.inheritance.getConstructorDefinition(node);
 
     this.inheritance._withAsyncConstructorEntryState(isTemplateRoot, () => {
       this.emit.line('function b___setup__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
@@ -938,7 +804,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const hasGenericScriptBody = this._compileAsyncScriptBodyEntry(node);
     this._compileAsyncRootSetupEntry(node, hasGenericScriptBody);
     this.inheritance.compileAsyncConstructorEntry(node);
-    const blocks = this.inheritance.compileAsyncCallableEntries(node);
+    const blocks = this.inheritance.compileInheritedCallableEntries(node);
     return { blocks, hasGenericScriptBody };
   }
 
@@ -949,20 +815,16 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeMethodDefinition(node) {
-    const analysis = this.analyzeBlock(node);
-    analysis.declares = (analysis.declares ?? []).concat([
-      this.return.createChannelDeclaration()
-    ]);
-    return analysis;
+    return this.inheritance.analyzeMethodDefinition(node);
   }
 
   postAnalyzeMethodDefinition(node) {
-    return this.inheritance.createMethodChannelFootprint(node);
+    return this.inheritance.postAnalyzeCallableDefinition(node);
   }
 
   compileMethodDefinition() {
-    // Method definitions are compiled through upfront metadata and dedicated
-    // async entry functions, not by inline root-body emission.
+    // Method definitions are compiled through metadata and dedicated callable
+    // entries, not by inline root-body emission.
   }
 }
 

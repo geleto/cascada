@@ -24,23 +24,24 @@ class CompileChannel {
   }
 
   getThisSharedSetPathFacts(node, analysisPass = this.compiler.analysis) {
+    const compiler = this.compiler;
     if (!node || !node.targets || node.targets.length !== 1) {
       return null;
     }
-    const segments = this.compiler.scriptMode
+    const segments = compiler.scriptMode
       ? this._getScriptThisSharedSetPathSegments(node)
       : this._getTemplateThisSharedSetPathSegments(node);
     if (!segments || segments.length === 0) {
       return null;
     }
     const name = segments[0];
-    const declaration = analysisPass.findRootDeclaration(node._analysis, name);
-    if (!declaration || !declaration.shared) {
+    const declarationFacts = this._getThisSharedDeclarationFacts(node._analysis, name, analysisPass, node, 'strict');
+    if (!declarationFacts) {
       return null;
     }
     return {
       name,
-      type: declaration.type,
+      type: declarationFacts.type,
       path: segments.slice(1)
     };
   }
@@ -60,7 +61,7 @@ class CompileChannel {
     const compiler = this.compiler;
     // Template set targets carry the full `this.x.y` path in the target
     // LookupVal; script-mode set_path uses node.path and is handled separately.
-    if (compiler.scriptMode || node.path) {
+    if (node.path) {
       return null;
     }
     const target = node.targets[0];
@@ -124,6 +125,14 @@ class CompileChannel {
   }
 
   getThisSharedAccessFacts(node, analysisPass = this.compiler.analysis, analysisNode = null) {
+    return this._getThisSharedAccessFacts(node, analysisPass, analysisNode, 'strict');
+  }
+
+  probeThisSharedAccessFacts(node, analysisPass = this.compiler.analysis, analysisNode = null) {
+    return this._getThisSharedAccessFacts(node, analysisPass, analysisNode, 'probe');
+  }
+
+  _getThisSharedAccessFacts(node, analysisPass, analysisNode, mode) {
     const compiler = this.compiler;
     if (!node) {
       return null;
@@ -133,29 +142,87 @@ class CompileChannel {
       return null;
     }
     const channelName = staticPath[1];
-    const channelDecl = analysisPass.findRootDeclaration(analysisNode || node._analysis, channelName);
-    const isTemplateTextChannel = !compiler.scriptMode &&
-      compiler.templateUsesInheritanceSurface &&
-      channelName === compiler.buffer.currentTextChannelName &&
-      channelDecl &&
-      channelDecl.type === 'text';
-    if (!channelDecl || (!channelDecl.shared && !isTemplateTextChannel)) {
-      return null;
+    const activeAnalysis = analysisNode || node._analysis;
+    if (compiler.scriptMode || compiler.templateUsesInheritanceSurface) {
+      const channelDecl = analysisPass.findRootDeclaration(activeAnalysis, channelName);
+      const parentNode = node._analysis?.parent?.node || null;
+      const isCallableRoot = staticPath.length === 2 &&
+        parentNode instanceof nodes.FunCall &&
+        parentNode.name === node;
+      if (
+        isCallableRoot &&
+        (!compiler.scriptMode || !channelDecl)
+      ) {
+        return null;
+      }
+      if (
+        compiler.scriptMode &&
+        !channelDecl &&
+        staticPath.length === 2 &&
+        compiler.inheritance.hasLocalMethodDefinition(activeAnalysis, channelName)
+      ) {
+        return null;
+      }
     }
-    if (
-      !compiler.scriptMode &&
-      channelDecl.type !== 'var' &&
-      channelName !== compiler.buffer.currentTextChannelName
-    ) {
+    const declarationFacts = this._getThisSharedDeclarationFacts(
+      activeAnalysis,
+      channelName,
+      analysisPass,
+      node,
+      mode
+    );
+    if (!declarationFacts) {
       return null;
     }
     const channelPath = [channelName].concat(staticPath.slice(2));
     return {
       channelName,
-      channelType: channelDecl.type,
+      channelType: declarationFacts.type,
       channelPath,
       pathPrefix: channelPath.length > 2 ? channelPath.slice(1, -1) : [],
       propertyName: channelPath.length >= 2 ? channelPath[channelPath.length - 1] : null
+    };
+  }
+
+  _getThisSharedDeclarationFacts(analysis, name, analysisPass, originNode, mode) {
+    const compiler = this.compiler;
+    let declaration = analysisPass.findRootDeclaration(analysis, name);
+    let type = declaration ? declaration.type : null;
+    if (!compiler.scriptMode && compiler.templateUsesInheritanceSurface) {
+      const rootAnalysis = compiler.analysis.getRootScopeOwner(analysis);
+      const sharedDeclaration = compiler.inheritance.findRootSharedDeclaration(rootAnalysis, name);
+      declaration = sharedDeclaration || declaration;
+      type = declaration ? declaration.type : type;
+      type = type || (name === compiler.buffer.currentTextChannelName ? 'text' : 'var');
+      if (type !== 'var' && name !== compiler.buffer.currentTextChannelName) {
+        return null;
+      }
+      if (!declaration || !declaration.shared) {
+        if (mode === 'probe') {
+          return null;
+        }
+        declaration = compiler.inheritance.ensureImplicitTemplateSharedDeclaration(
+          analysis,
+          name,
+          type,
+          originNode
+        );
+      }
+    }
+    if (!declaration || !declaration.shared) {
+      if (compiler.scriptMode && mode === 'strict') {
+        compiler.fail(
+          `this.${name} requires a root shared declaration`,
+          originNode.lineno,
+          originNode.colno,
+          originNode
+        );
+      }
+      return null;
+    }
+    return {
+      declaration,
+      type: declaration.type
     };
   }
 

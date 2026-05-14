@@ -349,9 +349,9 @@ class CompilerSync extends CompilerBaseSync {
       this.fail('compileRoot: root node can\'t have frame', node.lineno, node.colno, node);
     }
 
-    this.hasStaticExtends = node.children.some((child) => this._isStaticExtendsNode(child));
+    this.hasStaticExtends = node.children.some((child) => this.inheritance.isStaticExtendsNode(child));
     this.hasDynamicExtends = node.children.some((child) =>
-      this._isDynamicExtendsNode(child)
+      this.inheritance.isDynamicExtendsNode(child)
     );
     this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
     const blocks = this._compileSyncRoot(node, new Frame());

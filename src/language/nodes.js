@@ -363,6 +363,13 @@ class TemplateData extends Literal {
   get typename() { return 'TemplateData'; }
 }
 
+function isWhitespaceOutputNode(node) {
+  return node instanceof Output &&
+    node.children.every((child) =>
+      child instanceof TemplateData && /^\s*$/.test(child.value)
+    );
+}
+
 class UnaryOp extends Node {
   get typename() { return 'UnaryOp'; }
   get fields() { return ['target']; }
@@ -611,5 +618,6 @@ export {
   CallExtensionAsync,
   Do,
   ChannelCommand,
+  isWhitespaceOutputNode,
   printNodes
 };

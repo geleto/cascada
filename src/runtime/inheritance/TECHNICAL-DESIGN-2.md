@@ -36,6 +36,21 @@ When replacing old behavior, delete or bypass it in favor of the clean target
 shape described here. If the current codebase makes that impossible without a
 compatibility bridge, stop and resolve the design gap before implementing.
 
+Existing inheritance-related compiler/runtime code is not authoritative merely
+because it is active in the current branch. When a step touches old inheritance
+code whose shape does not match this design, prefer rewriting that slice to the
+target contract over adapting or layering onto the old implementation.
+
+Compiler code should use the compile mode contract directly. If behavior differs
+between Cascada Script and Cascada Template, branch on `compiler.scriptMode`
+rather than rediscovering the mode from AST node shapes such as method versus
+block nodes. Use node-shape checks for syntax recognition and traversal
+boundaries, not as a substitute for the known compile mode.
+
+Focused rebuild tests live in `tests/pasync/inheritance.js`. Keep new focused
+inheritance tests in that file unless a later integration gate intentionally
+splits them by public subsystem.
+
 ## Non-Negotiable Lifecycle
 
 Each phase has a single owner and a bounded contract.
@@ -361,7 +376,8 @@ Compile-time decides:
 - whether a template is structural or non-structural
 - callable signatures and argument-frame binding shape
 - callable metadata: `super`, invoked refs, owner, origins, and footprints
-- shared schema inputs and inferred template shared names
+- shared schema inputs, including explicit script shared declarations and
+  inferred template shared declarations
 - which syntax is legal
 
 Runtime decides:
@@ -547,13 +563,13 @@ For scripts, the compiler can classify `this.<name>` from local declarations:
 
 - declared shared channel only: shared access
 - local method only:
-  - `this.name(...)` is inherited callable dispatch
+  - `this.name(...)` is an inherited callable call
   - bare `this.name` is a structural error; inherited callables must be called
 - both shared channel and callable: structural ambiguity error
 - neither shared channel nor callable: structural missing-name error
 
 For templates, static `this.<name>` property access infers shared `var`
-participation, while `this.name(...)` is inherited callable dispatch. If the
+participation, while `this.name(...)` is an inherited callable call. If the
 same name is both shared and callable in the finalized chain, finalization
 reports the ambiguity.
 
@@ -723,7 +739,7 @@ Reuse boundary:
   `this.blockName(...)`, compiled `super(...)`, and structural inline block
   placement arguments
 - keep macro wrappers, `caller()` support, macro text-return behavior, imports,
-  and context-isolation rules out of inheritance dispatch
+  and context-isolation rules out of inherited invocation
 - keep inherited invocation in `invoke.js`; it consumes finalized dispatch
   entries, owner-relative `super` links, owner metadata, linked footprints, and
   invocation buffers, then calls the shared argument primitive rather than
@@ -783,11 +799,11 @@ Inherited callable invocation starts from finalized direct metadata.
 
 Rules:
 
-- ordinary `this.name(...)` dispatch performs one direct table read:
+- ordinary `this.name(...)` calls perform one direct table read:
   `runtimeState.methods[name]`
 - `super()` reads `methodData.super` from the executing callable's runtime
   entry
-- constructor execution is ordinary inherited dispatch to `__constructor__`
+- constructor execution is an ordinary inherited call to `__constructor__`
 - invocation creates an invocation child buffer at the call site
 - the invocation child buffer links exactly the target's
   `mergedLinkedChannels` and `mergedMutatedChannels`
@@ -819,7 +835,7 @@ argument frame, and method data.
 
 Compiled `this.name(...)` calls use the same path as `instance.invoke(...)`
 except their call-site buffer is the currently executing invocation buffer. They
-always dispatch through the same finalized table entry:
+always invoke through the same finalized table entry:
 
 ```js
 runtime.invokeInheritedCallable(currentInstance, "name", args, origin)
@@ -1006,7 +1022,9 @@ Rules:
 - the `extends` target expression cannot read inferred shared vars, because
   shared channels are initialized by constructor execution after loading.
 - dynamic selection cycles fail during loading.
-- dynamic selection cannot depend on constructor locals/channels.
+- dynamic selection reads only context/payload/global inputs available before
+  constructor execution. Names introduced later by constructor code are not
+  visible to parent selection.
 
 Block placement does not wait on a per-block parent-decision promise. Parent
 selection is completed during loading before any constructor runs.
@@ -1077,7 +1095,7 @@ Command-based component operations preserve source order by enqueueing on the
 owner buffer. Direct instance calls use the component root/shared buffers.
 
 Explicit shared observation remains separate from ordinary inherited method
-dispatch because it observes another instance's shared root.
+calls because it observes another instance's shared root.
 
 Component creation accepts explicit payload. By default the component is
 isolated from the caller render context. `with context` opts into using the
@@ -1124,7 +1142,6 @@ type InheritanceAnalysisFacts = {
   localExtendsNode: ExtendsNode | null,
   methodEntries: CompiledMethodEntryInput[],
   sharedSchemaInputs: SharedSchemaInput[],
-  inferredTemplateSharedNames: InferredSharedName[],
   componentOperations: ComponentOperationSite[],
   componentSharedObservations: ComponentSharedObservationSite[]
 }
@@ -1142,8 +1159,9 @@ no `extends`, no `this.<name>` shared access, and no inherited calls.
 resolver generation and validation. `methodEntries` carry callable signatures,
 source origins, callable-local `super` references, callable-local ordinary
 inherited call references, and callable-local linked/mutated channel footprints.
-`sharedSchemaInputs` and `inferredTemplateSharedNames` feed shared-schema
-finalization. Component operation collections feed component code generation.
+`sharedSchemaInputs` feeds shared-schema finalization and includes both explicit
+script shared declarations and inferred template shared declarations. Component
+operation collections feed component code generation.
 
 Analysis may track individual participation reasons for diagnostics or
 assertions, but those reason flags are not contracted fields unless listed
@@ -1241,7 +1259,8 @@ Goal:
 - remove template block `with ...`, `with context`, and `without context`
   syntax
 - remove script method `with context` syntax
-- remove `extends ... with ...` syntax for scripts and templates
+- document that inheritance `extends` has no `with` clause for scripts or
+  templates
 - remove template `extends none`
 - keep script `extends none` and dynamic-null no-parent selection script-only
 - support script `return` in inherited constructors and methods through the
@@ -1253,7 +1272,6 @@ Tests:
 
 - parser rejects block `with`, `with context`, and `without context`
 - script transpiler/parser rejects `method ... with context`
-- parser rejects `extends ... with ...` in scripts and templates
 - parser keeps existing component/import/include composition forms, including
   `with context, name` and `with context, { key: expr }`
 - template `extends none` fails
@@ -1285,8 +1303,11 @@ Goal:
 - reject dynamic template `extends` nested inside runtime control flow
 - reject dynamic template `extends` resolving to no parent at runtime
 - reject any template declaration before `extends`
-- reject `extends` target expressions that read inferred shared vars or other
-  constructor-created locals/channels
+- reject `extends` target expressions that read inferred shared vars
+- allow context/payload values to drive dynamic `extends` even when constructor
+  code later declares a local with the same name
+- fail dynamic `extends` naturally when the target is unavailable at parent
+  selection time
 - compute exact inheritance participation facts
 
 Tests:
@@ -1329,6 +1350,22 @@ Goal:
 - `inheritanceSpec` is data-only and contains no executable setup function
 - generated `rootFunction` functions contain no lifecycle mode flags
 - generated inheritance code uses only the target lifecycle helpers
+- remove old compiler setup/startup emission paths, including `b___setup__`,
+  `runtime.runCompiledRootStartup(...)`, cross-phase root startup promises, and
+  compiler-side inheritance bootstrap/finalize orchestration
+- remove dynamic-template per-block parent-readiness wrappers; parent
+  resolution belongs to `resolveInheritanceParent`
+- re-evaluate composition payload capture in `extends` emission so it supports
+  only the target parent-resolution payload model and not removed
+  `extends ... with ...` behavior
+- replace remaining root-level inheritance discovery scans with direct
+  transform/analysis facts where this makes the compiled ABI simpler:
+  template inheritance-surface participation, top-level block declarations, and
+  local `extends` metadata should be recorded once and then read from the root
+  analysis/metadata shape
+- if `extends` metadata is centralized in Step 1, include enough placement
+  facts for validation to reject nested template `extends` without a separate
+  root tree scan
 
 Tests:
 
@@ -1475,13 +1512,13 @@ Tests:
 - instance creation loads/finalizes exactly once and executes no constructor
   code
 - `InheritanceInstance.create(...)` does not invoke `__constructor__`
-- `instance.invoke(...)` dispatches through `runtimeState.methods[name]`
-- `this.method(...)` dispatches to the same finalized entry as
+- `instance.invoke(...)` invokes through `runtimeState.methods[name]`
+- `this.method(...)` calls the same finalized entry as
   `instance.invoke(...)`
 - positional arguments bind by signature order
 - script keyword arguments follow the same behavior as regular function calls
 - template named placement bindings are converted to ordinary invocation
-  arguments before dispatch
+  arguments before invocation
 - `super()` invokes the finalized parent entry and does not look up by name
 - no-argument `super()` forwards the original argument frame
 - explicit `super(...)` builds a fresh argument frame for the parent signature
@@ -1496,11 +1533,11 @@ Tests:
 - ignored `super()` return does not affect the caller's return value
 - invocation links only finalized merged footprints
 - missing method metadata at invocation is a fatal structural error
-- script `this.name(...)` dispatches when `name` is an inherited method
+- script `this.name(...)` calls an inherited method when `name` is an inherited method
 - script bare `this.name` for an inherited method fails clearly
 - script shared name vs inherited method name ambiguity fails clearly
 - unknown script `this.name` fails clearly
-- template `this.name(...)` dispatches inherited callable
+- template `this.name(...)` calls an inherited callable
 - constructor-specific handling uses `RuntimeMethodEntry.isConstructor`, not a
   method-name string comparison
 
@@ -1571,6 +1608,8 @@ Tests:
 - template `this.sharedName` reads and writes inherited shared vars from blocks
 - parent/child template shared writes follow documented source-order channel
   semantics
+- template constructor `super()` analysis and metadata, including implicit
+  trailing `super()`, is finalized with the template lifecycle implementation
 - script explicit `shared var` reads and writes through `this.sharedName`
 - script shared defaults are claimed child-to-parent, and an unselected parent
   default expression is not evaluated
@@ -1626,7 +1665,7 @@ Tests:
   clearly
 - non-`var` component shared channel observation requires an explicit
   snapshot/error operation
-- component shared observation remains separate from inherited method dispatch;
+- component shared observation remains separate from inherited method calls;
   observing shared state does not invoke component methods
 - owner side-channel final snapshot closes component root/shared buffers
 - explicit close rejects later operations
@@ -1634,6 +1673,8 @@ Tests:
 - constructor initialization failure records instance failure and closes buffer
 - constructor initialization failure blocks later component operations
   predictably
+- component operation sites are collected by component analysis rather than by
+  a later root tree scan
 
 ### Step 7: Cleanup, Fixtures, And Test Migration
 
@@ -1653,6 +1694,9 @@ Goal:
   integration tests
 - triage skipped inheritance tests as deleted, rewritten, or still required
 - verify compiler-private runtime helpers do not look like public API
+- delete or move remaining sync inheritance compiler methods from the clean
+  async inheritance module; the sync compiler continues to use the Nunjucks
+  inheritance path and is outside this rebuild
 
 Tests:
 
@@ -1666,6 +1710,8 @@ Tests:
 - provisional loader/finalization/invocation unit tests are either promoted to
   integration tests, retained with an invariant-specific reason, or deleted
 - no skipped inheritance test group remains without an explicit disposition
+- `src/compiler/inheritance.js` contains only clean async inheritance compiler
+  code, or any retained sync bridge has an explicit non-inheritance-module home
 - focused inheritance suites pass
 - full `npm run test:quick` at the final integration gate
 
@@ -1690,11 +1736,12 @@ Tests:
   dynamic-null parent selection are script-only.
 - `extends ... with ...` is not part of the inheritance surface.
 - Dynamic extends resolves once before constructor execution.
-- Dynamic extends target expressions cannot read constructor locals/channels.
+- Dynamic extends target expressions read only inputs available before
+  constructor execution.
 - Dynamic template extends is allowed only as a top-level declaration, with no
-  template declarations before it.
+  template code before it.
 - Script `extends` appears before constructor statements; only root-scope
-  shared declarations may precede it.
+  shared declarations, whitespace, and comments may precede it.
 - Script shared defaults are claimed child-to-parent, so the first selected
   default wins and later parent defaults are not evaluated.
 - Template block and script method `with context` syntax is absent; component

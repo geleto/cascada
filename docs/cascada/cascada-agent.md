@@ -658,12 +658,12 @@ import "f.script" as fmt with context, locale
 ```javascript
 // [EXT-01] RULE: `extends "file"` declares inheritance. Render the CHILD; base constructor runs as part of chain.
 // extends "expr" if cond else none — conditional extends; `none` means root of own chain.
-// Composition payload via `extends "f" with [forms]` — same forms as `component`/`import`.
+// `extends` has no `with` form. Render context flows through the inheritance chain automatically.
 
-// CONSTRAINT: `extends` target and payload resolve before constructor/startup code. They may read render
-// context/payload/globals, but not vars created by local constructor/root-program code.
+// CONSTRAINT: `extends` target resolves before constructor/startup code. It may read render
+// context and globals, and for components the component payload, but not vars created by local constructor/root-program code.
 
-// [EXT-02] SCRIPT RULE: Only `shared` declarations are allowed BEFORE `extends`. Plain `var` before extends is a compile error.
+// [EXT-02] SCRIPT RULE: Only root-scope `shared` declarations, whitespace, and comments may appear before `extends`.
 
 // [EXT-03] SCRIPT RULE: `shared` declares chain-owned state, accessed via `this.<name>` from constructors/methods.
 // Forms:
@@ -757,7 +757,7 @@ var h = header.render("Header")
 
 // [COMPONENT-05] RULE: Component constructor return is IGNORED in component mode (vs direct-render which uses it).
 
-// [COMPONENT-06] RULE: `with` forms supported (mirrors `extends`):
+// [COMPONENT-06] RULE: `with` forms supported for component composition:
 //   with context
 //   with var1, var2
 //   with context, var1, var2
@@ -852,13 +852,13 @@ Hello {{ user.name }}
    {% while %}/{% endwhile %}, {% switch %}/{% case %}/{% endswitch %}. #}
 
 {# [TPL-13] RULE: `include`, `import`, `from ... import`, `extends` all use {% %} tags.
-   `include` is template-ONLY (not in scripts). #}
+   `include` is template-ONLY (not in scripts). `extends` has no `with` form. #}
 {% include "f" with context, var1, var2 %}
 {% import "f" as lib with { key: expr } %}
 {% from "f" import helper with context, var1 %}
-{% extends "base.njk" with theme %}
+{% extends "base.njk" %}
 
-{# [TPL-14] RULE: `revert` is template-supported as `{% revert %}` — discards the current guard scope's
+{# [TPL-14] RULE: `revert` is template-supported as `{% revert %}` - discards the current guard scope's
    output and runs `recover` if present. #}
 {% guard %}
   {% set r = riskyCall() %}
@@ -886,7 +886,7 @@ Hello {{ user.name }}
    `{% block name(arg = localValue) %}` passes a named placement binding.
    CONSTRAINT: Overrides MUST match parent's argument signature exactly.
    `super()` renders the parent with the ORIGINAL block arguments (not reassigned locals).
-   Parent/loop/top-level locals are NOT captured; pass them as block args or payload. #}
+   Parent/loop/top-level locals are NOT captured; pass them as block args, use render context, or use `this.<name>`. #}
 
 {# [TPL-18] RULE: Shared `var` state across the hierarchy uses `this.<name>`.
    DIFFERENTIAL FROM SCRIPTS: NO `shared` declaration is required in templates — compiler INFERS shared vars
@@ -900,7 +900,8 @@ Theme: {{ this.theme }}
 
 {# [TPL-20] RULE: Dynamic `this[expr]` is NOT supported in inheritance templates. #}
 
-{# [TPL-21] RULE: `with` clauses and explicit payload model are ASYNC-ONLY.
+{# [TPL-21] RULE: Composition `with` clauses and explicit payload model are ASYNC-ONLY.
+   They apply to include/import/from-import/component composition, not to inheritance `extends`.
    Classic (sync) Nunjucks retains implicit access to all parent-scope variables. #}
 ```
 
@@ -914,7 +915,7 @@ Theme: {{ this.theme }}
 | `include` | Sees caller's `{% set %}` vars | Isolated; only `with` inputs |
 | `import` | Macros see only own args | Isolated; only `with` inputs |
 | `block` | Sees caller frame | Render context + declared args; no placement locals |
-| Child top-level `{% set %}` | Visible in child's blocks | Not captured; pass as block arg, payload, or `this.<name>` |
+| Child top-level `{% set %}` | Visible in child's blocks | Not captured; pass as block arg or use `this.<name>` |
 
 ---
 

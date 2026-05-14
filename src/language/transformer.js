@@ -487,6 +487,16 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
     }
   }
 
+  if (!scriptMode && extendsIndex !== -1) {
+    for (let i = 0; i < extendsIndex; i++) {
+      if (nodes.isWhitespaceOutputNode(executableChildren[i])) {
+        executableChildren.splice(i, 1);
+        extendsIndex--;
+        i--;
+      }
+    }
+  }
+
   const remainingChildren = [];
   const constructorChildren = [];
 

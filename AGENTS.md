@@ -114,6 +114,7 @@ Development and tests require Node `>=22`.
 #### **Repository Hygiene**
 
 *   ✅ **DO:** Work with a dirty tree carefully. User changes may already be present.
+*   ✅ **DO:** Leave completed edits unstaged unless the user explicitly asks you to stage them.
 *   ❌ **DON'T:** Revert unrelated changes or use destructive git commands unless explicitly asked.
 
 #### **Language & Scripting (Writing Cascada Code)**
@@ -137,8 +138,10 @@ Development and tests require Node `>=22`.
 #### **Compiler Implementation (Modifying `src/compiler/*.js`)**
 
 *   ✅ **DO:** Keep cleanup passes minimal and behavior-preserving: remove unused helpers, inline one-line or single-use helpers when the call site stays clearer, and delete defensive checks only when setup/analysis guarantees the shape.
-*   ✅ **DO:** Prefer clear modern JS for guaranteed shapes: direct access for invariants, `?.` for genuinely optional paths, `??` for nullish defaults, and `typeof` / `Array.isArray` / object / string / number checks only where the value can really vary.
+*   ✅ **DO:** Trust compiler-owned structure after parser, transformer, or analysis initialization. Check boundaries where public inputs, optional feature paths, or complex conditions can produce missing/invalid values; avoid rechecking arguments or properties whose shape normal execution guarantees.
+*   ✅ **DO:** Prefer clear modern JS for guaranteed shapes: direct access for invariants, `?.` for genuinely optional paths, `??` for nullish defaults in value selection, and type checks only where values can really vary.
 *   ✅ **DO:** Keep helpers that name real domain concepts, are reused, or prevent meaningful duplication.
+*   ✅ **DO:** Use explicit `if` statements for conditional processing or side effects, such as iterating, pushing, emitting, or mutating optional values. Avoid `(items ?? []).forEach(...)` when `if (items) { ... }` is clearer.
 *   ❌ **DON'T:** Swap `||` and `??` casually: `||` treats `false`, `0`, and `""` as missing; `??` only treats `null`/`undefined` as missing.
 *   ❌ **DON'T:** Hide invariant violations with optional chaining, `||` defaults, `!!`, or repeated `typeof`/array/object/string/number guards. Keep guards that support sync mode, public helpers, synthetic nodes, or pre-child-walk metadata seeding.
 *   ✅ **DO:** Trust the runtime to handle synchronization. Provide correct channel analysis metadata (`declaredChannels`, `usedChannels`, `mutatedChannels`, `sequenceLocks`) and linked-channel information so buffers can observe the right values in source order.

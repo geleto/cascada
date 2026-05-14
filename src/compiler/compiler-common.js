@@ -123,19 +123,6 @@ class CompilerCommon extends Obj {
     return 't_' + this.lastId;
   }
 
-  _isStaticExtendsNode(node) {
-    return node instanceof nodes.Extends &&
-      !node.noParentLiteral &&
-      node.template instanceof nodes.Literal &&
-      typeof node.template.value === 'string';
-  }
-
-  _isDynamicExtendsNode(node) {
-    return node instanceof nodes.Extends &&
-      !node.noParentLiteral &&
-      !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
-  }
-
   _makeCallback(res) {
     const err = this._tmpid();
 
@@ -529,36 +516,6 @@ class CompilerCommon extends Obj {
     node.children.forEach((child) => {
       this.compile(child, frame);
     });
-  }
-
-  _getInheritanceMetadata(node) {
-    return node && node.inheritanceMetadata ? node.inheritanceMetadata : null;
-  }
-
-  _getMethodDefinitions(node) {
-    const metadata = this._getInheritanceMetadata(node);
-    if (!metadata || !metadata.methods || !Array.isArray(metadata.methods.children)) {
-      return [];
-    }
-    return metadata.methods.children.filter((child) => child && child.name && child.name.value !== '__constructor__');
-  }
-
-  _getConstructorDefinition(node) {
-    const metadata = this._getInheritanceMetadata(node);
-    if (!metadata || !metadata.methods || !Array.isArray(metadata.methods.children)) {
-      return null;
-    }
-    return metadata.methods.children.find((child) => child && child.name && child.name.value === '__constructor__') || null;
-  }
-
-  _getSharedDeclarations(node) {
-    const metadata = this._getInheritanceMetadata(node);
-    const inferredSharedDeclarations =
-      node._analysis.inferredTemplateSharedDeclarations ?? [];
-    if (!metadata || !metadata.sharedDeclarations || !Array.isArray(metadata.sharedDeclarations.children)) {
-      return inferredSharedDeclarations;
-    }
-    return metadata.sharedDeclarations.children.filter(Boolean).concat(inferredSharedDeclarations);
   }
 
   compileNodeList(node, frame) {

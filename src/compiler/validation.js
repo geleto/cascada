@@ -62,7 +62,7 @@ function validateChannelDeclarationNode(compiler, node) {
   if (!compiler.asyncMode) {
     compiler.fail('Channel declarations are only supported in async mode', node.lineno, node.colno, node);
   }
-  if (!compiler.scriptMode && !isShared) {
+  if (!compiler.scriptMode) {
     compiler.fail('Channel declarations are only supported in script mode', node.lineno, node.colno, node);
   }
   if (!(nameNode instanceof nodes.Symbol)) {
@@ -96,20 +96,15 @@ function validateChannelObservationCall(compiler, { node, command, channelName, 
   }
 }
 
-function describePreExtendsRootStatement(node) {
-  if (node instanceof nodes.Set) {
-    return node.varType === 'declaration' ? 'var declaration' : 'assignment';
+function isAllowedBeforeScriptExtendsNode(node) {
+  if (nodes.isWhitespaceOutputNode(node)) {
+    return true;
   }
-  if (node instanceof nodes.Block) {
-    return 'method declaration';
-  }
-  if (node instanceof nodes.Extends) {
-    return 'extends statement';
-  }
-  if (node instanceof nodes.ChannelDeclaration) {
-    return `${node.isShared ? 'shared ' : ''}${node.channelType} declaration`;
-  }
-  return `${node.typename || 'statement'} statement`;
+  return node instanceof nodes.ChannelDeclaration && node.isShared;
+}
+
+function isAllowedBeforeTemplateExtendsNode(node) {
+  return nodes.isWhitespaceOutputNode(node);
 }
 
 function getScriptExtendsSourceOrderViolation(node) {
@@ -134,13 +129,12 @@ function getScriptExtendsSourceOrderViolation(node) {
 
   for (let i = 0; i < firstDirectExtendsIndex; i++) {
     const child = node.children[i];
-    if (child instanceof nodes.ChannelDeclaration && child.isShared) {
+    if (isAllowedBeforeScriptExtendsNode(child)) {
       continue;
     }
-    const offendingNodeDescription = describePreExtendsRootStatement(child);
     return {
       node: child,
-      message: `unexpected ${offendingNodeDescription} before extends; only shared declarations are allowed before extends`
+      message: 'only shared declarations may appear before script extends'
     };
   }
 
@@ -165,26 +159,103 @@ function validateScriptExtendsSourceOrder(compiler, node) {
   );
 }
 
+function isRootLevelNode(rootNode, childNode) {
+  return !!(rootNode && Array.isArray(rootNode.children) && rootNode.children.includes(childNode));
+}
+
+function validateTemplateExtendsExpression(compiler, rootNode, extendsNode) {
+  if (!extendsNode || !extendsNode.template) {
+    return;
+  }
+  const usedChannels = extendsNode.template._analysis?.usedChannels;
+  if (!usedChannels) {
+    return;
+  }
+  const inferredSharedNames = new Set();
+  const sharedDeclarations = compiler.inheritance.getSharedDeclarations(rootNode);
+  sharedDeclarations.forEach((declaration) => {
+    if (declaration.implicitTemplateShared) {
+      inferredSharedNames.add(declaration.name);
+    }
+  });
+  usedChannels.forEach((name) => {
+    if (!inferredSharedNames.has(name)) {
+      return;
+    }
+    compiler.fail(
+      `template extends target cannot read inferred shared var 'this.${name}'`,
+      extendsNode.template.lineno,
+      extendsNode.template.colno,
+      extendsNode
+    );
+  });
+}
+
+function validateTemplateInheritanceSurface(compiler, rootNode) {
+  if (compiler.scriptMode) {
+    return;
+  }
+
+  const allExtendsNodes = rootNode.findAll(nodes.Extends);
+  const directExtendsNodes = allExtendsNodes.filter((extendsNode) =>
+    isRootLevelNode(rootNode, extendsNode)
+  );
+  if (directExtendsNodes.length > 1) {
+    const extraExtendsNode = directExtendsNodes[1];
+    compiler.fail(
+      'template roots support at most one top-level extends declaration',
+      extraExtendsNode.lineno,
+      extraExtendsNode.colno,
+      extraExtendsNode
+    );
+  }
+
+  const directExtendsNode = directExtendsNodes[0] || null;
+  if (directExtendsNode) {
+    const extendsIndex = rootNode.children.indexOf(directExtendsNode);
+    for (let i = 0; i < extendsIndex; i++) {
+      const child = rootNode.children[i];
+      if (isAllowedBeforeTemplateExtendsNode(child)) {
+        continue;
+      }
+      compiler.fail(
+        'template extends must appear before template code',
+        child.lineno,
+        child.colno,
+        child
+      );
+    }
+    validateTemplateExtendsExpression(compiler, rootNode, directExtendsNode);
+  }
+
+  const nestedExtends = allExtendsNodes.find((extendsNode) =>
+    !isRootLevelNode(rootNode, extendsNode)
+  );
+  if (nestedExtends) {
+    compiler.fail(
+      'template extends must be a top-level declaration',
+      nestedExtends.lineno,
+      nestedExtends.colno,
+      nestedExtends
+    );
+  }
+}
+
 function validateLocalSharedMethodNameCollisions(compiler, node) {
-  const sharedDeclarations = compiler._getSharedDeclarations(node);
-  if (!sharedDeclarations || sharedDeclarations.length === 0) {
+  const sharedDeclarations = compiler.inheritance.getSharedDeclarations(node);
+  if (sharedDeclarations.length === 0) {
     return;
   }
   const sharedNames = new Map();
   sharedDeclarations.forEach((declaration) => {
-    if (declaration && declaration.name && declaration.name.value) {
-      sharedNames.set(declaration.name.value, declaration);
-    }
+    sharedNames.set(declaration.name, declaration);
   });
-  if (sharedNames.size === 0) {
-    return;
-  }
   const methodDefinitions = compiler.scriptMode
-    ? compiler._getMethodDefinitions(node)
+    ? compiler.inheritance.getMethodDefinitions(node)
     : node.findAll(nodes.Block);
   methodDefinitions.forEach((method) => {
-    const methodName = method && method.name && method.name.value;
-    if (!methodName || !sharedNames.has(methodName)) {
+    const methodName = method.name.value;
+    if (!sharedNames.has(methodName)) {
       return;
     }
     compiler.fail(
@@ -199,4 +270,4 @@ function validateLocalSharedMethodNameCollisions(compiler, node) {
 
 
 
-export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChannelDeclarationNode, validateChannelObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateLocalSharedMethodNameCollisions };
+export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChannelDeclarationNode, validateChannelObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateTemplateExtendsExpression, validateTemplateInheritanceSurface, validateLocalSharedMethodNameCollisions };

@@ -15,8 +15,8 @@ class CompileLookup {
     }
 
     const compiler = this.compiler;
-    facts.explicitThisDispatchMethodName =
-      compiler.inheritance.analyzeExplicitThisDispatchLookup(node);
+    facts.inheritedMethodCallName =
+      compiler.inheritance.analyzeInheritedMethodCallTarget(node);
     this._collectComponentBindingLookup(node, facts);
     this._collectScriptSequenceChannelLookup(node, analysisPass, facts);
 
@@ -29,7 +29,7 @@ class CompileLookup {
       return;
     }
 
-    this.compiler.inheritance.validateBareExplicitThisDispatchLookup(node);
+    this.compiler.inheritance.validateBareInheritedMethodLookup(node);
 
     if (this._compileComponentBindingLookup(node)) {
       return;
@@ -52,7 +52,7 @@ class CompileLookup {
       thisSharedAccessFacts: null,
       componentBindingRoot: null,
       componentBindingFacts: null,
-      explicitThisDispatchMethodName: null
+      inheritedMethodCallName: null
     };
   }
 
@@ -156,7 +156,7 @@ class CompileLookup {
     const compiler = this.compiler;
     const thisSharedFacts =
       node._analysis.thisSharedAccessFacts ||
-      compiler.channel.getThisSharedAccessFacts(node);
+      compiler.channel.probeThisSharedAccessFacts(node, compiler.analysis);
     if (!thisSharedFacts) {
       return false;
     }

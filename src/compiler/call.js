@@ -31,8 +31,8 @@ class CompileCall {
 
     const directMacroCall = this._analyzeDirectMacroCall(node, analysisPass);
     const importedCallable = this._collectImportedCallableUsage(node, analysisPass, uses);
-    const explicitThisDispatchMethodName =
-      compiler.inheritance.analyzeExplicitThisDispatchCall(node, analysisPass);
+    const inheritedMethodCallName =
+      compiler.inheritance.analyzeInheritedMethodCall(node, analysisPass);
     const specialChannelCall = this._collectSpecialChannelCallUsage(node, analysisPass, uses, mutates);
 
     return {
@@ -42,7 +42,7 @@ class CompileCall {
       importedCallable,
       directCallerCall: false,
       directMacroCall,
-      explicitThisDispatchMethodName,
+      inheritedMethodCallName,
       // Direct same-scope macro calls reuse the current buffer through
       // runtime.invokeMacro(..., currentBuffer). Imported callable calls need a
       // value boundary, so only those are marked as linked child buffers here.
@@ -53,17 +53,17 @@ class CompileCall {
   postAnalyzeFunCall(node) {
     const compiler = this.compiler;
     const thisSharedFacts = node.name
-      ? compiler.channel.getThisSharedAccessFacts(node.name, compiler.analysis, node._analysis)
+      ? compiler.channel.probeThisSharedAccessFacts(node.name, compiler.analysis, node._analysis)
       : null;
-    const explicitThisDispatchMethodName =
-      compiler.inheritance.postAnalyzeExplicitThisDispatchCall(node, thisSharedFacts);
+    const inheritedMethodCallName =
+      compiler.inheritance.postAnalyzeInheritedMethodCall(node, thisSharedFacts);
 
     return {
       funCallThisSharedAccessFacts: thisSharedFacts,
       componentBindingRoot: node.name ? compiler.component.getBindingRoot(node.name) : null,
       componentBindingFacts: node.name ? compiler.component.getBindingFacts(node.name, { forCall: true }) : null,
-      explicitThisDispatchMethodName: explicitThisDispatchMethodName ??
-        node._analysis.explicitThisDispatchMethodName ??
+      inheritedMethodCallName: inheritedMethodCallName ??
+        node._analysis.inheritedMethodCallName ??
         null
     };
   }
@@ -93,7 +93,7 @@ class CompileCall {
     if (this._compileImportedCallableCall(node)) {
       return;
     }
-    if (compiler.inheritance.compileExplicitThisDispatchCall(node)) {
+    if (compiler.inheritance.compileInheritedMethodCall(node)) {
       return;
     }
     compiler._emitAsyncDynamicCall(node, compiler.buffer.currentBuffer);
@@ -107,7 +107,11 @@ class CompileCall {
     const compiler = this.compiler;
     // Sequence calls always have a callable target; the sequence marker lives
     // on the static call path, not on a nameless expression.
-    const thisSharedFacts = compiler.channel.getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
+    const thisSharedFacts = compiler.channel.probeThisSharedAccessFacts(
+      node.name,
+      analysisPass,
+      node._analysis
+    );
     if (thisSharedFacts) {
       compiler.fail(
         'Sequence marker (!) is only supported on context paths, not this.<shared> channels.',
@@ -269,7 +273,11 @@ class CompileCall {
 
   _getSpecialChannelCallFacts(node, analysisPass) {
     const compiler = this.compiler;
-    const thisSharedFacts = compiler.channel.getThisSharedAccessFacts(node.name, analysisPass, node._analysis);
+    const thisSharedFacts = compiler.channel.probeThisSharedAccessFacts(
+      node.name,
+      analysisPass,
+      node._analysis
+    );
     if (thisSharedFacts) {
       const methodName = thisSharedFacts.channelPath.length >= 2
         ? thisSharedFacts.channelPath[thisSharedFacts.channelPath.length - 1]

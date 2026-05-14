@@ -6,8 +6,8 @@ const ROOT_STARTUP_PROMISE_VAR = '__rootStartupPromise';
 /**
  * CompileInheritance - Handles template inheritance operations
  *
- * This module contains all the compiler methods related to template inheritance,
- * including extends, include, import, fromimport, and block operations.
+ * This module contains inheritance-specific compiler methods for the clean
+ * async inheritance rebuild.
  */
 
 class CompileInheritance {
@@ -16,11 +16,152 @@ class CompileInheritance {
     this.emit = this.compiler.emit;
   }
 
-  supportsExplicitThisDispatch() {
+  supportsInheritedMethodCalls() {
     return !!(this.compiler.scriptMode || this.compiler.templateUsesInheritanceSurface);
   }
 
-  getExplicitThisDispatchMethodName(node) {
+  templateUsesInheritanceSurface(rootNode) {
+    const compiler = this.compiler;
+    return !compiler.scriptMode;
+  }
+
+  isStaticExtendsNode(node) {
+    return node instanceof nodes.Extends &&
+      !node.noParentLiteral &&
+      node.template instanceof nodes.Literal &&
+      typeof node.template.value === 'string';
+  }
+
+  isDynamicExtendsNode(node) {
+    return node instanceof nodes.Extends &&
+      !node.noParentLiteral &&
+      !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
+  }
+
+  ensureImplicitTemplateSharedDeclaration(analysis, name, type, originNode) {
+    const compiler = this.compiler;
+    if (compiler.scriptMode || !compiler.templateUsesInheritanceSurface) {
+      return null;
+    }
+    if (!name || name.charAt(0) === '!') {
+      return null;
+    }
+
+    const declaration = {
+      name,
+      type,
+      initializer: null,
+      shared: true,
+      implicitTemplateShared: true
+    };
+    const sharedDeclaration = this.ensureRootSharedDeclaration(
+      analysis,
+      declaration,
+      originNode ? (originNode._analysis || analysis) : analysis
+    );
+    return sharedDeclaration;
+  }
+
+  ensureRootSharedDeclaration(analysis, declaration, originAnalysis) {
+    const rootOwner = this.compiler.analysis.getRootScopeOwner(analysis);
+    const existingDeclaration = this.findRootSharedDeclaration(rootOwner, declaration.name);
+    if (existingDeclaration) {
+      return existingDeclaration;
+    }
+
+    declaration.shared = true;
+    declaration.declarationOrigin = this.compiler.analysis.getTopmostChildAnalysis(originAnalysis);
+    rootOwner.declaredChannels = rootOwner.declaredChannels || new Map();
+    if (!rootOwner.declaredChannels.has(declaration.name)) {
+      rootOwner.declaredChannels.set(declaration.name, declaration);
+    }
+    // The declaration table is rebuilt during finalization, so keep implicit
+    // shared declarations in the root declaration list as their source of truth.
+    rootOwner.declares.push(declaration);
+    this.registerRootSharedDeclaration(rootOwner, declaration);
+    return declaration;
+  }
+
+  findRootSharedDeclaration(rootAnalysis, name) {
+    const sharedDeclarations = rootAnalysis.inheritanceSharedDeclarations || [];
+    return sharedDeclarations.find((declaration) => declaration.name === name) || null;
+  }
+
+  registerRootSharedDeclaration(rootAnalysis, declaration) {
+    rootAnalysis.inheritanceSharedDeclarations = rootAnalysis.inheritanceSharedDeclarations || [];
+    if (!rootAnalysis.inheritanceSharedDeclarations.includes(declaration)) {
+      rootAnalysis.inheritanceSharedDeclarations.push(declaration);
+    }
+  }
+
+  postAnalyzeCallableDefinition(node) {
+    // Blocks contribute template text output; script methods contribute return output.
+    return this.createCallableChannelFootprint(node);
+  }
+
+  getMethodDefinitions(node) {
+    return node.inheritanceMetadata.methods.children.filter((method) => method.name.value !== '__constructor__');
+  }
+
+  getConstructorDefinition(node) {
+    return node.inheritanceMetadata.methods.children.find((method) => method.name.value === '__constructor__') || null;
+  }
+
+  hasLocalMethodDefinition(analysis, name) {
+    if (!this.compiler.scriptMode) {
+      return false;
+    }
+    const rootNode = this.compiler.analysis.getRootNode(analysis);
+    return this.getMethodDefinitions(rootNode).some((method) => method.name.value === name);
+  }
+
+  getSharedDeclarations(node) {
+    return node._analysis.inheritanceSharedDeclarations || [];
+  }
+
+  computeRootInheritanceFacts(node) {
+    const compiler = this.compiler;
+    const allExtendsNodes = node.findAll(nodes.Extends);
+    const extendsNodes = allExtendsNodes.filter((child) => !child.noParentLiteral);
+    // The local syntax may be `extends none`; hasExtends only means a real parent is selected.
+    const localExtendsNode = node.children.find((child) => child instanceof nodes.Extends) || null;
+    const hasDynamicExtends = extendsNodes.some((child) => this.isDynamicExtendsNode(child));
+    const hasExtends = extendsNodes.length > 0;
+    const methodDefinitions = compiler.scriptMode ? this.getMethodDefinitions(node) : node.findAll(nodes.Block);
+    const invokedMethodRefs = node._analysis.inheritanceInvokedMethodRefs || Object.create(null);
+
+    const sharedDeclarations = this.getSharedDeclarations(node);
+    const componentOperations = node.findAll(nodes.Component);
+    const hasSuper = !!node._analysis.inheritanceHasSuper;
+    const hasInheritedCalls = Object.keys(invokedMethodRefs).length > 0;
+    const participates = !!(
+      allExtendsNodes.length > 0 ||
+      methodDefinitions.length > 0 ||
+      sharedDeclarations.length > 0 ||
+      componentOperations.length > 0 ||
+      hasSuper ||
+      hasInheritedCalls
+    );
+
+    return {
+      hasExtends,
+      hasDynamicExtends,
+      localExtendsNode,
+      participates,
+      methodEntries: methodDefinitions.map((methodNode) => ({
+        name: methodNode.name.value,
+        signature: { argNames: this.getCallableSignature(methodNode).argNames }
+      })),
+      sharedSchemaInputs: sharedDeclarations.map((declaration) => ({
+        name: declaration.name,
+        type: declaration.type
+      })),
+      componentOperations,
+      componentSharedObservations: []
+    };
+  }
+
+  getInheritedMethodCallName(node) {
     return node instanceof nodes.LookupVal &&
       node.target instanceof nodes.Symbol &&
       node.target.value === 'this' &&
@@ -30,45 +171,99 @@ class CompileInheritance {
       : null;
   }
 
-  analyzeExplicitThisDispatchLookup(nameNode) {
-    return this.supportsExplicitThisDispatch()
-      ? this.getExplicitThisDispatchMethodName(nameNode)
+  analyzeInheritedMethodCallTarget(nameNode) {
+    return this.supportsInheritedMethodCalls()
+      ? this.getInheritedMethodCallName(nameNode)
       : null;
   }
 
-  analyzeExplicitThisDispatchCall(node, analysisPass) {
+  analyzeInheritedMethodCall(node, analysisPass) {
     const methodName = node && node.name
-      ? this.analyzeExplicitThisDispatchLookup(node.name)
+      ? this.analyzeInheritedMethodCallTarget(node.name)
       : null;
     if (!methodName) {
       return null;
     }
-    const thisSharedDispatch = this.compiler.channel.getThisSharedAccessFacts(
+    const thisSharedAccess = this.compiler.channel.probeThisSharedAccessFacts(
       node.name,
       analysisPass,
       node._analysis
     );
-    return thisSharedDispatch ? null : methodName;
+    return thisSharedAccess ? null : methodName;
   }
 
-  postAnalyzeExplicitThisDispatchCall(node, thisSharedFacts = null) {
+  postAnalyzeInheritedMethodCall(node, thisSharedFacts = null) {
     if (thisSharedFacts) {
       return null;
     }
     const methodName = node && node.name
-      ? this.analyzeExplicitThisDispatchLookup(node.name)
+      ? this.analyzeInheritedMethodCallTarget(node.name)
       : null;
     if (methodName) {
-      (node.name._analysis || (node.name._analysis = {})).allowExplicitThisDispatchCall = true;
+      (node.name._analysis || (node.name._analysis = {})).allowInheritedMethodCall = true;
+      this.recordInheritedMethodCall(node, methodName);
     }
     return methodName;
   }
 
-  validateBareExplicitThisDispatchLookup(node) {
+  analyzeSuper(node) {
+    const rootAnalysis = this.getRootAnalysis(node._analysis);
+    rootAnalysis.inheritanceHasSuper = true;
+    const callableAnalysis = this.getNearestCallableAnalysis(node._analysis);
+    if (callableAnalysis) {
+      callableAnalysis.callableUsesSuper = true;
+      if (!callableAnalysis.callableSuperOrigin) {
+        callableAnalysis.callableSuperOrigin = this.compiler._createErrorContext(node);
+      }
+    }
+  }
+
+  recordInheritedMethodCall(callNode, methodName) {
+    const rootAnalysis = this.getRootAnalysis(callNode._analysis);
+    this.recordInheritedMethodRef(rootAnalysis, 'inheritanceInvokedMethodRefs', methodName, callNode);
+    const callableAnalysis = this.getNearestCallableAnalysis(callNode._analysis);
+    if (callableAnalysis) {
+      this.recordInheritedMethodRef(callableAnalysis, 'callableInvokedMethodRefs', methodName, callNode);
+    }
+  }
+
+  recordInheritedMethodRef(analysis, fieldName, methodName, originNode) {
+    if (!analysis[fieldName]) {
+      analysis[fieldName] = Object.create(null);
+    }
+    if (!analysis[fieldName][methodName]) {
+      analysis[fieldName][methodName] = {
+        name: methodName,
+        origin: this.compiler._createErrorContext(originNode)
+      };
+    }
+  }
+
+  getRootAnalysis(analysis) {
+    let current = analysis;
+    while (current.parent) {
+      current = current.parent;
+    }
+    return current;
+  }
+
+  getNearestCallableAnalysis(analysis) {
+    let current = analysis;
+    while (current) {
+      const node = current.node;
+      if (node instanceof nodes.Block || node instanceof nodes.MethodDefinition) {
+        return current;
+      }
+      current = current.parent;
+    }
+    return null;
+  }
+
+  validateBareInheritedMethodLookup(node) {
     const methodName =
-      node._analysis.explicitThisDispatchMethodName ||
-      this.analyzeExplicitThisDispatchLookup(node);
-    if (methodName && !node._analysis.allowExplicitThisDispatchCall) {
+      node._analysis.inheritedMethodCallName ||
+      this.analyzeInheritedMethodCallTarget(node);
+    if (methodName && !node._analysis.allowInheritedMethodCall) {
       this.compiler.fail(
         `bare inherited-method references are not supported; bare this.${methodName} references are not allowed; use this.${methodName}(...)`,
         node.lineno,
@@ -78,8 +273,8 @@ class CompileInheritance {
     }
   }
 
-  compileExplicitThisDispatchCall(node) {
-    const methodName = node._analysis.explicitThisDispatchMethodName ?? null;
+  compileInheritedMethodCall(node) {
+    const methodName = node._analysis.inheritedMethodCallName ?? null;
     if (!methodName) {
       return false;
     }
@@ -107,6 +302,61 @@ class CompileInheritance {
       this.compiler.compileExpression(nameNode, null, nameNode, true);
       this.emit.line(';');
     });
+  }
+
+  analyzeBlock(node) {
+    const compiler = this.compiler;
+    const signature = this.getCallableSignature(node);
+    const declares = [];
+    const seenBlockArgNames = new Set();
+    signature.argNameNodes.forEach((nameNode, index) => {
+      nameNode._analysis = { ...nameNode._analysis, skipDeclarationOwner: node._analysis };
+      const canonicalName = signature.argNames[index];
+      if (seenBlockArgNames.has(canonicalName)) {
+        compiler.fail(
+          `block argument '${canonicalName}' is declared more than once`,
+          nameNode.lineno,
+          nameNode.colno,
+          node,
+          nameNode
+        );
+      }
+      seenBlockArgNames.add(canonicalName);
+      declares.push({
+        name: canonicalName,
+        type: 'var',
+        initializer: null,
+        explicit: true,
+        blockArg: true
+      });
+    });
+    if (declares.length > 0 && node.body) {
+      const bodyAnalysis = node.body._analysis || {};
+      const bodyDeclares = bodyAnalysis.declares
+        ? bodyAnalysis.declares.concat(declares)
+        : declares;
+      node.body._analysis = {
+        ...bodyAnalysis,
+        declares: bodyDeclares
+      };
+    }
+    const textChannel = !compiler.scriptMode
+      ? compiler.analysis.getCurrentTextChannel(node._analysis)
+      : null;
+    return {
+      createScope: true,
+      scopeBoundary: true,
+      parentReadOnly: true,
+      uses: textChannel ? [textChannel] : [],
+      mutates: textChannel ? [textChannel] : [],
+      createsLinkedChildBuffer: true
+    };
+  }
+
+  analyzeMethodDefinition(node) {
+    const analysis = this.analyzeBlock(node);
+    analysis.declares = [this.compiler.return.createChannelDeclaration()];
+    return analysis;
   }
 
   _getPositionalSuperArgsNode(node) {
@@ -160,6 +410,9 @@ class CompileInheritance {
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
     const explicitBlockArgNodes = this.getCallableArgNodes(node);
     const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
+    // TODO(Step 1): Remove this per-block parent-readiness wrapper. The target
+    // generated shape resolves the parent through resolveInheritanceParent
+    // rather than checking extendsState inside block placement.
     const needsParentCheck = isTopLevelTemplateBlock && this.compiler.hasDynamicExtends;
     this.emit.line(`let ${id};`);
     if (needsParentCheck) {
@@ -182,23 +435,33 @@ class CompileInheritance {
   }
 
   emitRootSharedDeclarations(node) {
-    const sharedDeclarations = this.compiler._getSharedDeclarations(node);
+    const sharedDeclarations = this.getSharedDeclarations(node);
     sharedDeclarations.forEach((declaration) => {
-      this.compiler.compileChannelDeclaration(declaration);
+      this.emitSharedDeclaration(declaration);
     });
   }
 
-  _getMethodInvocationPath(methodNode) {
-    const ownerPath = this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName);
-    return `${ownerPath}#method:${methodNode.name.value}`;
+  emitSharedDeclaration(declaration) {
+    this.emit(
+      `runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(${this.compiler.buffer.currentBuffer}, inheritanceState), ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context`
+    );
+    if (declaration.initializer) {
+      this.emit(', ');
+      this.compiler.compile(declaration.initializer, null);
+    }
+    this.emit.line(');');
   }
 
-  _isScriptMethodEntry(node) {
-    return !!(this.compiler.scriptMode && node instanceof nodes.MethodDefinition);
+  _getCallableInvocationPath(callableNode) {
+    const ownerPath = this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName);
+    return `${ownerPath}#method:${callableNode.name.value}`;
   }
 
   emitAsyncRootStateInitialization(compiledMethodEntriesVar, compiledSharedSchemaVar, compiledInvokedMethodRefsVar) {
-    if (!this.compiler.needsInheritanceState) {
+    // TODO(Step 1): Delete/rewrite this old setup/startup bootstrap path.
+    // The target ABI has metadata-only inheritanceSpec, no setup function, and
+    // no cross-phase root startup lifecycle helper.
+    if (!this.compiler.inheritanceParticipates) {
       this.emit.line('if (inheritanceState) {');
       this.emit.line('  inheritanceState = runtime.finalizeInheritanceMetadata(inheritanceState, context);');
       this.emit.line('}');
@@ -232,8 +495,11 @@ class CompileInheritance {
   }
 
   compileAsyncConstructorEntry(node) {
+    // TODO(Step 1): Rewrite constructor emission to the final callable entry
+    // shape. The target constructor entry must not depend on setup/startup
+    // lifecycle parameters.
     const isTemplateConstructor = !this.compiler.scriptMode;
-    const constructorDefinition = this.compiler._getConstructorDefinition(node);
+    const constructorDefinition = this.getConstructorDefinition(node);
 
     this._withAsyncConstructorEntryState(isTemplateConstructor, () => {
       this.emit.line('function b___constructor__(env, context, runtime, cb, output, inheritanceState = null, extendsState = null) {');
@@ -287,9 +553,6 @@ class CompileInheritance {
     this.emit.line(`    if (${ROOT_STARTUP_PROMISE_VAR}) {`);
     this.emit.line(`      await ${ROOT_STARTUP_PROMISE_VAR};`);
     this.emit.line('    }');
-    if (this.compiler.hasDeferredDynamicExtends) {
-      this._emitDynamicTemplateParentRender(`    `);
-    }
     this.emit.line(`    ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line(`    if (inheritanceState && inheritanceState.sharedRootBuffer && inheritanceState.sharedRootBuffer !== ${this.compiler.buffer.currentBuffer}) { inheritanceState.sharedRootBuffer.finish(); }`);
     this.emit.line(`    cb(null, await ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot());`);
@@ -312,33 +575,15 @@ class CompileInheritance {
     this.emit.line(`${indent}});`);
   }
 
-  _emitDynamicTemplateParentRender(indent = '') {
-    if (!this.compiler.hasDynamicExtends) {
-      return;
-    }
-    const parentSelectionVar = this.compiler._tmpid();
-    const parentPayloadVar = this.compiler._tmpid();
-    this.emit.line(`${indent}const ${parentSelectionVar} = await runtime.resolveSingle(extendsState && extendsState.parentSelection);`);
-    this.emit.line(`${indent}if (${parentSelectionVar}) {`);
-    this.emit.line(`${indent}  const ${parentPayloadVar} = ${parentSelectionVar}.compositionPayload || (inheritanceState && inheritanceState.compositionPayload) || null;`);
-    this._emitParentRootRender({
-      indent: `${indent}  `,
-      templateExpr: `${parentSelectionVar}.template`,
-      compositionPayloadExpr: parentPayloadVar,
-      currentBufferExpr: this.compiler.buffer.currentBuffer
-    });
-    this.emit.line(`${indent}}`);
-  }
-
   _emitAsyncCompositionRootCompletion(node) {
+    // TODO(Step 1): Remove this composition/lifecycle completion branch when
+    // root emission switches to the target {rootFunction, inheritanceSpec,
+    // resolveInheritanceParent} shape.
     this.emit.line(`} else if (componentMode) {`);
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('} else {');
     this.emit.line(`  if (${ROOT_STARTUP_PROMISE_VAR}) {`);
     this.emit.line(`    ${ROOT_STARTUP_PROMISE_VAR} = ${ROOT_STARTUP_PROMISE_VAR}.then(async () => {`);
-    if (this.compiler.hasDeferredDynamicExtends) {
-      this._emitDynamicTemplateParentRender(`      `);
-    }
     this.emit.line(`      ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('    }).catch((e) => {');
@@ -347,22 +592,7 @@ class CompileInheritance {
     this.emit.line('    });');
     this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${ROOT_STARTUP_PROMISE_VAR});`);
     this.emit.line('  } else {');
-    if (this.compiler.hasDeferredDynamicExtends) {
-      const finishPromiseVar = this.compiler._tmpid();
-      this.emit.line(`    const ${finishPromiseVar} = (async () => {`);
-      this._emitDynamicTemplateParentRender(`      `);
-      this.emit.line(`      ${this.compiler.buffer.currentBuffer}.finish();`);
-      this.emit.line(`      return ${this.compiler.buffer.currentBuffer};`);
-      this.emit.line('    })();');
-      this.emit.line(`    ${ROOT_STARTUP_PROMISE_VAR} = ${finishPromiseVar};`);
-      this.emit.line(`    runtime.setInheritanceStartupPromise(inheritanceState, ${finishPromiseVar});`);
-      this.emit.line(`    ${finishPromiseVar}.catch((e) => {`);
-      this.emit.line(`      var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
-      this.emit.line('      cb(err);');
-      this.emit.line('    });');
-    } else {
-      this.emit.line(`    ${this.compiler.buffer.currentBuffer}.finish();`);
-    }
+    this.emit.line(`    ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line('  }');
     this.emit.line(`  return ${this.compiler.buffer.currentBuffer};`);
     this.emit.line('}');
@@ -383,7 +613,10 @@ class CompileInheritance {
     this._emitAsyncCompositionRootCompletion(node);
   }
 
-  _emitExtendsCompositionPayload(node, extendsVarsVar, extendsRootContextVar, payloadVar) {
+  _emitExtendsCompositionPayload(extendsVarsVar, extendsRootContextVar, payloadVar) {
+    // TODO(Step 1): Re-evaluate composition payload capture when parent
+    // resolution moves into resolveInheritanceParent. This helper must not
+    // grow support for removed `extends ... with ...` syntax.
     this.emit.line(`const ${payloadVar} = inheritanceState && inheritanceState.compositionPayload ? inheritanceState.compositionPayload : runtime.createCompositionPayload(${extendsRootContextVar}, ${extendsVarsVar});`);
     this.emit.line('if (inheritanceState && !inheritanceState.compositionPayload) {');
     this.emit.line(`  inheritanceState.compositionPayload = ${payloadVar};`);
@@ -397,9 +630,8 @@ class CompileInheritance {
 
     this.emit.line(`const ${extendsVarsVar} = {};`);
     emitInputCapture(extendsVarsVar);
-    this.compiler.compositionPayload.emitContext(extendsRootContextVar, extendsVarsVar, node.withContext !== false);
+    this.compiler.compositionPayload.emitContext(extendsRootContextVar, extendsVarsVar, true);
     this._emitExtendsCompositionPayload(
-      node,
       extendsVarsVar,
       extendsRootContextVar,
       compositionPayloadVar
@@ -439,21 +671,64 @@ class CompileInheritance {
   }
 
   getCallableArgNodes(callableNode) {
-    return this.getCallableSignature(callableNode).argNodes;
+    return this.getCallableSignature(callableNode).placementArgNodes;
   }
 
   getCallableSignature(callableNode) {
     const signatureArgs = callableNode && callableNode.args && callableNode.args.children ? callableNode.args : new nodes.NodeList();
-    const label = callableNode instanceof nodes.MethodDefinition ? 'method signature' : 'block signature';
+    const label = this.compiler.scriptMode ? 'method signature' : 'block signature';
+    const allowNamedBindings = !this.compiler.scriptMode;
     const parsed = this.compiler._parseCallableSignature(signatureArgs, {
-      allowKeywordArgs: false,
+      allowKeywordArgs: allowNamedBindings,
       symbolsOnly: true,
       label,
       ownerNode: callableNode
     });
+    if (!allowNamedBindings) {
+      return {
+        argNames: parsed.args.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value)),
+        argNameNodes: parsed.args,
+        placementArgNodes: parsed.args
+      };
+    }
+
+    if (parsed.kwargs && parsed.args.length > 0) {
+      this.compiler.fail(
+        'block placement arguments cannot mix positional and named bindings',
+        parsed.kwargs.lineno,
+        parsed.kwargs.colno,
+        callableNode,
+        parsed.kwargs
+      );
+    }
+
+    if (parsed.kwargs) {
+      const argNameNodes = [];
+      const placementArgNodes = [];
+      parsed.kwargs.children.forEach((pair) => {
+        if (!(pair.key instanceof nodes.Symbol)) {
+          this.compiler.fail(
+            `${label} only supports identifier arguments`,
+            pair.key.lineno,
+            pair.key.colno,
+            callableNode,
+            pair.key
+          );
+        }
+        argNameNodes.push(pair.key);
+        placementArgNodes.push(pair.value);
+      });
+      return {
+        argNames: argNameNodes.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value)),
+        argNameNodes,
+        placementArgNodes
+      };
+    }
+
     return {
       argNames: parsed.args.map((nameNode) => this.compiler.analysis.getBaseChannelName(nameNode.value)),
-      argNodes: parsed.args
+      argNameNodes: parsed.args,
+      placementArgNodes: parsed.args
     };
   }
 
@@ -545,17 +820,17 @@ class CompileInheritance {
     this.emit.line(`return ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot();`);
   }
 
-  compileAsyncCallableEntry(callableNode) {
+  compileInheritedCallableEntry(callableNode) {
     const name = callableNode.name.value;
-    const isScriptMethod = this._isScriptMethodEntry(callableNode);
+    const isScriptMethod = this.compiler.scriptMode;
     const invocationPath = isScriptMethod
-      ? JSON.stringify(this._getMethodInvocationPath(callableNode))
+      ? JSON.stringify(this._getCallableInvocationPath(callableNode))
       : (this.compiler.templateName == null
         ? 'null'
         : JSON.stringify(String(this.compiler.templateName)));
     const declaredCallableArgNames = this.getCallableArgNames(callableNode);
     // This only wires the entry-local command buffer to its immediate parent
-    // invocation buffer. Caller-side inherited dispatch linking is resolved
+    // invocation buffer. Caller-side inherited invocation linking is resolved
     // separately from helper-resolved method metadata at runtime.
     const extraParams = ['blockPayload = null', 'blockRenderCtx = undefined', 'inheritanceState = null', 'methodData'];
     this.emit.beginEntryFunction(
@@ -582,52 +857,53 @@ class CompileInheritance {
     this.emit.endEntryFunction(callableNode, true);
   }
 
-  compileAsyncCallableEntries(node) {
+  compileInheritedCallableEntries(node) {
     const callableNames = new Set();
+    const callableKind = this.compiler.scriptMode ? 'method' : 'block';
     const callables = this.compiler.scriptMode
-      ? this.compiler._getMethodDefinitions(node)
+      ? this.getMethodDefinitions(node)
       : node.findAll(nodes.Block);
 
     callables.forEach((callableNode) => {
       const name = callableNode.name.value;
 
       if (callableNames.has(name)) {
-        this.compiler.fail(`Block "${name}" defined more than once.`, callableNode.lineno, callableNode.colno, callableNode);
+        this.compiler.fail(`${callableKind} "${name}" defined more than once.`, callableNode.lineno, callableNode.colno, callableNode);
       }
       callableNames.add(name);
-      this.compileAsyncCallableEntry(callableNode);
+      this.compileInheritedCallableEntry(callableNode);
     });
 
     return callables;
   }
 
-  collectCompiledMethodEntries(node, blocks) {
-    const constructorDefinition = this.compiler._getConstructorDefinition(node);
+  compileCallableEntriesLiteral(node, callables) {
+    const constructorDefinition = this.getConstructorDefinition(node);
     const ownerKey = JSON.stringify(this.compiler.templateName == null ? '__anonymous__' : String(this.compiler.templateName));
-    const methodEntries = blocks.map((block) => {
-      const methodName = block.name.value;
-      return this.compileMethodMetadataEntry({
+    const methodEntries = callables.map((callableNode) => {
+      const methodName = callableNode.name.value;
+      return this.compileMethodEntryLiteral({
         methodName,
         fnExpr: `b_${methodName}`,
-        ownerNode: block,
-        superExpr: this.blockUsesSuper(block) ? 'true' : 'false',
-        superOriginExpr: this.compileCallableSuperOriginLiteral(block),
-        invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(block)),
+        ownerNode: callableNode,
+        superExpr: callableNode._analysis.callableUsesSuper ? 'true' : 'false',
+        superOriginExpr: this.compileCallableSuperOriginLiteral(callableNode),
+        invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(callableNode._analysis.callableInvokedMethodRefs),
         signatureExpr: JSON.stringify({
-          argNames: this.getCallableSignature(block).argNames
+          argNames: this.getCallableSignature(callableNode).argNames
         }),
         ownerKey
       });
     });
 
     if (constructorDefinition) {
-      methodEntries.push(this.compileMethodMetadataEntry({
+      methodEntries.push(this.compileMethodEntryLiteral({
         methodName: '__constructor__',
         fnExpr: 'b___constructor__',
         ownerNode: constructorDefinition,
-        superExpr: this.blockUsesSuper(constructorDefinition) ? 'true' : 'false',
+        superExpr: constructorDefinition._analysis.callableUsesSuper ? 'true' : 'false',
         superOriginExpr: this.compileCallableSuperOriginLiteral(constructorDefinition),
-        invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(this.collectDirectInvokedMethodRefsForCallable(constructorDefinition)),
+        invokedMethodRefsExpr: this.compileInvokedMethodRefsLiteral(constructorDefinition._analysis.callableInvokedMethodRefs),
         signatureExpr: JSON.stringify({ argNames: [] }),
         ownerKey
       }));
@@ -636,102 +912,35 @@ class CompileInheritance {
     return `{ ${methodEntries.join(', ')} }`;
   }
 
-  compileMethodMetadataEntry({ methodName, fnExpr, ownerNode, superExpr, superOriginExpr, invokedMethodRefsExpr, signatureExpr, ownerKey }) {
-    const ownLinkedChannelNames = this._getMethodFootprintField(ownerNode, 'methodLinkedChannels');
+  compileMethodEntryLiteral({ methodName, fnExpr, ownerNode, superExpr, superOriginExpr, invokedMethodRefsExpr, signatureExpr, ownerKey }) {
+    const ownLinkedChannelNames = this._getCallableFootprintField(ownerNode, 'methodLinkedChannels');
     // Keep mutations separate from links so inherited/component calls can
     // later distinguish read-only participation from write barriers.
-    const ownMutatedChannelNames = this._getMethodFootprintField(ownerNode, 'methodMutatedChannels');
+    const ownMutatedChannelNames = this._getCallableFootprintField(ownerNode, 'methodMutatedChannels');
     const ownLinkedChannels = JSON.stringify(ownLinkedChannelNames);
     const ownMutatedChannels = JSON.stringify(ownMutatedChannelNames);
     return `${JSON.stringify(methodName)}: { fn: ${fnExpr}, ownMutatedChannels: ${ownMutatedChannels}, ownLinkedChannels: ${ownLinkedChannels}, super: ${superExpr}, superOrigin: ${superOriginExpr || 'null'}, invokedMethodRefs: ${invokedMethodRefsExpr || '{}'}, signature: ${signatureExpr}, ownerKey: ${ownerKey} }`;
   }
 
-  _getMethodFootprintField(ownerNode, fieldName) {
+  _getCallableFootprintField(ownerNode, fieldName) {
     if (fieldName !== 'methodLinkedChannels' && fieldName !== 'methodMutatedChannels') {
       throw new Error(`Unsupported method footprint field '${fieldName}'`);
     }
-    const channels = ownerNode?._analysis?.[fieldName] ?? [];
-    return Array.isArray(channels) ? channels : [];
-  }
-
-  collectDirectInvokedMethodRefsForCallable(callableNode) {
-    const calls = this.collectDirectFunCallsForCallableBody(this.getCallableBodyNode(callableNode));
-    return this.collectInvokedMethodRefsFromCalls(calls);
-  }
-
-  collectAllInvokedMethodRefsFromNode(sourceNode) {
-    const calls = sourceNode && typeof sourceNode.findAll === 'function'
-      ? sourceNode.findAll(nodes.FunCall)
-      : [];
-    return this.collectInvokedMethodRefsFromCalls(calls);
-  }
-
-  collectInvokedMethodRefsFromCalls(calls) {
-    const refs = Object.create(null);
-    calls.forEach((callNode) => {
-      const methodName = this.getAnalyzedExplicitThisDispatchMethodName(callNode);
-      if (methodName && !refs[methodName]) {
-        refs[methodName] = {
-          name: methodName,
-          origin: this.compiler._createErrorContext(callNode)
-        };
-      }
-    });
-    return refs;
-  }
-
-  getAnalyzedExplicitThisDispatchMethodName(callNode) {
-    return callNode &&
-      callNode._analysis &&
-      typeof callNode._analysis.explicitThisDispatchMethodName === 'string'
-      ? callNode._analysis.explicitThisDispatchMethodName
-      : null;
-  }
-
-  getCallableBodyNode(callableNode) {
-    // Keep this helper callable-shaped so future macro metadata can reuse it
-    // without accidentally traversing into nested callable boundaries.
-    if (
-      callableNode instanceof nodes.Block ||
-      callableNode instanceof nodes.MethodDefinition ||
-      callableNode instanceof nodes.Macro
-    ) {
-      return callableNode.body || null;
+    if (!ownerNode || !ownerNode._analysis) {
+      return [];
     }
-    return callableNode;
-  }
-
-  collectDirectFunCallsForCallableBody(ownerNode, calls = []) {
-    if (!ownerNode) {
-      return calls;
+    const channels = ownerNode._analysis[fieldName];
+    if (!Array.isArray(channels)) {
+      return [];
     }
-    if (Array.isArray(ownerNode)) {
-      ownerNode.forEach((child) => this.collectDirectFunCallsForCallableBody(child, calls));
-      return calls;
-    }
-    if (ownerNode instanceof nodes.Block || ownerNode instanceof nodes.MethodDefinition || ownerNode instanceof nodes.Macro) {
-      return calls;
-    }
-    if (ownerNode instanceof nodes.FunCall) {
-      calls.push(ownerNode);
-    }
-    if (ownerNode instanceof nodes.Node && typeof ownerNode.iterFields === 'function') {
-      ownerNode.iterFields((value) => {
-        this.collectDirectFunCallsForCallableBody(value, calls);
-      });
-    }
-    return calls;
-  }
-
-  collectCompiledInvokedMethodRefs(node) {
-    return this.compileInvokedMethodRefsLiteral(this.collectAllInvokedMethodRefsFromNode(node));
+    return channels;
   }
 
   compileInvokedMethodRefsLiteral(methodRefs) {
-    if (!methodRefs || typeof methodRefs !== 'object') {
+    if (!methodRefs) {
       return '{}';
     }
-    const names = Object.keys(methodRefs).filter(Boolean);
+    const names = Object.keys(methodRefs);
     if (names.length === 0) {
       return '{}';
     }
@@ -739,51 +948,44 @@ class CompileInheritance {
   }
 
   compileCallableSuperOriginLiteral(callableNode) {
-    const bodyNode = this.getCallableBodyNode(callableNode);
-    const superNodes = bodyNode && typeof bodyNode.findAll === 'function'
-      ? bodyNode.findAll(nodes.Super)
-      : [];
-    if (superNodes.length === 0) {
-      return 'null';
-    }
-    return JSON.stringify(this.compiler._createErrorContext(superNodes[0]));
+    return callableNode._analysis.callableSuperOrigin
+      ? JSON.stringify(callableNode._analysis.callableSuperOrigin)
+      : 'null';
   }
 
   compileSharedSchemaLiteral(node) {
     const fragments = ['{'];
-    const sharedDeclarations = this.compiler._getSharedDeclarations(node);
+    const sharedDeclarations = this.getSharedDeclarations(node);
     let needsComma = false;
     sharedDeclarations.forEach((child) => {
       if (needsComma) {
         fragments.push(', ');
       }
-      fragments.push(`${JSON.stringify(child.name.value)}: ${JSON.stringify(child.channelType)}`);
+      fragments.push(
+        `${JSON.stringify(child.name)}: ${JSON.stringify(child.type)}`
+      );
       needsComma = true;
     });
     fragments.push('}');
     return fragments.join('');
   }
 
-  blockUsesSuper(block) {
-    return !!(block && block.body && block.body.findAll(nodes.Super).length > 0);
-  }
-
-  createMethodChannelFootprint(ownerNode) {
+  createCallableChannelFootprint(ownerNode) {
     const bodyAnalysis = ownerNode && ownerNode.body && ownerNode.body._analysis;
     // Mutation metadata stays separate for future read/write scheduling.
-    const methodLinkedChannels = this.collectMethodChannelNames(
+    const methodLinkedChannels = this.collectCallableChannelNames(
       bodyAnalysis,
       ownerNode,
       'usedChannels' // Parent-visible used channels are today's callable link footprint.
     );
-    const methodMutatedChannels = this.collectMethodChannelNames(bodyAnalysis, ownerNode, 'mutatedChannels');
+    const methodMutatedChannels = this.collectCallableChannelNames(bodyAnalysis, ownerNode, 'mutatedChannels');
     return {
       methodLinkedChannels,
       methodMutatedChannels
     };
   }
 
-  collectMethodChannelNames(analysis, ownerNode, fieldName) {
+  collectCallableChannelNames(analysis, ownerNode, fieldName) {
     if (fieldName !== 'usedChannels' && fieldName !== 'mutatedChannels') {
       throw new Error(`Unsupported method channel footprint field '${fieldName}'`);
     }
@@ -791,7 +993,11 @@ class CompileInheritance {
       return [];
     }
 
-    return Array.from(analysis[fieldName] ?? []).filter((name) => {
+    const channelNames = analysis[fieldName];
+    if (!channelNames) {
+      return [];
+    }
+    return Array.from(channelNames).filter((name) => {
       if (!name || name === '__return__' || name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL) {
         return false;
       }
@@ -799,13 +1005,13 @@ class CompileInheritance {
       if (declaration && (declaration.internal || declaration.blockArg)) {
         return false;
       }
-      if (ownerNode && (ownerNode instanceof nodes.Block || ownerNode instanceof nodes.MethodDefinition)) {
+      if (ownerNode) {
         const declarationOwner = this.compiler.analysis.findDeclarationOwner(analysis, name);
         if (declarationOwner === ownerNode._analysis) {
           return false;
         }
         if (
-          ownerNode instanceof nodes.MethodDefinition &&
+          this.compiler.scriptMode &&
           declaration &&
           !declaration.shared &&
           !declaration.imported
@@ -813,7 +1019,7 @@ class CompileInheritance {
           return false;
         }
         if (
-          ownerNode instanceof nodes.Block &&
+          !this.compiler.scriptMode &&
           declaration &&
           declaration.type === 'var' &&
           !declaration.shared
@@ -825,6 +1031,9 @@ class CompileInheritance {
     });
   }
 
+  // TODO(final cleanup): The clean async inheritance rebuild does not own sync
+  // inheritance. Delete the sync inheritance methods below when the legacy sync
+  // path is separated or removed.
   compileSyncBlock(node, frame) {
     const args = node.args && node.args.children ? node.args.children : [];
     if (args.length > 0) {
@@ -910,17 +1119,12 @@ class CompileInheritance {
     const deferredSelectionVar = this.compiler._tmpid();
     this.emit.line(`const ${deferredSelectionVar} = runtime.resolveSingle(${parentTemplateId}).then((resolvedParentTemplate) => {`);
     this.emit.line('  if (resolvedParentTemplate === null || resolvedParentTemplate === undefined) {');
-    this.emit.line('    return null;');
+    this.emit.line(`    throw runtime.handleError(new Error("template extends must select a parent template"), ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path);`);
     this.emit.line('  }');
     this.emit.line(`  return { template: resolvedParentTemplate, compositionPayload: ${compositionPayloadVar} };`);
     this.emit.line('});');
     if (this.compiler.hasDynamicExtends) {
-      const isTopLevelDynamicExtends =
-        !!(this.compiler.topLevelDynamicExtends && this.compiler.topLevelDynamicExtends.has(node));
       this.emit.line(`if (extendsState) { extendsState.parentSelection = ${deferredSelectionVar}; }`);
-      if (!isTopLevelDynamicExtends) {
-        return;
-      }
       this._emitTemplateExtendsBoundaryFromSelection(deferredSelectionVar);
       return;
     }
@@ -934,15 +1138,6 @@ class CompileInheritance {
     }
 
     const k = this.compiler._tmpid();
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    if (node.withContext !== null || withVars.length > 0 || node.withValue) {
-      this.compiler.fail(
-        'extends with explicit composition inputs is not supported in sync mode',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
     const parentTemplateId = this.compiler.composition.compileSyncResolveTargetFile(node, frame, true, false, true);
     this.emit.line(`parentTemplate = ${parentTemplateId};`);
     this.emit.line('if (parentTemplate) {');
@@ -960,7 +1155,7 @@ class CompileInheritance {
     const args = positionalArgsNode.children;
     const compilingBlock = this.compiler.currentCallableDefinition;
     const knownArgNames = compilingBlock ? this.getCallableArgNames(compilingBlock) : [];
-    const isScriptMethod = this.compiler.scriptMode && this._isScriptMethodEntry(compilingBlock);
+    const isScriptMethod = this.compiler.scriptMode;
 
     if (args.length > knownArgNames.length) {
       this.compiler.fail(

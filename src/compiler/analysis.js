@@ -175,11 +175,47 @@ class CompileAnalysis {
   }
 
   findRootDeclaration(analysis, name) {
-    const owner = this._getRootScopeOwner(analysis);
+    const owner = this.getRootScopeOwner(analysis);
     if (!owner || !owner.declaredChannels) {
       return null;
     }
     return owner.declaredChannels.get(name) || null;
+  }
+
+  getRootNode(analysis) {
+    let current = analysis;
+    while (current.parent) {
+      current = current.parent;
+    }
+    return current.node;
+  }
+
+  _installDeclaration(owner, decl, declarationOrigin) {
+    if (decl.shared) {
+      if (!decl.declarationOrigin) {
+        decl.declarationOrigin = this.getTopmostChildAnalysis(declarationOrigin);
+      }
+      owner.declaredChannels.set(decl.name, decl);
+      this.compiler.inheritance.registerRootSharedDeclaration(owner, decl);
+      return;
+    }
+    owner.declaredChannels.set(decl.name, this._cloneDeclaration({ ...decl, declarationOrigin }));
+  }
+
+  getRootScopeOwner(analysis) {
+    let current = analysis;
+    while (current && current.parent) {
+      current = current.parent;
+    }
+    return this._getScopeOwner(current || analysis);
+  }
+
+  getTopmostChildAnalysis(analysis) {
+    let current = analysis;
+    while (current.parent && current.parent.parent) {
+      current = current.parent;
+    }
+    return current;
   }
 
   findDeclarationOwner(analysis, name) {
@@ -205,16 +241,8 @@ class CompileAnalysis {
     return current || analysis;
   }
 
-  _getRootScopeOwner(analysis) {
-    let current = analysis;
-    while (current && current.parent) {
-      current = current.parent;
-    }
-    return this._getScopeOwner(current || analysis);
-  }
-
   isRootScopeOwner(analysis) {
-    return this._getScopeOwner(analysis) === this._getRootScopeOwner(analysis);
+    return this._getScopeOwner(analysis) === this.getRootScopeOwner(analysis);
   }
 
   isParentOwnedDeclarationRootOwned(analysis, name) {
@@ -223,7 +251,7 @@ class CompileAnalysis {
       return false;
     }
     const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
-    return parentOwner && parentOwner === this._getRootScopeOwner(analysis);
+    return parentOwner && parentOwner === this.getRootScopeOwner(analysis);
   }
 
   _passesReadOnlyBoundary(currentScopeOwner, declarationOwner) {
@@ -268,7 +296,7 @@ class CompileAnalysis {
         }
         owner.declaredChannels = owner.declaredChannels || new Map();
         if (!owner.declaredChannels.has(decl.name)) {
-          owner.declaredChannels.set(decl.name, this._cloneDeclaration({ ...decl, declarationOrigin: analysis }));
+          this._installDeclaration(owner, decl, analysis);
         }
       }
 
@@ -287,9 +315,7 @@ class CompileAnalysis {
             }
             parentOwner.declaredChannels = parentOwner.declaredChannels || new Map();
             if (!parentOwner.declaredChannels.has(decl.name)) {
-              parentOwner.declaredChannels.set(decl.name, this._cloneDeclaration(Object.assign({}, decl, {
-                declarationOrigin: analysis
-              })));
+              this._installDeclaration(parentOwner, decl, analysis);
             }
           }
         }
@@ -368,7 +394,7 @@ class CompileAnalysis {
           }
         }
         if (!owner.declaredChannels.has(decl.name)) {
-          owner.declaredChannels.set(decl.name, this._cloneDeclaration({ ...decl, declarationOrigin }));
+          this._installDeclaration(owner, decl, declarationOrigin);
         }
       }
     };
