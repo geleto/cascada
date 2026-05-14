@@ -6,6 +6,7 @@ import {transform} from '../../src/language/transformer.js';
 import {CompilerAsync} from '../../src/compiler/compiler.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
 import * as runtime from '../../src/runtime/runtime.js';
+import {StringLoader} from '../util.js';
 
 function createIdPool() {
   return {
@@ -191,6 +192,304 @@ describe('Inheritance rebuild', function () {
 
       expect(source).to.contain('runtime.invokeCallbackExtension');
       expect(source).not.to.contain('function b___promisify');
+    });
+  });
+
+  describe('metadata loader', function () {
+    function createContext(values = {}, path = 'loader-entry.njk') {
+      return {
+        path,
+        lookup(name) {
+          return values[name];
+        },
+        lookupScript(name) {
+          return values[name];
+        },
+        getCompositionPayloadVariables() {
+          return values;
+        }
+      };
+    }
+
+    async function loadTemplateChain(templates, entryName, context = createContext({}, entryName)) {
+      const loader = new StringLoader();
+      Object.entries(templates).forEach(([name, source]) => loader.addTemplate(name, source));
+      const localEnv = new AsyncEnvironment(loader);
+      const entry = await localEnv.getTemplate(entryName, true, null, false);
+      return runtime.loadInheritanceChain({
+        templateOrScript: entry,
+        env: localEnv,
+        context,
+        runtime
+      });
+    }
+
+    async function loadScriptChain(scripts, entryName, context = createContext({}, entryName)) {
+      const loader = new StringLoader();
+      Object.entries(scripts).forEach(([name, source]) => loader.addTemplate(name, source));
+      const localEnv = new AsyncEnvironment(loader);
+      const entry = await localEnv.getScript(entryName, true, null, false);
+      return runtime.loadInheritanceChain({
+        templateOrScript: entry,
+        env: localEnv,
+        context,
+        runtime
+      });
+    }
+
+    it('loads a static template chain child-to-parent without rendering roots', async function () {
+      const chain = await loadTemplateChain({
+        'base.njk': '{% block body %}base{% endblock %}',
+        'mid.njk': '{% extends "base.njk" %}{% block body %}mid{% endblock %}',
+        'child.njk': '{% extends "mid.njk" %}{% block body %}child{% endblock %}'
+      }, 'child.njk');
+
+      expect(chain.entries.map((entry) => entry.path)).to.eql(['child.njk', 'mid.njk', 'base.njk']);
+      expect(chain.entries.map((entry) => entry.spec.methodEntries.body.name)).to.eql(['body', 'body', 'body']);
+    });
+
+    it('loads a static script chain child-to-parent without rendering roots', async function () {
+      const chain = await loadScriptChain({
+        'base.script': 'method title()\n  return "base"\nendmethod',
+        'mid.script': 'extends "base.script"\nmethod title()\n  return "mid"\nendmethod',
+        'child.script': 'extends "mid.script"\nmethod title()\n  return "child"\nendmethod'
+      }, 'child.script');
+
+      expect(chain.entries.map((entry) => entry.path)).to.eql(['child.script', 'mid.script', 'base.script']);
+      expect(chain.entries.map((entry) => entry.spec.methodEntries.title.name)).to.eql(['title', 'title', 'title']);
+    });
+
+    it('does not call compiled roots while loading metadata', async function () {
+      const parent = Object.freeze({
+        path: 'parent.njk',
+        compile() {},
+        inheritanceSpec: { methodEntries: {}, sharedSchema: {}, hasExtends: false },
+        async resolveInheritanceParent() {
+          return runtime.noInheritanceParent();
+        },
+        root() {
+          throw new Error('parent root should not run');
+        }
+      });
+      const child = Object.freeze({
+        path: 'child.njk',
+        compile() {},
+        inheritanceSpec: { methodEntries: {}, sharedSchema: {}, hasExtends: true },
+        async resolveInheritanceParent() {
+          return { parentTemplateOrScript: parent, origin: { path: 'child.njk' } };
+        },
+        root() {
+          throw new Error('child root should not run');
+        }
+      });
+
+      const chain = await runtime.loadInheritanceChain({
+        templateOrScript: child,
+        env: null,
+        context: createContext(),
+        runtime
+      });
+
+      expect(chain.entries.map((entry) => entry.path)).to.eql(['child.njk', 'parent.njk']);
+    });
+
+    it('wraps selected parent compile failures with the selecting extends origin', async function () {
+      const parent = Object.freeze({
+        path: 'parent.njk',
+        compile() {
+          throw new Error('parent compile failed');
+        }
+      });
+      const child = Object.freeze({
+        path: 'child.njk',
+        compile() {},
+        inheritanceSpec: { methodEntries: {}, sharedSchema: {}, hasExtends: true },
+        async resolveInheritanceParent() {
+          return {
+            parentTemplateOrScript: parent,
+            origin: {
+              lineno: 7,
+              colno: 3,
+              errorContextString: 'Extends',
+              path: 'child.njk'
+            }
+          };
+        }
+      });
+
+      try {
+        await runtime.loadInheritanceChain({
+          templateOrScript: child,
+          env: null,
+          context: createContext({}, 'entry.njk'),
+          runtime
+        });
+        expect().fail('Expected selected parent compile failure');
+      } catch (error) {
+        expect(String(error)).to.contain('parent compile failed');
+        expect(error.path).to.be('child.njk');
+        expect(error.lineno).to.be(7);
+      }
+    });
+
+    it('adds context path to entry compile failures without an extends origin', async function () {
+      const entry = Object.freeze({
+        path: 'entry.njk',
+        compile() {
+          throw new Error('entry compile failed');
+        }
+      });
+
+      try {
+        await runtime.loadInheritanceChain({
+          templateOrScript: entry,
+          env: null,
+          context: createContext({}, 'entry-context.njk'),
+          runtime
+        });
+        expect().fail('Expected entry compile failure');
+      } catch (error) {
+        expect(String(error)).to.contain('entry compile failed');
+        expect(error.path).to.be('entry-context.njk');
+      }
+    });
+
+
+    it('does not require or create a CommandBuffer while loading', async function () {
+      const strictRuntime = {
+        ...runtime,
+        CommandBuffer: function CommandBuffer() {
+          throw new Error('metadata loading must not create command buffers');
+        }
+      };
+      const chain = await loadTemplateChain({
+        'base.njk': '{% block body %}base{% endblock %}',
+        'child.njk': '{% extends "base.njk" %}{% block body %}child{% endblock %}'
+      }, 'child.njk', createContext({}, 'child.njk'));
+
+      expect(chain.entries.length).to.be(2);
+      await runtime.loadInheritanceChain({
+        templateOrScript: chain.entries[0].templateOrScript,
+        env: chain.entries[0].templateOrScript.env,
+        context: createContext({}, 'child.njk'),
+        runtime: strictRuntime
+      });
+    });
+
+    it('returns an immutable chain value', async function () {
+      const chain = await loadTemplateChain({
+        'base.njk': '{% block body %}base{% endblock %}',
+        'child.njk': '{% extends "base.njk" %}{% block body %}child{% endblock %}'
+      }, 'child.njk');
+
+      expect(Object.isFrozen(chain)).to.be(true);
+      expect(Object.isFrozen(chain.entries)).to.be(true);
+      expect(Object.isFrozen(chain.entries[0])).to.be(true);
+    });
+
+    it('rejects static inheritance cycles with source context', async function () {
+      try {
+        await loadTemplateChain({
+          'a.njk': '{% extends "b.njk" %}{% block body %}a{% endblock %}',
+          'b.njk': '{% extends "a.njk" %}{% block body %}b{% endblock %}'
+        }, 'a.njk');
+        expect().fail('Expected inheritance cycle to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('inheritance cycle detected');
+        expect(error.path).to.be('b.njk');
+      }
+    });
+
+    it('rejects dynamic inheritance cycles with source context', async function () {
+      try {
+        await loadTemplateChain({
+          'a.njk': '{% extends parentA %}{% block body %}a{% endblock %}',
+          'b.njk': '{% extends parentB %}{% block body %}b{% endblock %}'
+        }, 'a.njk', createContext({ parentA: 'b.njk', parentB: 'a.njk' }, 'a.njk'));
+        expect().fail('Expected dynamic inheritance cycle to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('inheritance cycle detected');
+        expect(error.path).to.be('b.njk');
+      }
+    });
+
+    it('preserves parent load failure source context', async function () {
+      try {
+        await loadTemplateChain({
+          'child.njk': '{% extends "missing.njk" %}{% block body %}child{% endblock %}'
+        }, 'child.njk');
+        expect().fail('Expected missing parent to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('missing.njk');
+        expect(error.path).to.be('child.njk');
+      }
+    });
+
+    it('resolves dynamic parent selection once during loading', async function () {
+      let lookupCount = 0;
+      const chain = await loadTemplateChain({
+        'base.njk': '{% block body %}base{% endblock %}',
+        'child.njk': '{% extends parentTemplate %}{% block body %}child{% endblock %}'
+      }, 'child.njk', {
+        path: 'child.njk',
+        lookup(name) {
+          if (name === 'parentTemplate') {
+            lookupCount += 1;
+            return 'base.njk';
+          }
+          return undefined;
+        },
+        lookupScript() {
+          return undefined;
+        },
+        getCompositionPayloadVariables() {
+          return {};
+        }
+      });
+
+      expect(chain.entries.map((entry) => entry.path)).to.eql(['child.njk', 'base.njk']);
+      expect(lookupCount).to.be(1);
+    });
+
+    it('loads only the script itself for parentless script inheritance', async function () {
+      const staticChain = await loadScriptChain({
+        'child.script': 'extends none\nreturn "child"'
+      }, 'child.script');
+      const dynamicChain = await loadScriptChain({
+        'child.script': 'extends parentScript\nreturn "child"'
+      }, 'child.script', createContext({ parentScript: null }, 'child.script'));
+
+      expect(staticChain.entries.map((entry) => entry.path)).to.eql(['child.script']);
+      expect(dynamicChain.entries.map((entry) => entry.path)).to.eql(['child.script']);
+    });
+
+    it('fails dynamic template null parent selection before constructor execution', async function () {
+      try {
+        await loadTemplateChain({
+          'child.njk': '{% extends parentTemplate %}constructor text{% block body %}child{% endblock %}'
+        }, 'child.njk', createContext({ parentTemplate: null }, 'child.njk'));
+        expect().fail('Expected null template parent to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('template extends must select a parent template');
+        expect(error.path).to.be('child.njk');
+      }
+    });
+
+    it('lets script dynamic extends read context before same-name constructor locals exist', function () {
+      [
+        'extends parentScript\nvar parentScript = "base.script"\nreturn "child"',
+        'extends result\ndata result\nreturn null'
+      ].forEach((source) => {
+        expect(function () {
+          new Script(source, env, 'constructor-local-extends.script').compileSource();
+        }).not.to.throwException();
+      });
+    });
+
+    it('allows static script extends with same-name constructor locals', function () {
+      expect(function () {
+        new Script('extends "base.script"\nvar parentScript = "local"\nreturn parentScript', env, 'static-local.script').compileSource();
+      }).not.to.throwException();
     });
   });
 

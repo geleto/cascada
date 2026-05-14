@@ -97,14 +97,14 @@ function validateChannelObservationCall(compiler, { node, command, channelName, 
   }
 }
 
-function isAllowedBeforeScriptExtendsNode(node) {
+function _isAllowedBeforeScriptExtendsNode(node) {
   if (nodes.isWhitespaceOutputNode(node)) {
     return true;
   }
   return node instanceof nodes.ChannelDeclaration && node.isShared;
 }
 
-function isAllowedBeforeTemplateExtendsNode(node) {
+function _isAllowedBeforeTemplateExtendsNode(node) {
   return nodes.isWhitespaceOutputNode(node);
 }
 
@@ -130,7 +130,7 @@ function getScriptExtendsSourceOrderViolation(node) {
 
   for (let i = 0; i < firstDirectExtendsIndex; i++) {
     const child = node.children[i];
-    if (isAllowedBeforeScriptExtendsNode(child)) {
+    if (_isAllowedBeforeScriptExtendsNode(child)) {
       continue;
     }
     return {
@@ -160,11 +160,11 @@ function validateScriptExtendsSourceOrder(compiler, node) {
   );
 }
 
-function isRootLevelNode(rootNode, childNode) {
+function _isRootLevelNode(rootNode, childNode) {
   return !!(rootNode && Array.isArray(rootNode.children) && rootNode.children.includes(childNode));
 }
 
-function validateTemplateExtendsExpression(compiler, rootNode, extendsNode) {
+function _validateTemplateExtendsExpression(compiler, rootNode, extendsNode) {
   if (!extendsNode || !extendsNode.template) {
     return;
   }
@@ -199,7 +199,7 @@ function validateTemplateInheritanceSurface(compiler, rootNode) {
 
   const allExtendsNodes = rootNode.findAll(nodes.Extends);
   const directExtendsNodes = allExtendsNodes.filter((extendsNode) =>
-    isRootLevelNode(rootNode, extendsNode)
+    _isRootLevelNode(rootNode, extendsNode)
   );
   if (directExtendsNodes.length > 1) {
     const extraExtendsNode = directExtendsNodes[1];
@@ -216,7 +216,7 @@ function validateTemplateInheritanceSurface(compiler, rootNode) {
     const extendsIndex = rootNode.children.indexOf(directExtendsNode);
     for (let i = 0; i < extendsIndex; i++) {
       const child = rootNode.children[i];
-      if (isAllowedBeforeTemplateExtendsNode(child)) {
+      if (_isAllowedBeforeTemplateExtendsNode(child)) {
         continue;
       }
       compiler.fail(
@@ -226,11 +226,11 @@ function validateTemplateInheritanceSurface(compiler, rootNode) {
         child
       );
     }
-    validateTemplateExtendsExpression(compiler, rootNode, directExtendsNode);
+    _validateTemplateExtendsExpression(compiler, rootNode, directExtendsNode);
   }
 
   const nestedExtends = allExtendsNodes.find((extendsNode) =>
-    !isRootLevelNode(rootNode, extendsNode)
+    !_isRootLevelNode(rootNode, extendsNode)
   );
   if (nestedExtends) {
     compiler.fail(
@@ -271,4 +271,4 @@ function validateLocalSharedMethodNameCollisions(compiler, node) {
 
 
 
-export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChannelDeclarationNode, validateChannelObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateTemplateExtendsExpression, validateTemplateInheritanceSurface, validateLocalSharedMethodNameCollisions };
+export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChannelDeclarationNode, validateChannelObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateTemplateInheritanceSurface, validateLocalSharedMethodNameCollisions };

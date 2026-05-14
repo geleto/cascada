@@ -618,6 +618,23 @@ this resolver.
 `InheritanceRuntimeState`. Runtime invocation receives the `InheritanceInstance`,
 which owns the finalized runtime state plus buffers and context.
 
+The metadata loader entrypoint is object-shaped:
+
+```js
+await loadInheritanceChain({
+  templateOrScript,
+  env,
+  context,
+  runtime,
+  origin: null
+})
+```
+
+It returns a frozen `LoadedInheritanceChain` whose frozen `entries` array is in
+child-to-parent order. Loading compiles metadata as needed, calls only
+`resolveInheritanceParent`, and never executes `root` or creates command
+buffers.
+
 ## Inheritance Instance API
 
 The public render path, component creation path, and tests should share the same
@@ -1184,9 +1201,11 @@ templates/scripts emit no inheritance ABI at all, while every participation
 reason above emits the single participant ABI.
 
 Static analysis must reject language surfaces that would require execution to
-discover structure: nested dynamic template `extends`, constructor locals in
-`extends` expressions, dynamic template `this[...]` shared access, and unsupported
-callable `with` syntax.
+discover structure: nested dynamic template `extends`, dynamic template
+`this[...]` shared access, and unsupported callable `with` syntax. Script
+dynamic `extends` is evaluated before constructor code runs, so later
+constructor locals do not shadow context values used by the parent selection
+expression.
 
 Generated-source and precompiled-fixture tests must assert the target ABI shape.
 Browser/precompiled fixtures should be regenerated from the clean compiler
@@ -1433,11 +1452,13 @@ Tests:
 - parent load failures preserve source/error context
 - dynamic parent selection resolves once
 - script `extends none` and dynamic null produce no selected parent entry
+- script dynamic `extends` can read context before same-name constructor locals
+  exist
 - dynamic template `extends` resolving to null/undefined fails before
   constructor execution
 - dynamic template null failure ordering is clear and does not execute
   constructor code
-- constructor-local dynamic extends expressions fail clearly
+- entry and parent compile failures preserve useful source/error context
 - loading can be unit-tested without `CommandBuffer`
 - loading returns an immutable chain value rather than mutating reusable state
 
