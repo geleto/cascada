@@ -2267,6 +2267,31 @@ await env.renderScript("about.script", {})
 
 The base script is not duplicated. Any logic in the base constructor - fetching data, building the result - runs unchanged with the child's overrides in place.
 
+An override may have fewer trailing arguments than the parent, but any kept
+argument must use the same name. Callers can pass arguments by keyword (e.g.
+`this.card(user=profile)`), and bare `super()` forwards the original values by
+name - both break if you rename a position:
+
+```cascada
+// base.script
+method card(user, theme)
+  return user.name + " / " + theme
+endmethod
+```
+
+```cascada
+// child.script
+extends "base.script"
+
+method card(user)
+  return super(user, "dark")
+endmethod
+```
+
+Declaring `card(profile)` instead of `card(user)` would be an error - `profile`
+is at the same position as the parent's `user`, which callers and `super()` both
+refer to by name.
+
 #### `super()` and `super(...)`
 
 Use `super()` to call the parent's version of the method and build on its result rather than replacing it entirely.
@@ -2352,7 +2377,7 @@ Shared variables can only be written through `this.name`. Writing `theme = "dark
 | Declaration | Accessed as |
 |---|---|
 | `shared var x = default` | `this.x` (read/snapshot), `this.x = value` (write), `this.x.prop` (read-through), `this.x.prop = value` (nested write) |
-| `shared var x` | same access forms; no default claimed - resolves to `none` if no other file claims a default |
+| `shared var x` | same access forms; no default - a parent default may still initialize `x` |
 | `shared data x` | `this.x.push(...)`, `this.x.path = value`, etc. |
 | `shared text x` | `this.x("message")` |
 | `shared sequence db = expr` | `this.db.method(...)` |
@@ -2369,18 +2394,21 @@ Variables created in the constructor body are local to that constructor. Use sha
 
 The render context carries through an `extends` chain automatically - every constructor and method at every level sees it by bare name. `extends` takes no `with` clause.
 
-To pass initialization values between levels, use shared variables. A child sets its default; the parent reads the same shared variable:
+To pass initialization values between levels, use shared defaults. The first
+declaration with an initializer in child-to-parent order initializes the shared
+variable. A declaration without an initializer does not block parent defaults;
+use `= none` when the child must explicitly choose an empty default.
 
 ```cascada
 // dark-page.script
-shared var theme = "dark"   // child claims the default
+shared var theme = "dark"   // child default wins
 
 extends "page.script"
 ```
 
 ```cascada
 // page.script
-shared var theme = "light"  // only evaluated if no earlier level claimed a default
+shared var theme = "light"  // only evaluated if no earlier default exists
 
 method title()
   return "[" + this.theme + "] Home"
@@ -2388,6 +2416,11 @@ endmethod
 
 return { title: this.title() }
 ```
+
+Defaults are selected before constructors run. Later constructor assignments
+are ordinary writes: they happen wherever the constructor body puts them. A
+child default overrides a parent default, but a child assignment before
+`super()` can still be overwritten by the parent constructor.
 
 #### Direct Render vs. Component
 

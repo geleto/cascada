@@ -4,29 +4,25 @@ const CHANNEL_TYPE_FACTS = Object.freeze({
     channelDeclarationTag: true,
     commandClass: 'DataCommand',
     requiresInitializer: false,
-    supportsValueInitializer: true,
-    usesInitializerAsTarget: false
+    supportsValueInitializer: true
   }),
   text: Object.freeze({
     channelDeclarationTag: true,
     commandClass: 'TextCommand',
     requiresInitializer: false,
-    supportsValueInitializer: true,
-    usesInitializerAsTarget: false
+    supportsValueInitializer: true
   }),
   var: Object.freeze({
     channelDeclarationTag: false,
     commandClass: 'VarCommand',
     requiresInitializer: false,
-    supportsValueInitializer: true,
-    usesInitializerAsTarget: false
+    supportsValueInitializer: true
   }),
   sequence: Object.freeze({
     channelDeclarationTag: true,
     commandClass: 'SequenceCallCommand',
     requiresInitializer: true,
-    supportsValueInitializer: false,
-    usesInitializerAsTarget: true
+    supportsValueInitializer: false
   })
 });
 

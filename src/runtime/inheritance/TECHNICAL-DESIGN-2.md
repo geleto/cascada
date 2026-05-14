@@ -104,7 +104,7 @@ Allowed:
 - validate shared/method collisions
 - validate missing invoked method refs
 - validate `super()` parent availability
-- validate signature compatibility
+- validate override argument-name compatibility
 - wire owner-relative `super` links
 - compute merged channel footprints
 - collect independent recoverable finalization errors
@@ -415,8 +415,14 @@ late code-generation heuristics.
 ```js
 type CompiledInheritanceSpec = {
   methodEntries: Record<string, CompiledMethodEntry>,
-  sharedSchema: Record<string, SharedSchemaInput>,
+  sharedSchema: Record<string, CompiledSharedSchemaEntry>,
   hasExtends: boolean
+}
+
+type CompiledSharedSchemaEntry = {
+  type: string,
+  origin: SourceOrigin | null,
+  hasDefault: boolean
 }
 ```
 
@@ -552,6 +558,9 @@ Rules:
 - positional and named placement bindings may be mixed, following the regular
   function/macro argument model; named placement bindings are normalized to the
   same ordered argument frame before invocation
+- overrides may add or omit trailing arguments, but the shared positional prefix
+  must keep the same argument names so keyword arguments and bare `super()`
+  forwarding remain stable
 
 The compiler must reject unsupported syntax early. The runtime must not carry
 `withContext`, context-mode, or implicit-placement named-binding metadata.
@@ -594,7 +603,14 @@ type LoadedInheritanceEntry = {
 
 type InheritanceRuntimeState = {
   methods: Record<string, RuntimeMethodEntry>,
-  sharedSchema: Record<string, string>
+  sharedSchema: Record<string, RuntimeSharedSchemaEntry>
+}
+
+type RuntimeSharedSchemaEntry = {
+  type: string,
+  origin: SourceOrigin | null,
+  defaultOrigin: SourceOrigin | null,
+  hasDefault: boolean
 }
 
 type RuntimeOwnerEntry = {
@@ -828,6 +844,12 @@ Rules:
   entry
 - constructor execution is an ordinary inherited call to `__constructor__`
 - invocation creates an invocation child buffer at the call site
+- external/public entrypoints create invocation buffers linked directly to the
+  instance shared/root buffer; this includes standalone direct-render
+  constructors, component constructors, and `component.someMethod(...)` calls
+- internal inherited calls create invocation buffers linked to the current
+  invocation buffer; this includes `this.someMethod(...)` and `super(...)`
+  from inside constructors, methods, and blocks
 - the invocation child buffer links exactly the target's
   `mergedLinkedChannels` and `mergedMutatedChannels`
 - callable entry prologue may validate `methodData`, but it must not resolve
@@ -840,6 +862,18 @@ Rules:
 Do not link all shared-schema channels as a convenience. Exact linking is part
 of the concurrency contract.
 
+The shared/root buffer is the storage owner for inheritance shared channels. It
+is not a catch-all ambient scope. Public entrypoints start from it to prevent
+component/direct method calls from seeing a caller's local scope accidentally.
+Internal calls link through the currently executing invocation buffer so they
+preserve ordered effects created by the current callable, while still being
+rooted in the same instance shared/root buffer.
+
+Final invocation code must choose the exact buffer at the call site. Do not
+keep a runtime helper that guesses between `currentBuffer` and
+`sharedRootBuffer`; that transitional selector exists only until Step 4 owns
+instance invocation.
+
 The invocation path must not branch on naming conventions such as
 `methodName === "__constructor__"` when metadata can carry the invariant
 directly. Constructor-specific behavior should be represented by
@@ -851,14 +885,14 @@ directly. Constructor-specific behavior should be represented by
 surface. It performs a direct lookup in the already-finalized dispatch table:
 `instance.runtimeState.methods[methodName]`. That entry is already the
 most-derived implementation. Invocation then builds the argument frame from
-positional arguments, creates an invocation buffer under `instance.rootBuffer`,
-links the target's exact merged footprints, and calls the target `fn` with the
-instance environment, instance context, runtime/callback, invocation buffer,
-argument frame, and method data.
+positional arguments, creates an invocation buffer linked to the instance
+shared/root buffer, links the target's exact merged footprints, and calls the
+target `fn` with the instance environment, instance context, runtime/callback,
+invocation buffer, argument frame, and method data.
 
-Compiled `this.name(...)` calls use the same path as `instance.invoke(...)`
-except their call-site buffer is the currently executing invocation buffer. They
-always invoke through the same finalized table entry:
+Compiled `this.name(...)` calls always invoke through the same finalized table
+entry as `instance.invoke(...)`, but their invocation buffer is linked to the
+currently executing invocation buffer:
 
 ```js
 runtime.invokeInheritedCallable(currentInstance, "name", args, origin)
@@ -1042,8 +1076,10 @@ Rules:
 - every template may have a dynamic `extends`, but it must be a top-level
   declaration in the root template body, not nested inside `if`, `for`,
   blocks, macros, includes, or any other runtime control flow.
-- no template declarations may appear before `extends`; templates use `{% set %}`
-  for ordinary locals and infer shared vars from `this.<name>` usage.
+- no template code may appear before `extends` except whitespace/comments.
+  Templates use `{% set %}` for ordinary locals and infer shared vars from
+  `this.<name>` usage, but `{% set this.name = ... %}` is constructor code and
+  is not allowed before `extends`.
 - the `extends` target expression cannot read inferred shared vars, because
   shared channels are initialized by constructor execution after loading.
 - dynamic selection cycles fail during loading.
@@ -1065,10 +1101,11 @@ Scripts:
 - shared declarations are root-scope only; they are not allowed inside methods
   or blocks
 - shared declarations may appear before `extends`
-- shared defaults are claims, not ordinary constructor writes. Defaults are
-  considered in child-to-parent chain order; the first selected declaration
-  with a default wins, and later parent defaults for the same shared name are
-  not evaluated.
+- shared defaults are claims, not ordinary constructor writes. Shared
+  declarations are considered in child-to-parent chain order; the first
+  selected declaration with an initializer wins the default slot. A declaration
+  with `= none` has `hasDefault: true`; a declaration without an initializer
+  has `hasDefault: false` and does not block parent defaults.
 - bare names never mean shared access in scripts, even when the same file
   declares a shared channel with that name
 
@@ -1078,7 +1115,10 @@ Templates:
 - reject all template `shared` declarations, including `shared var`
 - reject non-shared channel declarations in templates
 - reserve `this.__text__` as the inherited template text-channel exception
-- `{% set this.name = ... %}` is a runtime write, not a default claim
+- `{% set this.name = ... %}` is a runtime write, not a default claim. In an
+  extending template it runs before the implicit trailing constructor
+  `super()`, so parent constructor writes may overwrite child constructor
+  writes.
 - `extends` target expressions cannot read template shared vars, even when
   those vars are inferred elsewhere in the template
 
@@ -1170,6 +1210,12 @@ type InheritanceAnalysisFacts = {
   componentOperations: ComponentOperationSite[],
   componentSharedObservations: ComponentSharedObservationSite[]
 }
+
+type SharedSchemaInput = {
+  name: string,
+  type: string,
+  hasDefault: boolean
+}
 ```
 
 `participates` is the only codegen gate for emitting inheritance ABI. It must
@@ -1219,7 +1265,7 @@ before throwing when collection is cheap and clear.
 Collectable:
 
 - duplicate callable declarations in one file
-- incompatible override signatures
+- renamed override arguments in the shared positional prefix
 - `super()` with no parent implementation
 - missing `this.method(...)` references
 - shared/method name collisions
@@ -1232,8 +1278,16 @@ Immediate fatal:
 - corrupted method entry shapes that prevent safe finalization
 
 Shared-schema inputs should retain declaration origins during finalization so
-cross-file conflicts can point at the relevant declaration sites. Execution-time
-shared schema remains type-only.
+cross-file conflicts can point at the relevant declaration sites. Runtime shared
+schema remains structural metadata only: type, declaration origin, selected
+default origin, and whether a default exists. Default expressions are not
+evaluated during finalization.
+Do not keep a runtime `claimInheritanceSharedDefault` side channel in the final
+lifecycle. Instance shared-root setup must use the finalized schema's
+`hasDefault` metadata to initialize each selected shared default once.
+The current `claimedSharedDefaults` WeakSet is transitional scaffolding for the
+old constructor-emitted default guard. Remove it in Step 5 when shared-root
+setup evaluates only the finalized schema default.
 
 Compiler ABI metadata is an invariant after compilation. Finalization may copy,
 deduplicate, and freeze/normalize arrays for stable runtime use, but it must
@@ -1482,12 +1536,15 @@ Goal:
   entry
 - `RuntimeMethodEntry.super` is wired to the exact parent entry or `null`
 - every runtime method entry has finalized `ownerEntry`
-- shared schema is finalized before execution
+- shared schema is finalized before execution as structured runtime metadata
+  with type, origin, default origin, and `hasDefault`
 - runtime method entries are pruned to execution-time fields
 - recoverable metadata errors are collected where practical
 - replace transitional shared-channel bootstrap helpers with clean `shared.js`
   runtime operations; compiler output must not call legacy shared-buffer helpers
   once finalization owns shared schema setup
+- keep `claimedSharedDefaults` only as Step 5 transitional scaffolding; it is
+  not part of the clean finalized-schema default model
 
 Tests:
 
@@ -1500,8 +1557,8 @@ Tests:
   implementation for that callable name
 - missing `super()` targets fail during finalization
 - no-op topmost constructor entry is wired where constructor `super()` allows it
-- signature conflicts, missing invoked method refs, shared/method collisions,
-  and shared schema conflicts are reported with useful origins
+- renamed override arguments, missing invoked method refs, shared/method
+  collisions, and shared schema conflicts are reported with useful origins
 - at least two independent recoverable metadata errors are collected from one
   chain when practical
 - shared/method collisions are reported across files as well as within one file
@@ -1543,6 +1600,9 @@ Goal:
 - compiled `super(...)` must not pass owner path labels or owner string keys;
   object ownership comes from the finalized executing `methodData`
 - invocation uses the shared argument-frame/local-argument binding primitive
+- remove transitional buffer-selection helpers that guess between current and
+  shared/root buffers; direct entrypoints and internal calls must pass the exact
+  parent buffer described above
 - wire compiler-private inheritance runtime helpers onto the runtime object used
   by generated code
 - move callable entry prologue policy into clean invocation helpers:
@@ -1560,8 +1620,13 @@ Tests:
   code
 - `InheritanceInstance.create(...)` does not invoke `__constructor__`
 - `instance.invoke(...)` invokes through `runtimeState.methods[name]`
+- standalone direct-render constructors, component constructors, and
+  `component.someMethod(...)` link their invocation buffers directly to the
+  instance shared/root buffer
 - `this.method(...)` calls the same finalized entry as
   `instance.invoke(...)`
+- internal `this.method(...)` calls link their invocation buffers to the
+  current invocation buffer
 - positional arguments bind by signature order
 - script keyword arguments follow the same behavior as regular function calls
 - template named placement bindings are converted to ordinary invocation
@@ -1653,13 +1718,15 @@ Tests:
 - extending template block override receives named placement arguments
 - named binding expressions are emitted only for structural inline placements
 - template `this.sharedName` reads and writes inherited shared vars from blocks
-- parent/child template shared writes follow documented source-order channel
-  semantics
+- parent/child template shared writes follow constructor order: child template
+  constructor writes run before the implicit parent `super()`, and parent
+  constructor writes may overwrite them
 - template constructor `super()` analysis and metadata, including implicit
   trailing `super()`, is finalized with the template lifecycle implementation
 - script explicit `shared var` reads and writes through `this.sharedName`
-- script shared defaults are claimed child-to-parent, and an unselected parent
-  default expression is not evaluated
+- script shared default slots are selected child-to-parent by the first
+  declaration with an initializer, and an unselected parent default expression
+  is not evaluated
 - `this.__text__` remains the reserved inherited template text-channel
   exception
 - shared-channel linking is exact-footprint based, with no whole-schema setup
@@ -1786,11 +1853,13 @@ Tests:
 - Dynamic extends target expressions read only inputs available before
   constructor execution.
 - Dynamic template extends is allowed only as a top-level declaration, with no
-  template code before it.
+  template code before it; `{% set this.name = ... %}` before `extends` is not
+  a default and remains forbidden.
 - Script `extends` appears before constructor statements; only root-scope
   shared declarations, whitespace, and comments may precede it.
-- Script shared defaults are claimed child-to-parent, so the first selected
-  default wins and later parent defaults are not evaluated.
+- Script shared default slots are selected child-to-parent by the first
+  declaration with an initializer; declarations without initializers do not
+  block parent defaults.
 - Template block and script method `with context` syntax is absent; component
   `with context` remains the explicit context opt-in for components.
 - Inherited methods and template blocks read instance context by default.

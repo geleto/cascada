@@ -574,10 +574,11 @@ Existing compiler/runtime paths:
     declarations for those shared declarations.
 - Shared default initialization
   - `compileChannelDeclaration(...)` already routes shared declarations through
-    `runtime.getInheritanceSharedBuffer(...)`.
-  - `runtime.claimInheritanceSharedDefault(...)` controls child-first default
-    claiming.
-  - `runtime.initializeInheritanceSharedChannelDefault(...)` handles shared
+    `runtime.getInheritanceSharedRootBuffer(...)`.
+  - `runtime.claimInheritanceSharedDefault(...)` is transitional Step 5
+    scaffolding for constructor-emitted defaults.
+  - `runtime.declareInheritanceSharedChannel(...)` declares shared channels and
+    applies sequence initializer targets when present.
 - Bare shared `var` reads
   - `_compileDeclaredSymbolLookup(...)` detects shared channel declarations.
   - Shared var reads lower to `_emitSharedChannelObservation(name, node,

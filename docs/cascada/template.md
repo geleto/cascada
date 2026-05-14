@@ -204,7 +204,8 @@ The `extends` target is resolved before constructor code runs, so it may read
 render-context values and globals but not values created by top-level
 `{% set %}` in the same template. Templates do not support `extends none`,
 `extends ... with ...`, or dynamic-null parent selection. If a template has
-`extends`, it must select a parent template.
+`extends`, it must select a parent template. Nothing except whitespace and
+comments may appear before `{% extends %}`.
 
 Template constructor code reaches the parent constructor through an implicit
 trailing `super()` when a parent is selected. Block bodies may also use
@@ -237,7 +238,7 @@ placement-local values as block arguments:
 
 - `{% block name(arg1, arg2) %}` - positional placement values, passed into block-local arguments with the same names.
 - `{% block name(arg = localValue) %}` - named placement binding, passing `localValue` into the block argument named `arg`.
-- Overrides must match the parent's argument signature exactly.
+- An override may have fewer block arguments than the parent, but any kept argument must use the same name. Named placement bindings (`arg = value`) and `super()` both depend on stable argument names.
 - `super()` renders the parent block with the original block arguments.
 - Bare variables from the surrounding template local scope are not captured by a block. Pass loop/top-level values as block arguments, use render-context names, or read hierarchy state explicitly through `this.<name>`.
 
@@ -307,9 +308,9 @@ In async templates, the `this.<name>` surface provides shared `var` state across
 The child's `{% set this.theme = "dark" %}` writes the shared var explicitly through the inheritance state. The base's `{{ this.theme }}` inside the block reads it. Both templates infer `theme` automatically - no declaration required in either file.
 
 Template shared-var writes are ordinary runtime assignments, not shared-default
-initializers. If both child and parent template constructor code assign
-`this.theme`, the later source-ordered write wins in the current lifecycle.
-Use script `shared var` declarations for default-claim semantics; template
+initializers. In an extending template, top-level code runs before the implicit
+parent `super()`, so a parent constructor assignment can overwrite a child
+assignment. Use script `shared var` declarations for shared defaults; template
 inference only provides the shared `var` channel.
 
 ## Variable Scoping

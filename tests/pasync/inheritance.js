@@ -43,6 +43,14 @@ function compileProps(src, options = {}) {
   return new Function('runtime', source)(runtime);
 }
 
+function sharedSchemaEntry(type, options = {}) {
+  return {
+    type,
+    origin: options.origin || { path: `${type}-shared.owner`, lineno: 1, colno: 1 },
+    hasDefault: !!options.hasDefault
+  };
+}
+
 describe('Inheritance rebuild', function () {
   let env;
 
@@ -137,6 +145,28 @@ describe('Inheritance rebuild', function () {
         const props = compileProps(source, options);
         expect(Object.keys(props).sort()).to.eql(['inheritanceSpec', 'resolveInheritanceParent', 'root']);
       });
+    });
+
+    it('emits structured shared schema entries with explicit defaults', function () {
+      const props = compileProps('shared var theme = none\nextends none\nreturn this.theme', {
+        scriptMode: true,
+        name: 'shared-default.script'
+      });
+
+      expect(props.inheritanceSpec.sharedSchema.theme.type).to.be('var');
+      expect(props.inheritanceSpec.sharedSchema.theme.hasDefault).to.be(true);
+      expect(props.inheritanceSpec.sharedSchema.theme.origin.path).to.be('shared-default.script');
+    });
+
+    it('emits structured shared schema entries without defaults', function () {
+      const props = compileProps('shared var theme\nextends none\nreturn this.theme', {
+        scriptMode: true,
+        name: 'shared-no-default.script'
+      });
+
+      expect(props.inheritanceSpec.sharedSchema.theme.type).to.be('var');
+      expect(props.inheritanceSpec.sharedSchema.theme.hasDefault).to.be(false);
+      expect(props.inheritanceSpec.sharedSchema.theme.origin.path).to.be('shared-no-default.script');
     });
 
     it('emits no removed setup/startup constructs for participants', function () {
@@ -493,6 +523,344 @@ describe('Inheritance rebuild', function () {
     });
   });
 
+  describe('metadata finalization', function () {
+    function compiledMethod(name, options = {}) {
+      return {
+        name,
+        fn: options.fn || function compiledInheritanceMethod() {},
+        signature: { argNames: options.argNames || [] },
+        origin: options.origin || { path: `${name}.owner`, lineno: 1, colno: 1 },
+        isConstructor: !!options.isConstructor,
+        super: !!options.super,
+        superOrigin: options.superOrigin || null,
+        invokedMethodRefs: options.invokedMethodRefs || {},
+        ownLinkedChannels: options.ownLinkedChannels || [],
+        ownMutatedChannels: options.ownMutatedChannels || []
+      };
+    }
+
+    function loadedEntry(path, options = {}) {
+      return {
+        templateOrScript: {
+          path,
+          scriptMode: !!options.scriptMode,
+          compile() {}
+        },
+        spec: {
+          methodEntries: options.methodEntries || {},
+          sharedSchema: options.sharedSchema || {},
+          hasExtends: !!options.hasExtends
+        },
+        path,
+        origin: options.origin || { path, lineno: 1, colno: 1 }
+      };
+    }
+
+    function finalizeEntries(entries) {
+      return runtime.finalizeInheritanceChain({ entries }, { path: 'finalize-entry.njk' });
+    }
+
+    async function loadTemplateChainForFinalization(templates, entryName) {
+      const loader = new StringLoader();
+      Object.entries(templates).forEach(([name, source]) => loader.addTemplate(name, source));
+      const localEnv = new AsyncEnvironment(loader);
+      const entry = await localEnv.getTemplate(entryName, true, null, false);
+      return runtime.loadInheritanceChain({
+        templateOrScript: entry,
+        env: localEnv,
+        context: {
+          path: entryName,
+          lookup() {
+            return undefined;
+          },
+          getCompositionPayloadVariables() {
+            return {};
+          }
+        },
+        runtime
+      });
+    }
+
+    it('finalizes a loaded static template chain', async function () {
+      const chain = await loadTemplateChainForFinalization({
+        'base.njk': '{% block body %}base{% endblock %}',
+        'child.njk': '{% extends "base.njk" %}{% block body %}child{% endblock %}'
+      }, 'child.njk');
+      const state = runtime.finalizeInheritanceChain(chain, { path: 'child.njk' });
+
+      expect(Object.keys(state.methods).sort()).to.eql(['__constructor__', 'body']);
+      expect(state.methods.body.ownerEntry.path).to.be('child.njk');
+      expect(state.methods.body.super.ownerEntry.path).to.be('base.njk');
+    });
+
+    it('finalizes a static child-to-root chain into one dispatch table', function () {
+      const childFn = function childBody() {};
+      const midFn = function midBody() {};
+      const rootFn = function rootBody() {};
+      const state = finalizeEntries([
+        loadedEntry('child.njk', { hasExtends: true, methodEntries: { body: compiledMethod('body', { fn: childFn }) } }),
+        loadedEntry('mid.njk', { hasExtends: true, methodEntries: { body: compiledMethod('body', { fn: midFn }) } }),
+        loadedEntry('root.njk', { methodEntries: { body: compiledMethod('body', { fn: rootFn }) } })
+      ]);
+
+      expect(Object.keys(state.methods)).to.eql(['body']);
+      expect(state.methods.body.fn).to.be(childFn);
+      expect(state.methods.body.super.fn).to.be(midFn);
+      expect(state.methods.body.super.super.fn).to.be(rootFn);
+      expect(state.methods.body.super.super.super).to.be(null);
+    });
+
+    it('does not call compiled functions while finalizing', function () {
+      const state = finalizeEntries([
+        loadedEntry('child.script', {
+          scriptMode: true,
+          methodEntries: {
+            build: compiledMethod('build', {
+              fn() {
+                throw new Error('method should not run');
+              }
+            })
+          }
+        })
+      ]);
+
+      expect(state.methods.build.name).to.be('build');
+    });
+
+    it('wires super to the exact parent implementation without name lookup', function () {
+      const childBuild = compiledMethod('build', { super: true });
+      const midOther = compiledMethod('other');
+      const rootBuild = compiledMethod('build');
+      const state = finalizeEntries([
+        loadedEntry('child.script', { scriptMode: true, hasExtends: true, methodEntries: { build: childBuild } }),
+        loadedEntry('mid.script', { scriptMode: true, hasExtends: true, methodEntries: { other: midOther } }),
+        loadedEntry('root.script', { scriptMode: true, methodEntries: { build: rootBuild } })
+      ]);
+
+      expect(state.methods.build.origin.path).to.be('build.owner');
+      expect(state.methods.build.super.fn).to.be(rootBuild.fn);
+      expect(state.methods.build.super.name).to.be('build');
+    });
+
+    it('fails non-constructor super calls with no parent implementation', function () {
+      expect(function () {
+        finalizeEntries([
+          loadedEntry('child.script', {
+            scriptMode: true,
+            methodEntries: {
+              build: compiledMethod('build', { super: true, superOrigin: { path: 'child.script', lineno: 4, colno: 10 } })
+            }
+          })
+        ]);
+      }).to.throwException((error) => {
+        expect(String(error)).to.contain("super() in 'build' has no parent implementation");
+        expect(error.errors[0].path).to.be('child.script');
+      });
+    });
+
+    it('wires a no-op topmost constructor target for constructor super calls', function () {
+      const state = finalizeEntries([
+        loadedEntry('child.script', {
+          scriptMode: true,
+          methodEntries: {
+            __constructor__: compiledMethod('__constructor__', { isConstructor: true, super: true })
+          }
+        })
+      ]);
+
+      expect(state.methods.__constructor__.isConstructor).to.be(true);
+      expect(state.methods.__constructor__.super.isConstructor).to.be(true);
+      expect(state.methods.__constructor__.super.super).to.be(null);
+    });
+
+    it('wires constructor super to an existing parent constructor', function () {
+      const childConstructor = compiledMethod('__constructor__', { isConstructor: true, super: true });
+      const rootConstructor = compiledMethod('__constructor__', { isConstructor: true });
+      const state = finalizeEntries([
+        loadedEntry('child.script', {
+          scriptMode: true,
+          hasExtends: true,
+          methodEntries: { __constructor__: childConstructor }
+        }),
+        loadedEntry('root.script', {
+          scriptMode: true,
+          methodEntries: { __constructor__: rootConstructor }
+        })
+      ]);
+
+      expect(state.methods.__constructor__.fn).to.be(childConstructor.fn);
+      expect(state.methods.__constructor__.super.fn).to.be(rootConstructor.fn);
+      expect(state.methods.__constructor__.super.super).to.be(null);
+    });
+
+    it('allows overrides with more or fewer trailing arguments', function () {
+      expect(function () {
+        finalizeEntries([
+          loadedEntry('child.script', {
+            scriptMode: true,
+            hasExtends: true,
+            methodEntries: {
+              build: compiledMethod('build', { argNames: ['user'] }),
+              card: compiledMethod('card', { argNames: ['user', 'variant'] })
+            }
+          }),
+          loadedEntry('root.script', {
+            scriptMode: true,
+            methodEntries: {
+              build: compiledMethod('build', { argNames: ['user', 'variant'] }),
+              card: compiledMethod('card', { argNames: ['user'] })
+            }
+          })
+        ]);
+      }).not.to.throwException();
+    });
+
+    it('collects independent renamed-argument, missing reference, and shared schema errors', function () {
+      expect(function () {
+        finalizeEntries([
+          loadedEntry('child.script', {
+            scriptMode: true,
+            hasExtends: true,
+            sharedSchema: { theme: sharedSchemaEntry('var', { origin: { path: 'child.script', lineno: 1, colno: 1 } }) },
+            methodEntries: {
+              build: compiledMethod('build', {
+                argNames: ['profile'],
+                invokedMethodRefs: {
+                  missing: { name: 'missing', origin: { path: 'child.script', lineno: 2, colno: 3 } }
+                }
+              })
+            }
+          }),
+          loadedEntry('root.script', {
+            scriptMode: true,
+            sharedSchema: { theme: sharedSchemaEntry('text', { origin: { path: 'root.script', lineno: 1, colno: 1 } }) },
+            methodEntries: {
+              build: compiledMethod('build', { argNames: ['user'] })
+            }
+          })
+        ]);
+      }).to.throwException((error) => {
+        expect(error.errors.length).to.be(3);
+        expect(String(error)).to.contain('renames an inherited argument');
+        expect(String(error)).to.contain("missing inherited method 'missing'");
+        expect(String(error)).to.contain("shared channel 'theme' has conflicting types");
+      });
+    });
+
+    it('reports shared and method collisions across files', function () {
+      expect(function () {
+        finalizeEntries([
+          loadedEntry('child.njk', { sharedSchema: { card: sharedSchemaEntry('var', { origin: { path: 'child.njk', lineno: 1, colno: 1 } }) } }),
+          loadedEntry('root.njk', { methodEntries: { card: compiledMethod('card') } })
+        ]);
+      }).to.throwException(/shared channel 'card' conflicts with inherited method 'card'/);
+    });
+
+    it('keeps the child-most shared schema declaration and first available default', function () {
+      const state = finalizeEntries([
+        loadedEntry('child.script', {
+          scriptMode: true,
+          hasExtends: true,
+          sharedSchema: {
+            theme: sharedSchemaEntry('var', {
+              origin: { path: 'child.script', lineno: 2, colno: 1 },
+              hasDefault: false
+            })
+          }
+        }),
+        loadedEntry('root.script', {
+          scriptMode: true,
+          sharedSchema: {
+            theme: sharedSchemaEntry('var', {
+              origin: { path: 'root.script', lineno: 2, colno: 1 },
+              hasDefault: true
+            })
+          }
+        })
+      ]);
+
+      expect(state.sharedSchema.theme.type).to.be('var');
+      expect(state.sharedSchema.theme.origin.path).to.be('child.script');
+      expect(state.sharedSchema.theme.hasDefault).to.be(true);
+      expect(state.sharedSchema.theme.defaultOrigin.path).to.be('root.script');
+    });
+
+    it('merges channel footprints across overridden entries', function () {
+      const state = finalizeEntries([
+        loadedEntry('child.script', {
+          scriptMode: true,
+          hasExtends: true,
+          methodEntries: {
+            build: compiledMethod('build', {
+              ownLinkedChannels: ['childRead'],
+              ownMutatedChannels: ['childWrite']
+            })
+          }
+        }),
+        loadedEntry('root.script', {
+          scriptMode: true,
+          methodEntries: {
+            build: compiledMethod('build', {
+              ownLinkedChannels: ['rootRead'],
+              ownMutatedChannels: ['rootWrite']
+            })
+          }
+        })
+      ]);
+
+      expect(state.methods.build.mergedLinkedChannels.slice().sort()).to.eql(['childRead', 'rootRead']);
+      expect(state.methods.build.mergedMutatedChannels.slice().sort()).to.eql(['childWrite', 'rootWrite']);
+    });
+
+    it('prunes finalization-only method fields and attaches owner entries', function () {
+      const state = finalizeEntries([
+        loadedEntry('root.njk', {
+          methodEntries: {
+            body: compiledMethod('body', {
+              invokedMethodRefs: {},
+              ownLinkedChannels: ['theme'],
+              ownMutatedChannels: ['theme']
+            })
+          }
+        })
+      ]);
+      const entry = state.methods.body;
+
+      expect(entry.invokedMethodRefs).to.be(undefined);
+      expect(entry.superOrigin).to.be(undefined);
+      expect(entry.ownLinkedChannels).to.be(undefined);
+      expect(entry.ownMutatedChannels).to.be(undefined);
+      expect(entry.name).to.be('body');
+      expect(entry.fn).to.be.a(Function);
+      expect(entry.signature).to.eql({ argNames: [] });
+      expect(entry.origin.path).to.be('body.owner');
+      expect(entry.isConstructor).to.be(false);
+      expect(entry.ownerEntry.path).to.be('root.njk');
+      expect(entry.ownerEntry.isStructuralTemplate).to.be(true);
+    });
+
+    it('keeps participant shared declaration output off legacy shared-buffer helpers', function () {
+      const source = compileSource('shared var theme\nextends none\nreturn this.theme', {
+        scriptMode: true,
+        name: 'shared-helper.script'
+      });
+
+      expect(source).to.contain('sharedSchema');
+      expect(source).not.to.contain('runtime.getInheritanceSharedBuffer');
+    });
+
+    it('initializes shared sequence targets through declaration', function () {
+      const buffer = new runtime.CommandBuffer({ path: 'shared-sequence.script' }, null, null, null);
+      const firstTarget = { name: 'first' };
+      const secondTarget = { name: 'second' };
+
+      const channel = runtime.declareInheritanceSharedChannel(buffer, 'db', 'sequence', null, firstTarget);
+      runtime.declareInheritanceSharedChannel(buffer, 'db', 'sequence', null, secondTarget);
+
+      expect(channel._sequenceTarget).to.be(secondTarget);
+    });
+  });
+
   describe('analysis and validation', function () {
     it('lets inherited methods and template blocks read render context by default', function () {
       const scriptFacts = analyzeSource('method title()\n  return siteName\nendmethod\nreturn this.title()', { scriptMode: true });
@@ -578,9 +946,10 @@ describe('Inheritance rebuild', function () {
 
       expect(facts.participates).to.be(true);
       expect(facts.sharedSchemaInputs).to.eql([
-        { name: 'data', type: 'var' }
+        { name: 'data', type: 'var', hasDefault: false }
       ]);
-      expect(props.inheritanceSpec.sharedSchema).to.eql({ data: 'var' });
+      expect(props.inheritanceSpec.sharedSchema.data.type).to.be('var');
+      expect(props.inheritanceSpec.sharedSchema.data.hasDefault).to.be(false);
     });
 
     it('allows top-level dynamic template extends to compile', function () {
@@ -638,8 +1007,8 @@ describe('Inheritance rebuild', function () {
       );
 
       expect(facts.sharedSchemaInputs.sort((left, right) => left.name.localeCompare(right.name))).to.eql([
-        { name: 'mode', type: 'var' },
-        { name: 'theme', type: 'var' },
+        { name: 'mode', type: 'var', hasDefault: false },
+        { name: 'theme', type: 'var', hasDefault: false },
       ]);
     });
 
@@ -648,7 +1017,7 @@ describe('Inheritance rebuild', function () {
 
       expect(facts.participates).to.be(true);
       expect(facts.sharedSchemaInputs).to.eql([
-        { name: 'theme', type: 'var' }
+        { name: 'theme', type: 'var', hasDefault: false }
       ]);
     });
 
@@ -657,7 +1026,7 @@ describe('Inheritance rebuild', function () {
 
       expect(facts.participates).to.be(true);
       expect(facts.sharedSchemaInputs).to.eql([
-        { name: 'card', type: 'var' }
+        { name: 'card', type: 'var', hasDefault: false }
       ]);
     });
 
@@ -673,14 +1042,15 @@ describe('Inheritance rebuild', function () {
 
       expect(facts.participates).to.be(true);
       expect(facts.sharedSchemaInputs).to.eql([
-        { name: 'theme', type: 'var' }
+        { name: 'theme', type: 'var', hasDefault: false }
       ]);
     });
 
     it('emits implicit template shared vars in the compiled shared schema', function () {
       const props = compileProps('{% set this.theme = "dark" %}{{ this.theme }}');
 
-      expect(props.inheritanceSpec.sharedSchema).to.eql({ theme: 'var' });
+      expect(props.inheritanceSpec.sharedSchema.theme.type).to.be('var');
+      expect(props.inheritanceSpec.sharedSchema.theme.hasDefault).to.be(false);
     });
 
     it('rejects template shared and block name collisions', function () {

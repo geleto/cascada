@@ -208,7 +208,8 @@ class CompileInheritance {
       })),
       sharedSchemaInputs: sharedDeclarations.map((declaration) => ({
         name: declaration.name,
-        type: declaration.type
+        type: declaration.type,
+        hasDefault: !!declaration.initializer
       })),
       componentOperations,
       componentSharedObservations: []
@@ -486,7 +487,7 @@ class CompileInheritance {
 
   emitSharedDeclaration(declaration) {
     this.emit(
-      `runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(${this.compiler.buffer.currentBuffer}, inheritanceState), ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context`
+      `runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedRootBuffer(${this.compiler.buffer.currentBuffer}, inheritanceState), ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context`
     );
     if (declaration.initializer) {
       this.emit(', ');
@@ -795,9 +796,14 @@ class CompileInheritance {
 
   compileSharedSchemaLiteral(node) {
     const sharedDeclarations = this.getSharedDeclarations(node);
-    const entries = sharedDeclarations.map((child) =>
-      `${JSON.stringify(child.name)}: ${JSON.stringify(child.type)}`
-    );
+    const entries = sharedDeclarations.map((child) => {
+      const originNode = child.declarationOrigin ? child.declarationOrigin.node : node;
+      return `${JSON.stringify(child.name)}: { ` +
+        `type: ${JSON.stringify(child.type)}, ` +
+        `origin: ${JSON.stringify(this.compiler._createErrorContext(originNode))}, ` +
+        `hasDefault: ${child.initializer ? 'true' : 'false'} ` +
+        `}`;
+    });
     return `{ ${entries.join(', ')} }`;
   }
 

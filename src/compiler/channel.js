@@ -255,7 +255,7 @@ class CompileChannel {
     const name = node.name.value;
     const declareHelperName = node.isShared ? 'declareInheritanceSharedChannel' : 'declareBufferChannel';
     const targetBufferExpr = node.isShared
-      ? `runtime.getInheritanceSharedBuffer(${compiler.buffer.currentBuffer}, inheritanceState)`
+      ? `runtime.getInheritanceSharedRootBuffer(${compiler.buffer.currentBuffer}, inheritanceState)`
       : compiler.buffer.currentBuffer;
 
     compiler.emit(`runtime.${declareHelperName}(${targetBufferExpr}, "${name}", "${channelType}", context`);
@@ -290,8 +290,8 @@ class CompileChannel {
     }
 
     const emitInitializer = () => {
-      if (channelFacts && channelFacts.usesInitializerAsTarget) {
-        compiler.emit(`runtime.initializeInheritanceSharedChannelDefault(${targetBufferExpr}, "${name}", "${channelType}", context, `);
+      if (channelType === 'sequence') {
+        compiler.emit(`runtime.declareInheritanceSharedChannel(${targetBufferExpr}, "${name}", "${channelType}", context, `);
         compiler.compile(node.initializer, null);
         compiler.emit.line(');');
         return;
