@@ -24,7 +24,6 @@ class CompilerBaseAsync extends CompilerCommon {
     this.rename = new CompileRename(this);
     this.call = new CompileCall(this);
     this.lookup = new CompileLookup(this);
-    this.templateUsesInheritanceSurface = false;
   }
 
   analyzeSymbol(node, analysisPass) {
@@ -93,7 +92,7 @@ class CompilerBaseAsync extends CompilerCommon {
       );
     }
     if (declaredChannel.shared) {
-      this.channel.emitSharedChannelObservation(name, node, 'snapshot', true);
+      this.inheritance.emitSharedChannelObservation(name, node, 'snapshot', true);
       return;
     }
     if (!this.scriptMode && this.inBlock) {
@@ -571,7 +570,7 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
     if (observationFacts.kind === 'shared-channel') {
-      this.channel.emitSharedChannelObservation(observationFacts.channelName, targetNode, mode);
+      this.inheritance.emitSharedChannelObservation(observationFacts.channelName, targetNode, mode);
       return;
     }
     if (mode === 'isError') {

@@ -377,15 +377,67 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   compileBlock(node, frame) {
-    this.inheritance.compileSyncBlock(node, frame);
+    const args = node.args && node.args.children ? node.args.children : [];
+    if (args.length > 0) {
+      this.fail(
+        'block signatures are only supported in async mode',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+    // Static parent templates own top-level block rendering in the sync path.
+    if (!this.inBlock && this.hasStaticExtends && !this.hasDynamicExtends) {
+      return;
+    }
+
+    let id = this._tmpid();
+    if (!this.inBlock) {
+      this.emit('(parentTemplate ? function(e, c, f, r, cb) { cb(null, ""); } : ');
+    }
+    this.emit(`context.getBlock("${node.name.value}")`);
+    if (!this.inBlock) {
+      this.emit(')');
+    }
+    this.emit.line('(env, context, frame, runtime, ' + this._makeCallback(id));
+
+    this.emit.line(`${this.buffer.currentBuffer} += ${id};`);
+    this.emit.addScopeLevel();
   }
 
   compileSuper(node, frame) {
-    this.inheritance.compileSyncSuper(node, frame);
+    const args = node.args && node.args.children ? node.args.children : [];
+    if (args.length > 0) {
+      this.fail(
+        'super(...) is only supported in async mode',
+        node.lineno,
+        node.colno,
+        node
+      );
+      return;
+    }
+    const name = node.blockName.value;
+    const id = node.symbol.value;
+    const cb = this._makeCallback(id);
+    this.emit.line(`context.getSyncSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
+    this.emit.line(`${id} = runtime.markSafe(${id});`);
+    this.emit.addScopeLevel();
   }
 
   compileExtends(node, frame) {
-    this.inheritance.compileSyncExtends(node, frame);
+    if (node.noParentLiteral) {
+      return;
+    }
+
+    const k = this._tmpid();
+    const parentTemplateId = this.composition.compileSyncResolveTargetFile(node, frame, true, false, true);
+    this.emit.line(`parentTemplate = ${parentTemplateId};`);
+    this.emit.line('if (parentTemplate) {');
+    this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
+    this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
+    this.emit.line('}');
+    this.emit.line('}');
+    this.emit.addScopeLevel();
   }
 
   compileInclude(node, frame) {

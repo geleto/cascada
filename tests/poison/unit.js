@@ -826,6 +826,10 @@ import {createPoison, isPoison, PoisonError, collectErrors} from '../../src/runt
       const normalized = await runtime.normalizeFinalPromise(makeLazy('final'));
       expect(normalized.value).to.be('final');
       expect(normalized[marker]).to.be(undefined);
+
+      const promisedNormalized = await runtime.normalizeFinalPromise(Promise.resolve(makeLazy('promised-final')));
+      expect(promisedNormalized.value).to.be('promised-final');
+      expect(promisedNormalized[marker]).to.be(undefined);
     });
 
     it('should unwrap resolved-value markers before poison and lazy-marker checks', async () => {

@@ -589,9 +589,6 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeRoot(node) {
     const declares = this._getRootDeclarations(node);
-    const templateUsesInheritanceSurface = this.inheritance.templateUsesInheritanceSurface(node);
-    // Seeded before child post-analysis so blocks can infer template shared vars.
-    this.templateUsesInheritanceSurface = templateUsesInheritanceSurface;
     const sequenceLocks = node._analysis.sequenceLocks ?? [];
     sequenceLocks.forEach((lockName) => {
       declares.push({ name: lockName, type: 'sequential_path', initializer: null });
@@ -669,7 +666,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.return.emitFinalSnapshot(this.buffer.currentBuffer, returnVar);
       this.emit.line(`  ${this.buffer.currentBuffer}.finish();`);
       this.emit.line(`  await ${this.buffer.currentBuffer}.getFinishedPromise();`);
-      this.emit.line(`  cb(null, runtime.normalizeFinalPromise(await ${returnVar}));`);
+      this.emit.line(`  cb(null, runtime.normalizeFinalPromise(${returnVar}));`);
     } else {
       this.emit.line(`  ${this.buffer.currentBuffer}.finish();`);
       this.emit.line(`  cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);

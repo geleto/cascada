@@ -1,4 +1,5 @@
 import {RuntimeFatalError} from '../errors.js';
+import {applyChannelInitializer} from '../../channel-types.js';
 import {declareBufferChannel} from '../channels/index.js';
 
 const claimedSharedDefaults = new WeakSet();
@@ -7,17 +8,17 @@ function declareInheritanceSharedChannel(buffer, channelName, channelType, conte
   const hasInitializer = initializer !== undefined;
   const existingChannel = buffer.getOwnChannel(channelName);
   if (existingChannel) {
-    if (existingChannel._channelType !== channelType) {
+    if (existingChannel.channelType !== channelType) {
       throw new RuntimeFatalError(
-        `shared channel '${channelName}' was declared as '${existingChannel._channelType}' and '${channelType}'`,
+        `shared channel '${channelName}' was declared as '${existingChannel.channelType}' and '${channelType}'`,
         0,
         0,
         null,
         context?.path ?? null
       );
     }
-    if (channelType === 'sequence' && hasInitializer) {
-      existingChannel._setSequenceTarget(initializer);
+    if (hasInitializer) {
+      applyChannelInitializer(existingChannel, channelType, initializer);
     }
     return existingChannel;
   }
@@ -26,7 +27,8 @@ function declareInheritanceSharedChannel(buffer, channelName, channelType, conte
 }
 
 function claimInheritanceSharedDefault(buffer, channelName) {
-  // TODO(Step 5): Transitional guard for constructor-emitted shared defaults.
+  // TODO(Step 7): Replace constructor-emitted shared default claims with
+  // finalized-schema-driven default initialization.
   // Remove when shared-root setup evaluates only the finalized schema default.
   const channel = buffer.getOwnChannel(channelName);
   if (!channel || claimedSharedDefaults.has(channel)) {

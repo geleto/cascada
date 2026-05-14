@@ -126,7 +126,7 @@ describe('Inheritance rebuild', function () {
       expect(Object.keys(props).sort()).to.eql(['inheritanceSpec', 'resolveInheritanceParent', 'root']);
       expect(Object.keys(props.inheritanceSpec).sort()).to.eql(['hasExtends', 'methodEntries', 'sharedSchema']);
       expect(props.inheritanceSpec.setup).to.be(undefined);
-      expect(props.inheritanceSpec.invokedMethodRefs).to.be(undefined);
+      expect(props.inheritanceSpec.inheritedMethodDependencies).to.be(undefined);
       expect(props.resolveInheritanceParent.length).to.be(4);
       expect(props.inheritanceSpec.methodEntries.build.origin.path).to.be('shape.script');
     });
@@ -191,6 +191,13 @@ describe('Inheritance rebuild', function () {
       expect(source).not.to.contain('runtime.invokeSuperCallable');
     });
 
+    it('resolves implicit template constructor super before finishing text', function () {
+      const source = compileSource('{% extends "base.njk" %}child text{% block body %}x{% endblock %}');
+
+      expect(source).to.contain('runtime.resolveSingle(currentInstance.invokeSuper(methodData, null');
+      expect(source).not.to.contain('Promise.resolve(currentInstance.invokeSuper');
+    });
+
     it('emits constructor entries only for concrete constructor bodies', function () {
       const concreteScript = compileProps('extends none\nreturn "ok"', { scriptMode: true });
       const concreteTemplate = compileProps('{% block body %}x{% endblock %}');
@@ -234,6 +241,185 @@ describe('Inheritance rebuild', function () {
 
       expect(source).to.contain('runtime.invokeCallbackExtension');
       expect(source).not.to.contain('function b___promisify');
+    });
+  });
+
+  describe('direct render lifecycle', function () {
+    function createEnvironment(templates) {
+      const loader = new StringLoader();
+      Object.entries(templates).forEach(([name, source]) => loader.addTemplate(name, source));
+      return new AsyncEnvironment(loader);
+    }
+
+    it('emits participant roots as thin instance lifecycle orchestration', function () {
+      const source = compileSource('extends none\nreturn "ok"', {
+        scriptMode: true,
+        name: 'direct-root.script'
+      });
+
+      expect(source).to.contain('runtime.renderInheritanceParticipantRoot');
+      expect(source).to.contain('entryTemplateOrScript: this');
+      expect(source).to.contain('origin: {');
+      expect(source).not.to.contain('runtime.loadInheritanceChain');
+      expect(source).not.to.contain('runtime.finalizeInheritanceChain');
+      expect(source).not.to.contain('currentInstance.invoke("__constructor__"');
+      expect(source).not.to.contain('currentInstance.finishRender(entryResult)');
+      expect(source).not.to.contain(';(async () =>');
+      expect(source).not.to.contain('rootFunction');
+      expect(source).not.to.contain('props.root');
+      expect(source).not.to.contain('inheritanceState');
+    });
+
+    it('renders standalone participant templates through the constructor lifecycle', async function () {
+      const result = await env.renderTemplateString('{% block body %}Hi{% endblock %}');
+
+      expect(result).to.be('Hi');
+    });
+
+    it('renders inherited templates through the selected constructor chain', async function () {
+      const localEnv = createEnvironment({
+        'base.njk': 'Base:{% block body(user = "guest") %}{{ user }}{% endblock %}',
+        'child.njk': '{% extends "base.njk" %}{% block body(user = "guest") %}Child {{ user }}{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('child.njk', {})).to.be('Base:Child guest');
+    });
+
+    it('writes and reads inferred template shared vars in constructor bodies', async function () {
+      const result = await env.renderTemplateString('{% set this.theme = "dark" %}{{ this.theme }}');
+
+      expect(result).to.be('dark');
+    });
+
+    it('lets parent template constructor writes overwrite child shared writes after implicit super', async function () {
+      const localEnv = createEnvironment({
+        'base.njk': '{% set this.theme = "parent" %}Base:{{ this.theme }}{% block body %}{{ this.theme }}{% endblock %}',
+        'child.njk': '{% extends "base.njk" %}{% set this.theme = "child" %}{% block body %}Child:{{ this.theme }}{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('child.njk', {})).to.be('Base:parentChild:parent');
+    });
+
+    it('returns direct script constructor results through public render', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'extends none\nreturn "base"',
+        'child.script': 'extends "base.script"\nreturn super() + ":child"'
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('base:child');
+    });
+
+    it('normalizes lazy script constructor results at the public render boundary', async function () {
+      const result = await env.renderScriptString('extends none\nreturn { value: delayed() }', {
+        async delayed() {
+          return 'ready';
+        }
+      });
+
+      expect(result).to.eql({ value: 'ready' });
+    });
+
+    it('dispatches a script without a concrete constructor to the nearest ancestor constructor', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'extends none\nreturn "base"',
+        'child.script': 'extends "base.script"'
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('base');
+    });
+
+    it('does not let a parent constructor return override the child direct-render result', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'extends none\nreturn "base"',
+        'child.script': 'extends "base.script"\nsuper()\nreturn "child"'
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('child');
+    });
+
+    it('selects shared defaults child-to-parent without evaluating unselected parent defaults', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'extends none\nshared var theme = fail()\nreturn this.theme',
+        'child.script': 'extends "base.script"\nshared var theme = "child"\nreturn this.theme'
+      });
+
+      expect(await localEnv.renderScript('child.script', {
+        fail() {
+          throw new Error('parent default should not run');
+        }
+      })).to.be('child');
+    });
+
+    it('propagates constructor errors through public render context', async function () {
+      const localEnv = createEnvironment({
+        'child.script': 'extends none\nreturn thrower()'
+      });
+
+      try {
+        await localEnv.renderScript('child.script', {
+          thrower() {
+            throw new Error('constructor failed');
+          }
+        });
+        expect().fail('Expected constructor failure');
+      } catch (error) {
+        expect(String(error)).to.contain('constructor failed');
+        expect(String(error)).to.contain('child.script');
+      }
+    });
+
+    it('propagates dynamic parent load failures through public render', async function () {
+      const localEnv = createEnvironment({
+        'child.script': 'extends parentScript\nreturn "child"'
+      });
+
+      try {
+        await localEnv.renderScript('child.script', { parentScript: 'missing.script' });
+        expect().fail('Expected parent load failure');
+      } catch (error) {
+        expect(String(error)).to.contain('missing.script');
+        expect(error.path).to.be('child.script');
+      }
+    });
+
+    it('lets script dynamic null render only the entry constructor', async function () {
+      const localEnv = createEnvironment({
+        'child.script': 'extends parentScript\nreturn "child-only"'
+      });
+
+      expect(await localEnv.renderScript('child.script', { parentScript: null })).to.be('child-only');
+    });
+
+    it('propagates dynamic selection errors through public render', async function () {
+      const localEnv = createEnvironment({
+        'child.script': 'extends pickParent()\nreturn "child"'
+      });
+
+      try {
+        await localEnv.renderScript('child.script', {
+          pickParent() {
+            throw new Error('selection failed');
+          }
+        });
+        expect().fail('Expected dynamic selection failure');
+      } catch (error) {
+        expect(String(error)).to.contain('selection failed');
+        expect(String(error)).to.contain('child.script');
+      }
+    });
+
+    it('fails promised dynamic template null parent selection through public render', async function () {
+      const localEnv = createEnvironment({
+        'child.njk': '{% extends parentTemplate %}constructor text{% block body %}child{% endblock %}'
+      });
+
+      try {
+        await localEnv.renderTemplate('child.njk', { parentTemplate: Promise.resolve(null) });
+        expect().fail('Expected promised null template parent to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('template extends must select a parent template');
+        expect(String(error)).to.contain('child.njk');
+      }
     });
   });
 
@@ -545,7 +731,7 @@ describe('Inheritance rebuild', function () {
         isConstructor: !!options.isConstructor,
         super: !!options.super,
         superOrigin: options.superOrigin || null,
-        invokedMethodRefs: options.invokedMethodRefs || {},
+        inheritedMethodDependencies: options.inheritedMethodDependencies || {},
         ownLinkedChannels: options.ownLinkedChannels || [],
         ownMutatedChannels: options.ownMutatedChannels || []
       };
@@ -810,7 +996,7 @@ describe('Inheritance rebuild', function () {
             methodEntries: {
               build: compiledMethod('build', {
                 argNames: ['profile'],
-                invokedMethodRefs: {
+                inheritedMethodDependencies: {
                   missing: { name: 'missing', origin: { path: 'child.script', lineno: 2, colno: 3 } }
                 }
               })
@@ -902,7 +1088,7 @@ describe('Inheritance rebuild', function () {
         loadedEntry('root.njk', {
           methodEntries: {
             body: compiledMethod('body', {
-              invokedMethodRefs: {},
+              inheritedMethodDependencies: {},
               ownLinkedChannels: ['theme'],
               ownMutatedChannels: ['theme']
             })
@@ -911,7 +1097,7 @@ describe('Inheritance rebuild', function () {
       ]);
       const entry = state.methods.body;
 
-      expect(entry.invokedMethodRefs).to.be(undefined);
+      expect(entry.inheritedMethodDependencies).to.be(undefined);
       expect(entry.superOrigin).to.be(undefined);
       expect(entry.ownLinkedChannels).to.be(undefined);
       expect(entry.ownMutatedChannels).to.be(undefined);
@@ -978,7 +1164,7 @@ describe('Inheritance rebuild', function () {
         methodEntries: {
           greet: compiledMethod('greet', {
             argNames: ['user'],
-            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, inheritanceState, methodData, currentInstance) {
+            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, methodData, currentInstance) {
               expect(currentInstance.runtimeState.methods.greet).to.be(methodData);
               expect(invocationBuffer.parent).to.be(currentInstance.sharedRootBuffer);
               return `hello ${payload.originalArgs.user}`;
@@ -1060,7 +1246,7 @@ describe('Inheritance rebuild', function () {
         scriptMode: true,
         methodEntries: {
           outer: compiledMethod('outer', {
-            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, inheritanceState, methodData, currentInstance) {
+            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, methodData, currentInstance) {
               outerBuffer = invocationBuffer;
               return currentInstance.invokeFromCurrentBuffer(
                 'inner',
@@ -1093,7 +1279,7 @@ describe('Inheritance rebuild', function () {
       const child = compiledMethod('build', {
         argNames: ['user'],
         super: true,
-        fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, inheritanceState, methodData, currentInstance) {
+        fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, methodData, currentInstance) {
           return currentInstance.invokeSuper(
             methodData,
             null,
@@ -1487,11 +1673,11 @@ describe('Inheritance rebuild', function () {
 
       script.compile();
 
-      expect(script.inheritanceSpec.methodEntries.__constructor__.invokedMethodRefs.build.name).to.be('build');
-      expect(script.inheritanceSpec.methodEntries.__constructor__.invokedMethodRefs.decorate).to.be(undefined);
+      expect(script.inheritanceSpec.methodEntries.__constructor__.inheritedMethodDependencies.build.name).to.be('build');
+      expect(script.inheritanceSpec.methodEntries.__constructor__.inheritedMethodDependencies.decorate).to.be(undefined);
       expect(script.inheritanceSpec.methodEntries.__constructor__.super).to.be(false);
-      expect(script.inheritanceSpec.methodEntries.build.invokedMethodRefs.decorate.name).to.be('decorate');
-      expect(script.inheritanceSpec.methodEntries.build.invokedMethodRefs.build).to.be(undefined);
+      expect(script.inheritanceSpec.methodEntries.build.inheritedMethodDependencies.decorate.name).to.be('decorate');
+      expect(script.inheritanceSpec.methodEntries.build.inheritedMethodDependencies.build).to.be(undefined);
       expect(script.inheritanceSpec.methodEntries.build.super).to.be(true);
       expect(script.inheritanceSpec.methodEntries.build.superOrigin.path).to.be('callable-metadata.script');
     });

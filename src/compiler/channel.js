@@ -155,26 +155,24 @@ class CompileChannel {
     }
     const channelName = staticPath[1];
     const activeAnalysis = analysisNode || node._analysis;
-    if (compiler.scriptMode || compiler.templateUsesInheritanceSurface) {
-      const channelDecl = analysisPass.findRootDeclaration(activeAnalysis, channelName);
-      const parentNode = node._analysis?.parent?.node || null;
-      const isCallableRoot = staticPath.length === 2 &&
-        parentNode instanceof nodes.FunCall &&
-        parentNode.name === node;
-      if (
-        isCallableRoot &&
-        (!compiler.scriptMode || !channelDecl)
-      ) {
-        return null;
-      }
-      if (
-        compiler.scriptMode &&
-        !channelDecl &&
-        staticPath.length === 2 &&
-        compiler.inheritance.hasLocalMethodDefinition(activeAnalysis, channelName)
-      ) {
-        return null;
-      }
+    const channelDecl = analysisPass.findRootDeclaration(activeAnalysis, channelName);
+    const parentNode = node._analysis?.parent?.node || null;
+    const isCallableRoot = staticPath.length === 2 &&
+      parentNode instanceof nodes.FunCall &&
+      parentNode.name === node;
+    if (
+      isCallableRoot &&
+      (!compiler.scriptMode || !channelDecl)
+    ) {
+      return null;
+    }
+    if (
+      compiler.scriptMode &&
+      !channelDecl &&
+      staticPath.length === 2 &&
+      compiler.inheritance.hasLocalMethodDefinition(activeAnalysis, channelName)
+    ) {
+      return null;
     }
     const declarationFacts = this._getThisSharedDeclarationFacts(
       activeAnalysis,
@@ -200,7 +198,7 @@ class CompileChannel {
     const compiler = this.compiler;
     let declaration = analysisPass.findRootDeclaration(analysis, name);
     let type = declaration ? declaration.type : null;
-    if (!compiler.scriptMode && compiler.templateUsesInheritanceSurface) {
+    if (!compiler.scriptMode) {
       const rootAnalysis = compiler.analysis.getRootScopeOwner(analysis);
       const sharedDeclaration = compiler.inheritance.findRootSharedDeclaration(rootAnalysis, name);
       declaration = sharedDeclaration || declaration;
@@ -254,7 +252,7 @@ class CompileChannel {
     const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
     const name = node.name.value;
     const declareHelperName = node.isShared ? 'declareInheritanceSharedChannel' : 'declareBufferChannel';
-    const targetBufferExpr = node.isShared ? 'inheritanceState.sharedRootBuffer' : compiler.buffer.currentBuffer;
+    const targetBufferExpr = node.isShared ? 'currentInstance.sharedRootBuffer' : compiler.buffer.currentBuffer;
 
     compiler.emit(`runtime.${declareHelperName}(${targetBufferExpr}, "${name}", "${channelType}", context`);
     if (!node.isShared && channelFacts && channelFacts.requiresInitializer && node.initializer) {
@@ -365,7 +363,7 @@ class CompileChannel {
     }
     if (specialChannelCall.methodName === 'snapshot') {
       if (specialChannelCall.shared) {
-        this.emitSharedChannelObservation(specialChannelCall.channelName, node, 'snapshot');
+        compiler.inheritance.emitSharedChannelObservation(specialChannelCall.channelName, node, 'snapshot');
       } else {
         compiler.buffer.emitAddSnapshot(specialChannelCall.channelName, node);
       }
@@ -373,7 +371,7 @@ class CompileChannel {
     }
     if (specialChannelCall.methodName === 'isError') {
       if (specialChannelCall.shared) {
-        this.emitSharedChannelObservation(specialChannelCall.channelName, node, 'isError');
+        compiler.inheritance.emitSharedChannelObservation(specialChannelCall.channelName, node, 'isError');
       } else {
         compiler.buffer.emitAddIsError(specialChannelCall.channelName, node);
       }
@@ -381,22 +379,13 @@ class CompileChannel {
     }
     if (specialChannelCall.methodName === 'getError') {
       if (specialChannelCall.shared) {
-        this.emitSharedChannelObservation(specialChannelCall.channelName, node, 'getError');
+        compiler.inheritance.emitSharedChannelObservation(specialChannelCall.channelName, node, 'getError');
       } else {
         compiler.buffer.emitAddGetError(specialChannelCall.channelName, node);
       }
       return true;
     }
     return false;
-  }
-
-  emitSharedChannelObservation(channelName, node, mode = 'snapshot', implicitVarRead = false) {
-    const compiler = this.compiler;
-    compiler.emit(
-      `runtime.observeInheritanceSharedChannel(${JSON.stringify(channelName)}, ${compiler.buffer.currentBuffer}, ` +
-      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(compiler._generateErrorContext(node))}, path: context.path }, ` +
-      `(typeof inheritanceState === "undefined" ? null : inheritanceState), ${JSON.stringify(mode)}, ${implicitVarRead})`
-    );
   }
 
   _compileSequenceChannelFunCall(node, specialChannelCall) {

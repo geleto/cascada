@@ -136,7 +136,6 @@ class CompileLookup {
     const compiler = this.compiler;
     if (
       !compiler.scriptMode &&
-      compiler.templateUsesInheritanceSurface &&
       node.target instanceof nodes.Symbol &&
       node.target.value === 'this' &&
       !(node.val instanceof nodes.Literal && typeof node.val.value === 'string')
@@ -173,7 +172,7 @@ class CompileLookup {
       );
     }
     if (thisSharedFacts.channelPath.length === 1) {
-      compiler.channel.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
+      compiler.inheritance.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
       return true;
     }
     this._emitThisSharedVarNestedLookup(thisSharedFacts, node);
@@ -267,7 +266,7 @@ class CompileLookup {
     nestedPath.forEach(() => {
       this.emit(`runtime.${memberLookupHelper}((`);
     });
-    compiler.channel.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
+    compiler.inheritance.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
     nestedPath.forEach((propertyName) => {
       this.emit(`), ${JSON.stringify(propertyName)}, ${errorContextJson})`);
     });

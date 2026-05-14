@@ -39,10 +39,18 @@ class Channel {
     return this._target;
   }
 
+  get channelType() {
+    return this._channelType;
+  }
+
   _setTarget(nextTarget) {
     this._target = nextTarget;
     this._markStateChanged();
     return this._target;
+  }
+
+  setInitialValue(value) {
+    return this._setTarget(value);
   }
 
   _invalidateErrorStateCache() {

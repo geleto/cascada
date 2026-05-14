@@ -54,7 +54,10 @@ function unwrapResolvedValue(value) {
 }
 
 // Normalize a value that is leaving Cascada and becoming an ordinary JS promise/value.
-// Only three cases are allowed here:
+// Keep this as the final boundary: callers may pass either a value or a promise
+// for a value, and the resolved value still gets Cascada final-value handling.
+// Only these cases are allowed here:
+// - ordinary promises: normalize the resolved final value
 // - RESOLVE_MARKER-backed lazy values: return a promise for the final resolved object/array
 // - RESOLVED_VALUE_MARKER wrappers: unwrap synchronously to the plain value
 // - PoisonedValue: convert to a normal rejecting promise
@@ -65,6 +68,9 @@ function normalizeFinalPromise(value) {
   }
   if (isPoison(value)) {
     return Promise.reject(new PoisonError(value.errors));
+  }
+  if (value && typeof value.then === 'function') {
+    return Promise.resolve(value).then((resolved) => normalizeFinalPromise(resolved));
   }
   if (value && value[RESOLVE_MARKER]) {
     return Promise.resolve(value[RESOLVE_MARKER]).then(() => value);

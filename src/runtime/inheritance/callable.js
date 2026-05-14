@@ -1,10 +1,17 @@
 import {handleError} from '../errors.js';
+import {resolveSingle} from '../resolve.js';
 
 function noInheritanceParent() {
   return { parentTemplateOrScript: null, origin: null };
 }
 
 async function resolveInheritanceParent(env, isScript, target, origin, context, errorContext) {
+  try {
+    target = await resolveSingle(target);
+  } catch (error) {
+    throw runtimeError(error, context, errorContext);
+  }
+
   if (target === null || target === undefined) {
     // Scripts use null as an explicit parentless selection; templates must
     // select a concrete parent when dynamic extends is present.
@@ -37,19 +44,15 @@ function getInheritanceCallableOriginalArgs(blockPayload) {
   return blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {};
 }
 
-function createInheritanceCallableContext(context, isScriptMethod, invocationPath, blockPayload, blockRenderCtx, originalArgs) {
+function createInheritanceCallableContext(context, isScriptMethod, invocationPath, blockPayload, blockRenderCtx) {
   if (isScriptMethod) {
-    return context.forkForComposition(
-      invocationPath,
-      context.getCompositionContextVariables(),
-      blockRenderCtx || undefined
-    );
+    return context.forkForPath(invocationPath);
   }
 
   const compositionPayloadContext = context.getCompositionPayloadVariables() || {};
-  const payloadContext = Object.assign({}, (blockRenderCtx || {}), compositionPayloadContext, originalArgs);
-  // `blockPayload` marks an inherited block placement call; `originalArgs`
-  // carries the normalized argument frame for both blocks and methods.
+  const payloadContext = Object.assign({}, (blockRenderCtx || {}), compositionPayloadContext);
+  // Callable arguments are local channels, not composition-context variables.
+  // `blockPayload` only marks an inherited block placement call.
   if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(payloadContext).length > 0) {
     return context.forkForComposition(invocationPath, payloadContext, blockRenderCtx);
   }
@@ -59,9 +62,9 @@ function createInheritanceCallableContext(context, isScriptMethod, invocationPat
 function runtimeError(error, context, errorContext) {
   return handleError(
     error,
-    errorContext.lineno,
-    errorContext.colno,
-    errorContext.errorContextString,
+    errorContext?.lineno,
+    errorContext?.colno,
+    errorContext?.errorContextString,
     context.path
   );
 }

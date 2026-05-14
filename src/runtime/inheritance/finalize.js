@@ -166,17 +166,18 @@ function validateSharedMethodCollisions(sharedSchema, methodNames, errors, conte
   });
 }
 
-function validateInvokedMethodRefs(entries, methodNames, errors, context) {
+function validateInheritedMethodDependencies(entries, methodNames, errors, context) {
   entries.forEach((entry) => {
     Object.values(entry.spec.methodEntries || {}).forEach((methodEntry) => {
-      Object.keys(methodEntry.invokedMethodRefs || {}).forEach((name) => {
+      const dependencies = methodEntry.inheritedMethodDependencies || {};
+      Object.keys(dependencies).forEach((name) => {
         if (methodNames.has(name)) {
           return;
         }
         addFinalizationError(
           errors,
           `method '${methodEntry.name}' references missing inherited method '${name}'`,
-          methodEntry.invokedMethodRefs[name].origin ?? methodEntry.origin,
+          dependencies[name].origin ?? methodEntry.origin,
           context
         );
       });
@@ -210,7 +211,7 @@ function finalizeInheritanceChain(chain, context = null) {
     });
   }
 
-  validateInvokedMethodRefs(entries, methodNames, errors, context);
+  validateInheritedMethodDependencies(entries, methodNames, errors, context);
   assertNoFinalizationErrors(errors);
 
   return Object.freeze({

@@ -9,7 +9,6 @@ import {
   SequenceCallCommand,
   CommandBuffer,
   declareBufferChannel,
-  createSequenceChannel,
   createPoison,
   isPoisonError,
   linkCurrentBufferToParentChannels,
@@ -66,7 +65,7 @@ describe('channel.finalSnapshot', function () {
   );
   const flattenSequence = (commands, ctx, channelName, sequence) => {
     const buffer = new CommandBuffer(ctx, null);
-    const sequenceChannel = createSequenceChannel(buffer, channelName, ctx || null, sequence);
+    const sequenceChannel = declareBufferChannel(buffer, channelName, 'sequence', ctx || null, sequence);
 
     commands.forEach((entry) => buffer.addCommand(entry, channelName));
     sequenceChannel.finalSnapshot();
@@ -203,7 +202,7 @@ describe('channel.finalSnapshot', function () {
 
     it('clears resolved sequence promise cache after async sequence target resolution', async function () {
       const buffer = new CommandBuffer(context, null);
-      const sequenceChannel = createSequenceChannel(buffer, 'logger', context, Promise.resolve({
+      const sequenceChannel = declareBufferChannel(buffer, 'logger', 'sequence', context, Promise.resolve({
         snapshot() {
           return ['ok'];
         }

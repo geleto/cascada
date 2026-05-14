@@ -238,12 +238,35 @@ function _observeResolvedInheritanceSharedChannel(name, currentBuffer, channelTy
   return _addObservationCommand(currentBuffer, name, pos, mode);
 }
 
-function observeInheritanceSharedChannelImpl(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
+function observeInheritanceSharedChannel(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
   if (!currentBuffer || !inheritanceStateValue) {
     return undefined;
   }
 
   const pos = _getObservationPosition(errorContext);
+  const runtimeSharedSchema = inheritanceStateValue.runtimeState?.sharedSchema ?? null;
+  if (runtimeSharedSchema) {
+    const schemaEntry = runtimeSharedSchema[name] ?? null;
+    if (!schemaEntry) {
+      throw new RuntimeFatalError(
+        `unknown inherited shared channel '${name}'`,
+        pos.lineno,
+        pos.colno,
+        errorContext ? errorContext.errorContextString : null,
+        errorContext ? errorContext.path : null
+      );
+    }
+    return _observeResolvedInheritanceSharedChannel(
+      name,
+      currentBuffer,
+      schemaEntry.type,
+      pos,
+      errorContext,
+      mode,
+      implicitVarRead
+    );
+  }
+
   const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue || {});
   if (Object.prototype.hasOwnProperty.call(sharedSchema, name)) {
     // The metadata-ready barrier guarantees normal inherited dispatch observes
@@ -298,6 +321,5 @@ function channelLookup(name, currentBuffer) {
 }
 
 const memberLookup = memberLookupImpl;
-const observeInheritanceSharedChannel = observeInheritanceSharedChannelImpl;
 
 export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };

@@ -133,6 +133,10 @@ class SequenceObjectChannel extends Channel {
     return this._sequenceTarget;
   }
 
+  setInitialValue(targetObject) {
+    return this._setSequenceTarget(targetObject);
+  }
+
   _ensureSequenceTargetResolved() {
     if (this._sequenceTargetReady) {
       return this._sequenceTarget;

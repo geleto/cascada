@@ -1,4 +1,5 @@
 import {RuntimeFatalError} from '../errors.js';
+import {normalizeFinalPromise} from '../resolve.js';
 import {createInheritanceCallableArgumentFrame} from './invoke.js';
 import {declareInheritanceSharedChannel} from './shared.js';
 
@@ -19,8 +20,10 @@ class InheritanceInstance {
   static async create(options) {
     const runtime = options.runtime;
     const context = options.context;
-    const rootBuffer = options.output || new runtime.CommandBuffer(context, options.ownerBuffer || null, null, null);
-    const sharedRootBuffer = new runtime.CommandBuffer(context, rootBuffer, null, null);
+    const rootBuffer = options.rootBuffer || new runtime.CommandBuffer(context, null, null, null);
+    // TODO(Step 6): Components need a distinct shared root buffer with
+    // component-owned close timing. Direct render uses the render root buffer.
+    const sharedRootBuffer = rootBuffer;
     const chain = await runtime.loadInheritanceChain({
       templateOrScript: options.entryTemplateOrScript,
       env: options.env,
@@ -84,10 +87,14 @@ class InheritanceInstance {
   }
 
   async _invokeFromMethodData(methodData, args, origin, parentBuffer, context, options = {}) {
+    const visibleChannels = Array.from(new Set([
+      ...methodData.mergedLinkedChannels,
+      ...methodData.mergedMutatedChannels
+    ]));
     const invocationBuffer = new this.runtime.CommandBuffer(
       context,
       parentBuffer,
-      methodData.mergedLinkedChannels,
+      visibleChannels,
       parentBuffer,
       methodData.mergedMutatedChannels
     );
@@ -104,9 +111,6 @@ class InheritanceInstance {
     const renderContext = methodData.isConstructor ? undefined : context.getRenderContextVariables();
 
     try {
-      // TODO(Step 5): Generated callable ABI still has both inheritanceState
-      // and currentInstance. Both receive this instance until shared-root
-      // setup no longer references inheritanceState.
       const result = await methodData.fn(
         this.env,
         context,
@@ -115,7 +119,6 @@ class InheritanceInstance {
         invocationBuffer,
         callablePayload,
         renderContext,
-        this,
         methodData,
         this
       );
@@ -130,9 +133,10 @@ class InheritanceInstance {
   }
 
   finishRender(entryResult) {
-    // TODO(Step 5): Replace this placeholder with direct-render completion.
-    // Templates finish the root text channel; scripts return entryResult.
-    return entryResult;
+    this.sharedRootBuffer.finish();
+    this.rootBuffer.finish();
+    const finished = this.rootBuffer.getFinishedPromise();
+    return finished.then(() => entryResult);
   }
 
   close() {
@@ -144,4 +148,19 @@ class InheritanceInstance {
   }
 }
 
-export {InheritanceInstance};
+async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, cb, rootBuffer, origin = null }) {
+  const instance = await InheritanceInstance.create({
+    entryTemplateOrScript,
+    env,
+    context,
+    runtime,
+    cb,
+    rootBuffer,
+    origin
+  });
+  let entryResult;
+  entryResult = await instance.invoke('__constructor__', [], origin);
+  return normalizeFinalPromise(instance.finishRender(entryResult));
+}
+
+export {InheritanceInstance, renderInheritanceParticipantRoot};

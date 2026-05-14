@@ -268,35 +268,37 @@ Scripts:
 - Direct script render returns the `entryResult` produced by invoking
   `runtimeState.methods.__constructor__`.
 - Do not invent an inheritance-specific return path.
-- For templates, `finishRender(entryResult)` ignores `entryResult` for output
-  purposes and returns the text-channel snapshot.
+- For templates, `finishRender(entryResult)` completes the root/shared buffer
+  and returns the constructor result, which is the finalized template text for
+  the selected structural constructor chain.
 
 Generated participant roots must be thin orchestration only. The root function
 is invoked as the compiled template/script object's `rootRenderFunc`, so it can
-use `this` as the entry template/script object:
+use `this` as the entry template/script object. The generated root delegates
+the lifecycle to `runtime.renderInheritanceParticipantRoot(...)` instead of
+inlining load/finalize/constructor/finish logic:
 
 ```js
 function root(env, context, runtime, cb) {
-  (async () => {
-    const instance = await runtime.InheritanceInstance.create({
-      entryTemplateOrScript: this,
-      env,
-      context,
-      runtime,
-      cb
-    });
-    const entryResult = await instance.invoke("__constructor__", [], rootOrigin);
-    return instance.finishRender(entryResult);
-  })().then((result) => cb(null, result), cb);
+  runtime.renderInheritanceParticipantRoot({
+    entryTemplateOrScript: this,
+    env,
+    context,
+    runtime,
+    cb,
+    rootBuffer: output,
+    origin: rootOrigin
+  }).then((result) => cb(null, result), cb);
 }
 ```
 
-The actual generated code may use `async`/`try`/`catch` instead of `.then(...)`,
-but it must keep this ownership shape:
+The actual generated code must keep this ownership shape:
 
-1. create one `InheritanceInstance`
-2. invoke `__constructor__` through that instance
-3. complete via `instance.finishRender(entryResult)`
+1. pass the compiled entry object, runtime render inputs, root buffer, and
+   source origin to the runtime lifecycle helper
+2. let the runtime helper create one `InheritanceInstance`
+3. let the runtime helper invoke `__constructor__`, finish, and normalize the
+   direct-render result
 
 It must not duplicate load/finalize/shared-buffer setup inside `root`, and it
 must not use `props.root`, `props.rootFunction`, or any fallback between the two
@@ -704,14 +706,13 @@ const instance = await InheritanceInstance.create({
   env,
   context,
   runtime,
-  output,
-  ownerBuffer
+  rootBuffer
 })
 ```
 
 The exact option names may change, but `create(...)` must:
 
-1. create or select the root output buffer
+1. use the render root buffer when direct rendering, otherwise create one
 2. create the shared root buffer for this inheritance instance
 3. load the selected chain metadata from `entryTemplateOrScript`
 4. finalize metadata into `InheritanceRuntimeState`
@@ -840,11 +841,16 @@ type CompiledMethodEntry = {
   isConstructor: boolean,
   super: boolean,
   superOrigin: SourceOrigin | null,
-  invokedMethodRefs: Record<string, InvokedMethodRef>,
+  inheritedMethodDependencies: Record<string, InheritedMethodDependency>,
   ownLinkedChannels: string[],
   ownMutatedChannels: string[]
 }
 ```
+
+`inheritedMethodDependencies` is a deduplicated map of inherited methods that
+the compiled callable may call through `this.name(...)`. Each entry keeps the
+method name and the first compiler-known call-site origin for finalization
+errors. It is dependency metadata, not an exhaustive list of call sites.
 
 After finalization, runtime invocation should see a pruned execution entry:
 
@@ -862,7 +868,7 @@ type RuntimeMethodEntry = {
 }
 ```
 
-Finalization-only fields such as `callsSuper`, `invokedMethodRefs`,
+Finalization-only fields such as `callsSuper`, `inheritedMethodDependencies`,
 `superOrigin`, `ownLinkedChannels`, and `ownMutatedChannels` must not survive on
 the long-lived execution entry. If a field survives, it must be justified as an
 execution-time requirement.
@@ -1013,6 +1019,14 @@ existed.
   explicit shared observation, and owner side-channel lifetime wiring around
   `InheritanceInstance`
 - `index.js`: explicit compiler-private runtime exports
+
+Compiler-side inheritance code should stay owned by `CompileInheritance`.
+If emission grows enough to need a split, create an `InheritanceEmit` helper
+under `CompileInheritance` (for example `compiler.inheritance.emitter`), not as
+a top-level compiler service. That helper may own only inheritance-specific
+generated source: participant roots, parent resolver, shared declarations,
+callable bodies, and method-entry literals. Analysis, registration, signature
+decisions, and validation support stay with `CompileInheritance`.
 
 Do not make one file compensate for another phase. For example, `invoke.js`
 must not discover missing methods, and `load.js` must not create buffers to
@@ -1198,10 +1212,9 @@ channels implicitly.
 Shared channels are linked by exact finalized footprints. Broad setup-time
 whole-schema linking is not part of the target architecture.
 
-The inheritance runtime must use public channel/buffer APIs for channel type,
-ownership/link checks, and sequence initialization. It must not depend on
-private channel fields such as `_channelType`, `_buffer`, or
-`_setSequenceTarget`.
+The runtime must keep channel type behavior centralized. Declaration and shared
+re-declaration initializer handling both go through channel type metadata; they
+must not scatter direct sequence/var setter branches through inheritance code.
 
 ## Components
 
@@ -1336,11 +1349,11 @@ schema remains structural metadata only: type, declaration origin, selected
 default origin, and whether a default exists. Default expressions are not
 evaluated during finalization.
 Do not keep a runtime `claimInheritanceSharedDefault` side channel in the final
-lifecycle. Instance shared-root setup must use the finalized schema's
-`hasDefault` metadata to initialize each selected shared default once.
-The current `claimedSharedDefaults` WeakSet is transitional scaffolding for the
-old constructor-emitted default guard. Remove it in Step 5 when shared-root
-setup evaluates only the finalized schema default.
+lifecycle. The current `claimedSharedDefaults` WeakSet is transitional
+scaffolding for constructor-emitted default expressions: it lets the first
+selected declaration with an initializer run once while keeping unselected
+parent defaults unevaluated. A later cleanup should replace it with a selected
+default-initialization path driven directly by finalized schema metadata.
 
 Compiler ABI metadata is an invariant after compilation. Finalization may copy,
 deduplicate, and freeze/normalize arrays for stable runtime use, but it must
@@ -1596,8 +1609,8 @@ Goal:
 - replace transitional shared-channel bootstrap helpers with clean `shared.js`
   runtime operations; compiler output must not call legacy shared-buffer helpers
   once finalization owns shared schema setup
-- keep `claimedSharedDefaults` only as Step 5 transitional scaffolding; it is
-  not part of the clean finalized-schema default model
+- keep `claimedSharedDefaults` only as transitional scaffolding; it is not part
+  of the clean finalized-schema default model
 
 Tests:
 
@@ -1753,8 +1766,9 @@ Goal:
 
 Tests:
 
-- generated participant root source uses `InheritanceInstance.create(...)` and
-  does not duplicate load/finalize/shared-buffer setup
+- generated participant root source calls `renderInheritanceParticipantRoot(...)`
+  and does not duplicate load/finalize/shared-buffer/setup/constructor/finish
+  lifecycle logic
 - generated participant root passes the compiled template/script object as the
   entry object; it does not fall back between `root` and `rootFunction`
 - standalone template output matches the public template contract
@@ -1878,6 +1892,9 @@ Goal:
 - delete or move remaining sync inheritance compiler methods from the clean
   async inheritance module; the sync compiler continues to use the Nunjucks
   inheritance path and is outside this rebuild
+- evaluate splitting inheritance-specific generated-source emission into an
+  `InheritanceEmit` helper owned by `CompileInheritance`; do this only if the
+  boundary is pure emission and reduces coupling
 
 Tests:
 

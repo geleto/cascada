@@ -1076,7 +1076,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         ownMutatedChannels: [],
         ownLinkedChannels: [],
         super: false,
-        invokedMethodRefs: {}
+        inheritedMethodDependencies: {}
       }
     };
 
