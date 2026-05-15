@@ -596,8 +596,7 @@ Rules:
   function/macro argument model; named placement bindings are normalized to the
   same ordered argument frame before invocation
 - overrides may add or omit trailing arguments, but the shared positional prefix
-  must keep the same argument names so keyword arguments and bare `super()`
-  forwarding remain stable
+  must keep the same argument names so keyword arguments remain stable
 
 The compiler must reject unsupported syntax early. The runtime must not carry
 `withContext`, context-mode, or implicit-placement named-binding metadata.
@@ -623,6 +622,13 @@ reports the ambiguity.
 
 Bare names do not probe the inheritance shared schema. Bare names follow the
 ordinary ambient lookup path: locals, arguments, instance context, and globals.
+
+Shared storage uses compiler-internal channel names such as `$theme`.
+The compiled/runtime schema key is that name. Generated code maps
+`this.theme` and `component.theme` to `$theme`. This keeps shared storage
+separate from an ordinary local `var theme` and lets callable footprints filter
+ordinary `usedChannels` / `mutatedChannels` by shared names. Diagnostics may
+strip the `$` or render it as `this.theme` in a later cleanup pass.
 
 ## Load And Runtime Shapes
 
@@ -805,15 +811,18 @@ inside the invocation buffer. Reassigning an argument mutates only that local
 call frame; it does not mutate the caller's variable, composition payload, or
 shared state.
 
-Keep the original argument frame separate from mutable local argument channels.
-No-argument `super()` forwards the original frame exactly as received by the
-current callable. Explicit `super(user, fallbackUser)` evaluates the current
-local values and builds a fresh argument frame for the parent callable.
+Argument channels are local to each invocation. `super()` passes no arguments;
+use explicit arguments such as `super(user, fallbackUser)` to pass values to the
+parent callable.
 
 Step 4 reuse boundary:
 
 - inherited invocation mirrors async macro/function positional, keyword, and
-  default behavior, but keeps its own temporary mapper until Step 7
+  default behavior, but keeps its own temporary runtime mapper until Step 8
+- compiler-side signature parsing and local `var` channel binding shape are
+  shared with async macro/function code; inherited callables should continue to
+  move toward those existing argument semantics rather than inventing a parallel
+  argument model
 - use the inherited-callable mapper for every inheritance callable surface:
   `instance.invoke(...)`, compiled `this.method(...)`, compiled
   `this.blockName(...)`, compiled `super(...)`, and structural inline block
@@ -825,7 +834,7 @@ Step 4 reuse boundary:
   invocation buffers, then calls the inherited-callable mapper rather than
   `runtime.makeMacro` or macro-specific compiler wrappers
 
-Step 7 should deduplicate the inherited-callable mapper with the macro/function
+Step 8 should deduplicate the inherited-callable mapper with the macro/function
 argument helper once the final invocation surfaces are stable.
 
 ## Method Entry Shapes
@@ -964,8 +973,7 @@ currentInstance.invokeSuper(
   args,
   context,
   currentBuffer,
-  origin,
-  originalArgsWhenForwarding
+  origin
 )
 ```
 
@@ -978,10 +986,9 @@ Argument rules:
 - script keyword arguments follow the regular function-call rules
 - template named placement bindings are placement-only; they are not a separate
   callable signature mode
-- `super()` forwards the original argument frame when called with no
-  arguments
-- `super(args...)` builds a fresh argument frame against the parent target's
-  signature
+- `super()` passes no arguments
+- `super(args...)` builds an argument frame against the parent target's
+  signature from the explicit arguments
 
 Owner metadata rules:
 
@@ -1006,14 +1013,14 @@ existed.
 - `finalize.js`: metadata validation, method-table construction, super wiring,
   shared-schema finalization, footprint merging, runtime-entry pruning
 - `invoke.js`: inherited-callable argument-frame mapping while it waits for
-  Step 7 macro/callable deduplication. It must not own lookup, footprint
+  Step 8 macro/callable deduplication. It must not own lookup, footprint
   access, buffer choice, or `super` dispatch; those belong to compiled
   metadata and `InheritanceInstance`.
 - `callable.js`: compiler-private callable resolver/prologue helpers introduced
   before final invocation ownership is complete
-- Step 7 shared argument helper module or existing macro helper extraction:
-  argument-frame mapping and local `var` channel initialization reused by macros
-  and inheritance callables after the temporary Step 4 mapper is removed
+- Step 8 shared argument helper module or existing macro helper extraction:
+  runtime argument-frame mapping reused by macros and inheritance callables
+  after the temporary Step 4 mapper is removed
 - `shared.js`: shared schema/runtime operations and shared-root buffer access
 - `component.js`: component instance lifecycle, command-based operations,
   explicit shared observation, and owner side-channel lifetime wiring around
@@ -1151,8 +1158,10 @@ Rules:
   shared channels are initialized by constructor execution after loading.
 - dynamic selection cycles fail during loading.
 - dynamic selection reads only context/payload/global inputs available before
-  constructor execution. Names introduced later by constructor code are not
-  visible to parent selection.
+  constructor execution. Bare symbols in the expression compile as ambient
+  lookups, so names introduced later by constructor code are ignored by parent
+  selection. Shared declarations are metadata/default declarations and are not
+  readable by parent selection.
 
 Block placement does not wait on a per-block parent-decision promise. Parent
 selection is completed during loading before any constructor runs.
@@ -1269,18 +1278,7 @@ Required analysis contract:
 type InheritanceAnalysisFacts = {
   participates: boolean,
   hasExtends: boolean,
-  hasDynamicExtends: boolean,
-  localExtendsNode: ExtendsNode | null,
-  methodEntries: CompiledMethodEntryInput[],
-  sharedSchemaInputs: SharedSchemaInput[],
-  componentOperations: ComponentOperationSite[],
-  componentSharedObservations: ComponentSharedObservationSite[]
-}
-
-type SharedSchemaInput = {
-  name: string,
-  type: string,
-  hasDefault: boolean
+  localExtendsNode: ExtendsNode | null
 }
 ```
 
@@ -1292,13 +1290,13 @@ inference, or component-specific inheritance constructs. It is false for every
 ordinary template/script, including ordinary templates that contain no blocks,
 no `extends`, no `this.<name>` shared access, and no inherited calls.
 
-`hasExtends`, `hasDynamicExtends`, and `localExtendsNode` are required for
-resolver generation and validation. `methodEntries` carry callable signatures,
-source origins, callable-local `super` references, callable-local ordinary
-inherited call references, and callable-local linked/mutated channel footprints.
-`sharedSchemaInputs` feeds shared-schema finalization and includes both explicit
-script shared declarations and inferred template shared declarations. Component
-operation collections feed component code generation.
+`hasExtends` and `localExtendsNode` are required for resolver generation,
+template constructor chaining, and validation. Callable definitions, shared
+schema declarations, component operations, and extends nodes remain
+analysis-owned root fields with inheritance-prefixed names, but they are not
+duplicated inside `InheritanceAnalysisFacts`:
+`inheritanceCallableDefinitions`, `inheritanceSharedDeclarations`,
+`inheritanceComponentOperations`, and `inheritanceExtendsNodes`.
 
 Analysis may track individual participation reasons for diagnostics or
 assertions, but those reason flags are not contracted fields unless listed
@@ -1315,9 +1313,10 @@ reason above emits the single participant ABI.
 Static analysis must reject language surfaces that would require execution to
 discover structure: nested dynamic template `extends`, dynamic template
 `this[...]` shared access, and unsupported callable `with` syntax. Script
-dynamic `extends` is evaluated before constructor code runs, so later
-constructor locals do not shadow context values used by the parent selection
-expression.
+dynamic `extends` is evaluated before local declarations run. This step assumes
+the source-order declaration lookup described in
+`docs/code/source-order-declarations.md`: later script-local declarations do
+not shadow context/payload/global values in parent-selection expressions.
 
 Generated-source and precompiled-fixture tests must assert the target ABI shape.
 Browser/precompiled fixtures should be regenerated from the clean compiler
@@ -1452,8 +1451,8 @@ Goal:
 - reject dynamic template `extends` resolving to no parent at runtime
 - reject any template declaration before `extends`
 - reject `extends` target expressions that read inferred shared vars
-- allow context/payload values to drive dynamic `extends` even when constructor
-  code later declares a local with the same name
+- dynamic `extends` expressions rely on source-order declaration lookup, so
+  later local declarations do not shadow ambient values
 - fail dynamic `extends` naturally when the target is unavailable at parent
   selection time
 - compute exact inheritance participation facts
@@ -1496,6 +1495,14 @@ Goal:
   resolveInheritanceParent }` shape
 - constructor code is exposed only as the `__constructor__` method entry inside
   `inheritanceSpec.methodEntries`
+- the async transformer owns root-constructor shaping: when it detects an
+  inheritance surface, it moves constructor body code into an internal
+  `constructorDefinition` method named `__constructor__`; the compiler must not
+  re-filter root children to rediscover constructor code
+- inheritance discovery facts are analysis-owned and inheritance-prefixed:
+  `inheritanceCallableDefinitions`, `inheritanceExtendsNodes`,
+  `inheritanceLocalExtendsNode`, and `inheritanceComponentOperations`; compiler
+  emission reads these facts instead of recursively walking the AST
 - `inheritanceSpec` is data-only and contains no executable setup function
 - generated `root` functions contain no lifecycle mode flags
 - generated inheritance code uses only the target lifecycle helpers
@@ -1572,8 +1579,8 @@ Tests:
 - parent load failures preserve source/error context
 - dynamic parent selection resolves once
 - script `extends none` and dynamic null produce no selected parent entry
-- script dynamic `extends` can read context before same-name constructor locals
-  exist
+- dynamic `extends` relies on source-order declaration lookup, so later local
+  declarations do not shadow ambient values
 - dynamic template `extends` resolving to null/undefined fails before
   constructor execution
 - dynamic template null failure ordering is clear and does not execute
@@ -1652,8 +1659,9 @@ Goal:
 
 - implement inherited-callable argument-frame mapping with the same
   positional/keyword/default behavior as regular function and macro calls
-- keep regular function/macro argument behavior unchanged; the final shared
-  argument-binding helper is Step 7 cleanup
+- keep regular function/macro argument behavior unchanged; compiler-side
+  argument binding shape may be shared now, while final runtime argument-frame
+  deduplication is Step 8 cleanup
 - implement `InheritanceInstance.create(...)`
 - `create(...)` owns load + finalize + root/shared buffer setup
 - `create(...)` returns a ready-to-invoke instance and does not invoke methods
@@ -1675,7 +1683,7 @@ Goal:
 - generated callable code calls the current `InheritanceInstance` directly for
   inherited method calls and `super(...)`
 - move callable entry prologue policy into clean invocation helpers:
-  original-argument forwarding, callable context creation, argument-frame
+  callable context creation, argument-frame
   mapping, and entry-local channel initialization should be runtime-owned
   helpers reused by scripts/templates
 - keep compiler output limited to evaluating argument/default expressions,
@@ -1702,8 +1710,8 @@ Tests:
 - template named placement bindings are converted to ordinary invocation
   arguments before invocation
 - `super()` invokes the finalized parent entry and does not look up by name
-- no-argument `super()` forwards the original argument frame
-- explicit `super(...)` builds a fresh argument frame for the parent signature
+- no-argument `super()` passes no arguments
+- explicit `super(...)` builds an argument frame for the parent signature
 - explicit `super(arg)` evaluates the current local argument value
 - argument reassignment mutates only the local argument channel for that call
 - `this.method(...)` inside another method uses the current invocation buffer
@@ -1845,6 +1853,7 @@ Tests:
 
 - component constructor invocation before later method call
 - component with inheritance
+- component dynamic `extends` selects a parent from explicit component payload
 - component with template target
 - independent component instances do not share shared state
 - component method call after constructor observes initialized shared state
@@ -1869,7 +1878,46 @@ Tests:
 - component operation sites are collected by component analysis rather than by
   a later root tree scan
 
-### Step 7: Cleanup, Fixtures, And Test Migration
+### Step 7: Include Renders Inheritance Participants
+
+Authoritative sections:
+
+- Phase 4: Direct Render Lifecycle
+- Composition Payload And Context
+- Inheritance Instance API
+- File Ownership
+
+Goal:
+
+- `include` remains the template surface for "render this template here"
+- including a plain template keeps the existing include behavior
+- including an inheritance participant loads/finalizes the selected chain,
+  creates an `InheritanceInstance`, invokes `__constructor__`, finishes the
+  instance render, and inserts the resulting text at the include position
+- include is render composition, not component composition: it does not create
+  a component binding, expose component methods, or expose component shared
+  observation through a caller-side name
+- include context and payload rules remain include-owned; `component` keeps its
+  explicit stateful-instance semantics
+- template `component ... as name` is not introduced as an include replacement
+
+Tests:
+
+- `{% include "plain.njk" %}` continues to render ordinary templates exactly
+  as before
+- `{% include "child.njk" %}` renders an extending template through the
+  selected constructor chain and inserts the final text at the include site
+- include of an extending template preserves source-order output around the
+  include tag
+- include of a dynamic-extending template resolves parent selection with the
+  include context/payload rules
+- include load/finalization failures preserve include-site source context
+- included inheritance participants do not expose component bindings, component
+  method calls, or caller-side shared observation
+- nested includes of inheritance participants do not share instance state unless
+  ordinary include/context rules explicitly pass shared values
+
+### Step 8: Cleanup, Fixtures, And Test Migration
 
 Authoritative sections:
 
@@ -1935,7 +1983,9 @@ Tests:
 - `extends ... with ...` is not part of the inheritance surface.
 - Dynamic extends resolves once before constructor execution.
 - Dynamic extends target expressions read only inputs available before
-  constructor execution.
+  constructor execution; they cannot read shared declarations, and later local
+  declarations do not shadow ambient names by the source-order declaration
+  lookup rule.
 - Dynamic template extends is allowed only as a top-level declaration, with no
   template code before it; `{% set this.name = ... %}` before `extends` is not
   a default and remains forbidden.

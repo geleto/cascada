@@ -68,8 +68,8 @@ The runtime represents composition input as:
 }
 ```
 
-Use `runtime.createCompositionPayload(rootContext, payloadContext)` to build
-that shape. `rootContext` is the working context for the composed root.
+Build that shape directly where legacy inheritance state still needs it.
+`rootContext` is the working context for the composed root.
 `payloadContext` is the stable payload baseline reused by inherited methods and
 blocks so constructor-local variables cannot leak into later calls.
 

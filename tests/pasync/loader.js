@@ -1186,12 +1186,12 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         expect(result.trim()).to.equal('Child Ada');
       });
 
-      it('should pass the same explicit block arguments to super() without seeing child-local rebinding', async () => {
+      it('should pass explicit current block arguments to super()', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
-        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}';
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{% set user = "Grace" %}{{ super(user) }} / {{ user }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
-        expect(result.trim()).to.equal('Base Ada / Grace');
+        expect(result.trim()).to.equal('Base Grace / Grace');
       });
 
       it('should allow super(...) to override inherited signature inputs for the parent block call', async () => {
@@ -1363,22 +1363,22 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         expect(result.trim()).to.equal('Ada');
       });
 
-      it('should keep template-local values out of a multi-level super chain with explicit block arguments', async () => {
+      it('should pass explicit block arguments through a multi-level super chain', async () => {
         loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
-        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% set parentLabel = "parent" %}{% block content(user) %}Parent {{ parentLabel }} {{ super() }}{% endblock %}');
-        const childTemplate = '{% extends "parent.njk" %}{% set childLabel = "child" %}{% block content(user) %}Child {{ childLabel }} {{ super() }}{% endblock %}';
+        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% set parentLabel = "parent" %}{% block content(user) %}Parent {{ parentLabel }} {{ super(user) }}{% endblock %}');
+        const childTemplate = '{% extends "parent.njk" %}{% set childLabel = "child" %}{% block content(user) %}Child {{ childLabel }} {{ super(user) }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
         expect(result.trim()).to.equal('Child  Parent  Grand Ada');
       });
 
-      it('should keep original block arguments through a three-level super chain when the middle block rebinds them', async () => {
+      it('should pass the current explicit block argument value through super', async () => {
         loader.addTemplate('grand.njk', '{% block content(user) %}Grand {{ user }}{% endblock %}');
-        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block content(user) %}{% set user = "Mid" %}Parent {{ user }} {{ super() }}{% endblock %}');
-        const childTemplate = '{% extends "parent.njk" %}{% block content(user) %}Child {{ super() }}{% endblock %}';
+        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block content(user) %}{% set user = "Mid" %}Parent {{ user }} {{ super(user) }}{% endblock %}');
+        const childTemplate = '{% extends "parent.njk" %}{% block content(user) %}Child {{ super(user) }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
-        expect(result.trim()).to.equal('Child Parent Mid Grand Ada');
+        expect(result.trim()).to.equal('Child Parent Mid Grand Mid');
       });
 
       it('should preserve plain super() behavior when called multiple times in one block', async () => {

@@ -67,6 +67,8 @@ var result = 5 + 10 *
 // [LANG-04] RULE: SCRIPT comments are JS-style — `// line` and `/* block */`.
 // CONSTRAINT: Templates use `{# ... #}` instead — see TPL-03.
 
+// [LANG-06] RULE: Identifier names may contain letters, digits, and `_`; `$` is reserved for compiler internals.
+
 // [LANG-05] RULE: Property access on `none`/null produces an Error Value (poisoning).
 // DIFFERENTIAL: Differs from JS `TypeError` throw.
 var report             // = none
@@ -661,7 +663,7 @@ import "f.script" as fmt with context, locale
 // `extends` has no `with` form. Render context flows through the inheritance chain automatically.
 
 // CONSTRAINT: `extends` target resolves before constructor/startup code. It may read render
-// context and globals, and for components the component payload, but not vars created by local constructor/root-program code.
+// context and globals, and for components the component payload, but not shared state or vars created by local constructor/root-program code.
 
 // [EXT-02] SCRIPT RULE: Only root-scope `shared` declarations, whitespace, and comments may appear before `extends`.
 
@@ -1004,6 +1006,7 @@ Theme: {{ this.theme }}
 | C44 | Scripts use `elif`; templates use `elseif` | CTRL-01, TPL-12 |
 | C45 | Browser/new code uses ESM imports; old UMD bundles and automatic `window.nunjucks` globals are unsupported | API-03 |
 | C46 | Object literals require explicit keys (`{ name: name }`, not `{ name }`) | EXPR-06 |
+| C47 | Identifier names cannot contain `$`; it is reserved for compiler internals | LANG-06 |
 
 ---
 

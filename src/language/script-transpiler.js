@@ -74,6 +74,7 @@ import {lex, parseTemplateLine, TOKEN_TYPES} from './script-lexer.js';
 
 import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from '../compiler/validation.js';
 import {CHANNEL_TYPES, CHANNEL_TYPE_FACTS} from '../channel-types.js';
+import {renameSharedName} from '../inheritance/shared-names.js';
 
 class ScriptTranspiler {
   constructor() {
@@ -625,7 +626,7 @@ class ScriptTranspiler {
   }
 
   _getLeadingIdentifier(text) {
-    const match = text.trim().match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+    const match = text.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
     return match ? match[1] : '';
   }
 
@@ -640,7 +641,7 @@ class ScriptTranspiler {
     // Check character before (if not at start)
     if (position > 0) {
       const charBefore = text[position - 1];
-      if (/[a-zA-Z0-9_$]/.test(charBefore)) {
+      if (/[a-zA-Z0-9_]/.test(charBefore)) {
         return false;
       }
     }
@@ -648,7 +649,7 @@ class ScriptTranspiler {
     // Check character after (if not at end)
     if (position + length < text.length) {
       const charAfter = text[position + length];
-      if (/[a-zA-Z0-9_$]/.test(charAfter)) {
+      if (/[a-zA-Z0-9_]/.test(charAfter)) {
         return false;
       }
     }
@@ -813,15 +814,15 @@ class ScriptTranspiler {
   }
 
   /**
-   * Checks if a string is a valid JavaScript identifier
+   * Checks if a string is a valid Cascada identifier
    * @param {string} str - The string to check
    * @return {boolean} True if it's a valid identifier
    */
   _isValidIdentifier(str) {
     if (!str) return false;
 
-    // JavaScript identifier rules: start with letter, $, or _, followed by letters, digits, $, or _
-    return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
+    // `$` is reserved for compiler-generated names.
+    return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(str);
   }
 
   /**
@@ -1299,7 +1300,7 @@ class ScriptTranspiler {
       throw new Error(`Invalid shared declaration at line ${lineIndex + 1}`);
     }
 
-    this.declareChannel(decl.name, decl.channelType);
+    this.declareChannel(renameSharedName(decl.name), decl.channelType);
 
     parseResult.lineType = 'TAG';
     parseResult.tagName = 'shared';
@@ -2172,7 +2173,7 @@ class ScriptTranspiler {
       return callString;
     }
     if (!callString) return callString;
-    const match = callString.match(/^(\s*)([A-Za-z_$][A-Za-z0-9_$]*)(.*)$/);
+    const match = callString.match(/^(\s*)([A-Za-z_][A-Za-z0-9_]*)(.*)$/);
     if (!match) return callString;
     const mapped = this._mapCoreChannelName(match[2]);
     if (mapped === match[2]) return callString;

@@ -67,6 +67,7 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/compiler/component.js` — Component/composition compilation.
 -   `src/compiler/return.js` — Return statement compilation.
 -   `src/compiler/channel.js` — Channel declaration and command emission helpers.
+-   `docs/code/source-order-declarations.md` — Planned source-order declaration lookup design for compiler symbol resolution.
 
 ### Script
 -   `src/language/script-transpiler.js` — Script-to-template transpiler.

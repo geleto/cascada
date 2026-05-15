@@ -151,6 +151,10 @@ class Channel {
       cmd.resolved = true;
       this._beforeApplyCommand(cmd);
       const result = cmd.apply(this);
+      if (cmd.resolveApplyResult) {
+        cmd.resolveResult(result);
+        return;
+      }
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).catch((err) => {
           this._recordError(err, cmd);
@@ -158,6 +162,10 @@ class Channel {
       }
       return result;
     } catch (err) {
+      if (cmd.resolveApplyResult) {
+        cmd.rejectResult(err);
+        return;
+      }
       this._recordError(err, cmd);
     }
   }

@@ -160,20 +160,57 @@ function validateScriptExtendsSourceOrder(compiler, node) {
   );
 }
 
+function _hasThisLookup(node) {
+  if (!node) {
+    return false;
+  }
+  if (node instanceof nodes.LookupVal) {
+    let target = node;
+    while (target instanceof nodes.LookupVal) {
+      target = target.target;
+    }
+    return target instanceof nodes.Symbol && target.value === 'this';
+  }
+  return node.findAll(nodes.LookupVal).some((lookupNode) => _hasThisLookup(lookupNode));
+}
+
+function _validateExtendsTargetDoesNotUseThis(compiler, extendsNode) {
+  if (_hasThisLookup(extendsNode.template)) {
+    compiler.fail(
+      'dynamic extends target cannot read this.<shared> state',
+      extendsNode.template.lineno,
+      extendsNode.template.colno,
+      extendsNode
+    );
+  }
+}
+
+function validateScriptExtendsExpression(compiler, rootNode) {
+  if (!compiler.scriptMode) {
+    return;
+  }
+  const extendsNode = rootNode.children.find((child) => child instanceof nodes.Extends) || null;
+  if (!extendsNode || !extendsNode.template || extendsNode.noParentLiteral) {
+    return;
+  }
+  _validateExtendsTargetDoesNotUseThis(compiler, extendsNode);
+}
+
 function _isRootLevelNode(rootNode, childNode) {
-  return !!(rootNode && Array.isArray(rootNode.children) && rootNode.children.includes(childNode));
+  return childNode._analysis?.parent === rootNode._analysis;
 }
 
 function _validateTemplateExtendsExpression(compiler, rootNode, extendsNode) {
   if (!extendsNode || !extendsNode.template) {
     return;
   }
+  _validateExtendsTargetDoesNotUseThis(compiler, extendsNode);
   const usedChannels = extendsNode.template._analysis?.usedChannels;
   if (!usedChannels) {
     return;
   }
   const inferredSharedNames = new Set();
-  const sharedDeclarations = compiler.inheritance.getSharedDeclarations(rootNode);
+  const sharedDeclarations = rootNode._analysis.inheritanceSharedDeclarations ?? [];
   sharedDeclarations.forEach((declaration) => {
     if (declaration.implicitTemplateShared) {
       inferredSharedNames.add(declaration.name);
@@ -197,7 +234,7 @@ function validateTemplateInheritanceSurface(compiler, rootNode) {
     return;
   }
 
-  const allExtendsNodes = rootNode.findAll(nodes.Extends);
+  const allExtendsNodes = rootNode._analysis.inheritanceExtendsNodes ?? [];
   const directExtendsNodes = allExtendsNodes.filter((extendsNode) =>
     _isRootLevelNode(rootNode, extendsNode)
   );
@@ -242,33 +279,6 @@ function validateTemplateInheritanceSurface(compiler, rootNode) {
   }
 }
 
-function validateLocalSharedMethodNameCollisions(compiler, node) {
-  const sharedDeclarations = compiler.inheritance.getSharedDeclarations(node);
-  if (sharedDeclarations.length === 0) {
-    return;
-  }
-  const sharedNames = new Map();
-  sharedDeclarations.forEach((declaration) => {
-    sharedNames.set(declaration.name, declaration);
-  });
-  const methodDefinitions = compiler.scriptMode
-    ? compiler.inheritance.getMethodDefinitions(node)
-    : node.findAll(nodes.Block);
-  methodDefinitions.forEach((method) => {
-    const methodName = method.name.value;
-    if (!sharedNames.has(methodName)) {
-      return;
-    }
-    compiler.fail(
-      `shared channel '${methodName}' conflicts with method '${methodName}' defined in this file`,
-      method.name.lineno,
-      method.name.colno,
-      method,
-      sharedNames.get(methodName)
-    );
-  });
-}
 
 
-
-export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChannelDeclarationNode, validateChannelObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateTemplateInheritanceSurface, validateLocalSharedMethodNameCollisions };
+export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChannelDeclarationNode, validateChannelObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateScriptExtendsExpression, validateTemplateInheritanceSurface };

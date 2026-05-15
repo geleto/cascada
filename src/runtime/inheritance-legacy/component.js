@@ -5,7 +5,6 @@ import * as inheritanceState from './state.js';
 import * as inheritanceCall from './call.js';
 import {CommandBuffer} from '../command-buffer.js';
 import {RuntimeFatalError} from '../errors.js';
-import {createCompositionPayload} from '../composition-payload.js';
 
 function _createComponentError(message, errorContext = null) {
   return new RuntimeFatalError(
@@ -105,14 +104,6 @@ function _enqueueSharedObservation(instance, observationCommand, errorContext = 
   return observationCommand.promise;
 }
 
-async function _resolveComponentInstance(bindingValue, errorContext = null) {
-  const resolvedValue = await resolveSingle(bindingValue);
-  if (!(resolvedValue instanceof ComponentInstance)) {
-    throw _createComponentError('Component binding is not a component instance', errorContext);
-  }
-  return resolvedValue;
-}
-
 class ComponentOperationCommand extends Command {
   constructor({
     methodName = null,
@@ -121,7 +112,7 @@ class ComponentOperationCommand extends Command {
     cb = null,
     errorContext = null
   }) {
-    super({ withDeferredResult: true });
+    super({ withDeferredResult: true, resolveApplyResult: true });
     this.methodName = methodName;
     this.args = args;
     this.runtime = runtime;
@@ -134,34 +125,21 @@ class ComponentOperationCommand extends Command {
     this.isObservable = false;
   }
 
-  apply(channel) {
-    return this._run(channel._getTarget());
-  }
-
-  async _run(bindingValue) {
-    try {
-      const instance = await _resolveComponentInstance(bindingValue, this.errorContext);
-      const result = instance.callMethod(
-        this.methodName,
-        this.args,
-        this.runtime,
-        this.cb,
-        this.errorContext
-      );
-
-      const resolvedResult = await result;
-      this.resolveResult(resolvedResult);
-      return resolvedResult;
-    } catch (error) {
-      this.rejectResult(error);
-      throw error;
-    }
+  async apply(channel) {
+    const instance = await resolveSingle(channel._getTarget());
+    return instance.callMethod(
+      this.methodName,
+      this.args,
+      this.runtime,
+      this.cb,
+      this.errorContext
+    );
   }
 }
 
 class StartComponentInstanceCommand extends Command {
   constructor({
-    templateOrPromise,
+    componentScriptOrTemplate,
     payload,
     ownerContext,
     env,
@@ -171,8 +149,8 @@ class StartComponentInstanceCommand extends Command {
     bindingName = null,
     errorContext = null
   }) {
-    super({ withDeferredResult: true });
-    this.templateOrPromise = templateOrPromise;
+    super({ withDeferredResult: true, resolveApplyResult: true });
+    this.componentScriptOrTemplate = componentScriptOrTemplate;
     this.payload = payload;
     this.ownerContext = ownerContext;
     this.env = env;
@@ -186,30 +164,17 @@ class StartComponentInstanceCommand extends Command {
 
   apply(channel) {
     void channel;
-    return this._run();
-  }
-
-  async _run() {
-    try {
-      const instance = await createComponentInstance(
-        {
-          templateOrPromise: this.templateOrPromise,
-          payload: this.payload,
-          ownerContext: this.ownerContext,
-          env: this.env,
-          runtime: this.runtime,
-          cb: this.cb,
-          ownerBuffer: this.ownerBuffer,
-          bindingName: this.bindingName,
-          errorContext: this.errorContext
-        }
-      );
-      this.resolveResult(instance);
-      return instance;
-    } catch (error) {
-      this.rejectResult(error);
-      throw error;
-    }
+    return createComponentInstance({
+      componentScriptOrTemplate: this.componentScriptOrTemplate,
+      payload: this.payload,
+      ownerContext: this.ownerContext,
+      env: this.env,
+      runtime: this.runtime,
+      cb: this.cb,
+      ownerBuffer: this.ownerBuffer,
+      bindingName: this.bindingName,
+      errorContext: this.errorContext
+    });
   }
 }
 
@@ -219,38 +184,27 @@ class ObserveSharedChannelCommand extends Command {
     errorContext = null,
     implicitVarRead = false
   }) {
-    super({ withDeferredResult: true });
+    super({ withDeferredResult: true, resolveApplyResult: true });
     this.observationCommand = observationCommand;
     this.errorContext = errorContext;
     this.implicitVarRead = !!implicitVarRead;
     this.isObservable = false;
   }
 
-  apply(channel) {
-    return this._run(channel._getTarget());
-  }
-
-  async _run(bindingValue) {
-    try {
-      const instance = await _resolveComponentInstance(bindingValue, this.errorContext);
-      const result = await _enqueueSharedObservation(
-        instance,
-        this.observationCommand,
-        this.errorContext,
-        this.implicitVarRead
-      );
-      this.resolveResult(result);
-      return result;
-    } catch (error) {
-      this.rejectResult(error);
-      throw error;
-    }
+  async apply(channel) {
+    const instance = await resolveSingle(channel._getTarget());
+    return _enqueueSharedObservation(
+      instance,
+      this.observationCommand,
+      this.errorContext,
+      this.implicitVarRead
+    );
   }
 }
 
 async function createComponentInstance(spec) {
   const {
-    templateOrPromise,
+    componentScriptOrTemplate,
     payload,
     ownerContext,
     env,
@@ -260,7 +214,7 @@ async function createComponentInstance(spec) {
     bindingName = null,
     errorContext = null
   } = spec;
-  const template = await resolveSingle(templateOrPromise);
+  const template = await resolveSingle(componentScriptOrTemplate);
   if (!template) {
     throw _createComponentError('Component target did not resolve to a script or template', errorContext);
   }
@@ -271,7 +225,10 @@ async function createComponentInstance(spec) {
 
   const payloadContext = { ...(payload ?? {}) };
   const renderCtx = ownerContext.getRenderContextVariables();
-  const compositionPayload = createCompositionPayload(payloadContext);
+  const compositionPayload = {
+    rootContext: payloadContext,
+    payloadContext
+  };
   const componentContext = ownerContext.forkForComposition(
     template.path,
     compositionPayload.rootContext,
@@ -360,7 +317,7 @@ function startComponentInstance(spec) {
   const {
     currentBuffer,
     bindingName,
-    templateOrPromise,
+    componentScriptOrTemplate,
     payload,
     ownerContext,
     env,
@@ -369,7 +326,7 @@ function startComponentInstance(spec) {
     errorContext = null
   } = spec;
   const command = new StartComponentInstanceCommand({
-    templateOrPromise,
+    componentScriptOrTemplate,
     payload,
     ownerContext,
     env,

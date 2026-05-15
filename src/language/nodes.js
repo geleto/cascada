@@ -77,8 +77,9 @@ class Root extends NodeList {
   get typename() { return 'Root'; }
   get fields() {
     // Inheritance metadata is stored as one object, but root traversal follows
-    // source semantics: shared declarations, root/extends body, then methods.
-    return ['sharedDeclarations', 'children', 'methods'];
+    // source semantics: shared declarations, root/extends body, constructor,
+    // then methods.
+    return ['sharedDeclarations', 'children', 'constructorDefinition', 'methods'];
   }
 
   get sharedDeclarations() {
@@ -103,6 +104,18 @@ class Root extends NodeList {
     }
     this.inheritanceMetadata = this.inheritanceMetadata || new InheritanceMetadata(this.lineno, this.colno);
     this.inheritanceMetadata.methods = value;
+  }
+
+  get constructorDefinition() {
+    return this.inheritanceMetadata ? this.inheritanceMetadata.constructorDefinition : null;
+  }
+
+  set constructorDefinition(value) {
+    if (!value && !this.inheritanceMetadata) {
+      return;
+    }
+    this.inheritanceMetadata = this.inheritanceMetadata || new InheritanceMetadata(this.lineno, this.colno);
+    this.inheritanceMetadata.constructorDefinition = value;
   }
 
   init(lineno, colno, children, inheritanceMetadata) {
@@ -271,13 +284,14 @@ class SharedDeclarations extends NodeList {
 
 class InheritanceMetadata extends Node {
   get typename() { return 'InheritanceMetadata'; }
-  get fields() { return ['methods', 'sharedDeclarations']; }
+  get fields() { return ['methods', 'constructorDefinition', 'sharedDeclarations']; }
 
-  init(lineno, colno, methods, sharedDeclarations) {
+  init(lineno, colno, methods, constructorDefinition, sharedDeclarations) {
     super.init(
       lineno,
       colno,
       methods || new NodeList(lineno, colno, []),
+      constructorDefinition || null,
       sharedDeclarations || new SharedDeclarations(lineno, colno, [])
     );
   }

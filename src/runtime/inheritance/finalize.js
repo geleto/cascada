@@ -1,4 +1,5 @@
 import {handleError} from '../errors.js';
+import {getSharedSourceName} from '../../inheritance/shared-names.js';
 
 class InheritanceFinalizationError extends Error {
   constructor(errors) {
@@ -154,12 +155,13 @@ function createRuntimeSharedSchemaEntry(compiledSchemaEntry, fallbackOrigin) {
 
 function validateSharedMethodCollisions(sharedSchema, methodNames, errors, context) {
   Object.keys(sharedSchema).forEach((name) => {
-    if (!methodNames.has(name)) {
+    const methodName = getSharedSourceName(name);
+    if (!methodNames.has(methodName)) {
       return;
     }
     addFinalizationError(
       errors,
-      `shared channel '${name}' conflicts with inherited method '${name}'`,
+      `shared channel '${methodName}' conflicts with inherited method '${methodName}'`,
       sharedSchema[name].origin,
       context
     );

@@ -21,6 +21,7 @@ class Command {
     this.resolve = null;
     this.reject = null;
     this.isObservable = false;
+    this.resolveApplyResult = !!opts.resolveApplyResult;
 
     if (opts.withDeferredResult) {
       this.promise = new Promise((resolve, reject) => {

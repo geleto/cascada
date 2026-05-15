@@ -84,6 +84,22 @@ describe('Cascada Script: Variables', function () {
         }
       }
     });
+
+    it('should reject dollar signs in Cascada identifiers', async function () {
+      try {
+        await env.renderScriptString('var $name = 1\nreturn $name', {});
+        expect().fail('Should have thrown for a dollar-prefixed script identifier');
+      } catch (error) {
+        expect(error.message).to.contain('Invalid variable name');
+      }
+
+      try {
+        await env.renderTemplateString('{{ $name }}', {});
+        expect().fail('Should have thrown for a dollar-prefixed template identifier');
+      } catch (error) {
+        expect(error.message).to.contain('Identifier names cannot contain \'$\'');
+      }
+    });
   });
 
   describe('Variable Assignment with =', function () {

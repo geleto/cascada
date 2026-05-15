@@ -2,6 +2,7 @@
 import * as nodes from '../language/nodes.js';
 import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
 import {validateChannelDeclarationNode} from './validation.js';
+import {getSharedSourceName, renameSharedName} from '../inheritance/shared-names.js';
 
 class CompileChannel {
   constructor(compiler) {
@@ -18,6 +19,21 @@ class CompileChannel {
     this.compiler.emit(`${bufferId}.addCommand(new runtime.VarCommand({ channelName: ${JSON.stringify(name)}, args: [`);
     emitValueExpression();
     this.compiler.emit.line(`], pos: {lineno: ${lineno}, colno: ${colno}} }), ${JSON.stringify(name)});`);
+  }
+
+  emitLocalVarChannelBindings(bufferId, bindings) {
+    bindings.forEach((binding) => {
+      this.emitLocalVarChannelDeclaration(bufferId, binding.name);
+    });
+    bindings.forEach((binding) => {
+      this.emitLocalVarChannelInit(
+        bufferId,
+        binding.name,
+        binding.emitValueExpression,
+        binding.positionNode
+      );
+      this.compiler.emit.line('');
+    });
   }
 
   getStaticLiteralPathSegments(pathNode) {
@@ -47,13 +63,13 @@ class CompileChannel {
       return null;
     }
     const name = segments[0];
-    const declarationFacts = this._getThisSharedDeclarationFacts(node._analysis, name, analysisPass, node, 'strict');
-    if (!declarationFacts) {
+    const declaration = this._getThisSharedDeclaration(node._analysis, renameSharedName(name), analysisPass, node, 'strict');
+    if (!declaration) {
       return null;
     }
     return {
-      name,
-      type: declarationFacts.type,
+      name: declaration.name,
+      type: declaration.type,
       path: segments.slice(1)
     };
   }
@@ -155,7 +171,11 @@ class CompileChannel {
     }
     const channelName = staticPath[1];
     const activeAnalysis = analysisNode || node._analysis;
-    const channelDecl = analysisPass.findRootDeclaration(activeAnalysis, channelName);
+    const sharedName = renameSharedName(channelName);
+    const channelDecl = compiler.inheritance.findRootSharedDeclaration(
+      compiler.analysis.getRootScopeOwner(activeAnalysis),
+      sharedName
+    );
     const parentNode = node._analysis?.parent?.node || null;
     const isCallableRoot = staticPath.length === 2 &&
       parentNode instanceof nodes.FunCall &&
@@ -174,35 +194,32 @@ class CompileChannel {
     ) {
       return null;
     }
-    const declarationFacts = this._getThisSharedDeclarationFacts(
+    const declaration = this._getThisSharedDeclaration(
       activeAnalysis,
-      channelName,
+      sharedName,
       analysisPass,
       node,
       mode
     );
-    if (!declarationFacts) {
+    if (!declaration) {
       return null;
     }
     const channelPath = [channelName].concat(staticPath.slice(2));
     return {
-      channelName,
-      channelType: declarationFacts.type,
-      channelPath,
+      channelName: declaration.name,
+      channelType: declaration.type,
+      channelPath: [declaration.name].concat(staticPath.slice(2)),
       pathPrefix: channelPath.length > 2 ? channelPath.slice(1, -1) : [],
       propertyName: channelPath.length >= 2 ? channelPath[channelPath.length - 1] : null
     };
   }
 
-  _getThisSharedDeclarationFacts(analysis, name, analysisPass, originNode, mode) {
+  _getThisSharedDeclaration(analysis, name, analysisPass, originNode, mode) {
     const compiler = this.compiler;
-    let declaration = analysisPass.findRootDeclaration(analysis, name);
+    const rootAnalysis = compiler.analysis.getRootScopeOwner(analysis);
+    let declaration = compiler.inheritance.findRootSharedDeclaration(rootAnalysis, name);
     let type = declaration ? declaration.type : null;
     if (!compiler.scriptMode) {
-      const rootAnalysis = compiler.analysis.getRootScopeOwner(analysis);
-      const sharedDeclaration = compiler.inheritance.findRootSharedDeclaration(rootAnalysis, name);
-      declaration = sharedDeclaration || declaration;
-      type = declaration ? declaration.type : type;
       type = type || (name === compiler.buffer.currentTextChannelName ? 'text' : 'var');
       if (type !== 'var' && name !== compiler.buffer.currentTextChannelName) {
         return null;
@@ -221,8 +238,9 @@ class CompileChannel {
     }
     if (!declaration || !declaration.shared) {
       if (compiler.scriptMode && mode === 'strict') {
+        const sourceName = getSharedSourceName(name);
         compiler.fail(
-          `this.${name} requires a root shared declaration`,
+          `this.${sourceName} requires a root shared declaration`,
           originNode.lineno,
           originNode.colno,
           originNode
@@ -230,10 +248,7 @@ class CompileChannel {
       }
       return null;
     }
-    return {
-      declaration,
-      type: declaration.type
-    };
+    return declaration;
   }
 
   analyzeChannelDeclaration(node) {
@@ -241,7 +256,12 @@ class CompileChannel {
     validateChannelDeclarationNode(this.compiler, node);
     const name = node.name.value;
     return {
-      declares: [{ name, type: node.channelType, initializer: node.initializer || null, shared: !!node.isShared }],
+      declares: [{
+        name,
+        type: node.channelType,
+        initializer: node.initializer || null,
+        shared: !!node.isShared
+      }],
       uses: [name]
     };
   }

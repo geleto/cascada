@@ -1,7 +1,6 @@
 
 export * from './macro.js';
 export * from './safe-output.js';
-export * from './composition-payload.js';
 export * from './async-boundaries.js';
 export * from './channels/index.js';
 export * from './channels/command-base.js';
@@ -23,6 +22,7 @@ export * from './inheritance/finalize.js';
 export * from './inheritance/invoke.js';
 export * from './inheritance/shared.js';
 export * from './inheritance/instance.js';
+export * from './inheritance/component.js';
 export * from './inheritance-legacy/state.js';
 export * from './inheritance-legacy/bootstrap.js';
 export * from './lookup.js';
@@ -30,7 +30,6 @@ export * from './jinja-compat.js';
 export * from './call.js';
 export * from './loop.js';
 export * from './sequential.js';
-export * from './inheritance-legacy/component.js';
 export * from './deep-assign.js';
 export * as guard from './guard.js';
 export {RETURN_UNSET} from './markers.js';

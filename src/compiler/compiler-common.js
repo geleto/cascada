@@ -43,10 +43,7 @@ class CompilerCommon extends Obj {
     this.guardDepth = 0;
     this.importedBindings = new Set();
     this.templateName = typeof options.templateName === 'string' ? options.templateName : undefined;
-    this.hasExtends = false;
     this.inBlock = false;
-    this.currentCallableDefinition = null;
-    this.isCompilingCallableEntry = false;
     this.sequential = new CompileSequential(this);
     this.emit = new CompileEmit(this);
     this.async = null;
@@ -224,6 +221,26 @@ class CompilerCommon extends Obj {
       placementArgNodes: signature.args.concat(keywordDefaults.map((entry) => entry.valueNode)),
       keywordDefaults
     };
+  }
+
+  getCallableArgumentChannelFacts(callableSignature) {
+    return {
+      argNames: Array.from(new Set(callableSignature.argNames)),
+      keywordDefaultsByName: new Map(
+        callableSignature.keywordDefaults.map((entry) => [entry.name, entry.valueNode])
+      )
+    };
+  }
+
+  createCallableArgumentChannelBindings(callableSignature, emitValueExpression, getPositionNode = () => null) {
+    const { argNames, keywordDefaultsByName } = this.getCallableArgumentChannelFacts(callableSignature);
+    return argNames.map((name) => ({
+      name,
+      emitValueExpression: () => {
+        emitValueExpression(name, keywordDefaultsByName.get(name));
+      },
+      positionNode: getPositionNode(name)
+    }));
   }
 
   _getNodeName(node) {

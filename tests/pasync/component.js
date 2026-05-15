@@ -1024,7 +1024,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     const startupPromise = runtimeModule.startComponentInstance({
       currentBuffer: ownerBuffer,
       bindingName: 'nsBinding',
-      templateOrPromise: {
+      componentScriptOrTemplate: {
         compile() {},
         rootRenderFunc() {
           events.push('ctor-start');
@@ -1083,7 +1083,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     const startupPromise = runtimeModule.startComponentInstance({
       currentBuffer: ownerBuffer,
       bindingName: 'nsBinding',
-      templateOrPromise: {
+      componentScriptOrTemplate: {
         compile() {},
         rootRenderFunc(env, componentContext, runtime, cb, compositionMode, componentRootBuffer, inheritanceStateValue) {
           void env;
@@ -1158,7 +1158,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     }
 
     const componentInstance = await componentRuntimeModule.createComponentInstance({
-      templateOrPromise: {
+      componentScriptOrTemplate: {
         compile() {},
         rootRenderFunc() {},
         methods: {},
@@ -1251,7 +1251,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     }
 
     await componentRuntimeModule.createComponentInstance({
-      templateOrPromise: {
+      componentScriptOrTemplate: {
         compile() {},
         rootRenderFunc() {},
         methods: {},
@@ -1292,7 +1292,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     try {
       await componentRuntimeModule.createComponentInstance({
-        templateOrPromise: {
+        componentScriptOrTemplate: {
           compile() {},
           methods: {},
           sharedSchema: [],
@@ -1332,7 +1332,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     }
 
     const componentInstance = await componentRuntimeModule.createComponentInstance({
-      templateOrPromise: {
+      componentScriptOrTemplate: {
         compile() {},
         rootRenderFunc(envArg, contextArg, runtimeArg, cbArg) {
           void envArg;

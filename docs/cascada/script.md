@@ -220,6 +220,8 @@ CascadaScript uses a strict and explicit variable handling model that separates 
 #### Declaring Local Variables with `var`
 Use `var` to declare a new, script-local variable. Re-declaring a variable that already exists in a visible scope will cause a compile-time error. If no initial value is provided, the variable defaults to `none`.
 
+Identifier names may contain letters, digits, and `_`, and must not contain `$`. The `$` character is reserved for compiler-generated internal names.
+
 ```javascript
 // Declare and initialize a variable
 var user = fetchUser(1)
@@ -2269,8 +2271,8 @@ The base script is not duplicated. Any logic in the base constructor - fetching 
 
 An override may have fewer trailing arguments than the parent, but any kept
 argument must use the same name. Callers can pass arguments by keyword (e.g.
-`this.card(user=profile)`), and bare `super()` forwards the original values by
-name - both break if you rename a position:
+`this.card(user=profile)`), so renaming a kept position would change the public
+call contract:
 
 ```cascada
 // base.script
@@ -2289,14 +2291,13 @@ endmethod
 ```
 
 Declaring `card(profile)` instead of `card(user)` would be an error - `profile`
-is at the same position as the parent's `user`, which callers and `super()` both
-refer to by name.
+is at the same position as the parent's `user`, which callers refer to by name.
 
 #### `super()` and `super(...)`
 
 Use `super()` to call the parent's version of the method and build on its result rather than replacing it entirely.
 
-Bare `super()` forwards the original arguments unchanged:
+`super()` passes no arguments:
 
 ```cascada
 // about.script
@@ -2312,11 +2313,11 @@ await env.renderScript("about.script", {})
 // { title: "Home - About Us" }
 ```
 
-`super(...)` passes different arguments to the parent:
+Pass arguments explicitly when the parent needs them:
 
 ```cascada
 method greet(name, formal)
-  return super("Anonymous", formal)   // parent sees a different name
+  return super("Anonymous", formal)
 endmethod
 ```
 
@@ -2475,18 +2476,27 @@ Shared variables are read-only from the caller. Names that start with `_` are pr
 
 #### Dynamic `extends`
 
-The `extends` target is chosen before any setup code runs. It can read from the render context, globals, and - for components - the `with` payload. It cannot use variables created later in the script or any `shared` value - shared variables are not initialized until the constructor runs.
-
-`extends` must appear before setup code. Only `shared` declarations may come before it. Method declarations may appear after `extends` - they are metadata, not setup code.
-
-If the target resolves to `none` or `null`, the script has no parent. The static form `extends none` is also valid when a script has methods or shared variables but no parent:
+You can choose the parent at runtime based on context values:
 
 ```cascada
-extends baseScript if useBase else none
-extends none   // explicitly no parent
+extends config.baseScript          // from render context
+extends tier == "pro" if isPro else "standard.script"
+extends baseScript if useBase else none  // no parent if condition is false
 ```
 
-At the root of a parentless chain, all declared methods are available via `this.method(...)`. Calling an undeclared method is an error.
+Parent selection happens before any setup code runs, so the expression can read render-context values, globals, and — for components — the `with` payload. It cannot read variables you declare later in the script body, or `shared` values (those aren't initialized until the constructor runs).
+
+`extends` must appear before any executable code. `shared` declarations may appear before it, but they only reserve the shared channel slot - they cannot be read by the `extends` expression itself.
+
+When the target is `none`, `null`, or evaluates to either of those, the script simply has no parent:
+
+```cascada
+extends none   // explicitly parentless - still participates in an inheritance chain
+```
+
+This is useful when a script defines methods or shared variables but is always the root of its chain. All declared methods are still available via `this.method(...)`.
+
+Method declarations may appear after `extends` - they are compiled metadata, not setup code, so placement relative to `extends` does not affect resolution.
 
 #### Methods vs. Functions
 
@@ -2507,7 +2517,7 @@ At the root of a parentless chain, all declared methods are available via `this.
 | Constructor parameters | shared variables + render context | Context flows through automatically; use `shared var` to pass computed values between levels |
 | Instance state (`this.x`) | `shared var x`, `shared data x`, etc. | Each file must declare the shared names it uses |
 | Virtual method | `method` | Called via `this.method(...)` |
-| `super.method(args)` | `super(args)` | Bare `super()` forwards original args |
+| `super.method(args)` | `super(args)` | Pass parent arguments explicitly |
 | Single render | `extends` direct render | One chain instance per render |
 | Multiple instances | `component "X" as ns` | Each instance is fully independent |
 | Multiple inheritance | Not supported | One parent per `extends` |

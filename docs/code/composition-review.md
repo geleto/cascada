@@ -48,8 +48,8 @@ same extern-removal/payload-composition cleanup pass.
   `compositionPayloadVars`.
 
 - `[SIMPLIFICATION] composition payload shape` -
-  added `runtime.createCompositionPayload(...)` and reused it for component and
-  inheritance payload shape creation.
+  composition payload values are now plain context objects. The old
+  `runtime.createCompositionPayload(...)` wrapper was removed.
 
 - `[SIMPLIFICATION] composition context emission` -
   replaced extern-era context emission with a narrow payload/context merge
@@ -75,6 +75,6 @@ same extern-removal/payload-composition cleanup pass.
 - The async import/from/include/extends paths use payload objects rather than
   callee-side declarations, which conforms to the current payload architecture.
 - Sync compiler behavior is intentionally unchanged for Nunjucks compatibility.
-- Payload materialization through
-  `runtime.declareCompositionPayloadChannels(...)` is intentionally local to the
-  receiving execution context and does not create shared state.
+- Payload values remain observable context values. They are not materialized as
+  command-buffer channels because composition inputs are not mutable Cascada
+  variables.

@@ -1,4 +1,6 @@
 
+import {renameSharedName} from '../inheritance/shared-names.js';
+
 class CompileComponent {
   constructor(compiler) {
     this.compiler = compiler;
@@ -29,7 +31,7 @@ class CompileComponent {
     }
 
     const targetName = node.target.value;
-    const componentTargetVar = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false);
+    const componentScriptOrTemplateVar = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
     const instanceVar = this.compiler._tmpid();
@@ -42,7 +44,7 @@ class CompileComponent {
     this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
     this.emit.line(`  currentBuffer: ${this.compiler.buffer.currentBuffer},`);
     this.emit.line(`  bindingName: "${targetName}",`);
-    this.emit.line(`  templateOrPromise: ${componentTargetVar},`);
+    this.emit.line(`  componentScriptOrTemplate: ${componentScriptOrTemplateVar},`);
     this.emit.line(`  payload: ${rootContextVar},`);
     this.emit.line('  ownerContext: context,');
     this.emit.line('  env,');
@@ -69,7 +71,7 @@ class CompileComponent {
       return {
         bindingName,
         kind: 'shared-read',
-        channelName: staticPath[1],
+        channelName: renameSharedName(staticPath[1]),
         implicitVarRead: true
       };
     }
@@ -82,7 +84,7 @@ class CompileComponent {
       return {
         bindingName,
         kind: 'shared-observe',
-        channelName: staticPath[1],
+        channelName: renameSharedName(staticPath[1]),
         mode: staticPath[2],
         implicitVarRead: false
       };
@@ -178,7 +180,7 @@ class CompileComponent {
     this.emitChannelObservation({
       bindingName: componentBindingRoot.bindingName,
       kind: 'shared-read',
-      channelName: staticPath[1],
+      channelName: renameSharedName(staticPath[1]),
       implicitVarRead: true
     }, node);
     nestedPath.forEach((propertyName) => {

@@ -26,7 +26,7 @@ class Parser extends Obj {
       } else {
         tok = this.peeked;
         this.peeked = null;
-        return tok;
+        return this._validateSymbolToken(tok);
       }
     }
 
@@ -38,6 +38,15 @@ class Parser extends Obj {
       }
     }
 
+    return this._validateSymbolToken(tok);
+  }
+
+  _validateSymbolToken(tok) {
+    if (tok && tok.type === lexer.TOKEN_SYMBOL && tok.value.includes('$')) {
+      this.fail('Identifier names cannot contain \'$\'. \'$\' is reserved for compiler internals.',
+        tok.lineno,
+        tok.colno);
+    }
     return tok;
   }
 

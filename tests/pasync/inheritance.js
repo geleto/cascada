@@ -18,7 +18,7 @@ function createIdPool() {
   };
 }
 
-function analyzeSource(src, { scriptMode = false, name = scriptMode ? 'analysis.casc' : 'analysis.njk' } = {}) {
+function analyzeProgram(src, { scriptMode = false, name = scriptMode ? 'analysis.casc' : 'analysis.njk' } = {}) {
   const opts = {
     asyncMode: true,
     scriptMode,
@@ -29,7 +29,28 @@ function analyzeSource(src, { scriptMode = false, name = scriptMode ? 'analysis.
   const ast = transform(parse(templateSource, [], opts), [], name, opts);
   // analysis.run invokes analyze and postAnalyze hooks, including postAnalyzeRoot.
   compiler.analysis.run(ast);
-  return ast._analysis.inheritance;
+  return { ast, compiler, facts: ast._analysis.inheritance };
+}
+
+function analyzeSource(src, options = {}) {
+  return analyzeProgram(src, options).facts;
+}
+
+function analyzeCallableEntries(src, options = {}) {
+  const { ast } = analyzeProgram(src, options);
+  return (ast._analysis.inheritanceCallableDefinitions ?? []).map((callableNode) => ({
+    name: callableNode.name.value,
+    signature: { argNames: callableNode._analysis.callableSignatureFacts.argNames }
+  }));
+}
+
+function analyzeSharedSchemaInputs(src, options = {}) {
+  const { ast } = analyzeProgram(src, options);
+  return (ast._analysis.inheritanceSharedDeclarations ?? []).map((declaration) => ({
+    name: declaration.name,
+    type: declaration.type,
+    hasDefault: !!declaration.initializer
+  }));
 }
 
 function compileSource(src, { scriptMode = false, name = scriptMode ? 'compiled.casc' : 'compiled.njk' } = {}) {
@@ -153,9 +174,9 @@ describe('Inheritance rebuild', function () {
         name: 'shared-default.script'
       });
 
-      expect(props.inheritanceSpec.sharedSchema.theme.type).to.be('var');
-      expect(props.inheritanceSpec.sharedSchema.theme.hasDefault).to.be(true);
-      expect(props.inheritanceSpec.sharedSchema.theme.origin.path).to.be('shared-default.script');
+      expect(props.inheritanceSpec.sharedSchema.$theme.type).to.be('var');
+      expect(props.inheritanceSpec.sharedSchema.$theme.hasDefault).to.be(true);
+      expect(props.inheritanceSpec.sharedSchema.$theme.origin.path).to.be('shared-default.script');
     });
 
     it('emits structured shared schema entries without defaults', function () {
@@ -164,9 +185,9 @@ describe('Inheritance rebuild', function () {
         name: 'shared-no-default.script'
       });
 
-      expect(props.inheritanceSpec.sharedSchema.theme.type).to.be('var');
-      expect(props.inheritanceSpec.sharedSchema.theme.hasDefault).to.be(false);
-      expect(props.inheritanceSpec.sharedSchema.theme.origin.path).to.be('shared-no-default.script');
+      expect(props.inheritanceSpec.sharedSchema.$theme.type).to.be('var');
+      expect(props.inheritanceSpec.sharedSchema.$theme.hasDefault).to.be(false);
+      expect(props.inheritanceSpec.sharedSchema.$theme.origin.path).to.be('shared-no-default.script');
     });
 
     it('emits no removed setup/startup constructs for participants', function () {
@@ -186,15 +207,15 @@ describe('Inheritance rebuild', function () {
       );
 
       expect(source).to.contain('currentInstance.invokeFromCurrentBuffer("decorate"');
-      expect(source).to.contain('currentInstance.invokeSuper(methodData, null');
-      expect(source).to.contain('blockPayload ? blockPayload.originalArgs : null');
+      expect(source).to.contain('currentInstance.invokeSuper(methodData, []');
+      expect(source).not.to.contain('blockPayload ? blockPayload.originalArgs : null');
       expect(source).not.to.contain('runtime.invokeSuperCallable');
     });
 
     it('resolves implicit template constructor super before finishing text', function () {
       const source = compileSource('{% extends "base.njk" %}child text{% block body %}x{% endblock %}');
 
-      expect(source).to.contain('runtime.resolveSingle(currentInstance.invokeSuper(methodData, null');
+      expect(source).to.contain('runtime.resolveSingle(currentInstance.invokeSuper(methodData, []');
       expect(source).not.to.contain('Promise.resolve(currentInstance.invokeSuper');
     });
 
@@ -431,6 +452,9 @@ describe('Inheritance rebuild', function () {
           return values[name];
         },
         lookupScript(name) {
+          if (!(name in values)) {
+            return runtime.createPoison(new Error(`Can not look up unknown variable/function: ${name}`));
+          }
           return values[name];
         },
         getCompositionPayloadVariables() {
@@ -703,18 +727,18 @@ describe('Inheritance rebuild', function () {
       }
     });
 
-    it('lets script dynamic extends read context before same-name constructor locals exist', function () {
-      [
-        'extends parentScript\nvar parentScript = "base.script"\nreturn "child"',
-        'extends result\ndata result\nreturn null'
-      ].forEach((source) => {
-        expect(function () {
-          new Script(source, env, 'constructor-local-extends.script').compileSource();
-        }).not.to.throwException();
-      });
+    it('does not let script shared declarations satisfy dynamic extends', async function () {
+      try {
+        await loadScriptChain({
+          'child.script': 'shared var parentScript = "base.script"\nextends parentScript\nreturn "child"'
+        }, 'child.script', createContext({}, 'child.script'));
+        expect().fail('Expected shared declaration parent target to be ignored');
+      } catch (error) {
+        expect(String(error)).to.contain('Can not look up unknown variable/function: parentScript');
+      }
     });
 
-    it('allows static script extends with same-name constructor locals', function () {
+    it('allows static script extends with same-name local declarations', function () {
       expect(function () {
         new Script('extends "base.script"\nvar parentScript = "local"\nreturn parentScript', env, 'static-local.script').compileSource();
       }).not.to.throwException();
@@ -1282,11 +1306,10 @@ describe('Inheritance rebuild', function () {
         fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, methodData, currentInstance) {
           return currentInstance.invokeSuper(
             methodData,
-            null,
+            [payload.originalArgs.user],
             contextArg,
             invocationBuffer,
-            { path: 'child.script' },
-            payload.originalArgs
+            { path: 'child.script' }
           );
         }
       });
@@ -1321,12 +1344,12 @@ describe('Inheritance rebuild', function () {
       expect(await instance.invoke('build', ['Grace'], { path: 'call.script' })).to.be('Grace');
     });
 
-    it('lets compiled super forwarding preserve parent defaults', async function () {
+    it('lets explicit super arguments preserve parent defaults', async function () {
       const instance = await createCompiledScriptInstance({
         'child.script': [
           'extends "base.script"',
           'method build(user)',
-          '  return super()',
+          '  return super(user)',
           'endmethod'
         ].join('\n'),
         'base.script': [
@@ -1375,21 +1398,268 @@ describe('Inheritance rebuild', function () {
         expect(String(error)).to.contain('missing inherited method \'missing\'');
       }
     });
+
+    it('creates components through the inheritance instance lifecycle before method calls', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', [
+        'shared var theme',
+        'this.theme = "ready"',
+        'method read()',
+        '  return this.theme',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "component.script" as card',
+        'return card.read()'
+      ].join('\n'));
+
+      expect(await localEnv.renderScript('main.script', {})).to.be('ready');
+    });
+
+    it('uses the same component instance across an inherited component chain', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', [
+        'shared var theme = "base"',
+        'method read()',
+        '  return this.theme',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('child.script', [
+        'shared var theme',
+        'extends "base.script"',
+        'this.theme = "child"'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "child.script" as card',
+        'return [card.theme, card.read()]'
+      ].join('\n'));
+
+      expect(await localEnv.renderScript('main.script', {})).to.eql(['child', 'child']);
+    });
+
+    it('lets component payload select a dynamic inheritance parent', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', [
+        'shared var theme',
+        'method read()',
+        '  return "base:" + this.theme',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('child.script', [
+        'shared var theme = "child"',
+        'extends parentScript',
+        'method read()',
+        '  return "child>" + super()',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "child.script" as card with { parentScript: "base.script" }',
+        'return card.read()'
+      ].join('\n'));
+
+      expect(await localEnv.renderScript('main.script', {})).to.be('child>base:child');
+    });
+
+    it('keeps component payload vars separate from inherited shared storage', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', [
+        'shared var theme = "shared"',
+        'method read()',
+        '  return theme + ":" + this.theme',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "component.script" as card with { theme: "payload" }',
+        'return card.read()'
+      ].join('\n'));
+
+      expect(await localEnv.renderScript('main.script', {})).to.be('payload:shared');
+    });
+
+    it('lets component with context opt into caller context visibility', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', [
+        'method read()',
+        '  return site + ":" + label',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "component.script" as card with context, { label: "card" }',
+        'return card.read()'
+      ].join('\n'));
+
+      expect(await localEnv.renderScript('main.script', { site: 'docs' })).to.be('docs:card');
+    });
+
+    it('observes component shared vars without invoking same-named methods', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', [
+        'shared var theme = "dark"',
+        'method readTheme()',
+        '  this.theme = "method"',
+        '  return this.theme',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "component.script" as card',
+        'return [card.theme, card.readTheme(), card.theme]'
+      ].join('\n'));
+
+      expect(await localEnv.renderScript('main.script', {})).to.eql(['dark', 'method', 'method']);
+    });
+
+    it('rejects private and unknown component shared observations clearly', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', 'shared var _secret = "dark"');
+      loader.addTemplate('private.script', 'component "component.script" as card\nreturn card._secret');
+      loader.addTemplate('missing.script', 'component "component.script" as card\nreturn card.missing');
+
+      for (const name of ['private.script', 'missing.script']) {
+        try {
+          await localEnv.renderScript(name, {});
+          throw new Error('expected component observation to fail');
+        } catch (error) {
+          expect(String(error)).to.contain('Shared channel');
+          expect(String(error)).to.contain('was not found');
+        }
+      }
+    });
+
+    it('closes component instances through owner side-channel completion without an instance preflight check', async function () {
+      const participant = inheritanceParticipant('component.script', {
+        scriptMode: true,
+        methodEntries: {
+          ping: compiledMethod('ping', {
+            fn() {
+              return 'pong';
+            }
+          })
+        }
+      });
+      const ownerContext = createRuntimeContext({}, 'main.script');
+      const ownerBuffer = new runtime.CommandBuffer(ownerContext, null, null, null);
+      runtime.declareBufferChannel(ownerBuffer, 'card', 'var', ownerContext, null);
+      const instance = await runtime.createComponentInstance({
+        componentScriptOrTemplate: participant,
+        payload: {},
+        ownerContext,
+        env: {},
+        runtime,
+        ownerBuffer,
+        bindingName: 'card',
+        errorContext: { path: 'main.script', lineno: 1, colno: 1 }
+      });
+      ownerBuffer.addCommand(new runtime.VarCommand({
+        channelName: 'card',
+        args: [instance],
+        pos: { lineno: 1, colno: 1 }
+      }), 'card');
+      const bindingSnapshot = ownerBuffer.getChannel('card').finalSnapshot();
+      ownerBuffer.finish();
+      await bindingSnapshot;
+      await Promise.resolve();
+
+      expect(await instance.invoke('ping', [], { path: 'main.script', lineno: 2, colno: 1 })).to.be('pong');
+      expect(function () {
+        instance.close();
+      }).not.to.throwException();
+    });
+
+    it('rejects component creation when the constructor fails', async function () {
+      const failure = new runtime.RuntimeFatalError('constructor failed', 1, 1, null, 'component.script');
+      const participant = inheritanceParticipant('component.script', {
+        scriptMode: true,
+        methodEntries: {
+          __constructor__: compiledMethod('__constructor__', {
+            isConstructor: true,
+            fn() {
+              throw failure;
+            }
+          }),
+          ping: compiledMethod('ping', {
+            fn() {
+              return 'pong';
+            }
+          })
+        }
+      });
+      try {
+        await runtime.createComponentInstance({
+          componentScriptOrTemplate: participant,
+          payload: {},
+          ownerContext: createRuntimeContext({}, 'main.script'),
+          env: {},
+          runtime,
+          errorContext: { path: 'main.script', lineno: 1, colno: 1 }
+        });
+        expect().fail('Expected component creation failure');
+      } catch (error) {
+        expect(error).to.be(failure);
+      }
+    });
   });
 
   describe('analysis and validation', function () {
     it('lets inherited methods and template blocks read render context by default', function () {
-      const scriptFacts = analyzeSource('method title()\n  return siteName\nendmethod\nreturn this.title()', { scriptMode: true });
-      const templateFacts = analyzeSource('{% block body %}{{ siteName }}{% endblock %}');
+      const scriptEntries = analyzeCallableEntries('method title()\n  return siteName\nendmethod\nreturn this.title()', { scriptMode: true });
+      const templateEntries = analyzeCallableEntries('{% block body %}{{ siteName }}{% endblock %}');
 
-      expect(scriptFacts.methodEntries[0].name).to.be('title');
-      expect(templateFacts.methodEntries[0].name).to.be('body');
+      expect(scriptEntries[0].name).to.be('title');
+      expect(templateEntries[0].name).to.be('body');
+    });
+
+    it('keeps nested callable shared reads out of the outer inherited callable footprint', function () {
+      const props = compileProps([
+        'shared var theme',
+        'method outer()',
+        '  function inner()',
+        '    return this.theme',
+        '  endfunction',
+        '  return "outer"',
+        'endmethod',
+        'return this.outer()'
+      ].join('\n'), { scriptMode: true });
+
+      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChannels).to.eql([]);
+    });
+
+    it('keeps local vars with shared names out of inherited callable footprints', function () {
+      const props = compileProps([
+        'shared var theme',
+        'method outer()',
+        '  var theme = "local"',
+        '  return theme',
+        'endmethod',
+        'return this.outer()'
+      ].join('\n'), { scriptMode: true });
+
+      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChannels).to.eql([]);
+    });
+
+    it('records this shared accesses under internal storage names', function () {
+      const props = compileProps([
+        'shared var theme',
+        'method outer()',
+        '  return this.theme',
+        'endmethod',
+        'return this.outer()'
+      ].join('\n'), { scriptMode: true });
+
+      expect(props.inheritanceSpec.sharedSchema.$theme.type).to.be('var');
+      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChannels).to.eql(['$theme']);
     });
 
     it('uses only ordered argument names for block signatures', function () {
-      const facts = analyzeSource('{% block item(user = selectedUser) %}{{ user }}{% endblock %}');
+      const entries = analyzeCallableEntries('{% block item(user = selectedUser) %}{{ user }}{% endblock %}');
 
-      expect(facts.methodEntries[0].signature).to.eql({ argNames: ['user'] });
+      expect(entries[0].signature).to.eql({ argNames: ['user'] });
     });
 
     it('emits named block placement bindings by declared argument name', function () {
@@ -1399,9 +1669,9 @@ describe('Inheritance rebuild', function () {
     });
 
     it('supports mixed positional and named block placement bindings', function () {
-      const facts = analyzeSource('{% block item(user, label = selectedLabel) %}x{% endblock %}');
+      const entries = analyzeCallableEntries('{% block item(user, label = selectedLabel) %}x{% endblock %}');
 
-      expect(facts.methodEntries[0].signature).to.eql({ argNames: ['user', 'label'] });
+      expect(entries[0].signature).to.eql({ argNames: ['user', 'label'] });
     });
 
     it('supports keyword defaults in script method signatures', function () {
@@ -1458,14 +1728,15 @@ describe('Inheritance rebuild', function () {
 
     it('treats template this as the reserved inheritance surface', function () {
       const facts = analyzeSource('{{ this.data }}');
+      const sharedSchemaInputs = analyzeSharedSchemaInputs('{{ this.data }}');
       const props = compileProps('{{ this.data }}');
 
       expect(facts.participates).to.be(true);
-      expect(facts.sharedSchemaInputs).to.eql([
-        { name: 'data', type: 'var', hasDefault: false }
+      expect(sharedSchemaInputs).to.eql([
+        { name: '$data', type: 'var', hasDefault: false }
       ]);
-      expect(props.inheritanceSpec.sharedSchema.data.type).to.be('var');
-      expect(props.inheritanceSpec.sharedSchema.data.hasDefault).to.be(false);
+      expect(props.inheritanceSpec.sharedSchema.$data.type).to.be('var');
+      expect(props.inheritanceSpec.sharedSchema.$data.hasDefault).to.be(false);
     });
 
     it('allows top-level dynamic template extends to compile', function () {
@@ -1514,59 +1785,63 @@ describe('Inheritance rebuild', function () {
     it('rejects extends expressions that read inferred shared vars', function () {
       expect(function () {
         new AsyncTemplate('{% extends this.parentTemplate %}', env, 'shared-extends-target.njk').compile();
-      }).to.throwException(/cannot read inferred shared var 'this.parentTemplate'/);
+      }).to.throwException(/dynamic extends target cannot read this\.<shared> state/);
     });
 
     it('infers template shared declarations from analyzed this reads and writes', function () {
-      const facts = analyzeSource(
+      const sharedSchemaInputs = analyzeSharedSchemaInputs(
         '{{ this.theme }}{% block body %}{% set this.mode = "compact" %}{{ this.mode }}{% endblock %}'
       );
 
-      expect(facts.sharedSchemaInputs.sort((left, right) => left.name.localeCompare(right.name))).to.eql([
-        { name: 'mode', type: 'var', hasDefault: false },
-        { name: 'theme', type: 'var', hasDefault: false },
+      expect(sharedSchemaInputs.sort((left, right) => left.name.localeCompare(right.name))).to.eql([
+        { name: '$mode', type: 'var', hasDefault: false },
+        { name: '$theme', type: 'var', hasDefault: false },
       ]);
     });
 
     it('infers template shared declarations without extends or blocks', function () {
       const facts = analyzeSource('{{ this.theme }}');
+      const sharedSchemaInputs = analyzeSharedSchemaInputs('{{ this.theme }}');
 
       expect(facts.participates).to.be(true);
-      expect(facts.sharedSchemaInputs).to.eql([
-        { name: 'theme', type: 'var', hasDefault: false }
+      expect(sharedSchemaInputs).to.eql([
+        { name: '$theme', type: 'var', hasDefault: false }
       ]);
     });
 
     it('keeps template shared reads and inherited calls separate for the same name', function () {
       const facts = analyzeSource('{{ this.card }}{{ this.card() }}');
+      const sharedSchemaInputs = analyzeSharedSchemaInputs('{{ this.card }}{{ this.card() }}');
 
       expect(facts.participates).to.be(true);
-      expect(facts.sharedSchemaInputs).to.eql([
-        { name: 'card', type: 'var', hasDefault: false }
+      expect(sharedSchemaInputs).to.eql([
+        { name: '$card', type: 'var', hasDefault: false }
       ]);
     });
 
     it('treats template this calls as inherited callable calls without inferring shared vars', function () {
       const facts = analyzeSource('{{ this.card() }}');
+      const sharedSchemaInputs = analyzeSharedSchemaInputs('{{ this.card() }}');
 
       expect(facts.participates).to.be(true);
-      expect(facts.sharedSchemaInputs).to.eql([]);
+      expect(sharedSchemaInputs).to.eql([]);
     });
 
     it('does not let template locals block implicit this shared declarations', function () {
       const facts = analyzeSource('{% set theme = "local" %}{{ this.theme }}');
+      const sharedSchemaInputs = analyzeSharedSchemaInputs('{% set theme = "local" %}{{ this.theme }}');
 
       expect(facts.participates).to.be(true);
-      expect(facts.sharedSchemaInputs).to.eql([
-        { name: 'theme', type: 'var', hasDefault: false }
+      expect(sharedSchemaInputs).to.eql([
+        { name: '$theme', type: 'var', hasDefault: false }
       ]);
     });
 
     it('emits implicit template shared vars in the compiled shared schema', function () {
       const props = compileProps('{% set this.theme = "dark" %}{{ this.theme }}');
 
-      expect(props.inheritanceSpec.sharedSchema.theme.type).to.be('var');
-      expect(props.inheritanceSpec.sharedSchema.theme.hasDefault).to.be(false);
+      expect(props.inheritanceSpec.sharedSchema.$theme.type).to.be('var');
+      expect(props.inheritanceSpec.sharedSchema.$theme.hasDefault).to.be(false);
     });
 
     it('rejects template shared and block name collisions', function () {
@@ -1575,30 +1850,8 @@ describe('Inheritance rebuild', function () {
       }).to.throwException(/shared channel 'card' conflicts with method 'card'/);
     });
 
-    it('resolves dynamic template extends from context before constructor locals', async function () {
-      const props = compileProps('{% extends parentTemplate %}{% set parentTemplate = "ignored.njk" %}{% block body %}child{% endblock %}');
-      const calls = [];
-      const parent = { name: 'base' };
-      const origin = { path: 'caller-origin.njk' };
-      const result = await props.resolveInheritanceParent({
-        async getTemplate(name) {
-          calls.push(name);
-          return parent;
-        }
-      }, {
-        lookup(name) {
-          return name === 'parentTemplate' ? 'base.njk' : undefined;
-        },
-        path: 'child.njk'
-      }, runtime, origin);
-
-      expect(calls).to.eql(['base.njk']);
-      expect(result.parentTemplateOrScript).to.be(parent);
-      expect(result.origin).to.be(origin);
-    });
-
     it('fails dynamic template extends naturally when context does not provide the target', async function () {
-      const props = compileProps('{% extends parentTemplate %}{% set parentTemplate = "base.njk" %}{% block body %}child{% endblock %}');
+      const props = compileProps('{% extends parentTemplate %}{% block body %}child{% endblock %}');
       try {
         await props.resolveInheritanceParent(null, {
           lookup() {
@@ -1620,14 +1873,9 @@ describe('Inheritance rebuild', function () {
 
     it('computes exact inheritance participation facts', function () {
       const contractedFields = [
-        'componentOperations',
-        'componentSharedObservations',
-        'hasDynamicExtends',
         'hasExtends',
         'localExtendsNode',
-        'methodEntries',
-        'participates',
-        'sharedSchemaInputs'
+        'participates'
       ];
       const participants = [
         analyzeSource('{% extends "base.njk" %}'),

@@ -1285,7 +1285,6 @@ Primary files:
 
 - [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
-- [src/runtime/composition-payload.js](C:\Projects\cascada\src\runtime\composition-payload.js)
 
 Validation:
 

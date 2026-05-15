@@ -105,8 +105,6 @@ class CompileAnalysis {
       // Parent-owned linked channels this boundary may mutate. Future command-buffer
       // scheduling can use this to distinguish read-only child buffers.
       linkedMutatedChannels: null,
-      methodLinkedChannels: null,
-      methodMutatedChannels: null,
       createsLinkedChildBuffer: false,
       expressionControlFlowBoundary: false,
       ...existingAnalysis,

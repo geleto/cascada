@@ -202,10 +202,11 @@ its blocks directly in the output.
 
 The `extends` target is resolved before constructor code runs, so it may read
 render-context values and globals but not values created by top-level
-`{% set %}` in the same template. Templates do not support `extends none`,
-`extends ... with ...`, or dynamic-null parent selection. If a template has
-`extends`, it must select a parent template. Nothing except whitespace and
-comments may appear before `{% extends %}`.
+`{% set %}` in the same template or inferred shared vars such as
+`this.theme`. Templates do not support `extends none`, `extends ... with ...`,
+or dynamic-null parent selection. If a template has `extends`, it must select
+a parent template. Nothing except whitespace and comments may appear before
+`{% extends %}`.
 
 Template constructor code reaches the parent constructor through an implicit
 trailing `super()` when a parent is selected. Block bodies may also use
@@ -238,8 +239,8 @@ placement-local values as block arguments:
 
 - `{% block name(arg1, arg2) %}` - positional placement values, passed into block-local arguments with the same names.
 - `{% block name(arg = localValue) %}` - named placement binding, passing `localValue` into the block argument named `arg`.
-- An override may have fewer block arguments than the parent, but any kept argument must use the same name. Named placement bindings (`arg = value`) and `super()` both depend on stable argument names.
-- `super()` renders the parent block with the original block arguments.
+- An override may have fewer block arguments than the parent, but any kept argument must use the same name. Named placement bindings (`arg = value`) depend on stable argument names.
+- `super()` renders the parent block with no arguments. Pass values explicitly, such as `super(user)`, when the parent block needs them.
 - Bare variables from the surrounding template local scope are not captured by a block. Pass loop/top-level values as block arguments, use render-context names, or read hierarchy state explicitly through `this.<name>`.
 
 ### Inheritance Example
@@ -256,8 +257,7 @@ placement-local values as block arguments:
 {% extends "base.njk" %}
 
 {% block content(user) %}
-  {% set user = "Grace" %}
-  Child {{ user }} / {{ siteName }} / {{ super() }}
+  Child {{ user }} / {{ siteName }} / {{ super(user) }}
 {% endblock %}
 ```
 
@@ -275,7 +275,7 @@ Child Grace / Docs / Base Ada / Docs / dark
 
 What this shows:
 
-- `super()` still sees the original block argument `user = "Ada"`, even though the child reassigned the local `user` to `"Grace"`.
+- `super(user)` passes the child's current `user` value to the parent block explicitly.
 - `siteName` is visible inside both blocks because render-context names are available by default.
 - `theme` comes from the render context, which is visible throughout the selected inheritance chain by default.
 - A child top-level `{% set theme = ... %}` would not be visible in `content` by itself, and cannot be used by the `extends` target because parent selection happens before constructor code runs.
@@ -314,6 +314,8 @@ assignment. Use script `shared var` declarations for shared defaults; template
 inference only provides the shared `var` channel.
 
 ## Variable Scoping
+
+Identifier names may contain letters, digits, and `_`, and must not contain `$`. The `$` character is reserved for compiler-generated internal names.
 
 ### Concurrency Isolation
 

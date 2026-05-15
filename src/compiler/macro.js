@@ -203,6 +203,7 @@ class CompileMacro {
       ownerNode: node
     });
     return Object.assign({}, signature, {
+      callableSignature: signature,
       emittedArgNames: signature.positionalNames.map((name) => `"${name}"`),
       emittedKwargNames: signature.keywordNames.map((name) => `"${name}"`),
       emittedParamNames: signature.positionalNames.map((name) => `l_${name}`).concat('kwargs')
@@ -283,13 +284,19 @@ class CompileMacro {
     }
   }
 
-  _emitMacroBindingInit(bufferId, name, emitValueExpression, positionNode = null) {
-    this.compiler.channel.emitLocalVarChannelInit(bufferId, name, emitValueExpression, positionNode);
-  }
-
-  _emitAsyncMacroBindings({ node, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId }) {
+  _emitAsyncMacroBindings({ node, callableSignature, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId }) {
     const compiler = this.compiler;
     const hasCallerSupport = !!(rawCallerVar && allCallersBufferId);
+    const positionalArgNames = new Set(args.map((arg) => arg.value));
+    const positionNodesByName = new Map();
+    args.forEach((arg) => {
+      positionNodesByName.set(arg.value, arg);
+    });
+    if (kwargs) {
+      kwargs.children.forEach((pair) => {
+        positionNodesByName.set(pair.key.value, pair);
+      });
+    }
 
     if (compiler.scriptMode) {
       compiler.return.emitDeclareChannel(bufferId);
@@ -303,22 +310,9 @@ class CompileMacro {
       });
     }
 
-    // Declare all local argument channels before emitting init commands, so
-    // default expressions can read any parameter channel in the macro frame.
-    compiler.channel.emitLocalVarChannelDeclaration(bufferId, 'caller');
-    args.forEach((arg) => {
-      compiler.channel.emitLocalVarChannelDeclaration(bufferId, arg.value);
-    });
-    if (kwargs) {
-      kwargs.children.forEach((pair) => {
-        compiler.channel.emitLocalVarChannelDeclaration(bufferId, pair.key.value);
-      });
-    }
-
-    this._emitMacroBindingInit(
-      bufferId,
-      'caller',
-      () => {
+    const bindings = [{
+      name: 'caller',
+      emitValueExpression: () => {
         if (hasCallerSupport) {
           this._emitCallerBindingValue({
             bufferId,
@@ -330,34 +324,21 @@ class CompileMacro {
           compiler.emit('kwargs.caller');
         }
       },
-      node
-    );
+      positionNode: node
+    }].concat(compiler.createCallableArgumentChannelBindings(
+      callableSignature,
+      (name, defaultValueNode) => {
+        if (positionalArgNames.has(name)) {
+          compiler.emit(`l_${name}`);
+          return;
+        }
+        compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, ${JSON.stringify(name)}) ? kwargs[${JSON.stringify(name)}] : `);
+        compiler._compileExpression(defaultValueNode, managedFrame);
+      },
+      (name) => positionNodesByName.get(name) || node
+    ));
 
-    args.forEach((arg) => {
-      this._emitMacroBindingInit(
-        bufferId,
-        arg.value,
-        () => {
-          compiler.emit(`l_${arg.value}`);
-        },
-        arg
-      );
-    });
-
-    if (kwargs) {
-      kwargs.children.forEach((pair) => {
-        const name = pair.key.value;
-        this._emitMacroBindingInit(
-          bufferId,
-          name,
-          () => {
-            compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}") ? kwargs["${name}"] : `);
-            compiler._compileExpression(pair.value, managedFrame);
-          },
-          pair
-        );
-      });
-    }
+    compiler.channel.emitLocalVarChannelBindings(bufferId, bindings);
   }
 
   _emitSyncMacroBindings({ managedFrame, args, kwargs }) {
@@ -394,10 +375,11 @@ class CompileMacro {
     }
   }
 
-  _emitCompiledAsyncMacroBody({ node, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId, errVar, hasCallerSupport }) {
+  _emitCompiledAsyncMacroBody({ node, callableSignature, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId, errVar, hasCallerSupport }) {
     const compiler = this.compiler;
     this._emitAsyncMacroBindings({
       node,
+      callableSignature,
       managedFrame,
       bufferId,
       args,
@@ -440,6 +422,7 @@ class CompileMacro {
     const {
       args,
       kwargs,
+      callableSignature,
       emittedParamNames,
       emittedArgNames,
       emittedKwargNames
@@ -488,6 +471,7 @@ class CompileMacro {
       }, () => {
         returnStatement = this._emitCompiledAsyncMacroBody({
           node,
+          callableSignature,
           managedFrame: null,
           bufferId: 'macroParentBuffer',
           args,
@@ -502,6 +486,7 @@ class CompileMacro {
       compiler.emit.managedBlock(null, false, true, (managedFrame, bufferId) => {
         returnStatement = this._emitCompiledAsyncMacroBody({
           node,
+          callableSignature,
           managedFrame,
           bufferId,
           args,

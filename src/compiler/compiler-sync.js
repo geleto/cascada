@@ -353,7 +353,6 @@ class CompilerSync extends CompilerBaseSync {
     this.hasDynamicExtends = node.children.some((child) =>
       this.inheritance.isDynamicExtendsNode(child)
     );
-    this.hasExtends = this.hasStaticExtends || this.hasDynamicExtends;
     const blocks = this._compileSyncRoot(node, new Frame());
 
     this.emit.line('return {');

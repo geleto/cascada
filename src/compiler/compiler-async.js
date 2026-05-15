@@ -3,8 +3,8 @@ import * as nodes from '../language/nodes.js';
 
 import {
   validateScriptExtendsSourceOrder,
+  validateScriptExtendsExpression,
   validateTemplateInheritanceSurface,
-  validateLocalSharedMethodNameCollisions,
 } from './validation.js';
 
 import {CompilerBaseAsync} from './compiler-base-async.js';
@@ -492,6 +492,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeComponent(node) {
+    this.inheritance.recordComponentOperation(node);
     return this.component.analyzeComponent(node);
   }
 
@@ -556,14 +557,15 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeExtends(node) {
+    const inheritanceAnalysis = this.inheritance.analyzeExtends(node);
     if (this.scriptMode) {
-      return { createsLinkedChildBuffer: true };
+      return inheritanceAnalysis;
     }
     const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
     return {
+      ...inheritanceAnalysis,
       uses: textChannel ? [textChannel] : [],
-      mutates: textChannel ? [textChannel] : [],
-      createsLinkedChildBuffer: true
+      mutates: textChannel ? [textChannel] : []
     };
   }
 
@@ -588,6 +590,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeRoot(node) {
+    const inheritanceAnalysis = this.inheritance.analyzeRoot(node);
     const declares = this._getRootDeclarations(node);
     const sequenceLocks = node._analysis.sequenceLocks ?? [];
     sequenceLocks.forEach((lockName) => {
@@ -597,15 +600,16 @@ class CompilerAsync extends CompilerBaseAsync {
       createScope: true,
       scopeBoundary: true,
       declares,
-      textOutput: this._getRootTextOutput()
+      textOutput: this._getRootTextOutput(),
+      ...inheritanceAnalysis
     };
   }
 
   postAnalyzeRoot(node) {
     const inheritanceFacts = this.inheritance.computeRootInheritanceFacts(node);
     validateScriptExtendsSourceOrder(this, node);
+    validateScriptExtendsExpression(this, node);
     validateTemplateInheritanceSurface(this, node);
-    validateLocalSharedMethodNameCollisions(this, node);
     return {
       inheritance: inheritanceFacts
     };
@@ -619,17 +623,6 @@ class CompilerAsync extends CompilerBaseAsync {
     }
 
     this.inheritance.compileParticipantRootExport(node, rootCompileResult);
-  }
-
-  _emitRootCompositionPayloadInitialization(node) {
-    const skippedNames = Object.create(null);
-    this._getRootDeclarations(node).forEach((declaration) => {
-      skippedNames[declaration.name] = true;
-    });
-    this.inheritance.getSharedDeclarations(node).forEach((declaration) => {
-      skippedNames[declaration.name] = true;
-    });
-    this.emit.line(`runtime.declareCompositionPayloadChannels(${this.buffer.currentBuffer}, context, ${JSON.stringify(skippedNames)});`);
   }
 
   _getRootDeclarations(node) {
@@ -655,7 +648,6 @@ class CompilerAsync extends CompilerBaseAsync {
     for (const name of sequenceLocks) {
       this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
-    this._emitRootCompositionPayloadInitialization(node);
     this.inheritance.emitRootSharedDeclarations(node);
   }
 

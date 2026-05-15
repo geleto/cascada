@@ -11,18 +11,6 @@ class CompileCompositionPayload {
     this.emitObjectInput(node, targetVarsVar);
   }
 
-  emitCurrentPositionInputs(node, targetVarsVar) {
-    this.emitInputVariables(node, targetVarsVar, (nameNode, inputName) => {
-      const declaration = this.compiler.analysis.findDeclaration(nameNode._analysis, inputName);
-      if (declaration && declaration.type === 'var' && !declaration.shared) {
-        this.emit(`runtime.channelLookup(${JSON.stringify(inputName)}, ${this.compiler.buffer.currentBuffer})`);
-      } else {
-        this.emit(`context.lookup(${JSON.stringify(inputName)})`);
-      }
-    });
-    this.emitObjectInput(node, targetVarsVar);
-  }
-
   emitInputVariables(node, targetVarsVar, emitValue) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     withVars.forEach((nameNode) => {

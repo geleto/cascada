@@ -5,6 +5,7 @@ import {CompileRename} from './rename.js';
 import {CompilerCommon} from './compiler-common.js';
 import {CompileCall} from './call.js';
 import {CompileLookup} from './lookup.js';
+import {renameSharedName} from '../inheritance/shared-names.js';
 
 const compareOps = {
   '==': '==',
@@ -597,7 +598,7 @@ class CompilerBaseAsync extends CompilerCommon {
       return {
         kind: 'component',
         bindingName: componentBindingRoot.bindingName,
-        channelName: componentBindingRoot.staticPath[1]
+        channelName: renameSharedName(componentBindingRoot.staticPath[1])
       };
     }
 

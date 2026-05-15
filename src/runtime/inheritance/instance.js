@@ -13,17 +13,13 @@ class InheritanceInstance {
     this.rootBuffer = options.rootBuffer;
     this.sharedRootBuffer = options.sharedRootBuffer;
     this.context = options.context;
-    this.failure = null;
-    this.closed = false;
   }
 
   static async create(options) {
     const runtime = options.runtime;
     const context = options.context;
     const rootBuffer = options.rootBuffer || new runtime.CommandBuffer(context, null, null, null);
-    // TODO(Step 6): Components need a distinct shared root buffer with
-    // component-owned close timing. Direct render uses the render root buffer.
-    const sharedRootBuffer = rootBuffer;
+    const sharedRootBuffer = options.sharedRootBuffer || rootBuffer;
     const chain = await runtime.loadInheritanceChain({
       templateOrScript: options.entryTemplateOrScript,
       env: options.env,
@@ -57,7 +53,7 @@ class InheritanceInstance {
     return this._invokeFromMethodData(this.getMethod(methodName, origin), args, origin, currentBuffer, context);
   }
 
-  invokeSuper(methodData, args, context, currentBuffer, origin = null, forwardedOriginalArgs = null) {
+  invokeSuper(methodData, args, context, currentBuffer, origin = null) {
     if (!methodData || !methodData.super) {
       throw new RuntimeFatalError(
         `super() in '${methodData ? methodData.name : '<unknown>'}' has no parent implementation`,
@@ -67,9 +63,15 @@ class InheritanceInstance {
         origin?.path ?? null
       );
     }
-    return this._invokeFromMethodData(methodData.super, args, origin, currentBuffer, context, {
-      forwardedOriginalArgs
-    });
+    return this._invokeFromMethodData(methodData.super, args, origin, currentBuffer, context);
+  }
+
+  invokeConstructor(origin = null) {
+    const constructorEntry = this.runtimeState.methods.__constructor__ || null;
+    if (!constructorEntry) {
+      return undefined;
+    }
+    return this._invokeFromMethodData(constructorEntry, [], origin, this.sharedRootBuffer, this.context);
   }
 
   getMethod(methodName, origin) {
@@ -86,7 +88,7 @@ class InheritanceInstance {
     return methodData;
   }
 
-  async _invokeFromMethodData(methodData, args, origin, parentBuffer, context, options = {}) {
+  async _invokeFromMethodData(methodData, args, origin, parentBuffer, context) {
     const visibleChannels = Array.from(new Set([
       ...methodData.mergedLinkedChannels,
       ...methodData.mergedMutatedChannels
@@ -104,8 +106,7 @@ class InheritanceInstance {
         originalArgs: createInheritanceCallableArgumentFrame(
           methodData,
           args,
-          origin,
-          options.forwardedOriginalArgs ?? null
+          origin
         )
       };
     const renderContext = methodData.isConstructor ? undefined : context.getRenderContextVariables();
@@ -123,11 +124,9 @@ class InheritanceInstance {
         this
       );
       invocationBuffer.finish();
-      await invocationBuffer.getFinishedPromise();
       return result;
     } catch (error) {
       invocationBuffer.finish();
-      await invocationBuffer.getFinishedPromise();
       throw error;
     }
   }
@@ -140,9 +139,6 @@ class InheritanceInstance {
   }
 
   close() {
-    // TODO(Step 6): Component lifetime will own failure/closed-state behavior
-    // and side-channel completion timing around this buffer close.
-    this.closed = true;
     this.sharedRootBuffer.finish();
     this.rootBuffer.finish();
   }
@@ -159,7 +155,7 @@ async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, co
     origin
   });
   let entryResult;
-  entryResult = await instance.invoke('__constructor__', [], origin);
+  entryResult = await instance.invokeConstructor(origin);
   return normalizeFinalPromise(instance.finishRender(entryResult));
 }
 

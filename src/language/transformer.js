@@ -3,6 +3,7 @@ import * as nodes from './nodes.js';
 import {indexOf} from '../lib.js';
 import * as scopeBoundaries from '../compiler/scope-boundaries.js';
 import {getScriptExtendsSourceOrderViolation} from '../compiler/validation.js';
+import {renameSharedName} from '../inheritance/shared-names.js';
 
 var sym = 0;
 function gensym() {
@@ -249,42 +250,73 @@ function normalizeAsyncCompilerNodes(ast) {
   });
 }
 
-function isRootConstructorDefinitionNode(node) {
+function isRootConstructorExcludedNode(node) {
   return (
     node instanceof nodes.Block ||
     node instanceof nodes.Macro
   );
 }
 
-function createSyntheticConstructorMethod(constructorChildren, fallbackNode) {
-  if (!Array.isArray(constructorChildren) || constructorChildren.length === 0) {
-    return null;
-  }
+function hasThisSurface(node) {
+  return node.findAll(nodes.LookupVal).some((lookupNode) =>
+    lookupNode.target instanceof nodes.Symbol &&
+    lookupNode.target.value === 'this'
+  );
+}
 
+function hasAsyncInheritanceSurface(executableChildren, scriptMode, methodNodes, sharedDeclarations, extendsIndex) {
+  if (extendsIndex !== -1 || methodNodes.length > 0 || sharedDeclarations.length > 0) {
+    return true;
+  }
+  return executableChildren.some((child) => {
+    if (child instanceof nodes.Component || child.findAll(nodes.Component).length > 0) {
+      return true;
+    }
+    if (!scriptMode && child instanceof nodes.Block) {
+      return true;
+    }
+    return child.findAll(nodes.Super).length > 0 || hasThisSurface(child);
+  });
+}
+
+function createRootConstructorDefinition(constructorChildren, fallbackNode) {
   const firstNode = constructorChildren[0] || fallbackNode;
-  const constructorMethod = new nodes.MethodDefinition(
+  const constructorName = new nodes.Symbol(
     firstNode ? firstNode.lineno : 0,
     firstNode ? firstNode.colno : 0,
-    new nodes.Symbol(
-      firstNode ? firstNode.lineno : 0,
-      firstNode ? firstNode.colno : 0,
-      '__constructor__'
-    ),
-    new nodes.NodeList(
-      firstNode ? firstNode.lineno : 0,
-      firstNode ? firstNode.colno : 0,
-      []
-    ),
+    '__constructor__'
+  );
+  constructorName.isCompilerInternal = true;
+  const constructorBody = liftMethodLikeSuperCalls(
     new nodes.NodeList(
       firstNode ? firstNode.lineno : 0,
       firstNode ? firstNode.colno : 0,
       constructorChildren
     ),
-    false
+    constructorName
   );
-  constructorMethod.isSyntheticConstructor = true;
-  constructorMethod.body = liftMethodLikeSuperCalls(constructorMethod.body, constructorMethod.name);
-  return constructorMethod;
+  const constructorDefinition = new nodes.MethodDefinition(
+    firstNode ? firstNode.lineno : 0,
+    firstNode ? firstNode.colno : 0,
+    constructorName,
+    new nodes.NodeList(firstNode ? firstNode.lineno : 0, firstNode ? firstNode.colno : 0, []),
+    constructorBody
+  );
+  constructorDefinition.isCompilerInternal = true;
+  return constructorDefinition;
+}
+
+function createConstructorPlacementNode(node) {
+  if (!(node instanceof nodes.Block)) {
+    return node;
+  }
+  return new nodes.Block(
+    node.lineno,
+    node.colno,
+    node.name,
+    node.args,
+    new nodes.NodeList(node.body ? node.body.lineno : node.lineno, node.body ? node.body.colno : node.colno, [])
+  );
 }
 
 // @todo - do this after analysis, rename both AST nodes and analysis nodes
@@ -473,6 +505,7 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
       return;
     }
     if (child instanceof nodes.ChannelDeclaration && child.isShared) {
+      child.name.value = renameSharedName(child.name.value);
       sharedDeclarations.push(child);
       return;
     }
@@ -497,30 +530,40 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
     }
   }
 
-  const remainingChildren = [];
-  const constructorChildren = [];
-
-  executableChildren.forEach((child, index) => {
-    const shouldLiftIntoConstructor = extendsIndex !== -1 &&
-      index > extendsIndex &&
-      !isRootConstructorDefinitionNode(child);
-    if (shouldLiftIntoConstructor) {
-      constructorChildren.push(child);
-      return;
+  const hasInheritanceSurface = hasAsyncInheritanceSurface(
+    executableChildren,
+    scriptMode,
+    methodNodes,
+    sharedDeclarations,
+    extendsIndex
+  );
+  const constructorChildren = executableChildren.filter((child, index) => {
+    if (!hasInheritanceSurface) {
+      return false;
     }
-    remainingChildren.push(child);
+    if (child instanceof nodes.Extends) {
+      return false;
+    }
+    if (extendsIndex !== -1 && isRootConstructorExcludedNode(child)) {
+      return false;
+    }
+    return extendsIndex === -1 || index > extendsIndex;
   });
+  const constructorChildSet = new Set(constructorChildren);
+  const constructorBodyChildren = constructorChildren.map((child) => createConstructorPlacementNode(child));
+  const hasSharedDefault = sharedDeclarations.some((declaration) => declaration.initializer);
+  const constructorDefinition = (constructorBodyChildren.length > 0 || hasSharedDefault)
+    ? createRootConstructorDefinition(constructorBodyChildren, ast)
+    : null;
 
-  const constructorMethod = createSyntheticConstructorMethod(constructorChildren, ast);
-  if (constructorMethod) {
-    methodNodes.push(constructorMethod);
-  }
-
-  ast.children = remainingChildren;
+  ast.children = executableChildren.filter((child) =>
+    !constructorChildSet.has(child) || child instanceof nodes.Block
+  );
   ast.inheritanceMetadata = new nodes.InheritanceMetadata(
     ast.lineno,
     ast.colno,
     new nodes.NodeList(ast.lineno, ast.colno, methodNodes),
+    constructorDefinition,
     new nodes.SharedDeclarations(ast.lineno, ast.colno, sharedDeclarations)
   );
   return ast;

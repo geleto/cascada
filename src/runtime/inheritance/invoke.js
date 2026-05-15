@@ -1,6 +1,6 @@
 import {RuntimeFatalError} from '../errors.js';
 
-// TODO(Step 7): Deduplicate with macro keyword/positional argument mapping
+// TODO(Step 8): Deduplicate with macro keyword/positional argument mapping
 // once inherited callables and macros share one runtime argument-frame helper.
 function getInvocationArgs(args) {
   const values = Array.isArray(args) ? args.slice() : [];
@@ -12,20 +12,9 @@ function getInvocationArgs(args) {
 function createInheritanceCallableArgumentFrame(
   methodData,
   args,
-  errorContext,
-  forwardedOriginalArgs = null
+  errorContext
 ) {
   const argNames = methodData.signature.argNames;
-  if (forwardedOriginalArgs) {
-    const argumentFrame = {};
-    argNames.forEach((name) => {
-      if (Object.prototype.hasOwnProperty.call(forwardedOriginalArgs, name)) {
-        argumentFrame[name] = forwardedOriginalArgs[name];
-      }
-    });
-    return argumentFrame;
-  }
-
   const invocationArgs = getInvocationArgs(args);
   const values = invocationArgs.values;
   const kwargs = invocationArgs.kwargs;

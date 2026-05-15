@@ -422,9 +422,9 @@ Work:
   explicit shared/inheritance channels. It skips only when the current buffer
   already addresses the same channel object and fails if a different local
   channel is present.
-- inherited method link/mutation filtering moved from compile-time
-  `collectMethodChannelNames(...)` into analysis-owned `methodLinkedChannels`
-  and `methodMutatedChannels` facts on inherited method/block nodes.
+- inherited method link/mutation filtering now derives from the ordinary
+  `usedChannels` and `mutatedChannels` analysis facts, then narrows that set to
+  shared inheritance declarations when emitting method metadata.
 - compiler-emitted and runtime-resolved method metadata no longer carries
   `used` payloads: `ownLinkedChannels` / `mergedLinkedChannels` drive
   invocation admission, while `ownMutatedChannels` / `mergedMutatedChannels`
