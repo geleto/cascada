@@ -22,10 +22,7 @@ function createInheritanceCallableArgumentFrame(
   if (values.length > argNames.length) {
     throw new RuntimeFatalError(
       `Inherited callable '${methodData.name}' received too many arguments`,
-      errorContext?.lineno ?? 0,
-      errorContext?.colno ?? 0,
-      errorContext?.errorContextString ?? null,
-      errorContext?.path ?? null
+      errorContext
     );
   }
 

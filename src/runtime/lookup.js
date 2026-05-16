@@ -228,10 +228,7 @@ function _observeResolvedInheritanceSharedChannel(name, currentBuffer, channelTy
   if (implicitVarRead && channelType && channelType !== 'var') {
     throw new RuntimeFatalError(
       `Shared channel '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
-      pos.lineno,
-      pos.colno,
-      errorContext ? errorContext.errorContextString : null,
-      errorContext ? errorContext.path : null
+      errorContext
     );
   }
 
@@ -250,10 +247,7 @@ function observeInheritanceSharedChannel(name, currentBuffer, errorContext = nul
     if (!schemaEntry) {
       throw new RuntimeFatalError(
         `unknown inherited shared channel '${name}'`,
-        pos.lineno,
-        pos.colno,
-        errorContext ? errorContext.errorContextString : null,
-        errorContext ? errorContext.path : null
+        errorContext
       );
     }
     return _observeResolvedInheritanceSharedChannel(

@@ -11,10 +11,7 @@ function declareInheritanceSharedChannel(buffer, channelName, channelType, conte
     if (existingChannel.channelType !== channelType) {
       throw new RuntimeFatalError(
         `shared channel '${channelName}' was declared as '${existingChannel.channelType}' and '${channelType}'`,
-        0,
-        0,
-        null,
-        context?.path ?? null
+        context
       );
     }
     if (hasInitializer) {

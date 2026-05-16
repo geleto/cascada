@@ -57,10 +57,7 @@ class InheritanceInstance {
     if (!methodData || !methodData.super) {
       throw new RuntimeFatalError(
         `super() in '${methodData ? methodData.name : '<unknown>'}' has no parent implementation`,
-        origin?.lineno ?? 0,
-        origin?.colno ?? 0,
-        origin?.errorContextString ?? null,
-        origin?.path ?? null
+        origin
       );
     }
     return this._invokeFromMethodData(methodData.super, args, origin, currentBuffer, context);
@@ -79,10 +76,7 @@ class InheritanceInstance {
     if (!methodData) {
       throw new RuntimeFatalError(
         `missing inherited method '${methodName}'`,
-        origin?.lineno ?? 0,
-        origin?.colno ?? 0,
-        origin?.errorContextString ?? null,
-        origin?.path ?? null
+        origin
       );
     }
     return methodData;

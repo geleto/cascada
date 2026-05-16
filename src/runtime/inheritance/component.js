@@ -5,36 +5,26 @@ import {resolveSingle} from '../resolve.js';
 import {InheritanceInstance} from './instance.js';
 import {isPrivateSharedName} from '../../inheritance/shared-names.js';
 
-function createComponentError(message, errorContext = null) {
-  return new RuntimeFatalError(
-    message,
-    errorContext?.lineno ?? 0,
-    errorContext?.colno ?? 0,
-    errorContext?.errorContextString ?? null,
-    errorContext?.path ?? null
-  );
-}
-
 function getComponentSharedSchemaEntry(instance, channelName, errorContext) {
   if (isPrivateSharedName(channelName)) {
-    throw createComponentError(`Shared channel '${channelName}' was not found`, errorContext);
+    throw new RuntimeFatalError(`Shared channel '${channelName}' was not found`, errorContext);
   }
   const schemaEntry = instance.runtimeState.sharedSchema[channelName] || null;
   if (!schemaEntry) {
-    throw createComponentError(`Shared channel '${channelName}' was not found`, errorContext);
+    throw new RuntimeFatalError(`Shared channel '${channelName}' was not found`, errorContext);
   }
   return schemaEntry;
 }
 
 async function observeComponentSharedChannel(instance, observationCommand, errorContext = null, implicitVarRead = false) {
   if (!observationCommand.isUniversalObservationCommand || !observationCommand.channelName) {
-    throw createComponentError('Component shared observation requires a universal observational channel command', errorContext);
+    throw new RuntimeFatalError('Component shared observation requires a universal observational channel command', errorContext);
   }
 
   const channelName = observationCommand.channelName;
   const schemaEntry = getComponentSharedSchemaEntry(instance, channelName, errorContext);
   if (implicitVarRead && schemaEntry.type !== 'var') {
-    throw createComponentError(
+    throw new RuntimeFatalError(
       `Shared channel '${channelName}' cannot be used as a bare symbol. Use '${channelName}.snapshot()' instead.`,
       errorContext
     );
@@ -42,7 +32,7 @@ async function observeComponentSharedChannel(instance, observationCommand, error
 
   const channel = instance.sharedRootBuffer.getChannelIfExists(channelName);
   if (!channel) {
-    throw createComponentError(`Shared channel '${channelName}' was not found`, errorContext);
+    throw new RuntimeFatalError(`Shared channel '${channelName}' was not found`, errorContext);
   }
   return instance.sharedRootBuffer.addCommand(observationCommand, channelName);
 }
@@ -144,7 +134,7 @@ async function createComponentInstance(spec) {
   } = spec;
   const templateOrScript = await resolveSingle(componentScriptOrTemplate);
   if (!templateOrScript) {
-    throw createComponentError('Component target did not resolve to a script or template', errorContext);
+    throw new RuntimeFatalError('Component target did not resolve to a script or template', errorContext);
   }
 
   const payloadContext = { ...(payload ?? {}) };

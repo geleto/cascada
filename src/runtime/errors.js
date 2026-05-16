@@ -186,7 +186,14 @@ class RuntimeError extends Error {
  * Used for critical failures like broken sequential loop contracts.
  */
 class RuntimeFatalError extends RuntimeError {
-  constructor(message, lineno, colno, errorContextString = null, path = null) {
+  constructor(message, lineno = 0, colno = 0, errorContextString = null, path = null) {
+    if (lineno && typeof lineno === 'object') {
+      const errorContext = lineno;
+      lineno = errorContext.lineno ?? 0;
+      colno = errorContext.colno ?? 0;
+      errorContextString = errorContext.errorContextString ?? null;
+      path = errorContext.path ?? null;
+    }
     super(message, lineno, colno, errorContextString, path);
     this.name = 'RuntimeFatalError';
   }

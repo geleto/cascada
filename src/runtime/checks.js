@@ -65,10 +65,7 @@ function assertChannelLaneAvailable(buffer, channelName) {
 
   throw new RuntimeFatalError(
     `Channel '${channelName}' is visible but this buffer has no linked lane for it`,
-    0,
-    0,
-    null,
-    buffer._context ? buffer._context.path : null
+    buffer._context
   );
 }
 

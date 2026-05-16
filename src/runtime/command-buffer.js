@@ -46,7 +46,7 @@ class CommandBuffer {
       return null;
     }
     if (resolvedChannelName in this.arrays) {
-      throw createLaneMetadataError(
+      throw new RuntimeFatalError(
         `Channel '${resolvedChannelName}' was registered more than once on the same CommandBuffer`,
         this._context
       );
@@ -195,19 +195,13 @@ class CommandBuffer {
       if (!channel) {
         throw new RuntimeFatalError(
           `Channel '${resolvedChannelName}' is unavailable on finished CommandBuffer`,
-          cmd.pos?.lineno ?? 0,
-          cmd.pos?.colno ?? 0,
-          null,
-          path
+          {...cmd.pos, path}
         );
       }
       if (!channel._buffer.isChannelFinished(resolvedChannelName)) {
         throw new RuntimeFatalError(
           `${cmd.constructor.name} on finished buffer is allowed only if the target channel stream is finished`,
-          cmd.pos?.lineno ?? 0,
-          cmd.pos?.colno ?? 0,
-          null,
-          path
+          {...cmd.pos, path}
         );
       }
       return this._runObservationCommandOnFinishedBuffer(cmd, resolvedChannelName);
@@ -216,10 +210,7 @@ class CommandBuffer {
     const path = this._context?.path || null;
     throw new RuntimeFatalError(
       `Adding command '${cmd?.constructor ? cmd.constructor.name : 'unknown'}' is not allowed on a finished CommandBuffer`,
-      cmd?.pos ? cmd.pos.lineno : 0,
-      cmd?.pos ? cmd.pos.colno : 0,
-      null,
-      path
+      {...cmd?.pos, path}
     );
   }
 
@@ -233,10 +224,7 @@ class CommandBuffer {
     if (!channel) {
       throw new RuntimeFatalError(
         `Channel '${channelName}' is unavailable on finished CommandBuffer`,
-        cmd.pos?.lineno ?? 0,
-        cmd.pos?.colno ?? 0,
-        null,
-        path
+        {...cmd.pos, path}
       );
     }
 
@@ -380,13 +368,9 @@ class CommandBuffer {
   _assertCanInstallLinkedChannel(channelName, channel) {
     const resolvedChannelName = this._resolveAliasedChannelName(channelName);
     if (!channel) {
-      const path = this._context?.path || null;
       throw new RuntimeFatalError(
         `Cannot link channel '${resolvedChannelName}' without a registered channel object`,
-        0,
-        0,
-        null,
-        path
+        this._context
       );
     }
     return resolvedChannelName;
@@ -394,36 +378,24 @@ class CommandBuffer {
 
 }
 
-function createLaneMetadataError(message, renderContext = null) {
-  // Buffer creation receives a runtime render Context, not a source-position
-  // error context, so metadata errors are positionless but still carry path.
-  return new RuntimeFatalError(
-    message,
-    0,
-    0,
-    null,
-    renderContext?.path ?? null
-  );
-}
-
 function validateLaneNames(laneNames, label, context = null) {
   if (laneNames == null) {
     return null;
   }
   if (!Array.isArray(laneNames)) {
-    throw createLaneMetadataError(`${label} must be an array when provided`, context);
+    throw new RuntimeFatalError(`${label} must be an array when provided`, context);
   }
   const seen = new Set();
   for (let i = 0; i < laneNames.length; i++) {
     const name = laneNames[i];
     if (typeof name !== 'string') {
-      throw createLaneMetadataError(`${label} contains a non-string channel name`, context);
+      throw new RuntimeFatalError(`${label} contains a non-string channel name`, context);
     }
     if (!name) {
-      throw createLaneMetadataError(`${label} contains an empty channel name`, context);
+      throw new RuntimeFatalError(`${label} contains an empty channel name`, context);
     }
     if (seen.has(name)) {
-      throw createLaneMetadataError(`${label} contains duplicate channel '${name}'`, context);
+      throw new RuntimeFatalError(`${label} contains duplicate channel '${name}'`, context);
     }
     seen.add(name);
   }
