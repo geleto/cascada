@@ -41,7 +41,7 @@ Always add commands through the compiler's active buffer expression: `compiler.b
 
 Channels come into existence via `runtime.declareBufferChannel(buffer, name, type, context, null)`, emitted at codegen time. This call creates the `Channel` object, registers it in `_channels`, and binds its iterator. Any new channel type or new declaration form must go through this call.
 
-`WaitCurrentCommand` (`src/runtime/channels/timing.js`) is a timing-only sync point: it resolves when the iterator reaches this source-position slot on a specific channel lane, carrying no snapshot or error semantics. Used by concurrency-limited loops to enforce "slot N must finish before N+1 begins" across async iterations.
+`WaitCurrentCommand` (`src/runtime/channels/wait-commands.js`) is a timing-only sync point: it resolves when the iterator reaches this source-position slot on a specific channel lane, carrying no snapshot or error semantics. Used by concurrency-limited loops to enforce "slot N must finish before N+1 begins" across async iterations.
 
 Two distinct error-injection commands exist in `src/runtime/channels/error.js`:
 -   **`ErrorCommand`** — placed in the buffer command stream; the iterator throws immediately when it reaches this entry. Used when an entire async boundary has failed and no channel mutation will occur.

@@ -1,17 +1,16 @@
 
 import {isPoison, isPoisonError, PoisonError, createPoison} from '../errors.js';
-import {Command, contextualizeErrorsForChannel} from './command-base.js';
+import {ObservableCommand, MutatingResultCommand, contextualizeErrorsForChannel} from './command-base.js';
 import {Channel, mergePoisonErrors} from './base.js';
 
-class SequentialPathReadCommand extends Command {
-  constructor({ channelName, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
-    super({ withDeferredResult });
+class SequentialPathReadCommand extends ObservableCommand {
+  constructor({ channelName, pathKey, operation, repair = false, pos = null }) {
+    super();
     this.channelName = channelName;
     this.pathKey = pathKey || this.channelName;
     this.operation = operation;
     this.repair = !!repair;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = true;
   }
 
   apply(channel) {
@@ -75,9 +74,9 @@ class RepairReadCommand extends SequentialPathReadCommand {
 }
 
 // Executes a `!`-path write/call operation in source order. Poisons the path on failure so subsequent commands on the same path are skipped. Mutating.
-class SequentialPathWriteCommand extends Command {
-  constructor({ channelName, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
-    super({ withDeferredResult });
+class SequentialPathWriteCommand extends MutatingResultCommand {
+  constructor({ channelName, pathKey, operation, repair = false, pos = null }) {
+    super();
     this.channelName = channelName;
     this.pathKey = pathKey || this.channelName;
     this.operation = operation;

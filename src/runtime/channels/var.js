@@ -3,36 +3,13 @@ import {ChannelCommand, runWithResolvedArguments, contextualizeChannelError} fro
 import {Channel} from './base.js';
 
 class VarCommand extends ChannelCommand {
-  constructor(specOrValue) {
-    const isSpecObject = !!specOrValue &&
-      typeof specOrValue === 'object' &&
-      !Array.isArray(specOrValue) &&
-      (
-        Object.prototype.hasOwnProperty.call(specOrValue, 'channelName') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'subpath') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'pos')
-      );
-    if (isSpecObject) {
-      super({
-        channelName: specOrValue.channelName,
-        command: null,
-        args: specOrValue.args || [],
-        subpath: null,
-        pos: specOrValue.pos || null
-      });
-      this.initializeIfNotSet = specOrValue.initializeIfNotSet;
-      return;
-    }
+  constructor({ channelName, args = null, pos = null, initializeIfNotSet = false }) {
     super({
-      channelName: 'var',
-      command: null,
-      args: [specOrValue],
-      subpath: null,
-      pos: null
+      channelName,
+      args: args || [],
+      pos
     });
-    this.initializeIfNotSet = false;
+    this.initializeIfNotSet = initializeIfNotSet;
   }
 
   apply(channel) {

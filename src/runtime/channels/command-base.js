@@ -12,28 +12,26 @@ import {
 import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.js';
 const contextualizedChannelErrorCache = new WeakMap();
 
-// Base class for all commands. Manages the optional deferred-result promise used by observable commands.
+// Base class for buffered channel work.
 class Command {
-  constructor(options = null) {
-    const opts = options || {};
+  constructor() {
     this.resolved = false;
     this.promise = null;
     this.resolve = null;
     this.reject = null;
     this.isObservable = false;
-    this.resolveApplyResult = !!opts.resolveApplyResult;
+  }
 
-    if (opts.withDeferredResult) {
-      this.promise = new Promise((resolve, reject) => {
-        this.resolve = resolve;
-        this.reject = reject;
-      });
-      // Deferred command results are often consumed later by other internal runtime
-      // paths (for example as command arguments). Mark them handled immediately so
-      // an early rejection does not become a process-level warning before the real
-      // Cascada consumer observes it.
-      markPromiseHandled(this.promise);
-    }
+  _createResultPromise() {
+    this.promise = new Promise((resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+    });
+    // Deferred command results are often consumed later by other internal runtime
+    // paths (for example as command arguments). Mark them handled immediately so
+    // an early rejection does not become a process-level warning before the real
+    // Cascada consumer observes it.
+    markPromiseHandled(this.promise);
   }
 
   resolveResult(value) {
@@ -54,6 +52,26 @@ class Command {
     this.reject = null;
   }
 
+  settleResult(result, { mapValue = null, mapError = null, rethrow = false } = {}) {
+    const resolve = (value) => {
+      const resolvedValue = mapValue ? mapValue(value) : value;
+      this.resolveResult(resolvedValue);
+      return resolvedValue;
+    };
+    const reject = (err) => {
+      const rejectedValue = mapError ? mapError(err) : err;
+      this.rejectResult(rejectedValue);
+      if (rethrow) {
+        throw rejectedValue;
+      }
+      return undefined;
+    };
+    if (result && typeof result.then === 'function') {
+      return Promise.resolve(result).then(resolve, reject);
+    }
+    return resolve(result);
+  }
+
   getError() {
     return null;
   }
@@ -63,12 +81,33 @@ class Command {
   }
 }
 
-// Base class for commands targeting a declared channel (text/var/data/sequence). Carries channel name, method name, arguments, and source position.
-class ChannelCommand extends Command {
-  constructor({ channelName, command = null, args = null, subpath = null, pos = null, withDeferredResult = false }) {
-    super({ withDeferredResult });
+// Normal buffered work that mutates, orders, or reports through its lane.
+class MutatingCommand extends Command {
+}
+
+// Mutating commands that also produce a caller-facing promise result.
+class MutatingResultCommand extends MutatingCommand {
+  constructor() {
+    super();
+    this._createResultPromise();
+  }
+}
+
+// Ordered observations read a channel at the current source position and resolve
+// their own result promise without mutating the target channel.
+class ObservableCommand extends Command {
+  constructor() {
+    super();
+    this._createResultPromise();
+    this.isObservable = true;
+  }
+}
+
+// Base class for commands targeting a declared channel (text/var/data/sequence).
+class ChannelCommand extends MutatingCommand {
+  constructor({ channelName, args = null, pos = null }) {
+    super();
     this.channelName = channelName;
-    this.command = command;
     this.arguments = args || [];
     // Channel commands are buffered and applied later by the iterator. Any raw
     // promise/marker-backed value already present in the buffered argument
@@ -77,7 +116,6 @@ class ChannelCommand extends Command {
     if (this.arguments.length > 0) {
       markDeferredThenablesHandled(this.arguments);
     }
-    this.subpath = subpath;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
@@ -109,7 +147,38 @@ class ChannelCommand extends Command {
   }
 }
 
-export { Command, ChannelCommand, contextualizeErrorsForChannel, contextualizeChannelError, runWithResolvedArguments, markDeferredThenablesHandled };
+class ChannelMutatingResultCommand extends ChannelCommand {
+  constructor(spec) {
+    super(spec);
+    this._createResultPromise();
+  }
+}
+
+class ChannelObservableCommand extends ObservableCommand {
+  constructor(spec) {
+    super();
+    this.channelName = spec.channelName;
+    this.arguments = spec.args || [];
+    if (this.arguments.length > 0) {
+      markDeferredThenablesHandled(this.arguments);
+    }
+    this.pos = spec.pos || { lineno: 0, colno: 0 };
+  }
+}
+
+export {
+  Command,
+  MutatingCommand,
+  MutatingResultCommand,
+  ObservableCommand,
+  ChannelCommand,
+  ChannelMutatingResultCommand,
+  ChannelObservableCommand,
+  contextualizeErrorsForChannel,
+  contextualizeChannelError,
+  runWithResolvedArguments,
+  markDeferredThenablesHandled
+};
 
 function contextualizeErrorsForChannel(channel, pos, errors) {
   if (!Array.isArray(errors) || errors.length === 0) {

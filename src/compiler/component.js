@@ -34,14 +34,13 @@ class CompileComponent {
     const componentScriptOrTemplateVar = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
-    const instanceVar = this.compiler._tmpid();
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
 
     this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
     this.emit.line(`const ${componentVarsVar} = {};`);
     this.compiler.compositionPayload.emitCompiledInputs(node, componentVarsVar);
     this.compiler.compositionPayload.emitContext(rootContextVar, componentVarsVar, node.withContext);
-    this.emit.line(`const ${instanceVar} = runtime.startComponentInstance({`);
+    this.emit.line('runtime.startComponentInstance({');
     this.emit.line(`  currentBuffer: ${this.compiler.buffer.currentBuffer},`);
     this.emit.line(`  bindingName: "${targetName}",`);
     this.emit.line(`  componentScriptOrTemplate: ${componentScriptOrTemplateVar},`);
@@ -52,7 +51,6 @@ class CompileComponent {
     this.emit.line('  cb,');
     this.emit.line(`  errorContext: ${errorContextJson}`);
     this.emit.line('});');
-    this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${targetName}', args: [${instanceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${targetName}');`);
 
     if (targetName.charAt(0) !== '_' && this.compiler.analysis.isRootScopeOwner(node._analysis)) {
       this.emit.line(`context.addDeferredExport("${targetName}", "${targetName}", ${this.compiler.buffer.currentBuffer});`);

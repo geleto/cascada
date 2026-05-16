@@ -206,7 +206,7 @@ All technical claims verified:
 - `runtime.runWaitedControlFlowBoundary(parentBuffer, usedChannels, context, cb, asyncFn, waitedChannelName)` exists exactly as documented in `src/runtime/async-boundaries.js:51-62` ✓
 - All Key Files exist ✓
 - `finish()`, `getChannel()`, `finalSnapshot()` all present ✓
-- `WaitResolveCommand` in `channels/timing.js` ✓
+- `WaitResolveCommand` in `channels/wait-commands.js` ✓
 - While loop `false`/`true` return (no STOP_WHILE sentinel) ✓
 - Nested loop propagation rules ✓
 - Error/poison behavior ✓

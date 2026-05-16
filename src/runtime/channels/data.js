@@ -5,14 +5,13 @@ import {DataChannelTarget} from './data-target.js';
 import {Channel, cloneSnapshotValue, mergePoisonErrors} from './base.js';
 
 class DataCommand extends ChannelCommand {
-  constructor({ channelName, command, args = null, pos = null, initializeIfNotSet = false }) {
+  constructor({ channelName, operation, args = null, pos = null, initializeIfNotSet = false }) {
     super({
       channelName,
-      command: command || null,
       args: args || [],
-      subpath: null,
       pos
     });
+    this.operation = operation || null;
     this.initializeIfNotSet = initializeIfNotSet;
   }
 
@@ -24,7 +23,7 @@ class DataCommand extends ChannelCommand {
       const rawPath = args.length > 0 ? args[0] : null;
       const dataPath = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
       const poisonErrors = this.extractPoisonFromArgs(args);
-      if (this.command !== 'set') {
+      if (this.operation !== 'set') {
         const existing = readDataValueAtPath(channel._base.data, dataPath);
         if (isPoison(existing) || isPoisonError(existing)) {
           if (poisonErrors.length > 0) {
@@ -37,13 +36,13 @@ class DataCommand extends ChannelCommand {
         setDataPoisonAtPath(channel, args, this.toPoisonValue(poisonErrors));
         return;
       }
-      const method = this.command ? channel._base[this.command] : channel._base;
+      const method = this.operation ? channel._base[this.operation] : channel._base;
       if (typeof method !== 'function') {
         setDataPoisonAtPath(
           channel,
           args,
           this.toPoisonValue([
-            contextualizeChannelError(channel, this.pos, new Error(`has no method '${this.command}'`))
+            contextualizeChannelError(channel, this.pos, new Error(`has no method '${this.operation}'`))
           ])
         );
         return;
@@ -51,7 +50,7 @@ class DataCommand extends ChannelCommand {
       try {
         if (
           this.initializeIfNotSet &&
-          this.command === 'set' &&
+          this.operation === 'set' &&
           channel._getTarget() &&
           typeof channel._getTarget() === 'object' &&
           Object.keys(channel._getTarget()).length > 0
@@ -152,8 +151,7 @@ class DataChannel extends Channel {
           this._buffer.addCommand(new DataCommand({
 
             channelName: this._channelName,
-
-            command: methodName,
+            operation: methodName,
 
             args,
 

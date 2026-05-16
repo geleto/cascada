@@ -24,8 +24,7 @@ function withSequentialPathChannel(currentBuffer, pathKey, errorContext, repair,
     channelName: pathKey,
     pathKey,
     operation,
-    pos,
-    withDeferredResult: true
+    pos
   }), pathKey);
 }
 

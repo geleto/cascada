@@ -146,9 +146,10 @@ class CompileBuffer {
     const channelDecl = this.compiler.analysis.findDeclaration(node._analysis, channelName);
     const channelType = node.channelType || (channelDecl ? channelDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
-    const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
+    const path = staticPath.length > 1 ? staticPath.slice(1) : null;
+    const receiverPath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
     const isObservationCall = isCallNode &&
-      !subpath &&
+      !receiverPath &&
       (command === 'snapshot' || command === 'isError' || command === 'getError');
 
     if (isObservationCall) {
@@ -170,9 +171,9 @@ class CompileBuffer {
         if (!command) {
           this.compiler.fail('Invalid sequence command syntax: expected sequenceChannel.method(...)', node.lineno, node.colno, node);
         }
-        this.compiler.emit(`new runtime.SequenceCallCommand({ channelName: '${channelName}', command: '${command}', `);
-        if (subpath && subpath.length > 0) {
-          this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
+        this.compiler.emit(`new runtime.SequenceCallCommand({ channelName: '${channelName}', methodName: '${command}', `);
+        if (receiverPath && receiverPath.length > 0) {
+          this.compiler.emit(`path: ${JSON.stringify(receiverPath)}, `);
         }
         this.compiler.emit('args: ');
         this.compiler._compileAggregate(node.call.args, null, '[', ']', false, true);
@@ -183,9 +184,9 @@ class CompileBuffer {
       if (!command) {
         this.compiler.fail('Invalid sequence read syntax: expected sequenceChannel.path', node.lineno, node.colno, node);
       }
-      this.compiler.emit(`new runtime.SequenceGetCommand({ channelName: '${channelName}', command: '${command}', `);
-      if (subpath && subpath.length > 0) {
-        this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
+      this.compiler.emit(`new runtime.SequenceGetCommand({ channelName: '${channelName}', `);
+      if (path && path.length > 0) {
+        this.compiler.emit(`path: ${JSON.stringify(path)}, `);
       }
       this.compiler.emit(`pos: ${this._emitPositionLiteral(node)} })`);
       return;
@@ -202,7 +203,7 @@ class CompileBuffer {
     }
     this.compiler.emit(`new runtime.${channelFacts.commandClass}({ channelName: '${channelName}', `);
     if (command) {
-      this.compiler.emit(`command: '${command}', `);
+      this.compiler.emit(`operation: '${command}', `);
     }
     if (channelType === 'text') {
       this.compiler.emit('normalizeArgs: true, ');
@@ -254,8 +255,8 @@ class CompileBuffer {
     channelType,
     channelName,
     channelNameExpr = JSON.stringify(channelName),
-    command = null,
-    subpath = null,
+    operation = null,
+    path = null,
     argsExpr,
     valueExpr = null,
     positionNode = null,
@@ -273,11 +274,11 @@ class CompileBuffer {
       if (channelType === 'var') {
         argsExpr = `[${valueExpr}]`;
       } else if (channelType === 'text') {
-        command = command || 'set';
+        operation = operation || 'set';
         argsExpr = `[${valueExpr}]`;
         normalizeArgs = normalizeArgs === null ? true : normalizeArgs;
       } else if (channelType === 'data') {
-        command = command || 'set';
+        operation = operation || 'set';
         argsExpr = `[null, ${valueExpr}]`;
       }
     }
@@ -289,11 +290,11 @@ class CompileBuffer {
       `args: ${argsExpr}`,
       `pos: ${this._emitPositionLiteral(positionNode)}`
     ];
-    if (command) {
-      props.splice(1, 0, `command: ${JSON.stringify(command)}`);
+    if (operation) {
+      props.splice(1, 0, `operation: ${JSON.stringify(operation)}`);
     }
-    if (subpath && subpath.length > 0) {
-      props.splice(command ? 2 : 1, 0, `subpath: ${JSON.stringify(subpath)}`);
+    if (path && path.length > 0) {
+      props.splice(operation ? 2 : 1, 0, `path: ${JSON.stringify(path)}`);
     }
     if (normalizeArgs !== null) {
       props.push(`normalizeArgs: ${normalizeArgs ? 'true' : 'false'}`);
@@ -328,15 +329,15 @@ class CompileBuffer {
     );
   }
 
-  emitAddSequenceGet(channelName, commandName, subpath, positionNode) {
+  emitAddSequenceGet(channelName, path, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.SequenceGetCommand({ channelName: "${channelName}", command: "${commandName}", subpath: ${JSON.stringify(subpath || [])}, pos: ${this._emitPositionLiteral(positionNode)}, withDeferredResult: true }), "${channelName}")`
+      `${this.currentBuffer}.addCommand(new runtime.SequenceGetCommand({ channelName: "${channelName}", path: ${JSON.stringify(path)}, pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`
     );
   }
 
-  emitAddSequenceCall(channelName, commandName, subpath, argsExpr, positionNode) {
+  emitAddSequenceCall(channelName, methodName, receiverPath, argsExpr, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.SequenceCallCommand({ channelName: "${channelName}", command: "${commandName}", subpath: ${JSON.stringify(subpath || [])}, args: ${argsExpr}, pos: ${this._emitPositionLiteral(positionNode)}, withDeferredResult: true }), "${channelName}")`
+      `${this.currentBuffer}.addCommand(new runtime.SequenceCallCommand({ channelName: "${channelName}", methodName: "${methodName}", path: ${JSON.stringify(receiverPath || [])}, args: ${argsExpr}, pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`
     );
   }
 

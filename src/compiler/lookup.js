@@ -86,8 +86,7 @@ class CompileLookup {
     ) {
       facts.sequenceChannelLookup = {
         channelName: thisSharedFacts.channelName,
-        propertyName: thisSharedFacts.propertyName,
-        subpath: thisSharedFacts.pathPrefix
+        path: thisSharedFacts.channelPath.slice(1)
       };
     }
     return true;
@@ -121,14 +120,13 @@ class CompileLookup {
 
     const channelName = sequencePath[0];
     const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
-    const propertyName = sequencePath[sequencePath.length - 1];
-    if (!channelDecl || channelDecl.shared || channelDecl.type !== 'sequence' || propertyName === 'snapshot') {
+    const path = sequencePath.slice(1);
+    if (!channelDecl || channelDecl.shared || channelDecl.type !== 'sequence' || path[path.length - 1] === 'snapshot') {
       return null;
     }
     return {
       channelName,
-      propertyName,
-      subpath: sequencePath.slice(1, -1)
+      path
     };
   }
 
@@ -212,8 +210,7 @@ class CompileLookup {
     if (compiler.scriptMode && sequenceChannelLookup) {
       compiler.buffer.emitAddSequenceGet(
         sequenceChannelLookup.channelName,
-        sequenceChannelLookup.propertyName,
-        sequenceChannelLookup.subpath,
+        sequenceChannelLookup.path,
         node
       );
       return true;

@@ -6,38 +6,22 @@ import {ChannelCommand, runWithResolvedArguments, contextualizeChannelError} fro
 import {Channel} from './base.js';
 
 class TextCommand extends ChannelCommand {
-  constructor(specOrValue) {
-    const isSpecObject = !!specOrValue &&
-      typeof specOrValue === 'object' &&
-      !Array.isArray(specOrValue) &&
-      (
-        Object.prototype.hasOwnProperty.call(specOrValue, 'channelName') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'subpath') ||
-        Object.prototype.hasOwnProperty.call(specOrValue, 'pos')
-      );
-    if (isSpecObject) {
-      super({
-        channelName: specOrValue.channelName,
-        command: specOrValue.command || null,
-        args: specOrValue.args || [],
-        subpath: null,
-        pos: specOrValue.pos || null
-      });
-      this.normalizeArgs = specOrValue.normalizeArgs;
-      this.initializeIfNotSet = specOrValue.initializeIfNotSet;
-      return;
-    }
+  constructor({
+    channelName,
+    args = null,
+    operation = null,
+    pos = null,
+    normalizeArgs = false,
+    initializeIfNotSet = false
+  }) {
     super({
-      channelName: 'text',
-      command: null,
-      args: [specOrValue],
-      subpath: null,
-      pos: null
+      channelName,
+      args: args || [],
+      pos
     });
-    this.normalizeArgs = false;
-    this.initializeIfNotSet = false;
+    this.operation = operation || null;
+    this.normalizeArgs = normalizeArgs;
+    this.initializeIfNotSet = initializeIfNotSet;
   }
 
   apply(channel) {
@@ -56,7 +40,7 @@ class TextCommand extends ChannelCommand {
         channel._markStateChanged();
         return;
       }
-      if (this.command === 'set') {
+      if (this.operation === 'set') {
         if (args.length !== 1) {
           channel._setTarget(this.toPoisonValue([
             contextualizeChannelError(channel, this.pos, new Error('text.set() accepts exactly one argument'))
@@ -67,9 +51,9 @@ class TextCommand extends ChannelCommand {
           return;
         }
         channel._setTarget([]);
-      } else if (this.command !== null) {
+      } else if (this.operation !== null) {
         channel._setTarget(this.toPoisonValue([
-          contextualizeChannelError(channel, this.pos, new Error(`Unsupported text channel command '${this.command}'`))
+          contextualizeChannelError(channel, this.pos, new Error(`Unsupported text channel command '${this.operation}'`))
         ]));
         return;
       }
@@ -90,77 +74,41 @@ class TextCommand extends ChannelCommand {
 
 class TextChannel extends Channel {
   constructor(buffer, channelName, context, channelType) {
-
     super(buffer, channelName, context, channelType, [], null);
-
   }
-
-
 
   invoke(...args) {
-
     if (!this._buffer) return;
-
     if (args.length === 0) return;
-
     this._buffer.addCommand(new TextCommand({
-
       channelName: this._channelName,
-
       args,
-
       normalizeArgs: true,
-
       pos: { lineno: 0, colno: 0 }
-
     }), this._channelName);
-
   }
-
-
 
   _getCurrentResult() {
-
     if (!Array.isArray(this._target) || this._target.length === 0) {
-
       this._setTarget(['']);
-
       return '';
-
     }
-
     const result = this._target.join('');
-
     // Compact accumulated fragments so future appends keep O(1)-ish growth.
-
     this._setTarget([result]);
-
     return result;
-
   }
-
-
 
   _applyPoisonErrors(errors) {
-
     if (!Array.isArray(errors) || errors.length === 0) {
-
       return;
-
     }
-
     if (!Array.isArray(this._target)) {
-
       this._setTarget([]);
-
     }
-
     this._target.push(createPoison(errors));
-
     this._markStateChanged();
-
   }
-
 }
 
 function normalizeTextCommandArg(value, channel, pos) {

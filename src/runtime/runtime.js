@@ -6,7 +6,7 @@ export * from './channels/index.js';
 export * from './channels/command-base.js';
 export * from './channels/text.js';
 export * from './channels/var.js';
-export * from './channels/timing.js';
+export * from './channels/wait-commands.js';
 export * from './channels/observation.js';
 export * from './channels/data.js';
 export * from './channels/sequence.js';

@@ -500,7 +500,7 @@ describe('Phase 8 - Component Observations', function () {
       await env.renderScript('Main.script', {});
       expect().fail('Expected private shared var lookup to fail');
     } catch (err) {
-      expect(err.message).to.contain('Shared channel \'_theme\' was not found');
+      expect(err.message).to.contain('is private and cannot be accessed through a component');
     }
   });
 
@@ -1041,9 +1041,9 @@ describe('Phase 8 - Component Lifecycle', function () {
       errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
     });
 
-    const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    const sideChannelFinished = ownerBuffer.getChannel('nsBinding').finalSnapshot();
     ownerBuffer.finish();
-    await bindingSnapshot;
+    await sideChannelFinished;
     await startupPromise;
 
     expect(events).to.eql(['gate-resolved', 'ctor-start']);
@@ -1129,9 +1129,9 @@ describe('Phase 8 - Component Lifecycle', function () {
       errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
     });
 
-    const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    const sideChannelFinished = ownerBuffer.getChannel('nsBinding').finalSnapshot();
     ownerBuffer.finish();
-    await bindingSnapshot;
+    await sideChannelFinished;
     await startupPromise;
 
     expect(events).to.eql(['root-render', 'startup-called', 'finalize', 'constructor']);
@@ -1181,9 +1181,9 @@ describe('Phase 8 - Component Lifecycle', function () {
       pos: { lineno: 1, colno: 1 }
     }), 'nsBinding');
 
-    const bindingSnapshot = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    const sideChannelFinished = ownerBuffer.getChannel('nsBinding').finalSnapshot();
     ownerBuffer.finish();
-    await bindingSnapshot;
+    await sideChannelFinished;
 
     expect(() => componentInstance.callMethod(
       'build',

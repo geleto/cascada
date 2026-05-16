@@ -66,13 +66,13 @@ describe('channel errors', function () {
       const poison = createPoison([new Error('data poison')]);
       const bad = new DataCommand({
         channelName: 'data',
-        command: 'set',
+        operation: 'set',
         args: [['x'], poison],
         pos: { lineno: 1, colno: 1 }
       });
       const fix = new DataCommand({
         channelName: 'data',
-        command: 'set',
+        operation: 'set',
         args: [['x'], 'ok'],
         pos: { lineno: 2, colno: 1 }
       });
@@ -91,7 +91,7 @@ describe('channel errors', function () {
       const output = new DataChannel(null, 'data', null, 'data');
       const cmd = new DataCommand({
         channelName: 'data',
-        command: 'doesNotExist',
+        operation: 'doesNotExist',
         args: [['x'], 1],
         pos: { lineno: 1, colno: 1 }
       });
@@ -111,9 +111,8 @@ describe('channel errors', function () {
       const poison = createPoison([new Error('arg poison')]);
       const cmd = new SequenceCallCommand({
         channelName: 'seq',
-        command: 'exec',
-        args: [poison],
-        withDeferredResult: true
+        methodName: 'exec',
+        args: [poison]
       });
 
       try {

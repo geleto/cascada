@@ -1,18 +1,17 @@
 
-import {ChannelCommand, runWithResolvedArguments} from './command-base.js';
+import {ChannelMutatingResultCommand, ChannelObservableCommand, runWithResolvedArguments} from './command-base.js';
 import {PoisonError, isPoison} from '../errors.js';
 import {Channel} from './base.js';
 
-class SequenceCallCommand extends ChannelCommand {
-  constructor({ channelName, command, args = null, subpath = null, pos = null, withDeferredResult = false }) {
+class SequenceCallCommand extends ChannelMutatingResultCommand {
+  constructor({ channelName, methodName, args = null, path = null, pos = null }) {
     super({
       channelName,
-      command: command || null,
       args: args || [],
-      subpath: subpath || null,
-      pos,
-      withDeferredResult
+      pos
     });
+    this.methodName = methodName || null;
+    this.path = path || null;
   }
 
   apply(channel) {
@@ -28,83 +27,60 @@ class SequenceCallCommand extends ChannelCommand {
       }
 
       const execute = (sequenceTarget) => {
-        const target = resolveSubpath(sequenceTarget, this.subpath);
+        const target = resolvePath(sequenceTarget, this.path);
         if (target === null || target === undefined) {
-          this.resolveResult(undefined);
-          return undefined;
+          return this.settleResult(undefined);
         }
-        const method = this.command ? target[this.command] : target;
+        const method = this.methodName ? target[this.methodName] : target;
         if (typeof method !== 'function') {
-          this.resolveResult(undefined);
-          return undefined;
+          return this.settleResult(undefined);
         }
         const result = method.apply(target, args);
-        if (result && typeof result.then === 'function') {
-          return Promise.resolve(result).then(
-            (value) => {
-              this.resolveResult(value);
-              return value;
-            },
-            (err) => {
-              this.rejectResult(err);
-              throw err;
-            }
-          );
-        }
-        this.resolveResult(result);
-        return result;
+        return this.settleResult(result, { rethrow: true });
       };
 
       const sequenceTarget = channel._ensureSequenceTargetResolved ? channel._ensureSequenceTargetResolved() : channel._sequenceTarget;
       if (sequenceTarget && typeof sequenceTarget.then === 'function') {
-        return Promise.resolve(sequenceTarget).then(execute);
+        return this.settleResult(Promise.resolve(sequenceTarget).then(execute), { rethrow: true });
       }
       return execute(sequenceTarget);
     });
   }
 }
 
-// Reads a property from a sequence target in source order and resolves the deferred result promise with the value. Observable — applied immediately without waiting for pending mutating commands.
-class SequenceGetCommand extends ChannelCommand {
-  constructor({ channelName, command, subpath = null, pos = null, withDeferredResult = false }) {
+// Reads a property from a sequence target in source order and resolves its result promise with the value. Observable — applied immediately without waiting for pending mutating commands.
+class SequenceGetCommand extends ChannelObservableCommand {
+  constructor({ channelName, path = null, pos = null }) {
     super({
       channelName,
-      command: command || null,
       args: [],
-      subpath: subpath || null,
-      pos,
-      withDeferredResult
+      pos
     });
-    this.isObservable = true;
+    this.path = path || null;
   }
 
   apply(channel) {
     if (!channel) return undefined;
 
     const execute = (sequenceTarget) => {
-      const target = resolveSubpath(sequenceTarget, this.subpath);
-      const value = (target === null || target === undefined || !this.command) ? undefined : target[this.command];
-      this.resolveResult(value);
-      return value;
+      const value = resolvePath(sequenceTarget, this.path);
+      return this.settleResult(value);
     };
 
     const sequenceTarget = channel._ensureSequenceTargetResolved ? channel._ensureSequenceTargetResolved() : channel._sequenceTarget;
     if (sequenceTarget && typeof sequenceTarget.then === 'function') {
-      return Promise.resolve(sequenceTarget).then(execute, (err) => {
-        this.rejectResult(err);
-        throw err;
-      });
+      return this.settleResult(Promise.resolve(sequenceTarget).then(execute), { rethrow: true });
     }
     return execute(sequenceTarget);
   }
 }
 
-function resolveSubpath(target, subpath) {
-  if (!Array.isArray(subpath) || subpath.length === 0) {
+function resolvePath(target, path) {
+  if (!Array.isArray(path) || path.length === 0) {
     return target;
   }
   let current = target;
-  for (const segment of subpath) {
+  for (const segment of path) {
     if (current === null || current === undefined) {
       return undefined;
     }

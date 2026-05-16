@@ -43,7 +43,7 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/runtime/channels/sequence.js` — `SequenceCallCommand`, `SequenceGetCommand` — sequential `!` path execution.
 -   `src/runtime/channels/sequential-path.js` — `SequentialPathReadCommand`, `SequentialPathWriteCommand`, repair commands.
 -   `src/runtime/channels/observation.js` — `SnapshotCommand`, `RawSnapshotCommand`, `IsErrorCommand`, `GetErrorCommand`, `CaptureGuardStateCommand`, `RestoreGuardStateCommand`.
--   `src/runtime/channels/timing.js` — `WaitCurrentCommand`, `WaitResolveCommand` — timing-only sync points.
+-   `src/runtime/channels/wait-commands.js` — `WaitCurrentCommand`, `WaitResolveCommand` — timing-only sync points.
 -   `src/runtime/channels/error.js` — `ErrorCommand` (iterator throws), `TargetPoisonCommand` (writes poison into channel target).
 -   `src/runtime/channels/base.js` — `Channel` base class.
 

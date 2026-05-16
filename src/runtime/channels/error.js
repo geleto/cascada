@@ -1,8 +1,8 @@
 
 import {PoisonError, createPoison} from '../errors.js';
-import {Command, contextualizeErrorsForChannel} from './command-base.js';
+import {MutatingCommand, contextualizeErrorsForChannel} from './command-base.js';
 
-class ErrorCommand extends Command {
+class ErrorCommand extends MutatingCommand {
   constructor(errors) {
     super();
     this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
@@ -19,7 +19,7 @@ class ErrorCommand extends Command {
 }
 
 // Writes poison directly into a channel target: pushes a PoisonedValue onto a text buffer, or replaces a data/var/sequence target with one.
-class TargetPoisonCommand extends Command {
+class TargetPoisonCommand extends MutatingCommand {
   constructor({ channelName, errors = null, pos = null }) {
     super();
     this.channelName = channelName;

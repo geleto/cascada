@@ -1,4 +1,4 @@
-import {Command} from '../channels/command-base.js';
+import {MutatingCommand, MutatingResultCommand} from '../channels/command-base.js';
 import {CommandBuffer} from '../command-buffer.js';
 import {RuntimeFatalError} from '../errors.js';
 import {resolveSingle} from '../resolve.js';
@@ -7,7 +7,7 @@ import {isPrivateSharedName} from '../../inheritance/shared-names.js';
 
 function getComponentSharedSchemaEntry(instance, channelName, errorContext) {
   if (isPrivateSharedName(channelName)) {
-    throw new RuntimeFatalError(`Shared channel '${channelName}' was not found`, errorContext);
+    throw new RuntimeFatalError(`Shared channel '${channelName}' is private and cannot be accessed through a component`, errorContext);
   }
   const schemaEntry = instance.runtimeState.sharedSchema[channelName] || null;
   if (!schemaEntry) {
@@ -30,33 +30,30 @@ async function observeComponentSharedChannel(instance, observationCommand, error
     );
   }
 
-  const channel = instance.sharedRootBuffer.getChannelIfExists(channelName);
-  if (!channel) {
-    throw new RuntimeFatalError(`Shared channel '${channelName}' was not found`, errorContext);
-  }
   return instance.sharedRootBuffer.addCommand(observationCommand, channelName);
 }
 
-class ComponentOperationCommand extends Command {
+class ComponentOperationCommand extends MutatingResultCommand {
   constructor({
     methodName,
     args,
     errorContext = null
   }) {
-    super({ withDeferredResult: true, resolveApplyResult: true });
+    super();
     this.methodName = methodName;
     this.args = args;
     this.errorContext = errorContext;
-    this.isObservable = false;
   }
 
-  async apply(channel) {
-    const instance = await resolveSingle(channel._getTarget());
-    return instance.invoke(this.methodName, this.args, this.errorContext);
+  apply(channel) {
+    return this.settleResult(
+      resolveSingle(channel._getTarget())
+        .then((instance) => instance.invoke(this.methodName, this.args, this.errorContext))
+    );
   }
 }
 
-class StartComponentInstanceCommand extends Command {
+class StartComponentInstanceCommand extends MutatingCommand {
   constructor({
     componentScriptOrTemplate,
     payload,
@@ -65,10 +62,10 @@ class StartComponentInstanceCommand extends Command {
     runtime,
     cb = null,
     ownerBuffer,
-    bindingName,
+    sideChannelName,
     errorContext = null
   }) {
-    super({ withDeferredResult: true, resolveApplyResult: true });
+    super();
     this.componentScriptOrTemplate = componentScriptOrTemplate;
     this.payload = payload;
     this.ownerContext = ownerContext;
@@ -76,13 +73,12 @@ class StartComponentInstanceCommand extends Command {
     this.runtime = runtime;
     this.cb = cb;
     this.ownerBuffer = ownerBuffer;
-    this.bindingName = bindingName;
+    this.sideChannelName = sideChannelName;
     this.errorContext = errorContext;
-    this.isObservable = false;
   }
 
-  apply() {
-    return createComponentInstance({
+  apply(channel) {
+    const createdInstance = createComponentInstance({
       componentScriptOrTemplate: this.componentScriptOrTemplate,
       payload: this.payload,
       ownerContext: this.ownerContext,
@@ -90,32 +86,36 @@ class StartComponentInstanceCommand extends Command {
       runtime: this.runtime,
       cb: this.cb,
       ownerBuffer: this.ownerBuffer,
-      bindingName: this.bindingName,
+      sideChannelName: this.sideChannelName,
       errorContext: this.errorContext
+    });
+    return createdInstance.then((instance) => {
+      channel.setInitialValue(instance);
+      return instance;
     });
   }
 }
 
-class ObserveComponentChannelCommand extends Command {
+class ObserveComponentChannelCommand extends MutatingResultCommand {
   constructor({
     observationCommand,
     errorContext = null,
     implicitVarRead = false
   }) {
-    super({ withDeferredResult: true, resolveApplyResult: true });
+    super();
     this.observationCommand = observationCommand;
     this.errorContext = errorContext;
     this.implicitVarRead = implicitVarRead;
-    this.isObservable = false;
   }
 
-  async apply(channel) {
-    const instance = await resolveSingle(channel._getTarget());
-    return observeComponentSharedChannel(
-      instance,
-      this.observationCommand,
-      this.errorContext,
-      this.implicitVarRead
+  apply(channel) {
+    return this.settleResult(
+      resolveSingle(channel._getTarget()).then((instance) => observeComponentSharedChannel(
+        instance,
+        this.observationCommand,
+        this.errorContext,
+        this.implicitVarRead
+      ))
     );
   }
 }
@@ -129,9 +129,11 @@ async function createComponentInstance(spec) {
     runtime,
     cb,
     ownerBuffer,
+    sideChannelName = null,
     bindingName = null,
     errorContext = null
   } = spec;
+  const resolvedSideChannelName = sideChannelName ?? bindingName;
   const templateOrScript = await resolveSingle(componentScriptOrTemplate);
   if (!templateOrScript) {
     throw new RuntimeFatalError('Component target did not resolve to a script or template', errorContext);
@@ -167,12 +169,8 @@ async function createComponentInstance(spec) {
     throw error;
   }
 
-  if (ownerBuffer && bindingName) {
-    const bindingSnapshot = ownerBuffer.getChannel(bindingName).finalSnapshot();
-    Promise.resolve(bindingSnapshot).then(
-      () => instance.close(),
-      () => instance.close()
-    );
+  if (ownerBuffer && resolvedSideChannelName) {
+    ownerBuffer.getChannel(resolvedSideChannelName).getFinishedPromise().then(() => instance.close());
   }
 
   return instance;
@@ -190,6 +188,7 @@ function startComponentInstance(spec) {
     cb,
     errorContext = null
   } = spec;
+  const sideChannelName = bindingName;
   const command = new StartComponentInstanceCommand({
     componentScriptOrTemplate,
     payload,
@@ -198,11 +197,10 @@ function startComponentInstance(spec) {
     runtime,
     cb,
     ownerBuffer: currentBuffer,
-    bindingName,
+    sideChannelName,
     errorContext
   });
-  currentBuffer.addCommand(command, bindingName);
-  return command.promise;
+  currentBuffer.addCommand(command, sideChannelName);
 }
 
 function callComponentMethod(spec) {
@@ -213,12 +211,13 @@ function callComponentMethod(spec) {
     args,
     errorContext = null
   } = spec;
+  const sideChannelName = bindingName;
   const command = new ComponentOperationCommand({
     methodName,
     args,
     errorContext
   });
-  currentBuffer.addCommand(command, bindingName);
+  currentBuffer.addCommand(command, sideChannelName);
   return command.promise;
 }
 
@@ -230,12 +229,13 @@ function observeComponentChannel(spec) {
     errorContext = null,
     implicitVarRead = false
   } = spec;
+  const sideChannelName = bindingName || observationCommand.channelName;
   const command = new ObserveComponentChannelCommand({
     observationCommand,
     errorContext,
     implicitVarRead
   });
-  currentBuffer.addCommand(command, bindingName || observationCommand.channelName);
+  currentBuffer.addCommand(command, sideChannelName);
   return command.promise;
 }
 

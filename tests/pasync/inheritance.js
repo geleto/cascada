@@ -1521,13 +1521,17 @@ describe('Inheritance rebuild', function () {
       loader.addTemplate('private.script', 'component "component.script" as card\nreturn card._secret');
       loader.addTemplate('missing.script', 'component "component.script" as card\nreturn card.missing');
 
-      for (const name of ['private.script', 'missing.script']) {
+      const expectations = {
+        'private.script': 'is private and cannot be accessed through a component',
+        'missing.script': 'was not found'
+      };
+      for (const name of Object.keys(expectations)) {
         try {
           await localEnv.renderScript(name, {});
           throw new Error('expected component observation to fail');
         } catch (error) {
           expect(String(error)).to.contain('Shared channel');
-          expect(String(error)).to.contain('was not found');
+          expect(String(error)).to.contain(expectations[name]);
         }
       }
     });
@@ -1561,9 +1565,9 @@ describe('Inheritance rebuild', function () {
         args: [instance],
         pos: { lineno: 1, colno: 1 }
       }), 'card');
-      const bindingSnapshot = ownerBuffer.getChannel('card').finalSnapshot();
+      const sideChannelFinished = ownerBuffer.getChannel('card').finalSnapshot();
       ownerBuffer.finish();
-      await bindingSnapshot;
+      await sideChannelFinished;
       await Promise.resolve();
 
       expect(await instance.invoke('ping', [], { path: 'main.script', lineno: 2, colno: 1 })).to.be('pong');

@@ -1,14 +1,13 @@
 
 import {RETURN_UNSET} from '../markers.js';
 import {isPoisonError, handleError} from '../errors.js';
-import {Command} from './command-base.js';
+import {ObservableCommand, MutatingResultCommand} from './command-base.js';
 
-class SnapshotCommand extends Command {
+class SnapshotCommand extends ObservableCommand {
   constructor({ channelName, pos = null }) {
-    super({ withDeferredResult: true });
+    super();
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = true;
     this.isUniversalObservationCommand = true;
   }
 
@@ -24,18 +23,9 @@ class SnapshotCommand extends Command {
     }
 
     try {
-      const result = channel._resolveSnapshotCommandResult();
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(
-          (value) => {
-            this.resolveResult(value);
-          },
-          (err) => {
-            this.rejectResult(contextualize(err));
-          }
-        );
-      }
-      this.resolveResult(result);
+      return this.settleResult(channel._resolveSnapshotCommandResult(), {
+        mapError: contextualize
+      });
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
@@ -43,12 +33,11 @@ class SnapshotCommand extends Command {
 }
 
 // Captures the raw channel target without poison inspection. Used for overwrite semantics (e.g., var-channel set_path) where poisoned leaves may be replaced by the write. Observation command.
-class RawSnapshotCommand extends Command {
+class RawSnapshotCommand extends ObservableCommand {
   constructor({ channelName, pos = null }) {
-    super({ withDeferredResult: true });
+    super();
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = true;
   }
 
   apply(channel) {
@@ -73,12 +62,11 @@ class RawSnapshotCommand extends Command {
 // Ordered return-state observation. This deliberately checks only whether the
 // return channel still contains the sentinel; it does not consume or inspect
 // the returned value, which may itself be poison.
-class ReturnIsUnsetCommand extends Command {
+class ReturnIsUnsetCommand extends ObservableCommand {
   constructor({ channelName, pos = null }) {
-    super({ withDeferredResult: true });
+    super();
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = true;
   }
 
   apply(channel) {
@@ -101,12 +89,11 @@ class ReturnIsUnsetCommand extends Command {
 }
 
 // Resolves to a boolean indicating whether the channel currently holds a poisoned (error) value. Observation command.
-class IsErrorCommand extends Command {
+class IsErrorCommand extends ObservableCommand {
   constructor({ channelName, pos = null }) {
-    super({ withDeferredResult: true });
+    super();
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = true;
     this.isUniversalObservationCommand = true;
   }
 
@@ -123,13 +110,10 @@ class IsErrorCommand extends Command {
 
     try {
       const result = channel._isErrorNow();
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(
-          (value) => this.resolveResult(!!value),
-          (err) => this.rejectResult(contextualize(err))
-        );
-      }
-      this.resolveResult(!!result);
+      return this.settleResult(result, {
+        mapValue: (value) => !!value,
+        mapError: contextualize
+      });
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
@@ -137,12 +121,11 @@ class IsErrorCommand extends Command {
 }
 
 // Resolves to the current error on the channel (a PoisonError or null). Observation command.
-class GetErrorCommand extends Command {
+class GetErrorCommand extends ObservableCommand {
   constructor({ channelName, pos = null }) {
-    super({ withDeferredResult: true });
+    super();
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = true;
     this.isUniversalObservationCommand = true;
   }
 
@@ -159,13 +142,10 @@ class GetErrorCommand extends Command {
 
     try {
       const result = channel._getErrorNow();
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(
-          (value) => this.resolveResult(value || null),
-          (err) => this.rejectResult(contextualize(err))
-        );
-      }
-      this.resolveResult(result || null);
+      return this.settleResult(result, {
+        mapValue: (value) => value || null,
+        mapError: contextualize
+      });
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
@@ -173,12 +153,11 @@ class GetErrorCommand extends Command {
 }
 
 // Snapshots the current channel state for `try/resume` guard entry. The captured state is passed to a later RestoreGuardStateCommand. Observation command.
-class CaptureGuardStateCommand extends Command {
+class CaptureGuardStateCommand extends ObservableCommand {
   constructor({ channelName, pos = null }) {
-    super({ withDeferredResult: true });
+    super();
     this.channelName = channelName;
     this.pos = pos || { lineno: 0, colno: 0 };
-    this.isObservable = true;
   }
 
   apply(channel) {
@@ -193,24 +172,19 @@ class CaptureGuardStateCommand extends Command {
     }
 
     try {
-      const result = channel._captureGuardState();
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(
-          (value) => this.resolveResult(value),
-          (err) => this.rejectResult(contextualize(err))
-        );
-      }
-      this.resolveResult(result);
+      return this.settleResult(channel._captureGuardState(), {
+        mapError: contextualize
+      });
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
   }
 }
 
-// Restores a previously captured guard state to the channel, overwriting the current target with the saved snapshot. Carries a deferred result.
-class RestoreGuardStateCommand extends Command {
+// Restores a previously captured guard state to the channel, overwriting the current target with the saved snapshot. Carries a result promise.
+class RestoreGuardStateCommand extends MutatingResultCommand {
   constructor({ channelName, target, pos = null }) {
-    super({ withDeferredResult: true });
+    super();
     this.channelName = channelName;
     this.target = target;
     this.pos = pos || { lineno: 0, colno: 0 };
@@ -228,15 +202,9 @@ class RestoreGuardStateCommand extends Command {
     }
 
     try {
-      const result = channel._restoreGuardState(this.target);
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(
-          (value) => this.resolveResult(value),
-          (err) => this.rejectResult(contextualize(err))
-        );
-      }
-      this.resolveResult(result);
-      return result;
+      return this.settleResult(channel._restoreGuardState(this.target), {
+        mapError: contextualize
+      });
     } catch (err) {
       this.rejectResult(contextualize(err));
     }

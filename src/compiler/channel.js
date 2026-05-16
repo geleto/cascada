@@ -137,7 +137,7 @@ class CompileChannel {
       compiler.buffer.emitAddChannelCommandByType({
         channelType: 'data',
         channelName: thisSharedPath.name,
-        command: 'set',
+        operation: 'set',
         argsExpr: `[${JSON.stringify(dataPath)}, ${valueId}]`,
         positionNode: node
       });
@@ -436,7 +436,7 @@ class CompileChannel {
       compiler.buffer.asyncAddValueToBuffer((resultVar) => {
         compiler.emit(`${resultVar} = new runtime.TextCommand({ channelName: ${JSON.stringify(specialChannelCall.channelName)}, `);
         if (specialChannelCall.methodName) {
-          compiler.emit(`command: ${JSON.stringify(specialChannelCall.methodName)}, `);
+          compiler.emit(`operation: ${JSON.stringify(specialChannelCall.methodName)}, `);
         }
         compiler.emit('normalizeArgs: true, args: ');
         compiler._compileAggregate(node.args, null, '[', ']', false, true);
@@ -449,7 +449,7 @@ class CompileChannel {
         compiler.fail('Invalid data command syntax: expected this.dataChannel.command(...)', node.lineno, node.colno, node);
       }
       compiler.buffer.asyncAddValueToBuffer((resultVar) => {
-        compiler.emit(`${resultVar} = new runtime.DataCommand({ channelName: ${JSON.stringify(specialChannelCall.channelName)}, command: ${JSON.stringify(specialChannelCall.methodName)}, args: `);
+        compiler.emit(`${resultVar} = new runtime.DataCommand({ channelName: ${JSON.stringify(specialChannelCall.channelName)}, operation: ${JSON.stringify(specialChannelCall.methodName)}, args: `);
         const pathArg = specialChannelCall.pathPrefix && specialChannelCall.pathPrefix.length > 0
           ? JSON.stringify(specialChannelCall.pathPrefix)
           : 'null';

@@ -103,8 +103,7 @@ async function restoreChannels(buffer, channelGuardState) {
         channelName,
         pathKey: channelName,
         operation: () => true,
-        pos: { lineno: 0, colno: 0 },
-        withDeferredResult: true
+        pos: { lineno: 0, colno: 0 }
       }), channelName).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
     );
     await Promise.all(repairPromises);
@@ -218,8 +217,7 @@ function repairSequenceChannels(buffer, guardState, lockNames) {
       pathKey: lockName,
       // Repair is unconditional: clear poison and publish a healthy lock state.
       operation: () => true,
-      pos: { lineno: 0, colno: 0 },
-      withDeferredResult: true
+      pos: { lineno: 0, colno: 0 }
     }), lockName).catch((err) => reportAndThrow(guardState.fatalCb, err));
 
     guardState.detectionPromises.push(Promise.all([detectPromise, repairPromise]).then(() => true));
